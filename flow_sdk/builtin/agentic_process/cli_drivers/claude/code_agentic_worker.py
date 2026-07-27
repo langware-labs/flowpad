@@ -24,8 +24,8 @@ import sys
 import uuid
 from typing import Any, AsyncIterator
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticWorker
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext, AgenticWorker
+from flow_sdk.builtin.agentic_process.model_tiers import CLAUDE_MODEL_TIERS, resolve_model_tier
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowDataType, FlowElementType
 
 logger = logging.getLogger(__name__)
@@ -242,8 +242,9 @@ class ClaudeCodeAgenticWorker(AgenticWorker):
                 "mcp_servers": mcp_servers,
             }
 
-            if context.model:
-                options_dict["model"] = context.model
+            model = resolve_model_tier(CLAUDE_MODEL_TIERS, context.model)
+            if model:
+                options_dict["model"] = model
 
             # Session resume / fork
             if context.resume_session_id:

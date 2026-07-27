@@ -7,13 +7,18 @@ Tests:
 - shell.terminate_worker() — SIGTERM then SIGKILL on worker_pid
 """
 
+import signal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+from flow_sdk.builtin.process_lifecycle import (
+    backend_restart_requested,
+    request_backend_restart,
+)
 from flow_sdk.builtin.shell import Shell
-
 
 # NOTE: ``test_driver_preassign_interactive_session_id_flags`` was removed
 # when CodexDriver migrated to the TranscriptDescriptor-based session
@@ -324,6 +329,76 @@ async def test_instant_exit_latches_failed_to_start():
 
 
 @pytest.mark.asyncio
+async def test_termination_signal_stays_recoverable():
+    """An external termination signal is not a failed worker launch."""
+    process = _latchable_process()
+    mock_save = await _fire_exit_callback(
+        process,
+        lifetime=0.9,
+        exit_code=-int(signal.SIGTERM),
+    )
+
+    assert mock_save.await_count == 0
+    assert process.status == "running"
+    assert process.start_failure is None
+
+
+@pytest.mark.asyncio
+async def test_crash_signal_latches_failed_process():
+    """A crash signal must not enter an invisible recovery loop."""
+    process = _latchable_process()
+    mock_save = await _fire_exit_callback(
+        process,
+        lifetime=120.0,
+        exit_code=-int(signal.SIGABRT),
+    )
+
+    assert mock_save.await_count == 1
+    assert process.status == "failed"
+    assert process.start_failure == (
+        f"Worker terminated by crash signal {int(signal.SIGABRT)}."
+    )
+
+
+def test_backend_restart_request_is_scoped_to_server_generation(
+    monkeypatch,
+    tmp_path,
+):
+    import flow_sdk.instance_settings as instance_settings
+    from flow_sdk.builtin import process_lifecycle
+
+    monkeypatch.setattr(
+        instance_settings,
+        "get_instance_settings",
+        lambda: SimpleNamespace(instance_dir=tmp_path),
+    )
+    marker = request_backend_restart(tmp_path, 101)
+
+    monkeypatch.setattr(process_lifecycle.os, "getpid", lambda: 101)
+    assert backend_restart_requested()
+
+    monkeypatch.setattr(process_lifecycle.os, "getpid", lambda: 202)
+    assert not backend_restart_requested()
+
+    marker.write_text("not-a-pid")
+    assert not backend_restart_requested()
+
+
+@pytest.mark.asyncio
+async def test_clean_exit_during_backend_restart_stays_recoverable():
+    """CLI workers may translate TERM into code 0; restart intent still wins."""
+    from flow_sdk.builtin.agentic_process import agentic_process as ap_module
+
+    process = _latchable_process()
+    with patch.object(ap_module, "backend_restart_requested", return_value=True):
+        mock_save = await _fire_exit_callback(process, lifetime=0.9, exit_code=0)
+
+    assert mock_save.await_count == 0
+    assert process.status == "running"
+    assert process.start_failure is None
+
+
+@pytest.mark.asyncio
 async def test_long_lived_exit_stays_recoverable():
     """A worker that outlives the window and then dies is a normal STOPPED —
     no latch — so crash-healing (auto-reopen after backend restart) still works."""
@@ -375,3 +450,33 @@ async def test_open_gate_retry_clears_latch():
     from flow_sdk.responses.response import ApiFailResponse
     assert isinstance(result, ApiFailResponse)
     assert result.message == "STOP_TEST"
+
+
+@pytest.mark.asyncio
+async def test_open_missing_fork_source_fails_before_shell_spawn():
+    """A vanished fork parent must not degrade into ``--resume <new-id>``."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+    from flow_sdk.responses.response import ApiFailResponse
+
+    source_id = "missing-fork-source"
+    process = AgenticProcess.fork(source_id, workdir="/project", visible=True)
+    cmd = ClaudeCliOptions(
+        workdir="/project",
+        session_id=process.session_id,
+        resume=True,
+        fork_session_id=source_id,
+    )
+
+    with patch.object(AgenticProcess, "reap_if_orphaned", new_callable=AsyncMock, return_value=False), \
+         patch.object(AgenticProcess, "get_project", new_callable=AsyncMock), \
+         patch.object(AgenticProcess, "prepare_system_instruction_assets", new_callable=AsyncMock, return_value=[]), \
+         patch.object(AgenticProcess, "_apply_system_instruction_assets"), \
+         patch.object(AgenticProcess, "_finalized_restart_cli_options", return_value=cmd), \
+         patch.object(AgenticProcess, "_find_resumable_session", new_callable=AsyncMock, return_value=None), \
+         patch.object(AgenticProcess, "_get_or_create_shell", new_callable=AsyncMock) as create_shell:
+        result = await process._perform_open(None, True)
+
+    assert isinstance(result, ApiFailResponse)
+    assert result.status_code == 404
+    assert source_id in (result.message or "")
+    create_shell.assert_not_awaited()

@@ -1,2 +1,0 @@
-// WorkflowAssetEditor removed
-export {};

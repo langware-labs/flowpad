@@ -1,4 +1,22 @@
-import { APIEntity, createConversationForShare, FlowMessage, isImagePath, Prompt, TypeId, User } from '@sdk';
+import {
+  APIEntity,
+  Artifact,
+  createConversationForShare,
+  dataContext,
+  dataManager,
+  FlowMessage,
+  gitOriginCloneUrl,
+  isImagePath,
+  launchWizard,
+  MessageAttachment,
+  Prompt,
+  Task,
+  TypeId,
+  User,
+  type AgenticProcess,
+  type GitOrigin,
+  type WorkerStatus,
+} from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -6,17 +24,24 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
 import { BodyStatus, FlowMessageKind, forwardMessage } from '@sdk/entities/flow-message';
-import { AlertCircle, Download, File, FileText, Loader2, X } from 'lucide-react';
+import { AlertCircle, Download, File, FileText, Loader2, Play, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
+import { MessageContextButton } from './MessageContextButton';
+import { MessageRunStatus } from './MessageRunStatus';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
-import { ContextEntityChip, iconForEntity } from './EntityChip';
+import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { chipStateFor } from './useMessageAttachments';
+import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
+import { TESTABLE_TYPES } from './asset-review/test-prompt';
+import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
 import { participantLabelByUserId, UNRESOLVED_SENDER_LABEL, warnUnresolvedSender } from './participant-display';
 import { useAttachments, type AttachmentTypeChipView } from './useAttachments';
-import { editorPathForLocalFile } from './attachment-url';
+import { dockPointerForLocalFile } from './attachment-url';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { messageForwardShareSource } from '@src/hooks/share-sources';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
@@ -24,6 +49,7 @@ import type { SendTarget } from '@src/hooks/use-send-to-conversation';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
+import { openArtifact } from '@src/components/artifacts/open-artifact';
 
 /** Single Download affordance for a message whose body bundle hasn't been
  *  pulled yet. One click materializes every attachment (files + entities) —
@@ -72,7 +98,9 @@ export function DownloadAttachmentsButton({
       </div>
       <div className="flex min-w-0 flex-col">
         <span className="truncate text-sm font-medium text-foreground">
-          <Trans>{count} {count === 1 ? 'asset' : 'assets'} attached</Trans>
+          <Trans>
+            {count} {count === 1 ? 'asset' : 'assets'} attached
+          </Trans>
         </span>
         <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{sub}</span>
         {typeChips.length > 0 && (
@@ -107,6 +135,22 @@ interface FlowMessageBubbleProps {
   timestamp: string;
   task?: ITask | null;
   onApproveAndExecute?: (messageId: string, attachmentIndex: number) => void;
+  /** The conversation's headless run + its live status, resolved once by the
+   *  parent and shared across bubbles. Drive the per-message run-status
+   *  one-liner that replaces "Execute" once the prompt is executed. */
+  run?: AgenticProcess | null;
+  runStatus?: WorkerStatus | null;
+  /** Open this message's executed run in the conversation drawer's Runs tab. */
+  onOpenRun?: (processId: string) => void;
+  /** Whether the conversation already has a worker session — flips the Execute
+   *  chip from "Run" to "<Host>'s session · new run", resolved once by the parent. */
+  workerSessionExists?: boolean;
+  workerSessionLabel?: string | null;
+  workerSessionInFlight?: boolean;
+  /** Additive: open the conversation's worker session in the collaboration room
+   *  view. Rendered as an icon on the run-status line; leaves the Runs drawer
+   *  path untouched. */
+  onOpenWorkerSession?: () => void;
   /** Per-message Implement Plan handler. The bubble itself decides whether to
    *  render the chip (spec present + recipient role) — pass the raw messageId
    *  callback and the bubble binds it. */
@@ -147,17 +191,11 @@ interface FlowMessageBubbleProps {
    *  responder's `sender_id` is intentionally absent from the guest's roster,
    *  so we suppress the unresolved-sender alert and its telemetry. */
   isCommunity?: boolean;
-  /** Parent conversation's `message_status_visible` flag — passed straight
-   *  through to the receipt indicator. Defaults to true. */
-  conversationStatusVisible?: boolean;
-  /** Project gate from the parent. Attachment downloads materialize assets into
-   *  the conversation's project (`.claude/…`), so a download must run inside a
-   *  mapped project — when supplied, the bubble routes its download trigger
-   *  through this, which opens the project picker first if none is selected and
-   *  resumes the download after a pick. */
-  ensureProjectMapped?: (run: () => void | Promise<void>) => void;
   /** Project shell to use when opening asset entity attachments. */
   attachmentProjectId?: string | null;
+  /** Staged MessageAttachment rows for THIS message (parent-resolved via the
+   *  conversation-wide query). Drive the dashed staged chips + review modal. */
+  messageAttachments?: MessageAttachment[];
 }
 
 export function FlowMessageBubble({
@@ -166,6 +204,13 @@ export function FlowMessageBubble({
   timestamp,
   task,
   onApproveAndExecute,
+  run,
+  runStatus,
+  onOpenRun,
+  workerSessionExists = false,
+  workerSessionLabel = null,
+  workerSessionInFlight = false,
+  onOpenWorkerSession,
   onImplementPlan,
   onOpenPlanSession,
   onViewPlan,
@@ -178,9 +223,8 @@ export function FlowMessageBubble({
   participants,
   rosterReady = false,
   isCommunity = false,
-  conversationStatusVisible = true,
-  ensureProjectMapped,
   attachmentProjectId,
+  messageAttachments,
 }: FlowMessageBubbleProps) {
   // Prefer the FlowMessage handed down from the parent's batched conversation
   // query; fall back to a per-id fetch only when it wasn't provided (so the
@@ -205,7 +249,10 @@ export function FlowMessageBubble({
   // rendered received messages as authored by the recipient's own profile
   // name, e.g. the local git user.name).
   const creatorIsLocalArtifact = !!(
-    creator?.id && localUser?.id && creator.id === localUser.id && fm?.sender_id !== localUser.id
+    creator?.id &&
+    localUser?.id &&
+    creator.id === localUser.id &&
+    fm?.sender_id !== localUser.id
   );
   const { navigation } = useDockNavigation();
   const [overrideName, setOverrideName] = useState<string | null>(null);
@@ -227,6 +274,11 @@ export function FlowMessageBubble({
     downloading,
     download: handleDownloadBody,
   } = useAttachments(fm, messageId);
+
+  // Hoisted above the early returns (hook count — see the telemetry note below).
+  // A group parent whose member task is attached to this same message is
+  // context, not the ask: it ships, but its chip is suppressed.
+  const parentTaskIds = useAttachedParentTaskIds(entities);
 
   // Forward-to-another-conversation. Hoisted above the early returns (hook
   // count). The dialog's `commit` override POSTs the backend forward action —
@@ -285,7 +337,9 @@ export function FlowMessageBubble({
       <div className="flex gap-2 opacity-60">
         <div className="h-8 w-8 shrink-0 animate-pulse rounded-full bg-muted" />
         <div className="flex min-w-0 flex-1 flex-col gap-1 pt-1">
-          <span className="text-[11px] italic text-muted-foreground/70"><Trans>Loading message…</Trans></span>
+          <span className="text-[11px] italic text-muted-foreground/70">
+            <Trans>Loading message…</Trans>
+          </span>
         </div>
       </div>
     );
@@ -303,9 +357,7 @@ export function FlowMessageBubble({
   }
 
   const isCurrentUser = !!(fm.sender_id && localUser?.id && fm.sender_id === localUser.id);
-  const creatorLabel = creatorIsLocalArtifact
-    ? null
-    : creator?.name?.trim() || creator?.email?.trim() || null;
+  const creatorLabel = creatorIsLocalArtifact ? null : creator?.name?.trim() || creator?.email?.trim() || null;
   // Identity is hub-authoritative — but the bubble must NOT flash the alert
   // glyph on legitimate gaps (cold-load before roster fetch returns,
   // departed members, cross-instance bundle imports). Tiered chain:
@@ -369,7 +421,11 @@ export function FlowMessageBubble({
   // `prompt` entities render via the attachment-actions row's
   // PromptAttachmentPreview (inside MessageBubble), not as generic chips; the
   // rest ride in the body bundle and only render as live chips once `downloaded`.
-  const otherEntities = entities.filter((t) => t.type !== Prompt.type);
+  // Prompt entities render in the attachment-actions row; a group parent whose
+  // member task is attached here renders not at all (`parentTaskIds`, above).
+  const otherEntities = entities.filter(
+    (t) => t.type !== Prompt.type && !(t.type === Task.type && parentTaskIds.has(String(t.id))),
+  );
   const hasAttachments = attachmentItems.length > 0 || entities.length > 0;
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
   const hasBody = bodyStatus !== BodyStatus.NA;
@@ -387,46 +443,41 @@ export function FlowMessageBubble({
     !hasAttachments &&
     (!message.content || message.content === PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT);
 
-  // One click pulls the whole bundle (files + entities). When the parent supplies
-  // a project gate, route through it: assets materialize into the conversation's
-  // project, so a download with no project selected opens the picker first and
-  // resumes after a pick.
-  const triggerDownload = () =>
-    ensureProjectMapped ? ensureProjectMapped(() => handleDownloadBody()) : void handleDownloadBody();
-
-  // `body_downloaded` only means "the bytes are on local disk" — and a FILE
-  // attachment's bytes live in the message's own (project-independent) embedded
-  // storage, so the flag flips true even on a conversation that was never
-  // assigned a project (e.g. a received bundle whose body got unpacked). But
-  // the live chips expose download / open-in-editor / reveal-in-folder, all of
-  // which resolve through a raw local path with no project context — exactly
-  // the gate `triggerDownload` already enforces. So treat the message as
-  // "downloaded" (render live chips) only once a project is actually resolved;
-  // until then fall through to the gated DownloadAttachmentsButton, whose first
-  // click routes through the project picker and resumes after a pick (the bytes
-  // are already present, so nothing re-downloads). Drafts never reach here —
-  // they return early via MessageComposer above.
-  const showLiveChips = downloaded && attachmentProjectId != null;
+  // One click pulls the whole bundle (files + entities). Downloads STAGE into
+  // the message's record-data dir — no project mapping needed; installing into
+  // a project is the review modal's explicit step.
+  const triggerDownload = () => void handleDownloadBody();
 
   // Image attachments whose bytes are already local render as image cards right
   // away — viewing or downloading a picture needs no project context, so they
-  // skip the project-mapping gate the other chips wait behind. This is what the
-  // sender sees the instant they send (their bytes are already on disk): the
-  // picture itself, not a "Download" button for something they just attached.
+  // skip staging entirely (the backend never stages image/video files). This is
+  // what the sender sees the instant they send (their bytes are already on
+  // disk): the picture itself, not a "Download" button.
   const localImageItems = attachmentItems.filter(
     (i) => i.state === AttachmentChipState.Downloaded && !!i.url && isImagePath(i.filename),
   );
-  // The gated chip list and the aggregate "Download N" button must not re-count
-  // what's already surfaced without a download: the images shown inline above,
-  // and prompt entities (their text is previewed in the prompt row and they
-  // materialize on Approve & Execute, not via this button).
-  const gatedItems = showLiveChips ? attachmentItems.filter((i) => !localImageItems.includes(i)) : [];
+  // Staged/installed RAW FILE chips (the OS-file-picker lane). A received file
+  // is staged as a MessageAttachment (asset_type='file') and rides the same
+  // download→review→install lifecycle as asset entities — no project gate:
+  // review/install resolve their own target. Images never get a staged row.
+  const fileAttachments = (messageAttachments ?? []).filter((ma) => ma.asset_type === 'file');
+  const stagedFileNames = new Set(fileAttachments.map((ma) => ma.name ?? ''));
+  // The SENDER's own downloaded files have no staged MA row (staging happens on
+  // receive/unpack). Render them ungated so the sender sees their file
+  // immediately — open/reveal work off the local path, no project needed.
+  const senderLocalFileItems = attachmentItems.filter(
+    (i) =>
+      i.state === AttachmentChipState.Downloaded && !localImageItems.includes(i) && !stagedFileNames.has(i.filename),
+  );
+  // The "Download N" button must not re-count what's already surfaced without a
+  // download: images shown inline above, and prompt entities (previewed in the
+  // prompt row, materialized on Approve & Execute).
   const promptEntityCount = entities.filter((t) => t.type === Prompt.type).length;
   const pendingAssetCount = assetCount - localImageItems.length - promptEntityCount;
 
   const progressPct = progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
 
-  const footer =
+  const attachmentFooter =
     hasAttachments || downloadError || isBareTranscriptShare ? (
       <div className="mt-2 space-y-1.5">
         {isBareTranscriptShare && (
@@ -442,7 +493,9 @@ export function FlowMessageBubble({
           >
             <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className="font-medium"><Trans>Could not download</Trans></div>
+              <div className="font-medium">
+                <Trans>Could not download</Trans>
+              </div>
               <div className="break-all text-[10px] text-orange-700/80 dark:text-orange-300/80">
                 {downloadError.method} {downloadError.path} {downloadError.statusCode}: {downloadError.message}
               </div>
@@ -481,7 +534,7 @@ export function FlowMessageBubble({
             filename={item.filename}
             state={item.state}
             onOpenInEditor={
-              item.localPath ? () => navigation.openEditor(editorPathForLocalFile(item.localPath!)) : undefined
+              item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
             }
             onRevealInFolder={
               item.localPath
@@ -503,47 +556,65 @@ export function FlowMessageBubble({
                 typeId={typeId}
                 conversationId={fm.conversation_id ?? ''}
                 projectId={attachmentProjectId}
-                forceShow={showLiveChips}
+                // Entity chips need no project context: staged chips open the
+                // review modal, installed chips navigate by TypeId. `downloaded`
+                // alone unhides them (file chips keep the project gate).
+                forceShow={downloaded}
+                attachment={messageAttachments?.find(
+                  (ma) => ma.asset_type === typeId.type && ma.asset_id === String(typeId.id),
+                )}
+                // The whole message's attachments — the review modal lists them
+                // all on the left, with the clicked chip pinned + selected.
+                siblingAttachments={messageAttachments}
               />
             ))}
           </div>
         )}
-        {showLiveChips ? (
-          <>
-            {gatedItems.map((item) => (
-              <AttachmentChip
-                key={item.key}
-                url={item.url ?? ''}
-                filename={item.filename}
-                state={item.state}
-                downloading={item.state === AttachmentChipState.Ready && downloading}
-                onDownload={item.state === AttachmentChipState.Ready ? triggerDownload : undefined}
-                onOpenInEditor={
-                  item.localPath ? () => navigation.openEditor(editorPathForLocalFile(item.localPath!)) : undefined
-                }
-                onRevealInFolder={
-                  item.localPath
-                    ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
-                    : undefined
-                }
+        {/* Received raw files: dashed staged chip → review modal → install
+            (solid). No project gate — the review modal resolves the target. */}
+        {fileAttachments.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {fileAttachments.map((ma) => (
+              <MessageFileChip
+                key={`file:${ma.id}`}
+                attachment={ma}
+                projectId={attachmentProjectId}
+                siblingAttachments={messageAttachments}
               />
             ))}
-            {gatedItems.length > 1 && (
-              <a
-                href={localBundleUrl(messageId)}
-                download
-                className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Download className="h-3 w-3" />
-                <Trans>Download all attachments</Trans>
-              </a>
-            )}
-          </>
-        ) : hasBody && pendingAssetCount > 0 && (!downloaded || attachmentItems.length > 0) ? (
-          // Show the Download button only when there's actually something to pull
-          // (`!downloaded`) or a FILE attachment that still needs project-mapping
-          // to open. An entity-only message whose entity is already local (e.g. the
-          // sender's own forwarded diagnosis) needs neither — its chip renders above.
+          </div>
+        )}
+        {/* Sender's own local files (no staged row): open/reveal off local_path. */}
+        {senderLocalFileItems.map((item) => (
+          <AttachmentChip
+            key={item.key}
+            url={item.url ?? ''}
+            filename={item.filename}
+            state={item.state}
+            onOpenInEditor={
+              item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
+            }
+            onRevealInFolder={
+              item.localPath
+                ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
+                : undefined
+            }
+          />
+        ))}
+        {senderLocalFileItems.length > 1 && (
+          <a
+            href={localBundleUrl(messageId)}
+            download
+            className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Download className="h-3 w-3" />
+            <Trans>Download all attachments</Trans>
+          </a>
+        )}
+        {/* Download button ONLY while bytes are still remote. Once downloaded,
+            files render as staged chips above and entities as chips — nothing
+            left to pull, so no project-less dead-end button (the SAPAK bug). */}
+        {hasBody && !downloaded && pendingAssetCount > 0 ? (
           <DownloadAttachmentsButton
             count={pendingAssetCount}
             labels={assetLabels}
@@ -555,6 +626,24 @@ export function FlowMessageBubble({
         ) : null}
       </div>
     ) : null;
+
+  // The attachment block (when present) + the per-message context-process control
+  // (self-gates to advanced mode; renders nothing otherwise — empty fragment is
+  // inert in MessageBubble's inline `{footer}` slot).
+  const footer = (
+    <>
+      {attachmentFooter}
+      <MessageRunStatus
+        fm={fm}
+        run={run ?? null}
+        runStatus={runStatus}
+        onOpenRun={onOpenRun}
+        onOpenWorkerSession={onOpenWorkerSession}
+        workerSessionInFlight={workerSessionInFlight}
+      />
+      <MessageContextButton fm={fm} projectId={attachmentProjectId} />
+    </>
+  );
 
   const canForward = !fm.is_draft && fm.kind !== FlowMessageKind.INVITATION && !!fm.conversation_id;
 
@@ -582,10 +671,12 @@ export function FlowMessageBubble({
         onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
         onOpenPlanSession={onOpenPlanSession}
         onViewPlan={onViewPlan}
+        workerSessionExists={workerSessionExists}
+        workerSessionLabel={workerSessionLabel}
+        workerSessionInFlight={workerSessionInFlight}
         footer={footer}
         isSelected={isSelected}
         onSelect={onSelect}
-        conversationStatusVisible={conversationStatusVisible}
       />
       {forwardOpen && forwardSource && (
         <ShareToConversationDialog
@@ -604,30 +695,250 @@ export function FlowMessageBubble({
  * resolvable locally — no body-download / cloud-login round-trip. A local app
  * entity (e.g. a forwarded `flowpad_diagnosis`) already lives on disk, so its
  * chip shows immediately rather than as a blank message behind a Download button.
- * When the entity isn't local yet (a cross-user forward whose bundle hasn't been
- * pulled), it renders only once `forceShow` is set (the body has been downloaded),
- * where `ContextEntityChip`'s own resolved / "unavailable" states take over.
+ *
+ * Three-phase reception states (see useMessageAttachments.chipStateFor):
+ *   installed — the entity resolves locally: today's solid chip (navigates).
+ *   staged    — no local entity but a MessageAttachment row exists: dashed,
+ *               clickable — opens the review/install modal (no navigation).
+ *   hidden    — pre-download (`forceShow` false); the Download button carries it.
  */
+/**
+ * A staged/installed RAW FILE attachment (asset_type='file' — the OS-file-picker
+ * lane). Unlike entity chips, a file never resolves to an entity: installed-ness
+ * comes from the MA row's scope. Renders as a dashed File chip (staged) or solid
+ * File chip (installed); clicking opens the review modal (install / uninstall +
+ * content preview live there), matching the entity-chip flow.
+ */
+function MessageFileChip({
+  attachment,
+  projectId,
+  siblingAttachments,
+}: {
+  attachment: MessageAttachment;
+  projectId?: string | null;
+  siblingAttachments?: MessageAttachment[];
+}) {
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const typeId = new TypeId('file', String(attachment.asset_id ?? ''));
+  return (
+    <>
+      <EntityChip
+        entity={{
+          typeId,
+          type: 'file',
+          id: String(attachment.asset_id ?? ''),
+          name: attachment.name ?? 'file',
+          icon: File,
+        }}
+        staged={!attachment.installed}
+        onClick={() => setReviewOpen(true)}
+      />
+      {reviewOpen && (
+        <AssetReviewDialog
+          open={reviewOpen}
+          onClose={() => setReviewOpen(false)}
+          attachments={siblingAttachments?.length ? siblingAttachments : [attachment]}
+          initialAttachmentId={attachment.id}
+          attachmentProjectId={projectId ?? null}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * Ids of attached tasks that are the PARENT of another task attached to the
+ * SAME message — their chips are suppressed.
+ *
+ * An assignment message carries the member's own task AND its group parent:
+ * both must ride as real attachments (only attachments are packed into the body
+ * bundle, so context-only sharing would strand the parent as an unresolvable
+ * reference — see `useTaskAssignmentMessage`). But the message is a request to
+ * do the CHILD's work; the parent is context, reachable via the child's
+ * `parent_id` and the conversation's context row. So it ships, but doesn't
+ * clutter the bubble.
+ *
+ * Only ever hides a parent whose child is attached here too — a task sent on
+ * its own always renders. Resolution is async and self-correcting: until the
+ * child's row is local (pre-download) nothing is hidden, and the parent chip
+ * drops out once it resolves.
+ */
+function useAttachedParentTaskIds(entities: TypeId[]): Set<string> {
+  const taskIds = useMemo(() => entities.filter((t) => t.type === Task.type).map((t) => String(t.id)), [entities]);
+  const key = taskIds.join(',');
+  const [parentIds, setParentIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    // A lone task has no sibling to be the parent OF — nothing to hide.
+    if (taskIds.length < 2) {
+      setParentIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    void Promise.all(
+      taskIds.map((id) => dataManager.getByTypeId<Task>(new TypeId(Task.type, id)).catch(() => null)),
+    ).then((tasks) => {
+      if (cancelled) return;
+      const attached = new Set(taskIds);
+      const parents = new Set<string>();
+      for (const t of tasks) {
+        // Only suppress a parent that is itself attached to this message.
+        if (t?.parent_id && attached.has(t.parent_id)) parents.add(t.parent_id);
+      }
+      setParentIds(parents);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `key` is the stable identity of `taskIds` (order-preserving join).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return parentIds;
+}
+
 function MessageEntityChip({
   typeId,
   conversationId,
   projectId,
   forceShow,
+  attachment,
+  siblingAttachments,
 }: {
   typeId: TypeId;
   conversationId: string;
   projectId?: string | null;
   forceShow: boolean;
+  attachment?: MessageAttachment;
+  siblingAttachments?: MessageAttachment[];
 }) {
+  const { navigation } = useDockNavigation();
+  const isAdvanced = useIsAdvanced();
+  const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
+  const [reviewOpen, setReviewOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = useEntity<APIEntity<any>>(typeId);
-  // Hidden until either the entity is on disk (local) or the bundle is downloaded.
-  if (!data && !forceShow) return null;
-  return (
-    <ContextEntityChip
-      typeId={typeId}
-      inside={{ type: 'conversation', id: conversationId }}
-      projectId={projectId}
+  const state = chipStateFor(!!data, attachment, forceShow);
+  if (state === 'hidden') return null;
+  // Git-link chip: a git context folder shared through push-notify. The chip
+  // carries only the repo origin (no bytes); clicking launches the
+  // git-context-folder wizard, which reuses+pulls an existing local checkout
+  // (or clones once when none exists), registers it as a project, and
+  // attaches it as a context folder. After a completed run the staged
+  // attachment is marked installed (metadata-only, no clone).
+  const folderOrigin: GitOrigin | null =
+    typeId.type === 'folder'
+      ? ((attachment?.git_origin ??
+          (data as unknown as { origin?: Record<string, unknown> } | null)?.origin ??
+          null) as GitOrigin | null)
+      : null;
+  const handleFolderPull = folderOrigin
+    ? async () => {
+        const url = gitOriginCloneUrl(folderOrigin);
+        if (!url) return;
+        const targetProjectId = projectId ?? dataContext.project?.id ?? null;
+        const result = await launchWizard('git-context-folder', {
+          title: `Pull ${attachment?.name ?? 'git folder'}`,
+          targetTypeId: typeId.toString(),
+          payload: { projectId: targetProjectId, scope: 'private', mode: 'existing', url },
+        });
+        if (result.status === 'done' && attachment && !attachment.installed) {
+          try {
+            await attachment.install(targetProjectId ? 'project' : 'user', targetProjectId ?? undefined);
+          } catch {
+            // Install here only flips the chip state — the checkout succeeded
+            // in the wizard, so a bookkeeping failure stays quiet.
+          }
+        }
+      }
+    : null;
+  // Assigned-task chips install through the SAME review dialog as every other
+  // staged entity — the dialog's Select-project / Install-in-project owns the
+  // placement (project scope). No separate task project-picker: a staged task
+  // chip falls through to `setReviewOpen(true)` below, so the click opens one
+  // surface (the review dialog), never a picker-then-dialog pair. Git context
+  // folders referenced by the task ride as their own folder chips (the
+  // wizard-clone path above); loose attachment files ride as file attachments.
+  // "Run icon near the skill": one-click install-if-needed + run in a Vibe
+  // session (see useRunReceivedSkill). Only for skills with a staged/installed
+  // attachment — not artifacts or plain shares.
+  const runnable = !!attachment && TESTABLE_TYPES.has(typeId.type);
+  const runButton = runnable ? (
+    <button
+      type="button"
+      title="Run skill"
+      data-testid="skill-run-icon"
+      onClick={() => startSkillRun(attachment, projectId ?? null)}
+      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/50 bg-background text-primary transition-colors hover:bg-primary/10"
+    >
+      <Play className="h-3 w-3" />
+    </button>
+  ) : null;
+  // The dialog is hoisted ABOVE the staged/installed branch: installing from
+  // the open modal flips the chip staged → installed, and the modal must stay
+  // mounted mid-session so its header can flip to Uninstall (not vanish).
+  const dialog = attachment && reviewOpen && (
+    <AssetReviewDialog
+      open={reviewOpen}
+      onClose={() => setReviewOpen(false)}
+      attachments={siblingAttachments?.length ? siblingAttachments : [attachment]}
+      initialAttachmentId={attachment.id}
+      attachmentProjectId={projectId ?? null}
     />
+  );
+  if (state === 'staged') {
+    return (
+      <>
+        <span className="inline-flex items-center gap-1">
+          <EntityChip
+            entity={{ typeId, type: typeId.type, id: typeId.id, name: attachment!.name ?? typeId.type }}
+            staged
+            onClick={handleFolderPull ? () => void handleFolderPull() : () => setReviewOpen(true)}
+          />
+          {runButton}
+        </span>
+        {dialog}
+        {runPicker}
+      </>
+    );
+  }
+  const artifact =
+    typeId.type === Artifact.type && data
+      ? data instanceof Artifact
+        ? data
+        : new Artifact(data as unknown as Partial<Artifact>)
+      : null;
+  // Installed via a MessageAttachment: behavior splits by view mode.
+  //  • Advanced (or Dev): the chip KEEPS opening the review modal, where
+  //    uninstall / test live and an "Open" button jumps to the entity view.
+  //  • Standard / Vibe: no uninstall surface — the chip navigates straight to
+  //    the entity view like any normal chip (onClick left undefined).
+  // Chips without an attachment (plain shares, artifacts) keep their navigation
+  // behavior — as do receive_policy='auto' row-only types (shared transcripts,
+  // diagnoses): they auto-installed at unpack with nothing to review, so their
+  // chip navigates straight to the entity.
+  const autoInstalled = dataManager.getTypeInfo?.(typeId.type)?.receive_policy === 'auto';
+  return (
+    <>
+      <span className="inline-flex items-center gap-1">
+        <ContextEntityChip
+          typeId={typeId}
+          inside={{ type: 'conversation', id: conversationId }}
+          onClick={
+            artifact
+              ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null })
+              : handleFolderPull
+                ? () => void handleFolderPull()
+                : attachment && !autoInstalled && isAdvanced
+                  ? () => setReviewOpen(true)
+                  : undefined
+          }
+          projectId={projectId}
+        />
+        {runButton}
+      </span>
+      {dialog}
+      {runPicker}
+    </>
   );
 }

@@ -1,34 +1,30 @@
-import { IncomingTaskDialog } from '@src/components/task-receive/IncomingTaskDialog';
-import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { UsageBar } from '@src/components/cost-dashboard';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
-import { NotificationFeed, notify } from '@src/notifications';
+import { NotificationFeed } from '@src/notifications';
 import { RecentConversationsStrip } from '@src/components/project-activity-strip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
 import { MiniDesktop } from '@src/components/quick-create';
 import { SessionInput } from '@src/components/session-input/session-input';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
-import { AdvancedOnly } from '@src/components/view-mode';
+import { AdvancedOnly, VibeSwap } from '@src/components/view-mode';
 import { useProjects } from '@src/hooks/use-projects';
-import { claudeSessionManager, dataContext } from '@sdk';
-import { useAuth, useProject } from '@sdk/react/hooks';
+import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/components/home-customization';
+import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
+import { useAuth } from '@sdk/react/hooks';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
-import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
-import { CommunityAssistanceDialog } from '@src/components/community-assistance-dialog/CommunityAssistanceDialog';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
 import { HomeFeedColumn } from './feed';
-import { X, CheckCircle2, Users } from 'lucide-react';
-import { useInboxStore } from '@src/store/use-inbox-store';
-import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { X, CheckCircle2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LastScanResult } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { VIBE_MODEL_DEFAULT, type VibeModelTier } from '@src/pages/flow-page/vibe-model-select';
+import { DEFAULT_WORKER_TYPE, type WorkerType } from '@src/components/workers/worker-types';
 
 /**
  * HomeLanding - Welcome view with greeting and quick action buttons
@@ -41,65 +37,19 @@ import { Trans, useLingui } from '@lingui/react/macro';
  *   - Right column: Feed
  * URL: /dock/home
  */
-const _INDEX_APPROVED_KEY = 'flowpad-index-approved';
-const _SCAN_DISMISSED_KEY = 'flowpad-scan-dismissed';
-
 export function HomeLanding() {
   const { t } = useLingui();
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const { navigation } = useDockNavigation();
   useProjects();
 
   // Incoming task dialog — driven by URL params (email deep-link) or WS events.
   // Deep link shape:
-  //   ?action=open&fm=<id>[&conversation_id=...&task_id=...&project_url=...&...]
+  //   ?action=open&fm=<id>[&conversation_id=...&task_id=...&git_origin=...&...]
   // The backend's /open handler unpacks the bundle and resolves
   // conversation_id / task_id from the FM's context, so we navigate directly
   // off the URL params — no FM lookup needed on the UI side.
-  const { pendingTask, setPendingTask } = useIncomingTaskStore();
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('action') !== 'open') return;
-    const fmId = params.get('fm') || '';
-    const convId = params.get('conversation_id') || '';
-    const taskId = params.get('task_id') || '';
-    const title = params.get('title') || 'Shared';
-    const senderName = params.get('sender_name') || 'Someone';
-    const projectUrl = params.get('project_url') || undefined;
-    const branch = params.get('branch') || undefined;
-    const repoId = params.get('repo_id') || undefined;
-
-    // Clean URL so refreshing doesn't re-trigger
-    const url = new URL(window.location.href);
-    for (const key of ['action', 'fm', 'conversation_id', 'task_id', 'title', 'sender_name', 'project_url', 'branch', 'repo_id']) {
-      url.searchParams.delete(key);
-    }
-    window.history.replaceState(null, '', url.toString());
-
-    if (projectUrl && taskId) {
-      // REPO attachment — show pull/clone dialog before navigating in.
-      setPendingTask({ taskId, taskTitle: title, senderName, projectUrl, branch, repoId });
-      return;
-    }
-
-    if (convId) {
-      navigation.openDock(DockPointer.forConversation(convId));
-      return;
-    }
-
-    // Last resort: no convId in the deep link. If we have a taskId, open the
-    // tasks dock; otherwise stay on home and let the strip surface the share
-    // once inbox-fetch lands the FM. ``fmId`` is unused here but kept in the
-    // URL params for diagnostics / future fallback.
-    void fmId;
-    if (taskId) {
-      navigation.openDock(DockPointer.fromUrl('tasks', taskId));
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const { project: currentProject } = useProject();
-  const { resetAndRescan, scanInfo, lastScanResult } = useSystemTools();
-  const [showWelcome, setShowWelcome] = useState(false);
+  const { lastScanResult } = useSystemTools();
   const [postScanResult, setPostScanResult] = useState<LastScanResult | null>(null);
 
   // Detect scan completion: when lastScanResult changes to a new value, capture it for display
@@ -111,28 +61,22 @@ export function HomeLanding() {
     prevLastScanResultRef.current = lastScanResult;
   }, [lastScanResult]);
 
-  // Show welcome modal when never_indexed, unless user has already approved or dismissed this session.
-  useEffect(() => {
-    if (localStorage.getItem(_INDEX_APPROVED_KEY) || sessionStorage.getItem(_SCAN_DISMISSED_KEY) || !scanInfo) return;
-    if (scanInfo.never_indexed) setShowWelcome(true);
-  }, [scanInfo]);
-  const firstName = user?.name?.split(' ')[0] || 'there';
+  const firstName = currentUser?.name?.split(' ')[0] || 'there';
 
-  const [showCommunityAssistance, setShowCommunityAssistance] = useState(false);
+  // Per-project home branding from the ACTIVE project's `.flow/customization/`
+  // — shared across every home surface (see useHomeCustomization).
+  const { homeTitle, homeBackgroundUrl } = useHomeCustomization();
+
   const [draftPrompt, setDraftPrompt] = useState('');
 
-  // Inbox unread count — populates the shared store consumed by the sidebar
-  // Inbox badge. The home Inbox row was removed; the Recent conversations strip
-  // (now labelled "Inbox") is the home inbox surface and has its own refresh.
-  const { setUnreadCount } = useInboxStore();
-  useEffect(() => {
-    void listInboxMessages().then((msgs) => setUnreadCount(msgs.filter((m) => !m.is_read).length));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Inbox unread count: backend-owned (InboxManager.unread) — the sidebar pip
+  // reads it via useInboxManager(); no per-view recount here anymore.
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
+  const vibeModel: VibeModelTier = VIBE_MODEL_DEFAULT;
+  const vibeWorker: WorkerType = DEFAULT_WORKER_TYPE;
   const { scope: searchScope, isLoading: searchScopeLoading } = useGlobalSearchScope();
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
@@ -156,36 +100,63 @@ export function HomeLanding() {
     void navigateToResult(result, navigation);
   }, [navigation]);
 
-  // Get paths from desktop_info
-  const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
-
-  const handleSessionSubmit = (message: string) => {
-    if (!currentProject?.typeId) {
-      notify.error({ title: t`Project Required`, message: t`Please select or create a project first.` });
-      return;
-    }
-
-    const workdir = currentProject.fs_storage_mount_path || currentProject.name || paths?.workspace || undefined;
-
-    void (async () => {
-      try {
-        const agenticProcess = await claudeSessionManager.createAndStartSession({ workdir }, { instruction: message });
-        void navigation.openShellProcess(agenticProcess.id);
-      } catch (error) {
-        console.error('[HomeLanding] Failed to create session:', error);
-      }
-    })();
-  };
+  // Both home inputs seed the same headless vibe build session (create the
+  // chat process, embed the `vibe` persona, open the workspace, prompt —
+  // uploading any attachments to the process input dir first). Same shared
+  // path as flow-page's "New chat" starter.
+  const handleVibeSubmit = useStartVibeSession();
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="relative flex h-full flex-col overflow-hidden">
+      <HomeCustomBackground url={homeBackgroundUrl} />
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
+      <VibeSwap
+        vibe={
+          /* VibeHome — Lovable-style single centered column: the prompt is the
+             hero CTA. Side columns, search, feed, usage and notifications are
+             dropped (still mounted in the fallback). Reuses SessionInput; submit
+             goes to handleVibeSubmit (seeds a headless build session). */
+          <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-4">
+            <div
+              aria-hidden
+              className="vibe-hero-gradient pointer-events-none absolute inset-x-0 bottom-0 h-2/3"
+            />
+            <div className="relative z-10 flex w-full max-w-2xl flex-col items-center gap-6 text-center">
+              <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
+                <HomeGreeting
+                  override={homeTitle}
+                  className="vibe-gradient-text"
+                  fallback={
+                    <Trans>
+                      Build something <span className="vibe-gradient-text">amazing</span>
+                    </Trans>
+                  }
+                />
+              </h1>
+              <p className="text-lg text-muted-foreground">
+                <Trans>Create apps and tools by chatting with AI</Trans>
+              </p>
+              <div className="w-full">
+                <SessionInput
+                  placeholder={t`What would you like to work on, ${firstName}?`}
+                  value={draftPrompt}
+                  onChange={setDraftPrompt}
+                  allowAttachments
+                  onSubmit={(msg, files) => void handleVibeSubmit(msg, files, vibeModel, vibeWorker)}
+                />
+              </div>
+            </div>
+          </div>
+        }
+        fallback={
+          <>
       {/* Top row: UsageBar + Search */}
-      <div className="flex shrink-0 items-center gap-2 p-4">
-        <AdvancedOnly className="w-72 shrink-0">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 p-3 sm:flex-nowrap sm:p-4">
+        <AdvancedOnly className="hidden w-72 shrink-0 md:block">
           <UsageBar />
         </AdvancedOnly>
-        <div className="flex-1" />
-        <div className="relative w-72 shrink-0">
+        <div className="hidden flex-1 sm:block" />
+        <div className="relative min-w-0 flex-1 sm:w-72 sm:flex-none">
           <RecordSearchBar
             query={searchQuery}
             filters={searchFilters}
@@ -196,7 +167,7 @@ export function HomeLanding() {
             placeholder={t`Search...`}
           />
           {searchQuery.trim().length >= 2 && (
-            <div className="absolute right-0 top-full z-50 w-[600px] pt-1">
+            <div className="absolute right-0 top-full z-50 w-[calc(100vw-2rem)] max-w-[600px] pt-1">
               <InlineSearchResults
                 query={searchQuery}
                 filters={searchFilters}
@@ -213,9 +184,9 @@ export function HomeLanding() {
       </div>
 
       {/* Main row: Sidebar + Content */}
-      <div className="flex min-h-0 flex-1 gap-6 px-4 pb-4">
+      <div className="flex min-h-0 flex-1 gap-4 px-3 pb-3 lg:gap-6 lg:px-4 lg:pb-4">
         {/* Left column: Inbox */}
-        <div className="w-72 shrink-0 flex flex-col gap-2">
+        <div className="hidden w-72 shrink-0 flex-col gap-2 lg:flex">
           {/* Invisible spacer mirroring the right Feed column so Inbox aligns with Feed */}
           <div aria-hidden className="h-9 shrink-0" />
           <RecentConversationsStrip />
@@ -223,32 +194,28 @@ export function HomeLanding() {
 
         {/* Middle column: Main content + Quick Access. The column itself never
             scrolls; side panels own their own scrolling. */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-hidden sm:gap-6">
           {/* Hero — fixed at the top, never scrolls */}
           <div className="flex shrink-0 flex-col items-center gap-6 text-center">
-            <h1 className="text-4xl font-bold tracking-tight">
-              <Trans>
-                Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
-              </Trans>
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              <HomeGreeting
+                override={homeTitle}
+                className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent"
+                fallback={
+                  <Trans>
+                    Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
+                  </Trans>
+                }
+              />
             </h1>
 
-            <div className="w-full max-w-3xl flex flex-col items-end gap-2">
+            <div className="flex w-full max-w-3xl flex-col items-end gap-2">
               <SessionInput
                 placeholder={t`What would you like to work on?`}
                 value={draftPrompt}
                 onChange={setDraftPrompt}
-                onSubmit={(msg) => void handleSessionSubmit(msg)}
+                onSubmit={(msg) => void handleVibeSubmit(msg)}
               />
-              <div className="flex w-full flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-violet-600/60 bg-transparent px-2.5 text-xs font-medium text-violet-600 transition-colors hover:bg-violet-50 dark:border-violet-400/60 dark:text-violet-400 dark:hover:bg-violet-950/40"
-                  onClick={() => setShowCommunityAssistance(true)}
-                >
-                  <Users className="h-3 w-3" />
-                  <Trans>Community assistance</Trans>
-                </button>
-              </div>
             </div>
           </div>
 
@@ -312,42 +279,17 @@ export function HomeLanding() {
           </AdvancedOnly>
         </div>
 
-        <HomeFeedColumn />
+        <div className="hidden min-h-0 lg:block">
+          <HomeFeedColumn />
+        </div>
 
       </div>
-
-      {/* Welcome modal for first-time / not-yet-indexed users */}
-      <WelcomeModal
-        open={showWelcome}
-        onStart={() => {
-          localStorage.setItem(_INDEX_APPROVED_KEY, '1');
-          setShowWelcome(false);
-          void resetAndRescan();
-        }}
-        onSkip={() => {
-          sessionStorage.setItem(_SCAN_DISMISSED_KEY, '1');
-          setShowWelcome(false);
-        }}
+          </>
+        }
       />
 
-      <CommunityAssistanceDialog
-        open={showCommunityAssistance}
-        onClose={() => setShowCommunityAssistance(false)}
-      />
 
-      {/* Incoming task dialog — pull/clone flow for shared tasks */}
-      {pendingTask && (
-        <IncomingTaskDialog
-          open={!!pendingTask}
-          taskId={pendingTask.taskId}
-          taskTitle={pendingTask.taskTitle}
-          senderName={pendingTask.senderName}
-          projectUrl={pendingTask.projectUrl}
-          branch={pendingTask.branch}
-          repoId={pendingTask.repoId}
-          onClose={() => setPendingTask(null)}
-        />
-      )}
+      </div>
     </div>
   );
 }

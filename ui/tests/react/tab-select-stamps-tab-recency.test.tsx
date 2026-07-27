@@ -4,11 +4,9 @@
  * Shell/AgenticProcess row.
  *
  * The real select path runs here: the router fires the production loaders
- * (`loadAgentApp` → `loadProcess`), which today call `process.activate()` /
- * `shell.activate()` — stamping the TARGET entity. Nothing calls
- * `Tab.activateById`, so the Tab's `last_active_at` stays null and the
- * close-reselect (`resolveActive`) skips its recency tier and falls back to
- * `tab_order` — closing the active tab does not pop the previously-active one.
+ * (`loadAgentApp` → `loadProcess`), materializes the project-owned Tab, then
+ * stamps that Tab through `stampTabRecencyForTarget`. The close resolver reads
+ * the same Tab's `last_active_at`, so this test protects the full handoff.
  *
  * Faithful boundary: the only mock is the SDK backend action boundary
  * (`dataManager.callAction`), modelled on the real backend's generic `activate`
@@ -16,9 +14,9 @@
  * entity row. So a Tab-targeted activate bumps that tab; a Shell/Process-
  * targeted activate does not touch any tab row — exactly the production split.
  *
- * Bug: after a full select, NO `activate` is ever sent to the Tab → the
- * process's tab `last_active_at` is never stamped (assertion below fails).
- * Fix: the loader stamps the Tab on select (`Tab.activateById`) → it is stamped.
+ * Regression contract: the fake backend must preserve the `project_id` posted
+ * by `new_tab`; otherwise exact project scoping correctly hides the fake row
+ * before the recency assertion can observe the Tab-level `activate`.
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -32,6 +30,8 @@ import {
   ComputeNode,
   ComputeProviderType,
   connectionManager,
+  ContextEntitiesEnum,
+  dataContext,
   dataManager,
   Project,
   Shell,
@@ -47,9 +47,9 @@ import { resetTabLifecycleForTests } from '@src/tabs/tab-lifecycle';
 
 const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const COMPUTE_NODE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-const NEW_PROCESS_ID = '22222222-2222-4222-8222-222222222222';
-const NEW_SHELL_ID = '33333333-3333-4333-8333-333333333333';
-const NEW_PROCESS_TAB_ID = '40000000-0000-4000-8000-000000000003';
+const NEW_PROCESS_ID = '2a2a2a2a-2a2a-4a2a-8a2a-2a2a2a2a2a2a';
+const NEW_SHELL_ID = '3a3a3a3a-3a3a-4a3a-8a3a-3a3a3a3a3a3a';
+const NEW_PROCESS_TAB_ID = '4a000000-0000-4a00-8a00-00000000000a';
 
 let TabbedTerminalComponent: typeof import('@src/components/terminal/TabbedTerminal').default;
 let UnifiedTabStripComponent: typeof import('@src/pages/flow-page/content-panel/unified-tab-strip').UnifiedTabStrip;
@@ -62,13 +62,20 @@ function projectDock(): DockPointer {
   return DockPointer.forProject(PROJECT_ID);
 }
 
-function tabRow(id: string, dock: DockPointer, targetType: string | null, targetId: string | null, name: string): TabRow {
+function tabRow(
+  id: string,
+  dock: DockPointer,
+  targetType: string | null,
+  targetId: string | null,
+  projectId: string | null,
+  name: string,
+): TabRow {
   return {
     id,
     pointer: dock.toJSON() ?? '',
     target_type: targetType,
     target_id: targetId,
-    project_id: null,
+    project_id: projectId,
     name,
     icon_key: targetType === AgenticProcess.type ? 'claude' : null,
     worktree: false,
@@ -226,17 +233,36 @@ describe('selecting a tab stamps recency on the Tab entity', () => {
 
       if (action.name === 'new_tab' && target === null) {
         const pointer = String(action.bodyParameters.pointer ?? '');
+        const projectId = (action.bodyParameters.project_id as string | null) ?? null;
         const existing = backendTabs.find((tab) => tab.pointer === pointer);
         if (!existing) {
           if (pointer === projectDock().toJSON()) {
             backendTabs = [
               ...backendTabs,
-              new Tab(tabRow('40000000-0000-4000-8000-000000000002', projectDock(), Project.type, PROJECT_ID, 'Flowpad Project')),
+              new Tab(
+                tabRow(
+                  '40000000-0000-4000-8000-000000000002',
+                  projectDock(),
+                  Project.type,
+                  PROJECT_ID,
+                  projectId,
+                  'Flowpad Project',
+                ),
+              ),
             ];
           } else if (pointer === processDock(NEW_PROCESS_ID).toJSON()) {
             backendTabs = [
               ...backendTabs,
-              new Tab(tabRow(NEW_PROCESS_TAB_ID, processDock(NEW_PROCESS_ID), AgenticProcess.type, NEW_PROCESS_ID, 'New Claude')),
+              new Tab(
+                tabRow(
+                  NEW_PROCESS_TAB_ID,
+                  processDock(NEW_PROCESS_ID),
+                  AgenticProcess.type,
+                  NEW_PROCESS_ID,
+                  projectId,
+                  'New Claude',
+                ),
+              ),
             ];
           }
         }
@@ -298,12 +324,20 @@ describe('selecting a tab stamps recency on the Tab entity', () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
     applyAllTabs([]);
     resetTabLifecycleForTests();
     (capabilityManager as unknown as { capabilities: Capability[] }).capabilities = [];
     (connectionManager as unknown as { socket: unknown }).socket = null;
+    // Reset the shared dataContext the loader mutated (active shell/target +
+    // current project) so a following loader-integration test in the SAME worker
+    // doesn't inherit this test's active terminal target — cross-test
+    // contamination that makes the second-to-run test fail in the full suite even
+    // though each passes in isolation.
+    dataContext.setActiveShellId('');
+    dataContext.setActiveTerminalTargetTypeId(null);
+    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
   });
 
   it('stamps last_active_at on the process Tab when it is selected', async () => {

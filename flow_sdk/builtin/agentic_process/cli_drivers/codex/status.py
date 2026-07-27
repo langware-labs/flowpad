@@ -141,7 +141,7 @@ def _classify_codex_entry(raw: dict[str, Any]) -> tuple[WorkerStatus | None, boo
     if rtype == "thread.started":
         return WorkerStatus.INITIALIZING, False
     if rtype == "turn.started":
-        return WorkerStatus.WAITING, False
+        return WorkerStatus.WORKING, False
     if rtype == "item.started":
         item = raw.get("item") if isinstance(raw.get("item"), dict) else {}
         item_type = _as_str(item.get("type")) or ""
@@ -168,7 +168,7 @@ def _classify_codex_entry(raw: dict[str, Any]) -> tuple[WorkerStatus | None, boo
         if event_type in _TOOL_END_EVENTS or event_type.endswith("_end"):
             return WorkerStatus.THINKING, False
         if event_type == "task_started":
-            return WorkerStatus.WAITING, False
+            return WorkerStatus.WORKING, False
         return None, False
 
     if rtype == "response_item":
@@ -178,7 +178,7 @@ def _classify_codex_entry(raw: dict[str, Any]) -> tuple[WorkerStatus | None, boo
         phase = _as_str(payload.get("phase")) or ""
         if item_type == "message":
             if role == "user":
-                return WorkerStatus.WAITING, False
+                return WorkerStatus.WORKING, False
             if role in {"assistant", "developer"}:
                 if phase == "final_answer":
                     return WorkerStatus.COMPLETE, True

@@ -12,7 +12,8 @@ import { History } from 'lucide-react';
 import { DockPointer, HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
-import { FSRef, TypeId, copyToClipboard, looksBinaryText } from '@sdk';
+import { FSRef, TypeId, PrefKey, copyToClipboard, dataManager, looksBinaryText } from '@sdk';
+import { usePreference } from '@src/hooks/use-preference';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { Check, ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
@@ -26,13 +27,13 @@ import { genericEntityShareSource } from '@src/hooks/share-sources';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { AssetCollisionBadge, useAssetCollisionSideTab } from '../AssetCollisionUI';
 
 export const EDITOR_MODES = ['view', 'review', 'editor', 'markdown', 'learning'] as const;
 export type EditorMode = (typeof EDITOR_MODES)[number];
 // Backwards-compatible internal alias; new code should use `EditorMode`.
 type ViewMode = EditorMode;
 
-const MODE_STORAGE_KEY = 'markdownEditor.mode';
 const EDITOR_MODE_PARAM = 'editorMode';
 // Optional 1-indexed body line to drop the caret on at first mount (e.g. a
 // freshly-created skill opens with the caret right after its `# <name>`
@@ -47,16 +48,6 @@ function isEditorMode(value: string | undefined | null): value is ViewMode {
 /** 'review' and 'markdown' are power-user surfaces — only shown in Advanced. */
 function isAdvancedOnlyMode(mode: ViewMode): boolean {
   return mode === 'review' || mode === 'markdown';
-}
-
-function readStoredMode(): ViewMode {
-  if (typeof window === 'undefined') return DEFAULT_MODE;
-  try {
-    const raw = window.localStorage.getItem(MODE_STORAGE_KEY);
-    return (EDITOR_MODES as readonly string[]).includes(raw ?? '') ? (raw as ViewMode) : DEFAULT_MODE;
-  } catch {
-    return DEFAULT_MODE;
-  }
 }
 
 const MODE_ICONS: Record<ViewMode, React.ComponentType<{ className?: string }>> = {
@@ -94,10 +85,8 @@ interface MarkdownEditorProps {
    * frontmatter key through the single content buffer.
    */
   headerExtras?: (ctx: MarkdownHeaderExtrasCtx) => React.ReactNode;
-  /** Appended to the side drawer after Editor + Backlinks. */
+  /** Appended to the side drawer after Backlinks. */
   extraSideTabs?: ExtraSideTab[];
-  /** Forwarded to the Editor tab — runs once after its backing process is created. */
-  onChatProcessCreated?: (process: import('@sdk').AgenticProcess) => Promise<void> | void;
   /** When true, the "Learning" view-mode chip appears in the header strip. */
   showLearningMode?: boolean;
   /** Body rendered when viewMode === 'learning'. Required when showLearningMode is true. */
@@ -111,6 +100,43 @@ interface MarkdownEditorProps {
   onDelete?: () => Promise<void>;
   /** Display name shown in the delete confirmation. Defaults to the filename. */
   deleteLabel?: string;
+  /**
+   * External change token (typically the backing entity's `updated_date`). When
+   * it changes, the body is re-read from disk — closes the
+   * `file change → reindex → updated_date → refresh` loop so an out-of-band edit
+   * (e.g. an agent editing this open doc) refreshes the view. Ignored while the
+   * buffer is dirty (unsaved edits win).
+   */
+  reloadKey?: string | number;
+  /**
+   * Optional heading slug (a GFM slug like "auto-run"). When set, the body
+   * scrolls to that heading once it renders — the deep-link target for wiki
+   * fragment URLs (`…/wiki/<name>` + `?wikiFragment=<slug>`).
+   */
+  fragment?: string;
+  /**
+   * Override the missing-file copy (note + action-button label) — e.g. the
+   * task Plan section shows "This task has no spec yet." / "Add spec" instead
+   * of the generic "Note: File is missing / Re-create it". The editor keeps
+   * ownership of the layout, button, and `recreate` wiring; custom copy also
+   * drops the raw source-path line (a missing file is a normal state for
+   * such surfaces, not an error worth a path dump).
+   */
+  missingFileCopy?: { note: React.ReactNode; actionLabel: React.ReactNode };
+  /**
+   * Chrome variant. `'full'` (default) is the complete editor: header with
+   * filename/path/mode-toggle/Properties/Copy + the side rail. `'plain'` is a
+   * stripped read-only "plain doc": just the body under a minimal header of
+   * `plainLeadingActions` + Share + `plainTrailingActions` — no path, Properties,
+   * Copy, mode toggle, or side rail. Used by the wiki modal.
+   */
+  variant?: 'full' | 'plain';
+  /**
+   * Plain header (`variant='plain'`): composes the action row. Receives the
+   * editor's ready-made Share button so the caller decides where Share sits
+   * (e.g. `(share) => <>{open}{share}{switcher}</>`).
+   */
+  plainHeaderActions?: (share: React.ReactNode) => React.ReactNode;
 }
 
 /**
@@ -120,7 +146,8 @@ interface MarkdownEditorProps {
  * - Shows a Properties block only when the file has YAML frontmatter.
  * - Fields are rendered dynamically from whatever keys exist in the frontmatter.
  * - Body is rendered by Milkdown (view/review/editor) or Monaco (markdown).
- * - The chosen mode is persisted across docs via localStorage.
+ * - The chosen mode is persisted across docs via the EDITOR_MODE preference.
+ * - `variant='plain'` collapses all of that to a read-only body + a 3-item header.
  */
 export function MarkdownEditor({
   fsRef,
@@ -128,11 +155,15 @@ export function MarkdownEditor({
   toolbar,
   headerExtras,
   extraSideTabs,
-  onChatProcessCreated,
   showLearningMode,
   learningPanel,
   onDelete,
   deleteLabel,
+  reloadKey,
+  fragment,
+  missingFileCopy,
+  variant,
+  plainHeaderActions,
 }: MarkdownEditorProps) {
   return (
     <MarkdownEditorContent
@@ -142,11 +173,15 @@ export function MarkdownEditor({
       toolbar={toolbar}
       headerExtras={headerExtras}
       extraSideTabs={extraSideTabs}
-      onChatProcessCreated={onChatProcessCreated}
       showLearningMode={showLearningMode}
       learningPanel={learningPanel}
       onDelete={onDelete}
       deleteLabel={deleteLabel}
+      reloadKey={reloadKey}
+      fragment={fragment}
+      missingFileCopy={missingFileCopy}
+      variant={variant}
+      plainHeaderActions={plainHeaderActions}
     />
   );
 }
@@ -172,12 +207,19 @@ function normalizeDirection(value: string | undefined): 'ltr' | 'rtl' | undefine
   return v === 'ltr' || v === 'rtl' ? v : undefined;
 }
 
-function goToSlug(slug: string): void {
-  const direct = document.getElementById(slug);
-  const heading = direct ?? Array.from(
-    document.querySelectorAll<HTMLElement>('.ProseMirror :is(h1,h2,h3,h4,h5,h6)')
-  ).find((h) => gfmSlug(h.textContent ?? '') === slug);
-  heading?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+/** Resolve the rendered heading matching `slug` (Milkdown's own ids first, then
+ *  a GFM-slug scan of the rendered headings), or null if not present yet. */
+function findHeading(slug: string): HTMLElement | null {
+  return document.getElementById(slug)
+    ?? Array.from(
+      document.querySelectorAll<HTMLElement>('.ProseMirror :is(h1,h2,h3,h4,h5,h6)')
+    ).find((h) => gfmSlug(h.textContent ?? '') === slug)
+    ?? null;
+}
+
+/** Scroll to the heading matching `slug`, if present. */
+function goToSlug(slug: string, smooth = true): void {
+  findHeading(slug)?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
 }
 
 // ── Editor content ────────────────────────────────────────────────────────────
@@ -189,11 +231,15 @@ function MarkdownEditorContent({
   toolbar,
   headerExtras,
   extraSideTabs,
-  onChatProcessCreated,
   showLearningMode,
   learningPanel,
   onDelete,
   deleteLabel,
+  reloadKey,
+  fragment,
+  missingFileCopy,
+  variant,
+  plainHeaderActions,
 }: {
   fsRef: FSRef;
   sourcePath: string;
@@ -201,11 +247,15 @@ function MarkdownEditorContent({
   toolbar?: React.ReactNode;
   headerExtras?: MarkdownEditorProps['headerExtras'];
   extraSideTabs?: ExtraSideTab[];
-  onChatProcessCreated?: MarkdownEditorProps['onChatProcessCreated'];
   showLearningMode?: boolean;
   learningPanel?: React.ReactNode;
   onDelete?: MarkdownEditorProps['onDelete'];
   deleteLabel?: MarkdownEditorProps['deleteLabel'];
+  reloadKey?: string | number;
+  fragment?: string;
+  missingFileCopy?: MarkdownEditorProps['missingFileCopy'];
+  variant?: MarkdownEditorProps['variant'];
+  plainHeaderActions?: MarkdownEditorProps['plainHeaderActions'];
 }) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
@@ -216,11 +266,16 @@ function MarkdownEditorContent({
   const advanced = useIsAdvanced();
 
   // viewMode source of truth: URL `?editorMode=…` if present and valid; else
-  // last-used value from localStorage; else DEFAULT_MODE. Updating viewMode
-  // pushes a new DockPointer with the option merged in — the URL becomes
-  // shareable + back-button-restorable, and per-tab independent.
+  // last-used value from the stored preference; else DEFAULT_MODE. Updating
+  // viewMode pushes a new DockPointer with the option merged in — the URL
+  // becomes shareable + back-button-restorable, and per-tab independent.
   const urlMode = currentDock?.options?.[EDITOR_MODE_PARAM];
-  const rawViewMode: ViewMode = isEditorMode(urlMode) ? urlMode : readStoredMode();
+  const [storedMode, setStoredMode] = usePreference<EditorMode>(PrefKey.EDITOR_MODE);
+  const rawViewMode: ViewMode = isEditorMode(urlMode)
+    ? urlMode
+    : isEditorMode(storedMode)
+      ? storedMode
+      : DEFAULT_MODE;
   // In Standard, fall back to 'view' so the body never renders a surface whose
   // chip is hidden (e.g. a share-link pinning ?editorMode=review opened by a
   // Standard user).
@@ -237,7 +292,7 @@ function MarkdownEditorContent({
   // reflects the actual visible mode (silent + clean per design).
   //
   // Guard against the initial-mount race: `showLearningMode` is computed by
-  // WorkflowAssetEditor from an async process query, so it starts `false` for
+  // the host editor from an async process query, so it starts `false` for
   // ~one tick even when this doc DOES have learning runs. Stripping then would
   // wipe a legitimate `?editorMode=learning` share-link. We delay the strip
   // by a small idle period; if learning becomes available within that window,
@@ -256,11 +311,25 @@ function MarkdownEditorContent({
   // wiki toolbar to insert wikilinks at the cursor.
   const milkdownRef = useRef<MilkdownEditorInstance | null>(null);
 
-  // Keep localStorage as the no-URL fallback for new docs / fresh links.
+  // For an `owns_main_ref` type (e.g. prompt) the ENTITY is authoritative over
+  // the file, so a save that only lands on disk gets reverted by the next
+  // `entity.save()` re-render. Those saves reindex back into the entity; the
+  // hand-edited types (markdown, skill) are already file-authoritative and skip
+  // the cost. Registry-driven off the entity's own type — never a type allowlist.
+  const reindexOnSave = useMemo(() => {
+    if (!chatTarget) return false;
+    try {
+      const typeName = new TypeId(chatTarget).type;
+      return !!dataManager.getAllTypeInfos?.().find((t) => t.type_name === typeName)?.owns_main_ref;
+    } catch {
+      return false; // not a parseable TypeId (raw file) → no entity to reindex into
+    }
+  }, [chatTarget]);
+
+  // Keep the stored preference as the no-URL fallback for new docs / fresh links.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try { window.localStorage.setItem(MODE_STORAGE_KEY, viewMode); } catch { /* storage may be disabled */ }
-  }, [viewMode]);
+    setStoredMode(viewMode);
+  }, [viewMode, setStoredMode]);
 
   const {
     fields,
@@ -276,7 +345,7 @@ function MarkdownEditorContent({
     recreate,
     reload,
     lastSync,
-  } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000 });
+  } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000, reloadKey, reindexOnSave });
 
   const [propsExpanded, setPropsExpanded] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -319,9 +388,11 @@ function MarkdownEditorContent({
     ),
   }), [revisionStatus, gitComputeNodeId, gitFileDir, gitFileName, reload]);
 
+  const collisionTab = useAssetCollisionSideTab();
+
   const allSideTabs = useMemo(
-    () => [revisionsTab, ...(extraSideTabs ?? [])],
-    [revisionsTab, extraSideTabs],
+    () => [revisionsTab, ...(collisionTab ? [collisionTab] : []), ...(extraSideTabs ?? [])],
+    [revisionsTab, collisionTab, extraSideTabs],
   );
 
   const shareSource = useMemo(() => {
@@ -332,24 +403,26 @@ function MarkdownEditorContent({
   }, [chatTarget, sourcePath]);
 
   // On-disk caret line shared across all editor backends. Null means "user has
-  // not clicked yet" — chat header badge is hidden in that case. Persists across
-  // mode switches so caret restores to the same logical position.
-  const [cursorLine, setCursorLine] = useState<number | null>(null);
+  // not clicked yet". Only read when an editor (re)mounts on a mode switch, so
+  // caret restores to the same logical position — a ref, not state, so caret
+  // moves don't re-render the editor tree.
+  const cursorLineRef = useRef<number | null>(null);
   const bodyStartLineRef = useRef(bodyStartLine);
   bodyStartLineRef.current = bodyStartLine;
   const handleEditorLineChange = useCallback((bodyLine: number) => {
-    setCursorLine(bodyStartLineRef.current + bodyLine - 1);
+    cursorLineRef.current = bodyStartLineRef.current + bodyLine - 1;
   }, []);
   // Seed the caret from `?initialLine=N` on a fresh open (no user caret yet) —
   // body-line space, so it survives frontmatter changes. Cleared once the user
-  // clicks/types and `cursorLine` becomes the source of truth.
+  // clicks/types and `cursorLineRef` becomes the source of truth.
   const initialLineParam = useMemo(() => {
     const raw = currentDock?.options?.[INITIAL_LINE_PARAM];
     if (raw == null) return null;
     const n = parseInt(raw, 10);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [currentDock?.options]);
-  const initialBodyLine = cursorLine != null ? cursorLine - bodyStartLine + 1 : initialLineParam;
+  const initialBodyLine =
+    cursorLineRef.current != null ? cursorLineRef.current - bodyStartLine + 1 : initialLineParam;
 
   const setBodyRef = useRef(setBody);
   setBodyRef.current = setBody;
@@ -401,12 +474,14 @@ function MarkdownEditorContent({
       return;
     }
 
-    // /dock/assets/wiki/<name> → keep the URL at the wiki form; the
-    // wiki route view (WikiResolveView) does the name resolution.
-    const wikiMatch = href.match(/\/dock\/assets\/wiki\/([^?#]+)/);
+    // /dock/assets/wiki/<name>[#<frag>] → keep the URL at the wiki form; the
+    // wiki route view (WikiResolveView) does the name resolution. A trailing
+    // `#<frag>` deep-links to a heading (rides as a query param, not the path).
+    const wikiMatch = href.match(/\/dock\/assets\/wiki\/([^?#]+)(?:#([^?\s]+))?/);
     if (wikiMatch) {
       const name = decodeURIComponent(wikiMatch[1]).replace(/\.md$/i, '');
-      navigation.openDock(DockPointer.forWiki(name));
+      const frag = wikiMatch[2] ? decodeURIComponent(wikiMatch[2]) : undefined;
+      navigation.openDock(DockPointer.forWiki(name, undefined, undefined, frag));
       return;
     }
 
@@ -415,6 +490,44 @@ function MarkdownEditorContent({
     const assetType = currentDock?.pointer?.split('/')?.[1] ?? 'claude_memory';
     navigation.openDock(DockPointer.forAssetEditor(assetType, resolvedPath));
   }, [sourcePathStr, currentDock, navigation]);
+
+  // Deep-link scroll: when opened with a `fragment` (wiki anchor), scroll to the
+  // matching heading once, after the body paints. Milkdown renders headings — and
+  // keeps growing the document — a few frames after content loads, so scrolling
+  // once on first sight lands short; we cache the heading and re-correct across
+  // frames until its position holds steady (bounded). Gated per-fragment (a ref,
+  // and no `body` dependency) so typing in the body never re-yanks the viewport
+  // back to the anchor.
+  const scrolledFragmentRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!fragment || isLoading || isMissing) return;
+    if (scrolledFragmentRef.current === fragment) return;
+    const slug = fragment.toLowerCase();
+    let raf = 0;
+    let framesLeft = 60;
+    let stable = 0;
+    let lastTop = Number.NaN;
+    let heading: HTMLElement | null = null;
+    const attempt = () => {
+      heading ??= findHeading(slug); // scan the DOM only until the heading exists
+      if (heading) {
+        heading.scrollIntoView({ block: 'start' });
+        const top = Math.round(heading.getBoundingClientRect().top);
+        if (top === lastTop) {
+          if (++stable >= 2) {
+            scrolledFragmentRef.current = fragment; // settled — don't re-scroll on edits
+            return;
+          }
+        } else {
+          stable = 0;
+          lastTop = top;
+        }
+      }
+      if (framesLeft-- > 0) raf = requestAnimationFrame(attempt);
+    };
+    raf = requestAnimationFrame(attempt);
+    return () => cancelAnimationFrame(raf);
+  }, [fragment, isLoading, isMissing]);
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (isLoading) {
@@ -458,11 +571,15 @@ function MarkdownEditorContent({
           showLearningMode={showLearningMode}
         />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-          <p className="text-sm font-medium text-foreground"><Trans>Note: File is missing</Trans></p>
-          <p className="break-all font-mono text-xs text-muted-foreground">{sourcePathStr}</p>
+          <p className="text-sm font-medium text-foreground">
+            {missingFileCopy?.note ?? <Trans>Note: File is missing</Trans>}
+          </p>
+          {!missingFileCopy && (
+            <p className="break-all font-mono text-xs text-muted-foreground">{sourcePathStr}</p>
+          )}
           <Button variant="outline" size="sm" onClick={() => void recreate()}>
             <FilePlus2 className="mr-1 h-4 w-4" />
-            <Trans>Re-create it</Trans>
+            {missingFileCopy?.actionLabel ?? <Trans>Re-create it</Trans>}
           </Button>
         </div>
       </div>
@@ -532,7 +649,8 @@ function MarkdownEditorContent({
     );
   }
 
-  // ── Editor ─────────────────────────────────────────────────────────────────
+  // Share controls (button + dialog) — one definition, shared by the plain and
+  // full headers, so the button (and its testId) isn't duplicated.
   const shareButton = shareSource ? (
     <ShareButton
       onClick={() => setShareOpen(true)}
@@ -540,7 +658,52 @@ function MarkdownEditorContent({
       testId="markdown-editor-share"
     />
   ) : null;
+  const shareDialog =
+    shareSource && shareOpen ? (
+      <ShareToConversationDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        source={shareSource}
+      />
+    ) : null;
 
+  // Body renderer — the single Milkdown invocation both paths share, so a
+  // body-mount change (a new prop, plugin, direction/fragment tweak) can't drift
+  // between the plain doc and the full editor.
+  const milkdownBody = (mode: ViewMode) => (
+    <MilkdownEditor
+      content={body}
+      onChange={handleBodyChange}
+      onLinkClick={handleLinkClick}
+      editorMode={mode === 'learning' ? 'view' : mode}
+      editorRef={milkdownRef}
+      onCursorLineChange={handleEditorLineChange}
+      initialLine={initialBodyLine}
+      direction={normalizeDirection(fields.direction)}
+      toolbarRight={
+        mode === 'editor' ? <WikiToolbar editorRef={milkdownRef} sourceTypeId={chatTarget} /> : undefined
+      }
+    />
+  );
+
+  // ── Plain doc ────────────────────────────────────────────────────────────
+  // Read-only body under a minimal header. The caller composes the whole action
+  // row via `plainHeaderActions(share)` — it receives the ready-made Share node
+  // and decides where Share sits. No path, Properties, Copy, mode toggle, or
+  // side rail. Used by the wiki modal.
+  if (variant === 'plain') {
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className="flex flex-shrink-0 items-center justify-end gap-1 border-b px-3 py-2">
+          {plainHeaderActions?.(shareButton)}
+        </div>
+        {shareDialog}
+        <div className="min-h-0 flex-1 overflow-hidden">{milkdownBody('view')}</div>
+      </div>
+    );
+  }
+
+  // ── Editor ─────────────────────────────────────────────────────────────────
   // Favorite toggle next to Share (both modes), mirroring the interactive tab.
   // Keyed on the asset entity's TypeId (the same id chat/share use).
   const favoriteTypeId = chatTarget ? new TypeId(chatTarget) : null;
@@ -586,13 +749,7 @@ function MarkdownEditorContent({
         actions={toolbar}
         showLearningMode={showLearningMode}
       />
-      {shareSource && shareOpen && (
-        <ShareToConversationDialog
-          open={shareOpen}
-          onClose={() => setShareOpen(false)}
-          source={shareSource}
-        />
-      )}
+      {shareDialog}
 
       {hasFields && (
         <div className="flex-shrink-0 border-b">
@@ -631,12 +788,7 @@ function MarkdownEditorContent({
         {viewMode === 'learning' && learningPanel ? (
           <div className="h-full overflow-hidden">{learningPanel}</div>
         ) : (
-          <EditorWithSidePanel
-            chatTarget={chatTarget}
-            extraTabs={allSideTabs}
-            onChatProcessCreated={onChatProcessCreated}
-            cursorLine={cursorLine}
-          >
+          <EditorWithSidePanel target={chatTarget} extraTabs={allSideTabs}>
             {viewMode === 'markdown' ? (
               <MonacoMarkdownEditor
                 value={body}
@@ -647,21 +799,7 @@ function MarkdownEditorContent({
             ) : viewMode === 'review' ? (
               <ReviewSurface body={body} docTypeId={chatTarget} />
             ) : (
-              <MilkdownEditor
-                content={body}
-                onChange={handleBodyChange}
-                onLinkClick={handleLinkClick}
-                editorMode={viewMode === 'learning' ? 'view' : viewMode}
-                editorRef={milkdownRef}
-                onCursorLineChange={handleEditorLineChange}
-                initialLine={initialBodyLine}
-                direction={normalizeDirection(fields.direction)}
-                toolbarRight={
-                  viewMode === 'editor' ? (
-                    <WikiToolbar editorRef={milkdownRef} sourceTypeId={chatTarget} />
-                  ) : undefined
-                }
-              />
+              milkdownBody(viewMode)
             )}
           </EditorWithSidePanel>
         )}
@@ -802,6 +940,7 @@ function EditorHeader({ fileName, entityType, dirPath, dirty, viewMode, onViewMo
           {TypeIcon && <TypeIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />}
           <span className="truncate text-sm font-medium" title={fileName}>{fileName}</span>
           {dirty && <span className="text-sm text-amber-500">*</span>}
+          <AssetCollisionBadge />
           {advanced && nameExtras}
         </div>
         <div className="flex min-w-0 items-center gap-1">

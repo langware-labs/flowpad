@@ -13,7 +13,7 @@ import {
   CommandSeparator,
 } from '@src/components/ui/command';
 import {
-  SUPPORTED_LOCALES,
+  useSupportedLocales,
   getRecentLocales,
   setLocale,
   useLocale,
@@ -59,22 +59,31 @@ export function LanguageSelector() {
   const [open, setOpen] = useState(false);
   const activeCode = useLocale();
   const activeInfo = useLocaleInfo();
+  const supportedLocales = useSupportedLocales();
 
   // Active + recents, de-duped, in the dedicated top section. `activeCode`
   // updates on every selection (incl. ones made elsewhere, via the locale
-  // listener), so it's the only dependency needed.
+  // listener); `supportedLocales` updates when the backend list arrives.
   const pinned = useMemo(
     () =>
       [...new Set([activeCode, ...getRecentLocales()])]
-        .map((c) => SUPPORTED_LOCALES.find((l) => l.code === c))
+        .map((c) => supportedLocales.find((l) => l.code === c))
         .filter((l): l is LocaleInfo => !!l),
-    [activeCode],
+    [activeCode, supportedLocales],
   );
 
   const handleSelect = (code: string) => {
     void setLocale(code);
     setOpen(false);
   };
+
+  // Only offer the picker when the backend ships 2+ locales (a genuine choice).
+  // Deliberately NOT gated on `navigator.languages`: that reports the OS
+  // preferred-languages list, which says nothing about what a user reads or
+  // types — a Hebrew typist on an English UI reports only `en`, and gating on it
+  // hid the picker from exactly the people who wanted it. The OS signal still
+  // picks the first-run default (locale-context's `resolveInitialLocale`).
+  if (supportedLocales.length < 2) return null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -101,7 +110,7 @@ export function LanguageSelector() {
             </CommandGroup>
             <CommandSeparator />
             <CommandGroup heading={t`All languages`}>
-              {SUPPORTED_LOCALES.map((info) => (
+              {supportedLocales.map((info) => (
                 <LocaleRow key={info.code} info={info} active={info.code === activeCode} onSelect={handleSelect} />
               ))}
             </CommandGroup>

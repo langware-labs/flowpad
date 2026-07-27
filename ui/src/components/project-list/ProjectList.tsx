@@ -1,21 +1,16 @@
-import { Flow, Project, timeAgo } from '@sdk';
+import { Project } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
-import { Badge } from '@src/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@src/components/ui/card';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Card, CardHeader, CardTitle } from '@src/components/ui/card';
+import { useLingui } from '@lingui/react/macro';
 import React from 'react';
 
 export interface ProjectListProps {
   /** List of projects to display */
   projects: Project[] | undefined;
-  /** Map of project ID to flows (optional - if not provided, flows section won't be shown) */
-  projectFlowsMap?: Map<string, Flow[]>;
   /** Loading state */
   isLoading: boolean;
   /** Called when a project card is clicked */
   onProjectClick?: (project: Project) => void;
-  /** Called when a flow item is clicked (only used if projectFlowsMap is provided) */
-  onFlowClick?: (flow: Flow, event: React.MouseEvent) => void;
   /** Optional title for the section */
   title?: string;
   /** Whether to require authentication to show the list */
@@ -29,18 +24,13 @@ export interface ProjectListProps {
 /**
  * ProjectList - Displays a grid of project cards
  *
- * This is a presentational component that can be used in different contexts:
- * - With flows (when projectFlowsMap is provided)
- * - Without flows (just project cards)
- *
- * Navigation is handled by the parent via callbacks, making it context-agnostic.
+ * Presentational: navigation is handled by the parent via callbacks, making it
+ * context-agnostic.
  */
 export const ProjectList: React.FC<ProjectListProps> = ({
   projects,
-  projectFlowsMap,
   isLoading,
   onProjectClick,
-  onFlowClick,
   title,
   requireAuth = true,
   compact = false,
@@ -127,9 +117,6 @@ export const ProjectList: React.FC<ProjectListProps> = ({
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {displayProjects.map((project) => {
-              const projectFlows = projectFlowsMap?.get(project.id || '') || [];
-              const showFlows = projectFlowsMap !== undefined;
-
               const handleClick = () => {
                 onProjectClick?.(project);
               };
@@ -151,41 +138,8 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                     <CardHeader>
                       <CardTitle className="flex items-center justify-between">
                         <span className="truncate">{project.displayName}</span>
-                        {showFlows && (
-                          <Badge variant="outline" className="ml-2">
-                            {projectFlows.length} {projectFlows.length === 1 ? t`flow` : t`flows`}
-                          </Badge>
-                        )}
                       </CardTitle>
                     </CardHeader>
-
-                    {showFlows && (
-                      <CardContent>
-                        {projectFlows.length > 0 ? (
-                          <div className="space-y-3">
-                            <h4 className="text-sm font-medium text-muted-foreground"><Trans>Flows:</Trans></h4>
-                            <div className="max-h-48 space-y-2 overflow-y-auto">
-                              {projectFlows.map((flow) => (
-                                <div
-                                  key={flow.id}
-                                  className="flex cursor-pointer items-center justify-between rounded-md bg-muted p-2 hover:bg-muted/80 hover:shadow-sm"
-                                  onClick={(e) => onFlowClick?.(flow, e)}
-                                >
-                                  <span className="truncate text-sm font-medium">{flow.displayName}</span>
-                                  {flow?.created_date ? (
-                                    <div className="text-xs text-muted-foreground">{timeAgo(flow?.created_date)}</div>
-                                  ) : null}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="py-6 text-center">
-                            <p className="text-sm text-muted-foreground"><Trans>No flows in this project</Trans></p>
-                          </div>
-                        )}
-                      </CardContent>
-                    )}
                   </Card>
                 </div>
               );

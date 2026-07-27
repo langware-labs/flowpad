@@ -14,6 +14,7 @@
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router';
 import {
@@ -24,6 +25,8 @@ import {
   ComputeNode,
   ComputeProviderType,
   connectionManager,
+  ContextEntitiesEnum,
+  dataContext,
   dataManager,
   Project,
   Shell,
@@ -60,7 +63,7 @@ function tabRow(id: string, dock: DockPointer, targetType: string | null, target
     pointer: dock.toJSON() ?? '',
     target_type: targetType,
     target_id: targetId,
-    project_id: null,
+    project_id: PROJECT_ID,
     name,
     icon_key: targetType === AgenticProcess.type ? 'claude' : null,
     worktree: false,
@@ -304,15 +307,25 @@ describe('new agentic-process loader handoff', () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
     applyAllTabs([]);
     resetTabLifecycleForTests();
     (capabilityManager as unknown as { capabilities: Capability[] }).capabilities = [];
     (connectionManager as unknown as { socket: unknown }).socket = null;
+    // Reset the shared dataContext the loader mutated (active shell/target +
+    // current project). These are process-wide singletons; without clearing them
+    // a following loader-integration test in the SAME worker inherits this test's
+    // active terminal target and its resolveActive picks the stale process instead
+    // of materializing the freshly-opened one (cross-test contamination — each
+    // test passes in isolation but the second-to-run fails in the suite).
+    dataContext.setActiveShellId('');
+    dataContext.setActiveTerminalTargetTypeId(null);
+    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
   });
 
   it('clicking the real Claude opener renders the newly materialized process tab', async () => {
+    const queryClient = new QueryClient();
     const router = createMemoryRouter(
       [
         {
@@ -325,9 +338,11 @@ describe('new agentic-process loader handoff', () => {
     );
 
     render(
-      <HarnessCapabilitiesProvider>
-        <RouterProvider router={router} />
-      </HarnessCapabilitiesProvider>,
+      <QueryClientProvider client={queryClient}>
+        <HarnessCapabilitiesProvider>
+          <RouterProvider router={router} />
+        </HarnessCapabilitiesProvider>
+      </QueryClientProvider>,
     );
 
     await screen.findByTestId('terminal-tab-bar');
@@ -358,7 +373,7 @@ describe('new agentic-process loader handoff', () => {
       const activePanel = screen
         .getByTestId('terminal-panels')
         .querySelector('[data-testid="terminal-panel"][data-active="true"]');
-      expect(activePanel).toHaveAttribute('data-session-id', processDock(NEW_PROCESS_ID).toJSON());
+      expect(activePanel).toHaveAttribute('data-session-id', processDock(NEW_PROCESS_ID).pointer);
     });
   });
 });

@@ -3,8 +3,15 @@ import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { Agent, AgenticProcess, FSRef, ProcessKind } from '@sdk';
-import { useCallback } from 'react';
+import { Agent, AgenticProcess, AgentKind, FSRef, ProcessKind } from '@sdk';
+import { useProject } from '@sdk/react/hooks';
+import { useCallback, useState } from 'react';
+import { Trans } from '@lingui/react/macro';
+import { Loader2, Play } from 'lucide-react';
+import { Button } from '@src/components/ui/button';
+import { createVibeProcessForProject } from '@src/pages/flow-page/use-start-vibe-session';
+import { notify } from '@src/notifications';
+import { tagAttrs } from '@src/tags/tag-attrs';
 
 interface AgentAssetEditorProps {
   /** FSRef to the agent .md file. */
@@ -51,14 +58,54 @@ export function AgentAssetEditor({ fsRef, agent: providedAgent }: AgentAssetEdit
   const chatTarget = agent ? agent.typeId.toString() : null;
   const agentExecutionTarget = agent ? agent.typeId.toString() : null;
   const { navigation } = useDockNavigation();
+  const { project } = useProject();
   const onDelete = useCallback(async () => {
     if (!agent) return;
     await agent.delete();
     navigation.openDock(DockPointer.forAssetList(Agent.type));
   }, [agent, navigation]);
+
+  // "Use agent": mark it a vibe agent (the vibe layer embeds every kind==vibe
+  // agent on process start) and open the vibe workspace — the agent is live in
+  // a process, ready to be asked. Tag-tagged, so journeys can highlight it
+  // and observe the click through the standard bus wiring.
+  const [launching, setLaunching] = useState(false);
+  const startUsingAgent = useCallback(async () => {
+    if (!agent || !project?.id || launching) return;
+    setLaunching(true);
+    try {
+      await agent.setKind(AgentKind.Vibe);
+      await createVibeProcessForProject({ projectId: project.id, navigation });
+    } catch (e) {
+      notify.error({ title: e instanceof Error ? e.message : 'Failed to start the agent' });
+    } finally {
+      setLaunching(false);
+    }
+  }, [agent, project?.id, navigation, launching]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1">
+      {agent && (
+        <div className="flex items-center justify-end border-b border-border px-3 py-1.5">
+          <Button
+            type="button"
+            size="sm"
+            disabled={launching || !project?.id}
+            onClick={() => void startUsingAgent()}
+            className="h-7 gap-1.5 px-3 text-xs"
+            data-testid="agent-use"
+            {...tagAttrs('UseAgent', 'button')}
+          >
+            {launching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+            <Trans>Use agent</Trans>
+          </Button>
+        </div>
+      )}
+      {/* Tagged so a journey can aim at the instructions body — highlight it, or
+          fill it via `act:{kind:'fill', target:'AgentInstructions'}`. The tag
+          goes on the CONTAINER; the act resolves the editable inside it, which
+          the rich editor owns and may re-create. */}
+      <div className="min-h-0 flex-1" {...tagAttrs('AgentInstructions', 'input')}>
         <MarkdownEditor
           fsRef={editorRef}
           chatTarget={chatTarget}

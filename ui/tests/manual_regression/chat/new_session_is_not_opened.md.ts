@@ -11,8 +11,7 @@ test.describe('home submit opens a shell session', () => {
     await dismissSetupModal(page);
     await gotoLanding(page);
 
-    // submitFromLanding dismisses any lingering WelcomeModal before fill+submit
-    // and waits for the /dock/shell/ navigation.
+    // submitFromLanding fills + submits and waits for the /dock/shell/ navigation.
     await submitFromLanding(page, 'hi');
     expect(page.url()).toContain('/dock/shell/');
   });

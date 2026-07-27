@@ -16,17 +16,20 @@
  * The controller is kept ONLY for the surrounding controls: leading/trailing
  * toolbars, the new-tab menu, spawn modals, and the close-shortcut label.
  */
-import { Tab } from '@sdk';
+import { Project, Tab } from '@sdk';
+import { useLingui } from '@lingui/react/macro';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { TabStrip } from '@src/components/tabs/TabStrip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
 import { resolveNextTab } from '@src/tabs/tab-candidates';
 import { applyPredictedOrder, refreshAllTabs, useAllTabs } from '@src/tabs/all-tabs-store';
-import { closeTabWithLifecycle } from '@src/tabs/tab-lifecycle';
+import { closeTabWithLifecycle, excludeClosingTabs, useTabLifecycles } from '@src/tabs/tab-lifecycle';
 import { uniqueTabsByDockKey, useCurrentTabs, useSyncContentTabNames } from '@src/tabs/useTabs';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import React, { useCallback, useEffect, useMemo } from 'react';
+import { useNavigation } from 'react-router';
 
 export interface UnifiedTabStripProps {
   /** `'project'` (default) shows the active project + projectless tabs; `'all'`
@@ -36,6 +39,7 @@ export interface UnifiedTabStripProps {
 
 export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'project' }) => {
   const { navigation, currentDock } = useDockNavigation();
+  const { t } = useLingui();
   const controller = useTerminalStripController({ addTabButton: true });
 
   const projectId = controller.tabsProjectId ?? null;
@@ -48,8 +52,15 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   useSyncContentTabNames();
   const currentTabs = useCurrentTabs();
   const globalTabs = useMemo(() => uniqueTabsByDockKey(allTabs), [allTabs]);
-  const tabs = scope === 'all' ? globalTabs : currentTabs;
-  const items = useTabStripItems(tabs);
+  // Optimistic close: drop `Closing` tabs from the WHOLE working set (not just
+  // the rendered items) — `baseItems`, `tabByKey`, and the mod+PgUp/PgDn cycling
+  // all derive from `tabs`, so a closing tab can't be re-selected mid-teardown.
+  const lifecycles = useTabLifecycles();
+  const tabs = useMemo(
+    () => excludeClosingTabs(scope === 'all' ? globalTabs : currentTabs, lifecycles),
+    [scope, globalTabs, currentTabs, lifecycles],
+  );
+  const baseItems = useTabStripItems(tabs);
   const tabByKey = useMemo(() => {
     const m = new Map<string, Tab>();
     for (const t of tabs) {
@@ -59,8 +70,60 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     return m;
   }, [tabs]);
 
+  // "Open Project" — the footer's project-name shortcut surfaced on the chip
+  // menu as a distinguished (emphasized) header entry. Owner-injected so the
+  // mapper stays a pure display layer and other strips (e.g. the vibe
+  // workspace child strip) don't inherit it. Navigates to the TAB's own
+  // project home, URL-first; global (projectless) tabs skip it.
+  const items = useMemo(() => {
+    const openProjectLabel = t`Open Project`;
+    const ProjectIcon = iconForType(Project.type);
+    return baseItems.map((item) => {
+      const projectId = tabByKey.get(item.key)?.project_id;
+      if (!projectId) return item;
+      return {
+        ...item,
+        contextMenuItems: [
+          {
+            label: openProjectLabel,
+            Icon: ProjectIcon,
+            emphasized: true,
+            onSelect: () => navigation.openDock(DockPointer.forProject(projectId)),
+          },
+          ...(item.contextMenuItems ?? []),
+        ],
+      };
+    });
+  }, [baseItems, tabByKey, navigation, t]);
+
   // Active highlight is the URL, full stop (every chip is keyed by its tabHash).
   const activeKey = currentDock?.tabHash ?? '';
+
+  // A tab click navigates URL-first (click → navigate → loader → context). Under
+  // load the target route's loader can still be resolving when the user closes
+  // that SAME tab (click, then X a moment later) — so the committed `currentDock`
+  // (hence `activeKey`) still names the PREVIOUS tab, `handleClose`'s active-close
+  // branch is skipped, and the in-flight navigation later commits the URL onto the
+  // tab that was just closed (a dead pointer, no self-heal). React-router's data
+  // router exposes that in-flight target as `navigation.location`; treat the
+  // closing tab as "the one on screen" when it matches EITHER the committed dock
+  // OR that pending target, so the close still heals to a surviving tab. Purely
+  // additive: with no navigation in flight `pendingActiveKey` is null and the
+  // behavior is identical to `key === activeKey`.
+  const routerNavigation = useNavigation();
+  const pendingActiveKey = useMemo(() => {
+    const loc = routerNavigation.location;
+    if (!loc) return null;
+    try {
+      return DockPointer.fromUrl(`${loc.pathname}${loc.search}`).tabHash;
+    } catch {
+      return null;
+    }
+  }, [routerNavigation.location]);
+  const isCurrentTab = useCallback(
+    (key: string) => key !== '' && (key === activeKey || key === pendingActiveKey),
+    [activeKey, pendingActiveKey],
+  );
 
   const handleSelect = useCallback(
     (key: string) => {
@@ -82,7 +145,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
 
   // Where to go when the active tab(s) close: the next tab in the current
   // project (confined to its scope — `resolveNextTab` with `projectId`), or the
-  // project home (`DockPointer.forProject`, which renders `ProjectBrief`) when the
+  // project home (`DockPointer.forProject`, which renders `ProjectHome`) when the
   // project has no tabs left. Closing a project's last tab lands on its project
   // home rather than jumping to a tab in another project — same destination a
   // fresh project entry resolves to (`dockForProjectEntry`). Falls back to Home
@@ -103,19 +166,19 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     (key: string) => {
       const tab = tabByKey.get(key);
       if (!tab) return;
-      if (key === activeKey) navigateAfterClose([tab]);
+      if (isCurrentTab(key)) navigateAfterClose([tab]);
       void closeTabWithLifecycle(tab).finally(() => void refreshAllTabs());
     },
-    [tabByKey, activeKey, navigateAfterClose],
+    [tabByKey, isCurrentTab, navigateAfterClose],
   );
 
   const handleCloseMany = useCallback(
     (keys: string[]) => {
       const closing = keys.map((k) => tabByKey.get(k)).filter((t): t is Tab => t != null);
-      if (keys.includes(activeKey)) navigateAfterClose(closing);
+      if (keys.some((k) => isCurrentTab(k))) navigateAfterClose(closing);
       void Promise.allSettled(closing.map((t) => closeTabWithLifecycle(t))).finally(() => void refreshAllTabs());
     },
-    [tabByKey, activeKey, navigateAfterClose],
+    [tabByKey, isCurrentTab, navigateAfterClose],
   );
 
   const handleRename = useCallback(
@@ -153,8 +216,8 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     [tabByKey, projectId],
   );
 
-  // Keyboard shortcuts (the strip owns them): mod+W close active, mod+T new Claude,
-  // mod+PgUp/PgDn cycle. Mac=Ctrl, Windows=Meta, Linux=Alt.
+  // Keyboard shortcuts (the strip owns them): mod+W close active, mod+T new
+  // terminal, mod+PgUp/PgDn cycle. Mac=Ctrl, Windows=Meta, Linux=Alt.
   useEffect(() => {
     const osPlatform: string =
       (navigator as Navigator & { userAgentData?: { platform: string } }).userAgentData?.platform ??
@@ -169,8 +232,10 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
         e.preventDefault();
         handleClose(activeKey);
       } else if (e.key === 't' || e.key === 'T') {
+        // mod+T = New Terminal, matching the advertised labels. Claude gets no
+        // binding: the mod is Ctrl on Mac, and Ctrl+C is terminal interrupt.
         e.preventDefault();
-        void controller.handleStartClaude();
+        void controller.handleStartTerminal();
       } else if (e.key === 'PageUp') {
         e.preventDefault();
         const idx = tabs.findIndex((t) => (t.dockPointer?.tabHash ?? t.id) === activeKey);

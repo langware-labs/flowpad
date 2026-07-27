@@ -13,6 +13,7 @@ GET-reflected-as-DELETE bug).
 URL structure follows the Flowpad Hub API guidelines:
   /api/v1/graph/[{scope_type}/{scope_id}/...]{entity_type}[/{entity_id}][/{action}]
 """
+
 from __future__ import annotations
 
 import contextlib as _contextlib
@@ -24,7 +25,7 @@ import httpx
 
 from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient
 from flow_sdk.cloud_client.client_hooks import HubAuthExpiredError
-from flow_sdk.cloud_client.shared.errors import HubError, _extract_reason
+from flow_sdk.cloud_client.shared.errors import HubError, _extract_error_code, _extract_reason
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 logger = logging.getLogger(__name__)
@@ -79,9 +80,11 @@ def hub_base_url() -> Optional[str]:
     is unset — the single chokepoint that guarantees no HTTP reaches the cloud.
     """
     from flow_sdk.instance_settings.privacy_mode import is_local_mode
+
     if is_local_mode():
         return None
     from flow_sdk.config import default_service_config
+
     url = default_service_config.flowpad_hub_url
     return url.rstrip("/") if url else None
 
@@ -95,6 +98,7 @@ def hub_public_url(sub_path: str) -> Optional[str]:
     if not base:
         return None
     from flow_sdk.api.api_request import APIRequest
+
     return f"{base}{APIRequest.api_prefix}/{sub_path.lstrip('/')}"
 
 
@@ -135,9 +139,7 @@ async def get_info() -> Optional[dict[str, Any]]:
                     "version": version if isinstance(version, str) else None,
                     "deployed_at": deployed_at if isinstance(deployed_at, str) else None,
                     "generated_at": generated_at if isinstance(generated_at, str) else None,
-                    "community_project_id": (
-                        community_project_id if isinstance(community_project_id, str) else None
-                    ),
+                    "community_project_id": (community_project_id if isinstance(community_project_id, str) else None),
                 }
             return {"version": None}
     except Exception as e:  # noqa: BLE001
@@ -180,6 +182,7 @@ def hub_graph_url(
     if not base:
         return None
     from flow_sdk.api.api_request import APIRequest
+
     segments: list[str] = []
     if scope:
         for scope_type, scope_id in scope:
@@ -364,7 +367,9 @@ async def hub_post(
         async with _hub_client() as client:
             logger.info(
                 "[hub] POST %s files=%s payload_keys=%s",
-                url, bool(files), list(payload.keys()) if not files and payload else None,
+                url,
+                bool(files),
+                list(payload.keys()) if not files and payload else None,
             )
             if files:
                 resp = await client.request("POST", url, files=files, timeout=timeout)
@@ -380,7 +385,7 @@ async def hub_post(
         return resp.json().get("data") or {}
     reason = _extract_reason(resp)
     logger.warning("[hub] POST %s returned %s: %s", url, resp.status_code, resp.text[:200])
-    raise HubError(resp.status_code, reason)
+    raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
 
 
 async def _hub_post_streamed_upload(
@@ -415,7 +420,7 @@ async def _hub_post_streamed_upload(
         sent = 0
         reported = 0
         while sent < len(content):
-            piece = bytes(mv[sent:sent + chunk_size])
+            piece = bytes(mv[sent : sent + chunk_size])
             sent += len(piece)
             yield piece
             if sent - reported >= step or sent >= len(content):
@@ -438,7 +443,11 @@ async def _hub_post_streamed_upload(
         async with _hub_client() as client:
             logger.info("[hub] POST (stream) %s body=%dB", url, total)
             resp = await client.request(
-                "POST", url, content=_body(), headers=headers, timeout=timeout,
+                "POST",
+                url,
+                content=_body(),
+                headers=headers,
+                timeout=timeout,
             )
     except HubAuthExpiredError as e:
         logger.warning("[hub] POST (stream) %s auth expired: %s", url, e)
@@ -450,36 +459,44 @@ async def _hub_post_streamed_upload(
         return resp.json().get("data") or {}
     reason = _extract_reason(resp)
     logger.warning("[hub] POST (stream) %s returned %s: %s", url, resp.status_code, resp.text[:200])
-    raise HubError(resp.status_code, reason)
+    raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
 
 
 async def hub_delete(
     entity_type: BuiltinEntityType,
     entity_id: str,
     action: str | None = None,
+    sub_path: str | None = None,
     *,
     payload: dict[str, Any] | None = None,
+    params: dict[str, str] | None = None,
     scope: list[tuple[str, str]] | None = None,
 ) -> Optional[dict[str, Any]]:
     """DELETE a hub graph endpoint (entity-level or entity-action).
 
     ``payload`` is sent as the JSON request body — the hub parses DELETE
     bodies (e.g. ``members`` DELETE expects a ``MembershipMethod``
-    ``{member_through, value}``). Returns the response ``data`` dict on
-    success, None when FLOWPAD_HUB_URL is not configured. Raises ``HubError``
-    on transport failure or non-200 so callers can classify (e.g. 403
-    owner-only) vs network errors.
+    ``{member_through, value}``). ``sub_path`` selects a sibling endpoint under
+    the same action (``members/link``), and ``params`` carries its selector
+    (revoke takes ``?link-id=``) — both mirror ``hub_get``/``hub_post``, and
+    without the sub-path a ``members/link`` DELETE would reach the hub as a
+    member removal. Returns the response ``data`` dict on success, None when
+    FLOWPAD_HUB_URL is not configured. Raises ``HubError`` on transport failure
+    or non-200 so callers can classify (e.g. 403 owner-only) vs network errors.
     """
-    url = hub_graph_url(entity_type, entity_id, action, scope=scope)
+    url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
     if not url:
-        logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping DELETE %s/%s",
-                     entity_type, entity_id)
+        logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping DELETE %s/%s", entity_type, entity_id)
         return None
     try:
         async with _hub_client() as client:
             logger.info("[hub] DELETE %s payload=%s", url, payload)
             resp = await client.request(
-                "DELETE", url, json=payload or {}, timeout=httpx.Timeout(10),
+                "DELETE",
+                url,
+                json=payload or {},
+                params=params or None,
+                timeout=httpx.Timeout(10),
             )
     except HubAuthExpiredError as e:
         logger.warning("[hub] DELETE %s auth expired: %s", url, e)
@@ -491,7 +508,7 @@ async def hub_delete(
         return resp.json().get("data") or {}
     reason = _extract_reason(resp)
     logger.warning("[hub] DELETE %s returned %s: %s", url, resp.status_code, resp.text[:200])
-    raise HubError(resp.status_code, reason)
+    raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
 
 
 async def hub_put(
@@ -517,7 +534,8 @@ async def hub_put(
         async with _hub_client() as client:
             logger.info(
                 "[hub] PUT %s payload_keys=%s",
-                url, list(payload.keys()) if payload else None,
+                url,
+                list(payload.keys()) if payload else None,
             )
             resp = await client.request("PUT", url, json=payload, timeout=10)
     except HubAuthExpiredError as e:
@@ -530,4 +548,33 @@ async def hub_put(
         return resp.json().get("data") or {}
     reason = _extract_reason(resp)
     logger.warning("[hub] PUT %s returned %s: %s", url, resp.status_code, resp.text[:200])
-    raise HubError(resp.status_code, reason)
+    raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
+
+
+async def hub_upload_entity_file(
+    entity_type: BuiltinEntityType,
+    entity_id: str,
+    filename: str,
+    content: bytes,
+    sub_path: str = "upload",
+) -> None:
+    """Upload ONE file into an entity's hub VFS.
+
+    The single call behind both halves of entity-file write-through: the
+    per-upload mirror in ``_hub_reflect._reflect_fs_to_hub`` (a shared entity's
+    live writes) and the catch-up in ``Entity.share()`` (files that already
+    existed when the hub twin was created — they can't ride the create POST,
+    which is JSON, and ``fs/upload`` needs the id to exist first).
+
+    ``sub_path`` is the destination DIRECTORY, not the target name — the hub
+    takes the filename from the multipart part. Passing ``upload/<name>`` would
+    nest it as ``<name>/<name>``.
+    """
+    await hub_post(
+        entity_type,
+        {},
+        entity_id,
+        "fs",
+        sub_path,
+        files={"uploaded_file": (filename, content, "application/octet-stream")},
+    )

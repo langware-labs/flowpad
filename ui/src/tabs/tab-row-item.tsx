@@ -6,8 +6,7 @@
  * so the strip is homogeneous and the active chip is just `currentDock.tabHash`.
  *
  * Display data is backend-resolved on the Tab (`name`, `icon_key`, `worktree`,
- * `status`/`is_disabled`); the only client-side overlay is the pending-glow,
- * keyed by the process id.
+ * `status`/`is_disabled`).
  */
 import { AgentTrace, AgenticProcess, dataManager, editorForType, Shell, Tab, TypeId } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -15,7 +14,6 @@ import { type TabStripItem } from '@src/components/tabs/TabStrip';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { usePendingSessionIds } from '@src/store/pending-actions-store';
 import { TabLifecycleState, type TabLifecycleEntry, useTabLifecycles } from '@src/tabs/tab-lifecycle';
 import { ContentTabTooltip, humanizeType, LazyProcessTooltip, PROVIDER_META } from '@src/tabs/provider-meta';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
@@ -23,11 +21,6 @@ import { FileText, FolderGit2 } from 'lucide-react';
 import React, { useMemo } from 'react';
 
 const TERMINAL_TARGET_TYPES = new Set<string>([Shell.type, AgenticProcess.type]);
-const TAB_LABEL_MAX = 30;
-
-function clip(name: string): string {
-  return name.length > TAB_LABEL_MAX ? name.slice(0, TAB_LABEL_MAX).trimEnd() + '…' : name;
-}
 
 function lifecycleStatus(lifecycle: TabLifecycleEntry | null): {
   hasError: boolean;
@@ -47,19 +40,22 @@ function lifecycleStatus(lifecycle: TabLifecycleEntry | null): {
   return { hasError: false, isClosing: false, statusReason: '' };
 }
 
-/** Tab → chip. `isPending` is the only caller-supplied glow overlay. */
-export function tabItem(tab: Tab, isPending: boolean, lifecycle: TabLifecycleEntry | null = null): TabStripItem {
+/** Tab → chip. */
+export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): TabStripItem {
   // DockPointer from the stored JSON pointer; key is the tabHash.
   const dock = tab.dockPointer;
   const key = dock?.tabHash ?? tab.id;
-  const label = clip(tab.name ?? '');
+  // No char-level clipping: CSS truncation in the strip owns visible clipping
+  // at every chip width, and tooltips need the full name.
+  const label = tab.name ?? '';
   const viewType = dock?.viewType || '';
   const lifecycleOverlay = lifecycleStatus(lifecycle);
   const isDisabled = lifecycleOverlay.isClosing || tab.is_disabled;
   const statusReason = lifecycleOverlay.statusReason || (tab.is_disabled ? 'Closing...' : '');
-  // Projectless ("global") tabs surface in every project's strip; mark them in
-  // blue so it's clear they don't belong to the active project.
-  const titleClassName = tab.project_id == null ? 'text-blue-500' : undefined;
+  // Projectless ("global") tabs live in the Global scope; mark their title with
+  // the same violet the Global chip uses, so a global tab and its scope chip read
+  // as one visual language.
+  const titleClassName = tab.project_id == null ? 'text-violet-500' : undefined;
 
   if (TERMINAL_TARGET_TYPES.has(tab.target_type ?? '')) {
     const kind = (tab.icon_key && tab.icon_key in PROVIDER_META ? tab.icon_key : 'shell') as keyof typeof PROVIDER_META;
@@ -77,7 +73,6 @@ export function tabItem(tab: Tab, isPending: boolean, lifecycle: TabLifecycleEnt
       isDisabled,
       hasError: lifecycleOverlay.hasError,
       statusReason,
-      isPending,
       renameable: true,
       tooltip: processId ? (
         <LazyProcessTooltip
@@ -129,9 +124,8 @@ export function tabItem(tab: Tab, isPending: boolean, lifecycle: TabLifecycleEnt
   };
 }
 
-/** Map the ordered tabs → chips, overlaying the pending-glow by process id. */
+/** Map the ordered tabs → chips. */
 export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
-  const pending = usePendingSessionIds();
   const lifecycles = useTabLifecycles();
   const { currentDock } = useDockNavigation();
 
@@ -140,7 +134,10 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
   // at creation and can't track the asset you're viewing. For the ACTIVE Assets
   // tab we overlay the focused asset live from the current dock — its own name +
   // type icon — leaving inactive assets tabs on their stored scope title.
-  const focusTypeId = currentDock?.viewType === 'assets' ? currentDock.targetTypeId ?? null : null;
+  const focusVfsFilename =
+    currentDock?.viewType === ViewType.ASSETS ? currentDock.vfsPath?.filename || null : null;
+  const focusTypeId =
+    currentDock?.viewType === ViewType.ASSETS ? currentDock.targetTypeId ?? null : null;
   const focusType = focusTypeId?.type;
   const focusEditable = !!(focusType && editorForType(focusType));
   const focusEntity = focusTypeId
@@ -163,16 +160,19 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
   // The displayed name comes from the focused entity, except an agent_trace
   // shows its analyzed process's name instead (resolved reactively above).
   const titleSource = focusType === 'agent_trace' ? focusProcess : focusEntity;
-  const activeAssetTitle = focusEditable ? (titleSource?.displayName?.trim() ?? null) : null;
+  const activeAssetTitle =
+    focusVfsFilename ?? (focusEditable ? (titleSource?.displayName?.trim() ?? null) : null);
 
   return useMemo(
     () =>
       tabs.map((t) => {
         const key = t.dockPointer?.tabHash ?? t.id;
-        const item = tabItem(t, t.target_id ? pending.has(t.target_id) : false, lifecycles.get(key) ?? null);
+        const item = tabItem(t, lifecycles.get(key) ?? null);
+        if (key === currentDock?.tabHash && activeAssetTitle) {
+          item.title = activeAssetTitle;
+        }
         // `focusType` is only set on an assets dock, so it implies viewType==='assets'.
         if (key === currentDock?.tabHash && focusType && focusEditable) {
-          if (activeAssetTitle) item.title = clip(activeAssetTitle);
           const Icon = iconForType(focusType);
           item.icon = (
             <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={`${focusType} tab`} />
@@ -180,7 +180,7 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
         }
         return item;
       }),
-    [tabs, pending, lifecycles, currentDock, focusType, focusEditable, activeAssetTitle],
+    [tabs, lifecycles, currentDock, focusType, focusEditable, activeAssetTitle],
   );
 }
 

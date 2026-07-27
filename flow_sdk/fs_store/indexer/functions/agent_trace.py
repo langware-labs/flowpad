@@ -68,23 +68,7 @@ def agent_trace_id(ref: FSRef) -> str:
     return _adopt_doc_id(_load_trace(ref._path)) or _trace_id_from_path(ref._path)
 
 
-def agent_trace_gen_id(ref: FSRef) -> str:
-    """Mint+write a stable id into trace.json (idempotent)."""
-    data = _load_trace(ref._path)
-    existing = _adopt_doc_id(data)
-    if existing:
-        return existing
-    new_id = _trace_id_from_path(ref._path)
-    if data:
-        data["id"] = new_id
-        try:
-            ref._path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        except OSError:
-            pass
-    return new_id
-
-
-def extract_agent_trace(ref: FSRef) -> list[FSRecord]:
+def extract_agent_trace(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a trace.json into a Record — summary fields only.
 
     FTS content is name + verdict + verdict_reason; the trace payload itself
@@ -96,12 +80,11 @@ def extract_agent_trace(ref: FSRef) -> list[FSRecord]:
     name = str(data.get("name") or path.parent.name)
     verdict = summary.get("verdict")
     verdict_reason = summary.get("verdict_reason")
-    rec_id = _adopt_doc_id(data) or _trace_id_from_path(path)
 
     content_parts = [p for p in (name, verdict, verdict_reason) if p]
     rec = FSRecord(
         type=RecordType.AGENT_TRACE,
-        id=rec_id,
+        id=resolved_id,
         name=name,
         session_id=str(data.get("session_id") or ""),
         worker_type=str(data.get("worker_type") or "claude"),

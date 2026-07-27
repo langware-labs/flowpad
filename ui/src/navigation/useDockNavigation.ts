@@ -2,6 +2,7 @@ import { Layout } from '@sdk';
 import { defineGlobal } from '@sdk/utils';
 import { useMemo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
+import { ViewType } from '@src/types/ViewType';
 import { DockPointer } from './DockPointer';
 import { NavigationActions } from './NavigationActions';
 import { detectLayout } from './url-builder';
@@ -46,13 +47,17 @@ export interface UseDockNavigationReturn {
  * }
  * ```
  */
-export function useDockNavigation(): UseDockNavigationReturn {
-  const navigate = useNavigate();
+/**
+ * Read-only selector for the current dock pointer parsed from the URL. Prefer this
+ * over the full {@link useDockNavigation} when a component only needs to know *what*
+ * is shown (e.g. which view type) and never navigates — it skips building a
+ * NavigationActions instance and rewriting the `navigation` global on every URL change.
+ */
+export function useCurrentDock(): DockPointer | null {
   const location = useLocation();
-  const params = useParams<{ agentId: string; processId: string; viewType?: string; pointer?: string; '*'?: string }>();
+  const params = useParams<{ viewType?: string }>();
 
-  // Parse current dock state from URL
-  const currentDock = useMemo(() => {
+  return useMemo(() => {
     if (params.viewType) {
       try {
         return DockPointer.fromUrl(`${location.pathname}${location.search}`);
@@ -64,6 +69,26 @@ export function useDockNavigation(): UseDockNavigationReturn {
     }
     return null;
   }, [location.pathname, location.search, params.viewType]);
+}
+
+/**
+ * True when the current URL is a *home* surface in ANY view mode — the bare
+ * home (no dock URL) or the HOME view (incl. the vibe `vibeNoProcess` landing)
+ * — as opposed to a workspace or any other dock. This is the single predicate
+ * for "is there no active session here worth preserving": consumed by
+ * `flow-page` to pick the home hero and by the project-open flow to decide
+ * whether switching a project should resume its last tab/build process (it
+ * shouldn't, on home — home stays home, on the new project).
+ */
+export function useIsHomeSurface(): boolean {
+  const currentDock = useCurrentDock();
+  return currentDock === null || currentDock.viewType === ViewType.HOME;
+}
+
+export function useDockNavigation(): UseDockNavigationReturn {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const currentDock = useCurrentDock();
 
   // Create navigation instance with currentDock so openDock() can deduplicate
   const navigation = useMemo(() => {

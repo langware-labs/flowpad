@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ConversationParticipant, QueryRequest, User } from '@sdk';
+import { ConversationParticipant, normalizeEmail, QueryRequest, User } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
 /** Shared email shape check, used by every recipient-entry surface. */
@@ -16,14 +16,20 @@ export function participantKey(p: ConversationParticipant): string {
   return (p.user_id || p.email || p.name || '').trim().toLowerCase();
 }
 
-/** Build a ConversationParticipant from a contact User (remote → carry user_id). */
+/**
+ * Build a ConversationParticipant from a contact User. Carry the contact's
+ * identity so a contact known only by hub id (no email) is still selectable:
+ * prefer the foreign hub ``user_id``, else the local entity ``id`` for a remote
+ * contact. A purely-local contact (has email, no hub id) carries none.
+ */
 export function participantFromContact(u: User): ConversationParticipant {
   const participant: ConversationParticipant = {
-    email: u.email ?? null,
+    email: normalizeEmail(u.email),
     name: u.name ?? null,
   };
-  if (u.remote && u.id) {
-    participant.user_id = u.id;
+  const hubId = u.user_id || (u.remote ? u.id : undefined);
+  if (hubId) {
+    participant.user_id = hubId;
   }
   return participant;
 }
@@ -36,14 +42,14 @@ export function participantFromContact(u: User): ConversationParticipant {
 export function useContacts(
   excludeUserId?: string | null,
   enabled: boolean = true,
-): { contacts: User[] } {
+): { contacts: User[]; refetch: () => void } {
   const usersRequest = useMemo(() => new QueryRequest({ type: User.type }), []);
-  const { data: allUsers = [] } = useEntitiesQuery<User>(usersRequest, { enabled });
+  const { data: allUsers = [], refetch } = useEntitiesQuery<User>(usersRequest, { enabled });
   const contacts = useMemo(
     () => allUsers.filter((u) => !excludeUserId || u.id !== excludeUserId),
     [allUsers, excludeUserId],
   );
-  return { contacts };
+  return { contacts, refetch };
 }
 
 /** Filter contacts by a name/email query (case-insensitive). Empty → all. */

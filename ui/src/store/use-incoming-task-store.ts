@@ -1,13 +1,12 @@
 import { create } from 'zustand';
+import type { GitOrigin } from '@sdk/models/GitOrigin';
 
 export interface IncomingTaskParams {
   taskId: string;
   taskTitle: string;
   senderName: string;
-  /** Repo URL (from REPO attachment or notification metadata). When absent the UI navigates directly to the task. */
-  projectUrl?: string;
-  branch?: string;
-  repoId?: string;
+  /** Git origin reference. When absent the UI navigates directly to the task. */
+  gitOrigin?: GitOrigin | null;
 }
 
 interface IncomingTaskState {

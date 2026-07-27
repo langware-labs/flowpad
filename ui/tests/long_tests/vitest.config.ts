@@ -30,6 +30,13 @@ export default mergeConfig(
       hookTimeout: 15000,
       include: ['tests/long_tests/**/*.test.{ts,tsx}', 'tests/api/**/*.test.{ts,tsx}'],
       exclude: ['**/node_modules/**'],
+      // The include also pulls in `tests/api/**` component tests (e.g.
+      // DirectoryTree), which render components using the i18n `useLingui`
+      // hook. Load the shared lingui shim (activates the source locale + binds
+      // `useLingui`) so those render without an `I18nProvider`, exactly like the
+      // `api`/`react` tiers do. long_tests do their own `apiTestSetup` in-body,
+      // so only the lingui shim is needed here.
+      setupFiles: [path.resolve(__dirname, '../_lingui-mock.ts')],
       pool: 'threads',
       poolOptions: {
         threads: {

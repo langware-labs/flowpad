@@ -47,6 +47,19 @@ export class FlowDataStream extends EventEmitter {
   // preventing render-loop bursts in `useSyncExternalStore` consumers.
   private _emitBuffer: FlowData[] | null = null;
 
+  // Memoized `items` result. The getter used to copy + timestamp-sort the
+  // whole stream on EVERY access (with a `new Date(...)` parse per comparison)
+  // — `useSyncExternalStore` snapshots read it on every 'data' emit and every
+  // render, which at 1,000+ frames made each live frame O(n log n) in Date
+  // parses (QA issue D10). Invalidate ONLY on membership changes (push /
+  // clear / substream wiring); in-place consolidation (`appendContent`)
+  // mutates an already-listed item and never reorders, so it keeps the cache.
+  private _itemsCache: readonly FlowData[] | null = null;
+
+  private _invalidateItems(): void {
+    this._itemsCache = null;
+  }
+
   /**
    * Creates a new FlowDataStream
    * @param nameOrConfig - Either a string name (id will be auto-generated) or a config object with id and/or name
@@ -127,6 +140,7 @@ export class FlowDataStream extends EventEmitter {
   }
 
   addSubstream(stream: FlowDataStream, filter?: SubstreamFilter): void {
+    this._invalidateItems();
     const substream = new Substream(stream.id, stream, filter);
     this._substreams.push(substream);
     stream._parent = this;
@@ -142,6 +156,7 @@ export class FlowDataStream extends EventEmitter {
   }
 
   removeSubstream(id: string): void {
+    this._invalidateItems();
     const index = this._substreams.findIndex((s) => s.id === id);
     if (index !== -1) {
       const substream = this._substreams[index];
@@ -206,6 +221,10 @@ export class FlowDataStream extends EventEmitter {
   // Override EventEmitter.emit so the 7 ingest-path `'data'` emissions can
   // be coalesced by `ingestBatch` without touching every emit site.
   emit(event: string | symbol, ...args: any[]): boolean {
+    // Every membership change (own push or forwarded substream data) emits
+    // 'data', so this is the single chokepoint for cache invalidation —
+    // BEFORE the batch buffer check, since buffered emits still pushed.
+    if (event === 'data') this._invalidateItems();
     if (event === 'data' && this._emitBuffer) {
       const items = args[0];
       if (Array.isArray(items)) this._emitBuffer.push(...items);
@@ -442,6 +461,7 @@ export class FlowDataStream extends EventEmitter {
   }
 
   clear(): void {
+    this._invalidateItems();
     this._ownItems = [];
     this._isComplete = false;
     this._substreams = [];
@@ -480,6 +500,8 @@ export class FlowDataStream extends EventEmitter {
     return [...this._ownItems];
   }
   get items(): readonly FlowData[] {
+    if (this._itemsCache) return this._itemsCache;
+
     const allItems: FlowData[] = [...this._ownItems];
 
     for (const substream of this._substreams) {
@@ -492,11 +514,13 @@ export class FlowDataStream extends EventEmitter {
       }
     }
 
-    return allItems.sort((a, b) => {
-      const timeA = new Date(a.timestamp).getTime();
-      const timeB = new Date(b.timestamp).getTime();
-      return timeA - timeB;
-    });
+    // Decorate-sort-undecorate: parse each timestamp exactly once (O(n))
+    // instead of once per comparison. Array.prototype.sort is stable, so
+    // equal timestamps keep insertion order — same contract as before.
+    const keyed = allItems.map((item, i) => ({ t: new Date(item.timestamp).getTime(), i, item }));
+    keyed.sort((a, b) => a.t - b.t || a.i - b.i);
+    this._itemsCache = keyed.map((k) => k.item);
+    return this._itemsCache;
   }
 
   get isEmpty(): boolean {

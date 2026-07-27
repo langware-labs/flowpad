@@ -7,7 +7,10 @@ import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-
 import { sdkConfig } from '@sdk/config/index';
 import { connectionManager } from '@sdk/websocket';
 import { useIsDev } from '@src/components/view-mode';
+import { usePreference } from '@src/hooks/use-preference';
+import { instancePreferences, PrefKey } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
+import { useMinimizeOnClose } from '@src/hooks/use-minimize-on-close';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Check,
@@ -16,11 +19,14 @@ import {
   Copy,
   ExternalLink,
   History,
+  KeyRound,
   Loader2,
   RefreshCw,
   Stethoscope,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+
+import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
 
 interface PypiRelease {
   version: string;
@@ -263,6 +269,8 @@ interface VersionPopoverProps {
 export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
+  // Closing the popover genie-minimizes it into the version button.
+  const { sourceRef, targetRef, handleOpenChange } = useMinimizeOnClose(setOpen);
   const [data, setData] = useState<VersionCheckResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -284,6 +292,22 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
 
   const electronApi = getElectronApi();
   const mode: 'Desktop' | 'Browser' = electronApi ? 'Desktop' : 'Browser';
+
+  // Dev-only: which SPA page the local server renders. The backend reads this
+  // preference at bootstrap to set supported_pages, so changing it needs a full
+  // reload to re-bootstrap. Flush the debounced save first so the reload sees it.
+  const [appPage] = usePreference<string>(PrefKey.APP_PAGE);
+  const [switchingPage, setSwitchingPage] = useState(false);
+  const selectAppPage = useCallback(
+    async (page: 'desk' | 'hub') => {
+      if (page === (appPage ?? 'desk') || switchingPage) return;
+      setSwitchingPage(true);
+      instancePreferences.set(PrefKey.APP_PAGE, page);
+      await instancePreferences.saveJson();
+      window.location.reload();
+    },
+    [appPage, switchingPage],
+  );
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -411,9 +435,10 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   }, [data?.releases, currentVersion, pypi?.latest, electronVersion, githubLatest]);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
+          ref={targetRef}
           type="button"
           className="flex items-center gap-1 rounded-sm px-1.5 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           title={t`Flowpad version`}
@@ -426,7 +451,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="end" className="w-96 p-3">
+      <PopoverContent ref={sourceRef} side="top" align="end" className="w-96 p-3">
         <div className="space-y-3">
           {/* Header */}
           <div className="flex items-center justify-between">
@@ -452,6 +477,35 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             </button>
           </div>
+
+          {/* Dev-only: render the local desktop server's hub page for testing/debugging. */}
+          {isDev && (
+            <div className="flex items-center justify-between rounded-md border bg-muted/30 px-2 py-1.5">
+              <span className="text-[11px] font-medium text-muted-foreground"><Trans>Page</Trans></span>
+              <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5" role="group" aria-label={t`App page`}>
+                {(['desk', 'hub'] as const).map((page) => {
+                  const active = (appPage ?? 'desk') === page;
+                  return (
+                    <button
+                      key={page}
+                      type="button"
+                      data-testid={`app-page-${page}`}
+                      aria-pressed={active}
+                      disabled={switchingPage}
+                      onClick={() => void selectAppPage(page)}
+                      className={`rounded-sm px-2 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                        active
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {page === 'desk' ? <Trans>Desktop</Trans> : <Trans>Hub</Trans>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">
@@ -689,11 +743,26 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           </section>
 
           {/* Toolbar */}
-          <div className="-mx-3 -mb-3 mt-1 border-t px-3 pb-1 pt-2.5">
+          <div className="-mx-3 -mb-3 mt-1 flex gap-2 border-t px-3 pb-1 pt-2.5">
             <Button
               type="button"
               size="sm"
-              className="w-full"
+              variant="outline"
+              className="flex-1"
+              onClick={() => {
+                setOpen(false);
+                openHarnessLoginModal();
+              }}
+              title={t`Harness sign-in & status`}
+              data-testid="version-harness-status"
+            >
+              <KeyRound />
+              <span><Trans>Harness status</Trans></span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="flex-1"
               onClick={() => {
                 setOpen(false);
                 setDiagnoseOpen(true);

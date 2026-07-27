@@ -24,6 +24,7 @@ import asyncio
 import functools
 import json
 import logging
+import ntpath
 import os
 import platform
 import shutil
@@ -32,7 +33,7 @@ import subprocess
 import time
 import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter
 
@@ -40,7 +41,7 @@ from flow_sdk._compat import StrEnum
 from flow_sdk._version import __version__
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.project import Project
-from flow_sdk.builtin.user import User
+from flow_sdk.builtin.user import User, normalize_email
 from flow_sdk.builtin.workspace import Workspace
 from flow_sdk.config import (
     AGENT_MOUNT_FOLDER,
@@ -60,6 +61,7 @@ from flow_sdk.external_apis.llm.llm_drivers.definitions import LLMProvider
 from flow_sdk.flowpad_types.runtime_environment import OSType, RuntimeEnvironment
 from flow_sdk.models import AppPaths, BootstrapInfo, EnvInfo, LmInfo
 from flow_sdk.models.responses import ApiSuccessResponse
+from flow_sdk.preferences import DEFAULT_SHARE_MESSAGE_STATUS, PREF_SHARE_MESSAGE_STATUS
 
 router = APIRouter()
 
@@ -109,7 +111,7 @@ def get_default_desktop_email() -> str:
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
     """
     hostname = socket.gethostname()
-    return f"{hostname}@{DESKTOP_EMAIL_DOMAIN}"
+    return normalize_email(f"{hostname}@{DESKTOP_EMAIL_DOMAIN}") or ""
 
 
 def get_name() -> Optional[str]:
@@ -150,7 +152,7 @@ def get_email() -> Optional[str]:
             text=True,
             timeout=2,
         )
-        email = result.stdout.strip()
+        email = normalize_email(result.stdout)
         if email:
             return email
     except Exception:
@@ -174,8 +176,8 @@ def get_email() -> Optional[str]:
                         # Extract email from line like: AccountID = "email@example.com";
                         parts = line.split('"')
                         if len(parts) >= 2:
-                            email = parts[1].strip()
-                            if "@" in email:
+                            email = normalize_email(parts[1])
+                            if email and "@" in email:
                                 return email
         except Exception:
             pass
@@ -189,14 +191,14 @@ def get_email() -> Optional[str]:
                 r"Software\Microsoft\IdentityCRL\UserExtendedProperties",
             )
             # Enumerate subkeys to find email
-            email = winreg.EnumKey(key, 0)
+            email = normalize_email(winreg.EnumKey(key, 0))
             if email and "@" in email:
                 return email
         except Exception:
             pass
 
     # Fall back to environment variables
-    email = os.environ.get("EMAIL") or os.environ.get("USER_EMAIL")
+    email = normalize_email(os.environ.get("EMAIL") or os.environ.get("USER_EMAIL"))
     if email:
         return email
 
@@ -1165,6 +1167,97 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
     return ensured
 
 
+async def _reap_protected_path_projects() -> None:
+    """Remove stale protected-path Project rows and exact Project shadows.
+
+    Source content and relationship targets are deliberately untouched:
+    ``Project.destroy`` / ``FSRecord.destroy`` cascade through entity children,
+    while project delete-with-children can remove source folders.
+    """
+    from flow_sdk.builtin.tab import delete_tabs_for_missing_project  # noqa: PLC0415
+    from flow_sdk.core.cache.entity_cache import uname_cache  # noqa: PLC0415
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.roots import _CWD_PID_CACHE  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.all_projects import (  # noqa: PLC0415
+        invalidate_projects_cache,
+    )
+    from flow_sdk.fs_store.path_utils import is_protected_path  # noqa: PLC0415
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    settings = get_instance_settings()
+    project_shadows = settings.records_root / "project"
+    projects = await Project.get_all()
+    rows_by_id = {str(project.id): project for project in projects}
+    protected_row_ids = {
+        str(project.id)
+        for project in projects
+        if project.fs_storage_mount_path and project.protected_path
+    }
+
+    # Orphan shadows are independent evidence: their DB row may already be
+    # gone, but protected-path metadata must not survive to be re-adopted.
+    shadow_by_id: dict[str, Path] = {}
+    protected_shadow_ids: set[str] = set()
+    if project_shadows.is_dir():
+        for shadow in project_shadows.iterdir():
+            metadata = shadow / "metadata.json"
+            if not shadow.is_dir() or not metadata.is_file():
+                continue
+            try:
+                data = json.loads(metadata.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            project_id = str(data.get("id") or shadow.name)
+            mount = (
+                data.get("fs_storage_mount_path")
+                or data.get("cwd")
+                or data.get("real_path")
+            )
+            name = data.get("name")
+            if not mount and isinstance(name, str) and (
+                os.path.isabs(name) or ntpath.isabs(name)
+            ):
+                mount = name
+            if mount and is_protected_path(mount):
+                protected_shadow_ids.add(project_id)
+                shadow_by_id[project_id] = shadow
+
+    protected_ids = protected_row_ids | protected_shadow_ids
+    if not protected_ids:
+        return
+
+    driver = get_db_driver()
+    for project_id in sorted(protected_ids):
+        project = rows_by_id.get(project_id)
+        if project_id in protected_row_ids and project is not None:
+            if hasattr(driver, "fts_delete"):
+                await driver.fts_delete(project_id)
+            if project.uname:
+                uname_cache.invalidate("project", project.uname)
+            await Project.delete_by_id(project_id)
+
+        shadow = shadow_by_id.get(project_id) or project_shadows / project_id
+        try:
+            if shadow.parent.resolve() == project_shadows.resolve():
+                shutil.rmtree(shadow)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logging.warning(
+                "[bootstrap] Failed to remove protected-path project shadow %s: %s",
+                shadow,
+                exc,
+            )
+
+        if project_id in protected_row_ids or project is None:
+            await delete_tabs_for_missing_project(project_id)
+        logging.info("[bootstrap] Reaped protected-path project %s", project_id)
+
+    if protected_row_ids:
+        invalidate_projects_cache()
+        _CWD_PID_CACHE.clear()
+
+
 async def _index_system_project_markdowns(projects: list[Project]) -> None:
     """Seed Markdown entities for every .md file under each system project's
     ``docs/`` and ``.claude/docs/`` subtree.
@@ -1179,7 +1272,7 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
 
     from flow_sdk.core.entity import Entity  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown, markdown_id  # noqa: PLC0415
 
     for proj in projects:
         mount = proj.fs_storage_mount_path
@@ -1192,7 +1285,13 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
                 continue
             for md_path in base.rglob("*.md"):
                 try:
-                    records = extract_markdown(_FSRef(md_path))
+                    # Resolve id READ-ONLY (frontmatter id, else stable
+                    # uuid5(path)) — extract_markdown requires it since capsule
+                    # refactor 4f94fb92, and bootstrap must not stamp identity
+                    # capsules into tracked repo/system docs. Deterministic id
+                    # also makes this seeding idempotent across bootstraps.
+                    _md_ref = _FSRef(md_path)
+                    records = extract_markdown(_md_ref, markdown_id(_md_ref))
                     if not records:
                         continue
                     rec = records[0]
@@ -1231,6 +1330,10 @@ async def index_system_content() -> None:
     except Exception as e:
         logging.warning(f"[startup-index] Failed to ensure system projects (non-fatal): {e}")
     try:
+        await _reap_protected_path_projects()
+    except Exception as e:
+        logging.warning(f"[startup-index] Failed to reap mount-root project (non-fatal): {e}")
+    try:
         await _index_system_project_markdowns(system_projects)
     except Exception as e:
         logging.warning(f"[startup-index] Failed to index system markdowns (non-fatal): {e}")
@@ -1252,24 +1355,79 @@ async def index_system_content() -> None:
 
 
 # Bookmark.source value tagging the onboarding favorite (used to find/delete it
-# on reset). FeedEntry onboarding assets are tagged by ``data.kind == "wiki_tip"``.
+# on reset). The Welcome FeedEntry is tagged by ``data.category`` below.
 _ONBOARDING_SOURCE = "onboarding"
+# data.category on the Welcome feed entry — the stable id used to find/dedup/delete
+# it (robust vs the old ``data.kind == "wiki_tip"`` match).
+_ONBOARDING_FEED_CATEGORY = "onboarding.feed_welcome"
+# Preference gate (a dotted PrefKey in preferences.json, mirrored to the frontend
+# registry as PrefKey.ONBOARDING_WELCOME). true|missing → seed on start, then false.
+# This is the ONE key both the backend (this seeder) and the frontend (a surfaced
+# toggle) write; both merge into preferences.json so they don't clobber other keys,
+# but this key itself is last-writer-wins by design (the backend writes it at most
+# once per boot, so a concurrent UI toggle losing is benign: re-seed or don't).
+_ONBOARDING_WELCOME_KEY = "preferences.onboarding.welcome"
+# Default when the key is absent: true ⇒ a fresh instance seeds on first start.
+_ONBOARDING_WELCOME_DEFAULT = True
+
+
+def _preferences_path() -> Path:
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return get_instance_settings().instance_dir / "preferences.json"
+
+
+def _read_pref(key: str, default: Any) -> Any:
+    """Read a single key from the instance preferences.json. Thin wrapper over
+    the shared, import-light reader (``flow_sdk.preferences``)."""
+    from flow_sdk.preferences import read_instance_pref  # noqa: PLC0415
+
+    return read_instance_pref(key, default)
+
+
+def _write_pref(key: str, value: Any) -> None:
+    """Merge a single key into preferences.json (read-modify-write), preserving
+    every other key the frontend owns. Thin wrapper over the shared writer."""
+    from flow_sdk.preferences import write_instance_pref  # noqa: PLC0415
+
+    if not write_instance_pref(key, value):
+        logging.warning(f"[onboarding] failed to write {key} to preferences.json")
+
+
+def _resolve_supported_pages() -> list[str]:
+    """Which SPA page(s) this local server advertises in bootstrap.
+
+    The same OSS bundle renders either the desktop (`desk`) or the hub (`hub`)
+    page, selected by `supported_pages`. The local desktop server serves BOTH:
+    `desk` stays first so it remains the default landing home (an unqualified
+    dock never redirects away from desktop), while `hub` is also advertised so
+    the hub page's dock URLs (`/dock/hub/...`) are reachable in the same build
+    without the version-modal toggle.
+
+    Because `desk` is present, the frontend's `isHubOnly()` stays false, so the
+    app keeps calling the desktop-only endpoints (`tab`, `capability`,
+    `bookmark`, ...) as normal.
+    """
+    return ["desk", "hub"]
 
 
 async def create_onboarding_assets(user: User) -> None:
     """One-shot onboarding seed for the user's home view:
 
-    1. a favorite **bookmark** to the Welcome markdown, and
-    2. a Welcome **WikiTip feed entry** (``data.kind == "wiki_tip"`` →
-       WikiTipFeedEntryCard; see docs/wikitip.md).
+    1. a favorite **bookmark** to the Welcome markdown (already a fixture), and
+    2. a Welcome **feed entry** tagged ``data.category == "onboarding.feed_welcome"``
+       (kept ``kind == "wiki_tip"`` so WikiTipFeedEntryCard renders it and a click
+       opens the Welcome wiki; see docs/wikitip.md).
 
-    Idempotent via ``user.onboarded``. Runs at the tail of
-    ``index_system_content`` (after the markdown index has landed), so the
-    Welcome doc is a plain lookup — no polling. If it's still not found, leave
-    ``onboarded`` False so the next process restart retries. Re-run after
-    clearing ``onboarded`` (see ``/api/v1/onboarding/reset``) to re-seed.
+    Gated by the ``preferences.onboarding.welcome`` preference (true|missing → seed,
+    then flip it to false). Each asset is created idempotently so a stray true with
+    assets already present can't duplicate them. Runs at the tail of
+    ``index_system_content`` (after the markdown index has landed), so the Welcome
+    doc is a plain lookup. If it's still not found, leave the gate on so the next
+    process restart retries. Flip the gate back on (or ``/onboarding/reset``) to
+    re-seed.
     """
-    if getattr(user, "onboarded", False):
+    if not _read_pref(_ONBOARDING_WELCOME_KEY, _ONBOARDING_WELCOME_DEFAULT):
         return
 
     from flow_sdk.builtin.bookmark import Bookmark, BookmarkType  # noqa: PLC0415
@@ -1282,32 +1440,48 @@ async def create_onboarding_assets(user: User) -> None:
         return
     welcome = candidates[0]
 
-    # 1) Favorite bookmark to the Welcome page on the home view.
-    favorite = Bookmark(
-        bookmark_type=BookmarkType.FAVORITE.value,
-        title="Welcome",
-        source=_ONBOARDING_SOURCE,
-        data={
-            "entity_type": "markdown",
-            "entity_id": str(welcome.typeid),
-            "icon": "BookOpen",
-            # The favorite click handler reads asset_ref from data.nav and
-            # routes directly, bypassing a name-resolution hop on click.
-            "nav": {"asset_ref": welcome.asset_ref or ""},
-        },
+    # 1) Favorite bookmark to the Welcome page on the home view (skip if present).
+    has_bookmark = any(
+        getattr(bm, "source", None) == _ONBOARDING_SOURCE
+        for bm in await Bookmark.get_all(source_entity=user.typeid)
     )
-    await favorite.save(owner=user)
+    if not has_bookmark:
+        favorite = Bookmark(
+            bookmark_type=BookmarkType.FAVORITE.value,
+            title="Welcome",
+            source=_ONBOARDING_SOURCE,
+            data={
+                "entity_type": "markdown",
+                "entity_id": str(welcome.typeid),
+                "icon": "BookOpen",
+                # The favorite click handler reads asset_ref from data.nav and
+                # routes directly, bypassing a name-resolution hop on click.
+                "nav": {"asset_ref": welcome.asset_ref or ""},
+            },
+        )
+        await favorite.save(owner=user)
 
-    # 2) WikiTip Home Feed entry pointing at the Welcome page.
-    feed_entry = FeedEntry(
-        feed_status=FeedStatus.NEW.value,
-        data={"type_id": str(welcome.typeid), "kind": "wiki_tip", "wiki": "Welcome"},
+    # 2) Welcome Home Feed entry pointing at the Welcome wiki page (skip if present).
+    has_feed = any(
+        (fe.data or {}).get("category") == _ONBOARDING_FEED_CATEGORY
+        for fe in await FeedEntry.get_all(source_entity=user.typeid)
     )
-    await feed_entry.save(user.typeid)
+    if not has_feed:
+        feed_entry = FeedEntry(
+            feed_status=FeedStatus.NEW.value,
+            data={
+                "category": _ONBOARDING_FEED_CATEGORY,
+                "kind": "wiki_tip",
+                "wiki": "Welcome",
+                "type_id": str(welcome.typeid),
+            },
+        )
+        await feed_entry.save(user.typeid)
 
-    user.onboarded = True
-    await user.save()
-    logging.info(f"[bootstrap] Seeded onboarding assets (favorite + WikiTip feed) for user {user.typeid}")
+    # Done — flip the gate off. The pref is the sole onboarding SSOT (nothing reads
+    # the legacy User.onboarded field anymore).
+    _write_pref(_ONBOARDING_WELCOME_KEY, False)
+    logging.info(f"[bootstrap] Seeded onboarding assets (favorite + Welcome feed) for user {user.typeid}")
 
 
 async def _delete_onboarding_assets(user: User) -> int:
@@ -1322,7 +1496,10 @@ async def _delete_onboarding_assets(user: User) -> int:
             await bm.delete()
             removed += 1
     for fe in await FeedEntry.get_all(source_entity=user.typeid):
-        if (fe.data or {}).get("kind") == "wiki_tip":
+        data = fe.data or {}
+        # Match the Welcome feed entry by its category tag; also clean up entries
+        # seeded by the older kind-only tagging so reset stays effective.
+        if data.get("category") == _ONBOARDING_FEED_CATEGORY or data.get("kind") == "wiki_tip":
             await fe.delete()
             removed += 1
     return removed
@@ -1330,23 +1507,22 @@ async def _delete_onboarding_assets(user: User) -> int:
 
 @router.get("/api/v1/onboarding/status")
 async def onboarding_status() -> ApiSuccessResponse[dict]:
-    """Whether onboarding assets have been seeded for the local user. Surfaced
-    in profile settings next to Dev mode."""
-    user = await get_or_create_local_user()
-    return ApiSuccessResponse[dict](data={"onboarded": getattr(user, "onboarded", False)})
+    """Whether onboarding assets have been seeded. Onboarded ≡ the
+    ``preferences.onboarding.welcome`` gate is off. Surfaced in profile settings."""
+    return ApiSuccessResponse[dict](data={"onboarded": not _read_pref(_ONBOARDING_WELCOME_KEY, _ONBOARDING_WELCOME_DEFAULT)})
 
 
 @router.post("/api/v1/onboarding/reset")
 async def onboarding_reset() -> ApiSuccessResponse[dict]:
-    """Reset onboarding: delete the seeded assets, clear ``onboarded``, and
-    re-seed fresh. A dev/testing affordance surfaced in profile settings."""
+    """Reset onboarding: delete the seeded assets, turn the
+    ``preferences.onboarding.welcome`` gate back on, and re-seed fresh (which flips
+    the gate off again). A dev/testing affordance surfaced in profile settings."""
     user = await get_or_create_local_user()
     removed = await _delete_onboarding_assets(user)
-    user.onboarded = False
-    await user.save()
+    _write_pref(_ONBOARDING_WELCOME_KEY, True)
     await create_onboarding_assets(user)
     logging.info(f"[onboarding/reset] removed {removed} asset(s), re-seeded for user {user.typeid}")
-    return ApiSuccessResponse[dict](data={"onboarded": getattr(user, "onboarded", False)})
+    return ApiSuccessResponse[dict](data={"onboarded": not _read_pref(_ONBOARDING_WELCOME_KEY, _ONBOARDING_WELCOME_DEFAULT)})
 
 
 # ---------------------------------------------------------------------------
@@ -1387,23 +1563,49 @@ def setup_desktop_filesystem() -> None:
             logging.warning(f"Failed to create logs subdirectory {subdir}: {e}")
     logging.info(f"Logs folder ensured at: {logs_base}")
 
-    # Per-instance UI preferences. Defaults must stay in sync with
-    # DEFAULT_PREFERENCES in ts_sdk/src/services/InstancePreferences.ts.
+    # Per-instance UI preferences. Defaults must stay in sync with the
+    # PREF_REGISTRY in ts_sdk/src/preferences/prefRegistry.ts. Keys are the dotted
+    # tag ids `preferences.<category>.<name>`; the frontend store migrates any
+    # legacy flat-keyed preferences.json on load.
     # Legacy location: <workspace>/.flow/settings.json — migrated below.
-    prefs_path = get_instance_settings().instance_dir / "preferences.json"
+    prefs_path = _preferences_path()
     legacy_settings_path = workspace_path / ".flow" / "settings.json"
 
-    # Single source of truth for the default-stub shape. The set of known keys
-    # also bounds what we migrate from a legacy settings.json — anything else
-    # is silently dropped instead of riding along forever as dead weight.
+    # Single source of truth for the default-stub shape, keyed by dotted PrefKey.
     default_prefs = {
-        "show_system_skills": True,
-        "default_terminal": "builtin_xterm",
-        "buffer_sync_updates": False,
-        "notification_sound_enabled": False,
-        "notification_sound_key": "supershort-ping",
+        "preferences.general.show_system_skills": True,
+        "preferences.general.default_terminal": "builtin_xterm",
+        "preferences.terminal.buffer_sync_updates": False,
+        "preferences.notifications.sound_enabled": False,
+        "preferences.notifications.sound_key": "supershort-ping",
+        PREF_SHARE_MESSAGE_STATUS: DEFAULT_SHARE_MESSAGE_STATUS,
+        "preferences.advanced.scrollback_lines": 1000,
+        "preferences.advanced.experimental_flags": {},
+        # Indexer engine: "python" (FSIndexer) | "rust" (external RSIndexer via
+        # FLOWPAD_RS_INDEXER_BIN; falls back to python when unavailable).
+        "preferences.advanced.indexer_backend": "python",
+        # Per-folder indexing consent (macOS-TCC / cross-OS special folders).
+        # "ask" (default) → surface an in-app consent request before walking;
+        # "skip" → never walk; "allow" → walk (one expected OS prompt); "denied"
+        # → OS refused post-allow, don't re-ask. See special_folders.py.
+        "preferences.indexing.folders.documents": "ask",
+        "preferences.indexing.folders.desktop": "ask",
+        "preferences.indexing.folders.downloads": "ask",
+        # Onboarding gate: true (or missing) → seed onboarding assets on start, then
+        # the seeder flips it to false. Flip back on to re-seed on the next start.
+        _ONBOARDING_WELCOME_KEY: _ONBOARDING_WELCOME_DEFAULT,
     }
     known_pref_keys = set(default_prefs.keys())
+
+    # Old flat field name → dotted PrefKey. Bounds what we migrate from a legacy
+    # settings.json (anything else is dropped) and re-keys it to the new shape.
+    legacy_key_map = {
+        "show_system_skills": "preferences.general.show_system_skills",
+        "default_terminal": "preferences.general.default_terminal",
+        "buffer_sync_updates": "preferences.terminal.buffer_sync_updates",
+        "notification_sound_enabled": "preferences.notifications.sound_enabled",
+        "notification_sound_key": "preferences.notifications.sound_key",
+    }
 
     def _read_existing_prefs(path: Path) -> Optional[dict]:
         """Return the parsed dict, or None if file is missing/malformed/non-object."""
@@ -1430,7 +1632,11 @@ def setup_desktop_filesystem() -> None:
                 f"or not a dict; falling back to defaults"
             )
             return None
-        return {**default_prefs, **{k: v for k, v in legacy.items() if k in known_pref_keys}}
+        # Legacy settings.json uses old flat field names — re-key to dotted PrefKeys.
+        migrated_pairs = {
+            legacy_key_map[k]: v for k, v in legacy.items() if k in legacy_key_map
+        }
+        return {**default_prefs, **migrated_pairs}
 
     try:
         prefs_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1629,6 +1835,17 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
         _t.time("get_or_create_local_compute_node")
 
+        # Ensure + repair the @local inbox unread projection. The mutable
+        # ``unread`` value is deliberately NOT put in BootstrapInfo (cached 30s)
+        # — the FE hydrates it via the normal entity GET/watch channel.
+        try:
+            from flow_sdk.inbox import recompute_unread as _recompute_unread
+
+            await _recompute_unread("bootstrap", user.typeid if user else None)
+        except Exception as e:
+            logging.warning(f"[bootstrap] inbox recompute failed (non-fatal): {e}")
+        _t.time("inbox_recompute")
+
         sandbox_available = is_sandbox_available()
         sandbox_compute_node: Optional[ComputeNode] = None
         if sandbox_available:
@@ -1679,9 +1896,11 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         from flow_sdk.app.actions.hooks_sniffer import (  # noqa: PLC0415
             _create_or_update_sniffer_hook,
             _get_sniffer_hook,
+            sniffer_installed,
         )
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         sniffer_hook = None
+        sniffer_is_installed = False
         try:
             sniffer_hook = await _get_sniffer_hook()
             _t.time("get_sniffer_hook")
@@ -1692,12 +1911,17 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
                 _t.time("create_or_update_sniffer_hook")
                 await sniffer_hook.apply()
                 _t.time("sniffer_hook.apply")
+            # What settings.json actually carries — the UI warns on this, not on
+            # the DB entity, so a sniffer installed by another instance shows up.
+            sniffer_is_installed = sniffer_installed()
+            _t.time("sniffer_installed")
         except Exception as e:
             logging.warning(f"Failed to auto-enable sniffer hook: {e}")
 
         # Build BootstrapInfo using Pydantic model
         types = build_all_type_payloads()
         _t.time("build_all_type_payloads")
+        from flow_sdk.i18n import get_supported_locales, get_translation_targets  # noqa: PLC0415
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         from flow_sdk.instance_settings.privacy_mode import get_privacy_mode  # noqa: PLC0415
         bootstrap_info = BootstrapInfo(
@@ -1723,7 +1947,14 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             capabilities_summary=capabilities_summary.model_dump(mode="json"),
             scan_info=scan_info,
             sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,
+            sniffer_installed=sniffer_is_installed,
             records_root=str(get_instance_settings().records_root),
+            supported_locales=get_supported_locales(),
+            translation_targets=get_translation_targets(),
+            # Local desktop server serves the `desk` page by default; a dev can
+            # opt into the `hub` page via preferences.dev.app_page (see
+            # _resolve_supported_pages). A hub backend reports its own set here.
+            supported_pages=_resolve_supported_pages(),
             privacy_mode=get_privacy_mode(),
             notice=notice,
         )

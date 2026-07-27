@@ -10,11 +10,11 @@ There are three distinct "index" concepts in the codebase:
 
 | Name | Location | Purpose |
 |------|----------|---------|
-| **RecordState** (`state.json`) | record folder (`JSONFsRef`) | Per-record property cache (cached PropertyRecord values). See [fs_store.md](../fs_store.md#recordindex-per-record-property-cache). |
+| **Hash sentinel** (`<epoch>_<hash>_<pathdigest>.hash`) | record shadow folder | Per-record index-staleness token read by `index_required`. See [record-model.md](record-model.md). |
 | **Entity Index** (SQLite `entities` table) | `Entity` class: `flow_sdk/core/entity/entity_model.py` | Queryable database of record metadata. **This document.** |
 | **FTS5 Index** (`entities_fts`) | `flow_sdk/db/drivers/sqlite/sqlite_driver.py` | Full-text search virtual table, populated alongside Entity Index. |
 
-RecordState and Entity Index are completely unrelated systems that share the word "index".
+(A third historical "index" — the per-record `state.json`/`RecordState` property cache — was removed with the `FSRecord` refactor and no longer exists.)
 
 ---
 
@@ -76,6 +76,29 @@ async def get_record(self) -> "FSRecord | None":
 
 It looks the record up by `(type, id)` — there is no `"type/id"` string to parse and no `record` property.
 
+### Filesystem occurrence projection
+
+An Entity's `asset_ref` is the primary live path for its `(type, id)`. When the
+same filesystem identity is present at more than one path, the indexer also
+reflects a primary-first `asset_occurrences` list into the Entity DB. Primary
+selection is deterministic: earliest Git introduction commit, then trusted
+filesystem birth time (`st_birthtime` only), then the occurrence's persisted
+`first_seen_at`, then canonical path. Missing or re-keyed paths disappear from
+the projection on the next validating scan.
+
+`asset_occurrences` is a local, `Persist.FALSE` field and `duplicate_count` is
+the computed number of occurrences excluding the primary. Both are stripped
+from common/hub serialization: they describe this machine's filesystem and are
+not domain content, capsule data, or shareable entity state. The frontend only
+mirrors these backend fields. A warning badge displays `duplicate_count` and
+opens a read-only primary/duplicate path panel; it does not calculate identity,
+ranking, or remediation.
+
+Only the primary Record is parsed and synchronized. Duplicate paths are skipped
+with a warning and are never deleted, rewritten, or assigned a replacement id.
+This keeps the Entity DB aligned with the selected filesystem source without
+changing any user-owned asset.
+
 ---
 
 ## `Record.sync_to_db()` Implementation
@@ -115,10 +138,18 @@ There is no `Record.deindex()` method. De-indexing is done by the caller: the fs
 | Record CRUD via fs-records API | `FsRecordsActionsMixin._fs_records_action()` | `sync_to_db()` on every POST/PUT; DELETE removes the row + FTS directly |
 | Indexer scan/index pass | `FSIndexer.index()` / `.scan()` (`flow_sdk/fs_store/indexer/index_function.py`) | Walk roots, index per-type via registered indexer functions |
 | Discover-or-recover by path | `FsRecordsActionsMixin._handle_fs_records_discover_by_path()` | `sync_to_db()` after recovering a record by path |
+| GET-time freshness refresh | `Entity.check_and_refresh_record()` (via `handle_get_by_id`) | Re-sync iff `index_required`; then stamps the sentinel |
+| Push invalidate / agent turn-end | `reindex_paths()` → `discover_record_by_path(..., notify=True)` | Force re-parse of a changed-file set — see [Content Invalidation](invalidation.md) |
 | Explicit application code | anywhere | `await record.sync_to_db()` |
 | `Entity.get_all()` / `get_one()` | (none) | NOT triggered -- performance |
 
 `get_all()` and `get_one()` do not call `sync_to_db()`. Running it on every list query would cause O(N) filesystem reads per list request.
+
+The end-to-end **invalidation loop** (what triggers a re-index when a file
+changes out-of-band, and how the frontend re-reads the body afterward) is
+documented separately in [Content Invalidation](invalidation.md) — this document
+covers the middle (`sync_to_db` pipeline + `DataOpMessage`); that one covers the
+outer edges (trigger + FE `useFSRefContent` `reloadKey` re-read).
 
 ### Entities NOT FTS-indexed
 

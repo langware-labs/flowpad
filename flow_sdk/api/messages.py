@@ -37,6 +37,10 @@ class WSMessageType(Enum):
     CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
     PRIVACY_MODE_MSG = "privacy_mode_msg"
     TOPLOG_STATE_MSG = "toplog_state_msg"
+    FLOW_RUN_EVENT_MSG = "flow_run_event_msg"
+    FLOW_NODE_STATUS_MSG = "flow_node_status_msg"
+    # The unified event bus frame (docs/flow-events.md) — carries one FlowEvent.
+    TAG_MSG = "tag_msg"
 
 
 class ExeMessageSubType(StrEnum):
@@ -143,10 +147,64 @@ class PrivacyModeMessage(BaseMessage):
 
 class ToplogStateMessage(BaseMessage):
     """Broadcast when this instance's toplog state changes, so every open client
-    updates its in-memory topic set live (no reload). See flow_sdk/toplog.py."""
+    updates its in-memory tag set live (no reload). See flow_sdk/toplog.py."""
     message_type: str = WSMessageType.TOPLOG_STATE_MSG.value
     enabled: bool
     filter: Dict[str, bool]
+
+
+class FlowRunEventMessage(BaseMessage):
+    """Broadcast for every event/lifecycle beat of an AgenticFlow run — the
+    live run stream. ``kind``: run_start | event | run_end. The TS mirror is
+    ``FlowRunEventMessage`` in ``ts_sdk/src/websocket.ts``."""
+
+    message_type: str = WSMessageType.FLOW_RUN_EVENT_MSG.value
+    flow_id: str
+    run_id: str
+    kind: str
+    event: str = ""
+    data: Dict[str, Any] = {}
+    node: str = ""
+    status: str = ""
+    ts: str = ""
+
+
+class FlowNodeStatusMessage(BaseMessage):
+    """Broadcast on every scheduler transition for a flow node — the push feed
+    for live queue/active counters and node status lines.
+    ``phase``: queued | merged | started | finished | failed.
+    The TS mirror is ``FlowNodeStatusMessage`` in ``ts_sdk/src/websocket.ts``."""
+
+    message_type: str = WSMessageType.FLOW_NODE_STATUS_MSG.value
+    flow_id: str
+    run_id: str
+    node_id: str
+    phase: str
+    queued: int = 0
+    active: int = 0
+    detail: Dict[str, Any] = {}
+    ts: str = ""
+
+
+class TagMessage(BaseMessage):
+    """The unified event-bus frame: one serialized FlowEvent
+    (flow_sdk/tags/envelope.py), forwarded backend→app for the declared
+    allowlist only (tags/ws_forward.py). The envelope rides as a plain dict
+    so its schema stays pinned by the contract fixture, independent of
+    BaseMessage plumbing. TS mirror: ``TagMsg`` in ``ts_sdk/src/websocket.ts``."""
+
+    message_type: str = WSMessageType.TAG_MSG.value
+    event: Dict[str, Any]
+
+
+class BroadcastMessage(BaseMessage):
+    """Server-wide fan-out ping to every connected client: no target entity,
+    just a ``broadcast_type`` discriminator (e.g. ``"tabs_changed"`` from
+    ``broadcast_tabs_changed`` in ``flow_sdk/builtin/tab.py``). The TS mirror is
+    ``BroadcastMessage`` in ``ts_sdk/src/websocket.ts`` — keep the shapes in step."""
+
+    message_type: str = WSMessageType.BROADCAST.value
+    broadcast_type: str
 
 
 class EntityMessage(BaseMessage):

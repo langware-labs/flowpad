@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, MessageSquarePlus, Send } from 'lucide-react';
+import { Check, GitBranch, MessageSquarePlus, Send } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
+  Conversation,
   hasRemoteParticipant,
+  normalizeEmail,
   type ConversationParticipant,
   type ConversationSendPayload,
 } from '@sdk';
@@ -15,6 +17,8 @@ import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { guardCloudAction } from '@src/services/privacy-guard';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import type { ShareSource } from '@src/hooks/share-sources';
+import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
+import { WikiTip } from '@src/components/wiki-tip/WikiTip';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
 import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
@@ -55,6 +59,29 @@ interface ShareToConversationDialogProps {
    *  payload; must return the conversation id (or null on failure). The
    *  dialog still owns prep, busy/error state, and the success screen. */
   commit?: (target: SendTarget, payload: ConversationSendPayload) => Promise<string | null>;
+  /** Hide the Title input — the source already supplies a `defaultTitle` and
+   *  the user has no reason to edit it (e.g. forwarding a diagnosis). The
+   *  effective title still derives from the source default. */
+  hideTitle?: boolean;
+  /** Hide the Note textarea — the attached entity carries the meaning, so a
+   *  personal note is noise (e.g. forwarding a diagnosis). A `defaultNote`, if
+   *  given, is still sent as the message caption. */
+  hideNote?: boolean;
+  /** Override the Title input placeholder (e.g. collaboration framing instead
+   *  of the default "What do you need help with?"). */
+  titlePlaceholder?: string;
+  /** Override the submit button label (e.g. "Send invite" for Collaborate).
+   *  Defaults to "Share". */
+  submitLabel?: string;
+  /** Override the dialog heading (e.g. "Collaborate on this session").
+   *  Defaults to "Share". */
+  heading?: string;
+  /** Keep the local `project_id` on a NEW conversation even when the recipient
+   *  is remote. By default remote shares from arbitrary surfaces drop the
+   *  active-project association (it'd be arbitrary); Collaborate opts in so the
+   *  new conversation stays scoped to the workspace that started it (the hub
+   *  body still strips project_id — this only affects the sender's local row). */
+  associateProjectOnRemote?: boolean;
 }
 
 const MAX_CONVERSATIONS = 5;
@@ -88,6 +115,12 @@ export function ShareToConversationDialog({
   initialParticipants,
   onShared,
   commit,
+  hideTitle,
+  hideNote,
+  titlePlaceholder,
+  submitLabel,
+  heading,
+  associateProjectOnRemote,
 }: ShareToConversationDialogProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -105,6 +138,15 @@ export function ShareToConversationDialog({
   const [note, setNote] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [attachTranscript, setAttachTranscript] = useState(true);
+  // "Create bookmark" opt-in (default off): the receiver mints a favorite
+  // pointing at the shared asset when it installs. Only offered for bookmarkable
+  // sources (assets/artifacts).
+  const [createBookmark, setCreateBookmark] = useState(false);
+  // Conversation-scoped "Git sharing" opt-in: when on (and the asset is
+  // eligible), the share rides the asset's Git origin instead of copied bytes.
+  // Initialized from the selected conversation (new → off) and committed on
+  // submit so later replies inherit it. Only meaningful for git-capable sources.
+  const [gitSharing, setGitSharing] = useState(false);
   // Which conversation row is selected (a conversation id, or NEW_CONVERSATION).
   // Click selects; double-click or the Share button commits.
   const [selected, setSelected] = useState<string>(NEW_CONVERSATION);
@@ -153,6 +195,8 @@ export function ShareToConversationDialog({
     setNote(defaultNoteRef.current ?? '');
     setFiles([]);
     setAttachTranscript(true);
+    setCreateBookmark(false);
+    setGitSharing(false);
     setSharedConversationId(null);
     setLocalError(null);
     resetDraft();
@@ -162,7 +206,7 @@ export function ShareToConversationDialog({
   const recipientEmails = useMemo(
     () =>
       participants
-        .map((p) => (p.email || '').trim())
+        .map((p) => normalizeEmail(p.email) || '')
         .filter((e) => !!e && e.includes('@')),
     [participants],
   );
@@ -175,13 +219,41 @@ export function ShareToConversationDialog({
   const canStartNew = participants.length > 0 && (isRemote || !!effectiveProjectId) && titleOk;
   const hasContacts = participants.length > 0;
   const isNewSelected = selected === NEW_CONVERSATION;
-  const canShareSelected = isNewSelected
-    ? canStartNew
-    : conversations.some((c) => c.id === selected);
+
+  // Git sharing: eligibility is asset-only (backend preflight); the toggle's
+  // initial value follows the selected conversation's remembered default.
+  const gitCapable = source.gitPreflightRef != null;
+  const preflight = useGitSharePreflight(source.gitPreflightRef, open && gitCapable);
+  // Re-init the toggle ONLY when the selection changes (a ref keeps the effect
+  // off the conversation list's identity, so a background refetch can't clobber
+  // a manual toggle within one selection).
+  const conversationsRef = useRef(conversations);
+  conversationsRef.current = conversations;
+  useEffect(() => {
+    if (!gitCapable) return;
+    const conv = conversationsRef.current.find((c) => c.id === selected);
+    setGitSharing(selected === NEW_CONVERSATION ? false : conv?.git_sharing_enabled ?? false);
+  }, [selected, gitCapable]);
+
+  // Git mode is on-and-eligible; blocked = on but not (yet) shareable. A blocked
+  // toggle stops the share entirely — we never silently downgrade to a copy.
+  const gitMode = gitCapable && gitSharing && preflight.available;
+  const gitBlocked = gitCapable && gitSharing && (preflight.loading || !preflight.available);
+  const canShareSelected =
+    !gitBlocked &&
+    (isNewSelected ? canStartNew : conversations.some((c) => c.id === selected));
 
   const doShare = async (existingId: string | null) => {
     if (busy) return;
     setLocalError(null);
+    // Fail closed: Git is on but the asset isn't (yet) eligible. Never fall back
+    // to a silent copy — the sender must turn Git off to share it as a copy.
+    if (gitBlocked) {
+      setLocalError(
+        preflight.reason ?? t`This asset can't be shared with Git. Turn Git sharing off to send a copy.`,
+      );
+      return;
+    }
     if (isRemote) {
       const gate = await ensureCloudLogin();
       if (!gate.ok) {
@@ -200,18 +272,26 @@ export function ShareToConversationDialog({
         attachTranscript,
         files,
       });
+      // `createBookmark` can only be true when the checkbox rendered, which
+      // requires `source.bookmarkable` — no need to re-check it here. Git mode
+      // (on + eligible) sets the body transfer policy; it's independent of the
+      // Create Bookmark opt-in.
+      let mergedShareConfig = prepared.shareConfig ?? source.shareConfig;
+      if (gitMode) mergedShareConfig = { ...(mergedShareConfig ?? {}), transferMode: 'git' as const };
+      if (createBookmark) mergedShareConfig = { ...(mergedShareConfig ?? {}), createBookmark: true };
       payload = {
         text: note.trim(),
         files: prepared.files,
         assetReferences: prepared.assetReferences,
         sharedContextEntities: prepared.sharedContextEntities,
+        shareConfig: mergedShareConfig,
       };
       const target: SendTarget = existingId
         ? { kind: 'existing', conversationId: existingId }
         : {
             kind: 'new',
             params: {
-              project_id: isRemote ? null : effectiveProjectId,
+              project_id: isRemote && !associateProjectOnRemote ? null : effectiveProjectId,
               participants,
               title: effectiveTitle,
               shared_context_entities: prepared.sharedContextEntities,
@@ -229,6 +309,20 @@ export function ShareToConversationDialog({
         convId = await send(target, payload);
       }
       if (convId) {
+        // Remember the Git-sharing choice on the conversation so later replies
+        // (from either side) inherit it. Best-effort — the share already
+        // succeeded; a failed preference write must not surface as a share error.
+        if (gitCapable) {
+          const conv =
+            conversations.find((c) => c.id === convId) ?? new Conversation({ id: convId });
+          if ((conv.git_sharing_enabled ?? false) !== gitSharing) {
+            try {
+              await conv.setGitSharingEnabled(gitSharing);
+            } catch (prefErr) {
+              console.warn('[share] failed to persist git_sharing_enabled', prefErr);
+            }
+          }
+        }
         setSharedConversationId(convId);
         onShared?.(convId);
       }
@@ -245,7 +339,7 @@ export function ShareToConversationDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Send className="h-5 w-5 text-primary" />
-            <Trans>Share</Trans>
+            {heading ?? <Trans>Share</Trans>}
           </DialogTitle>
         </DialogHeader>
 
@@ -313,33 +407,42 @@ export function ShareToConversationDialog({
               </div>
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                <Trans>Title</Trans>
-              </label>
-              <Input
-                value={titleInput}
-                onChange={(e) => setTitleInput(e.target.value)}
-                placeholder={source.requiresTitle ? t`What do you need help with?` : defaultTitle || t`Conversation title`}
-                disabled={busy}
-                data-testid="share-title-input"
-              />
-            </div>
+            {!hideTitle && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                  <Trans>Title</Trans>
+                </label>
+                <Input
+                  value={titleInput}
+                  onChange={(e) => setTitleInput(e.target.value)}
+                  placeholder={
+                    titlePlaceholder ??
+                    (source.requiresTitle
+                      ? t`What do you need help with?`
+                      : defaultTitle || t`Conversation title`)
+                  }
+                  disabled={busy}
+                  data-testid="share-title-input"
+                />
+              </div>
+            )}
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                <Trans>Note (optional)</Trans>
-              </label>
-              <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder={t`Add a personal note…`}
-                rows={2}
-                disabled={busy}
-                className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                data-testid="share-note-input"
-              />
-            </div>
+            {!hideNote && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                  <Trans>Note (optional)</Trans>
+                </label>
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder={t`Add a personal note…`}
+                  rows={2}
+                  disabled={busy}
+                  className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  data-testid="share-note-input"
+                />
+              </div>
+            )}
 
             {source.supportsFiles && (
               <div className="flex flex-col gap-1.5">
@@ -355,6 +458,74 @@ export function ShareToConversationDialog({
                   </label>
                 )}
                 <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
+              </div>
+            )}
+
+            {source.bookmarkable && (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={createBookmark}
+                  onChange={(e) => setCreateBookmark(e.target.checked)}
+                  disabled={busy}
+                  data-testid="share-create-bookmark"
+                />
+                <Trans>Create bookmark on the recipient's desktop</Trans>
+              </label>
+            )}
+
+            {gitCapable && (
+              <div className="flex flex-col gap-1.5">
+                <WikiTip wikiword="Git sharing" buttonLabel={t`What is Git sharing?`}>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={gitSharing}
+                    aria-label={t`Share using Git origin`}
+                    onClick={() => {
+                      // Can turn OFF anytime; can only turn ON when eligible.
+                      if (!gitSharing && !preflight.available) return;
+                      setGitSharing((v) => !v);
+                    }}
+                    disabled={busy || preflight.loading || (!preflight.available && !gitSharing)}
+                    data-testid="share-git-toggle"
+                    data-state={gitSharing ? 'on' : 'off'}
+                    className={cn(
+                      'flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                      gitSharing
+                        ? 'border-primary bg-primary/10 text-foreground'
+                        : 'border-input bg-background text-muted-foreground hover:bg-muted/50',
+                    )}
+                  >
+                    <GitBranch className="h-3.5 w-3.5 shrink-0" />
+                    <span className="flex-1 text-left">
+                      <Trans>Share using Git origin</Trans>
+                    </span>
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'flex h-4 w-7 shrink-0 items-center rounded-full p-0.5 transition-colors',
+                        gitSharing ? 'justify-end bg-primary' : 'justify-start bg-muted-foreground/30',
+                      )}
+                    >
+                      <span className="h-3 w-3 rounded-full bg-background" />
+                    </span>
+                  </button>
+                </WikiTip>
+                {gitBlocked && (
+                  <div
+                    className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
+                    data-testid="share-git-blocked"
+                  >
+                    {preflight.loading ? (
+                      <Trans>Checking Git eligibility…</Trans>
+                    ) : (
+                      preflight.reason ?? (
+                        <Trans>This asset can't be shared with Git. Turn Git sharing off to send a copy.</Trans>
+                      )
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -430,7 +601,7 @@ export function ShareToConversationDialog({
                 className="gap-1.5"
               >
                 <Send className="h-4 w-4" />
-                {busy ? t`Sharing…` : t`Share`}
+                {busy ? t`Sharing…` : submitLabel ?? t`Share`}
               </Button>
             </div>
           </div>

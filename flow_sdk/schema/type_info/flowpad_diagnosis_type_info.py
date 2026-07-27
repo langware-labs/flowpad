@@ -54,6 +54,24 @@ class FlowpadDiagnosisMetadata(BaseMeta):
             "``symptoms``. Empty when the user asked for a full sweep."
         ),
     )
+    origin_project_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Id of the project the user was in when the diagnosis was recorded — "
+            "the project the issue happened on. Kept separate from the inherited "
+            "``project_id`` (which is storage-derived at index time). On the "
+            "originating machine this resolves to a local project; on another "
+            "machine (a shared diagnosis) it is a foreign id and the receiver "
+            "picks a local project instead."
+        ),
+    )
+    origin_project_name: Optional[str] = Field(
+        default=None,
+        description=(
+            "Display name of ``origin_project_id`` — travels with the diagnosis so "
+            "a helper on another machine can see which project it happened on."
+        ),
+    )
 
 
 FLOWPAD_DIAGNOSIS = TypeMetadata(
@@ -64,4 +82,7 @@ FLOWPAD_DIAGNOSIS = TypeMetadata(
     api_visible=True,
     index_fields=["title", "symptoms"],
     meta_model=FlowpadDiagnosisMetadata,
+    # Metadata-only diagnosis: row-only passive payload — staged like every
+    # bundle entry, then auto-installed (no review gate). The header IS the record.
+    receive_policy="auto",
 )

@@ -24,7 +24,7 @@ async function getTabNames(page: Page): Promise<string[]> {
 async function getActiveTabName(page: Page): Promise<string> {
   return page.locator('[data-testid^="tab-"]').evaluateAll((els) => {
     for (const el of els) {
-      if ((el.getAttribute('class') ?? '').includes('border-primary')) {
+      if (el.getAttribute('data-active') === 'true') {
         return (el.querySelector('span.font-medium')?.textContent ?? '').trim();
       }
     }

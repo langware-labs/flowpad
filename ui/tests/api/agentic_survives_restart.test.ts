@@ -17,48 +17,58 @@
  * (it iterates `AgenticProcess.get_all()` and re-`start_pty()`s dead workers),
  * so this recovers server-side with no client re-open.
  *
- * Runs against the disposable `dev-1` instance (skips if not launched), restarts
- * it via instance_ctl — never touches the main :9007 backend.
+ * Runs only against the explicitly selected disposable FLOW_INSTANCE. The
+ * launcher registry must match that name + backend port and hold a live backend
+ * PID before this suite can relaunch the instance via instance_ctl.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import * as sdk from '@sdk';
+import { apiTestSetup } from '../utils/test-utils';
 
+const INSTANCE = process.env.FLOW_INSTANCE || '';
 const REPO_ROOT = path.resolve(__dirname, '../../..');
-const ENV_FILE = path.join(REPO_ROOT, '.env.dev-1.local');
+const ENV_FILE = path.join(REPO_ROOT, `.env.${INSTANCE}.local`);
+const LAUNCHER = path.join(os.homedir(), `.flow/instances/${INSTANCE}/launcher.json`);
 const PORT = (() => {
   if (!existsSync(ENV_FILE)) return null;
   const m = readFileSync(ENV_FILE, 'utf8').match(/^LOCAL_SERVER_PORT=(\d+)/m);
   return m ? m[1] : null;
 })();
 
-const suite = PORT ? describe : describe.skip;
+function launcherMatchesLiveBackend(): boolean {
+  if (!INSTANCE || !PORT || !existsSync(LAUNCHER)) return false;
+  try {
+    const launcher = JSON.parse(readFileSync(LAUNCHER, 'utf8')) as Record<string, unknown>;
+    const backendPid = Number(launcher.backend_pid);
+    if (
+      launcher.name !== INSTANCE ||
+      Number(launcher.backend_port) !== Number(PORT) ||
+      !Number.isInteger(backendPid) ||
+      backendPid <= 0
+    ) {
+      return false;
+    }
+    process.kill(backendPid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-suite('Agentic process survives server restart (dev-1)', () => {
-  let sdk: any;
+const INSTANCE_READY = launcherMatchesLiveBackend();
+const suite = INSTANCE_READY ? describe : describe.skip;
+
+suite(`Agentic process survives server restart (instance=${INSTANCE || 'unset'})`, () => {
   let manager: any;
 
   beforeAll(async () => {
-    (globalThis as any).__FLOWPAD_API_URL__ = `http://localhost:${PORT}`;
-    vi.resetModules();
-    sdk = await import('@sdk');
-
-    const info = await sdk.dataManager.bootstrap('localhost', true);
-    await sdk.dataManager.loadTypes(info.types || []);
+    await apiTestSetup();
     manager = sdk.ConnectionManager.getInstance();
-    if (!manager.connected) await manager.connect();
-
-    // Compute node context (AgenticProcess.start resolves the node from context).
-    if (info.default_compute_node) {
-      const cn = new sdk.ComputeNode(info.default_compute_node);
-      cn.markAsExpanded?.();
-      await sdk.dataContext.setContextEntityTypeId(
-        sdk.ContextEntitiesEnum.CurrentComputeNodeTypeId,
-        cn.typeId,
-      );
-    }
   }, 60_000);
 
   it('worker is respawned by the watchdog (os-status worker_alive) after a restart', async () => {
@@ -83,7 +93,7 @@ suite('Agentic process survives server restart (dev-1)', () => {
     );
 
     // 2. Restart the backend (synchronous; kills the worker child).
-    execFileSync('scripts/instance_ctl.sh', ['launch', 'dev-1'], { cwd: REPO_ROOT, stdio: 'ignore' });
+    execFileSync('scripts/instance_ctl.sh', ['launch', INSTANCE], { cwd: REPO_ROOT, stdio: 'ignore' });
 
     // 3. Reconnect to the fresh backend.
     await vi.waitFor(
@@ -92,6 +102,14 @@ suite('Agentic process survives server restart (dev-1)', () => {
       },
       { timeout: 40_000, interval: 1_000 },
     );
+
+    // 3b. Re-watch the process on the fresh connection. PTY recovery is
+    //     ON-DEMAND, not a global sweep (see pty_recovery.py + commit bd14a1ab
+    //     "recover on-demand, not a global sweep (out-of-pty-devices crash)"):
+    //     the watchdog only respawns a process a live connection is actively
+    //     watching. A real UI re-subscribes to its open tab on reconnect; this
+    //     re-registers that watch so the watchdog has a reason to recover.
+    await proc.watch();
 
     // 4. The dead-worker watchdog (~5s interval) should respawn the worker —
     //    os-status `worker_alive` flips back to true once the PID is live again.

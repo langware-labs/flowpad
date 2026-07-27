@@ -7,7 +7,7 @@ collection of meta fields as direct instance attributes (default).
 Per-type typed metadata models are opt-in via ``TypeInfo.meta_model``.
 
 All per-type behavior lives in free functions registered on
-``TypeInfo`` (from_disk_fn, gen_uuid_fn, asset_hash_fn, post_sync_fn,
+``TypeInfo`` (from_disk_fn, identity backend, asset_hash_fn, post_sync_fn,
 main_subdir, main_layout). FSRecord itself knows nothing about types.
 
 The class deliberately omits the following — every one of them was
@@ -28,10 +28,14 @@ than savings:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, ClassVar, Generic, TypeVar
+from weakref import WeakValueDictionary
 
 from flow_sdk.fs_store.fs_ref import FSRef
 
@@ -39,8 +43,11 @@ from flow_sdk.fs_store.fs_ref import FSRef
 M = TypeVar("M")  # meta model — dict view by default; Pydantic models opt-in via TypeInfo.meta_model
 
 
-# Canonical naming. <type>-@<uid> as folder name under records_root/<type>/.
-_NAME_SEP = "-@"
+# Type-scoped shadow store: a record lives at ``records_root/<type>/<id>/`` — a
+# BARE id under a ``<type>/`` parent (the parent dir already scopes the type, so
+# the name carries no redundant prefix and no uname ``@``). The self-describing
+# ``<type>-<id>`` stem (``record_stem``, re-exported below) is only for flat /
+# portable namespaces (bundles, staging, VFS).
 _METADATA_JSON = "metadata.json"
 # The single per-record index sentinel. Two on-disk shapes:
 #   legacy  ``<int_epoch>_<contenthash>.hash``
@@ -52,16 +59,57 @@ _HASH_GLOB = "*.hash"
 # Instance attribute names that don't belong in serialized meta (system state).
 _SYSTEM_ATTRS: frozenset[str] = frozenset({"type", "id", "_asset_ref"})
 
+# Entity.save is DB -> disk while FSRecord.sync_to_db is disk -> DB.  They must
+# not observe the same record between those two stores.  Locks are loop-scoped
+# (asyncio locks cannot cross pytest/server event loops) and weakly held so a
+# long-lived server does not retain one lock for every record it ever touched.
+_RECORD_SYNC_LOCKS: "WeakValueDictionary[tuple[object, str, str], asyncio.Lock]" = (
+    WeakValueDictionary()
+)
+_HELD_RECORD_SYNC_KEYS: "ContextVar[frozenset[tuple[object, str, str]]]" = ContextVar(
+    "_held_record_sync_keys", default=frozenset()
+)
 
-def record_stem(record_type: str, uid: str) -> str:
-    return f"{record_type}{_NAME_SEP}{uid}"
+
+@asynccontextmanager
+async def record_sync_guard(record_type: str, record_id: str):
+    """Serialize opposite-direction DB/disk syncs for one record.
+
+    Reentrant only in the same asyncio Task.  A child task inherits contextvars,
+    so task identity is part of the held key; it must still wait for its parent
+    rather than accidentally bypassing the lock.
+    """
+    loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
+    held_key = (task, str(record_type), str(record_id))
+    held = _HELD_RECORD_SYNC_KEYS.get()
+    if held_key in held:
+        yield
+        return
+
+    lock_key = (loop, str(record_type), str(record_id))
+    lock = _RECORD_SYNC_LOCKS.get(lock_key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _RECORD_SYNC_LOCKS[lock_key] = lock
+
+    async with lock:
+        token = _HELD_RECORD_SYNC_KEYS.set(held | {held_key})
+        try:
+            yield
+        finally:
+            _HELD_RECORD_SYNC_KEYS.reset(token)
 
 
-def parse_record_stem(stem: str) -> tuple[str, str]:
-    if _NAME_SEP not in stem:
-        raise ValueError(f"Invalid record stem: {stem!r}")
-    rt, uid = stem.split(_NAME_SEP, 1)
-    return rt, uid
+# Single source of truth lives in record_paths; re-exported here for the callers
+# that import the stem / path helpers from this module.
+from flow_sdk.fs_store.record_paths import (  # noqa: E402
+    data_dir_for as data_dir_for,
+    is_record_dir as is_record_dir,
+    parse_record_stem as parse_record_stem,
+    record_stem as record_stem,
+    shadow_dir_for as shadow_dir_for,
+)
 
 
 def write_text_if_changed(path: Path, text: str) -> None:
@@ -204,10 +252,10 @@ class FSRecord(Generic[M]):
 
     @property
     def shadow_dir(self) -> Path:
-        """records_root/<type>/<type>-@<id>/"""
+        """records_root/<type>/<id>/"""
         if not self.type or self.id is None:
             raise ValueError(f"FSRecord(type={self.type!r}, id={self.id!r}) has no shadow_dir")
-        return _get_default_records_root() / self.type / record_stem(self.type, self.id)
+        return shadow_dir_for(self.type, self.id)
 
     @property
     def record_folder_ref(self) -> FSRef:
@@ -307,11 +355,39 @@ class FSRecord(Generic[M]):
         """Write a single metadata field (partial-merge convenience)."""
         return self.save_metadata({key: val})
 
+    def remove_metadata_keys(self, *keys: str) -> Path | None:
+        """Delete keys from metadata.json (the merge-writer can't remove).
+
+        ``save_metadata`` partial-merges — an obsolete key (e.g. a stored
+        field promoted to a computed one) would otherwise live on disk
+        forever and re-hydrate on every adopt. Returns the metadata path, or
+        None when there is no metadata file / nothing to remove.
+        """
+        meta_path = self.shadow_dir / _METADATA_JSON
+        if not meta_path.exists():
+            return None
+        try:
+            merged = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        removed = False
+        for k in keys:
+            if k in merged:
+                merged.pop(k)
+                self.__dict__.pop(k, None)  # keep the in-memory view consistent
+                removed = True
+        if not removed:
+            return None
+        meta_path.write_text(
+            json.dumps(merged, indent=2, ensure_ascii=False, default=str),
+            encoding="utf-8",
+        )
+        return meta_path
+
     @classmethod
     def load(cls, type: str, id: str) -> "FSRecord":
-        """Load by identity. Reads <records_root>/<type>/<type>-@<id>/metadata.json"""
-        folder = _get_default_records_root() / type / record_stem(type, id)
-        return cls.load_record(folder)
+        """Load by identity. Reads <records_root>/<type>/<id>/metadata.json"""
+        return cls.load_record(shadow_dir_for(type, id))
 
     @classmethod
     def load_or_none(cls, type: str, id: str) -> "FSRecord | None":
@@ -326,7 +402,7 @@ class FSRecord(Generic[M]):
         """Find a record by ``id`` alone, scanning every type under records_root.
 
         Unlike ``load``/``load_or_none`` this needs no ``type``: it checks the
-        deterministic shadow path ``<records_root>/<type>/<type>-@<id>/`` for each
+        deterministic shadow path ``<records_root>/<type>/<id>/`` for each
         type folder. Returns the single match, ``None`` when no type owns ``id``,
         and raises ``ValueError`` when more than one type has a record with this
         ``id`` (ids are unique within a type but can collide across types).
@@ -338,8 +414,8 @@ class FSRecord(Generic[M]):
         for type_dir in root.iterdir():
             if not type_dir.is_dir():
                 continue
-            folder = type_dir / record_stem(type_dir.name, id)
-            if (folder / _METADATA_JSON).exists():
+            folder = type_dir / str(id)
+            if is_record_dir(folder):
                 matches.append(folder)
         if not matches:
             return None
@@ -373,7 +449,7 @@ class FSRecord(Generic[M]):
             return []
         out: list[FSRecord] = []
         for child in root.iterdir():
-            if not child.is_dir() or _NAME_SEP not in child.name:
+            if not is_record_dir(child):
                 continue
             try:
                 out.append(cls.load_record(child))
@@ -388,10 +464,7 @@ class FSRecord(Generic[M]):
         root = _get_default_records_root() / type
         if not root.is_dir():
             return 0
-        return sum(
-            1 for child in root.iterdir()
-            if child.is_dir() and _NAME_SEP in child.name
-        )
+        return sum(1 for child in root.iterdir() if is_record_dir(child))
 
     # ── Index state (self-contained, on-disk, zero DB) ───────────────────
     #
@@ -581,19 +654,30 @@ class FSRecord(Generic[M]):
 
     # ── Asset placement (read from TypeInfo) ──────────────────────────────
 
-    def compute_asset_ref(self, scope_root: str | Path, entity) -> FSRef | None:
+    def compute_asset_ref(
+        self, scope_root: str | Path, entity, *, default_worker: str = "claude"
+    ) -> FSRef | None:
         """Resolve the user-facing asset location under scope_root.
 
-        Reads ``main_subdir`` / ``main_layout`` from the registered TypeInfo.
-        Returns None for types without a configured asset layout.
+        The family subdir comes from ``placement`` (``asset_class`` / ``harness``
+        / ``family`` via ``_resolved_layout``), so the harness prefix
+        (``.claude`` / ``.agents`` / …) is chosen by ``default_worker`` instead of
+        being welded into the type. ``main_layout`` / ``main_file`` / ``main_ext``
+        still own the file-vs-folder tail. Returns None for types without a
+        configured asset layout. ``default_worker`` defaults to ``claude`` so
+        callers that pass a bare ``scope_root`` keep today's ``.claude/*`` layout.
         """
+        from flow_sdk.fs_store.placement import family_subdir  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         info = SchemaRegistry.get(self.type)
-        if info is None or info.main_subdir is None:
+        if info is None:
+            return None
+        subdir = family_subdir(*info._resolved_layout, default_worker=default_worker)
+        if subdir is None:
             return None
         safe = self._safe_name(entity)
-        base = Path(scope_root) / info.main_subdir
+        base = Path(scope_root) / subdir
         if info.main_layout == "folder":
             # asset_ref_for owns the folder-vs-inner-file rule (its inverse,
             # body_path_for, recovers the body on write) so the convention lives
@@ -621,20 +705,23 @@ class FSRecord(Generic[M]):
             return None
         return body_fn(entity)
 
-    def upsert_main_ref(self, entity) -> None:
+    def upsert_main_ref(self, entity) -> str | None:
         """Write default_body into asset_ref iff the file doesn't yet exist —
         or on EVERY save for ``owns_main_ref`` types (the entity is the file's
         sole editor, so entity-side edits must reach the on-disk source of
         truth; otherwise the next rescan would revert them).
 
-        No-op if the record has no asset_ref OR no default_body for the type.
+        Returns the filesystem identity committed by ``TypeInfo`` when the type
+        has an identity policy. No-op if the record has no asset_ref.
         Asset_ref must be under the user's scope_root — never under records_root.
         """
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         ar = self._asset_ref
         if ar is None:
-            return
+            return None
+        if ar.read_only:
+            raise IOError(f"FSRef at {ar.path!r} is read-only")
         info = SchemaRegistry.get(self.type)
         # For folder types whose asset_ref is the folder (skill/whiteboard), the
         # body lives at <folder>/<main_file>. Resolve the real file before the
@@ -642,17 +729,61 @@ class FSRecord(Generic[M]):
         # otherwise short-circuit the first-create write.
         path = info.body_path_for(ar._path) if info else ar._path
         owns = bool(info and info.owns_main_ref)
-        if path.exists() and not owns:
-            return
-        body = self.default_body(entity)
-        if body is None:
-            return
-        write_text_if_changed(path, body)  # mkdirs; unchanged → don't touch mtime/index hash
+        if not path.exists() or owns:
+            body = self.default_body(entity)
+            if body is not None:
+                # An owned Markdown renderer replaces domain content but never
+                # owns capsule bytes. Validate/snapshot every named block,
+                # render, then restore the raw blocks before one atomic write.
+                if path.exists() and path.suffix.lower() in {".md", ".markdown"}:
+                    from flow_sdk.capsules import (  # noqa: PLC0415
+                        restore_capsule_blocks,
+                        snapshot_capsule_blocks,
+                    )
+
+                    existing = path.read_text(encoding="utf-8")
+                    body = restore_capsule_blocks(body, snapshot_capsule_blocks(existing))
+                try:
+                    unchanged = path.exists() and path.read_text(encoding="utf-8") == body
+                except OSError:
+                    unchanged = False
+                if not unchanged:
+                    from flow_sdk.fs_store.indexer._frontmatter import (  # noqa: PLC0415
+                        _atomic_write_text,
+                    )
+
+                    _atomic_write_text(path, body)
+            elif info and info.folder_backed:
+                # Main-doc-less folder assets still need an existing carrier
+                # target before AssetCapsule.from_path can select FolderCapsule.
+                ar._path.mkdir(parents=True, exist_ok=True)
+
+        entity_id = getattr(entity, "id", None)
+        if info is None or info.identity_backend is None or not entity_id:
+            return None
+        committed_id = info.mint_id(ar, proposed_id=str(entity_id))
+        # The carrier is authoritative. A create can race an existing asset at
+        # the same path (or use a deterministic policy), so the record must not
+        # keep advertising the losing proposed DB id after the commit.
+        self.__dict__["id"] = committed_id
+        return committed_id
 
     # ── DB integration ────────────────────────────────────────────────────
 
     async def sync_to_db(self, fts_batch: list | None = None, notify: bool = True) -> None:
         """Persist this FSRecord into the Entity DB + FTS + wiki.
+
+        The whole opposite-direction transition shares the same per-record
+        guard as ``Entity.save``.  ``Entity.from_record`` eventually re-enters
+        the guard in this same task, which is deliberately supported.
+        """
+        async with record_sync_guard(self.type, str(self.id)):
+            await self._sync_to_db_unlocked(fts_batch=fts_batch, notify=notify)
+
+    async def _sync_to_db_unlocked(
+        self, fts_batch: list | None = None, notify: bool = True
+    ) -> None:
+        """Implementation of :meth:`sync_to_db`; caller owns its record guard.
 
         Pipeline (single shared session for cache coherence):
           1. Entity row via ``Entity.from_record(self)``

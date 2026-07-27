@@ -10,8 +10,6 @@ export class SDKConfig implements ISDKConfig {
   auth_provider: string;
   flowpad_app_host: string;
   flowpad_app_port?: number;
-  sentry_dsn: string;
-  sentry_project: string;
   check_refresh_token: boolean;
 
   constructor(config: ISDKConfig) {
@@ -22,8 +20,6 @@ export class SDKConfig implements ISDKConfig {
     this.auth_provider = config.auth_provider;
     this.flowpad_app_host = config.flowpad_app_host;
     this.flowpad_app_port = config.flowpad_app_port;
-    this.sentry_dsn = config.sentry_dsn;
-    this.sentry_project = config.sentry_project;
     this.check_refresh_token = config.check_refresh_token;
   }
 

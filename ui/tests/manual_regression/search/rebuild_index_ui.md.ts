@@ -38,20 +38,21 @@ async function waitForIndexerIdle(request: APIRequestContext, budgetMs = 45_000)
 async function openSearch(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', '1');
     // The footer indexing indicator (footer-indexing-indicator) is wrapped in
     // <AdvancedOnly> — it does not exist in the default Standard view.
     localStorage.setItem('viewMode', 'advanced');
   });
   await page.goto('/dock/search');
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-  for (const n of ['Skip for now', 'Not Now', 'Not now']) {
-    const b = page.getByRole('button', { name: n });
-    if (await b.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await b.click();
-      break;
-    }
-  }
+  // View mode is now a backend-owned preference (`preferences.ui.view_mode`);
+  // the legacy `viewMode` localStorage key above is only adopted when the backend
+  // file doesn't already provide a value, so it is overridden the moment bootstrap
+  // reconciles an explicit backend value (e.g. Standard). Force Advanced through
+  // the live setter AFTER bootstrap so it wins, then wait for the DOM to reflect it.
+  await page.evaluate(() => {
+    (window as unknown as { setView?: (v: string) => void }).setView?.('advanced');
+  });
+  await page.locator('html[data-view="advanced"]').waitFor({ timeout: 10_000 });
 }
 
 const rebuildBtn = (page: Page) => page.locator('[data-testid="rebuild-index"]');

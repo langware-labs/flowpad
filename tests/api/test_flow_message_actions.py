@@ -18,6 +18,9 @@ import pytest
 # even when run in isolation. Mirrors the unit-suite sibling tests.
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 
+from flow_sdk.builtin.message_attachment import MessageAttachment
+from flow_sdk.fs_store.operations import flow_message as fm_data_ops
+
 
 def _new_id() -> str:
     return str(uuid.uuid4())
@@ -40,11 +43,11 @@ def _make_conversation_bundle_bytes(msg_data: dict, conv_id: str, participants: 
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("header.json", json.dumps(msg_data, ensure_ascii=False))
         zf.writestr(
-            f"attachment/conversation-@{conv_id}/header.json",
+            f"attachment/conversation-{conv_id}/header.json",
             json.dumps({"type": "conversation", "id": conv_id, "participants": participants}, ensure_ascii=False),
         )
         zf.writestr(
-            f"attachment/conversation-@{conv_id}/conversation.jsonl",
+            f"attachment/conversation-{conv_id}/conversation.jsonl",
             json.dumps(pointer, ensure_ascii=False) + "\n",
         )
     return buf.getvalue()
@@ -105,7 +108,7 @@ def _make_flowmsg_bytes_with_attachment(msg_data: dict, inner_fm_id: str) -> byt
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("header.json", json.dumps(msg_data, ensure_ascii=False))
         zf.writestr(
-            f"attachment/flow_message-@{inner_fm_id}/message.json",
+            f"attachment/flow_message-{inner_fm_id}/message.json",
             json.dumps(inner_fm_data, ensure_ascii=False),
         )
     return buf.getvalue()
@@ -212,7 +215,7 @@ async def test_upload_flow_message_preserves_bundle_participants(
 
     conv = await Conversation.get_one({"id": conv_id})
     assert conv is not None
-    assert conv.participants == participants
+    assert conv.members == participants
 
 
 @pytest.mark.asyncio
@@ -300,7 +303,20 @@ async def test_download_flow_message_returns_zip(bootstrapped_client):
     buf = io.BytesIO(download_resp.content)
     with zipfile.ZipFile(buf, "r") as zf:
         names = zf.namelist()
-    assert "header.json" in names, f"header.json missing from zip. Files: {names}"
+        # The top-level FlowMessage envelope was renamed header.json ->
+        # flow_message.json in the entities.json metadata-transport refactor
+        # (readers still accept the legacy name). Assert the envelope is present
+        # AND carries this message's identity — not just that some filename exists.
+        envelope_name = next(
+            (n for n in ("flow_message.json", "header.json") if n in names), None
+        )
+        assert envelope_name is not None, (
+            f"top-level FlowMessage envelope (flow_message.json) missing from zip. Files: {names}"
+        )
+        envelope = json.loads(zf.read(envelope_name))
+    assert envelope.get("id") == message_id, (
+        f"envelope {envelope_name} does not carry the message id: {envelope}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +332,7 @@ async def test_download_flow_message_returns_zip(bootstrapped_client):
 
 _SPEC_TITLE = "My Spec"
 # default_body_fn / _safe_entity_name turn "My Spec" into this leaf folder.
-_SPEC_LEAF_REL = Path("specs") / "My_Spec" / "spec.md"
+_SPEC_LEAF_REL = Path("agentic-assets") / "spec" / "My_Spec" / "spec.md"
 
 
 @pytest.fixture
@@ -345,12 +361,10 @@ def _spec_blob_storage(tmp_path):
 
 
 async def _setup_mapped_conversation(tmp_path: Path, subdir: str = "proj"):
-    """Create a real Project (on-disk mount) + a Conversation pointed at it, so
-    ``_resolve_project_root_for_conv`` returns the project's mount path.
+    """Create a real Project (on-disk mount) + a Conversation pointed at it.
 
-    Returns ``(conv_id, project_root)`` where ``project_root`` is the canonical
-    on-disk path the receiver will copy assets into (read back from the saved
-    Project so it matches whatever canonicalization the entity applied)."""
+    Returns ``(conv_id, project_id, project_root)``. ``project_root`` is read
+    back from the saved Project so it matches entity canonicalization."""
     from flow_sdk.builtin.user import User
     from flow_sdk.builtin.project import Project
     from flow_sdk.builtin.conversation import Conversation
@@ -373,11 +387,7 @@ async def _setup_mapped_conversation(tmp_path: Path, subdir: str = "proj"):
     conv.id = conv_id
     await conv.save(owner_typeid)
 
-    # Sanity: the resolver the receiver runs must agree with our project_root.
-    from flow_sdk.builtin.flow_message_bundle import _resolve_project_root_for_conv
-    resolved = await _resolve_project_root_for_conv(conv_id)
-    assert resolved == project_root, f"resolver {resolved} != {project_root}"
-    return conv_id, project_root
+    return conv_id, project.id, project_root
 
 
 async def _build_spec_bundle(
@@ -411,20 +421,20 @@ async def _build_spec_bundle(
     # Confirm the packer actually placed the file-backed asset (else the rest
     # of the test would be vacuous).
     with zipfile.ZipFile(zip_path, "r") as zf:
-        arc = f"attachment/spec-@{spec_id}/specs/My_Spec/spec.md"
+        arc = f"attachment/spec-{spec_id}/agentic-assets/spec/My_Spec/spec.md"
         assert arc in zf.namelist(), f"spec not packed: {zf.namelist()}"
     return zip_path.read_bytes()
 
 
 @pytest.mark.asyncio
-async def test_upload_file_backed_asset_materializes_in_mapped_project(
+async def test_upload_file_backed_asset_auto_installs_in_mapped_project(
     bootstrapped_client, tmp_path, _spec_blob_storage,
 ):
-    """[UNPACK-FB-RESTORE] A file-backed spec is copied to
-    ``<project>/specs/<leaf>`` on disk AND reindexed into a real entity row."""
+    """[UNPACK-FB-AUTO-INSTALL] A bound conversation installs a received
+    file-backed spec into its project while retaining the staged source."""
     from flow_sdk.builtin.spec import Spec
 
-    conv_id, project_root = await _setup_mapped_conversation(tmp_path)
+    conv_id, project_id, project_root = await _setup_mapped_conversation(tmp_path)
     spec_id = _new_id()
     fm_id = _new_id()
     sentinel = "RESTORE-SENTINEL-body-line"
@@ -439,25 +449,41 @@ async def test_upload_file_backed_asset_materializes_in_mapped_project(
     assert response.status_code == 200, f"upload failed: {response.text}"
     assert response.json().get("status") == "SUCCESS"
 
-    # 1. The asset landed on disk at the canonical <project>/<main_subdir>/<leaf>.
+    entry_key = f"spec-{spec_id}"
+    ma = await MessageAttachment.get_one({
+        "id": MessageAttachment.allocate_deterministic_id(fm_id, entry_key),
+    })
+    assert ma is not None, "upload did not stage a MessageAttachment"
+    assert ma.flow_message_id == fm_id
+    assert ma.conversation_id == conv_id
+    assert ma.asset_type == "spec" and ma.asset_id == spec_id
+    assert ma.scope == "project"
+    assert ma.project_id == project_id
+    assert ma.unpacked_path == f"unpacked/attachment/{entry_key}"
+
+    staged = fm_data_ops.staged_entry_dir(fm_id, entry_key) / _SPEC_LEAF_REL
+    assert staged.exists(), f"staged spec missing: {staged}"
+    assert sentinel in staged.read_text(encoding="utf-8")
+
     dest = project_root / _SPEC_LEAF_REL
-    assert dest.exists(), f"spec not copied to project: {dest}"
+    assert dest.exists(), f"bound conversation did not materialize the spec: {dest}"
     assert sentinel in dest.read_text(encoding="utf-8")
 
-    # 2. The reindex materialized the entity row.
     spec = await Spec.get_one({"id": spec_id})
-    assert spec is not None, "reindex did not materialize the spec row"
-    assert spec.content and sentinel in spec.content, f"body missing: {spec.content!r}"
+    assert spec is not None, "auto-install did not index the spec"
+    assert spec.project_id == project_id
+    assert spec.content and sentinel in spec.content
 
 
 @pytest.mark.asyncio
-async def test_upload_file_backed_asset_collision_different_bytes_returns_409(
+async def test_install_file_backed_asset_collision_different_bytes_returns_409(
     bootstrapped_client, tmp_path,
 ):
-    """[UNPACK-COLLISION] A different-bytes file already at the target path with
-    overwrite=False returns 409 with a PATH-shaped conflict ``{path: ...}`` —
-    distinct from the entity ``{type, id}`` conflict shape."""
-    conv_id, project_root = await _setup_mapped_conversation(tmp_path)
+    """[INSTALL-COLLISION] Explicit install with overwrite=False reports the
+    existing destination as a path-shaped 409 without clobbering it."""
+    from flow_sdk.builtin.spec import Spec
+
+    conv_id, project_id, project_root = await _setup_mapped_conversation(tmp_path)
     spec_id = _new_id()
     fm_id = _new_id()
     flowmsg_bytes = await _build_spec_bundle(
@@ -473,9 +499,29 @@ async def test_upload_file_backed_asset_collision_different_bytes_returns_409(
         "/api/v1/graph/flow-message-upload",
         files={"file": ("share.flowmsg", flowmsg_bytes, "application/zip")},
     )
-    assert response.status_code == 409, f"expected 409, got {response.status_code}: {response.text}"
-    body = response.json()
+    assert response.status_code == 200, f"staging failed: {response.text}"
+    assert response.json().get("status") == "SUCCESS"
+
+    entry_key = f"spec-{spec_id}"
+    ma = await MessageAttachment.get_one({
+        "id": MessageAttachment.allocate_deterministic_id(fm_id, entry_key),
+    })
+    assert ma is not None and not ma.scope
+    staged = fm_data_ops.staged_entry_dir(fm_id, entry_key) / _SPEC_LEAF_REL
+    assert "BUNDLE-BYTES" in staged.read_text(encoding="utf-8")
+    assert dest.read_text(encoding="utf-8") == "totally different local content\n"
+    assert await Spec.get_one({"id": spec_id}) is None
+
+    install = await bootstrapped_client.post(
+        f"/api/v1/graph/message_attachment/{ma.id}/install",
+        json={"scope": "project", "project_id": project_id},
+    )
+    assert install.status_code == 409, (
+        f"expected install 409, got {install.status_code}: {install.text}"
+    )
+    body = install.json()
     assert body.get("status") == "FAIL"
+    assert body.get("data", {}).get("asset_conflict") is True
     conflicts = body.get("data", {}).get("conflicts")
     assert isinstance(conflicts, list) and len(conflicts) > 0, body
     # PATH-shaped conflict, not the entity {type,id} shape.
@@ -486,18 +532,20 @@ async def test_upload_file_backed_asset_collision_different_bytes_returns_409(
 
     # The collision left the local file untouched (no clobber on a 409).
     assert dest.read_text(encoding="utf-8") == "totally different local content\n"
+    after_conflict = await MessageAttachment.get_one({"id": ma.id})
+    assert after_conflict is not None and not after_conflict.scope
+    assert await Spec.get_one({"id": spec_id}) is None
 
 
 @pytest.mark.asyncio
-async def test_unpack_overwrite_replaces_on_disk_file_backed_asset(
+async def test_install_overwrite_replaces_on_disk_file_backed_asset(
     bootstrapped_client, tmp_path, _spec_blob_storage,
 ):
-    """[UNPACK-OVERWRITE] overwrite=true replaces an existing ON-DISK file-backed
-    asset and re-materializes the row from the new bytes (on-disk file + entity
-    both reflect the replacement)."""
+    """[INSTALL-OVERWRITE] Explicit install with overwrite=true replaces the
+    destination and materializes the entity from the staged bytes."""
     from flow_sdk.builtin.spec import Spec
 
-    conv_id, project_root = await _setup_mapped_conversation(tmp_path)
+    conv_id, project_id, project_root = await _setup_mapped_conversation(tmp_path)
     spec_id = _new_id()
     fm_id = _new_id()
     new_sentinel = "OVERWRITE-NEW-SENTINEL"
@@ -516,13 +564,28 @@ async def test_unpack_overwrite_replaces_on_disk_file_backed_asset(
 
     response = await bootstrapped_client.post(
         "/api/v1/graph/flow-message-upload",
-        files={
-            "file": ("share.flowmsg", flowmsg_bytes, "application/zip"),
-            "overwrite": (None, "true"),
-        },
+        files={"file": ("share.flowmsg", flowmsg_bytes, "application/zip")},
     )
-    assert response.status_code == 200, f"overwrite upload failed: {response.text}"
+    assert response.status_code == 200, f"staging failed: {response.text}"
     assert response.json().get("status") == "SUCCESS"
+
+    entry_key = f"spec-{spec_id}"
+    ma = await MessageAttachment.get_one({
+        "id": MessageAttachment.allocate_deterministic_id(fm_id, entry_key),
+    })
+    assert ma is not None and not ma.scope
+    staged = fm_data_ops.staged_entry_dir(fm_id, entry_key) / _SPEC_LEAF_REL
+    staged_text = staged.read_text(encoding="utf-8")
+    assert new_sentinel in staged_text and old_sentinel not in staged_text
+    assert old_sentinel in dest.read_text(encoding="utf-8")
+    assert await Spec.get_one({"id": spec_id}) is None
+
+    install = await bootstrapped_client.post(
+        f"/api/v1/graph/message_attachment/{ma.id}/install",
+        json={"scope": "project", "project_id": project_id, "overwrite": True},
+    )
+    assert install.status_code == 200, f"overwrite install failed: {install.text}"
+    assert install.json().get("status") == "SUCCESS"
 
     # On-disk file reflects the replacement.
     on_disk = dest.read_text(encoding="utf-8")
@@ -533,3 +596,8 @@ async def test_unpack_overwrite_replaces_on_disk_file_backed_asset(
     assert spec is not None, "spec row missing after overwrite"
     assert spec.content and new_sentinel in spec.content, f"row not refreshed: {spec.content!r}"
     assert old_sentinel not in (spec.content or ""), spec.content
+
+    installed = await MessageAttachment.get_one({"id": ma.id})
+    assert installed is not None
+    assert installed.scope == "project"
+    assert installed.project_id == project_id

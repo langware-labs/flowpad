@@ -1,8 +1,9 @@
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
+import { useDiagnosisReport } from '@src/components/diagnose/use-diagnosis-report';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Textarea } from '@src/components/ui/textarea';
-import { ActionInfo, dataManager, forwardDiagnosis, sendDiagnosisEmailReport } from '@sdk';
 import { streamDiagnose, type DiagnoseEvent } from '@src/components/diagnose/diagnose-stream';
+import { animateMinimizeToProcessChip } from '@src/lib/minimize-to-element';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { CheckCircle2, Info, Loader2, Stethoscope, XCircle } from 'lucide-react';
@@ -35,16 +36,12 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
   const [running, setRunning] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
   const [done, setDone] = useState<DoneState | null>(null);
-  const [reporting, setReporting] = useState(false);
-  const [reportError, setReportError] = useState<string | undefined>(undefined);
-  // Set when the run finished while the user wasn't watching (app minimized / tab
-  // backgrounded / another window focused): we posted a Home-Feed card instead, so
-  // the modal shows a pointer to it rather than its own report buttons.
-  const [handedToFeed, setHandedToFeed] = useState(false);
-  const feedHandoffRef = useRef(false); // guards the one-shot feed-card post
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const { navigation } = useDockNavigation();
+  const { report, forward, busy: reporting, error: reportError, reset: resetReport } =
+    useDiagnosisReport(done?.diagnosisId ?? null);
 
   // Reset everything whenever the modal is (re)opened.
   useEffect(() => {
@@ -54,12 +51,9 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
       setRunning(false);
       setLines([]);
       setDone(null);
-      setReporting(false);
-      setReportError(undefined);
-      setHandedToFeed(false);
-      feedHandoffRef.current = false;
+      resetReport();
     }
-  }, [open]);
+  }, [open, resetReport]);
 
   // Auto-scroll the activity log to the latest line.
   useEffect(() => {
@@ -84,28 +78,9 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
         conversationId: ev.conversation_id,
         flowMessageId: ev.flow_message_id,
       });
-      // If the diagnosis finished while the user was NOT watching this modal — the
-      // app was minimized, this tab was backgrounded, or another window/app held
-      // focus — the result was never seen. Ask the backend to post the Home-Feed card
-      // (the one creator, `_post_home_feed_entry`) so the answer reaches the feed:
-      // an issue card with Report/Forward, or a no-issue card with the summary. Posting
-      // happens for ANY result here (gated on diagnosis_id, not conversation_id) so a
-      // user who walked away still gets an answer. The modal-closed (stream-
-      // disconnected) case is handled inline by the run and never reaches here, so the
-      // two paths can't both fire for one run.
-      const userWatching =
-        document.visibilityState === 'visible' && document.hasFocus();
-      if (ev.ok && ev.diagnosis_id && !userWatching && !feedHandoffRef.current) {
-        feedHandoffRef.current = true;
-        setHandedToFeed(true);
-        const info = new ActionInfo('diagnose_post_feed', null, null, 'POST');
-        info.bodyParameters = {
-          diagnosis_id: ev.diagnosis_id,
-          conversation_id: ev.conversation_id,
-          flow_message_id: ev.flow_message_id,
-        };
-        void dataManager.callAction(info);
-      }
+      // The run always posts its own Home-Feed card (issue card with Report/Forward,
+      // or a no-issue summary card), so the result reaches the feed regardless of
+      // whether this modal was open/focused at the finish — nothing to do here.
     }
     // 'progress' / 'flush' are terminal-only cosmetics; the running spinner covers liveness.
   }, []);
@@ -133,52 +108,38 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
   }, [message, handleEvent]);
 
   const handleClose = useCallback(() => {
+    // Closing mid-run: the diagnosis keeps going in the background, so fly the
+    // window into the footer's active-process chip — that's where the user can
+    // find it later.
+    if (running) animateMinimizeToProcessChip(contentRef.current);
     abortRef.current?.abort();
     onClose();
-  }, [onClose]);
+  }, [onClose, running]);
 
   // "Report issue" / "Forward" from the finished-diagnose popup: send the full
   // formatted diagnostic report into the chosen conversation (the same send path
   // the Feed card uses), then close. The body comes from the recorded support
   // FlowMessage; the diagnosis summary is only the no-message fallback.
-  // "Report issue" — email the diagnosis to the Flowpad team.
+  // "Report issue" — email the diagnosis to the Flowpad team, then close.
   const handleReportIssue = useCallback(async () => {
-    if (!done?.diagnosisId) return;
-    setReporting(true);
-    setReportError(undefined);
-    try {
-      await sendDiagnosisEmailReport(done.diagnosisId);
-      handleClose();
-    } catch (e) {
-      setReportError(e instanceof Error ? e.message : 'Failed to send report');
-    } finally {
-      setReporting(false);
-    }
-  }, [done, handleClose]);
+    if (await report()) handleClose();
+  }, [report, handleClose]);
 
   // "Forward" — attach the diagnosis entity into the chosen conversation.
   const handleForward = useCallback(
     async (conversationId: string) => {
-      if (!done?.diagnosisId) return;
-      setReporting(true);
-      setReportError(undefined);
-      try {
-        await forwardDiagnosis(conversationId, done.diagnosisId);
+      if (await forward(conversationId)) {
         // Open the conversation we forwarded into, replacing this modal.
         navigation.openDock(DockPointer.forConversation(conversationId));
         handleClose();
-      } catch (e) {
-        setReportError(e instanceof Error ? e.message : 'Failed to send report');
-      } finally {
-        setReporting(false);
       }
     },
-    [done, handleClose, navigation],
+    [forward, handleClose, navigation],
   );
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent ref={contentRef} className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Stethoscope className="h-4 w-4" />
@@ -277,25 +238,19 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
             </div>
           )}
 
-          {/* Finished while the user was away → we posted a Home-Feed card (for any
-              result); point them there instead of showing buttons they didn't see. */}
-          {done?.ok && handedToFeed && (
-            <p className="text-[11px] text-muted-foreground">
-              You stepped away while this finished, so it was saved to your Home feed — open it
-              there{done.conversationId ? ' to report or forward it' : ' to read the result'}.
-            </p>
-          )}
-
-          {/* Watching at the finish, and it's an issue → the Feed-entry report buttons. */}
-          {done?.ok && !handedToFeed && done.conversationId && (
+          {/* It's an issue → the same Report / Forward buttons the Home-Feed card
+              carries, so the user can act right here without leaving the modal. */}
+          {done?.ok && done.conversationId && (
             <DiagnosisActionButtons
               suggestedConversationId={done.conversationId}
               canReport={!!done.diagnosisId}
+              diagnosisId={done.diagnosisId ?? undefined}
               busy={reporting}
               error={reportError}
               onDismiss={handleClose}
               onReportIssue={() => void handleReportIssue()}
               onForward={(conversationId) => void handleForward(conversationId)}
+              onForwardedNew={handleClose}
             />
           )}
 

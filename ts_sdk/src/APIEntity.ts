@@ -12,7 +12,24 @@ import { DockPointerData } from './models/DockPointer';
 import { editorForType } from './models/asset-editor';
 import { TypeId } from './models/TypeId';
 import { ViewType } from './utils/ui/view-types';
+import { normalizeEmail } from './utils/utils';
 import { Callable } from './types';
+
+/**
+ * The DisplayTarget an `install()` / `setup()` returns — what the receiver should
+ * navigate to (`openDisplayTarget`). Mirrors the backend `_entity_payload` /
+ * `resolve_display_target` shape. `kind:'entity'` pointing at an `agentic_process`
+ * is a spawned Vibe setup session; other entities open in their editor; `webapp`
+ * opens the port preview.
+ */
+export interface ReceiveShowTarget {
+  kind?: 'entity' | 'vfs' | 'webapp';
+  typeid?: string;
+  type?: string;
+  id?: string;
+  path?: string;
+  port?: number | string;
+}
 
 /**
  * One row of an entity's member roster, as returned by the generic ``members``
@@ -28,6 +45,12 @@ export interface EntityMember {
   role?: string | null;
   status?: string | null;
   [key: string]: unknown;
+}
+
+/** One backend-ranked on-disk occurrence of an asset identity. */
+export interface AssetOccurrence {
+  path: string;
+  first_seen_at: string;
 }
 import { defineGlobal } from './utils/globals';
 import { WikiLink } from './types/wiki';
@@ -101,6 +124,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   orphan?: boolean;
   /** ISO 8601 timestamp of the last ``orphan = true`` transition; null otherwise. */
   orphan_since?: string | null;
+  /** Backend-owned live paths for this asset identity, including the primary. */
+  asset_occurrences?: AssetOccurrence[];
+  /** Number of non-primary live paths. The frontend displays, but never derives, it. */
+  duplicate_count?: number;
   created_by?: string;
   created_date?: Date;
   updated_by?: string;
@@ -112,6 +139,14 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   root_vfs_path?: string;
   fs_storage_mount_path?: string;
   visitor_role?: string;
+  /**
+   * Hub role roster cache: one row per member with their hub-set role. Membership
+   * is a generic capability of any remote entity; the hub is the source of truth
+   * (RoleRelationship edges) and this is a READ CACHE. ``deepAssign`` populates it
+   * from the wire ``members`` field. The conversation WIRE key is ``participants``
+   * (hub contract) and is adapted to ``members`` in Conversation.onEntityUpdate.
+   */
+  members?: EntityMember[];
   _expand?: EntityExpansion;
   _dirty: boolean = true;
   _typeId: TypeId | null = null;
@@ -240,6 +275,27 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const id = this.id ?? '';
     if (id.length < 8) return `${type}-${id || '?'}`;
     return `${type}-${id.slice(0, 4)}…${id.slice(-4)}`;
+  }
+
+  /**
+   * True when `displayName` is ONLY the `<type>-<key>` / `<type>-<id-tail>`
+   * synthetic fallback — i.e. the entity has no real `name`/`uname`/`title`/`key`
+   * and no `getDisplayName()` override. Distinguishes "the label is a real name"
+   * from "the label is a fabricated id string" without string-sniffing the value
+   * (which would risk eating a legit user name that happens to look like one).
+   *
+   * Callers that must not persist or label with the synthetic — notably the tab
+   * name resolver (`FlowSync.getTabName`), which would otherwise freeze
+   * `agentic_process-<id>` into `Tab.name` — check this and fall back instead.
+   */
+  get hasSyntheticDisplayName(): boolean {
+    return (
+      this.getDisplayName() == null &&
+      !isNonEmptyString(this.name) &&
+      !isNonEmptyString(this.uname) &&
+      !isNonEmptyString(this.title) &&
+      !isNonEmptyString(this.key)
+    );
   }
 
   get expand(): EntityExpansion | undefined {
@@ -703,7 +759,13 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (!Array.isArray(scope)) {
       scope = [scope];
     }
-    const entity = await dataManager.save<T>(this.typeId, scope);
+    // Capture the user's intended write NOW. DataManager serializes saves per
+    // entity, so this call may wait behind an older request; the shared cached
+    // entity can be mutated in that interval by the older response or a WS
+    // DataOp. A JSON round-trip is also the exact wire normalization Axios
+    // would perform (Dates -> strings, undefined fields omitted).
+    const entityJson = JSON.parse(JSON.stringify(this.toJSON())) as IEntity;
+    const entity = await dataManager.save<T>(this.typeId, scope, entityJson);
     if (isNew) {
       this.markAsExpanded();
       this._isLoaded = true;
@@ -724,7 +786,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   public async share(recipients?: string[]): Promise<T> {
     const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
-    info.bodyParameters = { ...this.toJSON(), ...(recipients ? { recipients } : {}) };
+    const cleaned = recipients
+      ?.map((r) => normalizeEmail(r))
+      .filter((r): r is string => !!r);
+    info.bodyParameters = { ...this.toJSON(), ...(cleaned?.length ? { recipients: cleaned } : {}) };
     await dataManager.callAction<unknown, unknown>(info);
     (this as any).remote = true;
     return this as unknown as T;
@@ -779,7 +844,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = {
-      recipient_email: email,
+      recipient_email: normalizeEmail(email) ?? '',
       invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
     };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);
@@ -856,6 +921,19 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const info = new ActionInfo('set-group', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = { group_id: groupId };
     await dataManager.callAction<unknown, unknown>(info);
+  }
+
+  /**
+   * Open / set up this entity — the reception hook reused for the open-an-existing
+   * surfaces (artifact favorites/cards/chips, skill run). Returns the DisplayTarget
+   * to navigate to (`openDisplayTarget`): the entity itself, or a spawned Vibe setup
+   * session. `projectId` optionally overrides the entity's own project binding.
+   */
+  public async setup(projectId?: string | null): Promise<ReceiveShowTarget | null> {
+    const info = new ActionInfo('setup', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters = { project_id: projectId ?? null };
+    const res = await dataManager.callAction<unknown, { show?: ReceiveShowTarget | null }>(info);
+    return res?.show ?? null;
   }
 
   /**

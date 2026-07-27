@@ -20,13 +20,11 @@ from pathlib import Path
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
 
-
 _ENV_VAR_TO_TYPE = (
     "FLOWPAD_DOC_DIRS",
     "FLOWPAD_PLAN_DIRS",
     "FLOWPAD_SKILL_DIRS",
     "FLOWPAD_AGENT_DIRS",
-    "FLOWPAD_WORKFLOW_DIRS",
 )
 
 
@@ -110,8 +108,14 @@ def resolve_project_id_for_cwd(cwd: str | None) -> str | None:
     if not cwd:
         return None
 
-    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import (  # noqa: PLC0415
+        canonical_posix_path,
+        is_valid_project_cwd,
+    )
+
+    if not is_valid_project_cwd(cwd, include_temp=True):
+        return None
 
     # Cache only confirmed real-id hits — a project's id won't change once it
     # exists. The derived-alias fallback is intentionally NOT cached so a
@@ -134,6 +138,76 @@ def resolve_project_id_for_cwd(cwd: str | None) -> str | None:
         _CWD_PID_CACHE[cwd] = real
         return real
     return Project.derive_id_for_path(canonical)
+
+
+async def load_project_mounts() -> tuple[tuple[str, str], ...]:
+    """Snapshot every Project's ``(canonical_mount, id)``, deepest mount first.
+
+    The lookup table for the deepest-project-wins association rule: a file
+    inside several nested project mounts belongs to the innermost one. Sorted
+    by mount length descending so the first containment hit IS the deepest.
+    Reads through the entity driver (the same DB the indexer writes with — a
+    raw sqlite side-read here would split-brain under the test harness).
+    Returns an empty tuple when there are no projects / any DB error.
+    """
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import (  # noqa: PLC0415
+        canonical_posix_path,
+        is_valid_project_cwd,
+    )
+
+    try:
+        projects = await Project.get_all()
+    except Exception:
+        return ()
+    mounts: list[tuple[str, str]] = []
+    for proj in projects or []:
+        mount = proj.fs_storage_mount_path or getattr(proj, "cwd", None)
+        if not mount or not proj.id:
+            continue
+        if not is_valid_project_cwd(mount, include_temp=True):
+            continue
+        try:
+            mounts.append((canonical_posix_path(str(mount)).rstrip("/"), str(proj.id)))
+        except OSError:
+            continue
+    mounts.sort(key=lambda m: len(m[0]), reverse=True)
+    return tuple(mounts)
+
+
+def has_nested_project_mounts(mounts: tuple[tuple[str, str], ...]) -> bool:
+    """True when any project mount lives inside another.
+
+    The gate for the deepest-wins re-association: with no nesting, a walk
+    root's own project is always the deepest containing mount, so the stamp
+    site can skip per-record canonicalization entirely.
+    """
+    from flow_sdk.fs_store.path_utils import is_path_under  # noqa: PLC0415
+
+    return any(
+        inner is not outer and is_path_under(inner[0], outer[0])
+        for inner in mounts
+        for outer in mounts
+    )
+
+
+def deepest_project_id_for_path(
+    path: str,
+    mounts: tuple[tuple[str, str], ...],
+    default: str | None = None,
+) -> str | None:
+    """Association rule: the DEEPEST project whose mount contains ``path`` owns it.
+
+    ``mounts`` is ``load_project_mounts()`` output (canonical, deepest-first);
+    ``path`` must be canonical posix too. Falls back to ``default`` (typically
+    the walk root's project_id) when no mount contains the path.
+    """
+    from flow_sdk.fs_store.path_utils import is_path_under  # noqa: PLC0415
+
+    for mount, pid in mounts:
+        if is_path_under(path, mount):
+            return pid
+    return default
 
 
 def _lookup_project_id_by_cwd(canonical: str) -> str | None:
@@ -284,7 +358,20 @@ def default_roots() -> list[FSRef]:
     # media library) — each first access trips a macOS TCC prompt attributed to
     # Flowpad. USER_HOME_FOLDER already covers home via targeted expanders, so a
     # home-rooted CWD_ROOT adds nothing but that recursive walk.
-    if not is_home_or_ancestor(cwd, settings.user_home):
+    # macOS-TCC / cross-OS gate: never auto-walk a backend cwd that sits inside a
+    # protected folder (Documents/Desktop/Downloads/media). Walk only when the
+    # folder is un-gated or explicitly allowed; media/skip/denied/ask drop it.
+    # This is a PURE decision — default_roots() runs at indexer construction, so
+    # it must not queue a user-facing consent event (that is owned by the
+    # request-time scan path in _resolve_scoped_roots, which drains + surfaces).
+    from flow_sdk.fs_store.indexer.special_folders import (  # noqa: PLC0415
+        IndexDecision,
+        indexing_decision,
+    )
+    if (
+        not is_home_or_ancestor(cwd, settings.user_home)
+        and indexing_decision(cwd, foreground=False) is IndexDecision.WALK
+    ):
         roots.append(
             FSRef(
                 cwd,

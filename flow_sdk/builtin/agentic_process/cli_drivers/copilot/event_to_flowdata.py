@@ -11,6 +11,7 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowDataType,
     FlowElementType,
 )
+from flow_sdk.transcript_analyzer.derive import derive_entry
 from flow_sdk.transcript_analyzer.entries import AssistantMessageEntry
 from flow_sdk.transcript_analyzer.parsers.copilot import CopilotParser
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
@@ -32,7 +33,12 @@ class CopilotEventConverter:
             self._capture_session(event)
             return _result(event)
         if event_type == "flowpad.interrupted":
-            return [_error("copilot turn interrupted"), final_end_frame()]
+            # User-requested cancel is not an error: emit the canonical
+            # turn-abort STATUS (``turn-terminated``) so the chat marks the
+            # in-flight tool calls terminated instead of painting a crash.
+            from flow_sdk.builtin.agentic_process.turn_abort import abort_status_frame  # noqa: PLC0415 — avoid import cycle at module load
+
+            return [abort_status_frame(), final_end_frame()]
         if event_type == "flowpad.error":
             message = str(event.get("message") or "copilot exited with an error")
             return [_error(message), final_end_frame()]
@@ -143,6 +149,10 @@ def final_end_frame() -> FlowData:
 
 
 def _wrap_live(entry) -> FlowData:
+    # Derived refinements (e.g. a `flow` CLI call inside a shell command)
+    # are applied here so the live frame matches what history's refold
+    # produces for the same entry.
+    entry = derive_entry(entry)
     process_entry = ProcessEntry(transcript_entry=entry, observation_kind="live")
     frames = entry.to_flow_data()
     if frames:

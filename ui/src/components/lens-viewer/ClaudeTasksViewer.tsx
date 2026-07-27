@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { dataContext, fsManager } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AlertTriangle, CheckCircle2, Circle, Clock, FileText, Loader2, ArrowRight } from 'lucide-react';
-import { Trans } from '@lingui/react/macro';
-import { t } from '@lingui/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { msg } from '@lingui/macro';
 
 interface TaskData {
   id: string;
@@ -23,19 +23,19 @@ interface Props {
 const STATUS_CONFIG = {
   in_progress: {
     icon: Clock,
-    label: t`In Progress`,
+    label: msg`In Progress`,
     badgeClass: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
     borderClass: 'border-blue-300 dark:border-blue-700',
   },
   pending: {
     icon: Circle,
-    label: t`Pending`,
+    label: msg`Pending`,
     badgeClass: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
     borderClass: 'border-gray-200 dark:border-gray-700',
   },
   completed: {
     icon: CheckCircle2,
-    label: t`Completed`,
+    label: msg`Completed`,
     badgeClass: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
     borderClass: 'border-green-300 dark:border-green-700',
   },
@@ -69,6 +69,7 @@ function TaskCard({
   cardRef?: (el: HTMLDivElement | null) => void;
   onSelectTask: (id: string) => void;
 }) {
+  const { t } = useLingui();
   const config = STATUS_CONFIG[task.status] || STATUS_CONFIG.pending;
   const StatusIcon = config.icon;
 
@@ -83,7 +84,7 @@ function TaskCard({
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">#{task.id}</span>
             <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${config.badgeClass}`}>
-              {config.label}
+              {t(config.label)}
             </span>
           </div>
           <p className="mt-0.5 text-sm">{task.subject}</p>
@@ -126,6 +127,7 @@ function TaskCard({
 }
 
 export function ClaudeTasksViewer({ sessionId, selectedActiveForm }: Props) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -306,7 +308,7 @@ export function ClaudeTasksViewer({ sessionId, selectedActiveForm }: Props) {
               <div key={status}>
                 <div className="mb-2 flex items-center gap-2">
                   <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {config.label}
+                    {t(config.label)}
                   </span>
                   <span className="text-xs text-muted-foreground">({groupTasks.length})</span>
                 </div>

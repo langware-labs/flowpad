@@ -7,21 +7,31 @@
  * marks [skip:harness]/[skip:platform] (11, 31, 33, 34, 38) are test.skip with
  * the matrix's documented rationale; everything else is automated headlessly.
  *
- * One test('...') per matrix `test N:` line. baseURL comes from VITE_PORT.
- * API requests go to the frontend origin and ride the Vite `/api` proxy, so
- * they always reach the SAME backend the UI under test is wired to.
- * QA_API_URL overrides with an explicit backend; never hardcode a port.
+ * One test('...') per matrix `test N:` line. baseURL comes from VITE_PORT;
+ * API requests use the same explicit instance-aware backend origin as the app.
  */
-import { test, expect, request as pwRequest, type APIRequestContext, type Page } from '@playwright/test';
-import { dismissSetupModal } from './helpers';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { apiBase, apiContext } from '../_shared/api';
+import { dismissSetupModal, skipIfPtyExhausted } from './helpers';
 
-const API = process.env.QA_API_URL || '';
+/**
+ * Dismiss the "Cleaned invalid sessions … couldn't be restored" alertdialog and,
+ * when the host is out of PTY devices (the cause of that notice), take the
+ * sanctioned live-env skip. Seeded shells restore a PTY on view mount; under
+ * host PTY exhaustion they can't, so the strip renders zero tabs and the notice
+ * overlay intercepts clicks. Not an app bug — passes when PTYs are free.
+ */
+async function dismissCleanedSessionsOrSkip(page: Page) {
+  const ok = page.getByRole('button', { name: 'OK' });
+  if (await ok.isVisible({ timeout: 500 }).catch(() => false)) await ok.click().catch(() => {});
+  await skipIfPtyExhausted(page);
+}
+
+const API = apiBase();
 const tabSel = '[data-testid^="tab-shell|"]';
 
 async function api(): Promise<APIRequestContext> {
-  return pwRequest.newContext({
-    baseURL: API || `http://localhost:${process.env.VITE_PORT || '4097'}`,
-  });
+  return apiContext();
 }
 
 async function bootstrapIds(rq: APIRequestContext): Promise<{ projectId: string; cn: string }> {
@@ -156,15 +166,8 @@ async function uniqueProject(rq: APIRequestContext, label: string): Promise<stri
 
 async function gotoDockShell(page: Page) {
   await page.goto('/dock/shell');
-  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-  if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) await skipForNow.click();
   await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-}
-
-async function gotoUrl(page: Page, path: string) {
-  await page.goto(path);
-  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-  if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) await skipForNow.click();
+  await dismissCleanedSessionsOrSkip(page);
 }
 
 async function tabIds(page: Page): Promise<string[]> {
@@ -172,28 +175,37 @@ async function tabIds(page: Page): Promise<string[]> {
 }
 
 /**
- * After a close-all the strip auto-switches off the now-empty project to one that
- * still has tabs. Poll for that SETTLED state (the switch lands a beat after the
- * closed project's tabs drop to 0): none of `closedIds` remain, every shown tab
- * belongs to `survivorIds`, and the count equals `expected`.
+ * Switch the active project via the projects-counter chip popover. The chip
+ * stays mounted even when the current project has zero open tabs (it labels the
+ * ambient current project + the counts of projects that still own tabs), so it
+ * is the affordance the matrix uses to move OFF an emptied project.
  */
-async function expectSwitchedAfterCloseAll(
-  page: Page,
-  closedIds: string[],
-  survivorIds: string[],
-  expected: number,
-) {
+async function openProjectsChipPopover(page: Page) {
+  await page.locator('[data-testid="projects-counter-chip"]').first().click();
+  const popover = page.locator('[data-testid="projects-counter-popover"]');
+  await popover.waitFor({ state: 'visible', timeout: 10_000 });
+  return popover;
+}
+
+async function switchToProjectViaChip(page: Page, projectName: string) {
+  const popover = await openProjectsChipPopover(page);
+  await popover.getByText(new RegExp(projectName, 'i')).first().click();
+}
+
+/**
+ * Poll until the strip shows EXACTLY `ids` (count + membership), regardless of
+ * order. Used after a project switch to assert the destination project's tabs.
+ */
+async function expectStripTabs(page: Page, ids: string[]) {
   await expect
     .poll(
       async () => {
         const t = await tabIds(page);
-        const closedLeft = t.filter((x) => closedIds.some((id) => x.includes(id))).length;
-        const survivorsShown = t.filter((x) => survivorIds.some((id) => x.includes(id))).length;
-        return closedLeft === 0 && survivorsShown === t.length ? t.length : -1;
+        return t.length === ids.length && t.every((x) => ids.some((id) => x.includes(id))) ? t.length : -1;
       },
       { timeout: 15_000 },
     )
-    .toBe(expected);
+    .toBe(ids.length);
 }
 
 /** Click a left-rail icon button (Home or the Chats/shell view). */
@@ -247,13 +259,14 @@ test.describe('Interactive tabs / project filtering matrix', () => {
   test('test 1: Refresh keeps a single shell tab alive', async ({ page }) => {
     const rq = await api();
     await resetDb(rq);
-    await gotoUrl(page, '/dock/shell/new_terminal');
+    await page.goto('/dock/shell/new_terminal');
     await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 30_000 });
     const url1 = page.url();
     const target = url1.match(/shell-[0-9a-f-]+/)![0];
     await page.locator('[data-testid="terminal-panel"]').first().waitFor({ state: 'visible', timeout: 15_000 });
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     expect(page.url()).toContain(target);
     await expect(page.locator(tabSel)).toHaveCount(1, { timeout: 15_000 });
     await commonValidation(page);
@@ -274,6 +287,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const active = url.match(/(shell|agentic_process)-[0-9a-f-]+/)![0];
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => tabIds(page), { timeout: 15_000 }).toEqual(orderBefore);
     expect(page.url()).toContain(active);
     await commonValidation(page);
@@ -285,11 +299,13 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const { id } = await createProcess(rq, projectId, 'claude_code');
-    await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
+    await page.goto(`/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     expect(page.url()).toContain(`agentic_process-${id}`);
     await commonValidation(page);
@@ -301,11 +317,13 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const { id } = await createProcess(rq, projectId, 'codex');
-    await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
+    await page.goto(`/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     expect(page.url()).toContain(`agentic_process-${id}`);
     await commonValidation(page);
@@ -324,6 +342,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const target = page.url().match(/shell-[0-9a-f-]+/)![0];
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     expect(page.url()).toMatch(/\/dock\/shell\/shell-/);
     expect(page.url()).toContain(target);
     await commonValidation(page);
@@ -344,13 +363,16 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await clickRail(page, 'chats');
     await page.waitForURL(/\/dock\/shell/, { timeout: 15_000 });
     // All three tabs survive the round-trip ("keeps tabs alive"). Re-entry via the
-    // Chats rail goes to /dock/shell (scope-seeded to the active project, like the
-    // Files/Assets rails), whose loader resolves a default among the live tabs — so
-    // assert it lands on one of the strip's actual tabs, not a specific prior
-    // selection (the rail does not carry a remembered pointer).
+    // Chats rail lands on bare /dock/shell (scope-seeded to the active project):
+    // the rail carries NO remembered pointer, so it does NOT auto-restore a
+    // concrete session (same documented behavior as test 45). The surviving tabs
+    // are still selectable — click one and confirm it re-activates (URL → concrete
+    // pointer), which is the real "keeps tabs alive" guarantee.
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(3);
-    const resolved = page.url().match(/(?:shell|agentic_process)-[0-9a-f-]+/)![0];
-    expect(await tabIds(page)).toContain(`tab-shell|${resolved}`);
+    const survivor = (await tabIds(page))[0]; // any surviving tab; first is deterministic
+    const survivorKey = survivor.replace('tab-shell|', '');
+    await page.locator(`[data-testid="${survivor}"]`).click();
+    await expect.poll(async () => page.url(), { timeout: 15_000 }).toContain(survivorKey);
     await commonValidation(page);
     await rq.dispose();
   });
@@ -372,6 +394,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await expect(secondTab).toContainText('build-server');
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|shell-${ids[1]}"]`)).toContainText('build-server', { timeout: 15_000 });
     await commonValidation(page);
     await rq.dispose();
@@ -389,8 +412,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const targetUrl = `/dock/shell/shell-${ids[1]}`;
     await clickRail(page, 'home');
     await page.waitForURL(/\/$/, { timeout: 15_000 });
-    await gotoUrl(page, targetUrl);
+    await page.goto(targetUrl);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     expect(page.url()).toContain(`shell-${ids[1]}`);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(2);
     await commonValidation(page);
@@ -402,8 +426,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const { id } = await createProcess(rq, projectId, 'claude_code');
-    await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
+    await page.goto(`/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     await commonValidation(page);
     await rq.dispose();
@@ -412,7 +437,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
   test('test 10: Open invalid shell id (graceful fallback)', async ({ page }) => {
     const rq = await api();
     await resetDb(rq);
-    await gotoUrl(page, '/dock/shell/shell-deadbeef-dead-4eef-8eef-deadbeefdead');
+    await page.goto('/dock/shell/shell-deadbeef-dead-4eef-8eef-deadbeefdead');
     // Must not white-screen: page renders something (body has content), no crash.
     await page.waitForTimeout(3_000);
     const bodyText = (await page.locator('body').textContent()) ?? '';
@@ -433,8 +458,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const pb = await createProject(rq, 'Proj-B', '/tmp/regression/proj-b');
     await createShell(rq, pa);
     const pbShell = await createShell(rq, pb);
-    await gotoUrl(page, `/dock/shell/shell-${pbShell}`);
+    await page.goto(`/dock/shell/shell-${pbShell}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     // project auto-switches to Proj-B; URL preserved.
     expect(page.url()).toContain(`shell-${pbShell}`);
     await expect(page.locator('[data-testid="footer"]')).toContainText(/proj-b/i, { timeout: 15_000 });
@@ -454,7 +480,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await secondTab.hover();
     await secondTab.locator('button[aria-label="Close tab"]').click();
     await expect(secondTab).toHaveCount(0, { timeout: 15_000 });
-    await gotoUrl(page, staleUrl);
+    await page.goto(staleUrl);
     await page.waitForTimeout(3_000);
     // Sensible state, no white-screen, no zombie tab for the closed id.
     await expect(page.locator('#root')).not.toBeEmpty();
@@ -474,15 +500,19 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const shells = await pureShells(rq);
     const aIds = shells.filter((s) => s.project_id === pa).map((s) => s.id);
     const bIds = shells.filter((s) => s.project_id === pb).map((s) => s.id);
-    await gotoUrl(page, `/dock/shell/shell-${aIds[0]}`);
+    await page.goto(`/dock/shell/shell-${aIds[0]}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
     await expect(page.locator('[data-testid="close-all-tabs-button"]')).toContainText('3', { timeout: 10_000 });
     await page.locator('[data-testid="close-all-tabs-button"]').click();
-    // Close-all closes ONLY the current project's (Proj-A) tabs; the strip then
-    // auto-switches to a project that still has tabs (Proj-B) rather than
-    // stranding on an empty project.
-    await expectSwitchedAfterCloseAll(page, aIds, bIds, 2);
+    // Close-all closes ONLY the current project's (Proj-A) tabs and leaves the
+    // strip on the now-empty Proj-A (its project home) — it does NOT auto-jump to
+    // another project (the .md: "validate Proj-A strip is now empty"). Proj-B's
+    // tabs are untouched: switch to it via the chip and both are intact.
+    await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(0);
+    await switchToProjectViaChip(page, 'Proj-B');
+    await expectStripTabs(page, bIds);
     await rq.dispose();
   });
 
@@ -568,8 +598,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     // Navigate to a concrete shell pointer (deterministic) rather than bare
     // /dock/shell, whose default-tab resolution can momentarily leave the strip
     // empty on a cold worker.
-    await gotoUrl(page, `/dock/shell/shell-${ids[0]}`);
+    await page.goto(`/dock/shell/shell-${ids[0]}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(4);
     const before = await tabIds(page);
     const secondTab = page.locator(`[data-testid="${before[1]}"]`);
@@ -623,6 +654,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let i = 0; i < 3; i++) await createShell(rq, pb);
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await page.locator('[data-testid="projects-counter-chip"]').first().click();
     await page.locator('[data-testid="projects-counter-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
     // Select Proj-B explicitly.
@@ -643,6 +675,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let i = 0; i < 4; i++) await createShell(rq, c);
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator('[data-testid="projects-counter-chip"]').first()).toContainText('3', { timeout: 15_000 });
     await rq.dispose();
   });
@@ -678,8 +711,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await createShell(rq, d);
     // current = Proj-B
     const bShell = (await pureShells(rq)).find((s: { project_id: string }) => s.project_id === b).id;
-    await gotoUrl(page, `/dock/shell/shell-${bShell}`);
+    await page.goto(`/dock/shell/shell-${bShell}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await page.locator('[data-testid="projects-counter-chip"]').first().click();
     await page.locator('[data-testid="projects-counter-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
     const rows = await page.locator('[data-testid="projects-counter-popover"]').getByText(/Proj-[ABCD]/).allTextContents();
@@ -700,15 +734,23 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     for (let i = 0; i < 2; i++) await createShell(rq, b);
     const shells = await pureShells(rq);
     const aIds = shells.filter((s) => s.project_id === a).map((s) => s.id);
-    const bIds = shells.filter((s) => s.project_id === b).map((s) => s.id);
-    await gotoUrl(page, `/dock/shell/shell-${aIds[0]}`);
+    await page.goto(`/dock/shell/shell-${aIds[0]}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 20_000 }).toBe(3);
     await page.locator('[data-testid="close-all-tabs-button"]').click();
-    // Proj-A ends with zero tabs; rather than strand on the now-empty project the
-    // strip auto-switches to Proj-B (which still has its 2 tabs).
-    await expectSwitchedAfterCloseAll(page, aIds, bIds, 2);
-    await expect(page.locator('[data-testid="footer"]')).toContainText(/proj-b/i, { timeout: 10_000 });
+    // Proj-A ends with zero tabs; the strip stays on the now-empty Proj-A (does
+    // NOT auto-switch away). The footer keeps showing Proj-A as the current
+    // project (.md: "validate footer still shows Proj-A as current project").
+    await expect.poll(async () => (await tabIds(page)).length, { timeout: 15_000 }).toBe(0);
+    await expect(page.locator('[data-testid="footer"]')).toContainText(/proj-a/i, { timeout: 10_000 });
+    // Open the chip: Proj-A's row is gone (0 open tabs), Proj-B is still listed
+    // with count 2 (.md: "Proj-A row gone OR shows 0" / "Proj-B still listed count 2").
+    const popover = await openProjectsChipPopover(page);
+    const bRow = popover.locator('button').filter({ hasText: 'Proj-B' });
+    await expect(bRow).toBeVisible({ timeout: 10_000 });
+    await expect(bRow).toContainText('2'); // the row's count badge
+    await expect(popover.getByText(/Proj-A/)).toHaveCount(0);
     await rq.dispose();
   });
 
@@ -722,8 +764,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const list = (await pureShells(rq));
     const bIds = list.filter((s) => s.project_id === b).map((s) => s.id);
     const aShells = list.filter((s) => s.project_id === a);
-    await gotoUrl(page, `/dock/shell/shell-${aShells[1].id}`);
+    await page.goto(`/dock/shell/shell-${aShells[1].id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await page.locator('[data-testid="projects-counter-chip"]').first().click();
     await page.locator('[data-testid="projects-counter-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
     await page.locator('[data-testid="projects-counter-popover"]').getByText(/Proj-B/).first().click();
@@ -774,12 +817,19 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     // Footer reflects project path/name initially.
     const footer = page.locator('[data-testid="footer"]');
     await expect(footer).toBeVisible();
-    // Override workdir → footer shows the explicit path.
+    // Override workdir → the footer's path-bearing affordance reflects the explicit
+    // path. The footer's VISIBLE label is the project's displayName; the workdir →
+    // project-path → name fallback chain surfaces in the "Open folder" / "Open
+    // project view" title+aria-label (StatusBar.projectPath), not the visible text.
+    const overridePath = page.locator(
+      '[data-testid="footer"] [title*="override-workdir"], [data-testid="footer"] [aria-label*="override-workdir"]',
+    );
     await page.evaluate(() => (window as unknown as { dataContext: { setWorkdir: (p: string | null) => Promise<void> } }).dataContext.setWorkdir('/tmp/regression/override-workdir'));
-    await expect(footer).toContainText('override-workdir', { timeout: 10_000 });
-    // Revert.
+    await expect(overridePath.first()).toBeVisible({ timeout: 10_000 });
+    // Revert → the override path drops out of the fallback chain (falls back to the
+    // project's own path).
     await page.evaluate(() => (window as unknown as { dataContext: { setWorkdir: (p: string | null) => Promise<void> } }).dataContext.setWorkdir(null));
-    await expect(footer).not.toContainText('override-workdir', { timeout: 10_000 });
+    await expect(overridePath).toHaveCount(0, { timeout: 10_000 });
     await rq.dispose();
   });
 
@@ -803,10 +853,10 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     test.skip(true, 'platform: OS file manager opens outside the browser; cannot verify headlessly. skip_challenge_required.');
   });
 
-  test('test 32: Footer repo/branch reflects active project Git artifact [skip:scope-infra]', async () => {
+  test('test 32: Footer repo/branch Git artifact [skip:removed]', async () => {
     test.skip(
       true,
-      'rabbit-hole: a GIT_REPO Artifact created via REST with project_id + scope:"project" (correct CodeRef shape: name/ref_type/path) is accepted, but the footer (footer.tsx useCurrentArtifacts, QueryRequest scope=[project.typeId]) does not return it for the navigated project, so repoInfo never renders metadata.branch. Verified the artifact persists with the right project_id; the gap is in the project-scoped artifact QUERY matching (entity scope-query infra), a deep investigation orthogonal to the tab/strip matrix. skip_challenge_required.',
+      'removed: project Git artifacts and footer repo/branch rendering were removed; git share provenance is represented by GitOrigin bundle metadata. skip_challenge_required.',
     );
   });
 
@@ -829,6 +879,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { projectId } = await bootstrapIds(rq);
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     const before = (await tabIds(page)).length;
     await createShell(rq, projectId);
     // The strip syncs the tab set on load/navigation (it does not live-subscribe
@@ -836,6 +887,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     // a refetch. The backend state is authoritative; reload to pull it.
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 10_000 }).toBeGreaterThan(before);
     await rq.dispose();
   });
@@ -846,10 +898,12 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { projectId } = await bootstrapIds(rq);
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     const { id } = await createProcess(rq, projectId, 'claude_code');
     // Tab set syncs on load/navigation — reload to pull the externally-created AP.
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => (await tabIds(page)).join(','), { timeout: 10_000 }).toContain(`agentic_process-${id}`);
     await rq.dispose();
   });
@@ -866,6 +920,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await closeShell(rq, ids[2]);
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect.poll(async () => (await tabIds(page)).join(','), { timeout: 10_000 }).not.toContain(ids[2]);
     await expect.poll(async () => (await tabIds(page)).length, { timeout: 10_000 }).toBe(2);
     await rq.dispose();
@@ -951,8 +1006,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const { id } = await createProcess(rq, projectId, 'claude_code');
-    await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
+    await page.goto(`/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     const tab = page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`);
     await expect(tab).toBeVisible({ timeout: 15_000 });
     await tab.hover();
@@ -968,8 +1024,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     const { projectId } = await bootstrapIds(rq);
     const { id, shellId } = await createProcess(rq, projectId, 'claude_code');
     await createShell(rq, projectId); // a 2nd tab to switch to
-    await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
+    await page.goto(`/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     const tab = page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`);
     await renameTab(page, `tab-shell|agentic_process-${id}`, 'claude-fix');
     await expect(tab).toContainText('claude-fix', { timeout: 10_000 });
@@ -982,6 +1039,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     // refresh
     await page.reload();
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toContainText('claude-fix', { timeout: 15_000 });
     // PTY title update must not override user rename
     await rq.post(`${API}/api/v1/graph/shell/${shellId}/update-display`, { data: { name: 'pty-title', is_pty: true } });
@@ -995,8 +1053,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const sid = await createShell(rq, projectId);
-    await gotoUrl(page, `/dock/shell/shell-${sid}`);
+    await page.goto(`/dock/shell/shell-${sid}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     const tab = page.locator(`[data-testid="tab-shell|shell-${sid}"]`);
     const nameBefore = (await tab.textContent())?.trim() ?? '';
     await renameTab(page, `tab-shell|shell-${sid}`, 'shell-abcd1234-ef56-4789-9abc-567890abcdef');
@@ -1092,7 +1151,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     for (let i = 0; i < 2; i++) await createShell(rq, projectId);
-    await gotoUrl(page, '/agent/00000000-0000-0000-0000-000000000000/dock/shell');
+    await page.goto('/agent/00000000-0000-0000-0000-000000000000/dock/shell');
     await page.waitForTimeout(3_000);
     // No white-screen; something renders.
     await expect(page.locator('#root')).not.toBeEmpty();
@@ -1104,8 +1163,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const { id } = await createProcess(rq, projectId, 'claude_code');
-    await gotoUrl(page, `/dock/shell/agentic_process-${id}`);
+    await page.goto(`/dock/shell/agentic_process-${id}`);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
     expect(page.url()).toContain(`agentic_process-${id}`);
     await clickRail(page, 'home');
@@ -1121,7 +1181,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
   test('test 50: Deep link /dock/shell/new_terminal redirects to a real shell', async ({ page }) => {
     const rq = await api();
     await resetDb(rq);
-    await gotoUrl(page, '/dock/shell/new_terminal');
+    await page.goto('/dock/shell/new_terminal');
     await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 30_000 });
     const target = page.url().match(/shell-[0-9a-f-]+/)![0];
     await page.locator('[data-testid="terminal-panel"]').first().waitFor({ state: 'visible', timeout: 15_000 });
@@ -1145,6 +1205,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await createContentTab(rq, c);
     await gotoDockShell(page);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await dismissCleanedSessionsOrSkip(page);
     // Count = 2 even though Proj-C owns zero terminal tabs (the fix: the chip is
     // kind-agnostic, not terminal-only).
     await expect(page.locator('[data-testid="projects-counter-chip"]').first()).toContainText('2', { timeout: 15_000 });

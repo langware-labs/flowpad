@@ -1,23 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActionInfo, dataManager } from '@sdk';
-
-export interface AssetRevision {
-  hash: string;
-  version: number | null;
-  message: string;
-  date: string;
-  author: string;
-}
-
-interface GitRevisionList {
-  revisions: AssetRevision[];
-  version: number | null;
-  unpushed: number;
-}
+import { GitWorkdir, type GitRevision, type GitRevisionList } from '@sdk';
 
 export interface UseAssetRevisionStatusResult {
   /** Past revisions of this file, newest first. */
-  revisions: AssetRevision[];
+  revisions: GitRevision[];
   /** Current (HEAD) version of this asset, or null. */
   version: number | null;
   /** Local commits to this file not yet pushed (the header "pending" count). */
@@ -42,27 +28,40 @@ export function useAssetRevisionStatus(
   reloadSignal?: unknown,
 ): UseAssetRevisionStatusResult {
   const [data, setData] = useState<GitRevisionList>({ revisions: [], version: null, unpushed: 0 });
+  const [hasRepo, setHasRepo] = useState(false);
   const mountedRef = useRef(true);
 
   const fetchStatus = useCallback(async () => {
     const empty = { revisions: [], version: null, unpushed: 0 };
     if (!computeNodeId || !workdir || !file) {
       setData(empty);
+      setHasRepo(false);
       return;
     }
-    const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'GET');
-    action.subpath = 'file-revisions';
-    action.queryParameters = { workdir, file };
     try {
-      const result = await dataManager.callAction<null, GitRevisionList>(action);
+      const git = new GitWorkdir(workdir, computeNodeId);
+      const result: GitRevisionList = await git.fileRevisions(file);
       if (!mountedRef.current) return;
+      const revisions = result?.revisions ?? [];
       setData({
-        revisions: result?.revisions ?? [],
+        revisions,
         version: result?.version ?? null,
         unpushed: result?.unpushed ?? 0,
       });
+      // A file with history is obviously in a repo — skip the probe. Only when
+      // there's no history do we ask git directly, to tell "no repo" apart from
+      // "repo with no commits for this file yet".
+      if (revisions.length > 0) {
+        setHasRepo(true);
+      } else {
+        const isInit = await git.isInit();
+        if (mountedRef.current) setHasRepo(isInit);
+      }
     } catch {
-      if (mountedRef.current) setData(empty);
+      if (mountedRef.current) {
+        setData(empty);
+        setHasRepo(false);
+      }
     }
   }, [computeNodeId, workdir, file]);
 
@@ -74,6 +73,5 @@ export function useAssetRevisionStatus(
     };
   }, [fetchStatus, reloadSignal]);
 
-  // hasRepo is derived — a file with history is one that's in a repo.
-  return { ...data, hasRepo: data.revisions.length > 0, refresh: fetchStatus };
+  return { ...data, hasRepo, refresh: fetchStatus };
 }

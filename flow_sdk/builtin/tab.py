@@ -22,6 +22,8 @@ expected to reset on such a rebuild anyway).
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json as _json
 import logging
 import uuid
@@ -34,7 +36,7 @@ from flow_sdk.builtin.tab_order import (
     filter_for_project,
 )
 from flow_sdk.core import Entity
-from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.fs_store.identifier import is_valid_uuid, mint_uuid
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)
@@ -48,21 +50,87 @@ _UNSET: object = object()
 
 
 def _pointer_to_hash(pointer: str) -> str:
-    """Extract the canonical 'viewType|sub' identity string from either format:
-    - new: JSON {"viewType": ..., "pointer": ...}
+    """Extract the canonical identity string from either format:
+    - new: JSON {"viewType": ..., "pointer": ..., ["tabHash": ...]}
     - old: legacy "viewType|sub" string (backward compat during migration)
 
-    This ensures UUID5 remains stable across the format transition.
+    A scope-keyed dock (assets/explorer) normalizes its sub-pointer to '' and
+    carries its real identity in the frontend-computed ``tabHash`` field
+    ("assets|project:<id>") — without honoring it here, EVERY scope of such a
+    view derives the SAME uuid5 and each scope switch steals the one row. Prefer
+    ``tabHash`` when present; pointers without it hash exactly as before, so all
+    existing ids stay stable.
     """
     if pointer.startswith('{'):
         try:
             data = _json.loads(pointer)
+            tab_hash = data.get('tabHash')
+            if tab_hash:
+                return str(tab_hash)
             vt = data.get('viewType', '')
             sub = data.get('pointer', '')
             return f"{vt}|{sub}"
         except (ValueError, TypeError):
             return pointer
     return pointer
+
+
+def _pointer_view_type(pointer: str | None) -> str | None:
+    """The dock viewType a stored pointer addresses. Derived from
+    ``_pointer_to_hash`` — the one owner of the pointer-format grammar — whose
+    canonical hash always leads with the viewType (``vt|sub``, and the
+    scope-keyed ``tabHash`` form too). A malformed pointer yields a string no
+    real viewType equals, so equality checks fail closed."""
+    if not pointer:
+        return None
+    return _pointer_to_hash(pointer).split('|', 1)[0] or None
+
+
+# Target types that can never be workspace CHILDREN. A vibe workspace groups the
+# content assets it opens under its process tab (``parent_tab_id``); a live
+# session anchor (process/shell) or a whole project is never "inside" another
+# workspace — adopting one was how nested-display / shell-under-display
+# corruption arose. Mirrors the FE allow-list (``dockAddressesAsset``): the FE
+# adopts only content-asset docks, this deny-list is the backend belt.
+# ``ensure_tab`` drops the hint silently (an old client may still send it) and
+# null-heals legacy corrupt rows on touch.
+_PARENT_FORBIDDEN_TARGET_TYPES = frozenset({
+    EntityType.SHELL.value,
+    EntityType.AGENTIC_PROCESS.value,
+    EntityType.PROJECT.value,
+})
+
+
+def _pointer_is_adoptable_child(pointer: str | None) -> bool:
+    """Only a content-asset dock may be a workspace CHILD — the pointer-shape
+    mirror of the FE allow-list (``dockAddressesAsset``): an assets
+    ``editor/...`` pointer (typeid- or vfs-addressed), plain or project-rebased
+    (``<project-id>/editor/...``). Navigation surfaces (assets lists /
+    project-home, explorer, shell, project, inbox, …) are never children.
+
+    Complements ``_PARENT_FORBIDDEN_TARGET_TYPES``, which keys on the declared
+    ``target_type`` — NULL for list surfaces, so only a pointer-shape check can
+    catch a stale parent edge on e.g. a project-assets tab (RCA 2026-07-16).
+    Parses the RAW inner pointer itself: ``_pointer_to_hash`` deliberately
+    collapses it to the scope-keyed ``tabHash`` form (``project:<id>``)."""
+    if not pointer:
+        return False
+    if pointer.startswith('{'):
+        try:
+            data = _json.loads(pointer)
+        except (ValueError, TypeError):
+            return False
+        vt = str(data.get('viewType') or '')
+        sub = str(data.get('pointer') or '')
+    else:
+        vt, _, sub = pointer.partition('|')
+    if vt == 'assets':
+        return sub.startswith('editor/')
+    if vt == 'project':
+        # Project-rebased asset dock: ``<project-id>/<assetSubPointer>``.
+        _, _, asset_sub = sub.partition('/')
+        return asset_sub.startswith('editor/')
+    return False
 
 
 def tab_id_for(pointer: str) -> str:
@@ -87,6 +155,13 @@ class Tab(Entity):
     # fast reverse lookup. Null for target-less surfaces (settings/search/diff).
     target_type: str | None = APIField(default=None)
     target_id: str | None = APIField(default=None)
+
+    # Advisory grouping edge to the opener tab (the vibe display tab is the first
+    # consumer). Never affects ordering/close/recency; children stay ordinary
+    # global tabs. Nulled only on hard reap (see ``_clear_parent_refs``) — a
+    # soft-closed parent leaves it dangling-but-inert, and the deterministic
+    # uuid5 id regroups children when the parent's pointer reopens.
+    parent_tab_id: str | None = APIField(default=None)
 
     # Display primitives the strip draws straight off the Tab, so the chip never
     # has to fetch its backing Shell/AgenticProcess (docs/tab-management.md). Both
@@ -138,9 +213,14 @@ class Tab(Entity):
         tears down its PTY/worker; a markdown/skill survives untouched). A
         target without that method is a no-op.
         """
+        await self._soft_hide()
+        await self._dispatch_teardown()
+
+    async def _soft_hide(self) -> None:
+        """The membership-removal half of close — ONE definition of "soft-close"
+        shared by ``close`` and the fast HTTP handler (``_http_close``)."""
         self.visible = False
         await self.save()
-        await self._dispatch_teardown()
 
     async def _dispatch_teardown(self) -> None:
         target = await self._target_entity()
@@ -176,23 +256,28 @@ class Tab(Entity):
             await target.rename(name)
 
     async def _target_entity(self):
-        if not (self.target_type and self.target_id):
-            return None
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        return await _load_target_entity(self.target_type, self.target_id)
 
-        entity_cls = SchemaRegistry.get_entity_cls(self.target_type)
-        if entity_cls is None:
-            return None
-        return await entity_cls.get_one({"id": self.target_id})
+
+async def _visible_tabs_sorted_with_targets() -> (
+    "tuple[list[Tab], dict[tuple[str, str], object]]"
+):
+    """``_visible_tabs_sorted`` plus the batched SHELL/AGENTIC_PROCESS target map
+    it already loaded to reap. The hot read paths (``_build_tab_list`` /
+    ``list_all``) thread that map into ``_populate_tab_statuses`` so the status
+    fill reuses it instead of re-running the same ``id IN (…)`` loads — one set
+    of target queries per request, not two."""
+    tabs = await Tab.get_all({"visible": True})
+    target_map, verified_types = await _load_status_targets(tabs)
+    tabs = await _reap_orphans(tabs, target_map, verified_types)
+    tabs.sort(key=lambda t: (getattr(t, "tab_order", 0) or 0, t.id))
+    return tabs, target_map
 
 
 async def _visible_tabs_sorted() -> list[Tab]:
     """Every visible Tab in canonical GLOBAL order (``tab_order`` asc, ``id`` as
     the deterministic tiebreak so legacy ``tab_order==0`` rows never reshuffle)."""
-    tabs = await Tab.get_all({"visible": True})
-    tabs = await _delete_tabs_for_missing_projects(tabs)
-    tabs = await _delete_tabs_for_missing_targets(tabs)
-    tabs.sort(key=lambda t: (getattr(t, "tab_order", 0) or 0, t.id))
+    tabs, _ = await _visible_tabs_sorted_with_targets()
     return tabs
 
 
@@ -240,68 +325,354 @@ async def delete_tabs_for_missing_project(project_id: str | None) -> int:
     return deleted
 
 
-async def _delete_tabs_for_missing_projects(tabs: list[Tab]) -> list[Tab]:
-    project_ids = sorted({str(t.project_id) for t in tabs if getattr(t, "project_id", None)})
-    if not project_ids:
-        return tabs
-    missing_ids = [pid for pid in project_ids if not await _project_exists(pid)]
-    if not missing_ids:
-        return tabs
-    deleted_ids: set[str] = set()
-    for project_id in missing_ids:
+async def _load_status_targets(
+    tabs: list[Tab],
+) -> "tuple[dict[tuple[str, str], object], set[str]]":
+    """Batch-load the SHELL and AGENTIC_PROCESS target entities referenced by
+    ``tabs`` — ONE ``id IN (…)`` query per type, vs a ``get_one`` per tab.
+
+    These are the only target types that carry a chip ``status`` and the only
+    ones the orphan-target reaper validates, so a single load serves both the
+    status fill (``_populate_tab_statuses``) and the missing-target reap
+    (``_reap_orphans``) — killing the previous double-read of every
+    agentic_process row.
+
+    Returns ``(by_type_id, verified_types)``. ``verified_types`` lists the types
+    whose query actually ran (or had nothing to load) — a type whose load raised
+    is omitted so the reaper treats its tabs as "could not determine" and leaves
+    them alone, exactly like the old per-tab ``except: continue`` fail-open.
+    """
+    from flow_sdk.db.drivers.query import (  # noqa: PLC0415
+        ExpressionNode,
+        QueryFilter,
+        QueryOp,
+    )
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    by_type_id: dict[tuple[str, str], object] = {}
+    verified: set[str] = set()
+    for t in _DB_BACKED_TARGET_TYPES:
+        ids = sorted(
+            {str(tab.target_id) for tab in tabs if tab.target_type == t and tab.target_id}
+        )
+        if not ids:
+            verified.add(t)  # nothing referenced == fully known
+            continue
+        cls = SchemaRegistry.get_entity_cls(t)
+        if cls is None:
+            continue
         try:
-            project_tabs = await Tab.get_all({"project_id": project_id})
+            rows = await cls.get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids]))
+            )
+        except Exception:
+            logger.debug("tab status-target batch load failed for %s", t, exc_info=True)
+            continue
+        for r in rows:
+            by_type_id[(t, str(r.id))] = r
+        verified.add(t)
+    return by_type_id, verified
+
+
+def _pointer_project_id(pointer: str | None) -> str | None:
+    """The project id NAMED by a project-scoped dock pointer — pure parse, no
+    existence check (``viewType:"project"`` → leading ``<project_id>/`` segment).
+    Returns the id only when UUID-shaped (same reap-eligibility rule as
+    ``_existing_project_ids``); any other pointer shape → ``None``."""
+    if not pointer:
+        return None
+    try:
+        data = _json.loads(pointer)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict) or data.get("viewType") != "project":
+        return None
+    candidate = str(data.get("pointer") or "").split("/", 1)[0].strip()
+    return candidate if is_valid_uuid(candidate) else None
+
+
+async def _existing_project_ids(
+    tabs: list[Tab], pointer_pids: "dict[str, str | None]"
+) -> "tuple[set[str], set[str], bool]":
+    """Resolve which of the tabs' project ids still exist, via ONE ``id IN (…)``
+    query (vs a ``get_by_id`` per distinct project).
+
+    ``pointer_pids`` is the caller's per-tab ``_pointer_project_id`` parse
+    (tab id → pointer-named project id), computed once and shared with the
+    pointer-orphan reap so each pointer is parsed a single time per list call.
+
+    Returns ``(existing_ids, candidate_ids, ok)`` where ``candidate_ids`` is the
+    set of distinct UUID-shaped ``project_id``s (the only ones eligible for
+    reaping — legacy/non-UUID ids aren't reliable Project keys, same rule as
+    ``_project_exists``) and ``existing_ids`` is the subset of those that exist.
+    The caller reaps ``candidate_ids - existing_ids`` without re-validating shape.
+    ``ok`` is ``False`` if the lookup raised, so the caller fails open and reaps
+    nothing.
+    """
+    candidates = {
+        str(t.project_id)
+        for t in tabs
+        if getattr(t, "project_id", None) and is_valid_uuid(str(t.project_id))
+    }
+    # Also validate the project id NAMED BY a project-scoped dock pointer: a tab
+    # can carry a live (target-healed) ``project_id`` while its URL still names a
+    # deleted project — that fossil must be detected here to be reapable at all.
+    candidates |= {pid for pid in pointer_pids.values() if pid is not None}
+    if not candidates:
+        return set(), candidates, True
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import (  # noqa: PLC0415
+        ExpressionNode,
+        QueryFilter,
+        QueryOp,
+    )
+
+    try:
+        rows = await Project.get_all(
+            QueryFilter(
+                match=ExpressionNode(op=QueryOp.IN, operands=["id", sorted(candidates)])
+            )
+        )
+    except Exception:
+        logger.debug("tab project-existence batch load failed", exc_info=True)
+        return set(), candidates, False
+    return {str(r.id) for r in rows}, candidates, True
+
+
+async def _reap_orphans(
+    tabs: list[Tab],
+    target_map: "dict[tuple[str, str], object] | None" = None,
+    verified_types: "set[str] | None" = None,
+) -> list[Tab]:
+    """Drop — and hard-delete the rows for — tabs orphaned by a missing project
+    or a missing shell/agentic_process target. Replaces the old pair of per-row
+    reapers (``_delete_tabs_for_missing_projects`` / ``…_targets``).
+
+    Orphan detection is in-memory off two batched ``id IN (…)`` loads (projects
+    and the shell/agentic_process targets — the latter shared with the status fill
+    via ``target_map``), so the list READ costs O(1) queries instead of
+    O(distinct-projects + live-session-tabs) ``get_one``s. Writes fire ONLY
+    when something is genuinely orphaned (rare), so the steady-state read writes
+    nothing.
+
+    Fail-open preserved: a project lookup that raised reaps no project orphans;
+    a target type whose batch load raised (absent from ``verified_types``) reaps
+    no orphans of that type — never mass-delete on a transient read error.
+
+    The reaped target types are exactly ``_DB_BACKED_TARGET_TYPES`` (shell +
+    agentic_process): those rows are always DB-backed, so absence == orphan,
+    whereas a missing ``markdown``/asset target is a valid unindexed-but-on-disk
+    row (see ``_backfill_tab_projects``) and is left alone.
+    """
+    if not tabs:
+        return tabs
+    if target_map is None or verified_types is None:
+        target_map, verified_types = await _load_status_targets(tabs)
+    pointer_pids = {t.id: _pointer_project_id(t.pointer) for t in tabs}
+    existing_projects, candidate_projects, projects_ok = await _existing_project_ids(tabs, pointer_pids)
+
+    deleted_ids: set[str] = set()
+
+    # Missing PROJECT: reap every tab (visible AND hidden) of each absent project
+    # via the shared per-project reaper, so a deleted project leaves no dangling
+    # rows behind — not just the ones currently visible. Fires only for a
+    # genuinely missing project, so the steady-state read does no extra work.
+    if projects_ok:
+        for pid in sorted(candidate_projects - existing_projects):
+            await delete_tabs_for_missing_project(pid)
+            deleted_ids.update(
+                t.id for t in tabs if str(getattr(t, "project_id", None)) == pid
+            )
+
+    # Dead-URL POINTER: a project-scoped tab whose dock URL names a project that
+    # no longer exists. ``_backfill_tab_projects`` may still heal such a tab's
+    # ``project_id`` from its TARGET — so the projects chip advertises a live
+    # project — but opening the tab, or entering that project via the chip
+    # (``dockForProjectEntry`` resolves the tab's stored pointer VERBATIM), can
+    # only ever land on ``/dock/project/<dead>/…`` → "Project not found", forever
+    # (RCA 2026-07-08). A tab addressing a dead project is removed, not healed
+    # half-way. Same fail-open as the project reap above: only when the batched
+    # existence lookup succeeded.
+    reaped_pointer = False
+    if projects_ok:
+        pointer_orphans = [
+            t
+            for t in tabs
+            if t.id not in deleted_ids
+            and (pid := pointer_pids.get(t.id)) is not None
+            and pid not in existing_projects
+        ]
+        reaped_pointer = await _delete_rows(pointer_orphans, deleted_ids)
+
+    # Missing TARGET: a shell/agentic_process tab whose entity row is absent.
+    # BOTH live-session target types (``_DB_BACKED_TARGET_TYPES``) are ALWAYS
+    # DB-backed, so a missing row means the session is genuinely gone — never a
+    # valid unindexed-on-disk state (unlike a markdown/asset target, which is why
+    # those are NOT reaped). A ``close``d shell soft-hides its Tab via the generic
+    # orphan-close, but a reload whose active URL points at that now-deleted shell
+    # re-mints the row through ``ensure_tab`` (visible again); reaping shell here —
+    # not just agentic_process — is what finally drops that resurrected chip.
+    # Per-type gate on ``verified_types`` keeps the fail-open: a type whose batch
+    # load raised is omitted, so its tabs are left alone rather than mass-deleted.
+    target_orphans = [
+        t
+        for t in tabs
+        if t.id not in deleted_ids
+        and t.target_type in _DB_BACKED_TARGET_TYPES
+        and t.target_type in verified_types
+        and t.target_id
+        and (t.target_type, str(t.target_id)) not in target_map
+    ]
+    reaped_target = await _delete_rows(target_orphans, deleted_ids)
+
+    # Legacy DISPLAY rows: the display surface is no longer a Tab identity —
+    # a process has exactly ONE tab (its shell pointer) and vibe is a rendering
+    # mode of it. Any row still carrying a display pointer predates that model,
+    # so the pointer SHAPE alone condemns it (target liveness is irrelevant —
+    # ``Tab.delete`` is row-only and never touches the target). Children grouped
+    # under it re-anchor to the same target's shell tab (the process tab that
+    # replaced it) so workspace membership survives the heal; with no shell row
+    # the ``_reparent_children`` pass below nulls them instead. The cheap
+    # substring pre-filter keeps the steady state (no display rows anywhere)
+    # from paying a JSON parse per tab per list read.
+    display_rows = [
+        t
+        for t in tabs
+        if t.id not in deleted_ids
+        and "display" in (t.pointer or "")
+        and _pointer_view_type(t.pointer) == "display"
+    ]
+    # Same-target shell siblings are live visible rows, so resolve them from the
+    # already-loaded list — no extra query.
+    reparent: dict[str, str | None] = {}
+    for tab in display_rows:
+        shell_row = next(
+            (
+                s
+                for s in tabs
+                if s.id != tab.id
+                and tab.target_type
+                and s.target_type == tab.target_type
+                and str(s.target_id) == str(tab.target_id)
+                and _pointer_view_type(s.pointer) == "shell"
+            ),
+            None,
+        )
+        if shell_row is not None:
+            reparent[tab.id] = shell_row.id
+    reaped_display = await _delete_rows(display_rows, deleted_ids)
+
+    # Every hard-deleted row's children heal in ONE pass: display children
+    # re-anchor to their process's shell tab; everything else nulls (soft-close
+    # leaves edges intact by design — the deterministic id regroups on reopen;
+    # only a real delete is terminal). Mappings for rows whose delete failed are
+    # dropped so their children keep pointing at the still-existing row.
+    for pid in deleted_ids:
+        reparent.setdefault(pid, None)
+    reparent = {pid: nid for pid, nid in reparent.items() if pid in deleted_ids}
+    healed_children = await _reparent_children(reparent)
+
+    # Non-adoptable children: a row whose POINTER is a navigation surface
+    # (assets list / project-home, explorer, …) can never be a workspace child,
+    # whatever wrote the edge (the display-tab model stamped these before the
+    # adoptable invariant existed). ``ensure_tab`` heals such a row on touch;
+    # this sweep is the authoritative bulk heal — in-memory over the already-
+    # loaded list, so rows heal on any list read without ever being opened.
+    healed_nonadoptable = False
+    for child in tabs:
+        if child.id in deleted_ids or not child.parent_tab_id:
+            continue
+        if _pointer_is_adoptable_child(child.pointer):
+            continue
+        child.parent_tab_id = None
+        try:
+            await child.save()
+            healed_nonadoptable = True
         except Exception:
             continue
-        for tab in project_tabs:
+
+    # Dangling parent edges: a visible child whose parent row no longer EXISTS —
+    # e.g. an old client minted it under a row another reap cycle had already
+    # deleted, so no reap ever saw the pair together. A soft-closed parent is
+    # legitimate (regroups on reopen); only a genuinely missing row is terminal.
+    # Parents outside the visible list resolve in ONE batched ``id IN`` query
+    # (deduped set) — zero queries when every visible child's parent is visible,
+    # and hidden-but-live parents cost one query per cycle, not one per child.
+    healed_dangling = False
+    loaded_ids = {t.id for t in tabs}
+    unresolved = {
+        t.parent_tab_id
+        for t in tabs
+        if t.parent_tab_id
+        and t.id not in deleted_ids
+        and t.parent_tab_id not in loaded_ids
+        and t.parent_tab_id not in reparent  # healed above
+    }
+    if unresolved:
+        from flow_sdk.db.drivers.query import (  # noqa: PLC0415
+            ExpressionNode,
+            QueryFilter,
+            QueryOp,
+        )
+
+        try:
+            rows = await Tab.get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", sorted(unresolved)]))
+            )
+            gone = unresolved - {str(r.id) for r in rows}
+        except Exception:
+            gone = set()  # fail-open: never null edges on a transient read error
+        for child in tabs:
+            if child.id in deleted_ids or child.parent_tab_id not in gone:
+                continue
+            child.parent_tab_id = None
             try:
-                await tab.delete()
+                await child.save()
+                healed_dangling = True
             except Exception:
                 continue
-            deleted_ids.add(tab.id)
-    if deleted_ids:
+
+    if reaped_target or reaped_pointer or reaped_display or healed_children or healed_nonadoptable or healed_dangling:
+        # Background reap (no user navigation) — ONE ping per cycle so clients
+        # refetch once and the dangling chips drop live.
         await broadcast_tabs_changed()
     return [t for t in tabs if t.id not in deleted_ids]
 
 
-async def _delete_tabs_for_missing_targets(tabs: list[Tab]) -> list[Tab]:
-    """Hard-delete dangling agentic_process tabs whose target row no longer exists
-    — a bare FS stub that never synced, or a process removed out from under the
-    tab. The delete→orphan-Tab cleanup in ``Entity.delete`` never fired (there was
-    no delete) and the missing-PROJECT reaper skips it (its project still exists),
-    so the chip lingers, titled with its raw pointer, and 404s on click. Like that
-    reaper this removes only the stale row (``Tab.delete`` — never ``Tab.close``,
-    so no teardown of a target that isn't there).
-
-    Restricted to ``agentic_process``: those rows are always DB-backed, so absence
-    == orphan, whereas a missing ``markdown``/asset target is a valid
-    unindexed-but-on-disk row (see ``_backfill_tab_projects``) that must NOT be
-    reaped.
-    """
-    ap_type = EntityType.AGENTIC_PROCESS.value
-    candidates = [t for t in tabs if t.target_type == ap_type and t.target_id]
-    if not candidates:
-        return tabs
-    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
-
-    deleted_ids: set[str] = set()
-    for tab in candidates:
-        try:
-            if await AgenticProcess.get_one({"id": str(tab.target_id)}) is not None:
-                continue
-        except Exception:
-            # Fail open: a transient lookup problem must not hard-delete tabs.
-            continue
+async def _delete_rows(rows: "list[Tab]", deleted_ids: "set[str]") -> bool:
+    """Fail-open hard-delete shared by every reap pass: a row whose delete
+    raises is skipped (never blocks the list read), successes land in
+    ``deleted_ids``. Returns whether anything was deleted."""
+    reaped = False
+    for tab in rows:
         try:
             await tab.delete()
         except Exception:
             continue
         deleted_ids.add(tab.id)
-    if deleted_ids:
-        # Background reap (no user navigation) — ping clients so the dangling chip
-        # drops live instead of waiting for the next list fetch.
-        await broadcast_tabs_changed()
-    return [t for t in tabs if t.id not in deleted_ids]
+        reaped = True
+    return reaped
+
+
+async def _reparent_children(mapping: "dict[str, str | None]") -> bool:
+    """Move every child of each hard-deleted parent id onto its replacement
+    (``None`` = detach). Rare path (only on genuine reap); best-effort, one
+    query per gone parent. Broadcast is owned by the caller (coalesced into
+    ``_reap_orphans``'s single ping per cycle). Returns whether anything moved."""
+    changed = False
+    for pid, new_parent in mapping.items():
+        try:
+            children = await Tab.get_all({"parent_tab_id": pid})
+        except Exception:
+            continue
+        for child in children:
+            child.parent_tab_id = new_parent
+            try:
+                await child.save()
+                changed = True
+            except Exception:
+                continue
+    return changed
 
 
 async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> bool:
@@ -325,6 +696,50 @@ async def _project_of_target(target_type: str, target_id: str) -> str | None:
     return await Entity.project_id_of(target_type, target_id)
 
 
+# The two live-session target types: their rows are ALWAYS DB-backed, so absence
+# == the session is gone (never a valid unindexed-on-disk state). They are also
+# the only status-bearing tab targets, and (because absence is unambiguous) the
+# exact set ``_reap_orphans`` reaps a missing target for.
+_DB_BACKED_TARGET_TYPES = (EntityType.SHELL.value, EntityType.AGENTIC_PROCESS.value)
+
+
+def _is_synthetic_name(
+    name: str | None, target_type: str | None, target_id: str | None
+) -> bool:
+    """True when ``name`` is the frontend's ``<type>-<id>`` synthetic fallback for
+    this target rather than a real name — the label ``APIEntity.defaultDisplayName``
+    fabricates for an entity with no name/uname/title (e.g. an un-stamped
+    AgenticProcess). Backstop so a stale/legacy client can never freeze the
+    synthetic into the durable ``Tab.name`` (the FE guard in ``getTabName`` is the
+    primary fix; this is belt-and-suspenders). Anchored to the exact synthetic
+    shape — the literal id or the ``<first4>…<last4>`` ellipsis form — so it never
+    eats a legitimate user name that merely starts with the type token."""
+    if not name or not target_type:
+        return False
+    prefix = f"{target_type}-"
+    if not name.startswith(prefix):
+        return False
+    tail = name[len(prefix):]
+    tid = str(target_id or "")
+    if not tid:
+        return False
+    if tail == tid:
+        return True
+    return len(tid) >= 8 and tail == f"{tid[:4]}…{tid[-4:]}"
+
+
+async def _load_target_entity(target_type: str | None, target_id: str | None):
+    """Resolve the backing entity row for a tab target (None if unresolvable)."""
+    if not (target_type and target_id):
+        return None
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    entity_cls = SchemaRegistry.get_entity_cls(target_type)
+    if entity_cls is None:
+        return None
+    return await entity_cls.get_one({"id": str(target_id)})
+
+
 async def ensure_tab(
     pointer: str,
     *,
@@ -335,6 +750,7 @@ async def ensure_tab(
     icon_key: str | None = None,
     worktree: bool | None = None,
     after_tab_id: str | None = None,
+    parent_tab_id: str | None = None,
 ) -> Tab:
     """Deterministic get-or-create for a tab, keyed by the canonical pointer.
 
@@ -346,6 +762,19 @@ async def ensure_tab(
     ``ensure_file_entity``.
     """
     tid = tab_id_for(pointer)
+    # Reopen-race guard: a just-closed tab's background teardown may still be
+    # killing the shell/worker this pointer re-materializes. Wait for it so the
+    # reopen can't be reaped as a target orphan mid-teardown (awaits in-flight
+    # work only — a settled or absent task costs nothing).
+    pending = _PENDING_TEARDOWNS.get(tid)
+    if pending is not None:
+        with contextlib.suppress(Exception):
+            await pending
+    # Never adopt the FE `<type>-<id>` synthetic as a durable name (backstop to the
+    # `getTabName` guard): drop it to None so the null-name backfill / fresh create
+    # below leave the label empty until a real name is stamped onto the target.
+    if _is_synthetic_name(name, target_type, target_id):
+        name = None
     # Backend authority for the chip's project: the client computes ``project_id``
     # from a cache-first target read that MISSES on a cold/bare open (e.g. an
     # unindexed claude-session lens — the row only resolves via on-disk recovery),
@@ -410,6 +839,27 @@ async def ensure_tab(
         if not existing.worktree and worktree:
             existing.worktree = True
             dirty = True
+        # Adopt into a group on (re)open: opening an already-open tab from inside
+        # a workspace must pull it into that workspace's subset. Last-writer-wins
+        # (a tab belongs to at most one group). ``None`` = no hint → preserve
+        # (matches the name/icon_key hint convention). Never self-parent, and
+        # never a process/project tab (``_PARENT_FORBIDDEN_TARGET_TYPES``) or a
+        # non-content pointer (``_pointer_is_adoptable_child``) — those are
+        # workspace ANCHORS or top-level navigation surfaces, not children; a
+        # legacy row that carries a parent from the pre-invariant era is
+        # null-healed on touch. The outer guard skips the pointer parse on the
+        # dominant case (no edge on the row, no hint from the client).
+        if existing.parent_tab_id is not None or parent_tab_id:
+            if (
+                existing.target_type in _PARENT_FORBIDDEN_TARGET_TYPES
+                or not _pointer_is_adoptable_child(existing.pointer)
+            ):
+                if existing.parent_tab_id is not None:
+                    existing.parent_tab_id = None
+                    dirty = True
+            elif parent_tab_id and parent_tab_id != tid and existing.parent_tab_id != parent_tab_id:
+                existing.parent_tab_id = parent_tab_id
+                dirty = True
         if dirty:
             await existing.save()
         return existing
@@ -426,6 +876,13 @@ async def ensure_tab(
         activated = [t for t in visible if t.last_active_at]
         if activated:
             after_tab_id = max(activated, key=lambda t: t.last_active_at or 0).id
+    # Same parent invariant as the reopen path: a process/project tab or a
+    # non-content pointer is never minted as a workspace child, whatever hint
+    # the client sent. (Checked only when a hint arrived — no hint, no parse.)
+    if parent_tab_id and (
+        target_type in _PARENT_FORBIDDEN_TARGET_TYPES or not _pointer_is_adoptable_child(pointer)
+    ):
+        parent_tab_id = None
     tab = Tab(
         id=tid,
         pointer=pointer,
@@ -436,6 +893,7 @@ async def ensure_tab(
         icon_key=icon_key,
         worktree=bool(worktree),
         visible=True,
+        parent_tab_id=parent_tab_id if parent_tab_id and parent_tab_id != tid else None,
     )
     new_order = compute_insert_new(existing_ids, tid, after_tab_id)
     # Shift the existing rows whose index moved (reuses the reorder persister); the
@@ -513,17 +971,23 @@ async def reconcile_tab_project(target_type: str, target_id: str, project_id: st
 # in global order, optionally filtered to one project's view.
 
 
-async def _resolve_status(tab: Tab) -> str | None:
+async def _resolve_status(tab: Tab, target: "object" = _UNSET) -> str | None:
     """Best-effort live status for the chip (``closing`` ⇒ disabled affordance).
     Duck-typed: a Shell carries ``status``; an AgenticProcess defers to its linked
     shell (``shell_id``). Absent/unknown ⇒ ``None`` (enabled).
 
     Only terminal targets carry a status, so content/target-less tabs short-circuit
-    BEFORE the ``_target_entity`` DB read — the list path resolves no entity for the
-    ~majority of rows (markdown/asset/settings/search/diff)."""
-    if tab.target_type not in (EntityType.SHELL.value, EntityType.AGENTIC_PROCESS.value):
+    BEFORE any DB read — the list path resolves no entity for the ~majority of rows
+    (markdown/asset/settings/search/diff).
+
+    ``target`` may be passed pre-loaded — the entity ``_populate_tab_statuses``
+    already batch-fetched (or ``None`` when the batch didn't find it) — to skip the
+    per-tab ``get_one``. ``_UNSET`` (the default, for callers without a batch) falls
+    back to a direct ``_target_entity`` read."""
+    if tab.target_type not in _DB_BACKED_TARGET_TYPES:
         return None
-    target = await tab._target_entity()
+    if target is _UNSET:
+        target = await tab._target_entity()
     if target is None:
         return None
     status = getattr(target, "status", None)
@@ -546,11 +1010,27 @@ def _normalize_project(project: str | None) -> str | None:
     return project
 
 
-async def _populate_tab_statuses(tabs: list[Tab]) -> None:
-    """Populate status and is_disabled fields on a list of Tabs (in-place mutation).
-    Called before serialization to ensure every Tab carries current status from its backing entity."""
+async def _populate_tab_statuses(
+    tabs: list[Tab],
+    target_map: "dict[tuple[str, str], object] | None" = None,
+) -> None:
+    """Populate ``status`` and ``is_disabled`` on a list of Tabs (in-place).
+
+    Resolves the backing SHELL/AGENTIC_PROCESS entities in ONE batched
+    ``id IN (…)`` load per type (``_load_status_targets``) instead of a
+    ``get_one`` per tab, then derives each chip's status from the pre-loaded map.
+    Content/target-less tabs (markdown/asset/settings/…) carry no status and
+    never touch the DB. ``target_map`` may be supplied by a caller that already
+    loaded it, to avoid re-querying."""
+    status_types = _DB_BACKED_TARGET_TYPES
+    if target_map is None:
+        target_map, _ = await _load_status_targets(tabs)
     for tab in tabs:
-        tab.status = await _resolve_status(tab)
+        if tab.target_type in status_types and tab.target_id:
+            target = target_map.get((tab.target_type, str(tab.target_id)))
+            tab.status = await _resolve_status(tab, target)
+        else:
+            tab.status = None
         tab.is_disabled = tab.status == "closing"
 
 
@@ -562,15 +1042,9 @@ async def _project_from_pointer(pointer: str | None) -> str | None:
     is the authority. Returns the id only when it's a valid entity id AND the
     project still exists, so a stale pointer to a deleted project never stamps a
     dangling id."""
-    if not pointer:
+    candidate = _pointer_project_id(pointer)
+    if candidate is None:
         return None
-    try:
-        data = _json.loads(pointer)
-    except (ValueError, TypeError):
-        return None
-    if not isinstance(data, dict) or data.get("viewType") != "project":
-        return None
-    candidate = str(data.get("pointer") or "").split("/", 1)[0].strip()
     from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
 
     if not is_valid_entity_id(candidate):
@@ -585,8 +1059,14 @@ async def _backfill_tab_projects(tabs: list[Tab]) -> None:
     unindexed claude-session lens, an editor on an unindexed markdown), or minted
     by an older client. The list is the single source the strip draws from, so
     resolving here heals every chip on plain navigation, no ``new_tab`` re-mint
-    needed. Persisted so it sticks (and so the project-filter routes the chip to
-    its real project's view).
+    needed.
+
+    Resolution is IN-MEMORY ONLY — this is a read path (GET ``list``/``list_all``),
+    so it no longer writes (the old per-row ``tab.save()`` heated the SQLite writer
+    on every list fetch). The assignment is enough for both the response and the
+    project filter (``_build_tab_list`` reads ``tab.project_id`` straight after);
+    durable persistence of the heal moves to the next ``ensure_tab``/open of the
+    same pointer.
 
     Resolution order: the target entity's own project (authoritative — includes
     the claude-session on-disk recovery), else the project a project-scoped dock
@@ -602,12 +1082,6 @@ async def _backfill_tab_projects(tabs: list[Tab]) -> None:
         if not resolved:
             continue
         tab.project_id = resolved
-        try:
-            await tab.save()
-        except Exception:
-            logging.getLogger(__name__).debug(
-                "tab project backfill save failed for %s", tab.id, exc_info=True
-            )
 
 
 async def _build_tab_list(project: str | None) -> list[Tab]:
@@ -615,7 +1089,7 @@ async def _build_tab_list(project: str | None) -> list[Tab]:
     Global order filtered to ``{project OR projectless}`` (decision 3), each Tab
     fully populated with status/is_disabled. The Tab objects are serialized
     directly for API responses — no separate projection."""
-    tabs = await _visible_tabs_sorted()
+    tabs, target_map = await _visible_tabs_sorted_with_targets()
     # Heal projectless chips BEFORE filtering, so a backfilled tab routes to its
     # real project's view rather than staying in the projectless bucket.
     await _backfill_tab_projects(tabs)
@@ -624,7 +1098,7 @@ async def _build_tab_list(project: str | None) -> list[Tab]:
     filtered = filter_for_project(order_ids, project_of, _normalize_project(project))
     by_id = {t.id: t for t in tabs}
     result = [by_id[tab_id] for tab_id in filtered]
-    await _populate_tab_statuses(result)
+    await _populate_tab_statuses(result, target_map)
     return result
 
 
@@ -636,6 +1110,7 @@ def _serialize_row(tab: Tab) -> dict:
         "pointer": tab.pointer,
         "target_type": tab.target_type,
         "target_id": tab.target_id,
+        "parent_tab_id": tab.parent_tab_id,
         "project_id": tab.project_id,
         "name": tab.name,
         "icon_key": tab.icon_key,
@@ -669,15 +1144,10 @@ async def broadcast_tabs_changed() -> None:
     backend-originated changes (death/orphan-cleanup, rename, second window). Sends
     a proper broadcast message to all connected clients."""
     try:
+        from flow_sdk.api.messages import BroadcastMessage  # noqa: PLC0415
         from flow_sdk.server.routes.websocket import broadcast  # noqa: PLC0415
-        from pydantic import BaseModel
-        from flow_sdk.api.messages import WSMessageType
 
-        class TabsChangedMessage(BaseModel):
-            message_type: str = WSMessageType.BROADCAST.value
-            broadcast_type: str = "tabs_changed"
-
-        await broadcast(TabsChangedMessage().model_dump_json())
+        await broadcast(BroadcastMessage(broadcast_type="tabs_changed").model_dump_json())
     except Exception as e:
         logger.debug(f"broadcast_tabs_changed failed: {e}")
 
@@ -699,6 +1169,7 @@ async def _http_new_tab(
     icon_key: str | None = None,
     worktree: bool = False,
     after_tab_id: str | None = None,
+    parent_tab_id: str | None = None,
 ):
     """POST /graph/tab/new_tab — loader-driven get-or-create. A fresh tab lands
     right after ``after_tab_id`` (the opener); reopen keeps its slot. Returns the
@@ -712,6 +1183,7 @@ async def _http_new_tab(
         icon_key=icon_key,
         worktree=worktree,
         after_tab_id=after_tab_id,
+        parent_tab_id=parent_tab_id,
     )
     await broadcast_tabs_changed()
     return await _list_response(project_id)
@@ -752,9 +1224,9 @@ async def _http_list_all(cls):
     ping) that replaces the old reactive ``tab?visible=true`` entity query."""
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
-    tabs = await _visible_tabs_sorted()
+    tabs, target_map = await _visible_tabs_sorted_with_targets()
     await _backfill_tab_projects(tabs)
-    await _populate_tab_statuses(tabs)
+    await _populate_tab_statuses(tabs, target_map)
     return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
 
 
@@ -796,11 +1268,44 @@ _action_registry.register(
 )
 
 
+# In-flight background teardowns keyed by tab id. Serves two purposes: the
+# strong reference that keeps each fire-and-forget task alive until done, and
+# the reopen-race guard — ``ensure_tab`` awaits a pending teardown for the same
+# deterministic tab id before re-showing the row, so a fast close→reopen can't
+# resurrect a tab whose shell/worker is still being torn down under it.
+_PENDING_TEARDOWNS: dict[str, asyncio.Task] = {}
+
+
+async def drain_pending_teardowns() -> None:
+    """Await every in-flight tab teardown (test hook — keeps event loops clean)."""
+    await asyncio.gather(*_PENDING_TEARDOWNS.values(), return_exceptions=True)
+
+
 async def _http_close(self: Tab):
-    """POST /graph/tab/<id>/close — soft-close then return the updated list."""
-    await self.close()
+    """POST /graph/tab/<id>/close — soft-close, respond immediately, tear down
+    in the background.
+
+    The membership flip (``visible=False``) + broadcast + list response happen
+    before the per-target teardown (PTY/worker kill can take seconds), so the
+    client drops the chip instantly. A teardown failure therefore no longer
+    surfaces as an HTTP error — the tab hides regardless and the failure is
+    logged (``Shell.close`` already swallowed its sub-failures anyway).
+    Programmatic callers keep the synchronous semantics via ``Tab.close``.
+    """
+    await self._soft_hide()
     await broadcast_tabs_changed()
-    return await _list_response(self.project_id)
+    response = await _list_response(self.project_id)
+    tab_id = self.id
+    task = asyncio.create_task(self._dispatch_teardown(), name=f"tab-teardown:{tab_id}")
+    _PENDING_TEARDOWNS[tab_id] = task
+
+    def _done(t: asyncio.Task) -> None:
+        _PENDING_TEARDOWNS.pop(tab_id, None)
+        if not t.cancelled() and t.exception() is not None:
+            logger.warning("tab teardown failed for %s", tab_id, exc_info=t.exception())
+
+    task.add_done_callback(_done)
+    return response
 
 
 _action_registry.register(

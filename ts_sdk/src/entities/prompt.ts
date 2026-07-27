@@ -89,6 +89,15 @@ export class Prompt extends APIEntity<Prompt> implements IPrompt {
   }
 
   /**
+   * Quick-create parity with the other asset types (`Skill.createInProject` et
+   * al.) — an empty-text prompt the user fills in later. `_folderVfsPath` is
+   * ignored: TypeInfo.main_subdir fixes the location at `<project>/prompts/`.
+   */
+  static createInProject(project: { id?: string } | null, name: string, _folderVfsPath?: string): Promise<Prompt> {
+    return Prompt.create({ name, text: '', projectId: project?.id ?? null });
+  }
+
+  /**
    * prompt → queue: append this prompt's text onto the process's prompt
    * queue (source `library`). The backend owns injection/readiness — see
    * docs/prompt_queue.md. Each enqueue counts as a "use": bump the usage

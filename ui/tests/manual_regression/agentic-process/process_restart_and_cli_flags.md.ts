@@ -79,7 +79,7 @@ test.describe('process restart and CLI flags', () => {
     await expect(restart(page)).toHaveAttribute('data-restart-required', 'false', { timeout: 30_000 });
   });
 
-  test('test 3: out-of-band entity mutation lights the glow; only a Restart clears it', async ({ page }) => {
+  test('test 3: out-of-band entity mutation lights the glow; reverting or a Restart clears it', async ({ page }) => {
     test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
@@ -105,12 +105,29 @@ test.describe('process restart and CLI flags', () => {
     // Glow appears.
     await expect(restart(page)).toHaveAttribute('data-restart-required', 'true', { timeout: 10_000 });
 
-    // Toggle Chrome OFF again in the dropdown — glow STILL on (snapshot still
-    // drifted from last_started_hash; only a real restart clears it).
+    // Reverting Chrome OFF in the dropdown returns cli_config to the running
+    // worker's started hash, so the glow CLEARS: the restart-required contract
+    // is SYMMETRIC — a change-then-undo leaves no phantom "restart needed" glow
+    // (see AgenticProcess.save() docstring: "clears again when the config is
+    // reverted back to the running worker's hash").
     await cliOptions(page).click();
     await page.getByRole('menuitemcheckbox', { name: /Chrome browser/ }).click();
     await page.keyboard.press('Escape');
-    await expect(restart(page)).toHaveAttribute('data-restart-required', 'true');
+    await expect(restart(page)).toHaveAttribute('data-restart-required', 'false', { timeout: 10_000 });
+
+    // Re-drift out-of-band so there is a real pending change again, then prove a
+    // Restart clears it.
+    await page.evaluate(async (id) => {
+      const dm = (window as any).dataManager;
+      let p: any;
+      for (const [tid, ref] of dm.entities) {
+        if (tid.type === 'agentic_process' && (ref.entity?.id === id || String(tid).includes(id))) { p = ref.entity; break; }
+      }
+      if (!p) throw new Error('process entity not in cache');
+      p.cli_config = { ...(p.cli_config ?? {}), chrome: true };
+      await p.save();
+    }, pid);
+    await expect(restart(page)).toHaveAttribute('data-restart-required', 'true', { timeout: 10_000 });
 
     // Restart clears the glow.
     await restart(page).click();

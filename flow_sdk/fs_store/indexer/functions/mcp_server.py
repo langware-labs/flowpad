@@ -43,10 +43,10 @@ try:
 except ImportError:
     import tomli as _tomllib  # type: ignore[import-not-found,no-redef]
 
-from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
-from flow_sdk.fs_store.fs_record import FSRecord
 import uuid
 
+from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
+from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -55,7 +55,6 @@ from flow_sdk.fs_store.source_file_records import (
     _escape_json_pointer,
     _unescape_json_pointer,
 )
-
 
 # ── Source mapping: every system's MCP config files ───────────────────────────
 #
@@ -343,13 +342,16 @@ def mcp_server_id(ref: FSRef) -> str:
     same ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses — yields a
     path-safe id identical to the one the DB row gets.
     """
-    return mint_uuid(
-        f"{RecordType.MCP_SERVER}:{_record_id(str(ref.path), ref.json_path or '')}",
-        namespace=uuid.NAMESPACE_DNS,
-    )
+    return mint_uuid(mcp_server_identity_key(ref), namespace=uuid.NAMESPACE_DNS)
 
 
-def extract_mcp_server(ref: FSRef) -> list[FSRecord]:
+def mcp_server_identity_key(ref: FSRef | Path) -> str:
+    path = Path(getattr(ref, "path", ref))
+    json_path = getattr(ref, "json_path", None) or ""
+    return f"{RecordType.MCP_SERVER}:{_record_id(str(path), json_path)}"
+
+
+def extract_mcp_server(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse one MCP_SERVER FSRef into the agent-neutral server record.
 
     Persists the full definition site (``source_file`` + ``json_path`` +
@@ -396,7 +398,7 @@ def extract_mcp_server(ref: FSRef) -> list[FSRecord]:
 
     rec = FSRecord(
         type=RecordType.MCP_SERVER,
-        id=_record_id(source_file, json_path),
+        id=resolved_id,
         name=name,
         scope=ref.scope or "user",
         source_file=source_file,

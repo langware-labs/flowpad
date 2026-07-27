@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const log = require('electron-log');
@@ -13,6 +13,8 @@ const { SOD_KEY_KEYCHAIN_SERVICE, PYPI_PACKAGE, PYTHON_VERSION } = UvManager;
 const UPGRADE_COMMAND = `uv tool install ${PYPI_PACKAGE}@latest --python ${PYTHON_VERSION} --force`;
 const DIAGNOSE_COMMAND = 'flow diagnose';
 const { isNewer } = require('./semver');
+
+const isMac = process.platform === 'darwin';
 
 // Register flowpad:// as a custom protocol so the OS routes deep links here.
 // Must be called before app.whenReady().
@@ -223,8 +225,17 @@ const BACKEND_PORT = 9007;
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
 const FLOWPAD_CLOUD_URL = process.env.FLOWPAD_CLOUD_URL || 'https://app.flowpad.ai';
 const HEALTH_CHECK_INTERVAL = 500; // ms
-const MAX_HEALTH_CHECKS = 180; // 90 seconds — cold-start window
-const POST_UPGRADE_HEALTH_CHECKS = 240; // 120 seconds — matches uv upgrade() ceiling
+const MAX_HEALTH_CHECKS = 240; // 120 seconds — cold-start window. Sized to ride
+                               // past the first-launch AV-scan + bytecode-compile
+                               // cost on Windows so a slow-but-healthy backend
+                               // isn't misread as "failed to start". Observed cold
+                               // boots reach health in ~35-40s, so 120s keeps a ~3x
+                               // margin. Do NOT raise to mask a slow boot — fix the
+                               // slow path instead.
+const POST_UPGRADE_HEALTH_CHECKS = 240; // 120 seconds — the just-upgraded path is the
+                                        // slower one (all venv files freshly written →
+                                        // heaviest AV scan), so this is the riskiest
+                                        // window to tighten; kept == the normal window.
 
 let mainWindow = null;
 let uvManager = null;
@@ -320,13 +331,54 @@ app.on('second-instance', (_event, argv) => {
 //
 // handleDeepLink will see mainWindow === null and stash the URL into
 // pendingDeepLink, which startApp consumes after backend warmup.
-if (process.platform !== 'darwin') {
+if (!isMac) {
   const argvDeepLink = process.argv.find(arg => arg.startsWith('flowpad://'));
   if (argvDeepLink) {
     log.info(`[deep-link] picked up from process.argv: ${argvDeepLink}`);
     handleDeepLink(argvDeepLink);
   }
 }
+
+// --- Application menu (view-mode gated) ---------------------------------
+//
+// The menu is shown only in Advanced/Dev view modes. The renderer owns the
+// view-mode state and pushes the current "should the menu be visible" boolean
+// over the `set-menu-visible` channel (see preload.js / view-mode-context.tsx).
+//
+// macOS caveat: the menu lives in the system bar, and `setMenuBarVisibility`
+// is a no-op there. `setApplicationMenu(null)` would strip Cmd+Q, Copy/Paste,
+// window shortcuts, etc. So on macOS we always install a MINIMAL BASELINE menu
+// (App / Edit / Window) even when "hidden", and swap in the fuller menu (adds
+// File + View) when advanced. On Windows/Linux the in-window bar is genuinely
+// hidden when not advanced.
+let menuVisible = false;
+
+function buildMenuTemplate(advanced) {
+  const template = [];
+  if (isMac) template.push({ role: 'appMenu' });
+  if (advanced) template.push({ role: 'fileMenu' });
+  template.push({ role: 'editMenu' });
+  if (advanced) template.push({ role: 'viewMenu' });
+  template.push({ role: 'windowMenu' });
+  return template;
+}
+
+function applyMenu() {
+  // Non-mac + hidden: strip the bar entirely. Otherwise install the
+  // advanced-or-baseline template (advanced === menuVisible); on macOS the
+  // baseline stays so Cmd+Q / Copy-Paste / window shortcuts survive.
+  const menu = !menuVisible && !isMac ? null : Menu.buildFromTemplate(buildMenuTemplate(menuVisible));
+  Menu.setApplicationMenu(menu);
+  // No-op on macOS (menu lives in the system bar); meaningful on Win/Linux.
+  if (mainWindow) mainWindow.setMenuBarVisibility(menuVisible);
+}
+
+ipcMain.on('set-menu-visible', (_event, visible) => {
+  const next = !!visible;
+  if (next === menuVisible) return;
+  menuVisible = next;
+  applyMenu();
+});
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -348,10 +400,44 @@ function createWindow() {
   // navigation, so we wire them up — and the OS surfaces them differently per
   // platform, so we listen per platform (one source each, no double-navigation).
   const nav = () => mainWindow.webContents.navigationHistory;
-  const goBack = () => { if (nav().canGoBack()) nav().goBack(); };
-  const goForward = () => { if (nav().canGoForward()) nav().goForward(); };
 
-  if (process.platform === 'darwin') {
+  // [nav] tracing: every back/forward source and every resulting history
+  // transition is logged so a double-navigation (e.g. "back jumps two") shows
+  // up as either two trigger lines for one gesture, or one trigger followed by
+  // two did-navigate lines. Pairs with the frontend toplog `navigation` tag
+  // (window.history pushState/popstate from NavigationActions) — together they
+  // tell us whether the main process or the renderer is double-stepping.
+  const navState = () => {
+    try {
+      const h = nav();
+      return `idx=${h.getActiveIndex()}/${h.length() - 1} canBack=${h.canGoBack()} canFwd=${h.canGoForward()} url=${mainWindow.webContents.getURL()}`;
+    } catch (err) {
+      return `<navState unavailable: ${err.message}>`;
+    }
+  };
+  const goBack = (source) => {
+    const can = nav().canGoBack();
+    log.info(`[nav] goBack source=${source} willNavigate=${can} ${navState()}`);
+    if (can) nav().goBack();
+  };
+  const goForward = (source) => {
+    const can = nav().canGoForward();
+    log.info(`[nav] goForward source=${source} willNavigate=${can} ${navState()}`);
+    if (can) nav().goForward();
+  };
+
+  // Log the actual history transitions the main process observes, regardless of
+  // who triggered them (gesture, renderer history.back, react-router). These are
+  // the ground truth for "how many steps did one gesture cause".
+  mainWindow.webContents.on('did-navigate', (_e, url) => {
+    log.info(`[nav] did-navigate (full load) url=${url} ${navState()}`);
+  });
+  mainWindow.webContents.on('did-navigate-in-page', (_e, url, isMainFrame) => {
+    if (!isMainFrame) return;
+    log.info(`[nav] did-navigate-in-page (SPA/pushState) url=${url} ${navState()}`);
+  });
+
+  if (isMac) {
     // macOS surfaces the buttons two ways and never reaches the renderer:
     //  - a raw mouse `input-event` (button 'back'/'forward'); and
     //  - with drivers like Logitech Options / Options+ (or the trackpad), a
@@ -359,18 +445,18 @@ function createWindow() {
     //    mouse button / app-command (confirmed by event capture). Handle both.
     mainWindow.webContents.on('input-event', (_e, input) => {
       if (input.type !== 'mouseDown') return;
-      if (input.button === 'back') goBack();
-      else if (input.button === 'forward') goForward();
+      if (input.button === 'back') goBack('mac:mouse-input-event');
+      else if (input.button === 'forward') goForward('mac:mouse-input-event');
     });
     mainWindow.on('swipe', (_e, direction) => {
-      if (direction === 'left') goBack();
-      else if (direction === 'right') goForward();
+      if (direction === 'left') goBack('mac:swipe');
+      else if (direction === 'right') goForward('mac:swipe');
     });
   } else {
     // Windows/Linux: the buttons arrive as an app-command.
     mainWindow.webContents.on('app-command', (_e, command) => {
-      if (command === 'browser-backward') goBack();
-      else if (command === 'browser-forward') goForward();
+      if (command === 'browser-backward') goBack('app-command');
+      else if (command === 'browser-forward') goForward('app-command');
     });
   }
 
@@ -402,6 +488,7 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
+    log.info(`[nav] will-navigate url=${url}`);
     // Allow navigation to the backend (same-origin), block everything else.
     // Same-origin /win/ URLs are covered by this allow — they are in-app
     // destinations, consistent with the window-open carve-out above.
@@ -410,6 +497,18 @@ function createWindow() {
       if (/^https?:\/\//.test(url)) {
         require('electron').shell.openExternal(url);
       }
+    }
+  });
+
+  // Clear the taskbar/dock "attention" flash once the user focuses the window.
+  // On Linux/Windows a new-message notification calls flashFrame(true) (there is
+  // no dock to bounce); this turns it off the moment the window is focused. No-op
+  // on macOS where dock bounce self-clears on focus.
+  mainWindow.on('focus', () => {
+    try {
+      mainWindow.flashFrame(false);
+    } catch (err) {
+      log.warn(`[notify] flashFrame(false) on focus failed: ${err.message}`);
     }
   });
 
@@ -481,6 +580,11 @@ async function startApp() {
   setupElectronAutoUpdater();
 
   createWindow();
+
+  // Install the default (hidden/baseline) menu now that the app is ready and the
+  // window exists — so the app never flashes Electron's stock menu before the
+  // renderer reports its view mode over `set-menu-visible`.
+  applyMenu();
 
   // Wait for the loading page to finish loading so IPC listeners are ready
   if (mainWindow.webContents.isLoading()) {
@@ -791,6 +895,34 @@ ipcMain.handle('copy-to-clipboard', (_event, text) => {
   return false;
 });
 
+ipcMain.handle('capture-region', async (event, rawRegion) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || win.isDestroyed()) {
+    throw new Error('No active window to capture');
+  }
+
+  const region = rawRegion && typeof rawRegion === 'object' ? rawRegion : {};
+  const toNumber = (value, fallback = 0) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  };
+
+  const bounds = win.getContentBounds();
+  const maxX = Math.max(0, bounds.width - 1);
+  const maxY = Math.max(0, bounds.height - 1);
+  const rect = {
+    x: Math.min(maxX, Math.max(0, Math.floor(toNumber(region.x)))),
+    y: Math.min(maxY, Math.max(0, Math.floor(toNumber(region.y)))),
+    width: Math.max(1, Math.ceil(toNumber(region.width, bounds.width))),
+    height: Math.max(1, Math.ceil(toNumber(region.height, bounds.height))),
+  };
+  rect.width = Math.min(rect.width, Math.max(1, bounds.width - rect.x));
+  rect.height = Math.min(rect.height, Math.max(1, bounds.height - rect.y));
+
+  const image = await win.webContents.capturePage(rect);
+  return image.toDataURL();
+});
+
 // Quit from the startup-timeout recovery panel's "Quit" button.
 ipcMain.on('quit-app', () => {
   app.quit();
@@ -799,6 +931,75 @@ ipcMain.on('quit-app', () => {
 ipcMain.handle('get-backend-url', () => BACKEND_URL);
 
 ipcMain.handle('get-app-version', () => app.getVersion());
+
+// ── OS-level desktop notifications ───────────────────────────────────────────
+// Native surfaces for the `desktop_notify` ui_command (see the renderer's
+// handleDesktopNotify). Three channels: banner, dock/launcher badge, and an
+// attention signal (dock bounce on macOS, taskbar flash on Linux/Windows).
+let lastNote = null; // close the previous banner before the next so macOS doesn't coalesce
+let notifySeq = 0; // unique-body suffix — a repeated identical body is silently dropped
+
+// Show an OS banner. On click: focus the window (restoring if minimized) and
+// round-trip the opaque clickTarget to the renderer, which owns navigation.
+ipcMain.handle('notify-os', (_event, payload) => {
+  const { title, body, clickTarget } = payload && typeof payload === 'object' ? payload : {};
+  if (!Notification.isSupported()) return false;
+  try {
+    if (lastNote) {
+      try { lastNote.close(); } catch { /* already gone */ }
+    }
+    notifySeq += 1;
+    lastNote = new Notification({
+      title: typeof title === 'string' && title ? title : 'Flowpad',
+      // Zero-width space suffix keeps each body unique (invisible) so macOS
+      // renders every banner instead of collapsing repeats.
+      body: `${typeof body === 'string' ? body : ''}${'​'.repeat(notifySeq % 8)}`,
+      silent: false,
+    });
+    lastNote.on('click', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+        mainWindow.webContents.send('notification-click', { clickTarget });
+      }
+    });
+    lastNote.show();
+    return true;
+  } catch (err) {
+    log.warn(`[notify] notify-os failed: ${err.message}`);
+    return false;
+  }
+});
+
+// Set the dock (macOS) / launcher (Linux Unity) badge count. 0 clears it.
+ipcMain.handle('set-badge', (_event, n) => {
+  try {
+    app.setBadgeCount(Math.max(0, Number(n) | 0));
+    return true;
+  } catch (err) {
+    log.warn(`[notify] set-badge failed: ${err.message}`);
+    return false;
+  }
+});
+
+// Attention signal: dock bounce (macOS) or taskbar flash (Linux/Windows). Only
+// fires when the window is NOT focused — no point yelling at a user already
+// looking at the app.
+ipcMain.handle('notify-attention', () => {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()) return false;
+    if (process.platform === 'darwin') {
+      app.dock?.bounce('critical');
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.flashFrame(true);
+    }
+    return true;
+  } catch (err) {
+    log.warn(`[notify] notify-attention failed: ${err.message}`);
+    return false;
+  }
+});
 
 ipcMain.handle('get-startup-logs', () => {
   const logs = [];

@@ -29,16 +29,62 @@
       inner.src = 'about:blank';
       document.body.appendChild(inner);
 
-      let innerWin = null;
-      let pendingHtml = null;
+      let innerWin = inner.contentWindow;
 
-      function writeHtml(markup) {
-        const doc = inner.contentDocument || (inner.contentWindow && inner.contentWindow.document);
-        if (!doc) return false;
+      function cspDomains(value) {
+        return Array.isArray(value) ? value.filter((v) => typeof v === 'string' && v.trim()).join(' ') : '';
+      }
+
+      function buildCsp(csp) {
+        const config = csp && typeof csp === 'object' ? csp : {};
+        const connect = cspDomains(config.connectDomains) || "'none'";
+        const resources = cspDomains(config.resourceDomains);
+        const frames = cspDomains(config.frameDomains);
+        const baseUri = cspDomains(config.baseUriDomains) || "'self'";
+        const suffix = resources ? ` ${resources}` : '';
+        return [
+          "default-src 'none'",
+          `script-src 'unsafe-inline'${suffix}`,
+          `style-src 'unsafe-inline' data: blob:${suffix}`,
+          `img-src data: blob:${suffix}`,
+          `font-src data:${suffix}`,
+          `media-src data: blob:${suffix}`,
+          `connect-src ${connect}`,
+          `frame-src about: data: blob:${frames ? ` ${frames}` : ''}`,
+          `base-uri ${baseUri}`,
+          "form-action 'none'",
+        ].join('; ');
+      }
+
+      function escapeAttr(value) {
+        return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      }
+
+      function withCspMeta(markup, csp) {
+        const meta = `<meta http-equiv="Content-Security-Policy" content="${escapeAttr(buildCsp(csp))}">`;
+        if (/<head[^>]*>/i.test(markup)) return markup.replace(/<head([^>]*)>/i, `<head$1>${meta}`);
+        return `<!doctype html><html><head>${meta}</head><body>${markup}</body></html>`;
+      }
+
+      function buildAllow(permissions) {
+        const allow = [];
+        if (permissions && typeof permissions === 'object') {
+          if (permissions.camera) allow.push('camera');
+          if (permissions.microphone) allow.push('microphone');
+          if (permissions.geolocation) allow.push('geolocation');
+          if (permissions.clipboardWrite) allow.push('clipboard-write');
+        }
+        return allow.join('; ');
+      }
+
+      function writeHtml(markup, options) {
         try {
-          doc.open();
-          doc.write(markup);
-          doc.close();
+          inner.setAttribute('sandbox', typeof options.sandbox === 'string' ? options.sandbox : 'allow-scripts allow-forms');
+          const allow = buildAllow(options.permissions);
+          if (allow) inner.setAttribute('allow', allow);
+          else inner.removeAttribute('allow');
+          inner.srcdoc = withCspMeta(markup, options.csp);
+          innerWin = inner.contentWindow;
           return true;
         } catch (e) {
           console.error('[sandbox_proxy] failed to write html:', e);
@@ -48,26 +94,65 @@
 
       inner.addEventListener('load', () => {
         innerWin = inner.contentWindow;
-        if (pendingHtml !== null && writeHtml(pendingHtml)) pendingHtml = null;
       });
 
       function isJsonRpc(d) {
         return d && typeof d === 'object' && d.jsonrpc === '2.0';
       }
 
+      function normalizeMessageParams(params, envelope) {
+        const source =
+          params && typeof params === 'object'
+            ? (params.params && typeof params.params === 'object' ? params.params : params)
+            : (envelope && typeof envelope === 'object' ? envelope : {});
+        if (Array.isArray(source.content)) return { role: 'user', content: source.content };
+        const text =
+          typeof source.content === 'string' ? source.content :
+          typeof source.prompt === 'string' ? source.prompt :
+          typeof source.text === 'string' ? source.text :
+          typeof source.message === 'string' ? source.message :
+          '';
+        if (!text) return { role: 'user', content: [{ type: 'text', text: JSON.stringify(source) }] };
+        return { role: 'user', content: [{ type: 'text', text }] };
+      }
+
+      function normalizeContextParams(params) {
+        if (!params || typeof params !== 'object') return {};
+        if (Array.isArray(params.content) || params.structuredContent) return params;
+        if (params.context !== undefined) return { structuredContent: { context: params.context } };
+        const text =
+          typeof params.text === 'string' ? params.text :
+          typeof params.prompt === 'string' ? params.prompt :
+          '';
+        if (!text) return params;
+        return { content: [{ type: 'text', text }] };
+      }
+
+      function normalizeFromInner(data) {
+        if (!isJsonRpc(data)) return data;
+        if (data.method === 'ui/message') {
+          return { ...data, params: normalizeMessageParams(data.params, data) };
+        }
+        if (data.method === 'ui/update-model-context') {
+          return { ...data, params: normalizeContextParams(data.params) };
+        }
+        return data;
+      }
+
       function onMessage(event) {
         const data = event.data;
         if (event.source === window.parent) {
           if (isJsonRpc(data) && data.method === 'ui/notifications/sandbox-resource-ready') {
-            const html = data.params && data.params.html;
+            const params = data.params || {};
+            const html = params.html;
             if (typeof html === 'string') {
-              if (!writeHtml(html)) pendingHtml = html;
+              writeHtml(html, params);
             }
             return;
           }
           if (innerWin) innerWin.postMessage(data, '*');
-        } else if (innerWin && event.source === innerWin) {
-          window.parent.postMessage(data, '*');
+        } else if (event.source !== window.parent) {
+          window.parent.postMessage(normalizeFromInner(data), '*');
         }
       }
 

@@ -3,13 +3,16 @@
  * (docs/tab-management.md Part 3 §6). Owns the presentation-level behaviors
  * every tab kind shares:
  *
- *   - chip row with horizontal scroll, overflow chevrons, scroll-into-view on
- *     active change (ResizeObserver re-evaluates on layout shifts)
+ *   - Chrome-style equal-width chips: every tab is always visible; chips share
+ *     the row width (flex basis 200px, min 40px) and shrink in lockstep as tabs
+ *     are added — the strip never scrolls
+ *   - density degradation: as the shared chip width falls, the popout button,
+ *     then the close button (overlay-on-hover), then the title drop out
  *   - double-click / context-menu rename editing (the OWNER validates+saves;
  *     the strip only manages the input UI and emits the trimmed name)
  *   - per-chip popout + close buttons, close-all / close-others / close-right
  *     context-menu actions, the close-all badge button
- *   - pending-glow rendering and per-chip tooltips
+ *   - per-chip tooltips (the primary way to read a heavily-truncated title)
  *
  * It is URL-first by construction: a chip click only emits `onSelect(key)` —
  * the consumer navigates; active state arrives back via the `activeKey` prop
@@ -25,7 +28,7 @@ import {
 } from '@src/components/ui/context-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
-import { ChevronLeft, ChevronRight, ExternalLink, X, type LucideIcon } from 'lucide-react';
+import { ExternalLink, X, type LucideIcon } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
@@ -46,10 +49,12 @@ export interface TabStripItem {
   isDisabled?: boolean;
   hasError?: boolean;
   statusReason?: string;
-  /** Soft attention glow (never on the active chip). */
-  isPending?: boolean;
   /** Rename capability — present iff the tab has a target entity (Part 3 §3). */
   renameable?: boolean;
+  /** Whether the chip can be closed (default true). A `closable: false` chip
+   *  hides its X, is excluded from close-all/close-others/close-right, and shows
+   *  no "Close" context item — for pinned fixtures like the vibe "Display" chip. */
+  closable?: boolean;
   /** Hover tooltip content; falls back to statusReason when disabled. */
   tooltip?: React.ReactNode;
   /** data-testid for the chip. */
@@ -67,6 +72,10 @@ export interface TabStripContextMenuItem {
   onSelect: () => void;
   /** Optional leading icon (e.g. graph glyph for "Open Context"). */
   Icon?: LucideIcon;
+  /** Renders the entry as a distinguished header row at the TOP of the menu
+   *  (accented, above Rename, own separator) instead of a plain item — for
+   *  navigation shortcuts like "Open Project" that aren't tab operations. */
+  emphasized?: boolean;
 }
 
 export interface TabStripProps {
@@ -88,7 +97,8 @@ export interface TabStripProps {
   closeShortcutLabel?: string;
   /** Leading fixed node (e.g. ProjectsCounterChip). */
   leading?: React.ReactNode;
-  /** Trailing node that sticks to the right edge inside the scroll row. */
+  /** Trailing fixed node (opener toolbar) — sits after the tab row, never
+   *  overlaps or shrinks; the chips share whatever width remains. */
   trailing?: React.ReactNode;
   /** Hide the aggregated close-all badge button. */
   hideCloseAllButton?: boolean;
@@ -100,6 +110,20 @@ export interface TabStripProps {
   onReorderCancel?: () => void;
   testId?: string;
 }
+
+/** Strip-wide chip density, derived from the SHARED chip width (all chips are
+ *  equal-width by construction, so one number describes every chip):
+ *  `normal` = icon + title + in-flow hover buttons; `compact` = no popout,
+ *  close is an overlay; `icon` = icon only, close overlay on hover/active. */
+type ChipDensity = 'normal' | 'compact' | 'icon';
+
+/** Preferred/max chip width — the SAME constant drives the flex layout (inline
+ *  style) and the density thresholds, so the two can't drift apart. */
+const CHIP_MAX_PX = 200;
+/** Icon-only floor — chips never shrink below this; past it the row clips. */
+const CHIP_MIN_PX = 40;
+const COMPACT_BELOW_PX = 110;
+const ICON_ONLY_BELOW_PX = 64;
 
 export const TabStrip: React.FC<TabStripProps> = ({
   items,
@@ -126,116 +150,33 @@ export const TabStrip: React.FC<TabStripProps> = ({
   // the calm minimal hover (statusReason / title only).
   const isAdvanced = useIsAdvanced();
   const tabContainerRef = useRef<HTMLDivElement>(null);
-  const trailingRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const [hasTabOverflow, setHasTabOverflow] = useState(false);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
 
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
   const shouldSelectRenameInputRef = useRef(false);
 
-  const scrollSelectedTabIntoView = useCallback((targetKey: string, behavior: ScrollBehavior = 'smooth') => {
-    const container = tabContainerRef.current;
-    const tab = tabRefs.current[targetKey];
-    if (!container || !tab) return;
-
-    // Measure against the container's viewport rect (not offsetLeft/scrollLeft):
-    // the scroll container is not a positioned offset-parent, so offsetLeft is
-    // not relative to it and the partial-visibility math drifts — a chip clipped
-    // by a pixel then never triggers a scroll. Rect deltas are exact and
-    // scrollBy applies them regardless of offset-parent.
-    const containerRect = container.getBoundingClientRect();
-    const tabRect = tab.getBoundingClientRect();
-    // Breathing room so a selected chip lands fully clear of the edge / overflow
-    // chevron rather than flush against it.
-    const PAD = 8;
-
-    // The trailing toolbar is `sticky right-0` INSIDE the scroll container, so it
-    // paints on top of whatever scrolls under it. If we used the bare container
-    // right edge, a rightmost chip would land with its X/open controls tucked
-    // beneath the sticky toolbar — visible text, hidden controls. Treat the
-    // toolbar's left edge as the effective right boundary so the whole chip
-    // header (controls included) clears it.
-    const trailingRect = trailingRef.current?.getBoundingClientRect();
-    const effectiveRight =
-      trailingRect && trailingRect.width > 0 ? Math.min(containerRect.right, trailingRect.left) : containerRect.right;
-
-    if (tabRect.left < containerRect.left + PAD) {
-      container.scrollBy({ left: tabRect.left - containerRect.left - PAD, behavior });
-    } else if (tabRect.right > effectiveRight - PAD) {
-      container.scrollBy({ left: tabRect.right - effectiveRight + PAD, behavior });
-    }
-  }, []);
-
-  // Auto scroll-into-view: on initial mount the active chip may be in view
-  // only because the strip is still short; when the rest of the items land,
-  // the chip gets pushed off-screen. ResizeObserver re-evaluates on either
-  // layout shift — the scroll is a no-op once the chip is genuinely visible.
-  const hasActiveItem = allVisibleItems.some((i) => i.key === activeKey);
-  const lastScrolledKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!activeKey || !hasActiveItem) return;
-    const isFirstScrollForKey = lastScrolledKeyRef.current !== activeKey;
-    lastScrolledKeyRef.current = activeKey;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        scrollSelectedTabIntoView(activeKey, isFirstScrollForKey ? 'auto' : 'smooth');
-      });
-    });
-  }, [activeKey, hasActiveItem, scrollSelectedTabIntoView, allVisibleItems.length]);
-
+  // Density: one ResizeObserver on the row; all chips share one width
+  // (row / count, clamped to the chip max), so a single strip-level state
+  // keeps every chip's composition identical — no per-chip measurement.
+  const [density, setDensity] = useState<ChipDensity>('normal');
   useEffect(() => {
     const container = tabContainerRef.current;
-    if (!container || !activeKey || !hasActiveItem) return;
-    const observer = new ResizeObserver(() => {
-      scrollSelectedTabIntoView(activeKey, 'auto');
-    });
+    if (!container) return;
+    const compute = () => {
+      // Unmeasurable container (0 width — e.g. jsdom, display:none host):
+      // stay at 'normal' rather than degrading on a bogus measurement.
+      const width = container.clientWidth;
+      if (!width) return;
+      const per = Math.min(width / (items.length || 1), CHIP_MAX_PX);
+      setDensity(per >= COMPACT_BELOW_PX ? 'normal' : per >= ICON_ONLY_BELOW_PX ? 'compact' : 'icon');
+    };
+    compute();
+    const observer = new ResizeObserver(compute);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [activeKey, hasActiveItem, scrollSelectedTabIntoView]);
-
-  const updateScrollState = useCallback(() => {
-    const container = tabContainerRef.current;
-    if (!container) return;
-
-    const { scrollLeft, scrollWidth, clientWidth } = container;
-    const hasOverflow = scrollWidth > clientWidth + 1;
-    setHasTabOverflow(hasOverflow);
-    // 1px epsilon matches the right-side check: sub-pixel scrollLeft values
-    // (macOS trackpad inertia, fractional zoom) would otherwise keep the
-    // left chevron lit when visually at the start.
-    setCanScrollLeft(hasOverflow && scrollLeft > 1);
-    setCanScrollRight(hasOverflow && scrollLeft + clientWidth < scrollWidth - 1);
-  }, []);
-
-  const scrollTabs = (direction: 'left' | 'right') => {
-    const container = tabContainerRef.current;
-    if (!container) return;
-
-    const scrollAmount = 200; // pixels to scroll
-    container.scrollBy({
-      left: direction === 'left' ? -scrollAmount : scrollAmount,
-      behavior: 'smooth',
-    });
-  };
-
-  useEffect(() => {
-    updateScrollState();
-    const container = tabContainerRef.current;
-    if (!container) return;
-
-    const handleScroll = () => updateScrollState();
-    container.addEventListener('scroll', handleScroll);
-    window.addEventListener('resize', updateScrollState);
-
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', updateScrollState);
-    };
-  }, [items, updateScrollState]);
+  }, [items.length]);
 
   // Rename editing — the strip owns the input UI; the owner owns validation
   // and the save (entity rename / PTY `/rename` are kind strategies).
@@ -277,10 +218,13 @@ export const TabStrip: React.FC<TabStripProps> = ({
     }
   };
 
+  // Pinned (closable === false) chips are never batch-closed.
+  const closableKeys = new Set(items.filter((i) => i.closable === false).map((i) => i.key));
   const closeMany = (keys: string[]) => {
-    if (keys.length === 0) return;
-    if (onCloseMany) onCloseMany(keys);
-    else keys.forEach((k) => onClose(k));
+    const closeable = keys.filter((k) => !closableKeys.has(k));
+    if (closeable.length === 0) return;
+    if (onCloseMany) onCloseMany(closeable);
+    else closeable.forEach((k) => onClose(k));
   };
 
   // One context-menu group: the entries followed by a separator. Shared by the
@@ -291,8 +235,12 @@ export const TabStrip: React.FC<TabStripProps> = ({
     return (
       <>
         {entries.map((entry) => (
-          <ContextMenuItem key={entry.label} onSelect={entry.onSelect}>
-            {entry.Icon && <entry.Icon className="mr-2 h-4 w-4" />}
+          <ContextMenuItem
+            key={entry.label}
+            onSelect={entry.onSelect}
+            className={entry.emphasized ? 'bg-accent/50 font-medium text-foreground focus:bg-accent' : undefined}
+          >
+            {entry.Icon && <entry.Icon className={`mr-2 h-4 w-4${entry.emphasized ? ' text-primary' : ''}`} />}
             {entry.label}
             {entry.shortcut && <span className="ml-auto pl-4 text-xs text-muted-foreground">{entry.shortcut}</span>}
           </ContextMenuItem>
@@ -367,20 +315,78 @@ export const TabStrip: React.FC<TabStripProps> = ({
     [onReorderPreview, onReorderCommit, anchorsAt, editingKey],
   );
 
+  const activeIndex = allVisibleItems.findIndex((i) => i.key === activeKey);
+
+  // Popout + close live in an absolute overlay at EVERY density (the Chrome
+  // model): in-flow buttons would reserve ~48px of every chip even while
+  // invisible and crush the title. The overlay is backed by the chip surface
+  // color so it reads over truncated text; close is always visible on the
+  // active chip, hover-revealed on inactive ones; popout is hover-only and
+  // drops out below normal density.
+  const renderButtonOverlay = (key: string, isActive: boolean, isDisabled: boolean, closable = true) => (
+    <div
+      className={`absolute right-0.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded transition-opacity ${
+        isActive ? 'bg-background opacity-100' : 'bg-muted opacity-0 group-hover:opacity-100'
+      }`}
+    >
+      {density === 'normal' && onPopout && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onPopout(key);
+          }}
+          disabled={isDisabled}
+          className={`rounded p-0.5 hover:bg-muted-foreground/20 ${isActive ? 'opacity-0 group-hover:opacity-100' : ''}`}
+          aria-label={t`Open in external browser`}
+          title={t`Open in external browser`}
+          data-testid={`tab-open-external-${key}`}
+        >
+          <ExternalLink className="h-3 w-3" />
+        </button>
+      )}
+      {closable && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose(key);
+          }}
+          disabled={isDisabled}
+          className="rounded p-0.5 hover:bg-destructive/20"
+          aria-label={t`Close tab`}
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+
   // One chip in the single ordered row. `list` scopes close-others / close-right.
   const renderChip = (item: TabStripItem, index: number, list: TabStripItem[]) => {
     const { key } = item;
     const isActive = activeKey === key;
     const isDisabled = !!item.isDisabled;
     const hasError = !!item.hasError;
-    const isPending = !!item.isPending && !isActive;
+    const isEditing = editingKey === key;
+    const iconOnly = density === 'icon' && !isEditing;
+
+    // Chrome model: equal flex share for every chip — all tabs stay visible and
+    // shrink in lockstep; the strip never scrolls. Inline style (not Tailwind
+    // literals) so the widths come from the same constants the density math
+    // uses. An editing chip is temporarily pinned to the full preferred width
+    // so the rename input is usable; neighbors re-equalize around it.
+    const sizing: React.CSSProperties = isEditing
+      ? { width: CHIP_MAX_PX, flex: 'none' }
+      : { flex: `1 1 ${CHIP_MAX_PX}px`, minWidth: CHIP_MIN_PX, maxWidth: CHIP_MAX_PX };
 
     const tabContent = (
       <div
         ref={(node) => {
           tabRefs.current[key] = node;
         }}
-        className={`group relative flex shrink-0 select-none items-center gap-2 overflow-hidden rounded-t-lg border px-3 py-1.5 transition-colors ${
+        style={sizing}
+        className={`group relative flex select-none items-center overflow-hidden rounded-t-lg border py-1.5 transition-colors ${
+          iconOnly ? 'justify-center gap-0 px-1' : 'gap-2 px-3'
+        } ${
           isDisabled
             ? 'cursor-not-allowed border-transparent bg-transparent text-muted-foreground/50'
             : hasError
@@ -388,12 +394,13 @@ export const TabStrip: React.FC<TabStripProps> = ({
               : isActive
                 ? // Active tab shares the body background and opens its bottom edge
                   // (-mb-px over the baseline) so it reads as one surface with the
-                  // content below — a folder-tab continuum.
-                  'z-10 -mb-px cursor-pointer border-border border-b-transparent bg-background text-foreground'
-                : // Inactive tabs are raised, fully-bordered chips in the lighter
-                  // muted tone so they never blend into the (darker) body.
-                  'cursor-pointer border-border bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground'
-        } ${isPending ? 'animate-pending-glow rounded-md' : ''} ${dragKey === key ? 'opacity-60' : ''}`}
+                  // content below — a folder-tab continuum lifted off the muted band.
+                  'z-10 -mb-px cursor-pointer border-border border-b-transparent bg-background text-foreground shadow-sm'
+                : // Inactive tabs are flat on the band (Chrome-style); the
+                  // transparent border keeps their box metrics identical to the
+                  // active chip so activation never shifts neighbors.
+                  'cursor-pointer border-transparent text-muted-foreground hover:bg-foreground/5 hover:text-foreground'
+        } ${dragKey === key ? 'opacity-60' : ''}`}
         onPointerDown={(e) => startDrag(e, key, isDisabled)}
         onClick={() => {
           if (isDisabled) return;
@@ -402,6 +409,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
         }}
         data-testid={item.testId}
         data-terminal-target={key}
+        data-active={isActive ? 'true' : undefined}
         {...(item.dataAttributes ?? {})}
       >
         {/* Active accent — absolutely positioned so it never shifts tab height. */}
@@ -409,8 +417,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
           <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-primary" />
         )}
         {item.icon}
-        {item.badge}
-        {editingKey === key ? (
+        {!iconOnly && item.badge}
+        {isEditing ? (
           <input
             ref={renameInputRef}
             type="text"
@@ -418,7 +426,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
             onChange={handleNameChange}
             onBlur={handleNameBlur}
             onKeyDown={handleNameKeyDown}
-            className="min-w-[80px] rounded border border-border bg-background px-1 py-0 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            className="w-full min-w-0 rounded border border-border bg-background px-1 py-0 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
             autoFocus
             onFocus={(e) => {
               if (shouldSelectRenameInputRef.current) {
@@ -428,158 +436,120 @@ export const TabStrip: React.FC<TabStripProps> = ({
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span
-            className={`max-w-[160px] truncate text-sm font-medium ${item.titleClassName ?? ''}`}
-            onDoubleClick={(e) => {
-              if (!item.renameable) return;
-              e.stopPropagation();
-              startRename(key, item.title);
-            }}
-          >
-            {item.title}
-          </span>
+          !iconOnly && (
+            <span
+              // The active chip's close button is persistent (overlay) — keep
+              // the title clear of it; inactive titles reclaim the full width.
+              className={`min-w-0 flex-1 truncate text-sm font-medium ${isActive ? 'pr-4' : ''} ${item.titleClassName ?? ''}`}
+              onDoubleClick={(e) => {
+                if (!item.renameable) return;
+                e.stopPropagation();
+                startRename(key, item.title);
+              }}
+            >
+              {item.title}
+            </span>
+          )
         )}
 
-        {/* Hover-only affordance (opacity-0 until group-hover), rendered in
-            every view mode so the chip's width is mode-invariant. Gating it on
-            isAdvanced made Advanced chips ~24px wider than Standard ones, which
-            reflowed the strip and shifted the selected tab when toggling View. */}
-        {onPopout && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onPopout(key);
-            }}
-            disabled={isDisabled}
-            className="rounded p-0.5 opacity-0 transition-opacity hover:bg-muted-foreground/20 group-hover:opacity-100"
-            aria-label={t`Open in external browser`}
-            title={t`Open in external browser`}
-            data-testid={`tab-open-external-${item.dataAttributes?.['data-indicator-key'] ?? key}`}
-          >
-            <ExternalLink className="h-3 w-3" />
-          </button>
-        )}
-
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose(key);
-          }}
-          disabled={isDisabled}
-          className="rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/20 group-hover:opacity-100"
-          aria-label={t`Close tab`}
-        >
-          <X className="h-3 w-3" />
-        </button>
+        {!isEditing && renderButtonOverlay(key, isActive, isDisabled, item.closable !== false)}
       </div>
     );
 
+    // Separator between chips (Chrome-style): hidden next to the active chip so
+    // the raised tab reads as a single surface. Kept as a transparent element
+    // (not removed) so chip geometry is stable; shown everywhere during a drag
+    // to avoid flicker while the active index moves under the preview.
+    const hideSeparator = !dragKey && (index - 1 === activeIndex || index === activeIndex);
+    const separator =
+      index > 0 ? (
+        <div
+          aria-hidden
+          className={`h-4 w-px shrink-0 self-center ${hideSeparator ? 'bg-transparent' : 'bg-border/60'}`}
+        />
+      ) : null;
+
     return (
-      <ContextMenu key={key}>
-        <TooltipProvider delayDuration={600}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>
-            </TooltipTrigger>
-            {isAdvanced && item.tooltip ? (
-              <TooltipContent side="bottom" className="border bg-popover p-2.5 text-popover-foreground shadow-md">
-                {item.tooltip}
-              </TooltipContent>
-            ) : isDisabled && item.statusReason ? (
-              <TooltipContent side="bottom">{item.statusReason}</TooltipContent>
-            ) : item.title ? (
-              <TooltipContent side="bottom">{item.title}</TooltipContent>
-            ) : null}
-          </Tooltip>
-        </TooltipProvider>
-        <ContextMenuContent>
-          {item.renameable && (
-            <>
-              <ContextMenuItem onSelect={() => startRename(key, item.title)}><Trans>Rename</Trans></ContextMenuItem>
-              <ContextMenuSeparator />
-            </>
-          )}
-          {renderMenuGroup(item.contextMenuItems)}
-          {renderMenuGroup(newTabMenuItems)}
-          <ContextMenuItem onSelect={() => onClose(key)}>
-            <Trans>Close</Trans>{' '}
-            {closeShortcutLabel && (
-              <span className="ml-auto pl-4 text-xs text-muted-foreground">{closeShortcutLabel}</span>
+      <React.Fragment key={key}>
+        {separator}
+        <ContextMenu>
+          <TooltipProvider delayDuration={600}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>
+              </TooltipTrigger>
+              {isAdvanced && item.tooltip ? (
+                <TooltipContent side="bottom" className="border bg-popover p-2.5 text-popover-foreground shadow-md">
+                  {item.tooltip}
+                </TooltipContent>
+              ) : isDisabled && item.statusReason ? (
+                <TooltipContent side="bottom">{item.statusReason}</TooltipContent>
+              ) : item.title ? (
+                <TooltipContent side="bottom">{item.title}</TooltipContent>
+              ) : null}
+            </Tooltip>
+          </TooltipProvider>
+          <ContextMenuContent>
+            {/* Emphasized shortcuts (e.g. "Open Project") sit above the tab
+                operations as an accented header group — they navigate, they
+                don't mutate the tab, so they must not read as one more entry. */}
+            {renderMenuGroup(item.contextMenuItems?.filter((e) => e.emphasized))}
+            {item.renameable && (
+              <>
+                <ContextMenuItem onSelect={() => startRename(key, item.title)}><Trans>Rename</Trans></ContextMenuItem>
+                <ContextMenuSeparator />
+              </>
             )}
-          </ContextMenuItem>
-          <ContextMenuItem onSelect={() => closeMany(allVisibleItems.map((i) => i.key))}><Trans>Close All</Trans></ContextMenuItem>
-          <ContextMenuItem
-            onSelect={() => closeMany(list.filter((i) => i.key !== key).map((i) => i.key))}
-            disabled={list.length <= 1}
-          >
-            <Trans>Close All But This</Trans>
-          </ContextMenuItem>
-          <ContextMenuItem
-            onSelect={() => closeMany(list.slice(index + 1).map((i) => i.key))}
-            disabled={index >= list.length - 1}
-          >
-            <Trans>Close to the Right</Trans>
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
+            {renderMenuGroup(item.contextMenuItems?.filter((e) => !e.emphasized))}
+            {renderMenuGroup(newTabMenuItems)}
+            {item.closable !== false && (
+              <ContextMenuItem onSelect={() => onClose(key)}>
+                <Trans>Close</Trans>{' '}
+                {closeShortcutLabel && (
+                  <span className="ml-auto pl-4 text-xs text-muted-foreground">{closeShortcutLabel}</span>
+                )}
+              </ContextMenuItem>
+            )}
+            <ContextMenuItem onSelect={() => closeMany(allVisibleItems.map((i) => i.key))}><Trans>Close All</Trans></ContextMenuItem>
+            <ContextMenuItem
+              onSelect={() => closeMany(list.filter((i) => i.key !== key).map((i) => i.key))}
+              disabled={list.length <= 1}
+            >
+              <Trans>Close All But This</Trans>
+            </ContextMenuItem>
+            <ContextMenuItem
+              onSelect={() => closeMany(list.slice(index + 1).map((i) => i.key))}
+              disabled={index >= list.length - 1}
+            >
+              <Trans>Close to the Right</Trans>
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+      </React.Fragment>
     );
   };
 
   return (
-    // min-w-0/max-w-full: the strip must never size its host to content —
-    // hosts are flex children and would otherwise blow out to the sum of all
-    // chip widths (the off-screen right-arrow/close-all/toolbar bug).
-    <div className="flex min-w-0 max-w-full items-end bg-background" data-testid={testId}>
+    // The strip is a muted BAND (theme tokens only — muted contrasts with
+    // background in every theme) that the active chip lifts out of into the
+    // body. min-w-0/max-w-full: the strip must never size its host to content.
+    <div className="flex min-w-0 max-w-full items-end bg-muted" data-testid={testId}>
       {leading}
-      {/* Left Scroll Button — always reserves layout space when tabs
-          overflow, so toggling `canScrollLeft` doesn't shift the
-          tab row horizontally. Mirrors the right-button pattern. */}
-      {hasTabOverflow && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className={`h-7 w-7 shrink-0 rounded-none ${canScrollLeft ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-          onClick={() => scrollTabs('left')}
-          aria-label={t`Scroll tabs left`}
-          tabIndex={canScrollLeft ? 0 : -1}
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-      )}
 
-      {/* Scrollable Tab Container */}
+      {/* Tab row — chips share this width equally and are ALL always visible
+          (Chrome model). overflow-hidden only matters past the 40px/chip floor
+          (~25+ tabs at 1000px), where the row clips instead of scrolling. */}
       <div
         ref={tabContainerRef}
-        data-testid="terminal-tabs-scroll-container"
-        className="scrollbar-hide flex min-w-0 flex-1 items-end gap-1 overflow-x-auto pb-0 pl-2 pr-0 pt-1"
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        data-testid="terminal-tabs-row"
+        className="flex min-w-0 flex-1 items-end overflow-hidden pl-2 pr-1 pt-1"
       >
         {items.map((item, index) => renderChip(item, index, items))}
-
-        {/* Trailing toolbar flows after the last tab but sticks to the right
-            edge when tabs overflow. Placement is unconditional, so it does
-            not oscillate with hasTabOverflow. */}
-        {trailing && (
-          <div ref={trailingRef} className="sticky right-0 z-10 flex items-center self-stretch bg-background">
-            {trailing}
-          </div>
-        )}
       </div>
 
-      {/* Right Scroll Button */}
-      {hasTabOverflow && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className={`h-7 w-7 shrink-0 rounded-none ${canScrollRight ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-          onClick={() => scrollTabs('right')}
-          aria-label={t`Scroll tabs right`}
-          data-testid="scroll-tabs-right-button"
-          tabIndex={canScrollRight ? 0 : -1}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      )}
+      {/* Trailing toolbar — a fixed sibling AFTER the row (never overlaps or
+          shrinks); the chips absorb all width pressure. */}
+      {trailing && <div className="flex shrink-0 items-center self-stretch">{trailing}</div>}
 
       {/* Close All button — shown when 2+ tabs are open. Tab count badge
           hints at the destructive scope before clicking. */}

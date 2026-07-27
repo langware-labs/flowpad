@@ -41,6 +41,7 @@ export function ExplorerNavigator() {
     roots: m.roots,
     activePointer: m.activePointer,
     onNavigate: m.navigate,
+    search: { recordTypes: ['markdown'], placeholder: 'Search files…' },
     header: {
       title: 'Files',
       filterBar: (

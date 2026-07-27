@@ -1,167 +1,101 @@
-import logging
-"""Artifact entity representing filesystem entities or references created during execution."""
+"""Logical Artifact entity: composition identity plus optional source origin."""
 
-from enum import Enum
-from typing import Any, ClassVar, Dict, List, Optional
-from uuid import uuid4
+from __future__ import annotations
 
-from pydantic import BaseModel
+from pathlib import Path
+from typing import Any
+
+from pydantic import field_validator, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.builtin.fs_origin_field import FSOriginField
 from flow_sdk.core import Entity
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.schema.types import EntityType
+from flow_sdk.worldview.ontology import kind_matches, normalize_kind
+
+LEGACY_ARTIFACT_KIND_MAP: dict[str, str] = {
+    "WEBAPP": "application.web",
+    "WEBPAGE": "content.web.page",
+    "APP_SERVICE": "workload.service",
+    "CLOUD_SERVICE": "resource.infrastructure",
+    "FUNCTION": "workload.function",
+    "FILE": "content.file",
+    "TEXT_FILE": "content.file.text",
+    "DATA": "content.data",
+}
 
 
-# ref to physical
-class ArtifactReferenceType(str, Enum):
-    """Types of codebase references."""
+def _legacy_origin(data: dict[str, Any]) -> dict[str, Any] | None:
+    origin = data.get("origin") or data.get("git_origin")
+    metadata = data.get("metadata")
+    if origin is None and isinstance(metadata, dict):
+        origin = metadata.get("git_origin")
+    if isinstance(origin, dict):
+        normalized = dict(origin)
+        normalized.setdefault("kind", "git")
+        return normalized
 
-    FILE = "FILE"
-    FOLDER = "FOLDER"
-    GLOB = "GLOB"  # File pattern/glob
-    REFERENCE = "REFERENCE"  # External reference
-    URL = "URL"  # URL reference
-
-
-# logical
-class ArtifactType(str, Enum):
-    """Types of artifacts that can be produced (replaces ResultType from semantic analyzer)."""
-
-    WEBPAGE = "WEBPAGE"
-    FUNCTION = "FUNCTION"
-    APP_SERVICE = "APP_SERVICE"
-    CLOUD_SERVICE = "CLOUD_SERVICE"
-    REPORT = "REPORT"
-    FILE = "FILE"
-    DATA = "DATA"
-    GIT_REPO = "GIT_REPO"  # Added for repository connections
-    TEXT_FILE = "TEXT_FILE"
-    WEBAPP = "WEBAPP"  # Web application running on a port
+    raw_path = str(data.get("path") or "").strip()
+    if not raw_path:
+        return None
+    path = Path(raw_path).expanduser()
+    if not path.is_absolute():
+        return None
+    if path.name:
+        return {"kind": "local", "base": str(path.parent), "rel_path": path.name}
+    return {"kind": "local", "base": str(path), "rel_path": "."}
 
 
-class ArtifactRelationType(str, Enum):
-    """Types of relationships between artifacts."""
+class Artifact(Entity):
+    """A provider-neutral logical component in an application composition.
 
-    TEST_OF = "test_of"
-    IMPLEMENTATION_OF = "implementation_of"
-    DEPENDS_ON = "depends_on"
-    CONTAINS = "contains"
-    REFERENCES = "references"
-
-
-class ArtifactDescriptor(BaseModel):
-    """Descriptor for artifact types with human-readable descriptions."""
-
-    artifact_type: ArtifactType
-    description: str
-
-
-# Array of artifact descriptors
-artifact_descriptors: List[ArtifactDescriptor] = [
-    ArtifactDescriptor(
-        artifact_type=ArtifactType.WEBPAGE,
-        description="A web page or web-based user interface that can be accessed via browser",
-    ),
-    ArtifactDescriptor(
-        artifact_type=ArtifactType.FUNCTION, description="A reusable function or method that performs a specific task"
-    ),
-    ArtifactDescriptor(
-        artifact_type=ArtifactType.APP_SERVICE, description="An application service or microservice component"
-    ),
-    ArtifactDescriptor(
-        artifact_type=ArtifactType.CLOUD_SERVICE, description="A cloud-hosted service or infrastructure component"
-    ),
-    ArtifactDescriptor(
-        artifact_type=ArtifactType.REPORT,
-        description="A generated markdown report or document containing analysis or data",
-    ),
-    ArtifactDescriptor(artifact_type=ArtifactType.FILE, description="A general file or document in the filesystem"),
-    ArtifactDescriptor(artifact_type=ArtifactType.DATA, description="Raw data, dataset, or structured data output"),
-    ArtifactDescriptor(
-        artifact_type=ArtifactType.GIT_REPO, description="A Git repository containing version-controlled code"
-    ),
-    ArtifactDescriptor(
-        artifact_type=ArtifactType.TEXT_FILE,
-        description="Any file containing text, maybe with .txt extension or no extension at all",
-    ),
-    ArtifactDescriptor(
-        artifact_type=ArtifactType.WEBAPP,
-        description="A web application running on a specific port that can be accessed via browser",
-    ),
-]
-
-
-class CodeRef(Entity):
-    """Reference to a piece of code - can be file, folder, glob pattern, or external reference."""
-
-    type: str = APIField(default=BuiltinEntityType.CODE_REF.value)
-    name: str = APIField(description="Display name of the code reference")
-    ref_type: ArtifactReferenceType = APIField(description="Type of reference (FILE, FOLDER, GLOB, REFERENCE)")
-    path: str = APIField(description="Filesystem path, pattern, or URL")
-    description: Optional[str] = APIField(default=None, description="Human-readable description")
-    metadata: Optional[Dict[str, Any]] = APIField(default=None, description="Additional metadata")
-
-    def __init__(self, **data):
-        # Generate ID if not provided
-        if "id" not in data:
-            data["id"] = str(uuid4())
-        super().__init__(**data)
-
-    @property
-    def file_type(self) -> Optional[str]:
-        """Extract file extension from path, returns None for non-files."""
-        if self.ref_type != ArtifactReferenceType.FILE:
-            return None
-
-        import os
-
-        _, ext = os.path.splitext(self.path)
-        return ext[1:] if ext else None  # Remove leading dot
-
-
-class Artifact(CodeRef):
-    """Represents a filesystem entity or reference created during execution.
-
-    Inherits from CodeRef to provide code reference capabilities,
-    and adds artifact-specific metadata like type and generating flow.
+    Parentage uses the inherited ``parent_type_id`` field. Runtime placement
+    and observed provider state intentionally live on ``Deployment``.
     """
 
-    type: str = APIField(default=BuiltinEntityType.ARTIFACT.value)
-    artifact_type: ArtifactType = APIField(description="Type of artifact content")
-    generating_flow_id: Optional[str] = APIField(default=None, description="ID of the flow that created this artifact")
+    type: str = APIField(default=EntityType.ARTIFACT.value)
+    name: str = APIField(description="Display name")
+    kind: str = APIField(description="Open dot-path ontology kind")
+    description: str | None = APIField(default=None, description="Human-readable description")
+    origin: FSOriginField | None = APIField(
+        default=None,
+        description="Optional source locator (for example GitOrigin or LocalOrigin)",
+    )
 
-    # Service control attributes (for app_service and webapp types)
-    port: Optional[str] = APIField(default=None, description="Port number for services")
-    start_cmd: Optional[str] = APIField(default=None, description="Command to start/restart the service")
-    health: Optional[str] = APIField(default=None, description="Health check endpoint path")
-
-    def __init__(self, **data):
-        # Generate ID if not provided
-        if "id" not in data:
-            data["id"] = str(uuid4())
-        # Extract service control fields from metadata if present
-        metadata = data.get("metadata") or {}
-        if metadata:
-            if "port" in metadata and "port" not in data:
-                data["port"] = metadata.get("port")
-            if "start_cmd" in metadata and "start_cmd" not in data:
-                data["start_cmd"] = metadata.get("start_cmd")
-            if "health" in metadata and "health" not in data:
-                data["health"] = metadata.get("health")
+    def __init__(self, **data: Any) -> None:
+        data["id"] = self.allocate_id(data)
         super().__init__(**data)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _read_legacy_shape(cls, value: Any) -> Any:
+        """Tolerate legacy rows while emitting only the new Artifact shape."""
 
-class ArtifactRelation(Entity):
-    """Relationship between two artifacts."""
+        if not isinstance(value, dict):
+            return value
+        data = dict(value)
+        if not data.get("kind"):
+            old_type = str(data.get("artifact_type") or "FILE").strip().upper()
+            data["kind"] = LEGACY_ARTIFACT_KIND_MAP.get(old_type, "content.file")
+        if data.get("origin") is None:
+            origin = _legacy_origin(data)
+            if origin is not None:
+                data["origin"] = origin
+        return data
 
-    type: str = APIField(default="artifact_relation")
-    source_artifact_id: str = APIField(description="ID of the source artifact")
-    target_artifact_id: str = APIField(description="ID of the target artifact")
-    relation_type: ArtifactRelationType = APIField(description="Type of relationship")
-    metadata: Dict[str, Any] = APIField(default_factory=dict, description="Additional metadata")
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _valid_kind(cls, value: Any) -> str:
+        return normalize_kind(value)
 
-    def __init__(self, **data):
-        # Generate ID if not provided
-        if "id" not in data:
-            data["id"] = str(uuid4())
-        super().__init__(**data)
+    async def setup_on_receive(self, *, project_id=None, workdir=None) -> dict:
+        """Only application.web artifacts invoke the artifact setup skill."""
+
+        if kind_matches("application.web", self.kind):
+            return await super().setup_on_receive(project_id=project_id, workdir=workdir)
+        from flow_sdk.core.display_target import _entity_payload  # noqa: PLC0415
+
+        return _entity_payload(self)
+
+
+__all__ = ["Artifact", "LEGACY_ARTIFACT_KIND_MAP"]

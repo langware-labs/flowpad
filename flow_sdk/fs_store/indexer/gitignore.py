@@ -1,4 +1,9 @@
-"""Gitignore-aware walk helpers for the project folder walker.
+"""Gitignore-aware walk helpers — the shared matching engine for every tree
+walker in the codebase. The FSIndexer project folder walker, the asset-menu
+``walk_markdown_files``, and the llm_index Merkle scanner all consume it through
+the shared :mod:`flow_sdk.fs_store.indexer.walk`; the fsop watcher filter
+(:mod:`flow_sdk.server.fsop_filters`) reuses these matching primitives directly
+over its own bounded discovery walk.
 
 Two-stage matching:
 
@@ -24,7 +29,6 @@ from typing import Tuple
 
 from pathspec import GitIgnoreSpec
 
-
 # Hardcoded fast-path. Match by basename. Skipped without consulting any
 # .gitignore. Mirrors the older _WALK_IGNORED in markdown_record.py.
 _WALK_IGNORED: frozenset[str] = frozenset({
@@ -34,6 +38,11 @@ _WALK_IGNORED: frozenset[str] = frozenset({
     # macOS zip-extraction junk: __MACOSX holds only AppleDouble (._*)
     # resource-fork sidecars — binary, never real content.
     "__MACOSX",
+    # Flowpad-generated state and metadata dirs. They may travel with an asset,
+    # but no content walker should enter them.
+    # Asset-local FlowPad metadata (named capsules, legacy ids, and future
+    # carriers) is transportable content, but never an asset-discovery root.
+    ".flow", ".flowpad", ".markdown_index", ".llm_index",
 })
 
 
@@ -41,7 +50,32 @@ _WALK_IGNORED: frozenset[str] = frozenset({
 _FORCE_INCLUDE: frozenset[str] = frozenset({".claude"})
 
 
+def _is_claude_worktree(path: Path) -> bool:
+    """True if ``path`` is under ``.claude/worktrees`` (an agent git-worktree).
+
+    These are ephemeral, isolation-mode worktrees — each a FULL repo copy with
+    thousands of files. They live under ``.claude/``, so the ``.claude``
+    force-include (which exists to catch project skills/agents/commands) would
+    otherwise pull every worktree's tree into the index, making a single
+    ``markdown`` discover walk tens of thousands of duplicate files. Skip the
+    ``worktrees`` subtree specifically while keeping the rest of ``.claude``."""
+    parts = path.parts
+    for i in range(len(parts) - 1):
+        if parts[i] == ".claude" and parts[i + 1] == "worktrees":
+            return True
+    return False
+
+
 GitignoreStack = list[Tuple[Path, GitIgnoreSpec]]
+
+
+def is_denylisted(path: Path) -> bool:
+    """Hardcoded skip: ``_WALK_IGNORED`` basename or an agent worktree.
+
+    The gitignore-free fast-path — usable on its own by walkers that skip
+    generated/vendor dirs without honoring ``.gitignore``.
+    """
+    return path.name in _WALK_IGNORED or _is_claude_worktree(path)
 
 
 def _is_force_include(path: Path, root: Path) -> bool:
@@ -93,11 +127,13 @@ def is_ignored(
     """Return True if ``path`` should be skipped.
 
     Ordering:
-      1. If basename in ``_FORCE_INCLUDE`` ancestor chain → never ignored.
-      2. If basename in ``_WALK_IGNORED`` → ignored (fast-path).
-      3. Walk the gitignore stack outermost→innermost, last-match-wins.
+      1. If basename in ``_WALK_IGNORED`` → ignored (fast-path).
+      2. If under ``.claude/worktrees`` → ignored (agent worktrees, full repo
+         copies; overrides the ``.claude`` force-include below).
+      3. If basename in ``_FORCE_INCLUDE`` ancestor chain → never ignored.
+      4. Walk the gitignore stack outermost→innermost, last-match-wins.
     """
-    if path.name in _WALK_IGNORED:
+    if is_denylisted(path):
         return True
     if _is_force_include(path, root):
         return False

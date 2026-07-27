@@ -11,8 +11,6 @@ export interface AttachmentActionHandlers {
   implementPlan?: () => void;
   openPlanSession?: () => void;
   viewPlan?: (specId: string) => void;
-  /** Open the shared git repo (GitBranch) in the prefilled clone/attach dialog. */
-  openSharedRepo?: (gitBranchTypeId: TypeId) => void;
   /** Composer preview only — reopen the prompt dialog. */
   edit?: () => void;
 }
@@ -30,12 +28,17 @@ export interface AttachmentActionContext {
    *  View / Open Spec / session affordances as a spec, so descriptors read
    *  this one unified field. */
   specOrPlanTypeId: TypeId | null;
-  /** Resolved GitBranch (shared repo) TypeId on this message, or null. */
-  gitBranchTypeId: TypeId | null;
   /** First prompt-entity TYPE_ID attachment's TypeId, or null. */
   promptEntityTypeId: TypeId | null;
   /** True when a plan-implementation session already exists for the thread. */
   hasPlanSession: boolean;
+  /** True when a worker session already exists for the conversation — flips the
+   *  Execute chip from "Run" to "<label> · new run". */
+  workerSessionExists: boolean;
+  /** User-facing session label (`<Host>'s session`), or null when none. */
+  workerSessionLabel: string | null;
+  /** True while the session's worker is mid-turn — drives the chip's soft pulse. */
+  workerSessionInFlight: boolean;
   handlers: AttachmentActionHandlers;
 }
 
@@ -50,6 +53,8 @@ export interface AttachmentAction {
   variant: AttachmentActionVariant;
   title: string;
   testId?: string;
+  /** When true, the button's icon softly pulses (in-flight worker session). */
+  pulse?: boolean;
   run: () => void;
 }
 

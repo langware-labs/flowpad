@@ -2,24 +2,44 @@
 UI serving routes for the local server.
 """
 
+import json
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse
 
 router = APIRouter()
 
 
-def _find_static_file(filename: str) -> Path | None:
-    """Find a static file, checking ui/dist first then static/."""
+def _repo_root_for_ui(server_dir: Path) -> Path:
+    sdk_root = server_dir.parent
+    project_root = sdk_root.parent
+    if (project_root / 'ui').exists():
+        return project_root
+    return sdk_root
+
+
+def _find_static_file(filename: str, *, prefer_public: bool = False) -> Path | None:
+    """Find a static file across dev, build, and packaged locations."""
     if getattr(sys, 'frozen', False):
         base = Path(sys._MEIPASS) / 'server'
     else:
         base = Path(__file__).parent.parent
 
-    repo_root = base.parent
-    for path_candidate in [repo_root / 'ui' / 'dist' / filename, base / 'static' / filename]:
+    repo_root = _repo_root_for_ui(base)
+    candidates = [
+        repo_root / 'ui' / 'dist' / filename,
+        repo_root / 'ui' / 'public' / filename,
+        base / 'static' / filename,
+    ]
+    if prefer_public:
+        candidates = [
+            repo_root / 'ui' / 'public' / filename,
+            repo_root / 'ui' / 'dist' / filename,
+            base / 'static' / filename,
+        ]
+    for path_candidate in candidates:
         path = path_candidate
         if path.exists():
             return path
@@ -64,7 +84,7 @@ def _get_index_candidates() -> list[Path]:
         ]
     else:
         server_dir = Path(__file__).parent.parent
-        repo_root = server_dir.parent
+        repo_root = _repo_root_for_ui(server_dir)
         return [
             repo_root / 'ui' / 'dist' / 'index.html',
             server_dir / 'static' / 'index.html',
@@ -110,3 +130,56 @@ async def ws_test():
     if path:
         return HTMLResponse(content=path.read_text())
     return HTMLResponse(status_code=404)
+
+
+def _csp_domains(value: object) -> str:
+    if not isinstance(value, list):
+        return ""
+    domains = [str(v).strip() for v in value if isinstance(v, str) and v.strip()]
+    return " ".join(domains)
+
+
+def _sandbox_csp(raw: str | None) -> str:
+    try:
+        config = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        config = {}
+    if not isinstance(config, dict):
+        config = {}
+
+    connect = _csp_domains(config.get("connectDomains")) or "'none'"
+    resources = _csp_domains(config.get("resourceDomains"))
+    frames = _csp_domains(config.get("frameDomains"))
+    base_uri = _csp_domains(config.get("baseUriDomains")) or "'self'"
+
+    resource_suffix = f" {resources}" if resources else ""
+    resource_src = f"'unsafe-inline' data: blob:{resource_suffix}"
+    return "; ".join(
+        [
+            "default-src 'none'",
+            f"script-src 'unsafe-inline'{resource_suffix}",
+            f"style-src {resource_src}",
+            f"img-src data: blob:{resource_suffix}",
+            f"font-src data:{resource_suffix}",
+            f"media-src data: blob:{resource_suffix}",
+            f"connect-src {connect}",
+            f"frame-src about: data: blob:{(' ' + frames) if frames else ''}",
+            f"base-uri {base_uri}",
+            "form-action 'none'",
+        ]
+    )
+
+
+@router.get("/mcp-sandbox/sandbox_proxy.html")
+async def mcp_sandbox_proxy(request: Request):
+    path = _find_static_file("sandbox_proxy.html", prefer_public=True)
+    if not path:
+        return HTMLResponse(content="not found", status_code=404)
+    return HTMLResponse(
+        content=path.read_text(),
+        headers={
+            "Content-Security-Policy": _sandbox_csp(request.query_params.get("csp")),
+            "Cross-Origin-Resource-Policy": "cross-origin",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

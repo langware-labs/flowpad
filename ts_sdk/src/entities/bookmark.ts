@@ -1,4 +1,5 @@
-import { APIEntity, registerEntity } from '../APIEntity';
+import { ActionInfo } from '../models';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
 export enum BookmarkType {
@@ -9,6 +10,7 @@ export enum BookmarkType {
   NOTIFICATION_FAILED = 'notification_failed',
   TERMINAL_ANNOTATION = 'terminal_annotation',
   FAVORITE = 'favorite',
+  FAVORITE_FOLDER = 'favorite_folder',
   PLAN = 'plan',
 }
 
@@ -23,6 +25,22 @@ export interface IBookmark extends IEntity {
   status?: string;
   closed_at?: string;
   remind_at?: string;
+  /** Containing FAVORITE_FOLDER bookmark id; '' (or unset) = root. Empty
+   *  string, not null — dropped-None serialization + merge-never-removes
+   *  would otherwise strand cleared memberships. */
+  parent_id?: string;
+  /** Manual placement within the parent container. 0/unset = unstamped
+   *  (sorts at the END of a stamped container, newest first); stamped values
+   *  are contiguous from 1 via the `bookmark.order` action. */
+  order?: number;
+  /** Times this favorite has been opened. 0/unset = never opened — what the
+   *  desktop's unread badges count (see `isUnopened` in use-favorites.ts). */
+  counter?: number;
+  /** Owning project id, stamped at favorite-creation time from the current
+   *  project context. Carried as a plain field (the record still saves under
+   *  the unscoped @local desktop so webhook-created favorites stay visible);
+   *  the bookmarks slider filters favorites by this against the scope filter. */
+  project_id?: string | null;
 }
 
 @registerEntity
@@ -37,6 +55,10 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
   status?: string;
   closed_at?: string;
   remind_at?: string;
+  parent_id?: string;
+  order?: number;
+  counter?: number;
+  project_id?: string | null;
   static type: string = 'bookmark';
 
   constructor(entity: Partial<IBookmark> = {}) {
@@ -51,5 +73,45 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
     this.status = entity.status;
     this.closed_at = entity.closed_at;
     this.remind_at = entity.remind_at;
+    this.parent_id = entity.parent_id;
+    this.order = entity.order;
+    this.counter = entity.counter;
+    this.project_id = entity.project_id ?? null;
+  }
+
+  /** Record one open — bump `counter` and persist. Mirrors Prompt.enqueueTo's
+   *  `use_count` bump: stamp in place, then save.
+   *
+   *  The in-place bump + `notifyEntityChanged` is what re-renders the unread
+   *  badges, with zero network, so they tick before the save lands. The save's
+   *  own WS echo can't do it: an `update` DataOp arriving while this entity's
+   *  `saveInFlight` is set gets buffered, and the flush never notifies query
+   *  watchers. Deliberately no refetch — this fires on every favorite click.
+   *
+   *  Callers `void` it (a click path must never block navigation on a usage
+   *  stamp); the save promise is returned so tests can await the write. */
+  async markOpened(): Promise<void> {
+    this.counter = (this.counter ?? 0) + 1;
+    dataManager.notifyEntityChanged(this);
+    return this.save([]);
+  }
+
+  /** Desktop drag-drop commit — splice a bookmark into the drop gap within
+   *  its container (root '' or a folder id). Mirrors Tab.reorder; the server
+   *  registers the handler type-qualified as `bookmark.order`. */
+  static async reorder(
+    reorderId: string,
+    afterId: string | null,
+    beforeId: string | null,
+    parentId: string = '',
+  ): Promise<void> {
+    const info = new ActionInfo('order', Bookmark.type, null, 'POST');
+    info.bodyParameters = {
+      reorder_bookmark_id: reorderId,
+      after_bookmark_id: afterId,
+      before_bookmark_id: beforeId,
+      parent_id: parentId,
+    };
+    await dataManager.callAction<unknown, { bookmarks: IBookmark[] }>(info);
   }
 }

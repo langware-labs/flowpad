@@ -18,6 +18,7 @@ import {
   Shell,
   TypeId,
 } from '@sdk';
+import { applyProjectViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation';
 import { resolveNextTab, tabTargetKey } from '@src/tabs/tab-candidates';
 import { getTerminalTabsSnapshot } from '@src/tabs/useTabs';
@@ -181,6 +182,11 @@ export async function loadProject(projectTypeId: TypeId): Promise<Project> {
     ContextEntitiesEnum.CurrentProjectTypeId,
     projectTypeId,
   );
+  // Per-project view-mode memory: apply the project's remembered mode (or stamp
+  // the current one onto a project that has none). After the context write, so
+  // dataContext.project is this project before any recording. Synchronous apart
+  // from fire-and-forget saves — the loader stays fast.
+  applyProjectViewMode(project);
   return project;
 }
 
@@ -200,7 +206,10 @@ async function tagShellWithRoom(shell: Shell, roomId: string): Promise<void> {
   }
 }
 
-export async function loadProjectRoute(pointer: string | undefined): Promise<void> {
+export async function loadProjectRoute(
+  pointer: string | undefined,
+  opts: { viewMode?: string | null } = {},
+): Promise<void> {
   const { projectTypeId, roomId, tabTypeId, conversationId } =
     DockPointer.parseProjectPointer(pointer);
   const { assetSubPointer } = DockPointer.splitProjectPointer(pointer);
@@ -209,6 +218,15 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
     // No project id in URL — page renders its empty state; nothing to load.
     return;
   }
+
+  // `/dock/project/<id>` means "show the project space" — in EVERY view mode.
+  // This loader used to rewrite a bare project dock into the project's process
+  // shell whenever the AMBIENT mode was Vibe, which hijacked the footer/rail
+  // "open project view" controls: they ask for the project space by id and got
+  // an agentic process instead. Entering a Vibe WORKSPACE is a CALLER intent and
+  // is spelled out in the URL the caller navigates to — `open-project-component`
+  // resolves a Vibe project-open to a shell itself — never re-decided here from
+  // ambient state. URL-first: the loader loads what the URL names.
 
   // Prefetch project + room into the entity cache so the page's `useEntity`
   // calls hit immediately (no render blank → re-render).

@@ -96,7 +96,7 @@ def test_segments_cut_at_prompts_and_calls_collected(claude_home):
     assert [p["label"] for p in prompts] == ["first goal", "second goal"]
     assert trace["annotations"] == {
         "goals": [], "divergences": [], "issues": [], "verdict": None,
-        "notes": [], "by_skill": {}, "unattributed": [],
+        "notes": [], "by_skill": {}, "by_asset": {}, "unattributed": [],
     }
 
 
@@ -226,6 +226,48 @@ def test_merge_annotations_recounts_and_appends_skill_markers(claude_home):
     assert trace["annotations"]["notes"] == ["skill x: instruction y unclear"]
     # The skeleton is not mutated.
     assert skeleton["summary"]["verdict"] is None
+
+
+def test_merge_annotations_passes_by_asset_through(claude_home, tmp_path):
+    """Targeted-asset buckets survive the merge (the asset-improve poller reads
+    ONLY annotations.by_asset) and their anchors resolve against the asset file."""
+    _write_session(claude_home, [
+        _user("u1", "2026-06-12T10:00:00Z", "goal"),
+        _tool_use("a1", "2026-06-12T10:00:10Z", "tu1", "Bash", {"command": "true"}),
+    ])
+    asset = tmp_path / "vibe.md"
+    asset.write_text("## What to build — routing\nDoc / plan / report\n", encoding="utf-8")
+    key = f"agent-abc@{asset}"
+    skeleton = synthesize_agent_trace(SID)
+    annotations = {
+        "verdict": "mixed",
+        "issues": [{"ts": "2026-06-12T10:00:10Z", "label": "x", "skill": "vibe"}],
+        "by_asset": {
+            key: {"asset_ref": str(asset), "typeid": "agent-abc", "findings": [
+                {"kind": "issue", "label": "csv never offered",
+                 "section_hint": "the 'Doc / plan / report' routing line",
+                 "evidence": {"quote": "Creating a markdown doc", "ts": "2026-06-12T10:00:10Z"}},
+                {"kind": "issue", "label": "stale anchor",
+                 "section_hint": "the 'no such text anywhere' rule"},
+                "not-a-dict",
+            ]},
+            "malformed": "not-a-bucket",
+        },
+    }
+    trace = merge_annotations(skeleton, annotations)
+
+    bucket = trace["annotations"]["by_asset"][key]
+    assert bucket["asset_ref"] == str(asset)
+    assert [f["label"] for f in bucket["findings"]] == ["csv never offered", "stale anchor"]
+    # Anchors resolve against the asset file on disk, exactly like skill anchors.
+    assert bucket["findings"][0]["judged_against"] == "disk"
+    assert bucket["findings"][0]["unresolved_anchors"] == []
+    assert bucket["findings"][1]["unresolved_anchors"] == ["no such text anywhere"]
+    # Malformed buckets are dropped, never raised on; by_skill is unaffected.
+    assert "malformed" not in trace["annotations"]["by_asset"]
+    assert list(trace["annotations"]["by_skill"]) == ["vibe"]
+    # No by_asset in the payload → empty bucket, not a KeyError for consumers.
+    assert merge_annotations(skeleton, {"verdict": "ok"})["annotations"]["by_asset"] == {}
 
 
 def _skill(uuid: str, ts: str, tuid: str, name: str) -> dict:

@@ -1,8 +1,7 @@
 """FlowpadDiagnosis bundle roundtrip: pack → wipe the local row → unpack
 re-materializes the metadata-only entity from its packed ``header.json`` (same
-create-or-fill-merge contract as task / claude_session / git_branch). A
-diagnosis has no backing source file, so the header IS the record. Real test
-DB, no mocks."""
+create-or-fill-merge contract as task / claude_session). A diagnosis has no
+backing source file, so the header IS the record. Real test DB, no mocks."""
 
 from __future__ import annotations
 
@@ -56,7 +55,7 @@ async def test_pack_unpack_diagnosis_roundtrip(tmp_path):
     zip_path = await pack_bundle(fm, dest_dir=tmp_path)
 
     with zipfile.ZipFile(zip_path) as zf:
-        header_name = f"attachment/{EntityType.FLOWPAD_DIAGNOSIS.value}-@{diag.id}/header.json"
+        header_name = f"attachment/{EntityType.FLOWPAD_DIAGNOSIS.value}-{diag.id}/header.json"
         assert header_name in zf.namelist()
         header = json.loads(zf.read(header_name))
         assert header["id"] == diag.id
@@ -92,7 +91,7 @@ async def test_pack_diagnosis_header_is_exact_whitelist(tmp_path):
 
     header_path = (
         attachment_dir
-        / f"{EntityType.FLOWPAD_DIAGNOSIS.value}-@{diag.id}"
+        / f"{EntityType.FLOWPAD_DIAGNOSIS.value}-{diag.id}"
         / "header.json"
     )
     assert header_path.exists()

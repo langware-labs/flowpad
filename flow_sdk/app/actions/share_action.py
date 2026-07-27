@@ -16,6 +16,7 @@ from fastapi import HTTPException
 
 from flow_sdk.actions import action
 from flow_sdk.builtin.conversation import Conversation
+from flow_sdk.builtin.project import Project
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
@@ -76,19 +77,27 @@ async def share_entity() -> ApiSuccessResponse:
     if recipients is not None and not isinstance(recipients, list):
         raise HTTPException(status_code=400, detail="share: 'recipients' must be a list")
 
-    if recipients and isinstance(entity, Conversation):
+    # Conversation and Project both implement a ``share(recipients=...)`` fan-out
+    # (per-recipient MembershipRequest). Other types share without invites.
+    if recipients and isinstance(entity, (Conversation, Project)):
         await entity.share(recipients=recipients)
+    else:
+        await entity.share()
+
+    # Send-side address-book reconcile (rule 4): learn every recipient — for ANY
+    # shared entity type, not just conversations. A freshly-typed email carries no
+    # user_id (expected); a conversation's existing roster carries user_id+email.
+    # Non-fatal.
+    if recipients:
         try:
             from flow_sdk.app.actions.flow_message_action import _learn_address_book  # noqa: PLC0415
-            learn_entries: list[dict] = list(entity.participants or [])
+            learn_entries: list[dict] = list(getattr(entity, "members", None) or [])
             learn_entries += [
                 {"email": r} for r in recipients if isinstance(r, str) and r.strip()
             ]
             await _learn_address_book(learn_entries)
         except Exception as e:  # noqa: BLE001
             logger.warning("[share] address-book learning failed (non-fatal): %s", e)
-    else:
-        await entity.share()
 
     # Persist ``remote=True`` on the on-disk row so downstream consumers
     # (notably ``handle_add_message``'s ``is_remote_send`` gate) treat the

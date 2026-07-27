@@ -17,9 +17,12 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
+
+from flow_sdk import inbox
 from typing import Any, Callable, Optional
 
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
+from flow_sdk.preferences import message_status_sharing_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -31,16 +34,13 @@ logger = logging.getLogger(__name__)
 # step 404s. We eager-pull the bundle for these and skip the pull for
 # media-only FMs (FILE attachments stay manual).
 _ASSET_TYPEID_TYPES: frozenset[str] = frozenset({
-    "skill", "agent", "markdown", "spec", "workflow", "whiteboard",
-    # Not file-backed, but the chip resolves a real name only after the bundle's
-    # git_branch header materializes the row (+ its re-minted git_remote parent).
-    "git_branch",
+    "skill", "agent", "markdown", "spec", "whiteboard",
 })
 
 
 def _has_asset_typeid_attachment(attachments: Any) -> bool:
     """True iff ``attachments`` includes a TYPE_ID attachment for a file-backed
-    asset entity (skill / agent / markdown / spec / workflow / whiteboard).
+    asset entity (skill / agent / markdown / spec / whiteboard).
 
     Tolerates both the hub wire shape (list of dicts) and the local model
     shape (list of ``Attachment`` instances) — the ``data`` field is a
@@ -65,6 +65,30 @@ def _has_asset_typeid_attachment(attachments: Any) -> bool:
         if dash <= 0:
             continue
         if data[:dash] in _ASSET_TYPEID_TYPES:
+            return True
+    return False
+
+
+def _has_session_carrier_attachment(attachments: Any) -> bool:
+    """True iff ``attachments`` includes a ``remote_worker_session-<id>``
+    TYPE_ID carrier. Session messages must eager-pull their bundle: the
+    per-turn session snapshot lives in the bundle's header, and without the
+    pull a guest whose replies render inline never applies it — the session
+    row stays PENDING ("waiting for approve") while replies stream."""
+    if not attachments:
+        return False
+    for att in attachments:
+        att_type = (
+            att.get("attachment_type") if isinstance(att, dict)
+            else getattr(att, "attachment_type", None)
+        )
+        if att_type != "type_id":
+            continue
+        data = (
+            att.get("data") if isinstance(att, dict)
+            else getattr(att, "data", None)
+        )
+        if isinstance(data, str) and data.startswith("remote_worker_session-"):
             return True
     return False
 
@@ -120,7 +144,7 @@ async def _maybe_eager_pull_bundle(
     """
     if not attachment_filename:
         return
-    if not _has_asset_typeid_attachment(attachments):
+    if not (_has_asset_typeid_attachment(attachments) or _has_session_carrier_attachment(attachments)):
         return
     if fm_id in _INFLIGHT_BUNDLE_PULLS:
         return
@@ -252,6 +276,13 @@ class HubWsBridge:
         """
         from flow_sdk.cloud_client.events import EntityEvent  # noqa: PLC0415
 
+        # Unified-bus dual-publish (docs/flow-events.md phase 6): hub-origin
+        # events relay under their OWN family — see hub_on_tag.py.
+        from flow_sdk.cloud_client.hub_on_tag import emit_hub_entity
+
+        emit_hub_entity(op, entity_type, entity_id, parent_type, parent_id,
+                        str(data.get("actor")) if isinstance(data, dict) and data.get("actor") else None)
+
         if not self._subscriptions:
             return
         event = EntityEvent(
@@ -315,6 +346,8 @@ class HubWsBridge:
                 await self._handle_conversation_op(op, eid, data)
             elif etype == "invitation":
                 await self._handle_invitation_op(op, eid, data)
+            elif etype == "task":
+                await self._handle_task_op(op, eid, data)
             else:
                 logger.debug("hub_bridge: no handler for data_op_msg type=%s op=%s", etype, op)
         except Exception:
@@ -385,6 +418,25 @@ class HubWsBridge:
         # hub container (e.g. the conversation, used only for fanout).
         if isinstance(data, dict) and not data.get("id"):
             data = {**data, "id": child_id}
+        # Blob fallback: the hub op usually embeds the in-memory entity (blobs
+        # included), but a payload built from the hub's DB row carries blob
+        # fields EMPTY (they're db-excluded). Materializing that would clobber
+        # nothing locally yet still leave the child bodyless — so when a
+        # blob-declaring type arrives with all blob fields empty, fetch the
+        # expanded entity once and merge. Harmless when the body is genuinely
+        # empty; skipped entirely for types without blob fields.
+        blob_fields = cls.get_blob_fields_names() if hasattr(cls, "get_blob_fields_names") else []
+        if blob_fields and isinstance(data, dict) and not any(data.get(f) for f in blob_fields):
+            try:
+                from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
+                from flow_sdk.utils.hub import hub_get  # noqa: PLC0415
+
+                etype = BuiltinEntityType(child_type)
+                expanded = await hub_get(etype, child_id, params={"expand": "blobs"})
+                if isinstance(expanded, dict) and any(expanded.get(f) for f in blob_fields):
+                    data = {**data, **{f: expanded[f] for f in blob_fields if expanded.get(f)}}
+            except Exception:  # noqa: BLE001
+                logger.debug("hub_bridge: blob follow-up fetch failed for %s-%s", child_type, child_id, exc_info=True)
         envelope_ref = f"{parent_type}-{parent_id}" if parent_type and parent_id else None
         local_user = await User.get_local()
         someone_typeid = local_user.typeid if local_user else None
@@ -501,6 +553,56 @@ class HubWsBridge:
                     logger.info(
                         "[bridge] inbound persisted fm=%s conv=%s", fm_id, conversation_id,
                     )
+
+                    # Republish the unread projection now that the row + pointer
+                    # projection have settled (never on the intermediate CREATE).
+                    inbox.touch("inbound-message")
+
+                    # OS-level desktop notification for an inbound message from
+                    # *another* user. Emitted HERE — after the message is
+                    # persisted — not alongside the persist task: the renderer
+                    # re-derives the unread count via ``listInboxMessages`` on
+                    # receipt, so broadcasting before the row lands would count a
+                    # stale inbox and the badge/pip would never increment.
+                    # Broadcast to every desktop window so a backgrounded window
+                    # still fires the banner/badge/dock-bounce. Skipped for our
+                    # own messages (self-sends the hub echoes back — same guard as
+                    # the auto-ack below). Own try/except so a notify hiccup is
+                    # never mistaken for a persist failure.
+                    if (
+                        local_user
+                        and payload.get("sender_id")
+                        and payload["sender_id"] != local_user.id
+                    ):
+                        try:
+                            from flow_sdk.notifications import notify_desktop
+                            text = " ".join((payload.get("text") or "").split())
+                            preview = text if len(text) <= 80 else text[:77] + "..."
+                            if not preview:
+                                preview = (
+                                    (payload.get("attachment_filename") or "").strip()
+                                    or "Sent you a message"
+                                )
+                            # Message → generic payload flattening lives HERE
+                            # (the Layer-2 consumer); the notification service
+                            # renders it blind. The click target is the same
+                            # /conversation/<id>/message/<id> pointer an in-app
+                            # bubble click navigates to.
+                            await notify_desktop(
+                                "message",
+                                title=payload.get("sender_name") or "New message",
+                                body=preview,
+                                click_target={
+                                    "view_type": "conversation",
+                                    "pointer": f"{conversation_id}/message/{fm_id}",
+                                },
+                            )
+                        except Exception as _notify_err:
+                            logger.warning(
+                                "[bridge] desktop notify failed fm=%s (non-fatal): %s",
+                                fm_id, _notify_err,
+                            )
+
                     # Auto-run a permitted contact's prompt (the receiver's local
                     # ContactPermission policy decides). Cheap pre-check on the raw
                     # payload so a plain text message never spawns the task (and its
@@ -545,11 +647,15 @@ class HubWsBridge:
                     body_status=payload.get("body_status"),
                 ))
 
-            # Auto-ack delivery — receiver-side acks are the only signal that
-            # makes the sender's UI tick from ✓ to ✓✓. Skip if the local user
-            # IS the sender (hub ignores caller_is_sender anyway, but skipping
-            # avoids the round-trip).
-            if local_user and payload.get("sender_id") and payload["sender_id"] != local_user.id:
+            # Auto-ack delivery only when this user chose to share message
+            # status. The preference belongs to the reporting user, not to the
+            # message or conversation.
+            if (
+                message_status_sharing_enabled()
+                and local_user
+                and payload.get("sender_id")
+                and payload["sender_id"] != local_user.id
+            ):
                 self.manager.send({
                     "message_type": "rest_api_msg",
                     "message_id": str(uuid.uuid4()),
@@ -573,12 +679,17 @@ class HubWsBridge:
             someone_typeid = local_user.typeid if local_user else None
             prev_body_status = getattr(existing, "body_status", None)
             from flow_sdk.builtin.flow_message import delivery_advances  # noqa: PLC0415
+            # ``is_read`` / ``is_archived`` are LOCAL_ONLY_FIELDS (see
+            # flow_message.py) — per-machine inbox state the hub must NOT
+            # dictate. A body-READY UPDATE fans the full FlowMessage back to
+            # every participant *including the sender*, carrying the hub's
+            # is_read=False; copying it here clobbered the local read state
+            # (e.g. re-marked the sender's own just-sent message unread). Only
+            # sync the delivery/body fields the hub actually owns.
             for field in (
                 "delivery_status",
                 "delivered_at",
                 "received_at",
-                "is_read",
-                "is_archived",
                 "body_status",
                 "attachment_filename",
             ):
@@ -662,8 +773,8 @@ class HubWsBridge:
             return
 
     async def _handle_conversation_op(self, op: str, conv_id: str, data: dict) -> None:
-        """Passive upsert of Conversation lifecycle changes (title, status,
-        participants, message_status_visible) so the local entity stays in sync.
+        """Passive upsert of Conversation lifecycle changes so the local entity
+        stays in sync.
 
         ``title`` is included so a peer's rename (sent over HTTP or WS and reflected
         to the hub) fans out and lands on the local row here — otherwise a renamed
@@ -681,10 +792,16 @@ class HubWsBridge:
         _PROJECTED = {"message_count", "message_ids"}
         _LOCAL_FIELDS = {
             "id", "type", "title", "remote_project_id", "remote_project_name",
-            "participants", "message_status_visible", "shared_context_entities",
+            "participants", "git_sharing_enabled",
+            "shared_context_entities",
         }
         clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS and k not in _PROJECTED}
         clean["id"] = conv_id
+        # Wire adapter: the hub sends the roster under the ``participants`` key
+        # (its Conversation field + fanout contract); the local cache field is
+        # ``members`` (generic, on the Entity base). Map it at ingest.
+        if "participants" in clean:
+            clean["members"] = clean.pop("participants")
 
         self.remember_hub_conversation(conv_id)
 
@@ -713,8 +830,8 @@ class HubWsBridge:
             await Conversation.delete_by_id(conv_id)
             return
 
-        for field in ("title", "message_status_visible", "participants", "remote_project_id",
-                      "remote_project_name", "shared_context_entities"):
+        for field in ("title", "git_sharing_enabled", "members",
+                      "remote_project_id", "remote_project_name", "shared_context_entities"):
             if field in clean:
                 setattr(existing, field, clean[field])
         # Adopt the hub's owner when it carries one — keeps the local mirror
@@ -748,6 +865,44 @@ class HubWsBridge:
             return
         await handle_invitation_sync(local_user.typeid)
 
+    async def _handle_task_op(self, op: str, task_id: str, data: dict) -> None:
+        """A task was handed to this user — materialize it locally.
+
+        Assignment is not an offer: once the hub grants the assignee their role
+        it pushes the task here, and it must simply BE on their machine, the way
+        an assigned issue appears on a board. The frame is treated as a nudge
+        rather than the source of truth — ``materialize_accepted_task_invitation``
+        pulls the pair the local surfaces need (a member task's parent carries
+        the body and every display field, and its ``asset_ref`` anchors the
+        child's deduped folder), which the single-entity payload can't supply.
+
+        Its ``save(notify=True)`` emits the ordinary local op, so the task list
+        updates without a refresh. Deletes are left to the owner's own sweep.
+        """
+        if op == "delete":
+            return
+        from flow_sdk.app.actions.group_task_action import (
+            materialize_accepted_task_invitation,
+            materialize_remote_task,
+        )
+        from flow_sdk.builtin.task import Task
+        from flow_sdk.builtin.user import User
+
+        local_user = await User.get_local()
+        if local_user is None:
+            return
+
+        # Only a task we've never seen needs the full pull (parent + child, two
+        # hub GETs): the parent supplies the body and the asset_ref that anchors
+        # the child's folder. Once it's local, an update is just this row — the
+        # parent almost never changes, and re-pulling it on every status flip
+        # would double the hub traffic and re-notify a parent nobody touched.
+        if await Task.get_one({"id": task_id}) is None:
+            task = await materialize_accepted_task_invitation(task_id, local_user.typeid)
+        else:
+            task = await materialize_remote_task({**data, "id": task_id}, local_user.typeid)
+        logger.info("[bridge] task op %s materialized %s", op, getattr(task, "id", None))
+
     # ------------------------------------------------------------------
     # Outbound helpers — thin wrappers around send_request for callers that
     # want a clean coroutine API instead of building rest_api_msg payloads.
@@ -759,15 +914,12 @@ class HubWsBridge:
         project_id: str,
         text: str,
         receiver_id: Optional[str] = None,
-        message_status_visible: bool = True,
         timeout: float = 10.0,
     ) -> dict:
         body: dict = {"text": text}
         if receiver_id:
             body["receiver_address"] = receiver_id
             body["receiver_address_type"] = "id"
-        if not message_status_visible:
-            body["message_status_visible"] = False
         return await self.manager.send_request(
             {
                 "message_type": "rest_api_msg",
@@ -827,6 +979,16 @@ class HubWsBridge:
         return None
 
     async def mark_received(self, *, flow_message_ids: list[str], timeout: float = 5.0) -> dict:
+        if not message_status_sharing_enabled():
+            return {
+                "data": {
+                    "updated": [],
+                    "skipped": [
+                        {"id": message_id, "reason": "message_status_sharing_disabled"}
+                        for message_id in flow_message_ids
+                    ],
+                }
+            }
         return await self.manager.send_request(
             {
                 "message_type": "rest_api_msg",

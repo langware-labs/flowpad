@@ -11,15 +11,17 @@ TypeId format: ``shell-<uuid>``.
 from __future__ import annotations
 
 import asyncio
+import collections
 import logging
 import os
+import re
 from datetime import datetime, timezone
-from flow_sdk._compat import StrEnum
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 import psutil
 
-from flow_sdk.api.api_types.api_field import APIField, Persist
+from flow_sdk._compat import StrEnum
+from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import action
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -29,11 +31,38 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 from flow_sdk.utils.serialization import now_epoch_ms
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions, WorkerExecutionInfo
+    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+        WorkerCLIOptions,
+        WorkerExecutionInfo,
+    )
     from flow_sdk.builtin.faas.compute_node import ComputeNode
     from flow_sdk.builtin.faas.pty_session import Pty
 
 logger = logging.getLogger(__name__)
+
+
+# Per-shell-id PTY-open lock. Serializes ``Shell.start_pty`` so a watchdog
+# recovery tick and a concurrent client open (both entry points into start_pty)
+# can't both slip past the "already alive?" check and each ``create_pty`` — which
+# would leak a second OS PTY over the same shell. Mirrors ``_OPEN_LOCKS`` in
+# agentic_process.py. Process-local (PTYs are process-local), so no cross-process
+# coordination is needed.
+_START_PTY_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
+
+
+async def _next_unseen_pty_output(
+    queue: asyncio.Queue,
+    snapshot_max_seq: int,
+) -> bytes | None:
+    """Return the next chunk not already included in a disk snapshot."""
+    while True:
+        item = await queue.get()
+        if item is None:
+            return None
+        seq, chunk = item
+        if seq > snapshot_max_seq:
+            return chunk
 
 
 class ShellStatus(StrEnum):
@@ -51,14 +80,10 @@ def get_shell_record(uid: str) -> FSRecord | None:
 
 def shell_pty_stream_path(record_id: str, pty_pid: str | None):
     """Path to the .pty stream file for a shell session."""
-    from pathlib import Path
-    from flow_sdk.fs_store.fs_record import record_stem
-    from flow_sdk.fs_store.record_paths import get_default_records_data_root
-
     if pty_pid is None:
         raise ValueError("No pty_pid set")
-    stem = record_stem(BuiltinEntityType.SHELL.value, record_id)
-    return get_default_records_data_root() / BuiltinEntityType.SHELL.value / stem / f"{pty_pid}.pty"
+    from flow_sdk.fs_store.record_paths import data_dir_for
+    return data_dir_for(BuiltinEntityType.SHELL.value, record_id) / f"{pty_pid}.pty"
 
 
 def close_shell_record(record: FSRecord) -> None:
@@ -78,6 +103,7 @@ def close_shell_record(record: FSRecord) -> None:
         except (OSError, ValueError):
             pass
     record.save_metadata_field("status", ShellStatus.CLOSED.value)
+
 
 class Shell(Entity):
     """Entity representing a shell tab (PTY session).
@@ -121,7 +147,9 @@ class Shell(Entity):
             "Cleared the first time the user manually renames this tab in the UI."
         ),
     )
-    last_launch_cmd: dict | None = APIField(default=None, description="Serialized WorkerCLIOptions from the last launch() call")
+    last_launch_cmd: dict | None = APIField(
+        default=None, description="Serialized WorkerCLIOptions from the last launch() call"
+    )
 
     def get_implicit_private_context_entities(self) -> list["TypeId"]:
         """Project the owning process into private context (the reverse of
@@ -161,6 +189,7 @@ class Shell(Entity):
         if self._bound_compute_node is not None:
             return self._bound_compute_node
         from flow_sdk.builtin.faas.compute_node import ComputeNode
+
         return ComputeNode(
             id=self.compute_node_id or "",
             node_provider_id="local",
@@ -285,7 +314,9 @@ class Shell(Entity):
                 return False
 
         if expected_session_id:
-            actual_session_id = cls._argv_flag_value(cmdline, "--session-id") or cls._argv_flag_value(cmdline, "--resume")
+            actual_session_id = cls._argv_flag_value(cmdline, "--session-id") or cls._argv_flag_value(
+                cmdline, "--resume"
+            )
             # Only fail when cmdline carries an explicit session id that
             # disagrees with ours. Workers whose interactive mode doesn't
             # surface session_id on argv (codex TUI) leave actual=None;
@@ -311,7 +342,9 @@ class Shell(Entity):
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return False
 
-        expected_session_id = self._argv_flag_value(spawn_args, "--session-id") or self._argv_flag_value(spawn_args, "--resume")
+        expected_session_id = self._argv_flag_value(spawn_args, "--session-id") or self._argv_flag_value(
+            spawn_args, "--resume"
+        )
         return self._cmdline_matches_expected(
             cmdline,
             expected_exe=spawn_args[0],
@@ -355,6 +388,7 @@ class Shell(Entity):
         if not self.project_id:
             try:
                 from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
                 local = await Project.get_by_prop("uname", "local", "project")
                 if local is not None and getattr(local, "id", None):
                     self.project_id = local.id
@@ -398,52 +432,62 @@ class Shell(Entity):
         - status == "running" AND PTY alive  →  no-op, returns False
         - status == "running" AND PTY dead   →  cleanup stale session, spawn fresh PTY
         - status in (idle, closed, None)     →  spawn new PTY
+
+        The whole check-and-create runs under a per-shell-id lock so a watchdog
+        recovery tick and a concurrent client open can't both pass the liveness
+        check and each ``create_pty`` (double-spawn). Both callers enter here, so
+        the lock is the single serialization point.
         """
         if self.status not in (None, "idle", "closed", "running"):
             raise RuntimeError(f"Cannot open session in status: {self.status}")
         if not await self.ensure_live_compute_node_binding():
             raise RuntimeError(f"Compute node not found for shell session ({self._compute_node_lookup_hint()})")
 
-        cn = self.compute_node
-        existing = cn.get_pty(self.id)
+        async with _START_PTY_LOCKS[self.id]:
+            cn = self.compute_node
+            existing = cn.get_pty(self.id)
 
-        if existing and existing.is_alive:
-            if spawn_args is not None and not self._live_pty_matches_spawn_args(spawn_args):
+            if existing and existing.is_alive:
+                if spawn_args is not None and not self._live_pty_matches_spawn_args(spawn_args):
+                    await existing.kill()
+                    existing = None
+                else:
+                    if connection_id:
+                        await existing.attach(connection_id)
+                    return False
+
+            if existing and not existing.is_alive:
                 await existing.kill()
-                existing = None
-            else:
+                # A dead PTY handle does not imply a dead worker — sweep the
+                # session before respawning so the fresh ``--resume`` can't
+                # collide with a surviving worker's JSONL session lock.
+                await self.terminate_worker()
+            elif existing:
                 if connection_id:
                     await existing.attach(connection_id)
                 return False
+            elif self.status in ("running", "closed"):
+                await self._cleanup_stale_session()
 
-        if existing and not existing.is_alive:
-            await existing.kill()
-        elif existing:
-            if connection_id:
-                await existing.attach(connection_id)
-            return False
-        elif self.status in ("running", "closed"):
-            await self._cleanup_stale_session()
+            await cn.create_pty(
+                self.id,
+                rows=rows,
+                cols=cols,
+                connection_id=connection_id,
+                name=self.name,
+                working_dir=self.workdir,
+                on_exit=on_exit,
+                spawn_args=spawn_args,
+                extra_env=extra_env,
+            )
 
-        await cn.create_pty(
-            self.id,
-            rows=rows,
-            cols=cols,
-            connection_id=connection_id,
-            name=self.name,
-            working_dir=self.workdir,
-            on_exit=on_exit,
-            spawn_args=spawn_args,
-            extra_env=extra_env,
-        )
-
-        self.status = "running"
-        self.pty_pid = self.id
-        self.last_active_at = now_epoch_ms()
-        self.worker_pid = None
-        self.worker_name = None
-        await self.save()
-        return True
+            self.status = "running"
+            self.pty_pid = self.id
+            self.last_active_at = now_epoch_ms()
+            self.worker_pid = None
+            self.worker_name = None
+            await self.save()
+            return True
 
     async def start(self, *args, **kwargs) -> bool:
         """Back-compat alias for :meth:`start_pty`. Prefer ``start_pty`` —
@@ -468,31 +512,74 @@ class Shell(Entity):
         await self.stop()
         await self.start_pty()
 
-    async def terminate_worker(self) -> None:
-        """Gracefully kill the Claude worker and wait for full reap.
+    def _session_worker_procs(self, session_id: str, exclude: set[int]) -> list[psutil.Process]:
+        """Every live process whose argv names *session_id* via --session-id/--resume.
 
-        SIGTERM the worker and its descendants, wait up to 3s for the kernel
+        The session id is a UUID unique to this shell's worker session, so an
+        argv match is a positive identification regardless of which pid the
+        shell row currently records.
+        """
+        matches: list[psutil.Process] = []
+        for proc in psutil.process_iter(["pid", "cmdline"]):
+            if proc.info["pid"] in exclude:
+                continue
+            cmdline = proc.info.get("cmdline") or []
+            sid = self._argv_flag_value(cmdline, "--session-id") or self._argv_flag_value(cmdline, "--resume")
+            if sid == session_id:
+                matches.append(proc)
+        return matches
+
+    async def terminate_worker(self) -> None:
+        """Gracefully kill EVERY worker on this shell's session and wait for full reap.
+
+        Victims are the recorded ``worker_pid`` (+ descendants) PLUS a sweep of
+        all live processes whose argv carries this session's id — a relaunch
+        overwrites ``worker_pid`` (see ``start_pty``), so a still-live previous
+        worker can be orphaned with no pid record; its held JSONL session lock
+        would make every subsequent ``claude --resume`` collide and stall.
+
+        SIGTERM the victims and their descendants, wait up to 3s for the kernel
         to reap them, then SIGKILL any survivors and wait again. Returns only
         once every victim is fully reaped — once that holds, any flock-held
         resources (e.g. Claude's JSONL session lock) are released, so a
-        subsequent ``claude --resume`` won't collide with the dead worker's
+        subsequent ``claude --resume`` won't collide with a dead worker's
         leftover lock file.
 
         Shell entity and PTY are left alive (status unchanged).
-        Uses self.worker_pid set by _launch_worker_process().
         """
-        pid = self.worker_pid
-        if not pid:
+        victims: list[psutil.Process] = []
+        if self.worker_pid:
+            try:
+                proc = psutil.Process(self.worker_pid)
+                try:
+                    victims = [proc, *proc.children(recursive=True)]
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    victims = [proc]
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        launch_cmd = getattr(self, "last_launch_cmd", None)
+        session_id = launch_cmd.get("session_id") if isinstance(launch_cmd, dict) else None
+        if session_id:
+            seen = {p.pid for p in victims}
+
+            # Both the argv sweep and each match's ``children(recursive=True)``
+            # walk the full process table; run the whole collection off-loop so
+            # it can't stall other requests.
+            def _sweep() -> list[psutil.Process]:
+                out: list[psutil.Process] = []
+                for proc in self._session_worker_procs(session_id, seen):
+                    out.append(proc)
+                    try:
+                        out.extend(c for c in proc.children(recursive=True) if c.pid not in seen)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+                return out
+
+            victims.extend(await asyncio.to_thread(_sweep))
+
+        if not victims:
             return
-        try:
-            proc = psutil.Process(pid)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            return
-        try:
-            children = proc.children(recursive=True)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            children = []
-        victims = [proc, *children]
 
         for p in victims:
             try:
@@ -554,6 +641,67 @@ class Shell(Entity):
         await self._wait_for_shell_ready()
         await pty_handle.write(f"{text}\r".encode())
 
+    async def wait_for_input_ready(self, timeout: float = 5.0) -> None:
+        """Public gate: block until the PTY is at its prompt (readline initialised)
+        so an injected write lands. ``write``/``write_then_submit`` gate on this
+        internally; a raw ``write_raw`` (e.g. ``AgenticProcess.input``) must call
+        this FIRST, or a freshly-(re)booted TUI silently drops the keystrokes.
+        """
+        await self._wait_for_shell_ready(timeout=timeout)
+
+    async def wait_for_composer_ready(
+        self,
+        pattern: "re.Pattern[str]",
+    ) -> bool:
+        """Block until ``pattern`` appears in this PTY's ANSI-stripped output.
+
+        The vendor-marker gate for typed first deliveries (QA C09b): output
+        quiescence is NOT composer-readiness — a blocking boot interstitial
+        (directory trust / login screen) is quiet too, and typing into it eats
+        the prompt. This subscribes to the live output feed FIRST (synchronous
+        queue registration — no subscribe/read gap), then scans the accumulated
+        history and every subsequent paint via ``pump_composer_ready``.
+
+        Event-driven: only ever waits on the next PTY paint. Returns False when
+        the PTY is gone or closes before the marker appears — the caller must
+        not type. Callers own cancellation (e.g. the prompt turn's nudge task
+        is cancelled when the turn stream closes).
+        """
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+            pump_composer_ready,
+        )
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
+
+        await self.ensure_live_compute_node_binding()
+        provider_id = self.compute_node.node_provider_id if self.compute_node else None
+        if not provider_id:
+            return False
+        pty_key = (self.compute_node_id, provider_id, self.id)
+        session = pty_registry.states.get(pty_key)
+        if session is None:
+            return False
+        q: asyncio.Queue = asyncio.Queue()
+        session.sequenced_output_queues.append(q)
+        try:
+            stream = session.pty_stream_file
+            if stream is not None:
+                initial, snapshot_max_seq = stream.read_output_snapshot_after_seq(
+                    session.generation_start_seq
+                )
+            else:
+                initial, snapshot_max_seq = b"", session.generation_start_seq
+
+            return await pump_composer_ready(
+                pattern,
+                initial,
+                lambda: _next_unseen_pty_output(q, snapshot_max_seq),
+            )
+        finally:
+            try:
+                session.sequenced_output_queues.remove(q)
+            except ValueError:
+                pass
+
     async def write_raw(self, data: bytes) -> None:
         """Send raw bytes verbatim to PTY stdin (no \\r, no bracketed paste).
 
@@ -605,9 +753,11 @@ class Shell(Entity):
         """Stream live PTY output as it arrives. Delegates to self.pty.output()."""
         pty_handle = self.compute_node.get_pty(self.id)
         if pty_handle is None:
+
             async def _empty():
                 return
                 yield
+
             return _empty()
         return pty_handle.output()
 
@@ -720,9 +870,7 @@ class Shell(Entity):
 
         return True
 
-    async def _poll_for_worker_pid(
-        self, shell_pid: int | None, executable: str, timeout: float = 1.0
-    ) -> int | None:
+    async def _poll_for_worker_pid(self, shell_pid: int | None, executable: str, timeout: float = 1.0) -> int | None:
         """Poll for a child process of shell_pid whose argv[0] matches executable."""
         import os as _os
 
@@ -740,8 +888,7 @@ class Shell(Entity):
                         # whose argv[0] is the runtime (e.g. ``node``) and
                         # argv[1] is the script path (e.g. ``codex``).
                         if cmdline and any(
-                            _os.path.splitext(_os.path.basename(c))[0].casefold() == expected
-                            for c in cmdline[:2]
+                            _os.path.splitext(_os.path.basename(c))[0].casefold() == expected for c in cmdline[:2]
                         ):
                             return child.pid
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -831,6 +978,23 @@ class Shell(Entity):
     @action.post(action_name="close")
     async def close(self) -> ApiResponse:
         """Kill worker + PTY + delete disk record + delete entity. Permanent teardown."""
+        owner = None
+        if self.agentic_process_id:
+            try:
+                from flow_sdk.builtin.agentic_process import AgenticProcess
+                from flow_sdk.builtin.process_lifecycle import ProcessStatus
+
+                owner = await AgenticProcess.get_by_id(self.agentic_process_id)
+                if owner is not None and owner.shell_id == self.id:
+                    owner.status = ProcessStatus.STOPPING.value
+                    owner.context_data = {
+                        **owner.context_data,
+                        "_shell_exit_pending": True,
+                    }
+                    await owner.save()
+            except Exception as e:
+                logging.warning(f"[Shell.close] owner stop transition failed: {e}")
+
         try:
             await self.terminate_worker()
         except Exception as e:
@@ -851,6 +1015,29 @@ class Shell(Entity):
             logging.warning(f"[Shell.close] PTY kill failed: {e}")
 
         await self.delete()
+
+        # A direct shell close is an explicit lifecycle action, not an
+        # externally interrupted worker that restart recovery should preserve.
+        # Persist the terminal owner state before returning so the next entity
+        # read cannot race the PTY reader thread's on_exit callback.
+        if owner is not None:
+            try:
+                from flow_sdk.builtin.process_lifecycle import ProcessStatus
+
+                latest_owner = await type(owner).get_by_id(owner.id)
+                if latest_owner is not None and latest_owner.shell_id == self.id:
+                    latest_owner.context_data = {
+                        key: value
+                        for key, value in latest_owner.context_data.items()
+                        if key != "_shell_exit_pending"
+                    }
+                    latest_owner.sidecar_shell_id = None
+                    latest_owner.status = ProcessStatus.STOPPED.value
+                    latest_owner.visible = False
+                    await latest_owner.save()
+            except Exception as e:
+                logging.warning(f"[Shell.close] owner stopped transition failed: {e}")
+
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
     @action.post(action_name="run")

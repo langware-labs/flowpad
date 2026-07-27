@@ -5,6 +5,7 @@ import {
   QueryRequest,
 } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { compareConversationsByRecency } from '@src/components/conversation/conversation-category';
 // Single canonical keying, shared with ContactPicker / AddressBookButton so the
 // picker's dedup and this subset-match agree on participant identity.
 import { participantKey } from '@src/components/contact-picker/use-contacts';
@@ -44,7 +45,7 @@ export function useConversationsForContacts(
         if (c.dismissed_at || c.archived_at) return false;
         if (projectId && c.project_id && c.project_id !== projectId) return false;
         const have = new Set(
-          (c.participants ?? [])
+          (c.members ?? [])
             .map(participantKey)
             .filter((k) => k.length > 0),
         );
@@ -53,11 +54,7 @@ export function useConversationsForContacts(
         }
         return true;
       })
-      .sort((a, b) => {
-        const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
-        const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
-        return tb - ta;
-      });
+      .sort(compareConversationsByRecency);
   }, [conversations, selected, projectId]);
 
   return { conversations: filtered, isLoading };

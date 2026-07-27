@@ -109,11 +109,14 @@ async def test_agent_file_path_resolves_to_typeid(tmp_path: Path, initialize_tes
         assert e.project_id == pid
 
 
-async def test_skill_inner_file_path_is_not_mapped(tmp_path: Path, initialize_test_db):
-    """The skill's `asset_ref` is the FOLDER; its inner `SKILL.md` does not map.
+async def test_skill_inner_file_maps_to_owning_skill(tmp_path: Path, initialize_test_db):
+    """The skill's `asset_ref` is the FOLDER; its inner `SKILL.md` maps to it.
 
-    This is exactly the gap an editor deep-link to an inner file would hit:
-    `get_by_asset_ref` is exact-match, with no folder-descendant ownership lookup.
+    This is exactly the editor deep-link case: with ``resolve_containing=True``
+    (the ``/assets/entity`` route's mode) `get_by_asset_ref` is exact-match
+    first, then falls back to the deepest folder-layout ancestor
+    (containing-folder ownership), so a file inside the skill folder resolves
+    to the owning Skill entity. The default stays strict exact-match.
     """
     sid = _v5("skill:user:inner")
     folder = _write_skill(tmp_path, "inner_skill", sid)
@@ -121,6 +124,12 @@ async def test_skill_inner_file_path_is_not_mapped(tmp_path: Path, initialize_te
 
     # The folder (the canonical asset_ref) resolves...
     assert (await Entity.get_by_asset_ref(str(folder.resolve()))) is not None
-    # ...but the underlying SKILL.md file does NOT resolve to the owning skill.
+    # ...and the underlying SKILL.md resolves to the owning skill via the
+    # opt-in containing-folder fallback.
     inner = folder / "SKILL.md"
+    e = await Entity.get_by_asset_ref(str(inner.resolve()), resolve_containing=True)
+    assert e is not None, "inner SKILL.md did not map to the owning skill"
+    assert e.get_type() == str(RecordType.SKILL)
+    assert e.id == sid
+    # The default keeps the strict exact-match contract for existing callers.
     assert (await Entity.get_by_asset_ref(str(inner.resolve()))) is None

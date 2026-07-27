@@ -3,20 +3,17 @@ import { Project } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import type { WorkerType } from '@src/components/workers/worker-types';
-import {
-  workerIcon,
-  workerLabel,
-} from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
+import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { canonicalPath, projectListToSelectorItems, ProjectSelector } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dockForProjectEntry } from '@src/tabs/project-entry';
+import { dockForGlobalEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
-import { ChevronLeft, History, Layers, Loader2, RotateCcw } from 'lucide-react';
+import { AppWindow, ChevronLeft, Globe, History, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
 /** Agentic worker kinds offered by the picker's worker toolbar. Alias of the
@@ -69,20 +66,155 @@ export function resolveProjectChipName(
   return bucket ? bucketDisplayName(bucket) : null;
 }
 
+/**
+ * Hairline-flanked mid-list section title — the chip's "Active projects"
+ * separator. Exported so other project lists (the footer Switch Project
+ * dialog) render the identical separator instead of a lookalike.
+ */
+export function SectionHairlineTitle({
+  children,
+  testid = 'projects-counter-section-title',
+}: {
+  children: React.ReactNode;
+  testid?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-2 pb-0.5 pt-1.5" data-testid={testid}>
+      <span aria-hidden className="h-px flex-1 bg-border" />
+      <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{children}</span>
+      <span aria-hidden className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
 // Sort: alphabetical by display name, projectId tie-break. Deliberately NOT
 // current-first or state-ranked — the list keeps a stable order as the user
 // switches projects or buckets change state; the current row is highlighted
 // instead of moved.
 function compareBuckets(a: TabProjectBucket, b: TabProjectBucket): number {
-  return (
-    bucketDisplayName(a).localeCompare(bucketDisplayName(b)) || a.projectId.localeCompare(b.projectId)
-  );
+  return bucketDisplayName(a).localeCompare(bucketDisplayName(b)) || a.projectId.localeCompare(b.projectId);
 }
 
 function bucketRowLabel(bucket: TabProjectBucket): string {
   if (bucket.state === 'live') return bucketDisplayName(bucket);
   if (bucket.state === 'loading') return 'Loading…';
   return `Project unavailable (${bucket.projectId.slice(0, 8)})`;
+}
+
+/**
+ * True when `childPath` names a location strictly INSIDE `parentPath` — the
+ * containment test that makes one project a subproject of another. Both inputs
+ * pass through {@link canonicalPath} first, so this is cross-platform: `\` →
+ * `/`, and trailing / duplicate separators are normalized away. The compare is
+ * case-insensitive so grouping is correct on case-insensitive filesystems
+ * (Windows, macOS) and remains safe on Linux for this display-only feature. The
+ * trailing-separator boundary stops `/foo/bar` from reading as inside
+ * `/foo/barn`. Pure + dependency-free so it's unit-testable in isolation.
+ */
+export function isPathInside(childPath: string, parentPath: string): boolean {
+  const child = canonicalPath(childPath).toLowerCase();
+  const parent = canonicalPath(parentPath).toLowerCase();
+  if (!child || !parent || child === parent) return false;
+  return child.startsWith(`${parent}/`);
+}
+
+/** One indentation column of a tree row: a pass-through vertical, the elbow that
+ *  connects a child to its parent (last child stops the vertical at center), or
+ *  blank space where an ancestor branch has already ended. */
+type GuideCell = 'blank' | 'through' | 'elbow' | 'elbow-last';
+
+/** A menu row plus the tree-guide columns to draw at its left (empty = top level). */
+export interface ProjectTreeRow {
+  bucket: TabProjectBucket;
+  guides: GuideCell[];
+}
+
+/**
+ * Arrange open project buckets into parent → subproject render order for the
+ * menu. A bucket is a SUBPROJECT of another when its mount path lives inside
+ * that other bucket's mount path (deepest enclosing open project wins as the
+ * parent). This is a pure DISPLAY grouping — no entity/graph relationship is
+ * created or implied. Buckets without a resolved path (loading / missing) can't
+ * be contained, so they stay top-level. Siblings at every level keep the flat
+ * {@link compareBuckets} order; a subproject stays nested under its parent
+ * regardless of which one is the current scope. Returns rows in render order,
+ * each carrying the guide columns for its depth.
+ */
+export function buildProjectTreeRows(buckets: ReadonlyArray<TabProjectBucket>): ProjectTreeRow[] {
+  const paths = new Map<string, string>(); // projectId -> canonical mount path
+  for (const b of buckets) {
+    const mount = b.project?.fs_storage_mount_path;
+    if (mount) paths.set(b.projectId, canonicalPath(mount));
+  }
+
+  // Each pathed bucket's parent = the DEEPEST other pathed bucket that contains
+  // it (longest matching parent path wins for correct multi-level nesting).
+  const parentId = new Map<string, string>();
+  for (const b of buckets) {
+    const childPath = paths.get(b.projectId);
+    if (!childPath) continue;
+    let best: { id: string; len: number } | null = null;
+    for (const other of buckets) {
+      if (other.projectId === b.projectId) continue;
+      const parentPath = paths.get(other.projectId);
+      if (parentPath && isPathInside(childPath, parentPath) && (!best || parentPath.length > best.len)) {
+        best = { id: other.projectId, len: parentPath.length };
+      }
+    }
+    if (best) parentId.set(b.projectId, best.id);
+  }
+
+  // Children index + roots, each sibling list in the flat compareBuckets order.
+  const childrenOf = new Map<string, TabProjectBucket[]>();
+  const roots: TabProjectBucket[] = [];
+  for (const b of [...buckets].sort(compareBuckets)) {
+    const pid = parentId.get(b.projectId);
+    if (!pid) {
+      roots.push(b);
+      continue;
+    }
+    const siblings = childrenOf.get(pid);
+    if (siblings) siblings.push(b);
+    else childrenOf.set(pid, [b]);
+  }
+
+  // Depth-first flatten, carrying the guide columns down each branch.
+  const rows: ProjectTreeRow[] = [];
+  const walkChildren = (ownerId: string, prefix: GuideCell[]) => {
+    const kids = childrenOf.get(ownerId) ?? [];
+    kids.forEach((kid, i) => {
+      const isLast = i === kids.length - 1;
+      rows.push({ bucket: kid, guides: [...prefix, isLast ? 'elbow-last' : 'elbow'] });
+      walkChildren(kid.projectId, [...prefix, isLast ? 'blank' : 'through']);
+    });
+  };
+  for (const root of roots) {
+    rows.push({ bucket: root, guides: [] });
+    walkChildren(root.projectId, []);
+  }
+  return rows;
+}
+
+/** Left-edge tree guides for one menu row (file-explorer style). Each column is
+ *  a 16px cell; verticals connect flush across adjacent rows because the row
+ *  buttons stack with no gap. Purely decorative, so `aria-hidden`. */
+function RowGuides({ guides }: { guides: GuideCell[] }) {
+  if (guides.length === 0) return null;
+  return (
+    <span aria-hidden className="flex shrink-0 self-stretch">
+      {guides.map((cell, i) => (
+        <span key={i} className="relative w-4 self-stretch">
+          {cell === 'through' || cell === 'elbow' ? (
+            <span className="absolute bottom-0 left-2 top-0 w-px bg-border" />
+          ) : null}
+          {cell === 'elbow-last' ? <span className="absolute left-2 top-0 h-1/2 w-px bg-border" /> : null}
+          {cell === 'elbow' || cell === 'elbow-last' ? (
+            <span className="absolute left-2 top-1/2 h-px w-2 bg-border" />
+          ) : null}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 // Worker entries for the action strip — mirrors the tab strip's opener
@@ -120,7 +252,9 @@ const ProjectPickerPanel: React.FC<{
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
         <WorkerIcon className="h-3.5 w-3.5 shrink-0" />
-        <span className="text-xs font-medium text-muted-foreground"><Trans>Open {workerLabel(worker)} on…</Trans></span>
+        <span className="text-xs font-medium text-muted-foreground">
+          <Trans>Open {workerLabel(worker)} on…</Trans>
+        </span>
       </div>
       <div className="min-h-0 flex-1">
         <ProjectSelector
@@ -152,14 +286,25 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   // clicked icon on the action strip.
   const [pickerWorker, setPickerWorker] = useState<ProjectWorkerType | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
-  const { navigation } = useDockNavigation();
-  const { buckets } = useTabProjectBuckets();
+  const { currentDock, navigation } = useDockNavigation();
+  const { buckets: allBuckets, globalTabCount } = useTabProjectBuckets();
 
-  const sorted = useMemo(() => [...buckets].sort(compareBuckets), [buckets]);
+  // System projects (e.g. the shipped "Flowpad Assistant") are kept out of the
+  // chip entirely — they stay reachable via Preferences → UI → "Show system
+  // projects". We read the backend-computed `system` flag off the entity rather
+  // than re-deriving it client-side. A bucket whose entity is still loading
+  // (project == null) is kept — it resolves from cache and re-filters once known.
+  // The agent mount ROOT (~/Flowpad workspace) is excluded on the backend
+  // (never minted, never listed), so no new tab can open on it here.
+  const buckets = useMemo(() => allBuckets.filter((b) => !b.project?.system), [allBuckets]);
+
+  // Buckets in parent → subproject render order (a subproject is a project
+  // whose folder lives inside another open project's folder). Display-only
+  // nesting; see buildProjectTreeRows.
+  const treeRows = useMemo(() => buildProjectTreeRows(buckets), [buckets]);
 
   const tabTotal = buckets.reduce((sum, b) => sum + b.tabCount, 0);
   const projectTotal = buckets.length;
-  const isEmpty = projectTotal === 0;
 
   // Name of the current project, shown as a label segment on the chip.
   const projectName = useMemo(
@@ -167,11 +312,26 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     [currentProjectName, currentProjectId, buckets],
   );
   const hasProject = !!projectName;
+  // The Global scope surfaces ONLY when no project is active AND there is ≥1
+  // global tab (strictly current-only — you enter Global by opening a global
+  // tab, not by picking it from within a project). It is then always the current
+  // scope: a violet "Global" label + a current-marked row above the projects.
+  const isGlobalScope = currentProjectId == null && globalTabCount > 0;
+  // The active scope's label — a project name, or "Global" — or null when the
+  // chip is a bare counter. `scopeLabel != null` is the single "chip carries a
+  // label" predicate used for both styling and the counts muting.
+  const scopeLabel = hasProject ? projectName : isGlobalScope ? 'Global' : null;
+  // Nothing to advertise: no project owns a tab and we're not in a populated
+  // Global scope. A bare "0 / 0" chip represents nothing, so it stays hidden.
+  const isEmpty = projectTotal === 0 && !isGlobalScope;
 
-  const countTooltip = `${projectTotal} active project${projectTotal === 1 ? '' : 's'} with ${tabTotal} open tab${
-    tabTotal === 1 ? '' : 's'
-  }`;
-  const tooltipText = hasProject ? `${projectName} — ${countTooltip}` : countTooltip;
+  // Spelled-out, singular-aware labels for each count — used both in the
+  // hover tooltip (one line each so it's unmistakable which number is which)
+  // and, joined, in the flat aria-label.
+  const projectsLabel = `${projectTotal} open project${projectTotal === 1 ? '' : 's'}`;
+  const tabsLabel = `${tabTotal} open tab${tabTotal === 1 ? '' : 's'}`;
+  const countTooltip = `${projectsLabel}, ${tabsLabel}`;
+  const tooltipText = scopeLabel ? `${scopeLabel} — ${countTooltip}` : countTooltip;
 
   // Canonical mount paths of projects already open in the strip — excluded
   // from the picker so it only offers not-yet-open projects.
@@ -184,23 +344,26 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     [buckets],
   );
 
-  // When the chip carries a project name it reads as the "project context"
-  // pill — a subtle primary tint + accent border sets it apart from the neutral
-  // tab headers next to it, while staying within the design language (same
-  // height, radius, border weight). Without a project it falls back to the
-  // plain neutral chip so a project-less strip isn't washed in accent color.
-  const chipClass = `mx-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border px-2 text-xs font-medium tabular-nums focus:outline-none focus:ring-1 focus:ring-ring ${
+  // Three scope treatments, all within the same design language (height, radius,
+  // border weight): a PROJECT scope reads as a subtle primary-tinted pill; the
+  // GLOBAL scope gets a distinct violet accent so it never looks like a regular
+  // project; a scope-less strip falls back to the plain neutral chip so it isn't
+  // washed in accent color.
+  const chipClass = `ml-1 inline-flex h-7 shrink-0 items-center gap-1.5 self-center rounded-md border px-2.5 text-xs font-medium tabular-nums focus:outline-none focus:ring-1 focus:ring-ring ${
     hasProject
       ? 'border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10'
-      : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
+      : isGlobalScope
+        ? 'border-violet-500/30 bg-violet-500/5 text-foreground hover:bg-violet-500/10'
+        : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
   }`;
 
   // Per-type icon from the backend TypeInfo registry (CLAUDE.md: never hardcode
   // a glyph for an entity type) — the same project icon every other surface shows.
+  // Global is a pseudo-scope (not an entity type), so it uses a plain `Globe` glyph.
   const ProjectIcon = iconForType(Project.type);
 
-  // Shared trigger content: the project-name label (when known) followed by the
-  // open-projects / terminals counts. The name is the hero (primary glyph,
+  // Shared trigger content: the scope label (project name, or "Global") followed
+  // by the open-projects / tabs counts. The label is the hero (accent glyph,
   // foreground weight); the counts ride along muted and divided off.
   const triggerContent = (
     <>
@@ -210,10 +373,29 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
           <span className="max-w-[9rem] truncate">{projectName}</span>
           <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-border" />
         </>
+      ) : isGlobalScope ? (
+        <>
+          <Globe className="h-3 w-3 shrink-0 text-violet-500" />
+          <span className="max-w-[9rem] truncate">
+            <Trans>Global</Trans>
+          </span>
+          <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-border" />
+        </>
       ) : null}
-      <Layers className={`h-3 w-3 shrink-0 ${hasProject ? 'text-muted-foreground' : ''}`} />
-      <span className={hasProject ? 'text-muted-foreground' : undefined}>{projectTotal}</span>
-      <sub className="ml-0.5 text-[9px] leading-none text-muted-foreground">{tabTotal}</sub>
+      {/* Counts — each number is paired with its own meaning-carrying icon so
+          it's never ambiguous which is which: the per-type PROJECT glyph for
+          open projects, an app-window glyph for open tabs. The tabs count
+          (the high-frequency one) carries a subtle primary tint; a small dot
+          separates the two. Hover the chip for the spelled-out tooltip. */}
+      <span className="inline-flex items-center gap-1">
+        <ProjectIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+        {projectTotal}
+      </span>
+      <span aria-hidden className="mx-0.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
+      <span className="inline-flex items-center gap-1">
+        <AppWindow className="h-3 w-3 shrink-0 text-primary" />
+        {tabTotal}
+      </span>
     </>
   );
 
@@ -238,7 +420,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
         return;
       }
       setOpen(false);
-      navigation.openDock(await dockForProjectEntry(recovered.id));
+      navigation.openDock(await dockForProjectEntry(recovered.id, currentDock));
     } finally {
       setRecoveringId(null);
     }
@@ -256,9 +438,17 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     }
     if (bucket.state === 'live' && bucket.project) {
       setOpen(false);
-      navigation.openDock(await dockForProjectEntry(bucket.project.id));
+      navigation.openDock(await dockForProjectEntry(bucket.project.id, currentDock));
     }
     // 'loading' — ignore; spinner is rendered in the row.
+  };
+
+  // Selecting the Global row re-focuses the Global scope (it's only shown while
+  // Global is already current). URL-first: resolve the most-recently-active
+  // global tab (or Home) and navigate; the loader re-scopes off the URL.
+  const handleSelectGlobal = async () => {
+    setOpen(false);
+    navigation.openDock(await dockForGlobalEntry(currentDock));
   };
 
   const handleOpenChange = (next: boolean) => {
@@ -275,6 +465,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   const hasActions = !!onLaunchProjectPath || !!onOpenHistory;
 
   return (
+    <>
     <TooltipProvider delayDuration={400}>
       <Popover open={open} onOpenChange={handleOpenChange}>
         <Tooltip>
@@ -285,7 +476,13 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
               </button>
             </PopoverTrigger>
           </TooltipTrigger>
-          <TooltipContent side="bottom">{tooltipText}</TooltipContent>
+          <TooltipContent side="bottom">
+            <div className="flex flex-col gap-0.5">
+              {scopeLabel ? <span className="font-medium">{scopeLabel}</span> : null}
+              <span className="text-muted-foreground">{projectsLabel}</span>
+              <span className="text-muted-foreground">{tabsLabel}</span>
+            </div>
+          </TooltipContent>
         </Tooltip>
         <PopoverContent
           align="start"
@@ -303,16 +500,51 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
             />
           ) : (
             <ul className="flex flex-col">
-              {sorted.map((bucket) => {
+              {isGlobalScope ? (
+                // The Global scope row — violet-accented so it never reads as a
+                // regular project, and always the current scope when shown.
+                <li key="__global__">
+                  <button
+                    type="button"
+                    aria-current="true"
+                    onClick={() => void handleSelectGlobal()}
+                    className="flex w-full items-center gap-2 rounded bg-violet-500/10 px-2 py-1.5 text-left text-sm font-medium hover:bg-violet-500/15"
+                    data-testid="projects-counter-global"
+                  >
+                    <Globe className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+                    <span className="min-w-0 flex-1 truncate text-violet-600 dark:text-violet-300">
+                      <Trans>Global</Trans>
+                    </span>
+                    <span className="shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-xs tabular-nums text-violet-600 dark:text-violet-300">
+                      {globalTabCount}
+                    </span>
+                  </button>
+                </li>
+              ) : null}
+              {isGlobalScope && treeRows.length > 0 ? (
+                // Small mid-title separating the Global row from the project
+                // buckets below it.
+                <li key="__projects_title__" aria-hidden>
+                  <SectionHairlineTitle>
+                    <Trans>Active projects</Trans>
+                  </SectionHairlineTitle>
+                </li>
+              ) : null}
+              {treeRows.map(({ bucket, guides }) => {
                 const isCurrent = bucket.projectId === currentProjectId;
                 const isRecovering = recoveringId === bucket.projectId;
                 const isMissing = bucket.state === 'missing';
-                let leadingIcon: React.ReactNode = null;
+                // Live/loading rows lead with the per-type PROJECT icon from the
+                // TypeInfo registry (never a hardcoded glyph); a missing row
+                // swaps in its recover affordance instead.
+                let leadingIcon: React.ReactNode = (
+                  <ProjectIcon className={`h-3.5 w-3.5 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
+                );
                 if (isMissing) {
                   leadingIcon = isRecovering ? (
-                    <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
                   ) : (
-                    <RotateCcw className="h-3 w-3 shrink-0" />
+                    <RotateCcw className="h-3.5 w-3.5 shrink-0" />
                   );
                 }
                 const rowClass = `flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted ${
@@ -327,6 +559,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
                       onClick={() => void handleSelect(bucket)}
                       className={rowClass}
                     >
+                      <RowGuides guides={guides} />
                       {leadingIcon}
                       <span className="min-w-0 flex-1 truncate">{bucketRowLabel(bucket)}</span>
                       {isMissing && !isRecovering ? (
@@ -383,5 +616,11 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
         </PopoverContent>
       </Popover>
     </TooltipProvider>
+      {/* Anchor divider (Option B): a full-height hairline that visually makes
+          the project chip the container the tab strip hangs off of, rather than
+          just another item in the row. Sibling of the chip in the strip's
+          `items-end` band; `self-stretch` spans the band's full height. */}
+      <span aria-hidden data-testid="projects-counter-anchor" className="mx-1.5 w-px shrink-0 self-stretch bg-border" />
+    </>
   );
 };

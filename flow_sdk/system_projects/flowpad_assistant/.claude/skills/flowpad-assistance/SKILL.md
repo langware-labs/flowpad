@@ -32,6 +32,9 @@ description: |
   NOT handled here: building a website / web app / SaaS / dashboard — even when
   phrased as "using flowpad assistant". That is the separate ``web-app-builder``
   skill (copy-as-is template + setup); invoke it instead of the records action.
+  Also NOT handled here: building a slide deck / presentation / slideshow /
+  pitch deck — even phrased as "using flowpad assistant". That is the separate
+  ``decker`` skill; invoke it instead of the records action.
 tags:
 - flowpad
 - ui
@@ -47,6 +50,8 @@ allowed-tools:
 - Bash(flow schema info:*)
 - Bash(flow record index:*)
 - Bash(flow record search:*)
+- Bash(flow show entity:*)
+- Bash(flow show file:*)
 - Bash(flow process restart:*)
 - Bash(curl:*)
 - Read
@@ -64,6 +69,13 @@ A multi-action skill for the Flowpad app. Identify the requested action from the
 > and invoke the `web-app-builder` skill, which bootstraps a tested full-stack
 > template into the session's working directory. Do not hand-write HTML/JS
 > files or route this through `records`.
+
+> **Building a slide deck or presentation is not an action of this skill.** If
+> the user asks to build/create a slide deck, presentation, slideshow, pitch
+> deck, or keynote — even phrased as "make me a deck using flowpad assistant" —
+> stop and invoke the `decker` skill, which builds a deck template and
+> generates a self-contained deck from it. Do not hand-write slide HTML or
+> route this through `records`.
 
 ## Action: context
 
@@ -95,7 +107,6 @@ Success — exit 0, one JSON line on stdout:
     "CurrentDomainTypeId": "...",
     "CurrentVisitorTypeId": null,
     "CurrentAgentTypeId": null,
-    "CurrentWorkflowTypeId": null,
     "CurrentFlowTypeId": null
   }
 }
@@ -113,7 +124,6 @@ Each value is a TypeId string (`<type>-<id>`) or `null` if not set. The exit cod
 | "current compute node" / "this machine" | `CurrentComputeNodeTypeId` |
 | "current user" / "me" | `CurrentUserTypeId` |
 | "current agent" | `CurrentAgentTypeId` |
-| "current workflow" | `CurrentWorkflowTypeId` |
 | "current flow" | `CurrentFlowTypeId` |
 | "active entity" / "what I'm focused on" | `CurrentActiveEntityTypeId` |
 

@@ -4,6 +4,11 @@ import sys
 
 import pytest
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
+    import tomli as tomllib
+
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import factory
 from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
 
@@ -51,6 +56,17 @@ def test_model_add_dirs_resume_and_skills_in_shell_string():
     assert "resume abc-123" in result
     assert "# skill=reviewer" in result
     assert "# skill='bug fixer'" in result
+
+
+def test_model_tier_persists_raw_and_emits_resolved_model():
+    cmd = CodexCliOptions(model="sm", workdir="/repo")
+
+    assert cmd.model == "sm"
+    assert cmd.to_json()["model"] == "sm"
+
+    argv, _env = cmd.to_spawn_args()
+    assert argv[argv.index("-m") + 1] == "gpt-5.4-mini"
+    assert "-m gpt-5.4-mini" in cmd.to_shell_string()
 
 
 def test_json_spawn_args_read_prompt_from_stdin():
@@ -101,6 +117,12 @@ def test_interactive_spawn_args_use_bare_codex():
     assert argv == [
         "codex",
         "--dangerously-bypass-approvals-and-sandbox",
+        "-c",
+        "check_for_update_on_startup=false",
+        "-c",
+        'projects={"/repo"={trust_level="trusted"}}',
+        "-c",
+        "model_reasoning_effort=low",
         "-C",
         "/repo",
         "-m",
@@ -121,7 +143,72 @@ def test_interactive_spawn_respects_non_bypass_permissions():
     )
     argv, _ = cmd.to_spawn_args()
 
-    assert argv == ["codex"]
+    assert argv == [
+        "codex",
+        "-c",
+        "check_for_update_on_startup=false",
+        "-c",
+        "model_reasoning_effort=low",
+    ]
+
+
+@pytest.mark.parametrize(
+    "workdir",
+    [
+        "/repo",
+        '/repo.with.dots/space and "quotes"/back\\slash/emoji-🧪',
+        "/repo/control-\x7f-name",
+    ],
+)
+def test_interactive_trust_override_encodes_exact_workdir_as_toml_data(workdir):
+    cmd = CodexCliOptions(
+        workdir=workdir,
+        json_stream=False,
+        ephemeral=False,
+    )
+    argv, _ = cmd.to_spawn_args()
+
+    override = next(arg for arg in argv if arg.startswith("projects="))
+    assert tomllib.loads(override) == {
+        "projects": {workdir: {"trust_level": "trusted"}},
+    }
+
+
+def test_interactive_trust_override_uses_canonical_existing_workdir(tmp_path):
+    real_workdir = tmp_path / "real.project"
+    real_workdir.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(real_workdir, target_is_directory=True)
+
+    argv, _ = CodexCliOptions(
+        workdir=str(alias),
+        json_stream=False,
+        ephemeral=False,
+    ).to_spawn_args()
+
+    override = next(arg for arg in argv if arg.startswith("projects="))
+    assert tomllib.loads(override) == {
+        "projects": {str(real_workdir.resolve()): {"trust_level": "trusted"}},
+    }
+
+
+def test_headless_bypass_does_not_add_interactive_trust_override():
+    argv, _ = CodexCliOptions(workdir="/repo").to_spawn_args()
+
+    assert not any("trust_level" in arg for arg in argv)
+    assert "check_for_update_on_startup=false" not in argv
+
+
+def test_interactive_non_bypass_does_not_add_trust_override():
+    argv, _ = CodexCliOptions(
+        permission_mode="default",
+        workdir="/repo",
+        json_stream=False,
+        ephemeral=False,
+    ).to_spawn_args()
+
+    assert not any("trust_level" in arg for arg in argv)
+    assert "check_for_update_on_startup=false" in argv
 
 
 def test_pty_shell_string_uses_bare_codex_not_codex_exec():
@@ -147,7 +234,10 @@ def test_pty_shell_string_uses_bare_codex_not_codex_exec():
     assert "--skip-git-repo-check" not in result
     assert "--ephemeral" not in result
     assert "--json" not in result
-    assert "model_reasoning_effort" not in result
+    # Reasoning-effort override applies on BOTH transports (04a07cf9), so the
+    # PTY shell mirrors to_spawn_args and carries it too.
+    assert "-c model_reasoning_effort=low" in result
+    assert "-c check_for_update_on_startup=false" in result
     # User-set settings still flow through.
     assert "-m gpt-5.2" in result
     assert "-C /repo" in result

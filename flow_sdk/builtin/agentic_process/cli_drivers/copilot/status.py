@@ -93,7 +93,7 @@ def _classify(raw: dict[str, Any]) -> tuple[WorkerStatus | None, bool]:
         # Non-terminal so an aged session still downgrades to INACTIVE.
         return WorkerStatus.IDLE, False
     if event_type == "user.message":
-        return WorkerStatus.WAITING, False
+        return WorkerStatus.WORKING, False
     if event_type.startswith("session.") or event_type == "system.message":
         return WorkerStatus.INITIALIZING, False
     return None, False

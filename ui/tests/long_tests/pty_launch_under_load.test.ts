@@ -12,7 +12,9 @@
  * Run: cd ui && LOAD_PTYS=80 npx vitest run --project long pty_launch_under_load
  */
 import { describe, expect, it } from 'vitest';
+import { stressDescribe } from './_stress_gate';
 import { launchInstance, killInstance, prepareCleanRealm } from './_backend_lifecycle';
+import type { OwnedSdkMainRealm } from '../_sdk_realm';
 
 type SdkRealm = typeof import('@sdk');
 
@@ -20,7 +22,7 @@ const LOAD = Number(process.env.LOAD_PTYS) || 80;
 const BUDGET_MS = 4000;
 const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][@-Z\\^_`a-z{|}~]/g;
 
-describe('PTY launch readiness under load', () => {
+stressDescribe('PTY launch readiness under load', () => {
   it(
     `launch a PTY + wait for read in < ${BUDGET_MS}ms under ${LOAD} live PTYs`,
     async () => {
@@ -31,8 +33,10 @@ describe('PTY launch readiness under load', () => {
         throw new Error(`${name} failed to launch / become healthy`);
       }
       const spawned: string[] = [];
+      let activeRealm: OwnedSdkMainRealm | undefined;
       try {
-        const { sdk, main } = await prepareCleanRealm(port);
+        activeRealm = await prepareCleanRealm(port);
+        const { sdk, main } = activeRealm;
         await main.initSdk();
         const cn = await sdk.ComputeNode.getById<InstanceType<SdkRealm['ComputeNode']>>('@local');
         if (!cn) throw new Error('No @local compute node after initSdk');
@@ -98,8 +102,11 @@ describe('PTY launch readiness under load', () => {
         ).toBeLessThan(BUDGET_MS);
       } finally {
         // best-effort cleanup: close every worker we spawned, then drop the instance
+        activeRealm?.dispose();
+        let cleanupRealm: OwnedSdkMainRealm | undefined;
         try {
-          const { sdk } = await prepareCleanRealm(port);
+          cleanupRealm = await prepareCleanRealm(port);
+          const { sdk } = cleanupRealm;
           for (const id of spawned) {
             try {
               await sdk.apiClient.post(`${sdk.GRAPH_API_PREFIX}/agentic_process/${id}/close`, {});
@@ -109,6 +116,8 @@ describe('PTY launch readiness under load', () => {
           }
         } catch {
           /* realm gone */
+        } finally {
+          cleanupRealm?.dispose();
         }
         await killInstance(name);
       }

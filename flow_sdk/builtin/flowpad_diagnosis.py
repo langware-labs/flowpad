@@ -37,3 +37,16 @@ class FlowpadDiagnosis(Entity):
             "which is what the agent observed — this is the raw text the user wrote."
         ),
     )
+    origin_project_id: Optional[str] = APIField(
+        None,
+        description=(
+            "Id of the project the user was in when the diagnosis was recorded (the "
+            "project the issue happened on). On the originating machine it resolves "
+            "to a local project; on another machine it is a foreign id and the "
+            "receiver picks a local project instead."
+        ),
+    )
+    origin_project_name: Optional[str] = APIField(
+        None,
+        description="Display name of ``origin_project_id`` — travels with the diagnosis.",
+    )

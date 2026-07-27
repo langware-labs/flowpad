@@ -1,12 +1,9 @@
-"""FS-rooted bundle id-injection — the workflow/whiteboard share fix.
+"""FS-rooted bundle capsule transport.
 
 Workflow + whiteboard are filesystem-primary assets whose indexer ids are
-path/name-derived. When shared, the receiver restores the subtree to a
-different path, so without carrying the sender's id the receiver would mint a
-DIFFERENT entity id and the message's ``<type>-<id>`` chip would never resolve.
-The packer injects the sender's id into the asset's main markdown doc so the
-receiver's gen_id (which preserves an existing frontmatter id) materializes the
-SAME entity. This locks both that contract and the type registration.
+path/name-derived. Existing-source bundles copy the asset and its identity
+capsule verbatim; they never rewrite a conflicting id during pack. Source-less
+rendering persists the proposed entry id through TypeInfo separately.
 """
 import os
 import shutil
@@ -17,7 +14,6 @@ import pytest
 
 from flow_sdk.builtin.flow_message_bundle import (
     _ASSET_PACK_IGNORE,
-    _ensure_id_in_md_frontmatter,
     _extended_length_path,
     _pack_file_backed_attachment,
 )
@@ -26,61 +22,17 @@ from flow_sdk.schema.types import EntityType
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 ENTITY_ID = "7ce48c47-abab-4c9c-9780-a7198d12a260"
+SOURCE_ID = "11111111-2222-4333-8444-555555555555"
 
 
-def test_workflow_and_whiteboard_are_file_backed():
+def test_agent_and_whiteboard_are_file_backed():
     # The unified packer routes by the FAMILY predicate (TypeInfo.main_subdir is
     # not None), not a hardcoded type set — else their bytes never ride the
     # bundle and the receiver has nothing to materialize.
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-    for t in (EntityType.WORKFLOW.value, EntityType.WHITEBOARD.value):
+    for t in (EntityType.AGENT.value, EntityType.WHITEBOARD.value):
         info = SchemaRegistry.get(t)
         assert info is not None and info.main_subdir is not None, f"{t} must be file-backed"
-
-
-def test_injects_id_into_doc_without_frontmatter(tmp_path):
-    doc = tmp_path / "wf.md"
-    doc.write_text("---\nname: my-workflow\n---\n\n# Body\n", encoding="utf-8")
-
-    _ensure_id_in_md_frontmatter(doc, ENTITY_ID)
-
-    from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
-    fields = _yaml_load(_extract_frontmatter(doc.read_text(encoding="utf-8")))
-    assert fields["id"] == ENTITY_ID
-    assert fields["name"] == "my-workflow"  # other fields preserved
-    assert "# Body" in doc.read_text(encoding="utf-8")  # body preserved
-
-
-def test_injects_id_into_doc_with_no_frontmatter_at_all(tmp_path):
-    doc = tmp_path / "wf.md"
-    doc.write_text("# Just a body, no frontmatter\n", encoding="utf-8")
-
-    _ensure_id_in_md_frontmatter(doc, ENTITY_ID)
-
-    text = doc.read_text(encoding="utf-8")
-    from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
-    assert _yaml_load(_extract_frontmatter(text))["id"] == ENTITY_ID
-    assert "Just a body" in text
-
-
-def test_idempotent_when_id_already_matches(tmp_path):
-    doc = tmp_path / "wf.md"
-    original = f"---\nid: {ENTITY_ID}\nname: x\n---\n\n# Body\n"
-    doc.write_text(original, encoding="utf-8")
-
-    _ensure_id_in_md_frontmatter(doc, ENTITY_ID)
-
-    assert doc.read_text(encoding="utf-8") == original  # untouched
-
-
-def test_overwrites_a_foreign_id(tmp_path):
-    doc = tmp_path / "wf.md"
-    doc.write_text("---\nid: deadbeef-0000-0000-0000-000000000000\nname: x\n---\n\n# Body\n", encoding="utf-8")
-
-    _ensure_id_in_md_frontmatter(doc, ENTITY_ID)
-
-    from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
-    assert _yaml_load(_extract_frontmatter(doc.read_text(encoding="utf-8")))["id"] == ENTITY_ID
 
 
 # --- Pack-side fix: never bundle a `.venv`/cache into a shared asset ---------
@@ -144,7 +96,7 @@ def test_extended_length_path_prefixes_and_is_idempotent(tmp_path):
 @pytest.mark.skipif(os.name != "nt", reason="MAX_PATH (260) is a Windows-only extraction limit")
 def test_deep_bundle_member_extracts_only_with_extended_length_root(tmp_path):
     deep_arc = (
-        "attachment/skill-@359c3e7b-eac8-40fe-863b-74379f527fa2/.claude/skills/"
+        "attachment/skill-359c3e7b-eac8-40fe-863b-74379f527fa2/.claude/skills/"
         "soc2-evidence-renewal/.venv/lib/python3.14/site-packages/pip/_internal/"
         "operations/build/__pycache__/build_tracker.cpython-314.pyc"
     )
@@ -179,15 +131,15 @@ def test_deep_bundle_member_extracts_only_with_extended_length_root(tmp_path):
 # --- Pack-side: the unified file-backed family handler, end-to-end -----------
 #
 # The two tests below drive the REAL ``_pack_file_backed_attachment`` (not the
-# copytree/pin primitives in isolation) for both shapes of the file-backed
+# copy primitives in isolation) for both shapes of the file-backed
 # family: a FOLDER asset (whiteboard/skill) and SINGLE-FILE assets (a workflow
 # ``.md`` vs. a dynamic_workflow ``.js``). The real packer routes through
 # ``_resolve_file_backed_source`` → real ``TypeInfo`` (layout / main_subdir /
-# main_file / main_ext) → ``shutil.copytree(ignore=_ASSET_PACK_IGNORE)`` →
-# id-pin. Only the entity *lookup* is stubbed: under pytest the registry's
+# main_file / main_ext) → ``shutil.copytree(ignore=_ASSET_PACK_IGNORE)``.
+# Only the entity *lookup* is stubbed: under pytest the registry's
 # ``entity_cls`` is unregistered (``get_entity_cls`` returns None), so without
 # this the resolver would no-op before reaching any of the branches we mean to
-# exercise. The on-disk asset, the layout, and the pin are all the real thing.
+# exercise. The on-disk asset and layout are both real.
 
 
 class _FakeFileBackedEntity:
@@ -219,15 +171,19 @@ def _stub_file_backed_lookup(monkeypatch, asset_ref: str, name: str = "asset"):
 
 
 @pytest.mark.asyncio
-async def test_pack_folder_asset_copytree_and_pins_id_into_main_file(tmp_path, monkeypatch):
+async def test_pack_folder_asset_copies_capsule_verbatim(tmp_path, monkeypatch):
     # FOLDER asset (whiteboard): a real on-disk folder with the main doc + a
-    # noise dir (.venv / __pycache__). The bundle must keep the real files,
-    # drop the ignored trees (via the REAL function's _ASSET_PACK_IGNORE), and
-    # pin the sender id into TypeInfo.main_file.
+    # noise dir (.venv / __pycache__). The bundle must keep the real files and
+    # capsule, and drop ignored trees via the real _ASSET_PACK_IGNORE.
     src = tmp_path / "src" / "my-board"
     src.mkdir(parents=True)
     (src / "WHITE_BOARD.md").write_text("---\nname: my-board\n---\n\n# Board\n", encoding="utf-8")
     (src / "scene.excalidraw").write_text("{}", encoding="utf-8")  # real asset file
+    capsule_bytes = ("{\n  \"version\": 1,\n  \"data\": {\n"
+                     f"    \"id\": \"{SOURCE_ID}\"\n  }}\n}}\n").encode()
+    capsule = src / ".flow" / "capsules" / "identity.json"
+    capsule.parent.mkdir(parents=True)
+    capsule.write_bytes(capsule_bytes)
     # Env/cache cruft that MUST be dropped (mirrors the failing skill bundle).
     venv_deep = src / ".venv" / "lib" / "site-packages" / "pip" / "__pycache__"
     venv_deep.mkdir(parents=True)
@@ -243,7 +199,7 @@ async def test_pack_folder_asset_copytree_and_pins_id_into_main_file(tmp_path, m
 
     base = (
         attachment_dir
-        / f"{EntityType.WHITEBOARD.value}-@{ENTITY_ID}"
+        / f"{EntityType.WHITEBOARD.value}-{ENTITY_ID}"
         / ".claude" / "whiteboards" / "my-board"
     )
     # Real source preserved.
@@ -253,37 +209,38 @@ async def test_pack_folder_asset_copytree_and_pins_id_into_main_file(tmp_path, m
     assert not (base / ".venv").exists()
     assert not (base / "__pycache__").exists()
     assert not list(base.rglob("*.pyc"))
-    # Sender id pinned into the folder's main doc (TypeInfo.main_file).
+    # Existing source bytes are never rewritten during packing.
     from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
     fields = _yaml_load(_extract_frontmatter((base / "WHITE_BOARD.md").read_text(encoding="utf-8")))
-    assert fields["id"] == ENTITY_ID
+    assert "id" not in fields
     assert fields["name"] == "my-board"  # other frontmatter preserved
+    assert (base / ".flow" / "capsules" / "identity.json").read_bytes() == capsule_bytes
 
 
 @pytest.mark.asyncio
-async def test_pack_single_file_copies_md_pins_id_and_js_left_unmodified(tmp_path, monkeypatch):
-    from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
-
-    # (a) SINGLE-FILE .md asset (workflow): id pinned into its frontmatter.
+async def test_pack_single_file_copies_md_and_js_byte_for_byte(tmp_path, monkeypatch):
+    # (a) SINGLE-FILE .md asset: its comment capsule travels unchanged.
     md_src = tmp_path / "src_md" / "deploy.md"
     md_src.parent.mkdir(parents=True)
-    md_src.write_text("---\nname: deploy\n---\n\n# Deploy\n", encoding="utf-8")
+    md_bytes = (
+        "---\nname: deploy\n---\n\n# Deploy\n\n"
+        f"<!-- flowpad:capsule identity\nversion: 1\ndata:\n  id: {SOURCE_ID}\n"
+        "flowpad:endcapsule identity -->\n"
+    ).encode()
+    md_src.write_bytes(md_bytes)
     _stub_file_backed_lookup(monkeypatch, str(md_src), name="deploy")
     att_md = tmp_path / "bundle_md"
     att_md.mkdir()
-    await _pack_file_backed_attachment(EntityType.WORKFLOW.value, ENTITY_ID, att_md)
+    await _pack_file_backed_attachment(EntityType.AGENT.value, ENTITY_ID, att_md)
     md_dest = (
         att_md
-        / f"{EntityType.WORKFLOW.value}-@{ENTITY_ID}"
-        / ".claude" / "workflows" / "deploy.md"
+        / f"{EntityType.AGENT.value}-{ENTITY_ID}"
+        / ".claude" / "agents" / "deploy.md"
     )
     assert md_dest.exists()
-    md_fields = _yaml_load(_extract_frontmatter(md_dest.read_text(encoding="utf-8")))
-    assert md_fields["id"] == ENTITY_ID
-    assert md_fields["name"] == "deploy"
+    assert md_dest.read_bytes() == md_bytes
 
-    # (b) SINGLE-FILE .js body (dynamic_workflow): copied BYTE-FOR-BYTE with NO
-    # frontmatter injection — the .js-skip edge (no YAML fm in a JS body).
+    # (b) SINGLE-FILE .js body (dynamic_workflow): copied BYTE-FOR-BYTE.
     js_bytes = b"export default async function run(ctx) {\n  return ctx.value + 1;\n}\n"
     js_src = tmp_path / "src_js" / "flow.js"
     js_src.parent.mkdir(parents=True)
@@ -294,7 +251,7 @@ async def test_pack_single_file_copies_md_pins_id_and_js_left_unmodified(tmp_pat
     await _pack_file_backed_attachment(EntityType.DYNAMIC_WORKFLOW.value, ENTITY_ID, att_js)
     js_dest = (
         att_js
-        / f"{EntityType.DYNAMIC_WORKFLOW.value}-@{ENTITY_ID}"
+        / f"{EntityType.DYNAMIC_WORKFLOW.value}-{ENTITY_ID}"
         / ".claude" / "workflows" / "flow.js"
     )
     assert js_dest.exists()

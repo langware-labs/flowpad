@@ -3,7 +3,6 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { SkillsScope } from '@src/components/assets/editor/skill/skillEditorUtils';
 
-
 export const TaskEventType = {
   TASK_CREATED: 'task_created',
   TASK_UPDATED: 'task_updated',
@@ -63,16 +62,22 @@ export function getClassificationInfo(task: Task): ClassificationInfo | null {
   return { category, title, command };
 }
 
-/** Get the analysis report machine path from a task, or null. */
+/** Get the analysis report machine path from a task, or null. The fields are
+ *  only ever written by analysis-producing flows (analysis tasks and the
+ *  Analyze Status wizard), so no task_type gate. */
 export function getAnalysisPath(task: Task): string | null {
-  if (task.task_type !== TaskType.ANALYSIS) return null;
   return task.analysis_path ?? null;
 }
 
 /** Get the analysis JSON machine path from a task, or null. */
 export function getAnalysisJsonPath(task: Task): string | null {
-  if (task.task_type !== TaskType.ANALYSIS) return null;
   return task.analysis_json_path ?? null;
+}
+
+/** True when an Analyze Status run left its stamps on a (non-analysis) task —
+ *  a process to watch plus a report to open. Lights the AnalysisProgressRow. */
+export function hasStatusAnalysis(task: Task): boolean {
+  return !!task.process_id && (!!task.analysis_path || !!task.analysis_json_path);
 }
 
 export interface ArtifactInfo {
@@ -116,12 +121,12 @@ export function getArtifactPaths(task: Task): ArtifactInfo[] {
     artifacts.push({ path: `${normalized}/${effectiveFolder}/SKILL.md`, label: 'SKILL.md', skillDockPath });
   }
 
-  // analysis.md — in references subfolder
+  // analysis report (analysis.html) — in references subfolder
   if (typeof analysisPath === 'string') {
-    artifacts.push({ path: analysisPath, label: 'analysis.md' });
+    artifacts.push({ path: analysisPath, label: analysisPath.split('/').pop() || 'analysis' });
   } else if (typeof outputDir === 'string') {
     const normalized = outputDir.replace(/\\/g, '/');
-    artifacts.push({ path: `${normalized}/analysis.md`, label: 'analysis.md' });
+    artifacts.push({ path: `${normalized}/analysis.html`, label: 'analysis.html' });
   }
 
   // analysis.json — in references subfolder
@@ -163,18 +168,14 @@ export function getArtifactPaths(task: Task): ArtifactInfo[] {
   return artifacts;
 }
 
-/** Open an analysis report in the editor. */
+/** Open an analysis report in its type-appropriate viewer (reports are .html). */
 export function openAnalysisReport(analysisPath: string, navigation: NavigationActions): void {
   const computeNodeTypeId = dataContext.computeNode?.typeId;
-  if (computeNodeTypeId) {
-    const vfsPath = VFSPath.fromMachinePath(analysisPath, computeNodeTypeId);
-    navigation.openDock(DockPointer.forFile(vfsPath.absVfsPath));
-  } else {
-    navigation.openDock(DockPointer.forFile(analysisPath));
-  }
+  const path = computeNodeTypeId ? VFSPath.fromMachinePath(analysisPath, computeNodeTypeId).absVfsPath : analysisPath;
+  navigation.openFile(path);
 }
 
-/** Open any file artifact in the editor. */
+/** Open any file artifact in its type-appropriate viewer. */
 export function openArtifact(artifactPath: string, navigation: NavigationActions): void {
   openAnalysisReport(artifactPath, navigation); // Reuse the same logic
 }

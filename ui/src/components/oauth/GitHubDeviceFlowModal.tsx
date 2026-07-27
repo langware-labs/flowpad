@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { notify } from '@src/notifications';
+import { openExternal } from '@src/lib/open-external';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -26,16 +27,6 @@ interface LlmConfigMsg {
   auth_method?: string;
   oauth_request_id?: string;
   status?: string;
-}
-
-function openExternal(url: string) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const electronAPI = (window as any).electronAPI;
-  if (electronAPI?.openExternal) {
-    void electronAPI.openExternal(url);
-    return;
-  }
-  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 /**

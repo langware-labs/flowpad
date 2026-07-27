@@ -3,32 +3,43 @@
 Concentrates everything previously expressed as ``if worker_type == CODEX`` in
 ``AgenticProcess`` so the entity stays vendor-pure: cli_options building,
 headless ``codex exec --json`` turn execution, transcript location (process-
-local file the worker tee'd), tail-status mapping, history loading, and
-prompt composition that inlines embedded agents (codex has no native sub-
-agent dispatch in --ephemeral mode).
+local file the worker tee'd), tail-status mapping, history loading, and the
+prompt-composition compatibility hook.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
+    DeviceLoginSpec,
     AgenticProcessContextKey,
+    WorkerAuthResult,
     WorkerCLIOptions,
+    WorkerSpawnError,
+    apply_worker_env,
+    apply_worker_secret_env,
+    latch_spawn_failure,
     restart_payload_from_cli_options,
+    run_worker_auth_probe,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
     codex_transcript_path_for_process,
     find_codex_session_jsonl,
     find_latest_codex_session_jsonl,
-    load_session_history as _codex_load_session_history,
-    load_transcript_history as _codex_load_transcript_history,
     read_codex_rollout_meta,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
+    load_session_history as _codex_load_session_history,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
+    load_transcript_history as _codex_load_transcript_history,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.status import codex_tail_status
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
@@ -58,17 +69,25 @@ class CodexDriver:
     # Codex's TUI needs a discrete Enter after the paste settles, not a
     # trailing \r in the pasted text (Shell.write_then_submit).
     pty_submits_on_paste = False
+    # Composer-ready marker (QA C09b). Empirically grounded on codex-cli
+    # 0.144.1 raw PTY captures (tests/unit/fixtures/codex_pty_*.bin): the
+    # ``>_ OpenAI Codex (vX.Y.Z)`` banner paints in the same frame as the
+    # composer input line, and never renders while the directory-trust
+    # interstitial is up (that screen has no banner — and paints its own ``›``
+    # cursor, so a prompt-glyph marker would false-positive). The banner text
+    # is painted contiguously, so it survives ``strip_pty_controls``.
+    pty_composer_ready_pattern = re.compile(r">_ OpenAI Codex")
+    pins_resume_cwd = False  # codex mints its own rollout; no transcript-cwd pinning, no fork
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
     def cli_options(self, process: "AgenticProcess") -> CodexCliOptions:
         """Build a Codex CLI command for ``process``.
 
-        Codex doesn't accept inline ``--agents`` like Claude — it discovers
-        skills from ``~/.codex/skills/``. We surface the embedded agent names
-        as ``skill_names`` so ``cmd_line`` reflects them (some tests assert
-        on this), and the runtime path inlines the agent body via
-        ``compose_prompt`` instead.
+        Codex doesn't accept inline ``--agents`` like Claude. We surface the
+        embedded agent names as ``skill_names`` so ``cmd_line`` reflects them
+        (some tests assert on this); the instruction bodies are delivered via
+        generated process instruction assets.
         """
         cmd = CodexCliOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
@@ -77,12 +96,13 @@ class CodexDriver:
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.skill_names = list(agents_json.keys())
-        # ``visible=True`` means the entity is wired into a PTY tab — codex's
+        # ``pty_mode=True`` means an interactive PTY transport — codex's
         # interactive TUI is the bare ``codex`` invocation, NOT ``codex exec
         # --json``. Toggle ``json_stream`` so ``to_spawn_args`` emits the right
         # argv. Headless print-mode turns flip back through ``CodexCLIStreamWorker``
-        # which always uses the json-stream shape.
-        if process.visible:
+        # which always uses the json-stream shape. (Keys on the transport intent,
+        # not ``visible`` — tab visibility never changes the worker argv.)
+        if process.pty_mode:
             cmd.json_stream = False
             cmd.ephemeral = False
         return cmd
@@ -111,15 +131,18 @@ class CodexDriver:
             await process.get_project()
         except Exception:
             logger.debug("CodexDriver.headless_prompt: get_project failed", exc_info=True)
+        instruction_assets = await process.prepare_system_instruction_assets()
         if not process.workdir:
             return ApiFailResponse(message="codex prompt: workdir is not set")
 
         full_prompt = self.compose_prompt(instruction, process.get_agents_json())
 
         cli_cfg = process.cli_config or {}
+        env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
+        await apply_worker_secret_env(env_vars, process)
         context = AgenticContext(
             workdir=process.workdir,
-            env_vars=dict(cli_cfg.get("env_vars") or {}),
+            env_vars=env_vars,
             model=cli_cfg.get("model"),
             permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
             # Resume ONLY when codex actually has a rollout for this id. Codex
@@ -130,96 +153,124 @@ class CodexDriver:
             # fresh lets the worker mint a rollout; its real id is captured from
             # the stream below and persisted back onto ``process.session_id``.
             resume_session_id=process.session_id if self.has_resumable_session(process) else None,
+            add_dirs=list(process.resolved_add_dirs or []),
+            **process._instruction_context_kwargs(instruction_assets),
         )
 
         worker = CodexCLIStreamWorker.for_process(process.id)
-        from flow_sdk.builtin.agentic_process.agentic_process import _PROMPT_WORKERS
-        _PROMPT_WORKERS[process.id] = worker  # type: ignore[assignment]
+        from flow_sdk.builtin.agentic_process.agentic_process import (
+            register_prompt_worker,
+            unregister_prompt_worker,
+        )
 
-        # Touch the transcript file so ``tail_status`` returns INITIALIZING
-        # (rather than None) before the worker writes its first event. Mirrors
-        # the Claude path's eager session_id assignment.
+        register_prompt_worker(process.id, worker)
+        # Setup between registration and task scheduling can raise. The caller's
+        # admission ``finally`` can no longer clean the slot — register_prompt_worker
+        # popped the admission and moved ownership to ``_PROMPT_WORKERS``. Until
+        # _run_turn is scheduled (its ``finally`` owns unregister), THIS frame owns
+        # the worker slot: a raise here would leak it → prompt_worker_active pinned
+        # True forever (permanent 409 + busy). Hand ownership off on success.
         try:
-            transcript_path = worker.transcript_path
-            if transcript_path is not None and not transcript_path.exists():
-                transcript_path.parent.mkdir(parents=True, exist_ok=True)
-                transcript_path.touch()
-        except OSError:
-            logger.debug("CodexDriver.headless_prompt: failed to pre-touch transcript", exc_info=True)
-
-        from flow_sdk.builtin.process_lifecycle import ProcessStatus
-        if process.status != ProcessStatus.RUNNING.value:
-            process.status = ProcessStatus.RUNNING.value
+            # Touch the transcript file so ``tail_status`` returns INITIALIZING
+            # (rather than None) before the worker writes its first event. Mirrors
+            # the Claude path's eager session_id assignment.
             try:
-                await process.save()
-            except Exception:
-                logger.debug("CodexDriver.headless_prompt: lifecycle save failed", exc_info=True)
+                transcript_path = worker.transcript_path
+                if transcript_path is not None and not transcript_path.exists():
+                    transcript_path.parent.mkdir(parents=True, exist_ok=True)
+                    transcript_path.touch()
+            except OSError:
+                logger.debug("CodexDriver.headless_prompt: failed to pre-touch transcript", exc_info=True)
 
-        process_ref = process
-        process_id = process.id
+            from flow_sdk.builtin.process_lifecycle import ProcessStatus
 
-        # Multi-turn correctness: see ClaudeDriver.headless_prompt + the
-        # AgenticProcess._discover_status_from_transcript override.
-        object.__setattr__(process_ref, "_turn_in_flight", True)
-        try:
-            await process_ref.notify_updated()
-        except Exception:
-            logger.exception("CodexDriver.headless_prompt: start-of-turn notify_updated failed")
-
-        async def _run_turn() -> None:
-            session_id_persisted = False
-            try:
-                async for fd in worker.execute(prompt=full_prompt, context=context):
-                    if not session_id_persisted and worker.get_session_id():
-                        sid = worker.get_session_id()
-                        try:
-                            process_ref.session_id = sid
-                            await process_ref.save()
-                            session_id_persisted = True
-                        except Exception:
-                            logger.debug("CodexDriver.headless_prompt: session_id save failed", exc_info=True)
-                    try:
-                        await process_ref.emit_flow_data(fd.model_dump())
-                    except Exception:
-                        logger.debug("CodexDriver.headless_prompt: emit_flow_data failed", exc_info=True)
-            except Exception:
-                logger.exception("CodexDriver.headless_prompt: worker error")
-            finally:
-                _PROMPT_WORKERS.pop(process_id, None)
-                object.__setattr__(process_ref, "_turn_in_flight", False)
-                # ``worker_status`` is a computed projection re-derived from
-                # the JSONL tail by ``to_dict`` / ``api_json_serializer``, so
-                # ``save()`` short-circuits when no real entity field changed.
-                # ``notify_updated`` forces a data-op broadcast carrying the
-                # fresh ``worker_status=COMPLETE`` projection — that's what
-                # flips ``proc.output()`` consumers out of their wait loop on
-                # the TS side. Lifecycle ``status`` intentionally stays
-                # RUNNING so ``is_ready_for_input(p)`` returns True.
+            if process.status != ProcessStatus.RUNNING.value:
+                process.status = ProcessStatus.RUNNING.value
                 try:
-                    await process_ref.notify_updated()
+                    await process.save()
                 except Exception:
-                    logger.exception("CodexDriver.headless_prompt: terminal notify_updated failed")
+                    logger.debug("CodexDriver.headless_prompt: lifecycle save failed", exc_info=True)
 
-        asyncio.create_task(_run_turn(), name=f"codex-{process.id[:8]}")
+            process_ref = process
+            process_id = process.id
+
+            # Multi-turn correctness: see ClaudeDriver.headless_prompt + the
+            # AgenticProcess._discover_status_from_transcript override.
+            object.__setattr__(process_ref, "_turn_in_flight", True)
+            try:
+                await process_ref.notify_updated()
+            except Exception:
+                logger.exception("CodexDriver.headless_prompt: start-of-turn notify_updated failed")
+
+            # Session adoption (and its restart-snapshot bookkeeping) is owned by
+            # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
+            # only the turn-initial report (spurious-rotation guard).
+            adopt_session = process_ref.make_turn_session_adopter("CodexDriver.headless_prompt")
+
+            async def _run_turn() -> None:
+                try:
+                    async for fd in worker.execute(prompt=full_prompt, context=context):
+                        await adopt_session(worker.get_session_id())
+                        try:
+                            await process_ref.emit_flow_data(fd.model_dump())
+                        except Exception:
+                            logger.debug("CodexDriver.headless_prompt: emit_flow_data failed", exc_info=True)
+                except WorkerSpawnError as e:
+                    # No subprocess ever started — end the process FAILED with the
+                    # start_failure latch (the ERROR frame was already emitted).
+                    await latch_spawn_failure(process_ref, e)
+                except Exception:
+                    logger.exception("CodexDriver.headless_prompt: worker error")
+                finally:
+                    unregister_prompt_worker(process_id, worker)
+                    # Terminal status broadcast + completion-driven queue advance
+                    # (see AgenticProcess.end_headless_turn).
+                    await process_ref.end_headless_turn("CodexDriver.headless_prompt")
+
+            asyncio.create_task(_run_turn(), name=f"codex-{process.id[:8]}")
+        except BaseException:
+            # _run_turn never took ownership of the slot — release it here so the
+            # next turn is not permanently rejected with a 409.
+            unregister_prompt_worker(process.id, worker)
+            raise
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})
 
     def stream_worker(self, process: "AgenticProcess") -> CodexCLIStreamWorker:
         return CodexCLIStreamWorker.for_process(process.id)
 
+    # ── Auth ─────────────────────────────────────────────────────────────────
+
+    async def auth_probe(self) -> WorkerAuthResult:
+        """`codex login status` against the discovered CLI (exit-code based)."""
+        return await run_worker_auth_probe(self.name)
+
+    # RFC-8628 device flow. Requires "Allow device code login" enabled on the
+    # user's ChatGPT account; the CLI errors clearly when it isn't.
+    device_login_spec = DeviceLoginSpec(
+        login_argv=("codex", "login", "--device-auth"),
+        url_re=re.compile(r"(https://auth\.openai\.com/\S+)"),
+        code_re=re.compile(r"^\s*([A-Z0-9]{2,10}-[A-Z0-9]{2,10})\s*$", re.MULTILINE),
+        accepts_code_paste=False,
+    )
+
     # ── Transcript discovery ─────────────────────────────────────────────────
 
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
-        """Resolve the Codex transcript path and native format for ``process``."""
-        if process.visible:
-            rollout = self._rollout_descriptor(process)
-            if rollout is not None:
-                return rollout
+        """Resolve the Codex transcript for READING (history / prompts / status).
 
-        local = self._process_local_descriptor(process)
-        if local is not None:
-            return local
-
-        return self._rollout_descriptor(process)
+        Transcript↔output alignment: the rollout (``~/.codex/sessions/...``) is the
+        canonical, complete record — user-message entries AND assistant output, all
+        turns, one resumed session. The process-local file is only the tee'd
+        ``codex exec --json`` *stdout* — assistant output with NO user-message entry
+        (the headless prompt is an argv, not a stream event), so ``transcript/prompts``
+        came back empty for headless. Prefer the rollout for BOTH transports (visible
+        already did); fall back to the stdout tee only before codex mints/captures
+        its rollout id. (Live streaming reads the worker stdout directly, not this.)
+        """
+        rollout = self._rollout_descriptor(process)
+        if rollout is not None:
+            return rollout
+        return self._process_local_descriptor(process)
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
@@ -294,44 +345,7 @@ class CodexDriver:
         instruction: str,
         agents_json: dict | None,
     ) -> str:
-        """Inline embedded-agent definitions so codex executes them directly.
-
-        Codex has its own collaboration/delegation system but it can't fork the
-        current ``codex exec --ephemeral`` thread, so attempting to delegate
-        causes "thread can't be forked for a sub-agent" errors. Instead, we
-        flatten each embedded agent's instructions into the user prompt and
-        tell codex explicitly to follow them in-process.
-        """
-        agents_json = agents_json or {}
-        if not agents_json:
-            return instruction
-        sections: list[str] = [
-            "# Inline sub-agent definitions",
-            (
-                "Each ## block below defines a named sub-agent. Do NOT try to "
-                "delegate, fork, or spawn a separate agent — there is no "
-                "sub-agent runtime here. When the user instruction asks you "
-                "to use one of these agents, follow that agent's instructions "
-                "yourself, in this same turn."
-            ),
-            (
-                "Be fast: as soon as every required artifact (file, command "
-                "output) exists on disk, end the turn immediately with a one-"
-                "line confirmation. Do NOT write recaps, summaries, "
-                "explanations, verification steps, or follow-up suggestions."
-            ),
-        ]
-        for name, entry in agents_json.items():
-            body = (entry or {}).get("prompt") or ""
-            desc = (entry or {}).get("description") or ""
-            sections.append(f"\n## {name}")
-            if desc:
-                sections.append(desc)
-            if body:
-                sections.append(body)
-        sections.append("\n# User instruction")
-        sections.append(instruction)
-        return "\n".join(sections)
+        return instruction
 
     # ── External-session probe ───────────────────────────────────────────────
 
@@ -342,6 +356,7 @@ class CodexDriver:
         the Claude driver's ``flow-records-agentic`` invariant.
         """
         from flow_sdk.instance_settings import get_instance_settings
+
         sessions_root = get_instance_settings().codex_sessions_dir
         if not sessions_root.is_dir():
             return set()

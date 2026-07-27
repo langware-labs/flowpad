@@ -1,4 +1,4 @@
-import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
+import { ContextEntitiesEnum, dataContext } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
@@ -10,7 +10,7 @@ import {
   NewProjectFromGitDialog,
   ProjectSelectorModal,
   useEnsureProject,
-  useSelectExistingProject,
+  useGitCloneDialogSubmit,
 } from '@src/components/project-selector';
 import {
   DropdownMenu,
@@ -27,6 +27,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FolderOpen, FolderPlus, GitBranch } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
+import { projectRecencyMs } from '@src/lib/project-recency';
 import { QUICK_CREATE_REGISTRY } from './registry';
 
 interface QuickCreateMenuProps {
@@ -51,7 +52,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   const { computeNode } = useAgentContext();
   const { navigation } = useDockNavigation();
   const ensureProject = useEnsureProject();
-  const selectExisting = useSelectExistingProject();
+  const handleCreateGitProject = useGitCloneDialogSubmit(computeNode?.id);
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [newLocalProjectOpen, setNewLocalProjectOpen] = useState(false);
   const [newGitProjectOpen, setNewGitProjectOpen] = useState(false);
@@ -85,28 +86,6 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
     [ensureProject],
   );
 
-  const handleCreateGitProject = useCallback(
-    async (
-      url: string,
-      acceptSuggested?: string,
-      branch?: string,
-    ): Promise<{ ok: true } | { ok: false; suggestedName: string; attemptedName: string }> => {
-      if (!computeNode) {
-        throw new Error('No compute node available');
-      }
-      const result = await Project.createFromGitUrl(computeNode.id, url, acceptSuggested, branch);
-      if (result.kind === 'ok') {
-        await selectExisting(result.project);
-        return { ok: true };
-      }
-      if (result.kind === 'collision') {
-        return { ok: false, suggestedName: result.suggestedName, attemptedName: result.attemptedName };
-      }
-      throw new Error(result.message);
-    },
-    [computeNode, selectExisting],
-  );
-
   const projectItems = useMemo(
     () =>
       (projects ?? []).map((p) => ({
@@ -114,6 +93,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
         name: p.displayName,
         path: p.fs_storage_mount_path ?? '',
         modifiedAt: p.updated_date ?? null,
+        recencyMs: projectRecencyMs({ last_active_at: p.last_active_at, modified_at: p.updated_date }),
       })),
     [projects],
   );

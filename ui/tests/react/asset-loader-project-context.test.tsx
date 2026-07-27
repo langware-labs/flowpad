@@ -23,45 +23,64 @@
  * With the bug: the project context stays the sentinel → assertion fails.
  * After the fix (loader sets the project from e.project_id): it passes.
  *
- * Fixture: the skill `/private/tmp/.claude/skills/shopiing` from the report,
- * which lives on this dev instance. Requires a running backend at
- * localhost:$LOCAL_SERVER_PORT (react project).
+ * Fixture: the same project-scoped skill shape from the report, materialized
+ * under the explicitly selected disposable instance and removed after the
+ * file. The original hardcoded `/private/tmp` fixture could mutate a user's
+ * host filesystem even when the database backend was disposable.
  */
-import {
-  AssetEditor,
-  ContextEntitiesEnum,
-  Project,
-  Skill,
-  TypeId,
-  dataContext,
-  dataManager,
-} from '@sdk';
+import { rmSync } from 'node:fs';
+import { homedir } from 'node:os';
+import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
+
+import { AssetEditor, ContextEntitiesEnum, Project, Skill, TypeId, dataContext, dataManager } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { loadAssetRoute } from '@src/routes/loaders/load-asset';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
-// The exact asset from the report.
-const SKILL_PATH = '/private/tmp/.claude/skills/shopiing';
+const FLOW_INSTANCE = process.env.FLOW_INSTANCE?.trim() || '';
+const FLOW_HOME = path.resolve(process.env.FLOW_HOME || path.join(homedir(), '.flow'));
+const PROJECT_ROOT = path.join(FLOW_HOME, 'instances', FLOW_INSTANCE, 'react-fixtures', `asset-loader-${randomUUID()}`);
+const SKILL_PATH = path.join(PROJECT_ROOT, '.claude', 'skills', 'shopiing');
 // A real, unrelated project to seed as the pre-existing context so the
 // assertion is meaningful: if the loader never sets the project, the context
 // keeps this sentinel rather than coincidentally matching the skill's project.
 const SENTINEL_PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+let fixtureProject: Project | null = null;
+let fixtureSkill: Skill | null = null;
 
 describe('loadAssetRoute — VFS asset loads its owning project into context', () => {
   beforeEach(async (ctx: any) => {
     await apiTestSetup(getTestSignupInfo(), ctx.task.name);
   });
 
+  afterAll(async () => {
+    await fixtureSkill?.delete().catch(() => {});
+    await fixtureProject?.delete().catch(() => {});
+    rmSync(PROJECT_ROOT, { recursive: true, force: true });
+  });
+
   it('sets CurrentProjectTypeId to the skill VFS entity project_id', async () => {
-    // 1. Resolve the skill exactly as the loader does — by VFS path.
+    // 0. Materialize the fixture shape the report references — a skill named
+    //    `shopiing` living under the cycle-owned project root. A project whose
+    //    `name` is an absolute path gets `fs_storage_mount_path` = that path
+    //    (backend `Project.set_fs_storage_mount_path`), and a skill created under
+    //    that project scope is written to `<mount>/.claude/skills/<name>/` with
+    //    `project_id` + `asset_ref` stamped server-side (`_prepare_for_storage`).
+    //    Idempotent: skip when the fixture already exists on this instance.
     await dataManager.clearCache();
+    if (!(await dataManager.getEntityByPath<Skill>(SKILL_PATH))) {
+      fixtureProject = await new Project({ name: PROJECT_ROOT }).save();
+      fixtureSkill = await Skill.createInProject(fixtureProject, 'shopiing');
+      await dataManager.clearCache();
+    }
+
+    // 1. Resolve the skill exactly as the loader does — by VFS path.
     const skill = await dataManager.getEntityByPath<Skill>(SKILL_PATH);
     expect(skill, `fixture skill ${SKILL_PATH} must exist on this instance`).toBeTruthy();
     const projectId: string = (skill as any).project_id;
-    expect(projectId, 'backend must stamp the skill with its owning project_id').toMatch(
-      /^[0-9a-f-]{36}$/,
-    );
+    expect(projectId, 'backend must stamp the skill with its owning project_id').toMatch(/^[0-9a-f-]{36}$/);
     const assetRef: string = (skill as any).asset_ref;
     expect(assetRef, 'skill must have an asset_ref path').toBeTruthy();
 
@@ -70,9 +89,7 @@ describe('loadAssetRoute — VFS asset loads its owning project into context', (
       ContextEntitiesEnum.CurrentProjectTypeId,
       new TypeId(Project.type, SENTINEL_PROJECT_ID),
     );
-    expect(
-      dataContext.getContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId)?.id,
-    ).toBe(SENTINEL_PROJECT_ID);
+    expect(dataContext.getContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId)?.id).toBe(SENTINEL_PROJECT_ID);
 
     // 3. Run the REAL asset loader for this skill's VFS pointer, exactly as the
     //    dock loader does for `/dock/assets/editor/skill/vfs/<value>`.

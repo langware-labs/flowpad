@@ -1,10 +1,10 @@
 from datetime import datetime
-from flow_sdk._compat import StrEnum
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, List, Optional
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.core import Entity
-from flow_sdk.db.drivers.db_base_record import TypeId
 
 
 class TaskEventType(StrEnum):
@@ -24,9 +24,17 @@ class TaskType(StrEnum):
     SKILL_CREATION = "skill_creation"
 
 
+class TaskKind(StrEnum):
+    STANDARD = "standard"
+    GROUP = "group"
+
+
 class Task(Entity):
     type: str = APIField(default="task")
     title: str = APIField("")
+    # Task is a folder-backed markdown asset (see task_type_info): asset_ref is
+    # the ``tasks/<name>/`` folder holding ``task.md`` + inner ``spec.md``.
+    asset_ref: Optional[str] = APIField(None)
     description: Optional[str] = APIField(None, blob=True)
     status: str = APIField(TaskStatus.TO_DO)
     last_viewed_at: Optional[datetime] = APIField(None)
@@ -39,6 +47,21 @@ class Task(Entity):
     reporter: Optional[str] = APIField(None)
     workspace_id: Optional[str] = APIField(None)  # Should be a reference to organisation entity
     task_type: str = APIField(TaskType.TASK)
+    # Group tasks: ``group`` = the overview task that owns one child ("member
+    # task") per contacts-group member; children stay ``standard``.
+    kind: str = APIField(TaskKind.STANDARD)
+    # Name of the contacts group a ``group`` task was assigned to — shown as
+    # "Owner: <group_name>" on the overview task. Stamped by create-group-task.
+    group_name: Optional[str] = APIField(None)
+    # Group-task parent pointer; "" = top-level. Children own only their
+    # status — every display field resolves from the parent at render time.
+    parent_id: str = APIField("")
+    # The member's deliverable (repo / PR / doc / app URL) is NOT a field — a
+    # member records it as a standard ``Comment`` on their member task ("The
+    # task is done. Submission url is: <url>", with the url also in the
+    # comment's ``data``). A comment on a hub-remote member task auto-shares to
+    # the hub, and the owner (authorized on the child) pulls it during
+    # ``sync-group`` — see ``group_task_action._sync_group_owner``.
     priority: Optional[str] = APIField(None)
     tags: List[str] = APIField([])
     shared_by_id: Optional[str] = APIField(None)
@@ -55,7 +78,6 @@ class Task(Entity):
     analysis_json_path: Optional[str] = APIField(None)
     analysis_path: Optional[str] = APIField(None)
     artifacts: Optional[List[Any]] = APIField(None)
-    branch: Optional[str] = APIField(None)
     classification_category: Optional[str] = APIField(None)
     classification_command: Optional[str] = APIField(None)
     classification_path: Optional[str] = APIField(None)
@@ -68,9 +90,8 @@ class Task(Entity):
     process_id: Optional[str] = APIField(None)
     project_name: Optional[str] = APIField(None)
     project_root: Optional[str] = APIField(None)
-    project_url: Optional[str] = APIField(None)
+    git_origin: Optional[GitOrigin] = APIField(None)
     recipient_email: Optional[str] = APIField(None)
-    repo_id: Optional[str] = APIField(None)
     result_uname: Optional[str] = APIField(None)
     sender_email: Optional[str] = APIField(None)
     sender_name: Optional[str] = APIField(None)

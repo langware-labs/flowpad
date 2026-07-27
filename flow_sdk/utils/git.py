@@ -1,15 +1,42 @@
 import asyncio
 import logging
+import os
 import re
 import subprocess
-import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
 from .file_system import ROOT_FOLDER
 
 logger = logging.getLogger(__name__)
+
+# Env var name the inline git credential helper reads the token from. The helper
+# script (below) references only this NAME; the token value lives solely in the
+# child process env — never in argv (ps-visible) nor in the clone URL on disk.
+_GIT_TOKEN_ENV = "FLOWPAD_GIT_TOKEN"
+# `!f() { … }; f` is executed by git via /bin/sh, so `$FLOWPAD_GIT_TOKEN` resolves
+# from the child env. GitHub accepts any username with a token (use x-access-token).
+_GIT_TOKEN_CREDENTIAL_HELPER = (
+    f'!f() {{ echo username=x-access-token; echo "password=${_GIT_TOKEN_ENV}"; }}; f'
+)
+
+
+def _git_token_auth(token: Optional[str]) -> Tuple[list[str], Optional[dict]]:
+    """Auth for one git invocation: `(extra argv, child env)`.
+
+    The argv installs an inline `credential.helper` that names the env var; the
+    env carries the token itself (never argv, never the on-disk URL) plus
+    GIT_TERMINAL_PROMPT=0 so a bad/absent token fails fast instead of hanging.
+    `([], None)` when there's no token — a plain public clone.
+    """
+    if not token:
+        return [], None
+    return (
+        ["-c", f"credential.helper={_GIT_TOKEN_CREDENTIAL_HELPER}"],
+        {**os.environ, _GIT_TOKEN_ENV: token, "GIT_TERMINAL_PROMPT": "0"},
+    )
 
 
 @dataclass
@@ -84,12 +111,7 @@ def git_repo_full_name(repo_path: str) -> str:
     return m.group(1) if m else ""
 
 
-def repo_id(repo_full_name: str) -> str:
-    """Return uuid5(NAMESPACE_DNS, 'repo:{repo_full_name}') — stable cross-machine repo identity."""
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"repo:{repo_full_name}"))
-
-
-def derive_repo_leaf_from_url(project_url: str) -> str:
+def derive_repo_leaf_from_url(clone_url: str) -> str:
     """Extract the repo folder name from a git URL.
 
     Handles https / ssh / scp-style git URLs:
@@ -98,9 +120,9 @@ def derive_repo_leaf_from_url(project_url: str) -> str:
       https://example.com/some/repo/   → repo
     Returns empty string when the URL has no usable trailing segment.
     """
-    if not project_url:
+    if not clone_url:
         return ""
-    leaf = project_url.strip().rstrip("/").split("/")[-1]
+    leaf = clone_url.strip().rstrip("/").split("/")[-1]
     # ssh form `git@host:owner/repo.git` leaves "owner/repo.git" or just "repo.git"
     if ":" in leaf and "/" not in leaf:
         leaf = leaf.split(":")[-1]
@@ -109,36 +131,37 @@ def derive_repo_leaf_from_url(project_url: str) -> str:
     return leaf
 
 
-def _url_matches(path: str, project_url: str) -> bool:
-    """Return True if the git repo at path has an origin URL matching project_url."""
+def _url_matches(path: str, clone_url: str) -> bool:
+    """Return True if the git repo at path has an origin URL matching clone_url."""
     try:
         result = subprocess.run(
             ["git", "remote", "get-url", "origin"],
             cwd=path, capture_output=True, text=True, timeout=5,
         )
-        return result.returncode == 0 and result.stdout.strip() == project_url.strip()
+        return result.returncode == 0 and result.stdout.strip() == clone_url.strip()
     except Exception:
         return False
 
 
-def find_local_repo_for_url(project_url: str) -> Optional[str]:
-    """Find a local repo whose origin URL matches project_url.
+def find_local_repo_for_url(clone_url: str) -> Optional[str]:
+    """Find a local repo whose origin URL matches clone_url.
 
     Pass 1: Claude-registered projects (fast, authoritative).
     Pass 2: Immediate siblings of those projects — covers repos that exist
             on disk but were never opened in Claude.
     """
-    if not project_url:
+    if not clone_url:
         return None
 
     from pathlib import Path as _Path
+
     from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 
     claude_paths = list(iter_claude_project_paths())
 
     # Pass 1: Claude-registered projects
     for project_root in claude_paths:
-        if _url_matches(str(project_root), project_url):
+        if _url_matches(str(project_root), clone_url):
             return str(project_root)
 
     # Pass 2: siblings — scan one level inside each unique parent directory
@@ -152,7 +175,7 @@ def find_local_repo_for_url(project_url: str) -> Optional[str]:
             for sibling in parent.iterdir():
                 if not sibling.is_dir() or sibling == _Path(project_root):
                     continue
-                if (sibling / ".git").exists() and _url_matches(str(sibling), project_url):
+                if (sibling / ".git").exists() and _url_matches(str(sibling), clone_url):
                     return str(sibling)
         except OSError:
             continue
@@ -192,31 +215,71 @@ async def git_pull(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, 
         return False, f"Git pull error: {e}"
 
 
-async def git_clone(project_url: str, target_dir: str, branch: Optional[str] = None) -> Tuple[bool, str]:
-    """Clone project_url into target_dir, optionally checking out branch.
+async def git_clone(
+    clone_url: str, target_dir: str, branch: Optional[str] = None, token: Optional[str] = None
+) -> Tuple[bool, str]:
+    """Clone clone_url into target_dir, optionally checking out branch.
+
+    When ``token`` is given (a GitHub access token), the clone authenticates via
+    an inline credential helper that reads the token from the child env — so
+    private repos work and the token never touches argv or the on-disk URL.
 
     Returns (success, message).
     """
     try:
-        cmd = ["git", "clone", project_url, target_dir]
+        auth_args, env = _git_token_auth(token)
+        cmd = ["git", *auth_args, "clone", clone_url, target_dir]
         if branch:
             cmd += ["--branch", branch]
 
         def _run(args):
-            return subprocess.run(args, capture_output=True, text=True, timeout=120)
+            return subprocess.run(args, capture_output=True, text=True, timeout=120, env=env)
 
         result = await asyncio.to_thread(_run, cmd)
         if result.returncode == 0:
             out = (result.stdout or result.stderr or "").strip()
-            logger.info("[git] clone %s into %s succeeded", project_url, target_dir)
+            logger.info("[git] clone %s into %s succeeded", clone_url, target_dir)
             return True, out or "Cloned successfully."
         else:
             err = (result.stderr or result.stdout or "").strip()
-            logger.warning("[git] clone %s FAILED: %s", project_url, err)
+            logger.warning("[git] clone %s FAILED: %s", clone_url, err)
             return False, f"Git clone failed: {err}"
     except Exception as e:
         logger.warning("[git] clone error: %s", e)
         return False, f"Git clone error: {e}"
+
+
+async def git_remote_access(clone_url: str, token: Optional[str] = None) -> Tuple[bool, Optional[str]]:
+    """Can we read ``clone_url``, and what is its default branch?
+
+    ``git ls-remote --symref <url> HEAD`` is the cheap, provider-agnostic
+    reachability probe: it answers for public repos anonymously and for private
+    ones with ``token``, without fetching a single object. Same credential path
+    as ``git_clone``, so "the check passed" and "the clone will work" cannot
+    disagree.
+
+    Returns (accessible, default_branch or None).
+    """
+    try:
+        auth_args, env = _git_token_auth(token)
+        env = {**(env or os.environ), "GIT_TERMINAL_PROMPT": "0"}
+        cmd = ["git", *auth_args, "ls-remote", "--symref", clone_url, "HEAD"]
+
+        def _run():
+            return subprocess.run(cmd, capture_output=True, text=True, timeout=20, env=env)
+
+        result = await asyncio.to_thread(_run)
+        if result.returncode != 0:
+            logger.info("[git] ls-remote %s denied: %s", clone_url, (result.stderr or "").strip()[:200])
+            return False, None
+        # "ref: refs/heads/main\tHEAD" — the symref line names the default branch.
+        for line in (result.stdout or "").splitlines():
+            if line.startswith("ref:") and "refs/heads/" in line:
+                return True, line.split("refs/heads/", 1)[1].split()[0].strip()
+        return True, None
+    except Exception as e:
+        logger.warning("[git] ls-remote error for %s: %s", clone_url, e)
+        return False, None
 
 
 async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: str) -> GitPushResult:
@@ -278,6 +341,43 @@ _LOG_SEP = "\x1f"
 
 def _run_git(args: list[str], cwd: str, timeout: int = 10) -> subprocess.CompletedProcess:
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+
+
+def git_asset_introduction(path: str) -> datetime | None:
+    """Return the earliest commit that introduced a local file/folder asset.
+
+    File history follows renames. Folder history is pathspec-scoped and chooses
+    the earliest tracked child addition. The probe is best-effort and bounded
+    by ``_run_git``'s process timeout; callers run it off the event loop and only
+    for actual collision groups.
+    """
+    try:
+        root = find_project_root(path)
+        if root is None:
+            return None
+        target = Path(path).resolve()
+        rel_path = target.relative_to(Path(root).resolve()).as_posix()
+        args = ["git", "log"]
+        if not target.is_dir():
+            args.append("--follow")
+        args.extend(["--format=%aI", "--diff-filter=A", "--", rel_path])
+        result = _run_git(args, root)
+        if result.returncode != 0:
+            return None
+        dates: list[datetime] = []
+        for line in result.stdout.splitlines():
+            try:
+                parsed = datetime.fromisoformat(line.strip().replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            dates.append(
+                parsed.replace(tzinfo=timezone.utc)
+                if parsed.tzinfo is None
+                else parsed.astimezone(timezone.utc)
+            )
+        return min(dates) if dates else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
 
 
 async def git_commit_file(repo_path: str, rel_file: str, message: str) -> bool:

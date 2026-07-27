@@ -29,6 +29,8 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowDataType,
     FlowElementType,
 )
+from flow_sdk.transcript_analyzer import AgentTranscriptFile, EntryKind
+from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
 logger = logging.getLogger(__name__)
 _LAUNCH_LOOKBACK = timedelta(seconds=30)
@@ -62,11 +64,9 @@ def codex_transcript_path_for_process(process_id: str) -> Path:
 
     Lazily imported to avoid pulling Record machinery at module import time.
     """
-    from flow_sdk.fs_store.fs_record import record_stem
-    from flow_sdk.fs_store.record_paths import get_default_records_root
+    from flow_sdk.fs_store.record_paths import shadow_dir_for
 
-    root = get_default_records_root()
-    d = root / "agentic_process" / record_stem("agentic_process", process_id)
+    d = shadow_dir_for("agentic_process", process_id)
     d.mkdir(parents=True, exist_ok=True)
     return d / "codex_transcript.jsonl"
 
@@ -173,21 +173,35 @@ def load_session_history(session_id: str, process_id: str | None = None) -> list
 
 
 def load_transcript_history(transcript: Path) -> list[FlowData]:
-    """Load a specific Codex transcript file as FlowData."""
+    """Load a Codex transcript through the canonical typed parser.
+
+    ``AgentTranscriptFile`` is per-line tolerant — a malformed JSONL line is
+    skipped, not fatal — so reaching this except means the rollout as a whole
+    could not be parsed (a parser bug or an unreadable/foreign format). That
+    is worth a WARNING, and the caller gets a structured ERROR frame instead
+    of a silently-empty history.
+    """
     history: list[FlowData] = []
     try:
-        with open(transcript, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                history.extend(_entry_to_flow_data(entry))
-    except OSError:
-        return history
+        parsed = AgentTranscriptFile("codex", transcript)
+    except Exception as exc:
+        logger.warning("Codex history parse failed for %s", transcript, exc_info=True)
+        return [FlowData(
+            flow_value=f"Failed to parse codex transcript {transcript}: {exc}",
+            attributes={
+                "element-type": FlowElementType.ERROR,
+                "data-type": FlowDataType.TEXT,
+                "subtype": "history-parse-error",
+                "observation-kind": "replay",
+            },
+        )]
+
+    for entry in parsed.entries:
+        # Session metadata and unknown parser fallbacks are discovery/debug
+        # details, not durable conversation rows.
+        if entry.kind in (EntryKind.META, EntryKind.UNKNOWN):
+            continue
+        history.extend(_entry_to_replay_flow_data(entry))
 
     return history
 
@@ -195,111 +209,75 @@ def load_transcript_history(transcript: Path) -> list[FlowData]:
 # ── Per-entry conversion ───────────────────────────────────────────────────────
 
 
-def _entry_to_flow_data(entry: dict) -> list[FlowData]:
-    """Convert a single transcript line to zero or more FlowData items.
-
-    Handles both shapes:
-      - process-local stream events (``thread.started`` / ``item.completed`` ...)
-      - codex's own ``~/.codex/sessions/`` rollout shape
-        (``response_item`` with ``role`` and ``content`` blocks).
-
-    Both shapes carry an outer ISO 8601 ``timestamp`` field per line; we
-    forward it as ``created_time`` so the UI timeline reflects the original
-    transcript time instead of the get-history call time.
-    """
-    etype = entry.get("type")
-    entry_ts = entry.get("timestamp") or ""
-
-    # ── Process-local stream event shape ──────────────────────────────────────
-    if etype == "item.completed":
-        item = entry.get("item") or {}
-        return _item_to_flow_data(item, entry_ts)
-
-    # ── codex sessions/* rollout shape ────────────────────────────────────────
-    if etype == "response_item":
-        payload = entry.get("payload") or {}
-        return _response_item_to_flow_data(payload, entry_ts)
-
-    return []
+_TOOL_USE_KINDS = frozenset({
+    "tool_use",
+    "shell_command",
+    "file_write",
+    "file_edit",
+    "file_read",
+    "skill_call",
+    "search",
+    "web_fetch",
+    "todo_update",
+    "agent_spawn",
+    "exit_plan_mode",
+})
 
 
-def _item_to_flow_data(item: dict, entry_ts: str = "") -> list[FlowData]:
-    itype = item.get("type")
-    if itype == "agent_message":
-        text = item.get("text") or ""
-        if not text:
-            return []
-        return [FlowData(
-            flow_value=text,
-            created_time=entry_ts,
+def _entry_to_replay_flow_data(entry) -> list[FlowData]:
+    process_entry = ProcessEntry(
+        transcript_entry=entry,
+        observation_kind="replay",
+    ).to_dict()
+    frames = entry.to_flow_data()
+    if not frames:
+        # Entries whose ``to_flow_data()`` is deliberately empty (SYSTEM,
+        # TOKEN_USAGE) still get one STATUS frame — the live stream does the
+        # same (see ``event_to_flowdata._wrap_live``), so replay stays
+        # row-for-row comparable with what a live subscriber saw.
+        frames = [FlowData(
+            flow_value={},
+            created_time=entry.timestamp or "",
             attributes={
-                "element-type": FlowElementType.CHAT,
-                "data-type": FlowDataType.TEXT,
-                "role": "assistant",
-            },
-        )]
-    if itype == "command_execution":
-        return [FlowData(
-            flow_value={
-                "command": item.get("command"),
-                "output": item.get("aggregated_output"),
-                "exit_code": item.get("exit_code"),
-            },
-            created_time=entry_ts,
-            attributes={
-                "element-type": FlowElementType.TOOL_RESULT,
+                "element-type": _element_type_for_kind(entry.kind.value),
                 "data-type": FlowDataType.OBJECT,
-                "tool-name": "shell",
             },
         )]
-    if itype == "file_change":
-        return [FlowData(
-            flow_value={"changes": item.get("changes")},
-            created_time=entry_ts,
-            attributes={
-                "element-type": FlowElementType.TOOL_RESULT,
-                "data-type": FlowDataType.OBJECT,
-                "tool-name": "file_change",
-            },
-        )]
-    return []
+
+    # SYSTEM entries carry a refined subtype (``turn_context``,
+    # ``event_msg.error``, ...) that is strictly more informative than the
+    # generic kind tag — surface it instead.
+    subtype = entry.kind.value
+    if entry.kind is EntryKind.SYSTEM and getattr(entry, "subtype", None):
+        subtype = str(entry.subtype)
+
+    for frame in frames:
+        frame.process_entry = process_entry
+        frame.attributes["subtype"] = subtype
+        # Vendor-neutral abort signal: a rollout's organic turn_aborted event
+        # (written by the codex TUI on Ctrl-C) means every still-unmatched tool
+        # call of that turn is terminated, exactly like a flowpad-authored
+        # cancel marker (turn_abort.py). Stamp the shared attribute so the UI
+        # keys on semantics, not the vendor event name.
+        if subtype == "event_msg.turn_aborted":
+            frame.attributes["turn-terminated"] = "true"
+        frame.attributes["observation-kind"] = "replay"
+        frame.attributes.setdefault("transcript-entry-id", entry.id)
+        if entry.entry_id:
+            frame.attributes.setdefault("transcript-source-entry-id", entry.entry_id)
+        phase = getattr(entry, "phase", None)
+        if phase:
+            frame.attributes.setdefault("phase", str(phase))
+    return frames
 
 
-def _response_item_to_flow_data(payload: dict, entry_ts: str = "") -> list[FlowData]:
-    if payload.get("type") != "message":
-        return []
-    role = payload.get("role")
-    content = payload.get("content") or []
-    text_parts: list[str] = []
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        if block.get("type") in ("input_text", "output_text"):
-            text = block.get("text") or ""
-            # Skip codex's own permission/apps/skills/plugins prelude blocks.
-            if text and not text.startswith("<"):
-                text_parts.append(text)
-    text = "\n".join(text_parts).strip()
-    if not text:
-        return []
-    if role == "user":
-        return [FlowData(
-            flow_value=text,
-            created_time=entry_ts,
-            attributes={
-                "element-type": FlowElementType.USER_MESSAGE,
-                "data-type": FlowDataType.TEXT,
-                "role": "user",
-            },
-        )]
-    if role in ("assistant", "developer"):
-        return [FlowData(
-            flow_value=text,
-            created_time=entry_ts,
-            attributes={
-                "element-type": FlowElementType.CHAT,
-                "data-type": FlowDataType.TEXT,
-                "role": "assistant",
-            },
-        )]
-    return []
+def _element_type_for_kind(kind: str) -> str:
+    if kind == "user_message":
+        return FlowElementType.USER_MESSAGE
+    if kind == "assistant_message":
+        return FlowElementType.CHAT
+    if kind in _TOOL_USE_KINDS:
+        return FlowElementType.TOOL_CALL
+    if kind == "tool_result":
+        return FlowElementType.TOOL_RESULT
+    return FlowElementType.STATUS

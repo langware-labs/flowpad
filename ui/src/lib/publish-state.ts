@@ -6,14 +6,14 @@
  * `lib/` (peer to scope-filter / color-palette), not in a components dir.
  */
 
+import type { PushKind } from '@sdk';
 import { ViewMode } from '@src/components/view-mode';
 
 export type PublishState = 'no-repo' | 'local-only' | 'aligned' | 'unpublished';
 
-/** Typed push outcome from the backend (`GitRepo._classify_push_error`). */
-export type PushKind =
-  | 'pushed' | 'nothing' | 'conflict' | 'permission'
-  | 'no_remote' | 'network' | 'no_repo' | 'generic';
+// Typed push outcome — the SDK's mirror of `PushKind` in git_repo.py.
+// Re-exported for existing importers of this module.
+export type { PushKind } from '@sdk';
 
 export interface PublishStatusInput {
   hasRepo: boolean;
@@ -45,7 +45,11 @@ export function derivePublishState(input: PublishStatusInput): PublishStatus {
   return { state, pendingCount: 0 };
 }
 
-const isAdvanced = (mode: ViewMode): boolean => mode !== ViewMode.Standard;
+// Advanced copy is for power-user tiers only. Vibe (simpler than Standard) and
+// Standard both get the plain-language copy — so test for the advanced tiers
+// explicitly rather than "!== Standard" (which would wrongly catch Vibe).
+const isAdvanced = (mode: ViewMode): boolean =>
+  mode === ViewMode.Advanced || mode === ViewMode.Dev;
 
 export interface PublishLabels {
   /** Button label for the publish action. */

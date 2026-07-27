@@ -1,0 +1,270 @@
+{
+  "comment": "Cross-language FlowEvent contract \u2014 parsed by tests/unit/test_tag_bus.py (Python) and ui/tests/unit/event-bus.test.ts (TS). Both buses must accept this envelope verbatim and agree on every matching case.",
+  "envelope": {
+    "id": "7f3f0c7e-2c65-4a4f-9d3e-1b2a3c4d5e6f",
+    "timestamp": "2026-07-19T12:00:00.000000Z",
+    "tag": "flow.step.done",
+    "target": "agentic_flow:63e6a325-97be-46f4-a1a5-a9750d4c1d8d",
+    "data": {
+      "run_id": "r-1",
+      "node": "analyze"
+    },
+    "ctx": {
+      "actor": "user:u-1",
+      "scope": [
+        "agentic_flow_run:r-1",
+        "project:p-1"
+      ],
+      "origin": "local_server"
+    }
+  },
+  "tag_cases": [
+    {
+      "pattern": "*",
+      "tag": "anything.at.all",
+      "matches": true
+    },
+    {
+      "pattern": "flow.step.done",
+      "tag": "flow.step.done",
+      "matches": true
+    },
+    {
+      "pattern": "flow.step.done",
+      "tag": "flow.step.failed",
+      "matches": false
+    },
+    {
+      "pattern": "flow.*",
+      "tag": "flow.step.done",
+      "matches": true
+    },
+    {
+      "pattern": "flow.*",
+      "tag": "flow.done",
+      "matches": true
+    },
+    {
+      "pattern": "flow.*",
+      "tag": "flow",
+      "matches": false
+    },
+    {
+      "pattern": "flow.*.done",
+      "tag": "flow.step.done",
+      "matches": true
+    },
+    {
+      "pattern": "flow.*.done",
+      "tag": "flow.step.extra.done",
+      "matches": false
+    },
+    {
+      "pattern": "app.rou*",
+      "tag": "app.route.loaded",
+      "matches": false
+    },
+    {
+      "pattern": "entity.updated",
+      "tag": "entity.updated.deep",
+      "matches": false
+    }
+  ],
+  "target_cases": [
+    {
+      "pattern": "agent:1234",
+      "target": "agent:1234",
+      "matches": true
+    },
+    {
+      "pattern": "agent:1234",
+      "target": "agent:9999",
+      "matches": false
+    },
+    {
+      "pattern": "agent:*",
+      "target": "agent:9999",
+      "matches": true
+    },
+    {
+      "pattern": "agent:*",
+      "target": "agentic_flow:1",
+      "matches": false
+    },
+    {
+      "pattern": "*",
+      "target": "anything:x",
+      "matches": true
+    },
+    {
+      "pattern": "dock:shell/*",
+      "target": "dock:shell/agentic_process-1",
+      "matches": true
+    },
+    {
+      "pattern": "dock:shell/*",
+      "target": "dock:shell/shell-2",
+      "matches": true
+    },
+    {
+      "pattern": "dock:shell/*",
+      "target": "dock:assets/project-home",
+      "matches": false
+    },
+    {
+      "pattern": "dock:shell",
+      "target": "dock:shell/shell-2",
+      "matches": false
+    }
+  ],
+  "grammar": {
+    "comment": "Shared dot-taxonomy grammar (flow_sdk/tags/grammar.py <-> ts_sdk/src/tags/grammar.ts). normalize cases map raw -> canonical (null = rejected); pattern cases map pattern -> valid; within cases pin the lenient hierarchy-prefix semantics.",
+    "normalize_cases": [
+      {
+        "raw": "flow.step.done",
+        "canonical": "flow.step.done"
+      },
+      {
+        "raw": "  Application.Web ",
+        "canonical": "application.web"
+      },
+      {
+        "raw": "--acme--.orders.created",
+        "canonical": "--acme--.orders.created"
+      },
+      {
+        "raw": "gcp.compute.instance",
+        "canonical": "gcp.compute.instance"
+      },
+      {
+        "raw": "a_b-c.d",
+        "canonical": "a_b-c.d"
+      },
+      {
+        "raw": "",
+        "canonical": null
+      },
+      {
+        "raw": "flow..done",
+        "canonical": null
+      },
+      {
+        "raw": "flow.step.",
+        "canonical": null
+      },
+      {
+        "raw": "flow step",
+        "canonical": null
+      },
+      {
+        "raw": "flow:step",
+        "canonical": null
+      },
+      {
+        "raw": "orders.--acme--.created",
+        "canonical": null
+      }
+    ],
+    "pattern_cases": [
+      {
+        "pattern": "flow.*",
+        "valid": true
+      },
+      {
+        "pattern": "entity.updated",
+        "valid": true
+      },
+      {
+        "pattern": "flow.*.done",
+        "valid": true
+      },
+      {
+        "pattern": "--acme--.orders.*",
+        "valid": true
+      },
+      {
+        "pattern": "*",
+        "valid": false
+      },
+      {
+        "pattern": "",
+        "valid": false
+      },
+      {
+        "pattern": "Flow.*",
+        "valid": false
+      },
+      {
+        "pattern": "flow..*",
+        "valid": false
+      },
+      {
+        "pattern": "orders.--acme--.*",
+        "valid": false
+      }
+    ],
+    "within_cases": [
+      {
+        "tag": "workload.service.http",
+        "prefix": "workload",
+        "within": true
+      },
+      {
+        "tag": "workload.service.http",
+        "prefix": "workload.service",
+        "within": true
+      },
+      {
+        "tag": "workload.service.http",
+        "prefix": "workload.service.http",
+        "within": true
+      },
+      {
+        "tag": "workloads.other",
+        "prefix": "workload",
+        "within": false
+      },
+      {
+        "tag": "workload",
+        "prefix": "workload.service",
+        "within": false
+      },
+      {
+        "tag": " Harness.Claude.CLI ",
+        "prefix": "harness",
+        "within": true
+      }
+    ],
+    "namespace_cases": [
+      {
+        "tag": "--acme--.orders.created",
+        "namespace": "acme",
+        "rest": "orders.created"
+      },
+      {
+        "tag": "flow.step.done",
+        "namespace": null,
+        "rest": "flow.step.done"
+      },
+      {
+        "tag": "--acme--",
+        "namespace": "acme",
+        "rest": ""
+      }
+    ],
+    "reserved_roots": [
+      "agent",
+      "app",
+      "application",
+      "content",
+      "entity",
+      "flow",
+      "gcp",
+      "hub",
+      "local",
+      "node",
+      "resource",
+      "workload"
+    ]
+  }
+}

@@ -1,27 +1,48 @@
-import { afterAll } from 'vitest';
-
 import { installCleanup } from '../_cleanup';
+import {
+  HUB_INST_1,
+  HUB_INST_2,
+  resolveLaunchedInstance,
+} from './_instances';
+
+// The selected generated instance env is resolved in vitest.config.ts and baked
+// in via `define`. Validate it HERE so unrelated projects may evaluate the hub
+// config, while an actual hub run fails closed before touching any backend.
+declare const __HUB_INSTANCE_NAME__: string;
+declare const __HUB_BACKEND_PORT__: string;
+const selectedInstance = process.env.FLOW_INSTANCE?.trim() || '';
+if (
+  !selectedInstance ||
+  !HUB_INST_1 ||
+  !HUB_INST_2 ||
+  HUB_INST_1 === HUB_INST_2 ||
+  ![HUB_INST_1, HUB_INST_2].includes(selectedInstance)
+) {
+  throw new Error(
+    'hub vitest requires distinct SHARE_INST_1/SHARE_INST_2 and FLOW_INSTANCE equal to one pair member',
+  );
+}
+if (!process.env.ALICE_EMAIL || !process.env.ALICE_PW || !process.env.BOB_EMAIL || !process.env.BOB_PW) {
+  throw new Error('hub vitest requires ALICE_EMAIL/ALICE_PW and BOB_EMAIL/BOB_PW');
+}
+
+const launched1 = resolveLaunchedInstance(HUB_INST_1);
+const launched2 = resolveLaunchedInstance(HUB_INST_2);
+const selected = selectedInstance === HUB_INST_1 ? launched1 : launched2;
+const selectedPort = selected ? new URL(selected.apiUrl).port : '';
+if (
+  !launched1 ||
+  !launched2 ||
+  __HUB_INSTANCE_NAME__ !== selectedInstance ||
+  __HUB_BACKEND_PORT__ !== selectedPort
+) {
+  throw new Error(
+    `hub vitest pair '${HUB_INST_1}'/'${HUB_INST_2}' is not matching live launcher-owned infrastructure ` +
+      '(generated env, launcher identity/ports/hub/credentials, and both PIDs must agree)',
+  );
+}
 
 // Track + sweep every live local entity these hub tests mint before sharing to
 // the hub. Scope is LOCAL-backend entities (the realm that created them); the
 // remote hub copy is out of scope.
 installCleanup({ sweepTypes: ['skill', 'conversation', 'workflow', 'whiteboard'] });
-
-/**
- * Hub-suite test isolation: reset the per-instance SDK realm override.
- *
- * The two-client helpers (`_instances.ts getInstance`) set
- * `globalThis.__FLOWPAD_API_URL__` to point the freshly re-evaluated `@sdk`
- * realm at a specific instance's backend (dev-1 / dev-2). The hub project runs
- * single-threaded, so that global leaks across FILES: a single-client test file
- * loaded after a two-client file would re-import `@sdk` and silently target the
- * last instance's backend (wrong identity → 401 / "entity not found").
- *
- * Resetting it after every file means each file's `@sdk` import resolves to the
- * configured default backend (the `__API_URL__` define) unless that file
- * explicitly opts into an instance via `getInstance`. No hardcoded URL here —
- * deleting the override hands resolution back to the build-time config.
- */
-afterAll(() => {
-  delete (globalThis as Record<string, unknown>).__FLOWPAD_API_URL__;
-});

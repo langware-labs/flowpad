@@ -34,8 +34,17 @@ test.describe('File explorer sidebar shows file contents (FLOWPAD-1654)', () => 
     const count = await rows.count();
     expect(count, 'Explorer shows an empty list at VFS root').toBeGreaterThan(0);
 
-    // The directory-tree filters control (sidebar/tree panel) is present.
-    await expect(page.locator('[data-testid="directory-tree-filters-button"]')).toBeAttached({ timeout: 10_000 });
+    // The explorer's sidebar/tree panel is present and surfaces the directory
+    // structure. `/dock/explorer` renders the ExplorerNavigator (NavigatorPanel,
+    // testid `navigator-panel-explorer`) as its sidebar and a `browseable-*` fs
+    // tree — NOT the `directory-tree` component (whose `directory-tree-filters-button`
+    // only exists in the CodeEditor / execute-flow views), so assert the real panel
+    // and that at least one filesystem tree entry (the VFS root chevron) is present.
+    const sidebar = page.locator('[data-testid="navigator-panel-explorer"]');
+    await expect(sidebar).toBeAttached({ timeout: 10_000 });
+    await expect(
+      sidebar.locator('[data-testid^="browseable-chevron-fs-"]').first(),
+    ).toBeAttached({ timeout: 10_000 });
 
     const real = realConsoleErrors(errors);
     expect(real, `Console errors: ${real.join('\n')}`).toHaveLength(0);

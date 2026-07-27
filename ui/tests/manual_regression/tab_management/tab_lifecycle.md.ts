@@ -21,7 +21,6 @@ import { test, expect, type Page } from '@playwright/test';
 function dismissModals(page: Page) {
   return page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', 'true');
     localStorage.setItem('viewMode', 'advanced');
   });
 }

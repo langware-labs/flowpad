@@ -14,9 +14,16 @@
 
 import { dataContext, initSdk } from '@sdk';
 import type { LoaderFunctionArgs as LoaderArgs } from 'react-router';
+import { applySupportedLocales } from '@src/contexts/locale-context';
 
 export async function loadRoot(_args: LoaderArgs) {
   await initSdk();
+
+  // Backend is the source of truth for supported locales (bootstrap payload).
+  // Install the list + re-resolve the active locale now that it's available
+  // (initLocale ran pre-bootstrap against the en-US fallback). Awaited so the
+  // catalog/direction are settled before the app tree mounts.
+  await applySupportedLocales(dataContext.bootstrapInfo?.supported_locales);
 
   // Bootstrap may still set a service-unavailable / network / config error
   // on dataContext (initSdk swallows those and signals via navigator.error).

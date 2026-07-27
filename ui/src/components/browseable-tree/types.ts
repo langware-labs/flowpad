@@ -12,6 +12,13 @@ export interface BrowseableDragData {
   [key: string]: unknown;
 }
 
+/** One OS file from an external drag-drop, with its path relative to the drop
+ *  (posix, includes the file name — nested when a whole folder was dropped). */
+export interface DroppedFileEntry {
+  file: File;
+  relPath: string;
+}
+
 /**
  * Browseable — generic node in a tree menu.
  *
@@ -20,7 +27,11 @@ export interface BrowseableDragData {
  * across Wiki, Collaboration, and any other view that needs a tree menu.
  *
  * Design invariants:
- * - Click on a row == navigate to `pointer`. Never a side effect.
+ * - Click on a row resolves as `pointer ?? activate`. `pointer` is the
+ *   preferred pure form (URL-first: click == navigate to the pointer, never a
+ *   side effect); `activate` is the documented imperative fallback for
+ *   entities whose navigation requires async lookups or side effects (e.g.
+ *   resolving a session by worker id first). Neither ⇒ non-actionable row.
  * - Toolbar actions are explicitly for side effects (scan, new, delete).
  *   Never navigation.
  * - Selection is derived from the tree's `activePointer` prop, not stored.
@@ -49,6 +60,11 @@ export interface Browseable {
    *  `opacity-50 hover:opacity-100`). Cosmetic only — never carries behavior. */
   rowClassName?: string;
 
+  /** Optional tag tag (see ui/src/tags): the row renders `data-tag`, so
+   *  it is highlightable by journeys/wiki links and click-observable on the
+   *  EventBus — declaratively, with no per-adapter DOM wiring. */
+  tag?: string;
+
   /** Optional full-row body that replaces the default `icon | label | badge`
    *  zone. Use for rich, multi-line rows (e.g. a trigger showing scope chip +
    *  name + type-specific metadata lines). When set, `label`/`icon`/`badge` are
@@ -76,16 +92,63 @@ export interface Browseable {
   listChildren?: (opts?: { refresh?: boolean }) => Promise<Browseable[]>;
 
   /** Click == navigate to this pointer. `null` means header-only row
-   *  (clicking just toggles the chevron). */
+   *  (clicking just toggles the chevron) — unless `activate` is set. */
   pointer: DockPointer | null;
+
+  /** Imperative activation fallback for nodes whose navigation cannot be
+   *  expressed as a pure DockPointer (async entity resolution / side effects).
+   *  Renderers resolve a click as `pointer ?? activate`. Prefer `pointer`
+   *  wherever possible — it keeps navigation URL-first and selectable. */
+  activate?: () => void | Promise<void>;
+
+  /** Fired when the row is OPENED — from BOTH the `pointer` and `activate`
+   *  arms, so a usage stamp can't miss the (majority) pointer case. Never
+   *  fires for a row that opened nothing (neither arm set). Whether a
+   *  CONTAINER can open is the renderer's call, not this contract's: a click
+   *  on one expands, and the grid and tree order that against the pointer arm
+   *  differently. Both go through `openBrowseable` (./open.ts), which owns the
+   *  arm resolution and fires this AFTER dispatch, so a throw here cannot
+   *  break the navigation.
+   *
+   *  Side effect ONLY — a usage stamp on the underlying entity (e.g. the
+   *  favorites open-counter). Never navigate, never gate navigation, never
+   *  write view state. */
+  onOpen?: () => void;
+
+  /** Optional hover tooltip content (e.g. a live entity summary). Rendered by
+   *  both the desktop grid and the tree. In the tree it doubles as the hover
+   *  PREVIEW: hovering a row shows it without opening anything. */
+  tooltip?: ReactNode;
 
   /** Optional stable alternate identity for *selection* matching, used when the
    *  active pointer addresses this row by a different serialization than its
    *  `pointer` (e.g. an `editor/<t>/typeid/<id>` URL vs a vfs-path leaf). The
    *  tree compares it (as a string) against its `activeKey` prop, in addition to
    *  the pointer-string match. Only set where a row has a stable id (asset
-   *  leaves set their `<type>-<uuid>` typeid); other rows leave it undefined. */
+   *  leaves set their `<type>-<uuid>` typeid); other rows leave it undefined.
+   *
+   *  Doubles as the membership key for *multi-select* (see `selectable`). */
   selectionKey?: string;
+
+  /** Multi-select: when true (and `selectionKey` is set), this row participates
+   *  in OS-native multi-selection (Cmd/Ctrl-click toggle, Shift-click range).
+   *  Default off → the row behaves exactly as before (plain click navigates).
+   *  Independent of the URL-first *navigation* cursor; selection is ephemeral
+   *  local state, never persisted or written to the URL. */
+  selectable?: boolean;
+
+  /** Multi-select: the entity `type_name` (e.g. `skill`, `agent`, `markdown`) or
+   *  an adapter discriminator (e.g. `file`). A `bulkActions` resolver branches the
+   *  selection toolbar on the set of selected types. */
+  selectionType?: string;
+
+  /** Multi-select: how to delete this row in a bulk operation, plus the node id
+   *  to refresh afterward. The adapter that builds the row owns the delete (it
+   *  already has the endpoint / path in scope); the selection toolbar runs each
+   *  selected row's `run` under a single confirm, then refreshes the distinct
+   *  `refreshId`s. Keeps delete knowledge with the adapter rather than re-derived
+   *  (endpoint vs compute-node, path shape) in the toolbar resolver. */
+  bulkDelete?: { run: () => Promise<void>; refreshId: string };
 
   /** Inline hover actions. Side effects only. */
   toolbar?: ToolbarAction[];
@@ -98,6 +161,18 @@ export interface Browseable {
 
   /** Side effect for a successful drop. */
   onDrop?: (dragData: BrowseableDragData) => void | Promise<void>;
+
+  /** Accept OS files/folders dropped from outside the app. Entries carry the
+   *  drop-relative path (`relPath`, posix, includes the file name) so a dropped
+   *  directory keeps its structure. Distinct from `onDrop`, which handles the
+   *  intra-app Browseable payload. */
+  onExternalFilesDrop?: (entries: DroppedFileEntry[]) => void | Promise<void>;
+
+  /** Container-owned manual ordering of children: splice `dragId` into the
+   *  gap next to the anchor sibling. Renderers that support reordering (the
+   *  desktop grid's edge drop zones) call this; the anchor ids are siblings
+   *  within THIS container. */
+  reorderChildren?: (dragId: string, anchor: { afterId?: string; beforeId?: string }) => void | Promise<void>;
 }
 
 /**
@@ -161,6 +236,18 @@ export interface BrowseableTreeHeader {
 export interface BrowseableTreeProps {
   /** Top-level roots. */
   roots: BrowseableRoot[];
+
+  /** Dwell (ms) before hovering a row expands it — menu mode. Undefined (the
+   *  default) schedules nothing, so ordinary navigators never expand on hover.
+   *  Hover only ever EXPANDS; collapse stays on the chevron/click, and an
+   *  explicit collapse suppresses hover until the pointer leaves the row. */
+  hoverExpandMs?: number;
+
+  /** Rendered as the last row of EVERY level: once at the root ('') and once at
+   *  the end of each expanded folder's children (its id). Its use is a build-
+   *  as-you-browse toolbar — "add into THIS level" — so the parent id is handed
+   *  in. Undefined ⇒ no footer, unchanged for ordinary navigators. */
+  levelFooter?: (parentId: string) => ReactNode;
 
   /** The currently-active pointer (from URL). Drives both row selection and
    *  ancestor auto-expand. */

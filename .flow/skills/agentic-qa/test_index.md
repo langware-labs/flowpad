@@ -1,196 +1,83 @@
 # Test Index
 
-> Last updated: 2026-06-21T01-41-26 (branch 0.2.68-fixes)
-> Scope: .md scenarios + .md.ts coverage per category.
+> Last updated: 2026-07-24T21:51:41Z
+> Scope: .md scenarios + .md.ts Playwright files + standalone browser specs under ui/tests/manual_regression
 
-## agentic-process (12 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| conversation_view_three_spawn_branches.md | no |
-| embedded_close_preserves_process.md | no |
-| fork_action_from_search_dock.md | yes |
-| new_claude_session_no_console_errors.md | yes |
-| observability_surfaces.md | yes |
-| open_shell_from_process_workdir.md | yes |
-| process_restart_and_cli_flags.md | yes |
-| process_terminal_shell_tab_navigates_url.md | yes |
-| processtoolbar_fork.md | yes |
-| resume_session_from_recent.md | yes |
-| session_info_popover.md | yes |
-| worktree_lifecycle.md | yes |
+## agentic-process (md=14, md.ts=15)
+  orphan .md (no .md.ts): 3
+    - codex_chat_terminal_full_matrix
+    - codex_chat_terminal_switch_matrix
+    - embedded_close_preserves_process
 
-## assets (3 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| agent_execution_asset_picker.md | yes |
-| assets_list_mode.md | yes |
-| wiki_folder_tree.md | yes |
+## assets (md=4, md.ts=4)
 
-## chat (14 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| chat_input_controls.md | yes |
-| chat_refresh_persistence.md | yes |
-| chat_tab_switching.md | yes |
-| closing_a_chat_produces_console_error_401.md | yes |
-| doc_chat_per_type.md | yes |
-| landing_to_new_chat.md | yes |
-| new_session_is_not_opened.md | yes |
-| new_sessions_always_opened_with_session_1_header.md | yes |
-| opening_project_in_explorer_console_error_404.md | yes |
-| prompting_from_app_homepage_does_not_start_new_session.md | yes |
-| return_to_home.md | yes |
-| send_multiple_messages.md | yes |
-| sessions_disappear_after_page_refresh.md | yes |
-| switch_between_sessions.md | yes |
+## chat (md=19, md.ts=14)
+  orphan .md (no .md.ts): 5
+    - 401_unauthorized_when_closing_a_chat
+    - first_chat_message_is_slow
+    - in_chats_expanding_agent_thinking_component_is_not_retained
+    - prompting_to_start_new_session_from_app_homepage_does_not_wo
+    - while_agent_is_executing_refresh_clears_previous_thinking_se
 
-## cli-log (1 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| cli_log_viewer.md | yes |
+## cli-log (md=1, md.ts=1)
 
-## collaboration (4 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| collaboration_room_add_process.md | yes |
-| flowpad_assistant_docs_panel.md | yes |
-| project_room_new_doc.md | yes |
-| project_row_opens_collab_space.md | yes |
+## collaboration (md=7, md.ts=8)
 
-## conversation (2 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| conversation_title_rename_live.md | yes |
-| two_instance_hub_conversation.md | yes |
+## conversation (md=2, md.ts=2)
 
-## editor (13 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| ami_creating_a_folder_crashes_desktop_app_agent_id_is_missin.md | yes |
-| console_error_404_request_failed_with_status_code_404_when_c.md | yes |
-| console_error_500_failed_to_load_resource_tab_hooks_in_syste.md | yes |
-| editor_download_all_files_console_error.md | yes |
-| editor_tab_download_all_files_fails_to_create_zip.md | yes |
-| editorfiles_tab_creating_a_new_file_doesnt_show_the_file_in.md | yes |
-| execute_flow_error_theme_vs_dark_not_found_you_may_need_to_l.md | yes |
-| files_tab_download_directory_does_nothing.md | yes |
-| files_tab_shows_local_c_as_root_and_doesnt_show_the_temp_wor.md | yes |
-| milkdown_no_wiki_back_button.md | yes |
-| milkdown_selection_toolbar.md | yes |
-| new_prompt_save_indefinitely.md | yes |
-| uploading_a_file_doesnt_show_up_in_the_side_bar.md | yes |
+## docs (md=4, md.ts=0)
+  orphan .md (no .md.ts): 4
+    - LLM_comfigure
+    - coding_agent_cli
+    - environment_tab
+    - shell_tab
 
-## general (7 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| console_error_482_failed_to_start_in_app_hompage.md | yes |
-| current_activity_recent_sessions.md | yes |
-| execute_flow_hangs_indefinitely.md | yes |
-| heartbeat_sniffer_hook_events_e2e.md | yes |
-| mac_desktop_app_hompage_error_500_failed_to_load_system_reso.md | yes |
-| refreshing_any_tab_other_than_main_app_error_404_agent_id_mi.md | yes |
-| usage_cost_failed_to_fetch_cost_overview.md | yes |
+## editor (md=13, md.ts=13)
 
-## k_browser (1 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| atlas_status_and_diff.md | yes |
+## general (md=8, md.ts=7)
+  orphan .md (no .md.ts): 1
+    - app_slow_before_clearing_database
 
-## markdown_index (1 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| smoke.md | yes |
+## k_browser (md=1, md.ts=1)
 
-## search (8 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| mcp_index.md | no |
-| rebuild_index_ui.md | yes |
-| record_search_from_home.md | yes |
-| record_search_view.md | yes |
-| scan_records_viewer.md | yes |
-| search_bar.md | yes |
-| search_limit_param.md | yes |
-| search_scan_info_stats.md | yes |
+## markdown_index (md=1, md.ts=1)
 
-## setup (1 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| llm_not_configured_shows_up_after_configuring_llm.md | yes |
+## mcp-ui (md=0, md.ts=1)
 
-## skills (6 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| console_error_404_skill_page.md | yes |
-| skill_editor_error_skillparseerror_invalid_skillmd_format_mi.md | yes |
-| skills_failed_to_run_skill_console_error_482.md | yes |
-| skills_run_hangs_indefinitely.md | yes |
-| user_skills_failed_to_generate_plan_console_error_404.md | yes |
-| user_skills_failed_to_generate_plan_console_error_500.md | yes |
+## search (md=8, md.ts=8)
 
-## sniffer (4 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| sniffer_bootstrap_init_state.md | yes |
-| sniffer_event_capture.md | yes |
-| sniffer_shared_state_single_backend_call.md | yes |
-| sniffer_spa_navigation_preserves_state.md | yes |
+## setup (md=2, md.ts=1)
+  orphan .md (no .md.ts): 1
+    - login_with_anthropic_error_500
 
-## tab_management (0 scenarios)
-| Scenario | Playwright |
-|----------|------------|
+## skills (md=6, md.ts=7)
 
-## terminal (26 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| ctrlc_doesnt_copy_in_shell_tab.md | yes |
-| flow_shell_tab_location.md | yes |
-| git_status_panel.md | yes |
-| in_claude_ctrlv_does_not_paste.md | yes |
-| interactive_tabs_project_filtering_matrix.md | yes |
-| multiple_terminal_tabs.md | yes |
-| navigate_to_shell.md | yes |
-| prompt_index_panel.md | yes |
-| run_basic_command.md | yes |
-| shell_starts_in_acceptable_time.md | yes |
-| shell_tabs_remain_open_after_closing.md | yes |
-| shell_terminals_looks_empty.md | yes |
-| terminal_annotation_bookmark.md | yes |
-| terminal_clear_and_scrollback.md | yes |
-| terminal_command_history.md | yes |
-| terminal_ctrl_c.md | yes |
-| terminal_persistence_on_tab_switch.md | yes |
-| terminal_pty_no_duplicates.md | yes |
-| terminal_pty_output_clean.md | yes |
-| terminal_resize.md | yes |
-| terminal_scroll_sync.md | yes |
-| terminal_tab_rename.md | yes |
-| time_gutter_and_prompt_annotations.md | yes |
-| visible_process_still_pty.md | yes |
-| web_app_artifact_not_created_when_prompted.md | yes |
-| when_claude_runs_in_shell_and_is_thinking_not_all_the_output.md | yes |
+## sniffer (md=4, md.ts=4)
 
-## triggers (1 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| trigger_process_target_typeid_str.md | yes |
+## tab_management (md=0, md.ts=2)
 
-## whiteboard (8 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| create_persist.md | yes |
-| edge_cases.md | yes |
-| mermaid_sync.md | yes |
-| multi_tab.md | yes |
-| scope.md | yes |
-| smoke.md | yes |
-| ui_ux.md | yes |
-| wiki_integration.md | yes |
+## tags (md=0, md.ts=0, spec.ts=1)
+  standalone browser spec:
+    - tag-vocabulary.spec.ts (2 tests)
 
-## workflow (2 scenarios)
-| Scenario | Playwright |
-|----------|------------|
-| workflow_entity_create.md | yes |
-| workflow_run_button.md | yes |
+## terminal (md=29, md.ts=37)
+  orphan .md (no .md.ts): 3
+    - session_persistence_on_refresh
+    - session_resumes_after_sleep_wake
+    - shell_slow_to_start_powershell_only
 
-Total .md scenarios: 114
+## triggers (md=1, md.ts=5)
+
+## vibe (md=2, md.ts=0)
+  orphan .md (no .md.ts): 2
+    - vibe_bugs
+    - vibe_workspace_matrix
+
+## whiteboard (md=8, md.ts=8)
+
+## wiki (md=1, md.ts=0)
+  orphan .md (no .md.ts): 1
+    - wiki_link_layer
+
+---
+TOTAL: md=135, md.ts=139, spec.ts=1, orphan .md (Phase 12 scope)=22

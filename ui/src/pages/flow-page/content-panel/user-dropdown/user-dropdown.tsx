@@ -171,11 +171,13 @@ export function UserDropdown() {
   const { navigation } = useDockNavigation();
   const { login, connection, cloudUrl } = useCloudStatus();
   const dotClass = statusDotClass(login.status, connection.status);
-  // Logged out of cloud → identity is unknown, so fall back to a neutral
-  // question-mark glyph rather than the local user's initials (a name we can't
-  // actually vouch for). When logged in, derive up-to-2-char initials.
-  const avatarInitials = cloudLoginAvailable
-    ? (currentUser?.name || currentUser?.email?.split('@')[0] || '?')
+  // Derive up-to-2-char initials from whatever identity we have. `currentUser`
+  // is `cloudUser ?? localUser`, so after cloud logout it falls back to the
+  // local desktop user — we still show those initials rather than blanking the
+  // avatar to a question mark. The glyph only appears when there is genuinely no
+  // user at all. The cloud *picture* stays gated on `cloudLoginAvailable` below.
+  const avatarInitials = currentUser
+    ? (currentUser.name || currentUser.email?.split('@')[0] || '?')
         .split(/[\s._-]+/)
         .map((n: string) => n[0])
         .join('')
@@ -404,12 +406,12 @@ export function UserDropdown() {
                   </>
                 )}
                 <DropdownMenuItem
-                  onClick={() => navigation.openSettings()}
+                  onClick={() => navigation.openPreferences()}
                   className="cursor-pointer"
-                  data-testid="app-settings-button"
+                  data-testid="app-preferences-button"
                 >
                   <Settings className="mr-2 h-4 w-4" />
-                  <Trans>App Settings</Trans>
+                  <Trans>Preferences</Trans>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setIsAccountDialogOpen(true)}
@@ -453,18 +455,24 @@ export function UserDropdown() {
             </TooltipProvider>
           </>
         ) : isLocal ? null : (
+          // Logged-out: a round, avatar-sized icon button in the rail's icon language
+          // (not a filled CTA pill — de-emphasized per NN/g). Reuses the shared Button
+          // for focus-ring/disabled a11y; className carries the round/dashed look.
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  variant="default"
-                  size="sm"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t`Sign in`}
+                  data-testid="user-login-button"
                   onClick={() => {
                     trackEvent({ event: 'login_clicked', event_source: 'page_header' });
-                    navigator.navigateToLogin();
+                    void navigator.navigateToLogin();
                   }}
+                  className="h-8 w-8 rounded-full border border-dashed border-border text-muted-foreground hover:border-solid hover:text-foreground"
                 >
-                  <Trans>Login</Trans>
+                  <LogIn className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top">{cloudLoginTooltip('logged_out', 'disconnected', cloudUrl)}</TooltipContent>

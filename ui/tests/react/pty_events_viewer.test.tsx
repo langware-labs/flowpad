@@ -12,7 +12,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { PtyConnection } from '@sdk/services/shell/ptyConnection';
+import { PtyConnection } from '@sdk';
 import { PTYEventsViewer } from '@src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer';
 import { unitTestSetup } from '../utils/test-utils';
 

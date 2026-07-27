@@ -27,6 +27,7 @@ import {
   dataManager,
 } from '@sdk';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { stressDescribe } from './_stress_gate';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
 const ITERATIONS = 50;
@@ -220,7 +221,7 @@ async function runIteration(workdir: string): Promise<{ inv: Invariants; process
 // Suite
 // ---------------------------------------------------------------------------
 
-describe('clean_claude_pty', () => {
+stressDescribe('clean_claude_pty', () => {
   let activeProcess: AgenticProcess | null = null;
 
   beforeAll(async () => {

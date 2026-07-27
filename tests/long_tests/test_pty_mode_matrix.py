@@ -22,11 +22,13 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
 
 import httpx
 import pytest
 
+from tests.long_tests._model_tier import small_model_for
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -37,7 +39,11 @@ pytestmark = [
     pytest.mark.asyncio,
 ]
 
-HUB_URL = os.environ.get("FLOWPAD_HUB_URL", "http://localhost:9008")
+# No hardcoded default: a long/e2e test must NEVER silently target the main
+# dev backend (its loaded DB makes createProcess pathologically slow and the
+# port is environment-specific). Require an explicit dedicated-instance URL;
+# the fixture skips with a clear message when it is unset.
+HUB_URL = os.environ.get("FLOWPAD_HUB_URL")
 
 # worker_type → CLI binary that must be on PATH for that vendor's rows to run.
 _VENDOR_BINARY = {
@@ -46,12 +52,20 @@ _VENDOR_BINARY = {
     "copilot": "copilot",
 }
 
-_TRIVIAL_PROMPT = 'Respond with exactly the single word "pong" and nothing else.'
+_TURN_ONE_REPLY = "FLOWPAD_TURN_ONE_PONG"
+_TURN_TWO_REPLY = "FLOWPAD_TURN_TWO_PONG"
+_TURN_ONE_PROMPT = f'Respond with exactly "{_TURN_ONE_REPLY}" and nothing else.'
+_TURN_TWO_PROMPT = f'Respond with exactly "{_TURN_TWO_REPLY}" and nothing else.'
 
 
 @pytest.fixture
 async def hub_and_node():
     """Yields (httpx.AsyncClient, compute_node_id). Skips if hub isn't reachable."""
+    if not HUB_URL:
+        pytest.skip(
+            "FLOWPAD_HUB_URL not set — point this e2e test at a DEDICATED instance "
+            "(scripts/instance_ctl.sh launch <name>), never the main dev backend."
+        )
     client = httpx.AsyncClient(base_url=HUB_URL, timeout=httpx.Timeout(10.0, read=25.0))
     try:
         try:
@@ -81,12 +95,16 @@ def _require_binary(worker_type: str) -> None:
 
 async def _create(hub_client, compute_node_id: str, workdir: str, worker_type: str, pty_mode: bool) -> dict:
     """Create a process in the requested transport. Returns the process row."""
+    context = {
+        "workdir": workdir,
+        "worker_type": worker_type,
+        "permission_mode": "bypassPermissions",
+    }
+    model = small_model_for(worker_type)
+    if model:
+        context["model"] = model
     body = {
-        "context": {
-            "workdir": workdir,
-            "worker_type": worker_type,
-            "permission_mode": "bypassPermissions",
-        },
+        "context": context,
         # headless == !visible; pty_mode seeds visible at launch (see plan).
         "visible": pty_mode,
         "pty_mode": pty_mode,
@@ -104,10 +122,35 @@ async def _create(hub_client, compute_node_id: str, workdir: str, worker_type: s
     return g.json().get("data") or g.json()
 
 
-async def _prompt_until_flow(hub_client, process_id: str, message: str) -> str:
-    """Send a prompt; return the streamed body once a flow-* frame is seen.
+def _has_exact_assistant_reply(received: bytes, expected_reply: str) -> bool:
+    """True only for a complete assistant chat frame with the exact reply."""
+    pattern = (
+        rb'<flow-chat\b(?=[^>]*\brole="assistant")[^>]*>'
+        + re.escape(expected_reply.encode("utf-8"))
+        + rb"</flow-chat>"
+    )
+    return re.search(pattern, received, re.DOTALL) is not None
 
-    Breaks early — fast, for the single-turn "a frame arrives" assertion.
+
+def _raise_on_result_before_reply(received: bytes, expected_reply: str) -> None:
+    """A result before assistant content is terminal, never proof of a turn."""
+    match = re.search(rb"<flow-result\b[^>]*>.*?</flow-result>", received, re.DOTALL)
+    if match is not None:
+        frame = match.group(0).decode("utf-8", errors="replace")
+        raise AssertionError(
+            f"turn ended before assistant replied with {expected_reply!r}: {frame[:300]}"
+        )
+
+
+async def _prompt_until_assistant(
+    hub_client, process_id: str, message: str, expected_reply: str
+) -> str:
+    """Send a prompt; return only after its exact assistant chat frame arrives.
+
+    A startup interstitial used to produce a synthetic successful result with
+    no user or assistant transcript rows. Rejecting a result before the exact
+    assistant response makes that failure visible instead of accepting any
+    unrelated ``flow-*`` frame.
     """
     received = b""
     async with hub_client.stream(
@@ -118,13 +161,16 @@ async def _prompt_until_flow(hub_client, process_id: str, message: str) -> str:
         assert r.status_code == 200, f"prompt {r.status_code}: {(await r.aread()).decode()[:300]}"
         async for chunk in r.aiter_bytes():
             received += chunk
-            if b"<flow-" in received:
+            if _has_exact_assistant_reply(received, expected_reply):
                 break
+            _raise_on_result_before_reply(received, expected_reply)
     return received.decode("utf-8", errors="replace")
 
 
-async def _send_turn(hub_client, process_id: str, message: str) -> str:
-    """Transport-agnostic single turn: read until the first flow-* frame, then stop.
+async def _send_turn(
+    hub_client, process_id: str, message: str, expected_reply: str
+) -> str:
+    """Transport-agnostic turn: read through noise to the exact assistant reply.
 
     Retries on the 409 "another prompt turn is already in flight" — the PRIOR
     turn is still running (a PTY stream never closes, so we can't drain it; we
@@ -149,11 +195,14 @@ async def _send_turn(hub_client, process_id: str, message: str) -> str:
             assert r.status_code == 200, f"prompt {r.status_code}: {(await r.aread()).decode()[:300]}"
             async for chunk in r.aiter_bytes():
                 received += chunk
-                if b"<flow-" in received:
+                if _has_exact_assistant_reply(received, expected_reply):
                     return received.decode("utf-8", errors="replace")
-        # Stream closed with no flow frame — let the worker settle and retry.
+                _raise_on_result_before_reply(received, expected_reply)
+        # Stream closed with no expected reply — let the worker settle and retry.
         await asyncio.sleep(1.0)
-    raise AssertionError(f"no flow frame after {deadline_attempts} attempts on {process_id}")
+    raise AssertionError(
+        f"no assistant reply {expected_reply!r} after {deadline_attempts} attempts on {process_id}"
+    )
 
 
 async def _settle_session_id(hub_client, process_id: str) -> str | None:
@@ -165,6 +214,59 @@ async def _settle_session_id(hub_client, process_id: str) -> str | None:
             return sid
         await asyncio.sleep(1.0)
     return None
+
+
+async def _full_transcript(hub_client, process_id: str) -> dict:
+    """Read the normalized provider transcript after streamed content landed."""
+    r = await hub_client.post(
+        f"/api/v1/graph/agentic_process/{process_id}/transcript/full",
+        json={},
+    )
+    assert r.status_code == 200, f"transcript/full {r.status_code}: {r.text[:300]}"
+    return r.json().get("data") or r.json()
+
+
+def _assert_two_real_turns(transcript: dict, session_id: str) -> None:
+    """Prove two distinct user→assistant exchanges in one provider session."""
+    entries = [e for e in transcript.get("entries") or [] if not e.get("is_sidechain")]
+    users = [
+        (index, entry)
+        for index, entry in enumerate(entries)
+        if entry.get("kind") == "user_message" and not entry.get("is_meta")
+    ]
+    assert [entry.get("text") for _, entry in users] == [
+        _TURN_ONE_PROMPT,
+        _TURN_TWO_PROMPT,
+    ], f"unexpected real user turns: {[entry.get('text') for _, entry in users]}"
+
+    (user1_index, user1), (user2_index, user2) = users
+    assistant1 = next(
+        (
+            (index, entry)
+            for index, entry in enumerate(entries)
+            if user1_index < index < user2_index
+            and entry.get("kind") == "assistant_message"
+            and str(entry.get("text") or "").strip() == _TURN_ONE_REPLY
+        ),
+        None,
+    )
+    assistant2 = next(
+        (
+            (index, entry)
+            for index, entry in enumerate(entries)
+            if index > user2_index
+            and entry.get("kind") == "assistant_message"
+            and str(entry.get("text") or "").strip() == _TURN_TWO_REPLY
+        ),
+        None,
+    )
+    assert assistant1 is not None, "turn 1 has no exact assistant response before turn 2"
+    assert assistant2 is not None, "turn 2 has no exact assistant response after its user row"
+
+    relevant = [user1, assistant1[1], user2, assistant2[1]]
+    assert transcript.get("session_id") == session_id
+    assert all(entry.get("session_id") == session_id for entry in relevant)
+    assert len({entry.get("id") for entry in relevant}) == 4, "turn rows must be distinct"
 
 
 @pytest.mark.parametrize("worker_type", ["claude_code", "codex", "copilot"])
@@ -183,8 +285,13 @@ async def test_prompt_streams_in_both_transports(hub_and_node, tmp_path, worker_
     # The persisted transport intent must reflect the request.
     assert proc.get("pty_mode", True) is pty_mode, f"pty_mode not persisted: {proc.get('pty_mode')}"
 
-    xml = await _prompt_until_flow(hub_client, pid, _TRIVIAL_PROMPT)
-    assert "<flow-" in xml, f"{worker_type}/{'pty' if pty_mode else 'headless'}: no flow frame: {xml[:300]}"
+    xml = await _prompt_until_assistant(
+        hub_client, pid, _TURN_ONE_PROMPT, _TURN_ONE_REPLY
+    )
+    assert _TURN_ONE_REPLY in xml, (
+        f"{worker_type}/{'pty' if pty_mode else 'headless'}: "
+        f"no exact assistant reply: {xml[:300]}"
+    )
 
 
 @pytest.mark.parametrize("worker_type", ["claude_code", "codex", "copilot"])
@@ -202,18 +309,25 @@ async def test_multi_turn_resumes_same_session(hub_and_node, tmp_path, worker_ty
     proc = await _create(hub_client, cnid, str(tmp_path), worker_type, pty_mode)
     pid = proc["id"]
 
-    xml1 = await _send_turn(hub_client, pid, _TRIVIAL_PROMPT)
-    assert "<flow-" in xml1, f"turn1 no flow frame: {xml1[:200]}"
+    xml1 = await _send_turn(
+        hub_client, pid, _TURN_ONE_PROMPT, _TURN_ONE_REPLY
+    )
+    assert _TURN_ONE_REPLY in xml1, f"turn1 missing exact assistant reply: {xml1[:200]}"
 
     sid1 = await _settle_session_id(hub_client, pid)
     assert sid1, "turn 1 did not establish a session_id"
 
     # _send_turn retries on the in-flight 409 until turn 1 frees the worker.
-    xml2 = await _send_turn(hub_client, pid, "Say pong again.")
-    assert "<flow-" in xml2, f"turn2 no flow frame: {xml2[:200]}"
+    xml2 = await _send_turn(
+        hub_client, pid, _TURN_TWO_PROMPT, _TURN_TWO_REPLY
+    )
+    assert _TURN_TWO_REPLY in xml2, f"turn2 missing exact assistant reply: {xml2[:200]}"
 
     sid2 = await _settle_session_id(hub_client, pid)
     assert sid2 == sid1, (
         f"{worker_type}/{'pty' if pty_mode else 'headless'}: session_id changed across turns "
         f"({sid1} → {sid2}) — turn 2 started a fresh session instead of resuming"
     )
+
+    transcript = await _full_transcript(hub_client, pid)
+    _assert_two_real_turns(transcript, sid1)

@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
+import { toplog } from '@sdk';
 
 // Browser history entry with metadata
 interface HistoryEntry {
@@ -43,6 +44,12 @@ const useNavigationStore = create<NavigationStore>()(
         set((state) => {
           // Remove any forward history when pushing new entry
           const newHistory = [...state.history.slice(0, state.currentIndex + 1), entry];
+          toplog.log('navigation', 'store.pushHistory', {
+            path: entry.pathname + entry.search,
+            prevIndex: state.currentIndex,
+            newIndex: newHistory.length - 1,
+            len: newHistory.length,
+          });
           return {
             history: newHistory.slice(-50), // Keep last 50 entries
             currentIndex: newHistory.length - 1,
@@ -51,16 +58,29 @@ const useNavigationStore = create<NavigationStore>()(
         }),
 
       goBack: () =>
-        set((state) => ({
-          currentIndex: Math.max(0, state.currentIndex - 1),
-          isNavigatingBack: true,
-        })),
+        set((state) => {
+          toplog.log('navigation', 'store.goBack', {
+            fromIndex: state.currentIndex,
+            toIndex: Math.max(0, state.currentIndex - 1),
+            target: state.history[Math.max(0, state.currentIndex - 1)]?.pathname,
+          });
+          return {
+            currentIndex: Math.max(0, state.currentIndex - 1),
+            isNavigatingBack: true,
+          };
+        }),
 
       goForward: () =>
-        set((state) => ({
-          currentIndex: Math.min(state.history.length - 1, state.currentIndex + 1),
-          isNavigatingBack: false,
-        })),
+        set((state) => {
+          toplog.log('navigation', 'store.goForward', {
+            fromIndex: state.currentIndex,
+            toIndex: Math.min(state.history.length - 1, state.currentIndex + 1),
+          });
+          return {
+            currentIndex: Math.min(state.history.length - 1, state.currentIndex + 1),
+            isNavigatingBack: false,
+          };
+        }),
 
       canGoBack: () => get().currentIndex > 0,
       canGoForward: () => get().currentIndex < get().history.length - 1,
@@ -81,17 +101,8 @@ const useNavigationStore = create<NavigationStore>()(
   ),
 );
 
-// Deep linking configuration
-interface DeepLinkConfig {
-  // Map of route patterns to state extractors
-  routes: Record<string, (params: Record<string, string | undefined>, search: URLSearchParams) => unknown>;
-
-  // Map of state to URL builders
-  builders: Record<string, (state: Record<string, unknown>) => { path: string; search?: string }>;
-}
-
 // Hook for managing navigation with deep linking
-export function useNavigationState(config?: DeepLinkConfig) {
+export function useNavigationState() {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams();
@@ -110,47 +121,14 @@ export function useNavigationState(config?: DeepLinkConfig) {
     if (!store.isNavigatingBack) {
       store.pushHistory(entry);
     } else {
+      toplog.log('navigation', 'location change while isNavigatingBack — skip push, reset flag', {
+        path: entry.pathname + entry.search,
+      });
       // Reset the flag so the next forward navigation is tracked
       useNavigationStore.setState({ isNavigatingBack: false });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, location.search]);
-
-  // Extract state from current URL using config
-  const currentState = useMemo(() => {
-    if (!config) return null;
-
-    const searchParams = new URLSearchParams(location.search);
-
-    // Find matching route pattern
-    for (const [pattern, extractor] of Object.entries(config.routes)) {
-      // Simple pattern matching (you could use path-to-regexp for complex patterns)
-      if (location.pathname.includes(pattern)) {
-        return extractor(params, searchParams);
-      }
-    }
-
-    return null;
-  }, [location, params, config]);
-
-  // Navigate with state persistence
-  const navigateWithState = useCallback(
-    (stateName: string, state: Record<string, unknown>, options?: { replace?: boolean }) => {
-      if (!config?.builders[stateName]) {
-        console.warn(`No builder configured for state: ${stateName}`);
-        return;
-      }
-
-      const { path, search } = config.builders[stateName](state);
-      const url = search ? `${path}?${search}` : path;
-
-      void navigate(url, {
-        replace: options?.replace,
-        state: { ...state, _source: stateName },
-      });
-    },
-    [navigate, config],
-  );
 
   // Build shareable URL for current state
   const getShareableUrl = useCallback(() => {
@@ -173,20 +151,32 @@ export function useNavigationState(config?: DeepLinkConfig) {
 
   return {
     // Current state
-    currentState,
     location,
     params,
 
     // Navigation
-    navigateWithState,
     goBack: () => {
-      if (store.canGoBack()) {
+      const can = store.canGoBack();
+      // NOTE: this drives TWO stacks at once — the zustand store (store.goBack)
+      // AND the browser/router history (navigate(-1)). If both advance, a single
+      // "back" click steps back twice. The store/popstate trace lines around this
+      // one reveal whether that is what's happening.
+      toplog.log('navigation', 'useNavigationState.goBack', {
+        canGoBack: can,
+        url: location.pathname + location.search,
+      });
+      if (can) {
         store.goBack();
         void navigate(-1);
       }
     },
     goForward: () => {
-      if (store.canGoForward()) {
+      const can = store.canGoForward();
+      toplog.log('navigation', 'useNavigationState.goForward', {
+        canGoForward: can,
+        url: location.pathname + location.search,
+      });
+      if (can) {
         store.goForward();
         void navigate(1);
       }
@@ -202,43 +192,3 @@ export function useNavigationState(config?: DeepLinkConfig) {
     copyShareableUrl,
   };
 }
-
-// Example configuration for agent/flow routes
-export const agentFlowDeepLinkConfig: DeepLinkConfig = {
-  routes: {
-    '/agent': (params, search) => ({
-      agentId: params.agentId,
-      processId: params.processId,
-      messageId: search.get('message'),
-      viewMode: search.get('view') || 'chat',
-      filters: search.get('filters') ? JSON.parse(search.get('filters')!) : {},
-    }),
-  },
-  builders: {
-    flow: (state) => {
-      const agentId = typeof state.agentId === 'string' ? state.agentId : '';
-      const processId = typeof state.processId === 'string' ? state.processId : '';
-      const messageId = typeof state.messageId === 'string' ? state.messageId : undefined;
-      const viewMode = typeof state.viewMode === 'string' ? state.viewMode : undefined;
-      const filters = state.filters && typeof state.filters === 'object' ? state.filters : undefined;
-
-      return {
-        path: `/agent/${agentId}/flow/${processId}`,
-        search: new URLSearchParams({
-          ...(messageId && { message: messageId }),
-          ...(viewMode && { view: viewMode }),
-          ...(filters && { filters: JSON.stringify(filters) }),
-        }).toString(),
-      };
-    },
-    agent: (state) => {
-      const agentId = typeof state.agentId === 'string' ? state.agentId : '';
-      const viewMode = typeof state.viewMode === 'string' ? state.viewMode : undefined;
-
-      return {
-        path: `/agent/${agentId}`,
-        search: viewMode ? `view=${viewMode}` : undefined,
-      };
-    },
-  },
-};

@@ -8,8 +8,6 @@ declare const __FLOWPAD_APP_HOST__: string;
 declare const __FLOWPAD_APP_PORT__: string;
 declare const __FLOWPAD_DEV__: boolean;
 declare const __CHECK_REFRESH_TOKEN__: boolean;
-declare const __SENTRY_DSN__: string;
-declare const __SENTRY_PROJECT__: string;
 
 function parseApiConnectionPrimitives(apiUrl?: string): { api_protocol: string; api_host: string; api_port: number } {
   if (!apiUrl) {
@@ -48,8 +46,6 @@ export function load_config(): SDKConfig {
   const flowpadAppHost = typeof __FLOWPAD_APP_HOST__ !== 'undefined' ? __FLOWPAD_APP_HOST__ : 'flowpad.app';
   const flowpadAppPort =
     typeof __FLOWPAD_APP_PORT__ !== 'undefined' && __FLOWPAD_APP_PORT__ ? parseInt(__FLOWPAD_APP_PORT__) : undefined;
-  const sentryProject = typeof __SENTRY_PROJECT__ !== 'undefined' ? __SENTRY_PROJECT__ : '';
-  const sentryDsn = typeof __SENTRY_DSN__ !== 'undefined' ? __SENTRY_DSN__ : '';
   const checkRefreshToken = typeof __CHECK_REFRESH_TOKEN__ !== 'undefined' ? __CHECK_REFRESH_TOKEN__ : false;
 
   const { api_protocol, api_host, api_port } = parseApiConnectionPrimitives(apiUrl);
@@ -62,8 +58,6 @@ export function load_config(): SDKConfig {
     auth_provider: authProvider,
     flowpad_app_host: flowpadAppHost,
     flowpad_app_port: flowpadAppPort,
-    sentry_dsn: sentryDsn,
-    sentry_project: sentryProject,
     check_refresh_token: checkRefreshToken,
   };
 

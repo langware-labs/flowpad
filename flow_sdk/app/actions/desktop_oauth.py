@@ -714,6 +714,12 @@ async def _poll_github_device_until_done(
                 return ApiFailResponse(message="Authorized but could not persist token; retry available")
             session.pending_access_token = None
             _desktop_oauth_sessions.pop(session.state, None)
+            # The github capability's availability just changed out-of-band —
+            # restamp so journey awaits / capability views flip immediately.
+            from flow_sdk.builtin.capability import restamp_capability_state
+            from flow_sdk.core.capabilities import CapabilityKind
+
+            await restamp_capability_state(CapabilityKind.GITHUB.value)
             return ApiSuccessResponse(message="GitHub connected")
 
 

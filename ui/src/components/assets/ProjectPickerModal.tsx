@@ -11,13 +11,17 @@ import {
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { useProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
+import { projectRecencyMs } from '@src/lib/project-recency';
 import type { ProjectListItem } from '@sdk';
 
 interface ProjectPickerModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   selectedIds: string[];
-  onConfirm: (ids: string[]) => void;
+  /** Selected ids plus their full list items (for consumers that need cwd etc.). */
+  onConfirm: (ids: string[], items: ProjectListItem[]) => void;
+  /** Optional description override — the default keeps the scope-filter wording. */
+  description?: React.ReactNode;
 }
 
 function relativeTime(iso: string | null | undefined): string {
@@ -88,6 +92,7 @@ export function ProjectPickerModal({
   onOpenChange,
   selectedIds,
   onConfirm,
+  description,
 }: ProjectPickerModalProps): React.ReactElement {
   const { t } = useLingui();
   const { projects, isLoading } = useProjectList({ enabled: open });
@@ -115,7 +120,8 @@ export function ProjectPickerModal({
         raw: p,
         label: getProjectDisplayName(p),
         cwd: p.cwd || '',
-        modifiedMs: p.modified_at ? new Date(p.modified_at).getTime() : 0,
+        // `last_active_at` (UI-open recency) wins; session `modified_at` falls back.
+        modifiedMs: projectRecencyMs(p) ?? 0,
       });
     }
     out.sort((a, b) => b.modifiedMs - a.modifiedMs);
@@ -166,7 +172,9 @@ export function ProjectPickerModal({
       <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-lg">
         <DialogHeader>
           <DialogTitle><Trans>Select Projects</Trans></DialogTitle>
-          <DialogDescription><Trans>Choose which projects to filter by. Sorted by latest activity.</Trans></DialogDescription>
+          <DialogDescription>
+            {description ?? <Trans>Choose which projects to filter by. Sorted by latest activity.</Trans>}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="relative">
@@ -236,7 +244,12 @@ export function ProjectPickerModal({
             <Trans>Cancel</Trans>
           </button>
           <button
-            onClick={() => onConfirm(Array.from(checkedIds))}
+            onClick={() =>
+              onConfirm(
+                Array.from(checkedIds),
+                rows.filter((r) => checkedIds.has(r.pid)).map((r) => r.raw),
+              )
+            }
             className="h-8 rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90"
           >
             <Trans>Confirm</Trans>

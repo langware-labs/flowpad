@@ -3,6 +3,7 @@ import { Download, ExternalLink, FolderOpen, Trash2 } from 'lucide-react';
 import { ProjectNameChip } from '@src/components/assets/ProjectNameChip';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { useLingui } from '@lingui/react/macro';
+import { AssetCollisionBadge } from './AssetCollisionUI';
 
 export interface AssetEditorHeaderProps {
   /** Filename or folder name shown on the top line. */
@@ -59,6 +60,7 @@ export function AssetEditorHeader({
         <div className="flex items-center gap-1.5 truncate">
           <span className="text-sm font-medium">{fileName}</span>
           {dirty && <span className="text-sm text-amber-500">*</span>}
+          <AssetCollisionBadge />
           {advanced && <ProjectNameChip sourcePath={resolvedPath} />}
         </div>
         <div className="flex min-w-0 items-center gap-1">

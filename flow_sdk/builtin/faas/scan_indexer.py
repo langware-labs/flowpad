@@ -13,14 +13,24 @@ query+projection layer over it (mirrors ``project_list.list_projects_from_indexe
 
 from __future__ import annotations
 
-from datetime import datetime
+import asyncio
+import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from flow_sdk.fs_store.asset_occurrences import (
+    asset_occurrence_dicts,
+    resolve_asset_collisions,
+    stored_asset_occurrences,
+)
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions, get_shared_indexer
+from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.types import EntityType
+from flow_sdk.utils.git import git_asset_introduction
 
 SYSTEM_RESOURCE_PREFIX = "system_resource_claude_"
 
@@ -79,8 +89,9 @@ def _normalize(d: dict, simple: str, full: str) -> dict:
     return d
 
 
-def _project_nodes(
-    nodes, entity_type: EntityType, simple: str, full: str
+async def _project_nodes(
+    nodes, entity_type: EntityType, simple: str, full: str,
+    stored=None,
 ) -> list[dict]:
     """Project the terminal FSRefs of one type into deduped, normalized dicts."""
     info = SchemaRegistry.get(str(entity_type))
@@ -90,15 +101,78 @@ def _project_nodes(
     et = str(entity_type)
     out: list[dict] = []
     seen: set[str] = set()
+    resolved: list[tuple[Any, str, str]] = []
     for n in nodes:
         if n.record_type is None or str(n.record_type) != et:
             continue
         try:
-            recs = from_disk(n)
+            rid = info.extract_id(n) or info.mint_id(n)
+            resolved.append((n, rid, canonical_posix_path(str(n._path))))
+        except Exception:
+            continue
+
+    if stored is None:
+        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+
+        driver = get_db_driver()
+        rows = (
+            await driver.list_entity_sources_by_type(et)
+            if hasattr(driver, "list_entity_sources_by_type")
+            else {}
+        )
+        stored = stored_asset_occurrences(et, rows)
+
+    def _resolve_projection():
+        def _identity(candidate):
+            if not isinstance(candidate, str):
+                _node, rid, path = candidate
+                return et, rid, path
+            try:
+                ref = FSRef(candidate, record_type=RecordType(et))
+                rid = info.extract_id(ref)
+            except Exception:
+                return None
+            if not rid:
+                return None
+            return et, rid, canonical_posix_path(candidate)
+
+        return resolve_asset_collisions(
+            resolved,
+            stored,
+            _identity,
+            git_asset_introduction,
+            datetime.now(timezone.utc),
+        )
+
+    decisions = await asyncio.to_thread(_resolve_projection)
+    decision_by_id = {item.entity_id: item for item in decisions}
+    duplicates = {
+        (item.entity_id, path)
+        for item in decisions
+        for path in item.duplicate_paths
+    }
+    for item in decisions:
+        if item.duplicate_paths:
+            logging.warning(
+                "[asset-id] duplicate asset id; type=%s id=%s kept=%s skipped=%s",
+                et,
+                item.entity_id,
+                item.primary_path,
+                ",".join(item.duplicate_paths),
+            )
+    for n, resolved_id, path in resolved:
+        if (resolved_id, path) in duplicates:
+            continue
+        try:
+            recs = from_disk(n, resolved_id)
         except Exception:
             continue
         for rec in recs or []:
             d = rec.meta_dict()
+            decision = decision_by_id.get(resolved_id)
+            if decision is not None:
+                d["asset_occurrences"] = asset_occurrence_dicts(decision.occurrences)
+                d["duplicate_count"] = len(decision.duplicate_paths)
             rid = d.get("id")
             if rid is not None:
                 if rid in seen:
@@ -118,7 +192,13 @@ async def _walk_type_records(
     nodes = await idx.scan(
         IndexerOptions(types=[RecordType(str(entity_type))], roots=scoped_roots)
     )
-    return _project_nodes(nodes, entity_type, simple, full)
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    driver = get_db_driver()
+    stored = {}
+    if hasattr(driver, "list_entity_sources_by_type"):
+        rows = await driver.list_entity_sources_by_type(str(entity_type))
+        stored = stored_asset_occurrences(str(entity_type), rows)
+    return await _project_nodes(nodes, entity_type, simple, full, stored=stored)
 
 
 def _in_window(modified_at: str | None, start: str | None, end: str | None) -> bool:
@@ -208,7 +288,9 @@ async def get_resource_summary_from_indexer(scoped_roots) -> dict:
     for simple, entity_type in RESOURCE_TYPE_TO_ENTITY.items():
         full = get_system_resource_type(simple)
         try:
-            items = _project_nodes(by_type.get(str(entity_type), []), entity_type, simple, full)
+            items = await _project_nodes(
+                by_type.get(str(entity_type), []), entity_type, simple, full,
+            )
             summary[full] = len(items)
         except Exception:
             summary[full] = 0

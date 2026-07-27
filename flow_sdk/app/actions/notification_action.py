@@ -95,10 +95,18 @@ def _build_reply_flow_message(
     sender_name: str,
     is_draft: bool = False,
     shared_context_entities: Optional[list[str]] = None,
+    remote_worker_session_id: Optional[str] = None,
+    kind: Optional[str] = None,
 ) -> "FlowMessage":
     """Build (but do not save) the FlowMessage entity for a conversation reply.
 
     The caller is responsible for attaching any uploaded files and then saving.
+
+    ``remote_worker_session_id`` / ``kind``: live-session grouping key and the
+    SESSION_EVENT discriminator. Stamped on the header here; the authoritative
+    wire carrier is the ``remote_worker_session-<id>`` TYPE_ID attachment the
+    caller appends (the hub drops unknown header fields until its schema
+    mirrors these).
     """
     from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
 
@@ -123,6 +131,13 @@ def _build_reply_flow_message(
         "sender_name": sender_name,
         "conversation_id": conv_id,
         "is_draft": is_draft,
+        **({"remote_worker_session_id": remote_worker_session_id} if remote_worker_session_id else {}),
+        **({"kind": kind} if kind else {}),
+        # The sender authored this message → it is read from their side. Without
+        # this the sender's own outgoing message persists is_read=False and the
+        # inbox row's unread facet (``!latestMessage.is_read``, which does NOT
+        # exclude own messages) shows the conversation as unread on send.
+        "is_read": True,
     })
     reply_fm.id = FlowMessage.allocate_id(reply_fm.model_dump())
     reply_fm.attachment = [
@@ -271,6 +286,45 @@ def _parse_asset_references(raw: Any) -> list:
             return [parsed]
         return []
     return []
+
+
+def _parse_share_config(body: dict) -> dict:
+    """Decode the share_config carrier (JSON or multipart) into a dict. Both
+    share opt-ins (transfer_mode, create_bookmark) read their own key off this."""
+    raw = (
+        body.get("share_config")
+        or body.get("shareConfig")
+        or {}
+    )
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8", errors="replace")
+    if isinstance(raw, str):
+        try:
+            raw = _json.loads(raw)
+        except Exception:
+            raw = {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _parse_share_transfer_mode(body: dict) -> str:
+    """Read share_config.transfer_mode from JSON or multipart bodies."""
+    config = _parse_share_config(body)
+    mode = (
+        config.get("transfer_mode")
+        or config.get("transferMode")
+        or body.get("transfer_mode")
+        or body.get("transferMode")
+        or "copy"
+    )
+    mode = str(mode).strip().lower()
+    return mode if mode in {"copy", "git"} else "copy"
+
+
+def _parse_share_create_bookmark(body: dict) -> bool:
+    """Read share_config.create_bookmark (the "create bookmark on the recipient's
+    desktop" share opt-in) off the same share_config carrier."""
+    config = _parse_share_config(body)
+    return bool(config.get("create_bookmark") or config.get("createBookmark"))
 
 
 async def _attach_asset_references(reply_fm: "FlowMessage", asset_typeids: list) -> None:
@@ -457,8 +511,10 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
     under the same key.
     """
     try:
+        from flow_sdk.builtin.flow_message import FlowMessageKind  # noqa: PLC0415
         attachments = [a.model_dump(mode="python") for a in (reply_fm.attachment or [])]
         shared_context_entities = [str(c) for c in (reply_fm.shared_context_entities or [])]
+        sendable_kind = FlowMessageKind.sendable(reply_fm.kind.value) if reply_fm.kind else None
         await conv.add_message(
             reply_fm.text,
             sender_name=reply_fm.sender_name or None,
@@ -468,6 +524,8 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
             shared_context_entities=shared_context_entities or None,
             cloned_from_id=reply_fm.cloned_from_id or None,
             cloned_from_sender_id=reply_fm.cloned_from_sender_id or None,
+            remote_worker_session_id=reply_fm.remote_worker_session_id or None,
+            kind=sendable_kind.value if sendable_kind else None,
         )
         return True
     except Exception as e:  # noqa: BLE001
@@ -477,7 +535,13 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
         return False
 
 
-async def _upload_body_and_finalize(reply_fm: "FlowMessage", conv_id: str) -> None:
+async def _upload_body_and_finalize(
+    reply_fm: "FlowMessage",
+    conv_id: str,
+    *,
+    transfer_mode: str = "copy",
+    create_bookmark: bool = False,
+) -> None:
     """Pack + upload the FlowMessage body bundle in a background task.
 
     ``upload_body`` runs the hub PUT → fs/upload → set_body_status sequence,
@@ -492,6 +556,8 @@ async def _upload_body_and_finalize(reply_fm: "FlowMessage", conv_id: str) -> No
         )
         await reply_fm.upload_body(
             on_progress=make_flow_message_progress_emitter(reply_fm.id, "upload"),
+            transfer_mode=transfer_mode,
+            create_bookmark=create_bookmark,
         )
         await reply_fm.save()
         _notify_ui_conversation_updated(conv_id, "", reply_fm.id)
@@ -508,6 +574,8 @@ async def _finalize_message_dispatch(
     someone_typeid: str,
     *,
     is_remote_send: bool,
+    transfer_mode: str = "copy",
+    create_bookmark: bool = False,
 ) -> "Conversation":
     """Shared post-save dispatch tail for an already-saved FlowMessage (a reply
     OR a forwarded clone): backlink the shared-context entities, append the
@@ -530,7 +598,9 @@ async def _finalize_message_dispatch(
         await _send_conversation_message_header(conv, fm)
         from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
         if fm.body_status == BodyStatus.UPLOADING:
-            asyncio.create_task(_upload_body_and_finalize(fm, conv.id))
+            asyncio.create_task(_upload_body_and_finalize(
+                fm, conv.id, transfer_mode=transfer_mode, create_bookmark=create_bookmark,
+            ))
     return conv
 
 
@@ -614,6 +684,11 @@ async def _try_send_reply_via_hub(
         payload = dict(fm_payload)
         payload["id"] = hub_fm_id
         payload["text"] = text
+        # Sender-side materialize of the sender's OWN message — read from their
+        # side. The hub payload carries is_read=False (the hub doesn't track the
+        # sender's local read state); adopt True so the sender's conversation
+        # doesn't flip unread on send. is_read is a LOCAL_ONLY_FIELD.
+        payload["is_read"] = True
         if sender_id and not payload.get("sender_id"):
             payload["sender_id"] = sender_id
         if sender_name and not payload.get("sender_name"):
@@ -705,6 +780,8 @@ async def handle_add_message(
     if not isinstance(uploaded_files_preview, list):
         uploaded_files_preview = [uploaded_files_preview]
     asset_references = _parse_asset_references(body.get("asset_references"))
+    transfer_mode = _parse_share_transfer_mode(body)
+    create_bookmark = _parse_share_create_bookmark(body)
     # Accept both the new ``shared_context_entities`` name and the legacy
     # ``context_entities`` body key during transition (frontend may not be
     # fully cut over yet). Treat both as wire-bound (shared).
@@ -717,6 +794,12 @@ async def handle_add_message(
         shared_context_entities = [shared_context_entities]
     elif not isinstance(shared_context_entities, list):
         shared_context_entities = []
+    # Live-session grouping key + the one sendable non-default kind (the enum
+    # owns the whitelist, so add-message stays agnostic to which kinds exist).
+    from flow_sdk.builtin.flow_message import FlowMessageKind  # noqa: PLC0415
+    remote_worker_session_id = (body.get("remote_worker_session_id") or "").strip() or None
+    sendable_kind = FlowMessageKind.sendable((body.get("kind") or "").strip() or None)
+    message_kind = sendable_kind.value if sendable_kind else None
 
     if not conversation_id:
         return ApiFailResponse(message="conversation_id is required")
@@ -747,8 +830,8 @@ async def handle_add_message(
     # in an optimistic FE write. Skip the conversation's own typeid and the
     # transport types (conversation/flow_message) that ride every message.
     context_typeids = _parse_context_typeids(conv, asset_references, shared_context_entities)
-    # parent_share_on_default expansion: flagged types (e.g. git_branch)
-    # advertise their parent typeid on the rail so receivers re-materialize it.
+    # parent_share_on_default expansion: flagged types advertise their parent
+    # typeid on the rail so receivers re-materialize it.
     parent_typeids = await collect_parent_share_typeids(context_typeids)
     if parent_typeids:
         context_typeids = [*context_typeids, *parent_typeids]
@@ -792,6 +875,9 @@ async def handle_add_message(
         and not prompt_files
         and not asset_references
         and not raw_attachments
+        # Session messages always ride the HTTP slow path: the WS bridge body
+        # is text-only and would drop the session-snapshot carrier attachment.
+        and not remote_worker_session_id
     ):
         hub_response = await _try_send_reply_via_hub(
             conv_id=conv.id,
@@ -810,6 +896,8 @@ async def handle_add_message(
         sender_name=sender_name,
         is_draft=is_draft,
         shared_context_entities=shared_context_entities,
+        remote_worker_session_id=remote_worker_session_id,
+        kind=message_kind,
     )
 
     if raw_attachments:
@@ -821,7 +909,14 @@ async def handle_add_message(
         _atts = list(reply_fm.attachment or [])
         for _a in raw_attachments:
             if isinstance(_a, dict) and _a.get("attachment_type") and _a.get("data") is not None:
-                _atts.append(Attachment(attachment_type=_a["attachment_type"], data=_a["data"]))
+                # Preserve the preview/proposer fields so entity-backed attachments
+                # (prompt / prompt_result) stay previewable before the body downloads.
+                _atts.append(Attachment(
+                    attachment_type=_a["attachment_type"],
+                    data=_a["data"],
+                    prompt_preview=_a.get("prompt_preview"),
+                    proposer_id=_a.get("proposer_id"),
+                ))
         reply_fm.attachment = _atts
 
     if uploaded_files:
@@ -835,6 +930,23 @@ async def handle_add_message(
             reply_fm, sender_id, prompt_text, prompt_files,
             project_id=getattr(conv, "project_id", None) or None,
         )
+
+    if remote_worker_session_id:
+        # Authoritative wire carrier for the live-session key (the hub drops
+        # the header field until its schema mirrors it): a
+        # ``remote_worker_session-<id>`` TYPE_ID attachment. The bundle packer
+        # serializes the session row at upload time, so every session message
+        # ships a fresh snapshot. Skip when the caller already attached one.
+        from flow_sdk.builtin.flow_message import Attachment, AttachmentType  # noqa: PLC0415
+        session_att_data = f"remote_worker_session-{remote_worker_session_id}"
+        if not any(
+            a.attachment_type == AttachmentType.TYPE_ID and a.data == session_att_data
+            for a in (reply_fm.attachment or [])
+        ):
+            reply_fm.attachment = [
+                *(reply_fm.attachment or []),
+                Attachment(attachment_type=AttachmentType.TYPE_ID, data=session_att_data),
+            ]
 
     # A conversation reply goes to the hub whenever it's hub-mirrored
     # (``conv.remote`` is the load-bearing signal). Local-only conversations
@@ -862,7 +974,13 @@ async def handle_add_message(
         )
 
     conv = await _finalize_message_dispatch(
-        conv, reply_fm, context_typeids, someone_typeid, is_remote_send=is_remote_send,
+        conv,
+        reply_fm,
+        context_typeids,
+        someone_typeid,
+        is_remote_send=is_remote_send,
+        transfer_mode=transfer_mode,
+        create_bookmark=create_bookmark,
     )
 
     return ApiSuccessResponse(data=_fm_response_fields(reply_fm, conv))
@@ -1218,9 +1336,7 @@ async def open_notification() -> ApiResponse:
     return await handle_notification_deep_link(
         fm_id=notification_id,
         task_id=(meta.get("task_id") or (data or {}).get("task_id") or "").strip(),
-        project_url=(meta.get("project_url") or (data or {}).get("project_url") or "").strip(),
-        branch=(meta.get("branch") or (data or {}).get("branch") or "").strip(),
-        repo_id=(meta.get("repo_id") or (data or {}).get("repo_id") or "").strip(),
+        git_origin=(meta.get("git_origin") or (data or {}).get("git_origin")),
         sender_name=(meta.get("sender_name") or (data or {}).get("sender_name") or "").strip(),
         title=(meta.get("task_title") or (data or {}).get("task_title") or "").strip(),
     )

@@ -10,7 +10,7 @@
 // AssetEditor + the editor↔type mapping live in the SDK (single source of truth,
 // reused by the SDK entity pointer getters); re-exported here for UI imports.
 import { TypeId } from '@sdk';
-export { AssetEditor, EDITOR_TYPES, TYPE_TO_EDITOR, editorForType, isAssetEditor } from '@sdk';
+export { AssetEditor, EDITOR_TYPES, TYPE_TO_EDITOR, editorForPath, editorForType, isAssetEditor, isFileOnlyEditor } from '@sdk';
 
 /** How `<value>` identifies the asset — the `<method>` URL segment (editor mode only). */
 export enum AssetRoutingMethod {
@@ -32,10 +32,20 @@ export enum AssetMode {
   // rather than addressing one entity, so the asset loader no-ops it instead of
   // letting AssetDocPointer.parse throw `unknown mode "folder"`.
   FOLDER = 'folder',
+  // Project landing rendered inside the project-scoped Assets tab. It is a
+  // browser surface, not a single asset entity, so the asset loader no-ops it.
+  PROJECT_HOME = 'project-home',
 }
 
 /** Default wiki space (the local compute node). */
 export const DEFAULT_WIKI_SPACE = '@local';
+
+/**
+ * Query-param key carrying a wiki page's heading anchor (a GFM slug like
+ * "auto-run"). Lives in `DockPointer.options`, mirroring `HIGHLIGHT_PARAM`, so a
+ * wiki link can deep-link into a section without changing the path grammar.
+ */
+export const WIKI_FRAGMENT_PARAM = 'wikiFragment';
 
 /** The local compute node's TypeId — the always-available `@local` filesystem
  *  root. Single source for `new TypeId('compute_node', '@local')`. */
@@ -46,15 +56,19 @@ export function isAssetRoutingMethod(v: string): v is AssetRoutingMethod {
 }
 
 /**
- * True for multi-entity *browser* pointers — `list/<type>` and `folder/<…>` —
- * which address a directory/list rather than a single backing entity. These are
- * NOT modeled by `AssetDocPointer` (the browser views resolve their own
- * contents), so the asset route loader no-ops them instead of letting
+ * True for browser-only pointers — `list/<type>`, `folder/<…>`, and the project
+ * landing — which address a directory/list/surface rather than a single backing
+ * entity. These are NOT modeled by `AssetDocPointer` (the browser views resolve
+ * their own contents), so the asset route loader no-ops them instead of letting
  * `AssetDocPointer.parse` throw `unknown mode "list"` / `unknown mode "folder"`.
  * Pure + dependency-free so it's unit-testable in isolation.
  */
 export function isBrowseListPointer(pointer: string): boolean {
-  return pointer.startsWith(`${AssetMode.LIST}/`) || pointer.startsWith(`${AssetMode.FOLDER}/`);
+  return (
+    pointer.startsWith(`${AssetMode.LIST}/`) ||
+    pointer.startsWith(`${AssetMode.FOLDER}/`) ||
+    pointer === AssetMode.PROJECT_HOME
+  );
 }
 
 /** Thrown by AssetDocPointer.parse/validate on a malformed pointer. */

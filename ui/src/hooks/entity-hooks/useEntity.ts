@@ -18,6 +18,7 @@ export function useEntity<T extends APIEntity<T>>(
     error: ApiError | null;
     isError: boolean;
     isSuccess: boolean;
+    notFound: boolean;
   }>({
     data: typeId && enabled ? undefined : null,
     isLoading: !!(typeId && enabled),
@@ -25,14 +26,19 @@ export function useEntity<T extends APIEntity<T>>(
     error: null,
     isError: false,
     isSuccess: false,
+    notFound: false,
   });
 
   // Cache the snapshot to prevent unnecessary re-renders
   const snapshotRef = useRef(stateRef.current);
 
+  // Ref to the useSyncExternalStore notify callback so refetch() can trigger re-renders
+  const notifyRef = useRef<(() => void) | null>(null);
+
   // Subscribe function for useSyncExternalStore
   const subscribe = useCallback(
     (callback: () => void) => {
+      notifyRef.current = callback;
       if (!typeId || !enabled) {
         // When disabled or no typeId, immediately set to non-loading null state
         stateRef.current = {
@@ -42,6 +48,7 @@ export function useEntity<T extends APIEntity<T>>(
           error: null,
           isError: false,
           isSuccess: false,
+          notFound: false,
         };
         callback();
         return () => {};
@@ -55,6 +62,7 @@ export function useEntity<T extends APIEntity<T>>(
         error: null,
         isError: false,
         isSuccess: false,
+        notFound: false,
       };
       callback(); // Trigger re-render immediately with loading state
 
@@ -73,11 +81,13 @@ export function useEntity<T extends APIEntity<T>>(
               error: null,
               isError: false,
               isSuccess: true,
+              notFound: false,
             };
             callback();
           } else {
             // Only fetch from API if not in cache
             const entity = await dataManager.getByTypeId<T>(typeId, query);
+            const notFound = entity === null && dataManager.isNotFound(typeId);
             stateRef.current = {
               data: entity,
               isLoading: false,
@@ -85,6 +95,7 @@ export function useEntity<T extends APIEntity<T>>(
               error: null,
               isError: false,
               isSuccess: true,
+              notFound,
             };
             callback();
           }
@@ -98,6 +109,7 @@ export function useEntity<T extends APIEntity<T>>(
               error: null,
               isError: false,
               isSuccess: true,
+              notFound: false,
             };
             // Force snapshot update since entity object reference doesn't change
             snapshotRef.current = { ...stateRef.current };
@@ -112,6 +124,7 @@ export function useEntity<T extends APIEntity<T>>(
             error: err as ApiError,
             isError: true,
             isSuccess: false,
+            notFound: false,
           };
           callback(); // Trigger re-render to show error
         }
@@ -140,7 +153,8 @@ export function useEntity<T extends APIEntity<T>>(
       snapshotRef.current.isFetching !== current.isFetching ||
       snapshotRef.current.error !== current.error ||
       snapshotRef.current.isError !== current.isError ||
-      snapshotRef.current.isSuccess !== current.isSuccess
+      snapshotRef.current.isSuccess !== current.isSuccess ||
+      snapshotRef.current.notFound !== current.notFound
     ) {
       snapshotRef.current = { ...current };
     }
@@ -156,8 +170,15 @@ export function useEntity<T extends APIEntity<T>>(
 
     stateRef.current = { ...stateRef.current, isFetching: true, error: null, isError: false };
 
+    // Manual refetch is an explicit retry. Drop any terminal 404 marker so the
+    // store actually re-hits the network instead of short-circuiting.
+    if (dataManager.isNotFound(typeId)) {
+      dataManager.invalidateCacheByTypeId(typeId);
+    }
+
     try {
       const entity = await dataManager.getByTypeId<T>(typeId, query);
+      const notFound = entity === null && dataManager.isNotFound(typeId);
       stateRef.current = {
         data: entity,
         isLoading: false,
@@ -165,6 +186,7 @@ export function useEntity<T extends APIEntity<T>>(
         error: null,
         isError: false,
         isSuccess: true,
+        notFound,
       };
     } catch (err) {
       stateRef.current = {
@@ -174,8 +196,11 @@ export function useEntity<T extends APIEntity<T>>(
         error: err as ApiError,
         isError: true,
         isSuccess: false,
+        notFound: false,
       };
     }
+    snapshotRef.current = { ...stateRef.current };
+    notifyRef.current?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, typeId?.type, typeId?.id, queryJsonStringified]);
 

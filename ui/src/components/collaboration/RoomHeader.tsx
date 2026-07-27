@@ -115,7 +115,7 @@ export function RoomHeader({ room, isHost, isSupport = false, onEnded }: Props) 
         </span>
       )}
       <span className="ml-auto text-muted-foreground">
-        {(room.members?.length ?? 0)} {room.members?.length === 1 ? t`member` : t`members`}
+        {(room.presence?.length ?? 0)} {room.presence?.length === 1 ? t`member` : t`members`}
       </span>
       {isHost && live && (
         <Button size="sm" variant="outline" className="h-6 text-[11px]" onClick={() => void handleEnd()}>

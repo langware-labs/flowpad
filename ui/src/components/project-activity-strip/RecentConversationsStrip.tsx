@@ -9,6 +9,7 @@ import {
   acceptInvitation,
   dismissConversation,
   fetchConversations,
+  isInvitationGoneError,
   isTypeId,
 } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
@@ -20,7 +21,7 @@ import { NewConversationDialog } from '@src/components/new-conversation-dialog/N
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { ConversationParticipants } from '@src/components/conversation/ConversationParticipants';
 import { participantIsUser, participantName } from '@src/components/conversation/participant-display';
-import { conversationFacets } from '@src/components/conversation/conversation-category';
+import { conversationFacets, compareConversationsByRecency } from '@src/components/conversation/conversation-category';
 import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -91,11 +92,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
 
   const sorted = useMemo(() => {
     const list = [...conversations];
-    list.sort((a, b) => {
-      const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
-      const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
-      return tb - ta;
-    });
+    list.sort(compareConversationsByRecency);
     return list;
   }, [conversations]);
 
@@ -176,7 +173,12 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       await acceptInvitation({ invitation_id: invId });
       await refetch();
     } catch (e) {
-      console.error('[RecentConversationsStrip] acceptInvitation failed', e);
+      if (isInvitationGoneError(e)) {
+        // Orphan — the backend removed the stale local mirror; refetch drops it.
+        await refetch();
+      } else {
+        console.error('[RecentConversationsStrip] acceptInvitation failed', e);
+      }
     } finally {
       setAcceptingId(null);
     }
@@ -446,7 +448,11 @@ function ConversationRow({
     latestMessage,
     latestPtrTs: lastPtr?.ts ?? null,
     invitation,
-    viewer: { email: myEmail, cloudUserId: cloudUser?.id ?? currentUser?.id ?? null },
+    viewer: {
+      email: myEmail,
+      cloudUserId: cloudUser?.id ?? null,
+      localUserId: currentUser?.id ?? null,
+    },
   });
   const isInvitationRow = facets.isInvitation;
 
@@ -505,7 +511,7 @@ function ConversationRow({
   const wireSender = firstMessage?.sender_name?.trim() || null;
   const rosterSender = (() => {
     const me = { id: cloudUser?.id ?? currentUser?.id ?? null, email: myEmail || null };
-    const other = (conv.participants ?? []).find((p) => p && !participantIsUser(p, me));
+    const other = (conv.members ?? []).find((p) => p && !participantIsUser(p, me));
     return other ? participantName(other) : null;
   })();
   const inviterName = titleSender || wireSender || rosterSender;
@@ -574,10 +580,10 @@ function ConversationRow({
           {!isInvitationRow && messageCount > 0 && (
             <span>· {messageCount} msg{messageCount === 1 ? '' : 's'}</span>
           )}
-          {!isInvitationRow && (conv.participants?.length ?? 0) > 0 && (
+          {!isInvitationRow && (conv.members?.length ?? 0) > 0 && (
             <>
               <span>·</span>
-              <ConversationParticipants participants={conv.participants!} kind={conv.kind} />
+              <ConversationParticipants participants={conv.members!} kind={conv.kind} />
             </>
           )}
         </div>

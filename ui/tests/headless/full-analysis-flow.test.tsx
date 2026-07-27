@@ -10,44 +10,71 @@
  *      it renders — the "open analysis" step, no terminal needed.
  *
  * Agentic steps are seeded (deterministic); the browser layer runs them for real.
- * Prereq: a live backend. Skips itself when none is reachable.
+ * Prereq: an explicitly selected disposable instance_ctl backend.
  */
+import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { isAbsolute, join } from 'node:path';
+import { describe, expect, it } from 'vitest';
 import { act, screen } from '@testing-library/react';
 import { setupLiveBackend, bootApp } from './_harness';
 import { trackForCleanup, trackTypeId, testEntityName } from '../_cleanup';
+import { createSdkRealm } from '../_sdk_realm';
 
 const backend = setupLiveBackend('[full-flow]');
-const SID = '55555555-5555-4555-8555-555555555555';
+const SID = randomUUID();
 
 function seedSkillLoadedTranscript(skillName: string) {
-  const dir = join(homedir(), '.claude', 'projects', '-headless-fullflow');
+  const configuredClaudeHome = process.env.FLOWPAD_CLAUDE_HOME;
+  if (configuredClaudeHome && !isAbsolute(configuredClaudeHome)) {
+    throw new Error('FLOWPAD_CLAUDE_HOME must be absolute for headless transcript isolation');
+  }
+  const claudeHome = configuredClaudeHome || join(homedir(), '.claude');
+  const dir = join(claudeHome, 'projects', `-headless-fullflow-${SID}`);
   mkdirSync(dir, { recursive: true });
   const lines = [
-    { type: 'user', uuid: 'u1', sessionId: SID, timestamp: '2026-06-25T10:00:00Z',
-      message: { role: 'user', content: [{ type: 'text', text: 'search for smartphone' }] } },
-    { type: 'assistant', uuid: 'a1', sessionId: SID, timestamp: '2026-06-25T10:00:05Z',
-      message: { id: 'm1', model: 'claude',
-                 content: [{ type: 'tool_use', id: 'tu1', name: 'Skill', input: { skill: skillName } }] } },
-    { type: 'user', uuid: 'u2', sessionId: SID, timestamp: '2026-06-25T10:00:06Z',
-      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'loaded' }] } },
+    {
+      type: 'user',
+      uuid: 'u1',
+      sessionId: SID,
+      timestamp: '2026-06-25T10:00:00Z',
+      message: { role: 'user', content: [{ type: 'text', text: 'search for smartphone' }] },
+    },
+    {
+      type: 'assistant',
+      uuid: 'a1',
+      sessionId: SID,
+      timestamp: '2026-06-25T10:00:05Z',
+      message: {
+        id: 'm1',
+        model: 'claude',
+        content: [{ type: 'tool_use', id: 'tu1', name: 'Skill', input: { skill: skillName } }],
+      },
+    },
+    {
+      type: 'user',
+      uuid: 'u2',
+      sessionId: SID,
+      timestamp: '2026-06-25T10:00:06Z',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'loaded' }] },
+    },
   ];
   const path = join(dir, `${SID}.jsonl`);
-  writeFileSync(path, lines.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf-8');
-  return () => rmSync(path, { force: true });
+  writeFileSync(path, lines.map((l) => JSON.stringify(l)).join('\n') + '\n', {
+    encoding: 'utf-8',
+    flag: 'wx',
+  });
+  return () => rmSync(dir, { recursive: true, force: true });
 }
 
 describe('full analysis flow — open analysis renders against live data (no mocks)', () => {
   it('SDK-create skill → seed skill-loaded analysis → open the analysis in the app', async () => {
-    if (!backend.current) return; // soft-skip when no backend is up
-    const apiUrl = backend.current.apiUrl;
+    const live = backend.current;
+    if (!live) throw new Error('headless backend preflight did not resolve FLOW_INSTANCE');
+    const apiUrl = live.apiUrl;
 
-    (globalThis as any).__FLOWPAD_API_URL__ = apiUrl;
-    vi.resetModules();
-    const sdk = await import('@sdk');
+    const { sdk } = await createSdkRealm(apiUrl);
     await sdk.initSdk();
 
     // 1. Create the product-finder skill (the thing analyses will implicate).
@@ -59,12 +86,22 @@ describe('full analysis flow — open analysis renders against live data (no moc
     let traceId = '';
     try {
       const annotations = {
-        verdict: 'mixed', verdict_reason: 'missed the price-range step',
-        issues: [{ ts: '2026-06-25T10:00:05Z', label: 'did not honor price range', severity: 'attention',
-                   skill: skillName, section_hint: 'Search online', evidence: { quote: 'smartphone', ts: '2026-06-25T10:00:05Z' } }],
+        verdict: 'mixed',
+        verdict_reason: 'missed the price-range step',
+        issues: [
+          {
+            ts: '2026-06-25T10:00:05Z',
+            label: 'did not honor price range',
+            severity: 'attention',
+            skill: skillName,
+            section_hint: 'Search online',
+            evidence: { quote: 'smartphone', ts: '2026-06-25T10:00:05Z' },
+          },
+        ],
       };
       const res = await fetch(`${apiUrl}/api/v1/workers/claude/${SID}/agent-trace`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ annotations }),
       });
       expect(res.ok).toBe(true);
@@ -78,7 +115,9 @@ describe('full analysis flow — open analysis renders against live data (no moc
       const { container, router } = await bootApp();
       const { DockPointer } = await import('@src/navigation/DockPointer');
       const url = DockPointer.forAssetEditorByTypeId('agent_trace', new sdk.TypeId('agent_trace', traceId)).toUrl();
-      await act(async () => { await router.navigate(url); });
+      await act(async () => {
+        await router.navigate(url);
+      });
 
       await screen.findByTestId('agent-trace-editor', {}, { timeout: 18000 }); // do not increase timeout without approval
       expect(container.querySelector('[data-testid="agent-trace-editor"]')).not.toBeNull();

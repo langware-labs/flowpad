@@ -12,6 +12,25 @@ export interface SendReplyExtras {
    *  context (deduped against the conversation TypeIds already stamped by
    *  the backend). The wire field is ``shared_context_entities``. */
   sharedContextEntities?: string[];
+  /** Transfer policy + per-share opt-ins for body-bundle attachments. */
+  shareConfig?: {
+    transferMode?: 'copy' | 'git';
+    /** Mint a FAVORITE bookmark on the receiver at install. Default off. */
+    createBookmark?: boolean;
+  };
+  /** Live-session grouping key. The backend stamps it on the FlowMessage and
+   *  auto-appends the authoritative `remote_worker_session-<id>` TYPE_ID
+   *  carrier attachment (the hub drops unknown header fields). */
+  remoteWorkerSessionId?: string;
+}
+
+/** Serialize shareConfig to the backend's snake_case share_config shape.
+ *  Kept in one place so the multipart and JSON send paths agree. */
+function serializeShareConfig(cfg: SendReplyExtras['shareConfig']): Record<string, unknown> {
+  return {
+    transfer_mode: cfg?.transferMode ?? 'copy',
+    ...(cfg?.createBookmark ? { create_bookmark: true } : {}),
+  };
 }
 
 export interface SendReplyTarget {
@@ -52,8 +71,14 @@ export async function sendReply(
     if (hasAssetRefs) {
       form.append('asset_references', JSON.stringify(extras!.assetReferences));
     }
+    if (extras?.shareConfig) {
+      form.append('share_config', JSON.stringify(serializeShareConfig(extras.shareConfig)));
+    }
     for (const ce of sharedCtxEntities) {
       form.append('shared_context_entities', ce);
+    }
+    if (extras?.remoteWorkerSessionId) {
+      form.append('remote_worker_session_id', extras.remoteWorkerSessionId);
     }
     action.bodyParameters = form;
     // File sends are multipart — binary bodies only travel over REST.
@@ -62,6 +87,8 @@ export async function sendReply(
     const body: Record<string, unknown> = { message };
     if (extras?.promptText) body.prompt_text = extras.promptText;
     if (sharedCtxEntities.length > 0) body.shared_context_entities = sharedCtxEntities;
+    if (extras?.shareConfig) body.share_config = serializeShareConfig(extras.shareConfig);
+    if (extras?.remoteWorkerSessionId) body.remote_worker_session_id = extras.remoteWorkerSessionId;
     action.bodyParameters = body;
     // Text-only send: prefer the WebSocket hop when the socket is open
     // (skips an HTTP round-trip), fall back to REST otherwise.
@@ -74,4 +101,3 @@ export async function refreshNotifications(projectPath?: string): Promise<void> 
   action.bodyParameters = { project_path: projectPath ?? '' };
   await dataManager.callAction(action);
 }
-

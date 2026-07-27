@@ -1,7 +1,19 @@
 import type { Bookmark } from '@sdk';
 import type { SearchResult } from '@src/hooks/use-record-search';
+import { DockPointer } from './DockPointer';
 import type { NavigationActions } from './NavigationActions';
-import { isResultNavigable, navigateToResult } from './record-type-nav';
+import { isResultNavigable, navigateToResult, RECORD_TYPE_NAV } from './record-type-nav';
+
+/**
+ * A "bookmark current view" favorite stores the whole dock — `nav.pointer` is
+ * `DockPointer.toJSON()`. Restoring it is a pure `openDock`, the same lossless
+ * round-trip Tabs use to persist, so it works for ANY view (a web app, a shell,
+ * a lens, an editor) — not just entity-backed ones RECORD_TYPE_NAV can dispatch.
+ */
+function dockPointerForFavorite(bookmark: Bookmark): DockPointer | null {
+  const raw = (bookmark.data?.nav as Record<string, unknown> | undefined)?.pointer;
+  return typeof raw === 'string' ? DockPointer.fromJSON(raw) : null;
+}
 
 function asSearchResult(bookmark: Bookmark): SearchResult | null {
   const entityType = bookmark.data?.entity_type as string | undefined;
@@ -22,7 +34,24 @@ function asSearchResult(bookmark: Bookmark): SearchResult | null {
   };
 }
 
+/**
+ * Pure DockPointer for a favorite's target, when its record type navigates
+ * via a `dockPointer` arm (URL-first). Returns null for `primaryAction`
+ * types (session-likes needing async resolution) — callers fall back to the
+ * imperative `navigateToFavorite`.
+ */
+export function pointerForFavorite(bookmark: Bookmark): DockPointer | null {
+  const dock = dockPointerForFavorite(bookmark);
+  if (dock) return dock;
+  const sr = asSearchResult(bookmark);
+  if (!sr) return null;
+  const nav = RECORD_TYPE_NAV[sr.record_type];
+  if (!nav?.dockPointer) return null;
+  return nav.dockPointer(sr) ?? null;
+}
+
 export function canNavigateFavorite(bookmark: Bookmark): boolean {
+  if (dockPointerForFavorite(bookmark)) return true;
   const sr = asSearchResult(bookmark);
   return !!sr && isResultNavigable(sr);
 }
@@ -36,6 +65,11 @@ export async function navigateToFavorite(
   bookmark: Bookmark,
   navigation: NavigationActions,
 ): Promise<void> {
+  const dock = dockPointerForFavorite(bookmark);
+  if (dock) {
+    navigation.openDock(dock);
+    return;
+  }
   const sr = asSearchResult(bookmark);
   if (!sr) return;
   await navigateToResult(sr, navigation);

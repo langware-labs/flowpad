@@ -9,12 +9,16 @@ export interface IInvitation extends IEntity {
   expiration_at?: string | Date;
   sent?: boolean;
   message?: string;
-  // Membership invitations (organization / team) carry a target descriptor
-  // instead of a backing conversation, so the inbox renders a generic row.
+  // Membership invitations (organization / team / workspace / project) carry
+  // a target descriptor instead of a backing conversation, so the inbox
+  // renders a membership row.
   target_type?: string;
   target_id?: string;
   target_name?: string;
   target_role?: string;
+  /** The inviter (resolved hub-side from the InvitedBy edge). */
+  sender_name?: string;
+  sender_user_id?: string;
 }
 
 @registerEntity
@@ -29,6 +33,8 @@ export class Invitation extends APIEntity<Invitation> implements IInvitation {
   target_id?: string;
   target_name?: string;
   target_role?: string;
+  sender_name?: string;
+  sender_user_id?: string;
   static type: string = 'invitation';
 
   constructor(entity: Partial<IInvitation> = {}) {
@@ -43,6 +49,8 @@ export class Invitation extends APIEntity<Invitation> implements IInvitation {
     this.target_id = entity.target_id;
     this.target_name = entity.target_name;
     this.target_role = entity.target_role;
+    this.sender_name = entity.sender_name;
+    this.sender_user_id = entity.sender_user_id;
   }
 }
 
@@ -65,4 +73,14 @@ export async function declineInvitation(
   action.bodyParameters = params;
   const res = await dataManager.callAction<DeclineInvitationParams, DeclineInvitationResult>(action);
   return res!;
+}
+
+/** True when an accept/decline failed because the invitation no longer exists
+ *  on the hub (its node was deleted/reset). The backend self-heals — it removes
+ *  the orphaned local mirror and answers HTTP 410 with ``data.gone``. Callers
+ *  should treat this as "the row is already gone": show a soft "Invitation no
+ *  longer valid" notice and refetch, rather than a hard error. */
+export function isInvitationGoneError(err: unknown): boolean {
+  const e = err as { response?: { status?: number; data?: { data?: { gone?: boolean } } } };
+  return e?.response?.status === 410 || e?.response?.data?.data?.gone === true;
 }

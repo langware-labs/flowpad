@@ -1,32 +1,40 @@
-"""Unicode/non-ASCII path handling on the desktop compute provider + logging.
+"""Non-ASCII / special-character path handling on the desktop compute provider.
 
-Regression coverage for the Windows "Hebrew folder" failures:
+Two incidents share this file, and its tests pin down both:
 
-  * ``_winpty_safe_cwd`` — winpty rejects non-ASCII cwd paths with
-    ``[WinError 123]``; we hand it the ASCII 8.3 short name instead.
-  * ``_ps_single_quote`` — the folder-picker embeds a path into a PowerShell
-    script; it must stay a literal no matter what characters it carries.
-  * dev file logging — must be UTF-8 so a non-ASCII traceback is recorded
-    instead of being silently dropped by a cp1252 ``charmap`` error.
+1. **"Other langs" fixes (Hebrew folders)** — non-ASCII text was being mangled
+   by cp1252 defaults on Windows:
+     * ``_ps_single_quote`` — the folder-picker embeds a path into a PowerShell
+       script; it must stay a literal no matter what characters it carries.
+     * dev file logging — must be UTF-8 so a non-ASCII traceback is recorded
+       instead of being silently dropped by a cp1252 ``charmap`` error.
 
-These all run (and pass) on every OS: the Windows-only branch of
-``_winpty_safe_cwd`` is exercised by faking the platform constant + the
-``GetShortPathNameW`` syscall, so no real Windows host is required.
+2. **The "Flowpad workspace" resume crash-loop (paths with spaces)** — that
+   same incident also added a PTY-spawn workaround (``_winpty_safe_cwd``) that
+   rewrote every long cwd to its 8.3 short name (``FLOWPA~1``). Session-keyed
+   CLIs derive their transcript-store key from the exact cwd string, so
+   ``claude --resume`` under the renamed cwd found no transcript and exited
+   immediately. The workaround's premise ("winpty rejects non-ANSI cwds") does
+   not hold for pywinpty ≥ 3 — both its ConPTY and winpty backends spawn into
+   non-ASCII directories natively — so it was removed outright.
+
+   The two real-PTY tests below (Windows-only, no mocks) pin both sides of
+   that removal:
+     * a spawned PTY runs in the EXACT cwd it was given — spaces included, no
+       8.3 renaming anywhere (the crash-loop regression), and
+     * a PTY spawns fine in a Hebrew-named directory with no rewriting (the
+       scenario the removed workaround was supposedly needed for).
 """
 
-import ctypes
 import logging
 import sys
 
 import pytest
 
-from flow_sdk.compute.providers.desktop import provider
-from flow_sdk.compute.providers.desktop.provider import (
-    _ps_single_quote,
-    _winpty_safe_cwd,
-)
+from flow_sdk.compute.providers.desktop.provider import _ps_single_quote
 
 HEBREW_DIR = "C:\\Users\\שני\\פרויקט"  # C:\Users\שני\פרויקט
+HEBREW_FOLDER_NAME = "שני פרויקט"
 
 
 # ---------------------------------------------------------------------------
@@ -61,70 +69,111 @@ def test_ps_single_quote_neutralizes_injection():
 
 
 # ---------------------------------------------------------------------------
-# _winpty_safe_cwd — ASCII short-path resolution on Windows
+# Real-PTY spawn cwd fidelity (Windows-only, no mocks)
 # ---------------------------------------------------------------------------
 
 
-def test_winpty_safe_cwd_passthrough_for_unresolvable_path():
-    """A path that has no short name resolves to itself on every OS.
+def _spawn_pty_and_read_cwd(cwd: str) -> str:
+    """Spawn ``cmd /c cd`` in a real PTY at *cwd* and return everything the
+    child printed (its working directory, plus terminal escape sequences)."""
+    from flow_sdk.compute.providers.desktop.provider import PtyProcess
 
-    Off Windows the function returns immediately; on Windows
-    ``GetShortPathNameW`` of a non-existent path returns 0 and we fall back to
-    the input. Either way: unchanged.
+    proc = PtyProcess.spawn("cmd /c cd", cwd=cwd)
+    chunks: list[str] = []
+    while proc.isalive():
+        try:
+            chunks.append(proc.read())
+        except EOFError:
+            break
+    # Drain whatever the pipe still buffers after exit.
+    try:
+        while True:
+            chunks.append(proc.read())
+    except Exception:
+        pass
+    return "".join(chunks)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="real winpty spawn; run on a Windows host")
+def test_pty_runs_in_exact_cwd_with_space(tmp_path):
+    """The PTY child must run in the EXACT directory string it was given.
+
+    Regression for the resume crash-loop: a since-removed workaround rewrote
+    the spawn cwd to its 8.3 short name (``Flowpad workspace`` → ``FLOWPA~1``).
+    The Claude CLI keys ``~/.claude/projects/<encoded-cwd>`` off the exact cwd
+    string, so a session created under the long form and resumed under the
+    short form found no transcript and exited within seconds. With the rewrite
+    gone, the child's reported cwd is byte-for-byte the requested path.
     """
-    missing = "C:\\this\\path\\does\\not\\exist\\__nope__"
-    assert _winpty_safe_cwd(missing) == missing
+    workdir = tmp_path / "Flowpad workspace" / "teachpal-zone"
+    workdir.mkdir(parents=True)
+    requested = str(workdir)
+
+    output = _spawn_pty_and_read_cwd(requested)
+
+    assert requested in output, (
+        f"PTY child ran in a rewritten cwd; requested {requested!r} "
+        f"but child printed: {output!r}"
+    )
+    # And specifically: no 8.3 alias of the space-bearing folder crept back in.
+    assert "FLOWPA~" not in output.upper().replace(requested.upper(), "")
 
 
-def _force_windows(monkeypatch):
-    """Make ``_winpty_safe_cwd`` take its Windows branch on any host without
-    touching the real ``sys.platform`` (which other code reads)."""
-    monkeypatch.setattr(provider, "PLATFORM_WIN32", sys.platform)
+@pytest.mark.skipif(sys.platform != "win32", reason="real winpty spawn; run on a Windows host")
+def test_pty_spawns_in_hebrew_cwd_without_rewriting(tmp_path):
+    """A PTY spawns fine in a Hebrew-named directory passed verbatim.
+
+    This is the scenario the removed ``_winpty_safe_cwd`` workaround claimed
+    to be needed for ("winpty rejects non-ANSI cwds with WinError 123").
+    pywinpty ≥ 3 spawns non-ASCII cwds natively on both the ConPTY and winpty
+    backends, so no renaming is needed — and the session-keyed cwd string
+    stays stable for resume in Hebrew projects too.
+    """
+    workdir = tmp_path / HEBREW_FOLDER_NAME
+    workdir.mkdir(parents=True)
+
+    output = _spawn_pty_and_read_cwd(str(workdir))
+
+    assert HEBREW_FOLDER_NAME in output, (
+        f"PTY child did not report the Hebrew cwd; child printed: {output!r}"
+    )
 
 
-class _FakeProc:
-    """Stand-in for a ctypes foreign function: callable, and tolerant of the
-    ``.argtypes`` / ``.restype`` assignments the production code makes."""
+@pytest.mark.skipif(sys.platform != "win32", reason="real GetShortPathNameW; run on a Windows host")
+def test_winpty_safe_cwd_keeps_ansi_path_with_space(tmp_path):
+    """A plain-ASCII cwd whose folder name merely contains a space must keep
+    its long form.
 
-    argtypes = None
-    restype = None
+    ``GetShortPathNameW`` shortens EVERY long component, not only the
+    non-ANSI-representable ones the Hebrew workaround was added for. When the
+    PTY resume path spawns ``claude --resume`` against the 8.3 alias
+    (``FLOWPA~1``), the CLI derives its ``~/.claude/projects/<encoded-cwd>``
+    slug from that alias, finds no transcript for a session created under the
+    long form (the headless spawn path), and exits within seconds — the
+    "Flowpad workspace" resume crash-loop.
 
-    def __init__(self, fn):
-        self._fn = fn
+    No mocks: real directory, real syscall, real ``_winpty_safe_cwd``.
+    """
+    workdir = tmp_path / "Flowpad workspace" / "teachpal-zone"
+    workdir.mkdir(parents=True)
+    long_form = str(workdir)
 
-    def __call__(self, *args):
-        return self._fn(*args)
+    # Precondition: the volume actually generates 8.3 aliases. If generation
+    # is disabled, GetShortPathNameW echoes the input and this test could not
+    # tell the fix from the bug — skip rather than pass vacuously.
+    import ctypes as real_ctypes
+    from ctypes import wintypes
 
+    fn = real_ctypes.windll.kernel32.GetShortPathNameW
+    fn.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+    fn.restype = wintypes.DWORD
+    needed = fn(long_form, None, 0)
+    buf = real_ctypes.create_unicode_buffer(needed or 1)
+    fn(long_form, buf, needed or 1)
+    if not needed or buf.value == long_form:
+        pytest.skip("8.3 short-name generation disabled on this volume")
 
-def _fake_windll(impl):
-    kernel32 = type("K", (), {"GetShortPathNameW": _FakeProc(impl)})()
-    return type("W", (), {"kernel32": kernel32})()
-
-
-def test_winpty_safe_cwd_uses_short_name_on_windows(monkeypatch):
-    short = "C:\\Users\\SHANI~1\\PROYEK~1"  # ASCII 8.3 form of the Hebrew dir
-
-    def get_short(path, buf, size):
-        if buf is None:
-            return len(short) + 1  # required buffer size incl. NUL
-        buf.value = short
-        return len(short)
-
-    _force_windows(monkeypatch)
-    monkeypatch.setattr(ctypes, "windll", _fake_windll(get_short), raising=False)
-
-    assert _winpty_safe_cwd(HEBREW_DIR) == short
-
-
-def test_winpty_safe_cwd_falls_back_when_api_raises(monkeypatch):
-    def boom(path, buf, size):
-        raise OSError("simulated GetShortPathNameW failure")
-
-    _force_windows(monkeypatch)
-    monkeypatch.setattr(ctypes, "windll", _fake_windll(boom), raising=False)
-
-    # Never propagate — the spawn must still get a usable path.
-    assert _winpty_safe_cwd(HEBREW_DIR) == HEBREW_DIR
+    assert _winpty_safe_cwd(long_form) == long_form
 
 
 # ---------------------------------------------------------------------------
@@ -158,9 +207,7 @@ def test_dev_file_handler_is_utf8(dev_logging):
     path = dev_logging.init_dev_file_logging()
     assert path is not None
 
-    handler = next(
-        h for h in logging.getLogger().handlers if getattr(h, "_flowpad_dev_file", False)
-    )
+    handler = next(h for h in logging.getLogger().handlers if getattr(h, "_flowpad_dev_file", False))
     assert (handler.encoding or "").lower() == "utf-8"
 
 

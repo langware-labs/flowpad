@@ -1,15 +1,15 @@
 /**
  * ProcessToolbar — icon-only toolbar for a running AgenticProcess.
  *
- * Flags (Chrome, Full Trust, Debug) live in the CLI Options dropdown and write
- * straight to the entity. Column visibility + Trace filters live in Columns & Trace.
+ * Supported vendor flags live in the CLI Options dropdown and write straight
+ * to the entity. Column visibility + Trace filters live in Columns & Trace.
  *
  * Restart awareness is backend-driven: any worker-relevant change flips
  * `process.restart_required` and the top-left Restart button glows.
  */
 
 import { AgenticProcess, copyToClipboard, dataContext, dataManager, openTerminalFromComputeNode, Shell } from '@sdk';
-import { hasWorkerStarted, ProcessStatus, WorkerStatus } from '@sdk/process/agentic-types.js';
+import { hasWorkerStarted, isProcessRunning, WorkerStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
@@ -28,10 +28,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from '@src/components/ui/dropdown-menu';
-import { BugPlay, Check, Copy, ExternalLink, Filter, GitFork, Info, RotateCcw, ScrollText, SlidersHorizontal, SquareTerminal, X } from 'lucide-react';
+import {
+  BugPlay,
+  Check,
+  Copy,
+  ExternalLink,
+  Filter,
+  GitFork,
+  Info,
+  RotateCcw,
+  ScrollText,
+  SlidersHorizontal,
+  SquareTerminal,
+  X,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { PTYViewer } from './pty-viewer';
 import { PTYEventsViewer } from './pty-events-viewer';
@@ -39,6 +51,11 @@ import { CommandStatusViewer } from './command-status-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
 import { setChatUiOverride, useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
+import {
+  buildSessionResumeCommand,
+  getWorkerCliCapabilities,
+  type WorkerCliCapabilities,
+} from './process-cli-presentation';
 
 interface ProcessToolbarProps {
   process: AgenticProcess;
@@ -56,8 +73,19 @@ interface ProcessToolbarProps {
   shell?: Shell | null;
 }
 
-export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, colVis, onColVisChange, sessionStartTime, lastMessageTime, embedded, onClose, shell }: ProcessToolbarProps) {
-  const { t } = useLingui();
+export function ProcessToolbar({
+  process,
+  traceFilters,
+  onTraceFiltersChange,
+  colVis,
+  onColVisChange,
+  sessionStartTime,
+  lastMessageTime,
+  embedded,
+  onClose,
+  shell,
+}: ProcessToolbarProps) {
+  const { t, i18n } = useLingui();
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
   const { navigation } = useDockNavigation();
   const chatOverride = useChatUiOverride();
@@ -65,34 +93,38 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const [showPtyEventsViewer, setShowPtyEventsViewer] = useState(false);
   const [showCommandStatus, setShowCommandStatus] = useState(false);
 
-  // Force re-render whenever any field on the process entity changes. Backend
+  // Force re-render whenever any field this toolbar reads changes. Backend
   // mutates the entity in place via castAndDeepAssign, so without an explicit
-  // subscription React stays unaware of fields like `restart_required` that
-  // aren't already shadowed by local component state. Use dataManager.subscribe
-  // directly with initialFetch=false — APIEntity.subscribe() forces initialFetch
-  // which would re-invoke the snapshot during subscription and cause an update loop.
+  // subscription React stays unaware of fields not already shadowed by local
+  // component state. The snapshot is a composite of every entity field rendered
+  // here — restart_required, the wire `status` (ready/busy), and `workerStatus`
+  // — so a mid-turn status broadcast re-renders the toolbar (this is what fixes
+  // the old headless-staleness: the snapshot used to read restart_required only,
+  // so status/worker moves never re-rendered). Use dataManager.subscribe with
+  // initialFetch=false — APIEntity.subscribe() forces initialFetch which would
+  // re-invoke the snapshot during subscription and cause an update loop.
+  const snapshot = () => `${process.restart_required}|${process.status}|${process.workerStatus}`;
   useSyncExternalStore(
     useCallback((cb) => dataManager.subscribe(process.typeId, cb, false), [process]),
-    () => process.restart_required,
-    () => process.restart_required,
+    snapshot,
+    snapshot,
   );
 
   const hasSession = !!process.session_id;
   const workerStatus = process.workerStatus;
-  // started: PTY is alive RIGHT NOW (gates Restart, CLI flag toggles, Apply)
-  const started = process.status === ProcessStatus.RUNNING;
+  // started: process is live RIGHT NOW (gates Restart, CLI flag toggles, Apply)
+  const started = isProcessRunning(process.status);
   // hasTranscript: at least one real assistant turn happened (gates Fork, Open Transcript)
-  const hasTranscript = hasSession
-    && hasWorkerStarted(workerStatus)
-    && workerStatus !== WorkerStatus.IDLE;
+  const hasTranscript = hasSession && hasWorkerStarted(workerStatus) && workerStatus !== WorkerStatus.IDLE;
   const canFork = hasTranscript;
   const canToggle = started;
   const workdir = process.workdir ?? '';
 
+  const cliCapabilities = getWorkerCliCapabilities(process.worker_type);
   const _cliOpts = process.cliOptions;
-  const currentChrome = _cliOpts.chrome;
-  const currentDanger = _cliOpts.permission_mode === 'bypassPermissions';
-  const currentDebug = _cliOpts.debug;
+  const currentChrome = cliCapabilities.chrome && _cliOpts.chrome;
+  const currentDanger = cliCapabilities.fullTrust && _cliOpts.permission_mode === 'bypassPermissions';
+  const currentDebug = cliCapabilities.debug && _cliOpts.debug;
 
   const [isForking, setIsForking] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
@@ -110,25 +142,13 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
     [process, canToggle],
   );
 
-  // Sticky toast while API_TIMEOUT; the stable id dedupes (no re-show guard
-  // needed) and auto-dismisses once the status recovers.
+  // Console-only warning on API_TIMEOUT; the effect re-runs on status
+  // transitions, so this fires once per stall.
   useEffect(() => {
-    const typeId = String(process.typeId);
-    const id = `api-timeout:${typeId}`;
     if (process.workerStatus === WorkerStatus.API_TIMEOUT) {
-      notify.warning({
-        id,
-        title: t`Agent is taking a long time to respond`,
-        message: t`The Anthropic API may be slow or unresponsive.`,
-        durationMs: null,
-        typeId,
-        actions: [
-          { label: t`Terminate`, command: 'terminal.terminate', args: { typeId } },
-          { label: t`Keep Waiting`, command: 'notification.dismiss', args: { id } },
-        ],
-      });
-    } else {
-      notify.dismiss(id);
+      console.warn(
+        `[ProcessToolbar] Agent ${String(process.typeId)} is taking a long time to respond — the Anthropic API may be slow or unresponsive.`,
+      );
     }
   }, [process.workerStatus, process.typeId]);
 
@@ -154,7 +174,15 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   };
 
   const anyCliActive = currentChrome || currentDanger || currentDebug;
-  const anyTimeFieldActive = traceFilters.time || traceFilters.index || traceFilters.line || traceFilters.absLine || traceFilters.debugTime || traceFilters.refTime;
+  // Vendor knowledge lives in the capabilities table; render its lazy descriptor here.
+  const fullTrustDescription = cliCapabilities.fullTrustDescription ? i18n._(cliCapabilities.fullTrustDescription) : '';
+  const anyTimeFieldActive =
+    traceFilters.time ||
+    traceFilters.index ||
+    traceFilters.line ||
+    traceFilters.absLine ||
+    traceFilters.debugTime ||
+    traceFilters.refTime;
   const anyColActive = !colVis.trace || !colVis.time || !colVis.annotations || anyTimeFieldActive;
 
   const processDisplayName = useMemo(
@@ -162,12 +190,12 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
     [process.context_data, process.name, process.instruction_content],
   );
 
-  const setTrace = (key: keyof TraceFilters) => (val: boolean) =>
-    onTraceFiltersChange({ ...traceFilters, [key]: val });
+  const setTrace = (key: keyof TraceFilters) => (val: boolean) => onTraceFiltersChange({ ...traceFilters, [key]: val });
 
   const debugSlot = (
     <>
       {/* CLI Options dropdown */}
+      {(cliCapabilities.chrome || cliCapabilities.fullTrust || cliCapabilities.debug) && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -179,178 +207,239 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-72">
-            <RichCheckboxItem
-              checked={currentChrome}
-              disabled={!canToggle}
-              onCheckedChange={(v) => void persistCliFlags({ chrome: v })}
-              label={t`Chrome browser`}
-              description={t`Enable browser automation via Chrome (--chrome)`}
-              docsUrl="https://docs.anthropic.com/en/docs/claude-code/cli-reference"
-            />
-            <RichCheckboxItem
-              checked={currentDanger}
-              disabled={!canToggle}
-              onCheckedChange={(v) => void persistCliFlags({ danger: v })}
-              label={t`Full Trust`}
-              description={t`Skip all permission prompts (--dangerously-skip-permissions)`}
-              docsUrl="https://docs.anthropic.com/en/docs/claude-code/settings"
-            />
-            <RichCheckboxItem
-              checked={currentDebug}
-              disabled={!canToggle}
-              onCheckedChange={(v) => void persistCliFlags({ debug: v })}
-              label={t`Debug logging`}
-              description={t`Verbose debug output (--debug)`}
-              docsUrl="https://docs.anthropic.com/en/docs/claude-code/cli-reference"
-            />
+            {cliCapabilities.chrome && (
+              <RichCheckboxItem
+                checked={currentChrome}
+                disabled={!canToggle}
+                onCheckedChange={(v) => void persistCliFlags({ chrome: v })}
+                label={t`Chrome browser`}
+                description={t`Enable browser automation via Chrome (--chrome)`}
+                docsUrl="https://docs.anthropic.com/en/docs/claude-code/cli-reference"
+              />
+            )}
+            {cliCapabilities.fullTrust && (
+              <RichCheckboxItem
+                checked={currentDanger}
+                disabled={!canToggle}
+                onCheckedChange={(v) => void persistCliFlags({ danger: v })}
+                label={t`Full Trust`}
+                description={fullTrustDescription}
+                docsUrl={cliCapabilities.fullTrustDocsUrl}
+              />
+            )}
+            {cliCapabilities.debug && (
+              <RichCheckboxItem
+                checked={currentDebug}
+                disabled={!canToggle}
+                onCheckedChange={(v) => void persistCliFlags({ debug: v })}
+                label={t`Debug logging`}
+                description={t`Verbose debug output (--debug)`}
+                docsUrl="https://docs.anthropic.com/en/docs/claude-code/cli-reference"
+              />
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
+      )}
 
-        {/* Columns & Trace dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded transition-colors hover:bg-accent ${anyColActive ? 'text-primary' : 'text-muted-foreground'}`}
-              aria-label={t`Columns & Trace`}
-              title={t`Column visibility & trace filters`}
-            >
-              <BugPlay className="h-3.5 w-3.5" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64">
-            <DropdownMenuLabel className="text-xs text-muted-foreground"><Trans>Columns</Trans></DropdownMenuLabel>
-            <DropdownMenuCheckboxItem
-              checked={colVis.trace && traceFilters.events}
-              onSelect={(e) => e.preventDefault()}
-              onCheckedChange={(v) => {
-                if (v) {
-                  onColVisChange({ ...colVis, trace: true });
-                  onTraceFiltersChange({ ...traceFilters, events: true });
-                } else {
-                  onColVisChange({ ...colVis, trace: false });
-                }
-              }}
-            >
-              <span className="text-xs">
-                <span className="font-medium"><Trans>Trace events</Trans></span>
-                <span className="ml-1 text-muted-foreground"><Trans>— show trace event gutter</Trans></span>
+      {/* Columns & Trace dropdown */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded transition-colors hover:bg-accent ${anyColActive ? 'text-primary' : 'text-muted-foreground'}`}
+            aria-label={t`Columns & Trace`}
+            title={t`Column visibility & trace filters`}
+          >
+            <BugPlay className="h-3.5 w-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-64">
+          <DropdownMenuLabel className="text-xs text-muted-foreground">
+            <Trans>Columns</Trans>
+          </DropdownMenuLabel>
+          <DropdownMenuCheckboxItem
+            checked={colVis.trace && traceFilters.events}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={(v) => {
+              if (v) {
+                onColVisChange({ ...colVis, trace: true });
+                onTraceFiltersChange({ ...traceFilters, events: true });
+              } else {
+                onColVisChange({ ...colVis, trace: false });
+              }
+            }}
+          >
+            <span className="text-xs">
+              <span className="font-medium">
+                <Trans>Trace events</Trans>
               </span>
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={colVis.time}
-              onSelect={(e) => e.preventDefault()}
-              onCheckedChange={(v) => onColVisChange({ ...colVis, time: v })}
-            >
-              <span className="text-xs">
-                <span className="font-medium"><Trans>Time gutter</Trans></span>
-                <span className="ml-1 text-muted-foreground"><Trans>— show time/index gutter</Trans></span>
+              <span className="ml-1 text-muted-foreground">
+                <Trans>— show trace event gutter</Trans>
               </span>
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={colVis.annotations}
-              onSelect={(e) => e.preventDefault()}
-              onCheckedChange={(v) => onColVisChange({ ...colVis, annotations: v })}
-            >
-              <span className="text-xs">
-                <span className="font-medium"><Trans>Annotations</Trans></span>
-                <span className="ml-1 text-muted-foreground"><Trans>— show annotation gutter</Trans></span>
+            </span>
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={colVis.time}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={(v) => onColVisChange({ ...colVis, time: v })}
+          >
+            <span className="text-xs">
+              <span className="font-medium">
+                <Trans>Time gutter</Trans>
               </span>
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={traceFilters.promptAnnotations}
-              onSelect={(e) => e.preventDefault()}
-              onCheckedChange={(v) => onTraceFiltersChange({ ...traceFilters, promptAnnotations: v })}
-            >
-              <span className="text-xs">
-                <span className="font-medium"><Trans>Prompt annotations</Trans></span>
-                <span className="ml-1 text-muted-foreground"><Trans>— show prompt anchors in gutter</Trans></span>
+              <span className="ml-1 text-muted-foreground">
+                <Trans>— show time/index gutter</Trans>
               </span>
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Filter className="h-3 w-3" />
-                <Trans>Time Gutter Fields</Trans>
+            </span>
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={colVis.annotations}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={(v) => onColVisChange({ ...colVis, annotations: v })}
+          >
+            <span className="text-xs">
+              <span className="font-medium">
+                <Trans>Annotations</Trans>
               </span>
-            </DropdownMenuLabel>
-            <DropdownMenuCheckboxItem checked={traceFilters.time} onSelect={(e) => e.preventDefault()} onCheckedChange={setTrace('time')}>
-              <Trans>Time</Trans>
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem checked={traceFilters.index} onSelect={(e) => e.preventDefault()} onCheckedChange={setTrace('index')}>
-              <Trans>Index (seq)</Trans>
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem checked={traceFilters.line} onSelect={(e) => e.preventDefault()} onCheckedChange={setTrace('line')}>
-              <Trans>Line</Trans>
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem checked={traceFilters.absLine} onSelect={(e) => e.preventDefault()} onCheckedChange={setTrace('absLine')}>
-              <Trans>Abs line</Trans>
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem checked={traceFilters.debugTime} onSelect={(e) => e.preventDefault()} onCheckedChange={setTrace('debugTime')}>
-              <Trans>Row time range</Trans>
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem checked={traceFilters.refTime} onSelect={(e) => e.preventDefault()} onCheckedChange={setTrace('refTime')}>
-              <Trans>Anchor time range</Trans>
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => setShowPtyViewer(true)}>
-              <span className="text-amber-400 text-xs font-medium"><Trans>PTY Viewer</Trans></span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setShowPtyEventsViewer(true)}>
-              <span className="text-amber-400 text-xs font-medium"><Trans>PTY Events Viewer</Trans></span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setShowCommandStatus(true)}>
-              <span className="text-amber-400 text-xs font-medium"><Trans>Command Status</Trans></span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-xs text-muted-foreground"><Trans>Chat mode</Trans></DropdownMenuLabel>
-            {/* The bottom-ribbon toggle is the primary control; this mirrors it.
+              <span className="ml-1 text-muted-foreground">
+                <Trans>— show annotation gutter</Trans>
+              </span>
+            </span>
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={traceFilters.promptAnnotations}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={(v) => onTraceFiltersChange({ ...traceFilters, promptAnnotations: v })}
+          >
+            <span className="text-xs">
+              <span className="font-medium">
+                <Trans>Prompt annotations</Trans>
+              </span>
+              <span className="ml-1 text-muted-foreground">
+                <Trans>— show prompt anchors in gutter</Trans>
+              </span>
+            </span>
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Filter className="h-3 w-3" />
+              <Trans>Time Gutter Fields</Trans>
+            </span>
+          </DropdownMenuLabel>
+          <DropdownMenuCheckboxItem
+            checked={traceFilters.time}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={setTrace('time')}
+          >
+            <Trans>Time</Trans>
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={traceFilters.index}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={setTrace('index')}
+          >
+            <Trans>Index (seq)</Trans>
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={traceFilters.line}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={setTrace('line')}
+          >
+            <Trans>Line</Trans>
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={traceFilters.absLine}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={setTrace('absLine')}
+          >
+            <Trans>Abs line</Trans>
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={traceFilters.debugTime}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={setTrace('debugTime')}
+          >
+            <Trans>Row time range</Trans>
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={traceFilters.refTime}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={setTrace('refTime')}
+          >
+            <Trans>Anchor time range</Trans>
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => setShowPtyViewer(true)}>
+            <span className="text-xs font-medium text-amber-400">
+              <Trans>PTY Viewer</Trans>
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setShowPtyEventsViewer(true)}>
+            <span className="text-xs font-medium text-amber-400">
+              <Trans>PTY Events Viewer</Trans>
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setShowCommandStatus(true)}>
+            <span className="text-xs font-medium text-amber-400">
+              <Trans>Command Status</Trans>
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-xs text-muted-foreground">
+            <Trans>Chat mode</Trans>
+          </DropdownMenuLabel>
+          {/* The bottom-ribbon toggle is the primary control; this mirrors it.
                 Checked = force the chat ("ui") view; unchecked = follow View mode
                 (Standard ⇒ chat, Advanced ⇒ terminal). See chat-ui-mode-context. */}
-            <DropdownMenuCheckboxItem
-              checked={chatOverride === 'chat'}
-              onSelect={(e) => e.preventDefault()}
-              onCheckedChange={(v) => setChatUiOverride(v ? 'chat' : null)}
-            >
-              <span className="text-xs">
-                <span className="font-medium"><Trans>Force chat UI</Trans></span>
-                <span className="ml-1 text-muted-foreground">— {chatOverride ?? t`auto`}</span>
+          <DropdownMenuCheckboxItem
+            checked={chatOverride === 'chat'}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={(v) => setChatUiOverride(v ? 'chat' : null)}
+          >
+            <span className="text-xs">
+              <span className="font-medium">
+                <Trans>Force chat UI</Trans>
               </span>
-            </DropdownMenuCheckboxItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <span className="ml-1 text-muted-foreground">— {chatOverride ?? t`auto`}</span>
+            </span>
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </>
   );
 
   // Restart — top-left, glows when backend signals process.restart_required
   const restartSlot = (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex" style={(!started || isRestarting) ? { pointerEvents: 'auto' } : undefined}>
-              <button
-                data-testid="process-toolbar-restart"
-                data-restart-required={process.restart_required ? 'true' : 'false'}
-                className={`inline-flex h-7 w-7 items-center justify-center rounded transition-colors
-                  ${(!started || isRestarting) ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}
-                  ${process.restart_required && started
-                    ? 'animate-pulse bg-amber-500/20 text-amber-500 ring-2 ring-amber-500/60 shadow-[0_0_12px_rgba(245,158,11,0.55)] hover:bg-amber-500/30 dark:text-amber-400'
-                    : 'text-muted-foreground hover:bg-accent'}
-                `}
-                disabled={!started || isRestarting}
-                onClick={() => void handleRestart()}
-                aria-pressed={process.restart_required}
-                aria-label={t`Restart session`}
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-              </button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs">
-            {isRestarting ? t`Restarting…`
-              : !started ? t`Session is not running`
-              : process.restart_required ? t`Restart required — config changed since start`
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex" style={!started || isRestarting ? { pointerEvents: 'auto' } : undefined}>
+          <button
+            data-testid="process-toolbar-restart"
+            data-restart-required={process.restart_required ? 'true' : 'false'}
+            className={`inline-flex h-7 w-7 items-center justify-center rounded transition-colors ${!started || isRestarting ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'} ${
+              process.restart_required && started
+                ? 'animate-pulse bg-amber-500/20 text-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.55)] ring-2 ring-amber-500/60 hover:bg-amber-500/30 dark:text-amber-400'
+                : 'text-muted-foreground hover:bg-accent'
+            } `}
+            disabled={!started || isRestarting}
+            onClick={() => void handleRestart()}
+            aria-pressed={process.restart_required}
+            aria-label={t`Restart session`}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="text-xs">
+        {isRestarting
+          ? t`Restarting…`
+          : !started
+            ? t`Session is not running`
+            : process.restart_required
+              ? t`Restart required — config changed since start`
               : t`Restart session`}
-          </TooltipContent>
-        </Tooltip>
+      </TooltipContent>
+    </Tooltip>
   );
 
   // Entity name — absolutely centered in the header (truncated for header fit;
@@ -375,81 +464,90 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
     />
   );
 
-  const downloadSlot = !embedded && (
-    <ExportEntityButton typeId={process.typeId} defaultTitle={processDisplayName} />
-  );
+  const downloadSlot = !embedded && <ExportEntityButton typeId={process.typeId} defaultTitle={processDisplayName} />;
 
   const rightSlot = (
     <>
-        {/* Reusable asset manager — same component the chat side panel uses. */}
-        <AssetManagerButton process={process} />
+      {/* Reusable asset manager — same component the chat side panel uses. */}
+      <AssetManagerButton process={process} />
 
-        {/* Commit & Merge — worktree sessions only, prominent, left of Open Terminal */}
-        {!embedded && (
-          <CommitMergeButton process={process} onInjectPrompt={handleInjectPrompt} />
-        )}
+      {/* Commit & Merge — worktree sessions only, prominent, left of Open Terminal */}
+      {!embedded && <CommitMergeButton process={process} onInjectPrompt={handleInjectPrompt} />}
 
-        {/* Open terminal in current folder — hidden in embedded mode */}
-        {!embedded && (
-          <IconToggleButton
-            icon={<SquareTerminal className="h-3.5 w-3.5" />}
-            active={false}
-            tooltip={workdir ? t`Open terminal in ${workdir}` : t`Open terminal`}
-            disabled={false}
-            onClick={() => void navigation.openNewShell({ cwd: workdir || undefined })}
-          />
-        )}
+      {/* Open terminal in current folder — hidden in embedded mode */}
+      {!embedded && (
+        <IconToggleButton
+          icon={<SquareTerminal className="h-3.5 w-3.5" />}
+          active={false}
+          tooltip={workdir ? t`Open terminal in ${workdir}` : t`Open terminal`}
+          disabled={false}
+          onClick={() => void navigation.openNewShell({ cwd: workdir || undefined })}
+        />
+      )}
 
-        {/* Fork — hidden in embedded mode */}
-        {!embedded && (
-          <IconToggleButton
-            icon={<GitFork className="h-3.5 w-3.5" />}
-            active={false}
-            tooltip={
-              isForking ? t`Forking…`
-              : canFork ? t`Fork session — new tab, same conversation history`
-              : !hasSession ? t`Launch a session first`
-              : !started ? t`Session is not running`
-              : t`Send a message first — fork requires conversation history`
-            }
-            disabled={!canFork || isForking}
-            onClick={() => void handleFork()}
-          />
-        )}
+      {/* Fork — hidden in embedded mode */}
+      {!embedded && (
+        <IconToggleButton
+          icon={<GitFork className="h-3.5 w-3.5" />}
+          active={false}
+          tooltip={
+            isForking
+              ? t`Forking…`
+              : canFork
+                ? t`Fork session — new tab, same conversation history`
+                : !hasSession
+                  ? t`Launch a session first`
+                  : !started
+                    ? t`Session is not running`
+                    : t`Send a message first — fork requires conversation history`
+          }
+          disabled={!canFork || isForking}
+          onClick={() => void handleFork()}
+        />
+      )}
 
-        {/* Open in Worktree — next to Fork, hidden in embedded mode */}
-        {!embedded && <OpenInWorktreeButton process={process} />}
+      {/* Open in Worktree — next to Fork, hidden in embedded mode */}
+      {!embedded && <OpenInWorktreeButton process={process} />}
 
-        {/* Session Info */}
-        {hasSession && <SessionInfoPopover process={process} sessionStartTime={sessionStartTime} lastMessageTime={lastMessageTime} />}
+      {/* Session Info */}
+      {hasSession && (
+        <SessionInfoPopover
+          process={process}
+          cliCapabilities={cliCapabilities}
+          sessionStartTime={sessionStartTime}
+          lastMessageTime={lastMessageTime}
+        />
+      )}
 
-        {/* Open Transcript */}
-        {hasSession && (
-          <IconToggleButton
-            icon={<ScrollText className="h-3.5 w-3.5" />}
-            active={false}
-            tooltip={
-              hasTranscript ? t`Open transcript`
-              : !started ? t`Session is not running`
-              : t`Send a message first — no transcript yet`
-            }
-            disabled={!hasTranscript}
-            onClick={() => {
-              navigation.openLens('claude', 'transcript', process.session_id!);
-            }}
-          />
-        )}
+      {/* Open Transcript */}
+      {hasSession && (
+        <IconToggleButton
+          icon={<ScrollText className="h-3.5 w-3.5" />}
+          active={false}
+          tooltip={
+            hasTranscript
+              ? t`Open transcript`
+              : !started
+                ? t`Session is not running`
+                : t`Send a message first — no transcript yet`
+          }
+          disabled={!hasTranscript}
+          onClick={() => {
+            navigation.openLens('claude', 'transcript', process.session_id!);
+          }}
+        />
+      )}
 
-        {/* Close — only in embedded mode */}
-        {embedded && onClose && (
-          <IconToggleButton
-            icon={<X className="h-3.5 w-3.5" />}
-            active={false}
-            tooltip={t`Close terminal`}
-            disabled={false}
-            onClick={onClose}
-          />
-        )}
+      {/* Close — only in embedded mode */}
+      {embedded && onClose && (
+        <IconToggleButton
+          icon={<X className="h-3.5 w-3.5" />}
+          active={false}
+          tooltip={t`Close terminal`}
+          disabled={false}
+          onClick={onClose}
+        />
+      )}
     </>
   );
 
@@ -468,7 +566,9 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
     <TooltipProvider delayDuration={300}>
       {/* Embedded keeps the full layout; non-embedded swaps Standard/Advanced by
           the global View mode. Skin layer: same slots, different arrangement. */}
-      {embedded ? advancedHeader : (
+      {embedded ? (
+        advancedHeader
+      ) : (
         <ViewSwap
           advanced={advancedHeader}
           standard={<StandardInteractiveTabHeader title={titleSlot} actions={actionsSlot} />}
@@ -477,7 +577,11 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
 
       <PTYViewer open={showPtyViewer} onClose={() => setShowPtyViewer(false)} shell={shell ?? null} />
       <PTYEventsViewer open={showPtyEventsViewer} onClose={() => setShowPtyEventsViewer(false)} shell={shell ?? null} />
-      <CommandStatusViewer open={showCommandStatus} onClose={() => setShowCommandStatus(false)} process={process ?? null} />
+      <CommandStatusViewer
+        open={showCommandStatus}
+        onClose={() => setShowCommandStatus(false)}
+        process={process ?? null}
+      />
     </TooltipProvider>
   );
 }
@@ -497,7 +601,7 @@ function RichCheckboxItem({
   onCheckedChange: (v: boolean) => void;
   label: string;
   description: string;
-  docsUrl: string;
+  docsUrl?: string | null;
 }) {
   const { t } = useLingui();
   return (
@@ -510,16 +614,18 @@ function RichCheckboxItem({
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex items-center gap-1">
           <span className="text-xs font-medium">{label}</span>
-          <a
-            href={docsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-auto text-muted-foreground hover:text-foreground"
-            onClick={(e) => e.stopPropagation()}
-            aria-label={t`${label} docs`}
-          >
-            <ExternalLink className="h-3 w-3" />
-          </a>
+          {docsUrl && (
+            <a
+              href={docsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto text-muted-foreground hover:text-foreground"
+              onClick={(e) => e.stopPropagation()}
+              aria-label={t`${label} docs`}
+            >
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
         </div>
         <span className="text-[11px] text-muted-foreground">{description}</span>
       </div>
@@ -554,10 +660,7 @@ function IconToggleButton({
         <span className="inline-flex" style={disabled ? { pointerEvents: 'auto' } : undefined}>
           <button
             type="button"
-            className={`inline-flex h-7 w-7 items-center justify-center rounded transition-colors
-              ${disabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-accent cursor-pointer'}
-              ${active && activeClassName ? activeClassName : 'text-muted-foreground'}
-            `}
+            className={`inline-flex h-7 w-7 items-center justify-center rounded transition-colors ${disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:bg-accent'} ${active && activeClassName ? activeClassName : 'text-muted-foreground'} `}
             disabled={disabled}
             onClick={onClick}
             aria-pressed={active}
@@ -649,7 +752,17 @@ function workerLabel(workerType: string | null | undefined): string {
   return workerType ?? '';
 }
 
-function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { process: AgenticProcess; sessionStartTime?: string | null; lastMessageTime?: string | null }) {
+function SessionInfoPopover({
+  process,
+  cliCapabilities,
+  sessionStartTime,
+  lastMessageTime,
+}: {
+  process: AgenticProcess;
+  cliCapabilities: WorkerCliCapabilities;
+  sessionStartTime?: string | null;
+  lastMessageTime?: string | null;
+}) {
   const { t } = useLingui();
   const cliOpts = process.cliOptions;
   const worker = workerLabel(process.worker_type);
@@ -684,36 +797,36 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
     };
   }, [process.session_id, workdir]);
 
-  // Build a copy-paste-into-terminal-and-run command. The session is already
-  // running, so the right flag is `--resume <uuid>` (not `--session-id`, which
-  // is for first-time session creation with a chosen UUID — and would error if
-  // the session already exists). Prefix with `cd <workdir>` so the command is
-  // self-contained.
-  const claudeParts = ['claude'];
-  if (permMode === 'bypassPermissions') claudeParts.push('--dangerously-skip-permissions');
-  if (chrome) claudeParts.push('--chrome');
-  if (debug) claudeParts.push('--debug');
-  if (worktree) claudeParts.push('--worktree');
-  claudeParts.push('--resume', process.session_id || '?');
-  if (model && model !== '(default)') claudeParts.push('--model', model);
-  const claudeCmd = claudeParts.join(' ');
+  // Build a copy-paste-into-terminal-and-run command using each vendor's resume
+  // syntax. Prefix with `cd <workdir>` so the displayed command is self-contained.
+  const resumeCommand = buildSessionResumeCommand({
+    workerType: process.worker_type,
+    sessionId: process.session_id,
+    permissionMode: permMode,
+    chrome,
+    debug,
+    worktree,
+    model: model === '(default)' ? null : model,
+  });
   // Single-quote the path so spaces/metachars are safe; escape any embedded ' as '\''.
   const quoted = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
-  const command =
-    workdir && workdir !== '(not set)'
-      ? `cd ${quoted(workdir)} && ${claudeCmd}`
-      : claudeCmd;
+  const command = resumeCommand
+    ? workdir && workdir !== '(not set)'
+      ? `cd ${quoted(workdir)} && ${resumeCommand}`
+      : resumeCommand
+    : '(unsupported worker)';
 
   // "Open in external terminal": spawn a real OS terminal (Terminal.app / cmd /
   // gnome-terminal) via the compute node's cross-platform `open-terminal` action.
-  // Pass the bare claude command + cwd separately — the backend composes the
+  // Pass the bare worker command + cwd separately — the backend composes the
   // `cd` itself per-OS. The displayed/copied string keeps the `cd … &&` prefix.
   const computeNodeId = dataContext.computeNode?.id;
   const openExternalTerminal = () => {
     if (!computeNodeId) return;
+    if (!resumeCommand) return;
     void openTerminalFromComputeNode(
       computeNodeId,
-      claudeCmd,
+      resumeCommand,
       workdir && workdir !== '(not set)' ? workdir : undefined,
     ).catch((e) => console.error('[SessionInfoPopover] open external terminal failed:', e));
   };
@@ -737,11 +850,11 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
     [t`Harness worker Session ID`, process.session_id || 'none'],
     [t`PTY ID`, process.pty_pid || 'none (detached)'],
     [t`Permission`, permMode],
-    [t`Chrome`, chrome ? 'enabled' : 'disabled'],
-    [t`Debug`, debug ? 'enabled' : 'disabled'],
-    [t`Worktree`, worktree ? 'enabled' : 'disabled'],
-    [t`Model`, model],
   ];
+  if (cliCapabilities.chrome) rows.push([t`Chrome`, chrome ? 'enabled' : 'disabled']);
+  if (cliCapabilities.debug) rows.push([t`Debug`, debug ? 'enabled' : 'disabled']);
+  if (cliCapabilities.worktree) rows.push([t`Worktree`, worktree ? 'enabled' : 'disabled']);
+  rows.push([t`Model`, model]);
 
   return (
     <Popover>
@@ -755,7 +868,9 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
       </PopoverTrigger>
       <PopoverContent side="bottom" align="end" className="w-96 p-0">
         <div className="border-b px-3 py-2">
-          <h4 className="text-xs font-semibold"><Trans>Harness Session Details</Trans></h4>
+          <h4 className="text-xs font-semibold">
+            <Trans>Harness Session Details</Trans>
+          </h4>
         </div>
         <div className="space-y-1 px-3 py-2">
           {rows.map(([label, value]) => (
@@ -765,7 +880,8 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
             label={t`Command`}
             value={command}
             extraAction={
-              computeNodeId && (
+              computeNodeId &&
+              resumeCommand && (
                 <button
                   className={ROW_ICON_BUTTON_CLASS}
                   onClick={openExternalTerminal}

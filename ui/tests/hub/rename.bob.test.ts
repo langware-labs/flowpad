@@ -22,8 +22,8 @@
  *       *messages* over the same path (which the hub does fan).
  *
  * Run:
- *   VITE_API_URL=http://localhost:<bob-be> RENAME_BOB_EMAIL=<bob>@local.test \
- *     RENAME_BOB_PASSWORD=<pw> npm run test:vitest:hub -- rename.bob
+ *   FLOW_INSTANCE=$SHARE_INST_2 BOB_EMAIL=<bob>@local.test BOB_PW=<pw> \
+ *     npm run test:vitest:hub -- rename.bob
  */
 import { promises as fsp } from 'node:fs';
 
@@ -58,12 +58,15 @@ beforeAll(async () => {
     console.log('[rename.bob] skip:', skipReason);
     return;
   }
-  bobEmail = process.env.RENAME_BOB_EMAIL || backend.email || null;
-  const bPass = process.env.RENAME_BOB_PASSWORD;
+  bobEmail = process.env.BOB_EMAIL || null;
+  const bPass = process.env.BOB_PW;
   if (!bobEmail || !bPass) {
-    skipReason = 'set RENAME_BOB_EMAIL + RENAME_BOB_PASSWORD';
+    skipReason = 'set BOB_EMAIL + BOB_PW';
     console.log('[rename.bob] skip:', skipReason);
     return;
+  }
+  if (backend.email !== bobEmail) {
+    throw new Error(`bob backend identity '${backend.email}' does not match BOB_EMAIL '${bobEmail}'`);
   }
   bobToken = (await hubLogin(bobEmail, bPass)).token;
   console.log(`[rename.bob] ready: backend=${bobEmail}`);

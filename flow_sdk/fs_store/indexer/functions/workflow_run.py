@@ -60,25 +60,40 @@ def _run_id(data: dict, path: Path) -> str:
 def _skill_id_from_path(script_path: str) -> str | None:
     """The owning skill's id when ``script_path`` is a ``.claude/skills/<name>/*.js``.
 
-    Reuses the skill extractor's own id logic (frontmatter id → uuid5(name)) by
-    handing it the ``<name>`` folder (the script's parent)."""
+    Resolves through the skill type's single identity seam. A missing identity
+    means the owning folder is a newly discovered asset, so it is minted before
+    the relationship is recorded."""
     skill_dir = Path(script_path).parent
     if skill_dir.parent.name != "skills" or skill_dir.parent.parent.name != ".claude" or not skill_dir.is_dir():
         return None
-    from flow_sdk.fs_store.indexer.functions.skill import skill_id as _skill_id  # noqa: PLC0415
-    return _skill_id(FSRef(skill_dir))
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(str(RecordType.SKILL))
+    if info is None:
+        return None
+    try:
+        ref = FSRef(skill_dir, record_type=RecordType.SKILL)
+        return info.extract_id(ref) or info.mint_id(ref)
+    except Exception:
+        return None
 
 
 def workflow_run_id(ref: FSRef) -> str:
     """Stable uuid5 from the provider runId (a stable natural key). Doubles as
-    the gen_uuid_fn: the journal is provider-owned (read-only), so — unlike
+    the stable-key callback: the journal is provider-owned (read-only), so — unlike
     agent_trace — we never write an id back; uuid5(runId) is stable across
     rescans without persistence."""
-    data = _load_journal(ref._path)
-    return mint_uuid(_run_id(data, ref._path))
+    path = Path(getattr(ref, "_path", ref))
+    data = _load_journal(path)
+    return mint_uuid(_run_id(data, path))
 
 
-def extract_workflow_run(ref: FSRef) -> list[FSRecord]:
+def workflow_run_identity_key(ref: FSRef | Path) -> str:
+    path = Path(getattr(ref, "_path", ref))
+    return _run_id(_load_journal(path), path)
+
+
+def extract_workflow_run(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a wf_<runId>.json journal into a Record — envelope fields only.
 
     FTS content is the workflow name + status; the workflowProgress payload
@@ -91,9 +106,12 @@ def extract_workflow_run(ref: FSRef) -> list[FSRecord]:
     status = str(data.get("status") or "")
 
     # Lineage: the journal records the source workflow's `.js` path (incl. the
-    # owning `.claude/skills/<name>/` when bundled in a skill). Derive the
-    # DynamicWorkflow id (path-derived, so it matches even if the workflow isn't
-    # indexed) and the owning skill id.
+    # owning `.claude/skills/<name>/` when bundled in a skill). Two cross-refs:
+    #  - dynamic_workflow_id: PATH-derived by design — a `.js` script carries no
+    #    capsule (no frontmatter, no `.flow/id`), so its id has no portable home;
+    #    the path derive is the only stable key, not the collision anti-pattern.
+    #  - skill_id: read through the owning skill's TypeInfo, so this reference
+    #    follows canonical and legacy identity without minting the other asset.
     script_path = str(data.get("scriptPath") or "") or None
     dynamic_workflow_id = None
     skill_id = None
@@ -105,7 +123,7 @@ def extract_workflow_run(ref: FSRef) -> list[FSRecord]:
     content_parts = [p for p in (workflow_name, status) if p]
     rec = FSRecord(
         type=RecordType.WORKFLOW_RUN,
-        id=mint_uuid(run_id),
+        id=resolved_id,
         name=workflow_name,
         run_id=run_id,
         workflow_name=workflow_name,

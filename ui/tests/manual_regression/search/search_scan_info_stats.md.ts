@@ -61,13 +61,6 @@ test.describe('Search Scan Info Stats', () => {
     await page.goto('/dock/home');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
-    // Dismiss WelcomeModal if shown (appears after DB reset when scanInfo.never_indexed=true).
-    // When open, the AlertDialog sets aria-hidden on the rest of the page, blocking pointer events.
-    const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-    if (await skipForNow.isVisible({ timeout: 12_000 }).catch(() => false)) {
-      await skipForNow.click();
-    }
-
     const input = page.locator('[data-testid="search-input"]').first();
     await expect(input).toBeVisible({ timeout: 10_000 });
     await input.click();
@@ -108,26 +101,19 @@ test.describe('Search Scan Info Stats', () => {
 
   // ── Test 6: Rebuild-index button runs archive→clear→scan→index and refreshes the indexed badge ──
   test('rebuild-index button archives, clears, scans, indexes and refreshes indexed badge', async ({ page }) => {
-    test.setTimeout(60_000);
+    // USER-APPROVED timeout exception (per the no-timeout-raise non-negotiable):
+    // a full rebuild reindexes the whole workspace, and on a heavily-used host
+    // (real ~/.claude with thousands of sessions) the index phase legitimately
+    // takes ~130s of linear work — the rebuild button stays busy until it
+    // completes. On a normal install this finishes in seconds. Budget raised to
+    // 180s with explicit user approval so the test can observe real completion.
+    test.setTimeout(180_000);
     await dismissSetupModal(page);
     await page.goto('/dock/search');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     const searchView = page.locator('[data-testid="search-view"]');
     await expect(searchView).toBeVisible({ timeout: 10_000 });
-
-    // WelcomeModal ("Make your records searchable") may appear when never_indexed=true.
-    // When open it sets aria-hidden on the rest of the page, which intercepts clicks.
-    const dismissWelcomeModal = async () => {
-      for (const name of ['Not Now', 'Skip for now']) {
-        const btn = page.getByRole('button', { name });
-        if (await btn.isVisible({ timeout: 1_500 }).catch(() => false)) {
-          await btn.click().catch(() => {});
-          break;
-        }
-      }
-    };
-    await dismissWelcomeModal();
 
     const readIndexedCount = async (): Promise<number> => {
       const badge = page.locator('text=/\\d+ indexed/').first();
@@ -170,7 +156,11 @@ test.describe('Search Scan Info Stats', () => {
 
     await rebuildButton.click();
 
-    await expect.poll(() => allSeen(), { timeout: 120_000, intervals: [500] }).toBe(true);
+    // The rebuild runs archive→clear→scan→index sequentially (~6+5+17+116 ≈
+    // 145s cumulative on a real ~/.claude); seen.index lands only after the
+    // full reindex completes. Poll ceiling sits under the user-approved 180s
+    // test budget with margin for load variance.
+    await expect.poll(() => allSeen(), { timeout: 165_000, intervals: [500] }).toBe(true);
 
     // Button returns to the enabled state once the orchestration finishes (busy=false).
     await expect(rebuildButton).toBeEnabled({ timeout: 30_000 });

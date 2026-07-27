@@ -5,17 +5,20 @@ import { RunButton } from '@src/components/assets/editor/run/RunButton';
 import { useRunOnFile } from '@src/components/assets/editor/run/useRunOnFile';
 import { DiscussDocButtons } from '@src/components/assets/editor/discuss/DiscussDocButtons';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
-import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
-import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
+import { ProcessRunsPanel } from '@src/components/process-runs/ProcessRunsPanel';
+import type { ProcessEntry } from '@src/components/process-runs/process-run-store';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
+import { entityReloadKey } from '@src/utils/entity-reload-key';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { dataContext, FrontMatterFsRef, ProcessKind } from '@sdk';
 import type { APIEntity, FSRef } from '@sdk';
+import { useDocTranslations } from '@src/components/assets/editor/translations/useDocTranslations';
 import { History } from 'lucide-react';
+import { AssetCollisionProvider } from '../AssetCollisionUI';
 
 interface PlainMarkdownAssetEditorProps {
   /** FSRef to the .md file. */
@@ -40,13 +43,28 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
   const { entity } = useEntityByPath<APIEntity<APIEntity<any>>>(assetType, fsRef);
   const chatTarget = entity ? entity.typeId.toString() : null;
   const assetRef = (entity as { asset_ref?: string } | null)?.asset_ref;
+  // Body re-read token: the live entity's `updated_date` advances when a
+  // reindex (agent turn-end / invalidate) re-parses the file, so a stable scalar
+  // of it drives MarkdownEditor's out-of-band refresh. Guarded against unsaved edits.
+  const baseReloadKey = entityReloadKey((entity as { updated_date?: unknown } | null)?.updated_date);
   const localTypeId = dataContext.computeNodeTypeId;
+
   // Memoize: useFSRefContent's load effect is keyed on fsRef identity, so a
   // fresh FrontMatterFsRef every render re-downloads the file on every re-render.
-  const editorRef = useMemo(
+  const baseEditorRef = useMemo(
     () => (assetRef && localTypeId ? new FrontMatterFsRef(assetRef, localTypeId) : fsRef),
     [assetRef, localTypeId, fsRef],
   );
+
+  // Document translation: the `?lang=` inline body swap, completion auto-refresh,
+  // and the Translations side tab — shared with the wikitip modal surface.
+  const { editorRef, reloadKey, translationsTab } = useDocTranslations({
+    entity,
+    chatTarget,
+    assetRef,
+    baseEditorRef,
+    baseReloadKey,
+  });
 
   const { navigation } = useDockNavigation();
   // No backing FsRecord entity (raw CLAUDE.md etc.) → no delete button. The
@@ -115,24 +133,26 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
     icon: History,
     description: 'Runs on this file',
     panel: (
-      <WorkflowRunsPanel
+      <ProcessRunsPanel
         entries={runHistory}
         currentEntry={processEntry}
-        computeNodeId={fsRef.typeId.id}
       />
     ),
   };
 
   return (
     <>
-      <MarkdownEditor
-        fsRef={editorRef}
-        chatTarget={chatTarget}
-        toolbar={toolbar}
-        extraSideTabs={[runsTab]}
-        onDelete={deletable?.delete ? onDelete : undefined}
-        deleteLabel={deletable?.name ?? undefined}
-      />
+      <AssetCollisionProvider entity={entity}>
+        <MarkdownEditor
+          fsRef={editorRef}
+          chatTarget={chatTarget}
+          toolbar={toolbar}
+          extraSideTabs={[translationsTab, runsTab]}
+          onDelete={deletable?.delete ? onDelete : undefined}
+          deleteLabel={deletable?.name ?? undefined}
+          reloadKey={reloadKey}
+        />
+      </AssetCollisionProvider>
       {mcpModal}
     </>
   );

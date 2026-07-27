@@ -1,21 +1,36 @@
-import { Agent, AgentTrace, DynamicWorkflow, FSRef, Skill, TypeId, UsageReport, VFSPath, Whiteboard, Workflow } from '@sdk';
+import { Agent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { useMemo } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { AssetEditor, AssetRoutingMethod, EDITOR_TYPES, editorForType } from '@src/navigation/asset-doc-types';
+import { AssetEditor, AssetRoutingMethod, EDITOR_TYPES, editorForType, isFileOnlyEditor } from '@src/navigation/asset-doc-types';
+import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
+import { MediaViewer } from '@src/components/media-viewer/MediaViewer';
+import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
 import { MissingAssetCard } from './MissingAssetCard';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
+import { TaskAssetEditor } from './task/TaskAssetEditor';
 import { AgentAssetEditor } from './agent/AgentAssetEditor';
 import { AgentTraceAssetEditor } from './agent-trace/AgentTraceAssetEditor';
 import { DynamicWorkflowAssetEditor } from './dynamic-workflow/DynamicWorkflowAssetEditor';
 import { UsageReportAssetEditor } from './usage-report/UsageReportAssetEditor';
+import { AssetCleanupReportAssetEditor } from './asset-cleanup/AssetCleanupReportAssetEditor';
+import { JourneyViewer } from '@src/journey/JourneyViewer';
 import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
-import { WorkflowAssetEditor } from './workflow/WorkflowAssetEditor';
+import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
+import { DeckViewer } from './deck/DeckViewer';
+import { AssetCollisionProvider, AssetCollisionShell } from './AssetCollisionUI';
+
+const McpAppPreview = lazy(() =>
+  import('@src/components/mcp-app-preview/McpAppPreview').then((m) => ({ default: m.McpAppPreview })),
+);
+const SpreadsheetAssetEditor = lazy(() =>
+  import('./spreadsheet/SpreadsheetAssetEditor').then((m) => ({ default: m.SpreadsheetAssetEditor })),
+);
 
 interface AssetEditorRouterProps {
   /** The ViewType.ASSETS pointer, e.g. "editor/<editor>/<method>/<value>". */
@@ -25,6 +40,12 @@ interface AssetEditorRouterProps {
 /** True if `assetType` (a RecordType value) has an asset editor. */
 export function hasEditor(assetType: string): boolean {
   return editorForType(assetType) !== undefined;
+}
+
+/** vpath (`compute_node-@local/<rel>`) → machine abs path; passthrough otherwise. */
+function machinePathOf(value: string): string {
+  const vfs = VFSPath.parse(value);
+  return vfs.typeId ? vfs.machinePath : value;
 }
 
 function ConnectingFallback() {
@@ -61,7 +82,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
       ? new TypeId(ptr.value)
       : null;
   const { data: typeIdEntity, isLoading: entityLoading, isError: entityError, refetch: refetchEntity } = useEntity(typeId);
-  const { computeNode } = useAgentContext();
+  const { computeNode, flow } = useAgentContext();
 
   // Derive the FSRef + the record type for this asset in ONE unconditional memo
   // (must run before the early returns to keep hook order stable). The FSRef is
@@ -73,7 +94,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
   const assetRef = (typeIdEntity as { asset_ref?: string } | null)?.asset_ref ?? null;
   const computeNodeKey = computeNode?.typeId?.toString() ?? null;
   const derived = useMemo<{ fsRef: FSRef; assetType: string } | null>(() => {
-    if (!ptr || !ptr.editor || ptr.editor === AssetEditor.CODE) return null;
+    if (!ptr || !ptr.editor || isFileOnlyEditor(ptr.editor)) return null;
     if (ptr.method === AssetRoutingMethod.TYPEID) {
       // Build the FSRef from the entity's canonical asset_ref (the path the
       // editors' EntityResolutionGate matches on — the folder for skill/whiteboard,
@@ -109,6 +130,29 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     return <CodeEditor activePath={ptr.value} />;
   }
 
+  // File-only display viewers: no entity, no EntityResolutionGate. HtmlPreview
+  // and McpAppPreview expect a machine abs path (they prefix the context
+  // compute node themselves), so normalize the pointer value here — the ONE
+  // vpath→machine-path point for these viewers. MediaViewer parses both forms.
+  if (ptr.editor === AssetEditor.HTML) {
+    return <HtmlPreview path={machinePathOf(ptr.value)} />;
+  }
+  if (ptr.editor === AssetEditor.MCP_APP) {
+    return (
+      <Suspense fallback={<ConnectingFallback />}>
+        <McpAppPreview path={machinePathOf(ptr.value)} process={flow ?? null} />
+      </Suspense>
+    );
+  }
+  if (ptr.editor === AssetEditor.IMAGE || ptr.editor === AssetEditor.VIDEO || ptr.editor === AssetEditor.AUDIO) {
+    // The enum values ARE the kind strings ('image' | 'video' | 'audio').
+    return <MediaViewer path={ptr.value} kind={ptr.editor} />;
+  }
+  if (ptr.editor === AssetEditor.PDF) {
+    // PdfViewer parses both the vpath and plain-path forms itself, like MediaViewer.
+    return <PdfViewer path={ptr.value} />;
+  }
+
   // A typeid pointer whose entity has SETTLED with nothing usable (404 /
   // fetch error / resolved-but-no-asset_ref — e.g. a tab pointing at a
   // markdown that was never materialized) is terminal, not "still
@@ -121,12 +165,26 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     !entityLoading &&
     (entityError || !assetRef)
   ) {
+    // owns_main_ref types (task/spec) re-render their backing file from the
+    // default body on save, so an orphaned row (no asset_ref / file gone — e.g.
+    // a task created before this checkout was a folder asset) can self-heal
+    // with one save. Offer that; hand-edited types (markdown/skill) get retry
+    // only, since rebuilding from a template would clobber user content.
+    const ownsMainRef = !!dataManager
+      .getAllTypeInfos?.()
+      .find((t) => t.type_name === typeId.type)?.owns_main_ref;
+    const orphan = typeIdEntity as APIEntity<never> | null;
     return (
       <MissingAssetCard
         typeLabel={typeId.type}
         fsRef={new FSRef(typeId.toString(), computeNode?.typeId ?? typeId)}
         onRetry={() => void refetchEntity()}
         entity={typeIdEntity ?? null}
+        onRebuild={
+          ownsMainRef && orphan
+            ? () => void orphan.save().then(() => refetchEntity())
+            : undefined
+        }
       />
     );
   }
@@ -141,7 +199,24 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Skill.type}
           fsRef={fsRef}
           typeLabel="skill"
-          render={(skill) => <SkillAssetEditor fsRef={fsRef!} skill={skill} />}
+          render={(skill) => (
+            <AssetCollisionProvider entity={skill}>
+              <SkillAssetEditor fsRef={fsRef!} skill={skill} />
+            </AssetCollisionProvider>
+          )}
+        />
+      );
+    case AssetEditor.TASK:
+      return (
+        <EntityResolutionGate<Task>
+          type={Task.type}
+          fsRef={fsRef}
+          typeLabel="task"
+          render={(task) => (
+            <AssetCollisionShell entity={task}>
+              <TaskAssetEditor fsRef={fsRef!} task={task} />
+            </AssetCollisionShell>
+          )}
         />
       );
     case AssetEditor.AGENT:
@@ -150,7 +225,11 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Agent.type}
           fsRef={fsRef}
           typeLabel="agent"
-          render={(agent) => <AgentAssetEditor fsRef={fsRef!} agent={agent} />}
+          render={(agent) => (
+            <AssetCollisionProvider entity={agent}>
+              <AgentAssetEditor fsRef={fsRef!} agent={agent} />
+            </AssetCollisionProvider>
+          )}
         />
       );
     case AssetEditor.WHITEBOARD:
@@ -159,7 +238,61 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Whiteboard.type}
           fsRef={fsRef}
           typeLabel="whiteboard"
-          render={(whiteboard) => <WhiteboardAssetEditor fsRef={fsRef!} whiteboard={whiteboard} />}
+          render={(whiteboard) => (
+            <AssetCollisionShell entity={whiteboard}>
+              <WhiteboardAssetEditor fsRef={fsRef!} whiteboard={whiteboard} />
+            </AssetCollisionShell>
+          )}
+        />
+      );
+    case AssetEditor.DECK_TEMPLATE:
+      return (
+        <EntityResolutionGate<DeckTemplate>
+          type={DeckTemplate.type}
+          fsRef={fsRef}
+          typeLabel="deck template"
+          render={(deckTemplate) => (
+            <AssetCollisionShell entity={deckTemplate}>
+              <DeckTemplateViewer fsRef={fsRef} deckTemplate={deckTemplate} />
+            </AssetCollisionShell>
+          )}
+        />
+      );
+    case AssetEditor.DECK:
+      return (
+        <EntityResolutionGate<Deck>
+          type={Deck.type}
+          fsRef={fsRef}
+          typeLabel="deck"
+          render={(deck) => (
+            <AssetCollisionShell entity={deck}>
+              <DeckViewer fsRef={fsRef} deck={deck} />
+            </AssetCollisionShell>
+          )}
+        />
+      );
+    case AssetEditor.JOURNEY:
+      return (
+        <EntityResolutionGate<Journey>
+          type={Journey.type}
+          fsRef={fsRef}
+          typeLabel="journey"
+          render={(journey) => <JourneyViewer journey={journey} />}
+        />
+      );
+    case AssetEditor.SPREADSHEET:
+      return (
+        <EntityResolutionGate<Spreadsheet>
+          type={Spreadsheet.type}
+          fsRef={fsRef}
+          typeLabel="spreadsheet"
+          render={(spreadsheet) => (
+            <AssetCollisionShell entity={spreadsheet}>
+              <Suspense fallback={<ConnectingFallback />}>
+                <SpreadsheetAssetEditor fsRef={fsRef!} spreadsheet={spreadsheet} />
+              </Suspense>
+            </AssetCollisionShell>
+          )}
         />
       );
     case AssetEditor.AGENT_TRACE:
@@ -168,7 +301,11 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={AgentTrace.type}
           fsRef={fsRef}
           typeLabel="agent trace"
-          render={(trace) => <AgentTraceAssetEditor fsRef={fsRef!} trace={trace} />}
+          render={(trace) => (
+            <AssetCollisionShell entity={trace}>
+              <AgentTraceAssetEditor fsRef={fsRef!} trace={trace} />
+            </AssetCollisionShell>
+          )}
         />
       );
     case AssetEditor.DYNAMIC_WORKFLOW:
@@ -177,7 +314,11 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={DynamicWorkflow.type}
           fsRef={fsRef}
           typeLabel="dynamic workflow"
-          render={(workflow) => <DynamicWorkflowAssetEditor fsRef={fsRef!} workflow={workflow} />}
+          render={(workflow) => (
+            <AssetCollisionShell entity={workflow}>
+              <DynamicWorkflowAssetEditor fsRef={fsRef!} workflow={workflow} />
+            </AssetCollisionShell>
+          )}
         />
       );
     case AssetEditor.USAGE_REPORT:
@@ -186,16 +327,24 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={UsageReport.type}
           fsRef={fsRef}
           typeLabel="usage report"
-          render={(report) => <UsageReportAssetEditor fsRef={fsRef!} report={report} />}
+          render={(report) => (
+            <AssetCollisionShell entity={report}>
+              <UsageReportAssetEditor fsRef={fsRef!} report={report} />
+            </AssetCollisionShell>
+          )}
         />
       );
-    case AssetEditor.WORKFLOW:
+    case AssetEditor.ASSET_CLEANUP_REPORT:
       return (
-        <EntityResolutionGate<Workflow>
-          type={Workflow.type}
+        <EntityResolutionGate<AssetCleanupReport>
+          type={AssetCleanupReport.type}
           fsRef={fsRef}
-          typeLabel="workflow"
-          render={(workflow) => <WorkflowAssetEditor fsRef={fsRef!} workflow={workflow} />}
+          typeLabel="asset cleanup report"
+          render={(report) => (
+            <AssetCollisionShell entity={report}>
+              <AssetCleanupReportAssetEditor fsRef={fsRef!} report={report} />
+            </AssetCollisionShell>
+          )}
         />
       );
     case AssetEditor.MARKDOWN:

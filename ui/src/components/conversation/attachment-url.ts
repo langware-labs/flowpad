@@ -1,5 +1,11 @@
-import { ActionInfo } from '@sdk/models/ActionInfo';
-import { AttachmentType, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
+import {
+  AttachmentType,
+  attachmentDataString,
+  flowMessageAttachmentDownloadUrl,
+  type Attachment,
+} from '@sdk/entities/flow-message';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 
 /**
  * True for a FILE attachment the user can download as a chip — i.e. any FILE
@@ -25,9 +31,7 @@ export function isDownloadableFileAttachment(
  * "only when the bytes are local" rule is applied in one place.
  */
 export function fileAttachmentUrl(messageId: string, vfsPath: string): string {
-  const action = new ActionInfo('fs', 'flow_message', messageId, 'GET');
-  action.subpath = `download/${vfsPath}`;
-  return action.fullActionUrl;
+  return flowMessageAttachmentDownloadUrl(messageId, vfsPath);
 }
 
 /**
@@ -59,4 +63,17 @@ export function localAttachmentUrl(
  */
 export function editorPathForLocalFile(localPath: string): string {
   return `compute_node-@local/${localPath.replace(/^\/+/, '')}`;
+}
+
+/**
+ * The dock pointer the conversation "Open" affordance navigates to for a
+ * downloaded attachment. A markdown body opens in the **markdown document
+ * editor** (the assets `editor/markdown` surface — rich Milkdown rendering with
+ * working internal-link navigation), every other file in the code editor.
+ * Both address the bytes against the **@local** compute node via
+ * {@link editorPathForLocalFile}; the viewer dispatch is the shared
+ * `dockPointerForFile` chokepoint.
+ */
+export function dockPointerForLocalFile(localPath: string): DockPointer {
+  return dockPointerForFile(editorPathForLocalFile(localPath));
 }

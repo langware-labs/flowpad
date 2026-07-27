@@ -13,6 +13,7 @@ The intended workflow is:
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, Optional
 
@@ -22,10 +23,16 @@ from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
+)
+from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
     ok as _ok,
 )
-
+from flow_sdk.cli.commands._common import (
+    post_graph_json as _post_graph_json,
+)
 
 record_app = typer.Typer(
     name="record",
@@ -178,10 +185,7 @@ def _parse_time_window(time_arg: str) -> "int | None":
     key = time_arg.strip().lower()
     if key in _TIME_WINDOWS:
         return _TIME_WINDOWS[key]
-    raise ValueError(
-        f"Unknown time window: {time_arg!r}. "
-        f"Use one of: {', '.join(_TIME_WINDOWS.keys())}"
-    )
+    raise ValueError(f"Unknown time window: {time_arg!r}. Use one of: {', '.join(_TIME_WINDOWS.keys())}")
 
 
 def _filter_by_time(results: list[dict], window_seconds: "int | None") -> list[dict]:
@@ -317,30 +321,22 @@ def _post_json(
 ) -> dict:
     """POST JSON to a graph endpoint and return its ``data`` envelope.
 
-    Any transport / parse / non-SUCCESS response routes through ``_fail`` (which
-    exits). Pass ``not_found_hint`` to map a 404 to ``EXIT_NOT_FOUND`` with that
-    message; omit it to let a 404 fall through to the generic action-failed path.
+    Transport/parse handling is the shared ``post_graph_json``; this wrapper
+    only supplies record's exit contract. Pass ``not_found_hint`` to map a 404
+    to ``EXIT_NOT_FOUND`` with that message; omit it to let a 404 fall through
+    to the generic action-failed path.
     """
-    try:
-        resp = requests.post(url, json=payload or {}, timeout=timeout)
-    except requests.exceptions.RequestException as e:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
-        raise  # unreachable
-    try:
-        body = resp.json()
-    except ValueError:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
-        raise  # unreachable
 
-    if resp.status_code == 404 and not_found_hint is not None:
-        _fail(EXIT_NOT_FOUND, "NOT_FOUND", not_found_hint)
-    if resp.status_code != 200 or body.get("status") != "SUCCESS":
+    def _on_error(status_code: int, body: dict) -> None:
+        if status_code == 404 and not_found_hint is not None:
+            _fail(EXIT_NOT_FOUND, "NOT_FOUND", not_found_hint)
         _fail(
             EXIT_ACTION_FAILED,
             str(body.get("error_code") or "ACTION_FAILED"),
-            str(body.get("message") or body.get("error") or f"HTTP {resp.status_code}"),
+            str(body.get("message") or body.get("error") or f"HTTP {status_code}"),
         )
-    return body.get("data") or {}
+
+    return _post_graph_json(url, payload, timeout=timeout, on_error=_on_error)
 
 
 def _post_action(action_name: str, typeid_raw: str, payload: Optional[dict] = None) -> dict:
@@ -399,6 +395,139 @@ def unfavorite_record(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# `flow record comment add/list` — read/write standard ``Comment`` entities on
+# any entity (e.g. a task). This is the sanctioned way for a Bash-only wizard
+# agent to leave / read notes: it drives the SAME generic comment create/query
+# the frontend uses (``comment.save(parentTypeId)`` / ``QueryRequest`` of type
+# ``comment`` scoped to the parent). On a hub-remote parent the created comment
+# auto-shares to the hub as an ``is_child`` and reaches authorized peers.
+# ─────────────────────────────────────────────────────────────────────────────
+
+comment_app = typer.Typer(
+    name="comment",
+    help="Read/write comments on an entity (tasks, docs, …).",
+    add_completion=False,
+    no_args_is_help=True,
+)
+
+
+@comment_app.command(
+    "add",
+    help=(
+        "Add a comment to an entity. On a hub-remote parent the comment "
+        "auto-shares to the hub and reaches authorized peers. Pass --data to "
+        "attach a machine-readable JSON object to the comment's ``data`` field."
+    ),
+)
+def comment_add(
+    parent_typeid: Annotated[
+        str,
+        typer.Argument(help="Parent entity TypeId, e.g. 'task-<uuid>'."),
+    ],
+    text: Annotated[
+        str,
+        typer.Argument(help="Comment text (raw_content)."),
+    ],
+    data: Annotated[
+        Optional[str],
+        typer.Option(
+            "--data",
+            help='Optional JSON object for the comment\'s ``data`` field, e.g. \'{"submission_url":"https://…"}\'.',
+        ),
+    ] = None,
+) -> None:
+    if not parent_typeid or not parent_typeid.strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "parent_typeid is required")
+    if not text or not text.strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "text is required")
+    parent_type, parent_id = _parse_typeid(parent_typeid.strip())
+    body: dict[str, Any] = {"raw_content": text}
+    if data:
+        try:
+            parsed = json.loads(data)
+        except ValueError as e:
+            _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"--data must be valid JSON: {e}")
+            return
+        if not isinstance(parsed, dict):
+            _fail(EXIT_INVALID_ARG, "INVALID_ARG", "--data must be a JSON object")
+            return
+        body["data"] = parsed
+    port = _discover_port()
+    # Create scoped to the parent — mirrors the frontend's create URL
+    # (``<scope_path>/<type>``): the create handler sets ``parent_type_id`` from
+    # the URL target and auto-shares the child when the parent is hub-remote.
+    url = f"http://127.0.0.1:{port}/api/v1/graph/{parent_type}/{parent_id}/comment"
+    resp = _post_json(url, body, timeout=15, not_found_hint=f"Entity not found: {parent_typeid}")
+    new_id = resp.get("id") or (resp.get("entity") or {}).get("id")
+    _ok(
+        {
+            "parent_typeid": parent_typeid,
+            "id": new_id,
+            "typeid": f"comment-{new_id}" if new_id else None,
+        }
+    )
+
+
+@comment_app.command(
+    "list",
+    help=(
+        "List an entity's comments as JSON (raw_content + data + created_date), "
+        "oldest first. For a group task, read each member task's comments to "
+        "find the member's submission note."
+    ),
+)
+def comment_list(
+    parent_typeid: Annotated[
+        str,
+        typer.Argument(help="Parent entity TypeId, e.g. 'task-<uuid>'."),
+    ],
+) -> None:
+    if not parent_typeid or not parent_typeid.strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "parent_typeid is required")
+    parent_type, parent_id = _parse_typeid(parent_typeid.strip())
+    parent_key = f"{parent_type}-{parent_id}"
+    port = _discover_port()
+    # Scoped list route (mirrors the frontend's scoped QueryRequest). The scope
+    # query is permissive — it returns comments regardless of parent — so we
+    # filter by ``parent_type_id`` ourselves, exactly like ``useDocComments``.
+    # ``expand=blobs`` so the blob-excluded ``raw_content`` is served.
+    url = f"http://127.0.0.1:{port}/api/v1/graph/{parent_type}/{parent_id}/comment"
+    try:
+        resp = requests.get(url, params={"expand": "blobs"}, timeout=15)
+    except requests.exceptions.RequestException as e:
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
+        return
+    try:
+        body = resp.json()
+    except ValueError:
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+        return
+    if resp.status_code != 200 or body.get("status") != "SUCCESS":
+        _fail(
+            EXIT_ACTION_FAILED,
+            str(body.get("error_code") or "ACTION_FAILED"),
+            str(body.get("message") or body.get("error") or f"HTTP {resp.status_code}"),
+        )
+        return
+    raw = body.get("data") or []
+    comments = [
+        {
+            "id": c.get("id"),
+            "raw_content": c.get("raw_content"),
+            "data": c.get("data") or {},
+            "created_date": c.get("created_date"),
+        }
+        for c in raw
+        if isinstance(c, dict) and c.get("parent_type_id") == parent_key
+    ]
+    comments.sort(key=lambda c: c.get("created_date") or "")
+    _ok({"parent_typeid": parent_typeid, "total": len(comments), "comments": comments})
+
+
+record_app.add_typer(comment_app, name="comment")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # `flow record adopt-claude-session` — create an AgenticProcess record that
 # points at an existing Claude Code session transcript. The new record is
 # saved via the generic POST /api/v1/graph/agentic_process endpoint and shows
@@ -413,6 +542,7 @@ def _find_claude_session_jsonl(session_id: str) -> tuple[str, str] | None:
     None if no transcript with that session_id exists on disk.
     """
     import json as _json
+
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     projects_dir = get_instance_settings().claude_projects_dir
@@ -459,9 +589,7 @@ def _find_claude_session_jsonl(session_id: str) -> tuple[str, str] | None:
 def adopt_claude_session(
     session_id: Annotated[
         str,
-        typer.Argument(
-            help="Claude Code session UUID (the .jsonl filename without extension)."
-        ),
+        typer.Argument(help="Claude Code session UUID (the .jsonl filename without extension)."),
     ],
     workdir: Annotated[
         Optional[str],

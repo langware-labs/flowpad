@@ -39,12 +39,12 @@ from pathlib import Path
 from typing import Iterator
 
 from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
-from flow_sdk.fs_store.indexer.functions._claude_session_stats import (
-    _get_session_batch_stats,
-)
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.fs_store.indexer.functions._claude_session_stats import (
+    _get_session_batch_stats,
+)
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
@@ -122,30 +122,50 @@ def _iter_head_json(path: str | Path) -> Iterator[dict]:
             except json.JSONDecodeError:
                 continue
 
-def claude_session_id(ref: FSRef) -> str:
+def claude_session_identity_key(ref: FSRef | Path) -> str:
     """Stable, filesystem-safe **UUID** id = sessionId from the JSONL head
     envelope (fallback: filename stem). Claude session ids are already UUIDs so
     they're kept as-is; anything non-conforming is hashed with the same
     ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses, so it matches the DB
     id."""
-    key = ref._path.stem
+    path = Path(getattr(ref, "_path", ref))
+    key = path.stem
     try:
-        for raw in _iter_head_json(ref._path):
+        for raw in _iter_head_json(path):
             sid = raw.get("sessionId")
             if sid:
                 key = str(sid)
                 break
     except OSError:
         pass
-    return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.CLAUDE_SESSION}:{key}", namespace=uuid.NAMESPACE_DNS)
+    return key
+
+
+def claude_session_id_from_file(ref: FSRef | Path) -> str | None:
+    key = claude_session_identity_key(ref)
+    return key if is_valid_entity_id(key) else None
+
+
+def claude_session_stable_key(ref: FSRef | Path) -> str:
+    return f"{RecordType.CLAUDE_SESSION}:{claude_session_identity_key(ref)}"
+
+
+def claude_session_id(ref: FSRef) -> str:
+    existing = claude_session_id_from_file(ref)
+    return existing or mint_uuid(claude_session_stable_key(ref), namespace=uuid.NAMESPACE_DNS)
 
 # ── Extractor (head + tail read, no stat parse) ──────────────────────────────
 
-def extract_claude_session(ref: FSRef) -> list[FSRecord]:
+def extract_claude_session(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a JSONL session into a Record. Replaces ``ClaudeSessionRecord._from_fsref_sync``."""
-    return [extract_claude_session_from_path(ref._path)]
+    return [extract_claude_session_from_path(ref._path, resolved_id=resolved_id)]
 
-def extract_claude_session_from_path(path: str | Path, *, include_content: bool = True) -> FSRecord:
+def extract_claude_session_from_path(
+    path: str | Path,
+    *,
+    include_content: bool = True,
+    resolved_id: str | None = None,
+) -> FSRecord:
     """Build a Record from a JSONL transcript path.
 
     Envelope fields are read cheaply: first ``_HEAD_LINES`` lines for
@@ -222,7 +242,7 @@ def extract_claude_session_from_path(path: str | Path, *, include_content: bool 
 
     rec = FSRecord(
         type=RecordType.CLAUDE_SESSION,
-        id=session_id,
+        id=resolved_id or session_id,
         name=name,
         session_id=session_id,
         slug=slug,
@@ -332,9 +352,9 @@ def claude_session_to_transcript_dicts(rec: Record, include_raw_json: bool = Fal
     """Return filtered transcript entries as serializable dicts."""
     entries = claude_session_filtered_entries(rec)
     if include_raw_json:
-        return [e.meta_dict() for e in entries]
+        return [e.to_dict() for e in entries]
     return [
-        {k: v for k, v in e.meta_dict().items() if k != "raw_json"}
+        {k: v for k, v in e.to_dict().items() if k != "raw_json"}
         for e in entries
     ]
 

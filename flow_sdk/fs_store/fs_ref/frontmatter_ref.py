@@ -29,9 +29,11 @@ class FrontMatterFsRef(FSRef):
             return ""
         try:
             from flow_sdk.fs_store.indexer._frontmatter import _extract_body
-            return _extract_body(self._path.read_text(encoding="utf-8"))
+            body = _extract_body(self._path.read_text(encoding="utf-8"))
         except Exception:
             return ""
+        from flow_sdk.capsules import strip_capsule_blocks
+        return strip_capsule_blocks(body)
 
     def write_frontmatter(self, fields: dict) -> None:
         """Merge fields into the existing frontmatter, preserving the body."""
@@ -50,15 +52,23 @@ class FrontMatterFsRef(FSRef):
         """Replace the body while preserving the existing frontmatter."""
         if self.read_only:
             raise IOError(f"FrontMatterFsRef at {self.path!r} is read-only")
-        from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter
+        from flow_sdk.capsules import restore_capsule_blocks, snapshot_capsule_blocks
+        from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text, _render_frontmatter
         existing_fm = _read_existing_frontmatter(self._path) if self._path.exists() else {}
+        existing_text = self._path.read_text(encoding="utf-8") if self._path.exists() else ""
+        rendered = _render_frontmatter(existing_fm) + "\n" + body
+        rendered = restore_capsule_blocks(rendered, snapshot_capsule_blocks(existing_text))
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(_render_frontmatter(existing_fm) + "\n" + body, encoding="utf-8")
+        _atomic_write_text(self._path, rendered)
 
     def write_doc(self, body: str, frontmatter: dict) -> None:
-        """Atomically write frontmatter + body without reading the existing file first."""
+        """Atomically write frontmatter + body while preserving capsule blocks."""
         if self.read_only:
             raise IOError(f"FrontMatterFsRef at {self.path!r} is read-only")
-        from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter
+        from flow_sdk.capsules import restore_capsule_blocks, snapshot_capsule_blocks
+        from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text, _render_frontmatter
+        existing_text = self._path.read_text(encoding="utf-8") if self._path.exists() else ""
+        rendered = _render_frontmatter(frontmatter) + "\n" + body
+        rendered = restore_capsule_blocks(rendered, snapshot_capsule_blocks(existing_text))
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(_render_frontmatter(frontmatter) + "\n" + body, encoding="utf-8")
+        _atomic_write_text(self._path, rendered)

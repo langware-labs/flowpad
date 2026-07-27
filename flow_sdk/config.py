@@ -12,6 +12,7 @@ import string
 import sys
 import tempfile
 from enum import Enum
+from functools import lru_cache
 from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import Literal, Optional
@@ -64,6 +65,42 @@ def system_projects_root() -> Path:
 def flowpad_assistant_project_root() -> Path:
     """Mount path for the Flowpad Assistant system project."""
     return system_projects_root() / FLOWPAD_ASSISTANT_DIRNAME
+
+
+@lru_cache(maxsize=1)
+def flowpad_assistant_canonical_root() -> str | None:
+    """Canonical posix path of the running install's assistant project, or None.
+
+    The string form of ``flowpad_assistant_project_root()``, resolved the same
+    way ``indexer.roots.classify_path`` resolves it when stamping
+    ``entity.scope == "system"`` — so a scope tag and a path prefix can be
+    compared. Callers that need to answer "is this path the assistant's?" want
+    this, not ``is_system_project_path`` (which matches ANY install structurally).
+    """
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+    try:
+        return canonical_posix_path(flowpad_assistant_project_root().resolve())
+    except (OSError, ValueError):
+        return None
+
+
+def is_system_project_path(path: str | Path) -> bool:
+    """True when ``path`` is an SDK-shipped system project dir, for ANY install.
+
+    ``system_projects_root()`` resolves to the CURRENTLY-RUNNING SDK, so it
+    can't recognise the same shipped project under a different install (an
+    editable checkout vs. a wheel, or an older interpreter's site-packages).
+    Those copies get their own Project entities — minted per cwd off worker
+    session history — and only the running one carries ``system=True`` from
+    ``_ensure_system_projects``. Systemness is a property of the LOCATION, so
+    match it structurally: ``<any-install>/flow_sdk/system_projects/<name>``.
+    """
+    p = Path(path)
+    return (
+        p.parent.name == SYSTEM_PROJECTS_DIRNAME
+        and p.parent.parent.name == "flow_sdk"
+    )
 
 
 def _active_server_json_path() -> Path:
@@ -313,13 +350,15 @@ def set_server_info(data: dict) -> Path:
 
 
 def clear_server_info() -> None:
-    """Remove sentinel keys (server_pid, monitor_pid, launch_iso_time) from active file."""
+    """Delete the active server.json — this server is no longer running.
+
+    Every key in the file is runtime-only (port, pids, launch time), and a
+    leftover file is actively harmful: broadcast readers (``flow hooks
+    report``) treat any server.json as a live target, so a stale one
+    re-routes their traffic to whichever server later recycles the port.
+    """
     try:
-        info = load_server_info()
-        info.pop("server_pid", None)
-        info.pop("monitor_pid", None)
-        info.pop("launch_iso_time", None)
-        save_server_info(info)
+        get_port_file_path().unlink(missing_ok=True)
     except Exception:
         pass
 
@@ -345,6 +384,67 @@ def get_agent_mount_folder() -> str:
 
 # Agent mount folder constant
 AGENT_MOUNT_FOLDER = get_agent_mount_folder()
+
+
+def agent_workspace_root() -> Path:
+    """Per-instance agent mount ROOT (``<user_home>/Flowpad workspace``).
+
+    Matches the folder scanned by ``iter_workspace_project_paths`` and used as
+    the default agent working directory, resolved through instance settings so a
+    named dev instance points at its own home rather than ``Path.home()``.
+    """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return get_instance_settings().user_home / "Flowpad workspace"
+
+
+@lru_cache(maxsize=8)
+def _canonical_mount_roots(*raw_roots: str) -> frozenset[str]:
+    """Canonical forms of the agent mount roots, cached per distinct value pair.
+
+    Keyed on the raw root strings so a test that monkeypatches the roots gets its
+    own cache entry (no stale/leaked value), while a real scan resolves each root
+    once instead of re-running ``Path.resolve()`` for every cwd in the loop.
+    """
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+    out: set[str] = set()
+    for raw in raw_roots:
+        try:
+            out.add(canonical_posix_path(raw))
+        except (OSError, ValueError):
+            continue
+    return frozenset(out)
+
+
+def is_agent_mount_root(path: str | Path) -> bool:
+    """True when ``path`` is the agent mount ROOT itself — never a project.
+
+    The mount root is the container where agentic processes do their work; it is
+    infrastructure, not a user project. Without this gate, agentic-process init
+    (``Project.recover_by_path``) mints a stray "Flowpad workspace" project the
+    first time a process runs at the root with no specific project bound. Only
+    the bare root is excluded — real work subfolders under it stay projects.
+    """
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+    try:
+        target = canonical_posix_path(path)
+    except (OSError, ValueError):
+        return False
+    return target in _canonical_mount_roots(AGENT_MOUNT_FOLDER, str(agent_workspace_root()))
+
+
+def is_hidden_project(cwd: str | Path, system_flag: bool = False) -> bool:
+    """True when a project should be hidden from the default project lists.
+
+    A project is hidden when it is an SDK-shipped system project OR the agent
+    mount ROOT (``~/Flowpad workspace``). The path checks route through the
+    workspace consts (``is_system_project_path`` / ``is_agent_mount_root``) —
+    never a hardcoded literal. Hidden projects are still revealable via the
+    "Show system projects" preference, which flips the ``system`` filter off.
+    """
+    return system_flag or is_system_project_path(cwd) or is_agent_mount_root(cwd)
 
 
 # ---------------------------------------------------------------------------

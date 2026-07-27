@@ -1,4 +1,4 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity, type EntityMember } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
@@ -64,16 +64,20 @@ export interface IConversation extends IEntity {
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
-  participants?: ConversationParticipant[];
+  /** Hub role roster — inherited from the Entity base as ``members``. The wire
+   *  key on the conversation fanout is ``participants`` (hub contract), adapted
+   *  in ``onEntityUpdate``. */
   /** User-set display title. Set at creation in NewConversationDialog and
    *  shipped through the bundle on cross-user send. */
   title?: string | null;
   /**
-   * Per-conversation read-receipt visibility. When false, the hub suppresses
-   * `delivered` / `received` UPDATE frames to the original sender (co-recipients
-   * still see them). Mirrors the hub-side flag added in Phase 1.
+   * Conversation-scoped default transfer mode for asset shares. When true, asset
+   * shares into this conversation ride as Git-origin metadata (the receiver
+   * clones/pulls on an explicit Download) instead of copied bytes. Hub-synced and
+   * inherited by later replies from either side; defaults false (copy). The
+   * sender opts in per conversation via the Share dialog's Git toggle.
    */
-  message_status_visible?: boolean;
+  git_sharing_enabled?: boolean;
   /** Strip-only dismissal timestamp. Recent strip hides the row when set;
    *  auto-revives when a FlowMessage newer than this stamp arrives. Inbox
    *  ignores this field. Null = not dismissed. */
@@ -92,9 +96,9 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;
-  participants?: ConversationParticipant[];
+  // ``members`` (the hub role roster) is inherited from the Entity base.
   title?: string | null;
-  message_status_visible?: boolean;
+  git_sharing_enabled?: boolean;
   dismissed_at?: string | Date | null;
   archived_at?: string | Date | null;
   static type: string = 'conversation';
@@ -107,9 +111,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.remote_project_name = entity.remote_project_name;
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
-    this.participants = entity.participants;
     this.title = entity.title;
-    this.message_status_visible = entity.message_status_visible ?? true;
+    this.git_sharing_enabled = entity.git_sharing_enabled ?? false;
     this.dismissed_at = entity.dismissed_at ?? null;
     this.archived_at = entity.archived_at ?? null;
   }
@@ -125,6 +128,33 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
    */
   getDisplayName(): string | null {
     return this.title?.trim() || null;
+  }
+
+  /**
+   * Called by the store when the backend pushes an entity update
+   * (castAndDeepAssign runs this hook, then deepAssign on what's left).
+   *
+   * The roster (``members``) is a full server-authoritative snapshot — it must
+   * REPLACE, not merge. ``deepAssign`` recurses into arrays and merges them by
+   * index, never shrinking the target, so a member leaving would leave a stale
+   * tail entry ([A,B] + wire [B] → [B,B]). Assign the wire value wholesale here
+   * and strip it from the payload so the following deepAssign skips it. (Same
+   * pattern AgenticProcess uses for ``queue``.)
+   *
+   * Wire adapter: the local backend serializes the roster as ``members``; the
+   * hub conversation fanout uses ``participants`` (hub contract). Accept either
+   * key and land it on ``members``.
+   * @internal
+   */
+  protected onEntityUpdate(data: Partial<IConversation> & { participants?: unknown }): void {
+    const key = 'members' in data ? 'members' : 'participants' in data ? 'participants' : null;
+    if (key) {
+      const roster = (data as Record<string, unknown>)[key];
+      this.members = Array.isArray(roster)
+        ? roster.map((p) => ({ ...(p as EntityMember) }))
+        : (roster as EntityMember[] | undefined);
+      delete (data as Record<string, unknown>)[key];
+    }
   }
 
   // NOTE: FE-side project chip projection moved server-side. The backend's
@@ -206,6 +236,47 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
       await dataManager.callAction<unknown, unknown>(action);
     }
     this.title = title;
+  }
+
+  /**
+   * Set the conversation-scoped ``git_sharing_enabled`` default (asset shares
+   * ride Git-origin metadata when true, copied bytes when false). Same transport
+   * as {@link rename}: the generic entity update (``PUT /graph/conversation/<id>``
+   * with ``{git_sharing_enabled}``) opted into hub reflection, so for a shared
+   * (``remote``) conversation the local backend forwards it to the hub, which
+   * persists the authoritative value; the peer's local mirror converges on its
+   * next conversation-list sync (``_upsert_hub_conversation_metadata``). Any
+   * participant may flip it — the latest submitted value wins.
+   */
+  async setGitSharingEnabled(enabled: boolean): Promise<void> {
+    const action = new ActionInfo('update', this.typeId.type, this.typeId.id, 'PUT');
+    action.bodyParameters = { git_sharing_enabled: enabled };
+    action.hubReflect = true;
+    await dataManager.callAction<unknown, unknown>(action);
+    this.git_sharing_enabled = enabled;
+  }
+
+  /**
+   * Fan out an "install in project" pick to the whole conversation: install
+   * EVERY attachment of this conversation into ``projectId``. Backs binding a
+   * conversation to a project so all its current assets (and, via the reception
+   * path, future arrivals) become project assets. Receiver-local — no
+   * hub-reflect. Returns the per-attachment outcome buckets.
+   */
+  async installAttachmentsIntoProject(
+    projectId: string,
+  ): Promise<{ installed: string[]; skipped: string[]; failed: string[] }> {
+    const action = new ActionInfo('install-attachments', this.typeId.type, this.typeId.id, 'POST');
+    action.bodyParameters = { project_id: projectId };
+    const res = await dataManager.callAction<
+      unknown,
+      { installed: string[]; skipped: string[]; failed: string[] }
+    >(action);
+    return {
+      installed: res?.installed ?? [],
+      skipped: res?.skipped ?? [],
+      failed: res?.failed ?? [],
+    };
   }
 
   /**

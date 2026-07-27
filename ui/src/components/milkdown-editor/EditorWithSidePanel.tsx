@@ -1,22 +1,33 @@
-import type { AgenticProcess } from '@sdk';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef } from 'react';
-import { PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Link2, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
 import { CollapsedSideRail, SideRailButton } from '@src/components/ui/collapsed-side-rail';
 import { useSideWindows } from '@src/navigation/useSideWindows';
-import {
-  BacklinksTab,
-  ChatTab,
-  MD_SIDE_TABS,
-  MD_SIDE_TABS_DEFAULT,
-  MD_SIDE_TABS_ORDER,
-  type MdSideTabId,
-} from './side-windows';
+import { BacklinksTab } from './side-windows';
+
+// The one built-in side window; asset editors append extras via `extraTabs`.
+const BACKLINKS_TAB: TabDescriptor = {
+  id: 'backlinks',
+  label: 'Backlinks',
+  icon: Link2,
+  description: 'Documents that link here',
+};
+
+// Vibe/Standard keep the markdown rail deliberately small. Context is supplied
+// only by surfaces that support it; Revisions is supplied by MarkdownEditor.
+// Translations is a first-class doc affordance (read a doc in another language),
+// so it stays available in every mode. Everything else (Backlinks and other
+// asset-specific tools such as Runs/Eval) is a power-user option and remains
+// available in Advanced/Dev only.
+// Built-in tabs that stay available in Vibe/Standard. Caller-injected extras
+// declare their own non-Advanced visibility via `ExtraSideTab.availableInNonAdvanced`
+// (mode-visibility is a property of the tab, not a registry the shell owns).
+const NON_ADVANCED_SIDE_TAB_IDS = new Set(['context', 'revisions']);
 
 /**
- * Extra tab a caller can inject alongside Chat + Backlinks. The `panel` is the
+ * Extra tab a caller can inject alongside Backlinks. The `panel` is the
  * ReactNode rendered when the tab is active. Used by asset types (workflow
  * Runs, revisions, …) to append a window without forking this component.
  */
@@ -26,6 +37,12 @@ export interface ExtraSideTab {
   icon: TabDescriptor['icon'];
   description?: string;
   panel: ReactNode;
+  /**
+   * Keep this tab visible in Vibe/Standard (not just Advanced/Dev). Default
+   * false — an extra tab is a power-user affordance unless it opts in. Set for
+   * first-class doc affordances (e.g. Translations).
+   */
+  availableInNonAdvanced?: boolean;
 }
 
 interface EditorWithSidePanelProps {
@@ -33,24 +50,17 @@ interface EditorWithSidePanelProps {
   children: ReactNode;
   /**
    * Serialized TypeId of the first-class entity this file belongs to (e.g.
-   * `"plan-<uuid>"`, `"agent-<uuid>"`). Chat + Backlinks are keyed by this.
-   * Null disables those tabs' persistence (chat cannot open, history empty).
+   * `"plan-<uuid>"`, `"agent-<uuid>"`). Backlinks are keyed by this.
+   * Null disables that tab's persistence (history empty).
    */
-  chatTarget: string | null;
-  /** Appended after Chat + Backlinks. Use for asset-type-specific tabs (e.g. workflow Runs). */
+  target: string | null;
+  /** Appended after Backlinks. Use for asset-type-specific tabs (e.g. workflow Runs). */
   extraTabs?: ExtraSideTab[];
-  /** Forwarded to the Chat tab — runs once after its backing chat process is created. */
-  onChatProcessCreated?: (process: AgenticProcess) => Promise<void> | void;
-  /**
-   * Current caret line (1-indexed, on-disk) emitted by whichever editor is mounted.
-   * Rendered as "line N" in the chat header. Null hides the badge.
-   */
-  cursorLine?: number | null;
 }
 
 /**
  * Editor-agnostic shell: any markdown editor as `children`, plus a tabbed side
- * window (Chat, Backlinks, extras). The side window is URL-first dock state —
+ * window (Backlinks, extras). The side window is URL-first dock state —
  * the open set + active id live on the DockPointer (`?sideWindows=…`) and are
  * driven through the shared `useSideWindows` hook, identical to the interactive
  * terminal. Only opened windows show, each is closeable, and an empty set
@@ -62,10 +72,8 @@ interface EditorWithSidePanelProps {
  */
 export function EditorWithSidePanel({
   children,
-  chatTarget,
+  target,
   extraTabs,
-  onChatProcessCreated,
-  cursorLine,
 }: EditorWithSidePanelProps) {
   const { windows, active, open, close, closeAll, select } = useSideWindows();
   const advanced = useIsAdvanced();
@@ -85,33 +93,34 @@ export function EditorWithSidePanel({
     if (windows.length > 0) closeAll();
   }, [advanced, windows, closeAll]);
 
-  // Full registry of openable windows (Chat + Backlinks + caller extras), in
-  // display order. Drives both the open-tab descriptors and the collapsed rail.
+  // Registry of openable windows (Backlinks + caller extras), in display order.
+  // Filtering here covers both the open drawer tabs and the collapsed rail, so
+  // a persisted Advanced URL cannot leak a power-user tab into a simpler mode.
   const registry = useMemo<TabDescriptor[]>(() => {
-    const base = MD_SIDE_TABS_ORDER.map((id) => MD_SIDE_TABS[id] as TabDescriptor);
     const extras: TabDescriptor[] = (extraTabs ?? []).map(({ id, label, icon, description }) => ({
       id,
       label,
       icon,
       description,
     }));
-    return [...base, ...extras];
-  }, [extraTabs]);
+    const all = [BACKLINKS_TAB, ...extras];
+    if (advanced) return all;
+    // Non-Advanced: built-in always-on ids, plus any extra tab that opted in.
+    const nonAdvancedExtraIds = new Set(
+      (extraTabs ?? []).filter((t) => t.availableInNonAdvanced).map((t) => t.id),
+    );
+    return all.filter(
+      (tab) => NON_ADVANCED_SIDE_TAB_IDS.has(tab.id) || nonAdvancedExtraIds.has(tab.id),
+    );
+  }, [advanced, extraTabs]);
 
   const panels = useMemo<Record<string, ReactNode>>(() => {
     const map: Record<string, ReactNode> = {
-      chat: (
-        <ChatTab
-          target={chatTarget}
-          onChatProcessCreated={onChatProcessCreated}
-          cursorLine={cursorLine}
-        />
-      ),
-      backlinks: <BacklinksTab target={chatTarget} />,
+      backlinks: <BacklinksTab target={target} />,
     };
     for (const t of extraTabs ?? []) map[t.id] = t.panel;
     return map;
-  }, [chatTarget, extraTabs, onChatProcessCreated, cursorLine]);
+  }, [target, extraTabs]);
 
   // Open windows, in open order, narrowed to known registry ids (drops any
   // stale/foreign id) and marked closeable.
@@ -123,6 +132,7 @@ export function EditorWithSidePanel({
         .map((d) => ({ ...d, closable: true })),
     [windows, registry],
   );
+  const visibleActive = active && openTabs.some((tab) => tab.id === active) ? active : null;
 
   return (
     <div className="flex h-full w-full" data-testid="md-editor-with-side-panel">
@@ -137,7 +147,7 @@ export function EditorWithSidePanel({
           data-testid="md-side-window"
           tabTestIdPrefix="md-side-tab"
           tabs={openTabs}
-          activeTab={active ?? openTabs[openTabs.length - 1].id}
+          activeTab={visibleActive ?? openTabs[openTabs.length - 1].id}
           onActiveTabChange={select}
           onCloseTab={close}
           truncateLabels
@@ -146,32 +156,30 @@ export function EditorWithSidePanel({
           {panels}
         </TabbedSideDrawer>
       )}
-      {/* The rail is always present (like the terminal's ribbon): every
-          registered window can be opened — or re-activated, when already open —
-          at any time, whether the drawer is collapsed or showing other windows. */}
-      <CollapsedSideRail data-testid="md-side-window-collapsed">
-        {openTabs.length === 0 && (
-          <SideRailButton
-            icon={PanelRightOpen}
-            label="Expand side window"
-            onClick={() => open(registry[0]?.id ?? MD_SIDE_TABS_DEFAULT)}
-            testId="md-side-window-expand"
-          />
-        )}
-        {registry.map((tab) => (
-          <SideRailButton
-            key={tab.id}
-            icon={tab.icon}
-            label={tab.label}
-            active={windows.includes(tab.id)}
-            onClick={() => open(tab.id)}
-            testId={`md-side-tab-collapsed-${tab.id}`}
-          />
-        ))}
-      </CollapsedSideRail>
+      {/* When this mode has registered windows, the rail can open or re-activate
+          each one at any time, whether the drawer is collapsed or already open. */}
+      {registry.length > 0 && (
+        <CollapsedSideRail data-testid="md-side-window-collapsed">
+          {advanced && openTabs.length === 0 && (
+            <SideRailButton
+              icon={PanelRightOpen}
+              label="Expand side window"
+              onClick={() => open(registry[0].id)}
+              testId="md-side-window-expand"
+            />
+          )}
+          {registry.map((tab) => (
+            <SideRailButton
+              key={tab.id}
+              icon={tab.icon}
+              label={tab.label}
+              active={windows.includes(tab.id)}
+              onClick={() => open(tab.id)}
+              testId={`md-side-tab-collapsed-${tab.id}`}
+            />
+          ))}
+        </CollapsedSideRail>
+      )}
     </div>
   );
 }
-
-// Re-export MdSideTabId for convenience for callers that pin the default tab.
-export type { MdSideTabId };

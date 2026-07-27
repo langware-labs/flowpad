@@ -1,4 +1,4 @@
-import { ExternalLink, Eye, GitBranch, Pencil, Play } from 'lucide-react';
+import { ExternalLink, Eye, Pencil, Play } from 'lucide-react';
 import type { AttachmentActionContext, AttachmentActionDescriptor } from './types';
 import { firstUnapprovedPromptIdx } from './prompt-attachment';
 
@@ -11,22 +11,42 @@ import { firstUnapprovedPromptIdx } from './prompt-attachment';
  * MessageBubble surgery.
  */
 
+// Live-session messages retire the per-message CTA: approval is session-scoped
+// (the host approves the SESSION once, from the group header / session view),
+// so a prompt carrying a session id never renders "Approve & run".
 const approveVisible = (ctx: AttachmentActionContext): boolean =>
-  ctx.isFromOther && firstUnapprovedPromptIdx(ctx.fm) >= 0 && !!ctx.handlers.approveAndExecute;
+  ctx.isFromOther &&
+  !ctx.fm.remote_worker_session_id &&
+  firstUnapprovedPromptIdx(ctx.fm) >= 0 &&
+  !!ctx.handlers.approveAndExecute;
+
+/** Trim a session label so the chip stays "alive candy" (small pill), not a
+ *  paragraph. See feedback_chip_design. */
+function truncateLabel(label: string, max = 24): string {
+  return label.length > max ? `${label.slice(0, max - 1)}…` : label;
+}
 
 export const ATTACHMENT_ACTION_DESCRIPTORS: AttachmentActionDescriptor[] = [
   {
     key: 'prompt',
     visible: approveVisible,
-    build: (ctx) => ({
-      id: 'prompt.approve-execute',
-      label: 'Execute',
-      icon: Play,
-      variant: 'primary',
-      title: 'Approve this prompt and run it in the shared session',
-      testId: 'message-bubble-execute-prompt',
-      run: () => ctx.handlers.approveAndExecute?.(firstUnapprovedPromptIdx(ctx.fm)),
-    }),
+    build: (ctx) => {
+      // No session yet → "Run". A session exists → "<Host>'s session · new run",
+      // signalling the prompt joins the already-running session.
+      const sessionLabel = ctx.workerSessionExists ? ctx.workerSessionLabel : null;
+      return {
+        id: 'prompt.approve-execute',
+        label: sessionLabel ? `${truncateLabel(sessionLabel)} · new run` : 'Run',
+        icon: Play,
+        variant: 'primary',
+        pulse: ctx.workerSessionInFlight,
+        title: sessionLabel
+          ? `Approve and run this prompt in ${sessionLabel}`
+          : 'Approve this prompt and run it',
+        testId: 'message-bubble-execute-prompt',
+        run: () => ctx.handlers.approveAndExecute?.(firstUnapprovedPromptIdx(ctx.fm)),
+      };
+    },
   },
   {
     key: 'spec',
@@ -65,19 +85,6 @@ export const ATTACHMENT_ACTION_DESCRIPTORS: AttachmentActionDescriptor[] = [
       title: 'Start a worker session pre-loaded with this spec/plan and the conversation context to read and review (no changes yet)',
       testId: 'message-bubble-open-spec',
       run: () => ctx.handlers.implementPlan?.(),
-    }),
-  },
-  {
-    key: 'git_branch',
-    visible: (ctx) => ctx.isFromOther && !!ctx.gitBranchTypeId && !!ctx.handlers.openSharedRepo,
-    build: (ctx) => ({
-      id: 'git_branch.open-in-git',
-      label: 'Open in Git…',
-      icon: GitBranch,
-      variant: 'primary',
-      title: 'Clone this repo, or attach it to a local copy you already have',
-      testId: 'message-bubble-open-shared-repo',
-      run: () => ctx.handlers.openSharedRepo?.(ctx.gitBranchTypeId!),
     }),
   },
   {

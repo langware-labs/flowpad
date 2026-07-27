@@ -30,8 +30,13 @@ beforeEach(() => {
 // ---------- getAnalysisPath ----------
 
 describe('getAnalysisPath', () => {
-  it('returns null for non-analysis tasks', () => {
-    expect(getAnalysisPath({ task_type: 'bug', analysis_path: '/p' } as any)).toBeNull();
+  // No task_type gate, by design: `analysis_path` is only ever written by
+  // analysis-producing flows (analysis tasks AND the Analyze Status wizard,
+  // which stamps a report onto a *non-analysis* task — see hasStatusAnalysis).
+  // Gating on task_type here would hide the wizard's report on a bug task.
+  it('returns the path whatever the task_type — only analysis flows write it', () => {
+    expect(getAnalysisPath({ task_type: 'bug', analysis_path: '/p' } as any)).toBe('/p');
+    expect(getAnalysisPath({ task_type: 'analysis', analysis_path: '/p' } as any)).toBe('/p');
   });
 
   it('returns null when analysis_path is missing', () => {
@@ -47,25 +52,28 @@ describe('getAnalysisPath', () => {
 // ---------- openAnalysisReport ----------
 
 describe('openAnalysisReport', () => {
+  // Reports open through navigation.openFile — the shared type-dispatch
+  // chokepoint (an .md report lands in the assets document viewer, not the
+  // raw code editor).
   it('opens via VFS path when computeNode is available', () => {
     const fakeTypeId = { toString: () => 'compute_node-@local' };
     mockDataContext.computeNode = { typeId: fakeTypeId };
     mockFromMachinePath.mockReturnValue({ absVfsPath: 'compute_node-@local/home/analysis.md' });
 
-    const navigation = { openDock: vi.fn() } as any;
+    const navigation = { openFile: vi.fn() } as any;
     openAnalysisReport('/home/analysis.md', navigation);
 
     expect(mockFromMachinePath).toHaveBeenCalledWith('/home/analysis.md', fakeTypeId);
-    expect(navigation.openDock).toHaveBeenCalledTimes(1);
+    expect(navigation.openFile).toHaveBeenCalledWith('compute_node-@local/home/analysis.md');
   });
 
   it('falls back to raw path when computeNode is unavailable', () => {
     mockDataContext.computeNode = null;
 
-    const navigation = { openDock: vi.fn() } as any;
+    const navigation = { openFile: vi.fn() } as any;
     openAnalysisReport('/fallback/path.md', navigation);
 
     expect(mockFromMachinePath).not.toHaveBeenCalled();
-    expect(navigation.openDock).toHaveBeenCalledTimes(1);
+    expect(navigation.openFile).toHaveBeenCalledWith('/fallback/path.md');
   });
 });

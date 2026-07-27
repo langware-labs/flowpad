@@ -1,14 +1,12 @@
 import { InteractiveTerminal } from '@src/components/terminal';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
-import { Artifact, Flow, MachineStatus, WebappSubview } from '@sdk';
-import { Boxes, Terminal } from 'lucide-react';
+import { AgenticProcess, WebappSubview } from '@sdk';
+import { Cloud, Terminal } from 'lucide-react';
 import React from 'react';
-import { WebappArtifactsTab } from './webapp-artifacts-tab';
+import { WebappDeploymentsTab } from './webapp-deployments-tab';
 
 interface WebappTerminalPanelProps {
-  flow: Flow | null;
-  artifacts: Artifact[];
-  machineStatus: MachineStatus | null;
+  flow: AgenticProcess | null;
   isActive: boolean;
   activeTab: WebappSubview;
   onTabChange: (tab: WebappSubview) => void;
@@ -16,8 +14,6 @@ interface WebappTerminalPanelProps {
 
 export const WebappTerminalPanel: React.FC<WebappTerminalPanelProps> = ({
   flow,
-  artifacts,
-  machineStatus,
   isActive,
   activeTab,
   onTabChange,
@@ -36,8 +32,8 @@ export const WebappTerminalPanel: React.FC<WebappTerminalPanelProps> = ({
           value={WebappSubview.ARTIFACTS}
           className="h-7 gap-1.5 rounded-sm px-3 text-xs data-[state=active]:bg-muted"
         >
-          <Boxes className="h-3.5 w-3.5" />
-          Artifacts
+          <Cloud className="h-3.5 w-3.5" />
+          Deployments
         </TabsTrigger>
       </TabsList>
 
@@ -51,7 +47,7 @@ export const WebappTerminalPanel: React.FC<WebappTerminalPanelProps> = ({
       </TabsContent>
 
       <TabsContent value={WebappSubview.ARTIFACTS} className="mt-0 flex-1 overflow-hidden">
-        <WebappArtifactsTab artifacts={artifacts} machineStatus={machineStatus} />
+        <WebappDeploymentsTab />
       </TabsContent>
     </Tabs>
   );

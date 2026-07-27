@@ -1,6 +1,6 @@
 import { APIEntity, FSRef } from '@sdk';
 import { Button } from '@src/components/ui/button';
-import { FileQuestion, RefreshCw } from 'lucide-react';
+import { FileQuestion, Hammer, RefreshCw } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 
 interface MissingAssetCardProps<T extends APIEntity<T>> {
@@ -14,6 +14,14 @@ interface MissingAssetCardProps<T extends APIEntity<T>> {
    * informational; no delete affordance here (out of scope).
    */
   entity?: T | null;
+  /**
+   * Provided only when the entity OWNS its backing file (owns_main_ref types
+   * like task/spec): a single save re-renders the file from its default body,
+   * so an orphaned row (missing file / no asset_ref) can self-heal. Rebuilds
+   * then retries. Absent for hand-edited files (markdown/skill), where
+   * rebuilding from a template would clobber user content.
+   */
+  onRebuild?: () => void;
 }
 
 /**
@@ -35,6 +43,7 @@ export function MissingAssetCard<T extends APIEntity<T>>({
   fsRef,
   onRetry,
   entity,
+  onRebuild,
 }: MissingAssetCardProps<T>) {
   const orphanSinceRaw = (entity as { orphan_since?: string | null } | null | undefined)
     ?.orphan_since;
@@ -58,6 +67,11 @@ export function MissingAssetCard<T extends APIEntity<T>>({
           )}
         </div>
         <div className="flex gap-2">
+          {onRebuild && (
+            <Button size="sm" onClick={onRebuild} data-testid="missing-asset-rebuild">
+              <Hammer className="mr-1 h-3 w-3" /> <Trans>Rebuild file</Trans>
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={onRetry} data-testid="missing-asset-retry">
             <RefreshCw className="mr-1 h-3 w-3" /> <Trans>Retry</Trans>
           </Button>

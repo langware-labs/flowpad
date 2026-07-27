@@ -60,6 +60,10 @@ function harnessWarning(capability: UseCapabilityResult): string | null {
   return capability.result?.message ?? 'This harness is not available on this machine.';
 }
 
+/** WorkerType → the controller's per-vendor kind token (pending-label key). */
+const kindForWorker = (worker: ProjectWorkerType): 'claude' | 'codex' | 'copilot' =>
+  worker === 'claude_code' ? 'claude' : worker;
+
 export interface TerminalStripControllerOptions {
   /** Whether to expose the "Add Tab" opener toolbar as `trailing`. */
   addTabButton?: boolean;
@@ -76,12 +80,21 @@ export interface TerminalStripController {
   leading: React.ReactNode;
   /** Trailing opener toolbar (null unless `addTabButton`). */
   trailing: React.ReactNode;
+  /**
+   * The spawn openers as descriptors (claude/codex/copilot/terminal/sandbox/
+   * docker/history/…). Exposed so a surface can render a *subset* itself —
+   * e.g. the project home's launcher takes only `terminal` — instead of
+   * re-deriving a button's label/icon/pending state from the raw handlers.
+   */
+  openers: OpenerDescriptor[];
   /** History / resume / install dialogs — render once in the host. */
   modals: React.ReactNode;
   isTabCreationPending: boolean;
   isClaudeCreationPending: boolean;
   isTerminalCreationPending: boolean;
   handleStartClaude: () => Promise<void> | void;
+  /** Generic vendor launch — the `WorkerToolbar.onLaunch` contract. */
+  startWorker: (worker: ProjectWorkerType) => Promise<void> | void;
   handleStartTerminal: () => Promise<void> | void;
   handleOpenHistory: () => void;
 }
@@ -166,17 +179,20 @@ export function useTerminalStripController({
   const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
   const handleStartCodex = useCallback(() => startAgenticTab('codex', 'codex'), [startAgenticTab]);
   const handleStartCopilot = useCallback(() => startAgenticTab('copilot', 'copilot'), [startAgenticTab]);
+  const startWorker = useCallback(
+    (worker: ProjectWorkerType) => startAgenticTab(kindForWorker(worker), worker),
+    [startAgenticTab],
+  );
 
   const ensureProject = useEnsureProject();
   const handleLaunchProjectPath = useCallback(
     async (cwd: string, workerType: ProjectWorkerType) => {
       try {
         const project = await ensureProject(cwd, { select: false });
-        await startAgenticTab(
-          workerType === 'codex' ? 'codex' : workerType === 'copilot' ? 'copilot' : 'claude',
-          workerType,
-          { projectId: project.id, cwd: project.fs_storage_mount_path },
-        );
+        await startAgenticTab(kindForWorker(workerType), workerType, {
+          projectId: project.id,
+          cwd: project.fs_storage_mount_path,
+        });
       } catch (error) {
         notify.error({
           title: t`Failed to open project`,
@@ -268,7 +284,7 @@ export function useTerminalStripController({
     () => [
       {
         id: 'claude',
-        label: t`Start Claude (${modLabel}+C)`,
+        label: t`Start Claude`,
         Icon: PROVIDER_META.claude.Icon,
         iconClassName: PROVIDER_META.claude.iconClassName,
         onActivate: () => void handleStartClaude(),
@@ -388,7 +404,7 @@ export function useTerminalStripController({
 
   const newTabMenuItems = useMemo<TabStripContextMenuItem[]>(
     () => [
-      { label: t`New Claude Session`, shortcut: `${modLabel}+C`, onSelect: () => void handleStartClaude() },
+      { label: t`New Claude Session`, onSelect: () => void handleStartClaude() },
       { label: t`New Terminal`, shortcut: `${modLabel}+T`, onSelect: () => void handleStartTerminal() },
       // Advanced-only: freeze the current context into a GraphContext and open it.
       ...(isAdvanced
@@ -458,11 +474,13 @@ export function useTerminalStripController({
     closeShortcutLabel: `${modLabel}+W`,
     leading,
     trailing,
+    openers,
     modals,
     isTabCreationPending,
     isClaudeCreationPending,
     isTerminalCreationPending,
     handleStartClaude,
+    startWorker,
     handleStartTerminal,
     handleOpenHistory: () => setHistoryModalOpen(true),
   };

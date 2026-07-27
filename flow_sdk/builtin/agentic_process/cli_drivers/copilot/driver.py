@@ -4,15 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
+    DeviceLoginSpec,
     AgenticProcessContextKey,
+    WorkerAuthResult,
     WorkerCLIOptions,
+    WorkerSpawnError,
+    apply_worker_env,
+    apply_worker_secret_env,
+    latch_spawn_failure,
     restart_payload_from_cli_options,
+    run_worker_auth_probe,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
@@ -20,9 +28,13 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import
     copilot_transcript_path_for_process,
     find_copilot_session_jsonl,
     find_latest_copilot_session_jsonl,
-    load_session_history as _copilot_load_session_history,
-    load_transcript_history as _copilot_load_transcript_history,
     read_copilot_session_meta,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
+    load_session_history as _copilot_load_session_history,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
+    load_transcript_history as _copilot_load_transcript_history,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.status import copilot_tail_status
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.stream_worker import (
@@ -53,6 +65,12 @@ class CopilotDriver:
     # Copilot's TUI treats a pasted prompt ending in \r as literal text — needs
     # a discrete Enter after the paste settles (Shell.write_then_submit).
     pty_submits_on_paste = False
+    # Real Copilot CLI 1.0.70 PTY captures show the ``Session: <n> AIC used``
+    # status only on the main composer screen, never on folder trust. It is a
+    # stronger readiness signal than the generic prompt glyph (the trust
+    # choice list has its own glyph).
+    pty_composer_ready_pattern = re.compile(r"Session:[ \t\u00a0]*[0-9.,]+[ \t\u00a0]+AIC used")
+    pins_resume_cwd = False  # no transcript-cwd pinning, no fork
 
     def cli_options(self, process: "AgenticProcess") -> CopilotCliOptions:
         cmd = CopilotCliOptions.from_json(process.cli_config)
@@ -62,7 +80,9 @@ class CopilotDriver:
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.skill_names = list(agents_json.keys())
-        if process.visible:
+        # Transport intent (``pty_mode``), not tab visibility, selects the argv
+        # shape: PTY → interactive (no json-stream); headless → json-stream.
+        if process.pty_mode:
             cmd.json_stream = False
         if process.session_id and self._has_session(process):
             cmd.resume = True
@@ -84,6 +104,7 @@ class CopilotDriver:
             await process.get_project()
         except Exception:
             logger.debug("CopilotDriver.headless_prompt: get_project failed", exc_info=True)
+        instruction_assets = await process.prepare_system_instruction_assets()
         if not process.workdir:
             return ApiFailResponse(message="copilot prompt: workdir is not set")
 
@@ -103,86 +124,125 @@ class CopilotDriver:
 
         full_prompt = self.compose_prompt(instruction, process.get_agents_json())
         cli_cfg = process.cli_config or {}
+        env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
+        await apply_worker_secret_env(env_vars, process)
         context = AgenticContext(
             workdir=process.workdir,
-            env_vars=dict(cli_cfg.get("env_vars") or {}),
+            env_vars=env_vars,
             model=cli_cfg.get("model"),
             permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
             effort=cli_cfg.get("effort"),
             add_dirs=list(process.resolved_add_dirs or []),
             session_id=process.session_id if not resumable else None,
             resume_session_id=process.session_id if resumable else None,
+            **process._instruction_context_kwargs(instruction_assets),
         )
 
         worker = CopilotCLIStreamWorker.for_process(process.id)
-        from flow_sdk.builtin.agentic_process.agentic_process import _PROMPT_WORKERS
-        _PROMPT_WORKERS[process.id] = worker  # type: ignore[assignment]
+        from flow_sdk.builtin.agentic_process.agentic_process import (
+            register_prompt_worker,
+            unregister_prompt_worker,
+        )
 
+        register_prompt_worker(process.id, worker)
+        # Setup between registration and task scheduling can raise. The caller's
+        # admission ``finally`` can no longer clean the slot — register_prompt_worker
+        # popped the admission and moved ownership to ``_PROMPT_WORKERS``. Until
+        # _run_turn is scheduled (its ``finally`` owns unregister), THIS frame owns
+        # the worker slot: a raise here would leak it → prompt_worker_active pinned
+        # True forever (permanent 409 + busy). Hand ownership off on success.
         try:
-            transcript_path = worker.transcript_path
-            if transcript_path is not None and not transcript_path.exists():
-                transcript_path.parent.mkdir(parents=True, exist_ok=True)
-                transcript_path.touch()
-        except OSError:
-            logger.debug("CopilotDriver.headless_prompt: transcript pre-touch failed", exc_info=True)
-
-        from flow_sdk.builtin.process_lifecycle import ProcessStatus
-        if process.status != ProcessStatus.RUNNING.value:
-            process.status = ProcessStatus.RUNNING.value
             try:
-                await process.save()
-            except Exception:
-                logger.debug("CopilotDriver.headless_prompt: lifecycle save failed", exc_info=True)
+                transcript_path = worker.transcript_path
+                if transcript_path is not None and not transcript_path.exists():
+                    transcript_path.parent.mkdir(parents=True, exist_ok=True)
+                    transcript_path.touch()
+            except OSError:
+                logger.debug("CopilotDriver.headless_prompt: transcript pre-touch failed", exc_info=True)
 
-        process_ref = process
-        process_id = process.id
-        object.__setattr__(process_ref, "_turn_in_flight", True)
-        try:
-            await process_ref.notify_updated()
-        except Exception:
-            logger.exception("CopilotDriver.headless_prompt: start notify failed")
+            from flow_sdk.builtin.process_lifecycle import ProcessStatus
 
-        async def _run_turn() -> None:
-            # Resumed sessions already have the right id persisted; a fresh start
-            # persists copilot's real id once the worker reports it (below).
-            session_id_persisted = resumable
-            try:
-                async for fd in worker.execute(prompt=full_prompt, context=context):
-                    sid = worker.get_session_id()
-                    if sid and sid != process_ref.session_id:
-                        process_ref.session_id = sid
-                        session_id_persisted = False
-                    if sid and not session_id_persisted:
-                        try:
-                            await process_ref.save()
-                            session_id_persisted = True
-                        except Exception:
-                            logger.debug("CopilotDriver.headless_prompt: session save failed", exc_info=True)
-                    try:
-                        await process_ref.emit_flow_data(fd.model_dump())
-                    except Exception:
-                        logger.debug("CopilotDriver.headless_prompt: emit_flow_data failed", exc_info=True)
-            except Exception:
-                logger.exception("CopilotDriver.headless_prompt: worker error")
-            finally:
-                _PROMPT_WORKERS.pop(process_id, None)
-                object.__setattr__(process_ref, "_turn_in_flight", False)
+            if process.status != ProcessStatus.RUNNING.value:
+                process.status = ProcessStatus.RUNNING.value
                 try:
-                    await process_ref.notify_updated()
+                    await process.save()
                 except Exception:
-                    logger.exception("CopilotDriver.headless_prompt: terminal notify failed")
+                    logger.debug("CopilotDriver.headless_prompt: lifecycle save failed", exc_info=True)
 
-        asyncio.create_task(_run_turn(), name=f"copilot-{process.id[:8]}")
+            process_ref = process
+            process_id = process.id
+            object.__setattr__(process_ref, "_turn_in_flight", True)
+            try:
+                await process_ref.notify_updated()
+            except Exception:
+                logger.exception("CopilotDriver.headless_prompt: start notify failed")
+
+            # Session adoption (and its restart-snapshot bookkeeping) is owned by
+            # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
+            # only the turn-initial report (spurious-rotation guard). Resumed
+            # sessions no-op inside adopt_worker_session when the id is unchanged.
+            adopt_session = process_ref.make_turn_session_adopter("CopilotDriver.headless_prompt")
+
+            async def _run_turn() -> None:
+                try:
+                    async for fd in worker.execute(prompt=full_prompt, context=context):
+                        await adopt_session(worker.get_session_id())
+                        try:
+                            await process_ref.emit_flow_data(fd.model_dump())
+                        except Exception:
+                            logger.debug("CopilotDriver.headless_prompt: emit_flow_data failed", exc_info=True)
+                except WorkerSpawnError as e:
+                    # No subprocess ever started — end the process FAILED with the
+                    # start_failure latch (the ERROR frame was already emitted).
+                    await latch_spawn_failure(process_ref, e)
+                except Exception:
+                    logger.exception("CopilotDriver.headless_prompt: worker error")
+                finally:
+                    unregister_prompt_worker(process_id, worker)
+                    # Terminal status broadcast + completion-driven queue advance
+                    # (see AgenticProcess.end_headless_turn).
+                    await process_ref.end_headless_turn("CopilotDriver.headless_prompt")
+
+            asyncio.create_task(_run_turn(), name=f"copilot-{process.id[:8]}")
+        except BaseException:
+            # _run_turn never took ownership of the slot — release it here so the
+            # next turn is not permanently rejected with a 409.
+            unregister_prompt_worker(process.id, worker)
+            raise
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})
 
     def stream_worker(self, process: "AgenticProcess") -> CopilotCLIStreamWorker:
         return CopilotCLIStreamWorker.for_process(process.id)
 
+    async def auth_probe(self) -> WorkerAuthResult:
+        """Copilot has no status subcommand — heuristic probe (env token /
+        ``~/.copilot/config.json`` marker), never ``verified``. The shared
+        runner's install gate still applies: an uninstalled CLI reports
+        NOT_INSTALLED even when a GH_TOKEN happens to be in the env."""
+        return await run_worker_auth_probe(self.name)
+
+    # RFC-8628 device flow — copilot's default and only login mode.
+    device_login_spec = DeviceLoginSpec(
+        login_argv=("copilot", "login"),
+        url_re=re.compile(r"(https://github\.com/login/device)"),
+        code_re=re.compile(r"enter (?:the )?code ([A-Z0-9]{4}-[A-Z0-9]{4})"),
+        accepts_code_paste=False,
+    )
+
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
-        local = self._process_local_descriptor(process)
-        if local is not None:
-            return local
-        return self._session_descriptor(process)
+        """Resolve the Copilot transcript for READING (history / prompts / status).
+
+        Transcript↔output alignment (mirror of codex): the session record
+        (``~/.copilot/session-state/<id>/events.jsonl``) is the canonical, complete
+        transcript — user-message entries AND assistant output. The process-local
+        file is only the tee'd stdout (assistant output, no user-message entry), so
+        ``transcript/prompts`` came back empty for headless. Prefer the session
+        record; fall back to the stdout tee only before the session id resolves.
+        """
+        session = self._session_descriptor(process)
+        if session is not None:
+            return session
+        return self._process_local_descriptor(process)
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
@@ -248,28 +308,7 @@ class CopilotDriver:
         return _copilot_load_session_history(process.session_id or "", process_id=process.id)
 
     def compose_prompt(self, instruction: str, agents_json: dict | None) -> str:
-        agents_json = agents_json or {}
-        if not agents_json:
-            return instruction
-        sections = [
-            "# Inline sub-agent definitions",
-            (
-                "Each ## block below defines a named sub-agent. Do not spawn a "
-                "separate agent; follow the relevant agent instructions yourself "
-                "inside this Copilot CLI turn."
-            ),
-        ]
-        for name, entry in agents_json.items():
-            body = (entry or {}).get("prompt") or ""
-            desc = (entry or {}).get("description") or ""
-            sections.append(f"\n## {name}")
-            if desc:
-                sections.append(desc)
-            if body:
-                sections.append(body)
-        sections.append("\n# User instruction")
-        sections.append(instruction)
-        return "\n".join(sections)
+        return instruction
 
     def external_session_dirs(self) -> set[str]:
         root = copilot_session_state_root()

@@ -1,6 +1,7 @@
 """Abstract base class for compute providers."""
 
 import os
+import shlex
 from abc import ABC, abstractmethod
 from io import BytesIO
 from typing import Any, AsyncIterator, Callable, Literal, Optional, overload
@@ -120,6 +121,16 @@ class ComputeProvider(ABC):
             path = path.replace(os.sep, self.path_sep)
         return path
 
+    def extract_archive_command(self, zip_path: str, dest_dir: str) -> str:
+        """Shell command that extracts ``zip_path`` into an existing ``dest_dir``.
+
+        The command shape is the provider's decision (shell + available tools),
+        so override where it differs. The default uses python's stdlib zipfile —
+        every image that runs flowpad has python3, whereas the ``unzip`` binary
+        is frequently absent.
+        """
+        return f"cd {shlex.quote(dest_dir)} && python3 -m zipfile -e {shlex.quote(zip_path)} ."
+
     @abstractmethod
     async def create_node(self, name: str, runtime: RuntimeEnvironment, node_size=None) -> str:
         """Create a new compute node.
@@ -182,6 +193,15 @@ class ComputeProvider(ABC):
         Returns:
             ExecutionEnvironmentStatus
         """
+
+    async def get_node_details(self, provider_node_id: str) -> dict:
+        """Status plus any cheap live metadata for the node.
+
+        Base returns just the status; providers with a cheap richer probe (E2B
+        get_info) override to add started_at / end_at / cpu_count / memory_mb.
+        """
+        status = await self.get_node_status(provider_node_id)
+        return {"status": status.value}
 
     def get_host(self, provider_node_id: str, port: int) -> str:
         """Get the host address to connect to the compute node.

@@ -1,0 +1,73 @@
+import { emitAppTag, EventBus, startTagBridge } from '@sdk';
+
+/** Envelope attribution for direct user interactions (clicks, page signals):
+ *  the local user caused it. Stamped at the emitter, read by consumers that
+ *  need "did the user themselves do this" (journey transparency). */
+export const USER_ACTOR = 'user:local';
+import { useEffect } from 'react';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { dockTarget } from './dock-target';
+
+/**
+ * The UI-family bus adapter (docs/tags.md): the ONE place raw browser events
+ * become tag events. Mounted once in App. Three normalizers:
+ *
+ * 1. Clicks — a single capture-phase passive listener; the nearest
+ *    `[data-tag]` ancestor names the target → `app.ui.<kind>.clicked`.
+ * 2. Routes — navigation COMPLETE (currentDock settled, so back/forward/
+ *    reload/direct-URL all count) → `app.route.loaded`.
+ * 3. Sandbox pages — the `flow-journey` postMessage bridge; a sandboxed
+ *    iframe's `parent.postMessage({source:'flow-journey', event})` becomes
+ *    `app.page.signal` with `origin: 'sandbox'` (least-trusted tier).
+ *
+ * Per the envelope law, nothing here ever carries user-entered values.
+ */
+export function UiTagEmitter() {
+  const { currentDock } = useDockNavigation();
+
+  // 0. backend→app relay: tag_msg WS frames feed the app bus (idempotent).
+  useEffect(() => {
+    startTagBridge();
+  }, []);
+
+  // 1. clicks on tagged elements
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const el = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-tag]');
+      const target = el?.dataset.tag;
+      if (!target) return;
+      // `actor` is stamped HERE, at the interaction source: "the user did
+      // this" is envelope attribution (ctx.actor), not something consumers
+      // should re-derive by sniffing tag prefixes.
+      emitAppTag(`ui.${el.dataset.tagKind ?? 'label'}.clicked`, target, {}, { actor: USER_ACTOR });
+    };
+    document.addEventListener('click', onClick, { capture: true, passive: true });
+    return () => document.removeEventListener('click', onClick, { capture: true });
+  }, []);
+
+  // 2. navigation complete
+  const routeTarget = dockTarget(currentDock);
+  useEffect(() => {
+    emitAppTag('route.loaded', routeTarget, {
+      url: window.location.pathname + window.location.search,
+      viewType: currentDock?.viewType ?? null,
+      pointer: currentDock?.pointer ?? null,
+    });
+    // Emit on dock IDENTITY change only — option-only changes (highlight, lang,
+    // journeyId itself) are not a navigation for await purposes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeTarget]);
+
+  // 3. sandbox page signals
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      const d = e.data as { source?: string; event?: string } | null;
+      if (d?.source !== 'flow-journey' || typeof d.event !== 'string') return;
+      EventBus.emit('app.page.signal', d.event, {}, { origin: 'sandbox', actor: USER_ACTOR });
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
+
+  return null;
+}

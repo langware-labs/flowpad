@@ -36,10 +36,15 @@ export enum BodyStatus {
  *  - INVITATION : a local-only placeholder FlowMessage representing a pending
  *                 hub Invitation as the first row of a conversation; its
  *                 ``context_entities`` carry the backing Invitation TypeId so
- *                 the UI can read invitation_id off it for the Accept action. */
+ *                 the UI can read invitation_id off it for the Accept action.
+ *  - SESSION_EVENT : a live-session lifecycle line ("Dana approved the live
+ *                 session") rendered as a slim system line, not a bubble.
+ *                 Doubles as the session-snapshot carrier via its
+ *                 remote_worker_session TYPE_ID attachment. */
 export enum FlowMessageKind {
   USER = 'user',
   INVITATION = 'invitation',
+  SESSION_EVENT = 'session_event',
 }
 
 /** Single source of truth for the body filename on the hub blob store.
@@ -136,7 +141,7 @@ export interface IFlowMessage extends IEntity {
   /** Receipt state — orthogonal to the local-only `is_read` flag. Set only
    *  by the hub via mark_delivered / mark_received actions; flows back to
    *  the sender as a data_op_msg(update) frame, subject to the parent
-   *  conversation's `message_status_visible` gate. */
+   *  reporting user's message-status sharing preference. */
   delivery_status?: DeliveryStatus;
   delivered_at?: string | null;
   received_at?: string | null;
@@ -155,6 +160,11 @@ export interface IFlowMessage extends IEntity {
    *  attachments require a packed body; sender flips to READY after upload.
    *  Receivers gate downloads on READY. */
   body_status?: BodyStatus;
+  /** Live-session grouping key. Stamped at send time by the guest (who mints
+   *  the session id) and on PromptResult replies by the host; receivers
+   *  re-derive it from the `remote_worker_session-<id>` TYPE_ID attachment
+   *  when the hub stripped the header field. */
+  remote_worker_session_id?: string | null;
   /** Transient, server-derived (API responses only — never stored). True once
    *  this message has a body AND that body has been pulled + unpacked locally,
    *  i.e. every renderable body attachment is on disk (files materialized,
@@ -162,6 +172,10 @@ export interface IFlowMessage extends IEntity {
    *  message between a single Download button and rendered chips off this one
    *  flag, so the transcript and the context panel share download state. */
   body_downloaded?: boolean;
+  /** Transient, server-derived. True when the bundle's extracted tree persists
+   *  under the message's staging dir — staged attachments are reviewable (and
+   *  MessageAttachment rows exist) even though nothing is installed/indexed. */
+  body_unpacked?: boolean;
   /** Forward provenance: id of the source FlowMessage this one was forwarded
    *  from (set only on forwarded clones — see forwardMessage). */
   cloned_from_id?: string | null;
@@ -189,8 +203,10 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   kind?: FlowMessageKind;
   body_status?: BodyStatus;
   body_downloaded?: boolean;
+  body_unpacked?: boolean;
   cloned_from_id?: string | null;
   cloned_from_sender_id?: string | null;
+  remote_worker_session_id?: string | null;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -213,8 +229,10 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.kind = entity.kind ?? FlowMessageKind.USER;
     this.body_status = entity.body_status ?? BodyStatus.NA;
     this.body_downloaded = entity.body_downloaded ?? false;
+    this.body_unpacked = entity.body_unpacked ?? false;
     this.cloned_from_id = entity.cloned_from_id ?? null;
     this.cloned_from_sender_id = entity.cloned_from_sender_id ?? null;
+    this.remote_worker_session_id = entity.remote_worker_session_id ?? null;
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */
@@ -261,9 +279,10 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   /** Pack + upload this message's body via the local backend, which handles
    *  the hub fs/upload and the body_status state transitions.
    *  POSTs /api/v1/graph/flow_message/<id>/upload_body. */
-  async uploadBody(_opts: { onProgress?: (pct: number) => void } = {}): Promise<this> {
+  async uploadBody(_opts: { onProgress?: (pct: number) => void; transferMode?: 'copy' | 'git' } = {}): Promise<this> {
     if (!this.id) throw new Error('uploadBody requires this.id');
     const action = new ActionInfo('upload_body', FlowMessage.type, this.id, 'POST');
+    action.bodyParameters = { transfer_mode: _opts.transferMode ?? 'copy' };
     await dataManager.callAction<unknown, unknown>(action);
     this.body_status = BodyStatus.READY;
     this.attachment_filename = BODY_FILENAME;
@@ -433,6 +452,26 @@ export async function createTaskBundle(params: CreateTaskBundleParams): Promise<
   return res!;
 }
 
+/** URL for downloading a local FlowMessage as a `.flowmsg` bundle. */
+export function localFlowMessageBundleUrl(flowMessageId: string): string {
+  return new ActionInfo(
+    'create-and-download-local-flowmsg',
+    FlowMessage.type,
+    flowMessageId,
+    'GET',
+  ).fullActionUrl;
+}
+
+/** URL for streaming one file from a FlowMessage's embedded VFS storage. */
+export function flowMessageAttachmentDownloadUrl(
+  flowMessageId: string,
+  vfsPath: string,
+): string {
+  const action = new ActionInfo('fs', FlowMessage.type, flowMessageId, 'GET');
+  action.subpath = `download/${vfsPath}`;
+  return action.fullActionUrl;
+}
+
 export interface MarkResult {
   updated?: string[];
   skipped?: Array<{ id: string; reason: string; current?: string }>;
@@ -466,7 +505,7 @@ export async function forwardMessage(
  * Batch read-ack: tells the local server (which forwards to the hub) that
  * the listed FlowMessages have been seen by the current user. Hub flips
  * their `delivery_status` to "received" and fans an UPDATE frame back to
- * the sender (subject to the parent conversation's `message_status_visible`).
+ * the sender when the reporting user shares message status.
  */
 export async function markFlowMessagesReceived(flow_message_ids: string[]): Promise<MarkResult | null> {
   if (flow_message_ids.length === 0) return null;

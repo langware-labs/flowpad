@@ -1,12 +1,16 @@
 import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
 import apiClient from '../client';
 import { QueryRequest } from '../FlowSync/query';
-import { ActionInfo, TypeId } from '../models';
+import { ActionInfo, TypeId, gitOriginFromUrl, type GitOrigin } from '../models';
 import { DockPointerData } from '../models/DockPointer';
+import type { AssetDescriptor } from '../process/asset-descriptor';
+import { isHubOnly } from '../utils/hub-runtime';
 import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
 import { Artifact, IArtifact } from './artifact';
+import { type ConversationParticipant } from './conversation';
 import { ComputeNode } from './compute_node';
+import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
 
 export interface ProjectMember {
@@ -22,6 +26,107 @@ export interface ResolveProjectResult {
   name: string | null;
   host_name: string | null;
   members_count: number;
+}
+
+export type SecretPointerScope = 'private' | 'shared';
+
+export interface LocalSecretRef {
+  kind: 'local';
+  sod_name: string;
+}
+
+export interface EnvLocalSecretRef {
+  kind: 'env-local';
+  env_key: string;
+}
+
+export interface HubSecretRef {
+  kind: 'flowpad-hub';
+  secret_id: string;
+}
+
+export interface GcpSecretRef {
+  kind: 'gcp';
+  gcp_project: string;
+  secret: string;
+  version?: string;
+}
+
+export interface OnePasswordSecretRef {
+  kind: '1password';
+  vault: string;
+  item: string;
+  field?: string;
+}
+
+export type SecretOriginLocator =
+  | LocalSecretRef
+  | EnvLocalSecretRef
+  | HubSecretRef
+  | GcpSecretRef
+  | OnePasswordSecretRef;
+
+/** Which local SOD store the wizard caches a provided value into. */
+export type SodStore = 'sodot' | 'env-local';
+
+export interface ProjectSecretOriginSummary {
+  typeid: string;
+  name: string;
+  env_var: string;
+  kind: SecretOriginLocator['kind'] | string;
+  locator: Partial<SecretOriginLocator>;
+  scope: SecretPointerScope | string;
+}
+
+/** One row of the value-free resolve-status the Secrets card / wizard reads. */
+export interface SecretResolveStatus {
+  typeid: string;
+  name: string;
+  env_var: string;
+  kind: string;
+  scope: string;
+  sod_store: SodStore | string;
+  status: 'available' | 'missing';
+  setup_hint: {
+    kind: string;
+    sod_store: SodStore | string;
+    provider_label: string;
+    prompt: string;
+    coming_soon?: boolean;
+  };
+}
+
+export interface ProjectContextFolderResolveResult {
+  typeid: string;
+  kind: string;
+  path?: string;
+  message?: string;
+  [key: string]: unknown;
+}
+
+/** Mirror of the backend computed `Project.context_dir_infos` entries. */
+export interface ProjectContextDirInfo {
+  path: string;
+  /** Origin kind stamped at link time — "git" for cloned repos, else "local". */
+  origin_kind: string;
+  /** The linked Folder entity's typeid (e.g. "folder-<uuid>") — referenced by
+   *  UI surfaces like the push-notify message chip. Empty for legacy dirs. */
+  typeid?: string;
+}
+
+/** Optional per-project home branding read from `.flow/customization/`.
+ *  Mirrors the backend `Project.customization` computed field. `home.png` bytes
+ *  are fetched on demand via the `fs` download action; here only the flag. */
+export interface ProjectCustomization {
+  /** From `.flow/customization/string.json` — overrides the home greeting. */
+  home_title?: string | null;
+  /** True when `.flow/customization/home.png` exists → render it as background. */
+  has_home_background?: boolean;
+}
+
+interface ProjectContextFolderResolveResponse {
+  include_dirs?: unknown;
+  context_folder_results?: unknown;
 }
 
 const LOCAL_MEMBER_ID_KEY = 'flowpad.collaboration.member_id';
@@ -53,16 +158,49 @@ export function getOrCreateLocalMemberId(): string {
 export class Project extends APIEntity<Project> {
   static type: string = 'project';
   computeNode?: ComputeNode | null = null;
+  // ── Hub collaboration (Project as a shared unit — mirrors Conversation) ──
+  /** Hub role roster [{user_id, email, name, role}] — the generic ``members``
+   *  cache from the Entity base (redeclared with a default so readers get an
+   *  array). This is what the Members UI (`useMembers`) reads; distinct from the
+   *  local presence `presence` overlay below. The project's own (uuid4) id is the
+   *  shared hub identity — no separate cloud id. */
+  members: ConversationParticipant[] = [];
+  /** Portable repository identity received with a shared project. */
+  git_origin: GitOrigin | null = null;
+  /** Last UI view mode used in this project (vibe|standard|advanced|dev);
+   *  applied on project load so the mode is remembered per project. */
+  last_mode: string | null = null;
   // ── Collaboration overlay (merged from the former CollaborationSpace) ──
   session_code: string | null = null;
   host_member_id: string | null = null;
-  members: ProjectMember[] = [];
+  /** Local collaboration presence (session-code join, no roles). Renamed from
+   *  `members` so that name is free for the hub role roster. */
+  presence: ProjectMember[] = [];
+  /** Context folders: extra directories auto-added to every agentic worker's
+   *  --add-dir set and browseable in the Explorer as their own root. Mirrors
+   *  the backend Project.include_dirs. */
+  include_dirs: string[] = [];
+  /** Per-context-folder info (path + origin_kind). Mirrors the backend
+   *  computed Project.context_dir_infos — same paths/order as include_dirs. */
+  context_dir_infos: ProjectContextDirInfo[] = [];
+  /** Project secret pointers. Value-free metadata only; values are never
+   *  exposed through the SDK and resolve only inside worker launch. */
+  secret_origins: ProjectSecretOriginSummary[] = [];
+  /** Optional per-project home branding from `.flow/customization/`. Mirrors the
+   *  backend computed `Project.customization`. Read-only. */
+  customization: ProjectCustomization = {};
 
   constructor(entity: Partial<Project> = {}) {
     super(entity);
+    this.members = (entity.members as ConversationParticipant[] | undefined) ?? [];
+    this.last_mode = (entity.last_mode as string | null | undefined) ?? null;
     this.session_code = (entity.session_code as string | null | undefined) ?? null;
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
-    this.members = (entity.members as ProjectMember[] | undefined) ?? [];
+    this.presence = (entity.presence as ProjectMember[] | undefined) ?? [];
+    this.include_dirs = (entity.include_dirs as string[] | undefined) ?? [];
+    this.context_dir_infos = (entity.context_dir_infos as ProjectContextDirInfo[] | undefined) ?? [];
+    this.secret_origins = (entity.secret_origins as ProjectSecretOriginSummary[] | undefined) ?? [];
+    this.customization = (entity.customization as ProjectCustomization | undefined) ?? {};
   }
 
   // Land on the project's collaboration/home view at /dock/project/<id>
@@ -99,6 +237,9 @@ export class Project extends APIEntity<Project> {
     if (this.computeNode) {
       return this.computeNode;
     }
+    // Hub mode: the hub backend has no local compute node (`get-compute-node`
+    // 401s). No node here — callers already treat null as "no compute node".
+    if (isHubOnly()) return null;
     const actionInfo = new ActionInfo('get-compute-node', Project.type, this.typeId.id, 'GET');
     const responseComputeNode = await dataManager.callAction<void, { compute_node: any }>(actionInfo);
 
@@ -110,11 +251,172 @@ export class Project extends APIEntity<Project> {
     return computeNode;
   }
 
-  async setupComputeNode(options?: { gitRemoteRepoUrl?: string; gitBranch?: string }): Promise<ComputeNode | null> {
+  /**
+   * Discoverable assets for this project, pre-process (staging picker).
+   * Backend `project/{id}/get-assets` — same descriptor shape as
+   * `AgenticProcess.getAssets()`, computed server-side (path-scan over
+   * user/project/context dirs + scoped spec list). Always bounded; when the
+   * scan hit `limit` the response is truncated (long tail should be searched,
+   * not listed).
+   */
+  async getAssets(options?: { types?: string[]; limit?: number }): Promise<AssetDescriptor[]> {
+    return Project.getAssetsById(this.typeId.id, options);
+  }
+
+  /** Static form for callers without a Project instance (projectless staging → `'@local'`). */
+  static async getAssetsById(
+    projectId: string,
+    options?: { types?: string[]; limit?: number },
+  ): Promise<AssetDescriptor[]> {
+    const actionInfo = new ActionInfo('get-assets', Project.type, projectId, 'GET');
+    const queryParameters: Record<string, string | number> = {};
+    if (options?.types?.length) queryParameters.types = options.types.join(',');
+    if (options?.limit) queryParameters.limit = options.limit;
+    actionInfo.queryParameters = queryParameters;
+    const response = await dataManager.callAction<void, { assets?: AssetDescriptor[] }>(actionInfo);
+    return response?.assets ?? [];
+  }
+
+  /**
+   * `GitWorkdir` bound to this project's working tree, or null when the
+   * project has no working directory or compute node. Null does NOT mean
+   * "not a git repo" — that stays the async `isInit()` probe on the result.
+   *
+   * Mirror of the backend `Project.git_workdir()` (same null semantics).
+   */
+  async getGitWorkdir(): Promise<GitWorkdir | null> {
+    if (!this.fs_storage_mount_path) return null;
+    const computeNode = await this.getComputeNode();
+    if (!computeNode) return null;
+    return new GitWorkdir(this.fs_storage_mount_path, computeNode.id);
+  }
+
+  /** Clone/materialize the shared project's portable GitOrigin locally. */
+  async setupFromGitOrigin(): Promise<Project> {
+    const action = new ActionInfo('setup-from-git', Project.type, this.id, 'POST');
+    const response = await dataManager.callAction<void, Project>(action);
+    return dataManager.updateEntityFromJson<Project>(response as unknown as Record<string, unknown>);
+  }
+
+  /** Adopt the server-computed `include_dirs` off a context-dir action
+   *  response. The backend derives the list from Folder context links (it
+   *  canonicalizes paths), so the response — not an optimistic local guess —
+   *  is the truth. */
+  private adoptContextDirs(response: unknown): void {
+    const dirs = (response as { include_dirs?: unknown } | null)?.include_dirs;
+    if (Array.isArray(dirs)) {
+      this.include_dirs = dirs.filter((d): d is string => typeof d === 'string');
+    }
+    const infos = (response as { context_dir_infos?: unknown } | null)?.context_dir_infos;
+    if (Array.isArray(infos)) {
+      this.context_dir_infos = infos.filter((item): item is ProjectContextDirInfo => (
+        !!item && typeof item === 'object' && typeof (item as ProjectContextDirInfo).path === 'string'
+      ));
+    }
+  }
+
+  private adoptSecretOrigins(response: unknown): void {
+    const origins = (response as { secret_origins?: unknown } | null)?.secret_origins;
+    if (Array.isArray(origins)) {
+      this.secret_origins = origins.filter((item): item is ProjectSecretOriginSummary => (
+        !!item && typeof item === 'object' && typeof (item as ProjectSecretOriginSummary).typeid === 'string'
+      ));
+    }
+  }
+
+  /** Attach a context folder (auto-added to every agentic worker's --add-dir
+   *  set). Idempotent; the backend mints the Folder entity, links it into the
+   *  requested context bucket — `private` (default, never leaves this machine)
+   *  or `shared` (travels with the project) — and kicks a one-shot index so
+   *  the folder's assets become discoverable. */
+  async addContextDir(path: string, scope: 'private' | 'shared' = 'private'): Promise<void> {
+    const actionInfo = new ActionInfo('add-context-dir', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { path, scope };
+    this.adoptContextDirs(await dataManager.callAction(actionInfo));
+  }
+
+  /** Get-or-create the `Folder` entity for a directory, WITHOUT attaching it as
+   *  a context folder. Folder ids are deterministic (a Folder's id is its origin
+   *  key), so this is a safe get-or-create: it never links, never indexes, and
+   *  returns the same typeid for the same directory forever. Use it when a
+   *  surface needs an entity for a directory the user is merely browsing (e.g.
+   *  the Assets header's Share); use `addContextDir` when the folder should
+   *  actually join the project's context. */
+  async folderForPath(path: string): Promise<{ typeid: string; path: string; origin_kind: string | null }> {
+    const actionInfo = new ActionInfo('folder-for-path', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { path };
+    return dataManager.callAction(actionInfo);
+  }
+
+  /** Detach a context folder. No-op if not attached. */
+  async removeContextDir(path: string): Promise<void> {
+    const actionInfo = new ActionInfo('remove-context-dir', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { path };
+    this.adoptContextDirs(await dataManager.callAction(actionInfo));
+  }
+
+  async addSecretPointer(
+    name: string,
+    envVar: string,
+    options: { locator: SecretOriginLocator; scope?: SecretPointerScope; sodStore?: SodStore },
+  ): Promise<void> {
+    const actionInfo = new ActionInfo('add-secret-pointer', Project.type, this.typeId.id, 'POST');
+    // The backend builds the value-free locator from the generic ``locator`` dict
+    // (any provider kind); ``sod_store`` is where the wizard caches a value.
+    actionInfo.bodyParameters = {
+      name,
+      env_var: envVar,
+      scope: options.scope ?? 'private',
+      kind: options.locator.kind,
+      locator: options.locator,
+      ...(options.sodStore ? { sod_store: options.sodStore } : {}),
+    };
+    this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
+  }
+
+  async removeSecretPointer(typeid: string): Promise<void> {
+    const actionInfo = new ActionInfo('remove-secret-pointer', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { typeid };
+    this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
+  }
+
+  /** Value-free per-secret resolve status (available/missing) for the Secrets
+   *  card + setup wizard. Never fetches a value. */
+  async secretResolveStatus(): Promise<SecretResolveStatus[]> {
+    const actionInfo = new ActionInfo('secret-resolve-status', Project.type, this.typeId.id, 'POST');
+    const res = await dataManager.callAction<undefined, { secrets?: SecretResolveStatus[] }>(actionInfo);
+    return Array.isArray(res?.secrets) ? res!.secrets : [];
+  }
+
+  /** Setup wizard: store a user-provided value in the secret's designated SOD
+   *  store (sodot or the project .env.local). The value never touches the
+   *  reference json or any hub payload. */
+  async provideSecret(params: { typeid?: string; envVar?: string; value: string }): Promise<void> {
+    const actionInfo = new ActionInfo('provide-secret', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = {
+      ...(params.typeid ? { typeid: params.typeid } : {}),
+      ...(params.envVar ? { env_var: params.envVar } : {}),
+      value: params.value,
+    };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /** Resolve received shared context folders into receiver-local paths. */
+  async resolveContextFolders(): Promise<ProjectContextFolderResolveResult[]> {
+    const actionInfo = new ActionInfo('resolve-context-folders', Project.type, this.typeId.id, 'POST');
+    const response = await dataManager.callAction<undefined, ProjectContextFolderResolveResponse>(actionInfo);
+    this.adoptContextDirs(response);
+    const results = response?.context_folder_results;
+    if (!Array.isArray(results)) return [];
+    return results.filter((item): item is ProjectContextFolderResolveResult => (
+      !!item && typeof item === 'object' && typeof (item as ProjectContextFolderResolveResult).kind === 'string'
+    ));
+  }
+
+  async setupComputeNode(options?: { gitOrigin?: GitOrigin | null }): Promise<ComputeNode | null> {
     const actionInfo = new ActionInfo('initialize', Project.type, this.typeId.id, 'POST');
     actionInfo.bodyParameters = {
-      ...(options?.gitRemoteRepoUrl && { gitRemoteRepoUrl: options.gitRemoteRepoUrl }),
-      ...(options?.gitBranch && { gitBranch: options.gitBranch }),
+      ...(options?.gitOrigin && { gitOrigin: options.gitOrigin }),
     };
     const response = await dataManager.callAction<typeof actionInfo.bodyParameters, { compute_node: any }>(actionInfo);
 
@@ -197,6 +499,20 @@ export class Project extends APIEntity<Project> {
     return response || { workspace: null, agent: null, compute_node: null };
   }
 
+  /** POST /graph/project/<id>/activate — stamp `last_active_at` (server clock,
+   *  epoch-ms) via the generic `activate` action. Fired FIRE-AND-FORGET by
+   *  `dataContext.setContextEntityTypeId` whenever the current project
+   *  actually switches (the choke point every open-project path funnels
+   *  through); the project pickers sort by it (recency wins over session
+   *  `modified_at`). Static form mirrors `Tab.activateById`. */
+  static async activateById(id: string): Promise<void> {
+    // Hub mode: `project/<id>/activate` 401s on the hub backend. This is a
+    // fire-and-forget recency stamp — safely a no-op when unavailable.
+    if (isHubOnly()) return;
+    const info = new ActionInfo('activate', Project.type, id, 'POST');
+    await dataManager.callAction<undefined, unknown>(info);
+  }
+
   // ── Collaboration overlay (merged from CollaborationSpace) ───────────────
 
   /** True when the given member is the host on this project's collaboration. */
@@ -207,7 +523,7 @@ export class Project extends APIEntity<Project> {
 
   /** True when the member's last_seen_at is within `windowMs` of now. */
   isMemberOnline(memberId: string, windowMs: number = 30_000): boolean {
-    const m = this.members.find((x) => x.member_id === memberId);
+    const m = this.presence.find((x) => x.member_id === memberId);
     if (!m || !m.last_seen_at) return false;
     const t = Date.parse(m.last_seen_at);
     if (Number.isNaN(t)) return false;
@@ -236,7 +552,7 @@ export class Project extends APIEntity<Project> {
     if (result) {
       if (result.session_code !== undefined) this.session_code = result.session_code ?? null;
       if (result.host_member_id !== undefined) this.host_member_id = result.host_member_id ?? null;
-      if (Array.isArray(result.members)) this.members = result.members as ProjectMember[];
+      if (Array.isArray(result.presence)) this.presence = result.presence as ProjectMember[];
     }
     return this;
   }
@@ -249,10 +565,10 @@ export class Project extends APIEntity<Project> {
       { member_id: string; name: string },
       Partial<Project>
     >(info);
-    if (result && Array.isArray(result.members)) {
-      this.members = result.members as ProjectMember[];
+    if (result && Array.isArray(result.presence)) {
+      this.presence = result.presence as ProjectMember[];
     }
-    return this.members.find((m) => m.member_id === memberId) ?? null;
+    return this.presence.find((m) => m.member_id === memberId) ?? null;
   }
 
   /** Presence ping — bumps last_seen_at on the backend. */
@@ -261,11 +577,11 @@ export class Project extends APIEntity<Project> {
     info.bodyParameters = { member_id: memberId };
     const result = await dataManager.callAction<
       { member_id: string },
-      { ok: boolean; members: ProjectMember[] }
+      { ok: boolean; presence: ProjectMember[] }
     >(info);
-    if (result && Array.isArray(result.members)) {
-      this.members = result.members;
-      return result.members;
+    if (result && Array.isArray(result.presence)) {
+      this.presence = result.presence;
+      return result.presence;
     }
     return null;
   }
@@ -330,6 +646,7 @@ export class Project extends APIEntity<Project> {
 
   /**
    * Clone a git URL into the desktop workspace and materialize a Project.
+   * The wire contract is GitOrigin; URL/branch inputs are converted locally.
    * Dispatches to the compute_node `create-project-from-git` action.
    *
    * Returns one of:
@@ -347,15 +664,16 @@ export class Project extends APIEntity<Project> {
     | { kind: 'collision'; suggestedName: string; attemptedName: string }
     | { kind: 'error'; message: string }
   > {
+    const gitOrigin = gitOriginFromUrl(projectUrl, branch);
+    if (!gitOrigin) return { kind: 'error', message: 'Invalid Git repository URL' };
     const action = new ActionInfo('create-project-from-git', 'compute_node', computeNodeId, 'POST');
     action.bodyParameters = {
-      project_url: projectUrl,
+      git_origin: gitOrigin,
       ...(targetName ? { target_name: targetName } : {}),
-      ...(branch ? { branch } : {}),
     };
     try {
       const response = await dataManager.callAction<
-        { project_url: string; target_name?: string },
+        { git_origin: GitOrigin; target_name?: string },
         { project: unknown }
       >(action);
       if (!response?.project) return { kind: 'error', message: 'No project returned' };
