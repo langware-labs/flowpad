@@ -28,8 +28,12 @@ from flow_sdk.core.entity.entity_model import Entity, remote_reflection
 logger = logging.getLogger(__name__)
 
 # Flat metadata fields we mirror from the hub payload, when present on the type.
+# ``name`` AND ``title`` both ride: every entity carries both slots on both
+# sides now, so whichever one the type authors arrives verbatim. There is no
+# title→name coercion here — a project's label is ``name`` on the hub too.
 _MIRRORED_FIELDS = (
     "name",
+    "title",
     "git_origin",
     "account",
     "domain",
@@ -119,8 +123,6 @@ async def materialize_remote_membership_entity(
     ent_id = (str(data.get("id") or "")).strip()
     if not ent_id:
         return None
-    if data.get("title") and not data.get("name"):
-        data = {**data, "name": data["title"]}
 
     fields = tuple(k for k in _MIRRORED_FIELDS if k in cls.model_fields)
     existing = await cls.get_one({"id": ent_id})
