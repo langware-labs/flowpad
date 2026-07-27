@@ -123,3 +123,91 @@ def test_indexer_tolerates_legacy_header_json_without_leak(tmp_path):
     # Sender-local keys are NOT adopted from the legacy manifest.
     assert not hasattr(rec, "my_process_id")
     assert not hasattr(rec, "project_root")
+
+
+def test_archived_task_stays_archived_across_reindex(tmp_path):
+    """``archived_at`` must survive BOTH reader paths.
+
+    Regression: it was in neither ``TASK_FRONTMATTER_FIELDS`` nor the legacy
+    manifest key list, so every reindex silently resurrected archived tasks as
+    active ``to_do`` rows — an archived task the user never sees again reappears
+    in the task list, once per historical folder.
+    """
+    from datetime import datetime, timezone
+
+    from pydantic import TypeAdapter
+
+    from flow_sdk.builtin.task import Task
+
+    # The two readers surface the raw carrier value (YAML gives a str, JSON a
+    # str, YAML-typed timestamps a datetime) — normalize before comparing.
+    as_dt = TypeAdapter(datetime).validate_python
+    archived = datetime(2026, 4, 26, 12, 30, 10, tzinfo=timezone.utc)
+
+    # Modern path: entity -> task.md -> indexer.
+    t = Task(title="Archived Task", status="to_do", archived_at=archived)
+    folder = tmp_path / "tasks" / "archived-task"
+    folder.mkdir(parents=True)
+    (folder / "task.md").write_text(_task_md_body_from(t), encoding="utf-8")
+    rec = extract_task(FSRef(folder), str(t.id))[0]
+    assert as_dt(rec.archived_at) == archived
+
+    # Legacy path: manifest.json -> indexer.
+    legacy = tmp_path / "tasks" / "archived-legacy"
+    legacy.mkdir(parents=True)
+    (legacy / "manifest.json").write_text(
+        json.dumps({
+            "data": {
+                "id": "22222222-2222-4222-8222-222222222222",
+                "title": "Archived Legacy",
+                "status": "to_do",
+                "archived_at": archived.isoformat(),
+            }
+        }),
+        encoding="utf-8",
+    )
+    rec2 = extract_task(FSRef(legacy), "22222222-2222-4222-8222-222222222222")[0]
+    assert as_dt(rec2.archived_at) == archived
+
+    # A never-archived task must not gain a spurious key.
+    assert "archived_at" not in _task_md_body_from(Task(title="Live", status="to_do"))
+
+
+# Task fields that deliberately do NOT survive the task.md round-trip: derived
+# or sender-local (a received task must map its own local project), or local-only
+# view state. ``group_name``/``reporter`` are NOT deliberate — they are written
+# by group_task_action but dropped on reindex, the same drift that hid
+# ``archived_at``. They are listed so this guard passes today; fixing them means
+# moving them into TASK_FRONTMATTER_FIELDS, not extending this set.
+_NOT_ROUND_TRIPPED = {
+    "asset_ref", "my_process_id", "project_name", "project_root",   # derived / sender-local
+    "last_viewed_at", "ttl", "target_entity", "workspace_id",       # local-only state
+    "group_name", "reporter",                                       # KNOWN DRIFT — see above
+}
+
+
+def test_task_frontmatter_fields_covers_every_task_field():
+    """Adding a Task field must be a deliberate round-trip choice, not silent drift.
+
+    ``TASK_FRONTMATTER_FIELDS`` is hand-maintained, so a new field is dropped on
+    reindex unless someone remembers to list it — exactly how ``archived_at``
+    resurrected archived tasks. This fails loudly until the new field is either
+    round-tripped or explicitly declared local.
+    """
+    from flow_sdk.builtin.task import Task
+    from flow_sdk.core.entity.entity_model import Entity
+    from flow_sdk.fs_store.indexer.functions.task import TASK_FRONTMATTER_FIELDS
+
+    # Only fields Task itself declares; base-Entity infrastructure (uname, scope,
+    # created_by, …) is never frontmatter.
+    own = set(Task.model_fields) - set(Entity.model_fields)
+    explicit = {"title", "status", "description"}  # handled by name in both readers
+    dropped = own - set(TASK_FRONTMATTER_FIELDS) - explicit
+
+    assert dropped == _NOT_ROUND_TRIPPED, (
+        "Task fields changed their round-trip status. Newly dropped: "
+        f"{sorted(dropped - _NOT_ROUND_TRIPPED)}; newly covered: "
+        f"{sorted(_NOT_ROUND_TRIPPED - dropped)}. Add the field to "
+        "TASK_FRONTMATTER_FIELDS so it survives reindex, or to _NOT_ROUND_TRIPPED "
+        "if it is genuinely local."
+    )
