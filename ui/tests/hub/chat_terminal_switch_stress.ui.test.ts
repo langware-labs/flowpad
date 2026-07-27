@@ -10,13 +10,13 @@
  * in-flight entity broadcast carrying the pre-switch
  * `pty_mode` must NOT flip the pane back after the user toggles.
  *
- * The chat⇄terminal toggle (`handleToggleView`) does TWO things at once: it
+ * The chat⇄terminal switch (`useProcessModeSwitch`) does TWO things at once: it
  * flips the UI SKIN (chat pane over the PTY ⇄ raw xterm) and the TRANSPORT
  * (`switchMode` → `pty_mode` true⇄false). One live session underneath both.
  *
  * Two clients, one backend (the explicit `SHARE_INST_1`):
  *   • the browser PAGE drives the toggle / types tokens (production path:
- *     click → handleToggleView → switchMode);
+ *     click → switchTo → switchMode);
  *   • an SDK realm (`getInstance(INSTANCE)`) creates the watched process and is
  *     the AUTHORITATIVE observer — `loadHistory({force})` re-reads the on-disk
  *     transcript so a token hit means the worker actually took it (not the
@@ -140,7 +140,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
       proc.id as string,
     );
     try {
-      await page.page.getByTestId('terminal-chat-toggle').waitFor({ state: 'visible', timeout: 20_000 });
+      await page.page.getByTestId('terminal-mode-switch').waitFor({ state: 'visible', timeout: 20_000 });
     } catch (error) {
       const diagnostics = await page.page.evaluate(() => ({
         url: window.location.href,
@@ -187,19 +187,21 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
     }
   }
 
-  /** Read the toggle's three state attrs in ONE round-trip. */
+  /** Read the mode switch's three state attrs in ONE round-trip. They live on
+   *  the segmented control's CONTAINER (the segments themselves are per-mode). */
   async function readToggle(): Promise<{ enabled: boolean; switching: boolean; chatActive: boolean }> {
-    return page!.page.getByTestId('terminal-chat-toggle').evaluate((el) => ({
+    return page!.page.getByTestId('terminal-mode-switch').evaluate((el) => ({
       enabled: el.getAttribute('data-toggle-enabled') === 'true',
       switching: el.getAttribute('data-switching') === 'true',
       chatActive: el.getAttribute('data-chat-active') === 'true',
     }));
   }
 
-  /** The toggle is enabled iff the agent is awaiting input AND not mid-switch —
-   *  one wait covers both the idle gate and the switching spinner. (The button's
-   *  own `disabled` is exactly `switching || !toggleEnabled`, so these two cover
-   *  it — no separate isDisabled() probe.) */
+  /** The transport segments are enabled iff the agent is awaiting input AND not
+   *  mid-switch — one wait covers both the idle gate and the switching spinner.
+   *  (A transport segment's own `disabled` is `switching || (needs-transport-work
+   *  && !toggleEnabled)`, so these two cover every gated case — no separate
+   *  isDisabled() probe.) */
   async function waitToggleEnabled(): Promise<void> {
     const end = Date.now() + SWITCH_BUDGET_MS;
     for (;;) {
@@ -228,21 +230,24 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
     return v === 'true' ? true : v === 'false' ? false : null;
   }
 
-  /** Drive the TRANSPORT to `targetPty` via the real toggle button. Keyed on
-   *  `pty_mode` (reliable) not the skin. `handleToggleView` early-returns if the
-   *  worker isn't awaiting at the click instant (a silent no-op), and sets
-   *  `switching=true` asynchronously — so after each click we wait for the switch
-   *  to settle then check whether the transport reached the target; if not (a
-   *  no-op, or a wrong-direction skin race) we re-click. Since every click flips
-   *  the transport and we verify the RESULT, it converges. Bounded. */
+  /** Drive the TRANSPORT to `targetPty` via the real mode switch. Keyed on
+   *  `pty_mode` (reliable) not the skin. Clicks are DIRECTIONAL now (a segmented
+   *  control, not a flipping button): we click the target segment. `switchTo`
+   *  early-returns if the worker isn't awaiting at the click instant (a silent
+   *  no-op), and sets `switching=true` asynchronously — so after each click we
+   *  wait for the switch to settle then check whether the transport reached the
+   *  target; if not we re-click. A directional click is a no-op ONLY when the
+   *  transport already matches (the hook's guard keys on `pty_mode`, not the
+   *  skin), which is exactly the loop's success condition — so it converges.
+   *  Bounded. */
   async function switchTransportTo(targetPty: boolean): Promise<void> {
     for (let attempt = 0; attempt < 6; attempt++) {
       await waitToggleEnabled();
       if ((await currentPty()) === targetPty) return; // already there
-      // Fire onClick directly: a Playwright pointer-click can land on the tooltip
-      // <span> wrapper and miss; el.click() always invokes handleToggleView.
+      // Fire onClick directly: a Playwright pointer-click can miss on a small
+      // segment; el.click() always invokes the handler.
       await page!.page
-        .getByTestId('terminal-chat-toggle')
+        .getByTestId(targetPty ? 'terminal-mode-terminal' : 'terminal-mode-chat')
         .evaluate((el) => (el as HTMLButtonElement).click());
       const end = Date.now() + SWITCH_BUDGET_MS;
       let settled = false;

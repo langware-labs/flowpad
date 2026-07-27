@@ -164,8 +164,14 @@ test.describe('Codex durable transcript projection', () => {
       join(repo, 'ui/src/components/terminal/TabbedTerminal.tsx'),
       'utf8',
     );
-    const ribbon = readFileSync(
-      join(repo, 'ui/src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx'),
+    // The chat⇄terminal switch moved out of the bottom ribbon: the transport
+    // action lives in the hook, the control is the 3-mode header switch.
+    const modeSwitchHook = readFileSync(
+      join(repo, 'ui/src/components/terminal/interactive-terminal/use-process-mode-switch.ts'),
+      'utf8',
+    );
+    const modeSwitch = readFileSync(
+      join(repo, 'ui/src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx'),
       'utf8',
     );
     const toolbar = readFileSync(
@@ -179,9 +185,12 @@ test.describe('Codex durable transcript projection', () => {
     expect(backend).toContain('@action.post(action_name="switch-mode")');
     expect(backend).toContain('restart_required');
     expect(backend).toContain('ensure_embedded_assets');
-    expect(terminal).toContain('process.switchMode');
+    expect(terminal).toContain('useProcessModeSwitch');
+    expect(modeSwitchHook).toContain('process.switchMode');
+    expect(modeSwitchHook).toContain('loadHistory({ force: true })');
     expect(terminalPanel).toContain('data-pty-mode');
-    expect(ribbon).toContain('terminal-chat-toggle');
+    expect(modeSwitch).toContain('terminal-mode-switch');
+    expect(modeSwitch).toContain('terminal-mode-vibe');
     expect(toolbar).toContain("if (wt === 'codex') return 'Codex'");
     expect(toolbar).toContain('permission_mode');
   });

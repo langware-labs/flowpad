@@ -17,6 +17,9 @@ import { ExportEntityButton } from '@src/components/entity-actions/ExportEntityB
 import { AssetManagerButton } from '@src/components/asset-manager';
 import { ViewSwap } from '@src/components/view-mode';
 import { AdvancedInteractiveTabHeader, StandardInteractiveTabHeader } from './InteractiveTabHeader';
+import { TerminalModeSwitch } from './TerminalModeSwitch';
+import type { TransportMode } from './use-process-mode-switch';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import {
@@ -71,6 +74,23 @@ interface ProcessToolbarProps {
   onClose?: () => void;
   /** Shell entity for PTY Viewer (dev mode only). */
   shell?: Shell | null;
+  // ── Mode switch (chat | terminal | vibe), rendered leftmost in the header ──
+  // These all come from InteractiveTerminal, which owns the transport switch (it
+  // has the xterm ref and the reactive live entity). Do NOT re-derive them here:
+  // this component's useSyncExternalStore snapshot does not include `pty_mode`,
+  // so a locally-derived selection would go stale on a transport flip, and
+  // `started` is a different predicate than the mid-turn readiness gate.
+  /** True when the chat skin is up (⇒ the `chat` segment is selected). */
+  chatActive?: boolean;
+  /** Which transport the session is actually on (`pty_mode`) — NOT the same as
+   * `chatActive`, which is the skin. Read from the reactive live entity upstream. */
+  transportMode?: TransportMode;
+  /** A transport switch is in flight. */
+  switching?: boolean;
+  /** `isReadyForInput` — the backend 409s a mid-turn switch. */
+  switchEnabled?: boolean;
+  /** Undefined ⇒ this tab can't switch modes; the whole control is hidden. */
+  onSwitchMode?: (mode: TransportMode) => void;
 }
 
 export function ProcessToolbar({
@@ -84,10 +104,15 @@ export function ProcessToolbar({
   embedded,
   onClose,
   shell,
+  chatActive,
+  transportMode,
+  switching,
+  switchEnabled,
+  onSwitchMode,
 }: ProcessToolbarProps) {
   const { t, i18n } = useLingui();
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
-  const { navigation } = useDockNavigation();
+  const { navigation, windowMode } = useDockNavigation();
   const chatOverride = useChatUiOverride();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
   const [showPtyEventsViewer, setShowPtyEventsViewer] = useState(false);
@@ -191,6 +216,26 @@ export function ProcessToolbar({
   );
 
   const setTrace = (key: keyof TraceFilters) => (val: boolean) => onTraceFiltersChange({ ...traceFilters, [key]: val });
+
+  // "Continue this conversation in vibe mode" — the same move the asset Discuss
+  // button makes, addressed by PROCESS rather than by the ambient dock: this is
+  // the process's own shell URL plus `?viewMode=vibe`, which is by construction
+  // what `useVibeWorkspaceSession` resolves a workspace from. Asking the process
+  // (as every other open-in-vibe call site does) means there is no dock-shape
+  // predicate here to drift out of sync with that resolver. Popped-out windows
+  // are excluded for the reason AssetDiscussButton excludes them: a detached
+  // window has no business swapping itself for a full-page workspace.
+  const modeSwitchSlot = onSwitchMode ? (
+    <TerminalModeSwitch
+      current={chatActive ? 'chat' : 'terminal'}
+      transport={transportMode ?? 'terminal'}
+      switching={!!switching}
+      enabled={!!switchEnabled}
+      showVibe={!windowMode}
+      onSelect={onSwitchMode}
+      onVibe={() => void navigation.openShellProcess(process.id, { viewMode: ViewMode.Vibe })}
+    />
+  ) : null;
 
   const debugSlot = (
     <>
@@ -388,9 +433,10 @@ export function ProcessToolbar({
           <DropdownMenuLabel className="text-xs text-muted-foreground">
             <Trans>Chat mode</Trans>
           </DropdownMenuLabel>
-          {/* The bottom-ribbon toggle is the primary control; this mirrors it.
-                Checked = force the chat ("ui") view; unchecked = follow View mode
-                (Standard ⇒ chat, Advanced ⇒ terminal). See chat-ui-mode-context. */}
+          {/* The header's TerminalModeSwitch is the primary control; this is the
+                escape hatch it can't express — unchecking restores `null` (follow
+                View mode: Standard ⇒ chat, Advanced ⇒ terminal), which the
+                two-way switch has no segment for. See chat-ui-mode-context. */}
           <DropdownMenuCheckboxItem
             checked={chatOverride === 'chat'}
             onSelect={(e) => e.preventDefault()}
@@ -553,6 +599,7 @@ export function ProcessToolbar({
 
   const advancedHeader = (
     <AdvancedInteractiveTabHeader
+      modeSwitch={modeSwitchSlot}
       debug={debugSlot}
       restart={restartSlot}
       title={titleSlot}
@@ -571,7 +618,9 @@ export function ProcessToolbar({
       ) : (
         <ViewSwap
           advanced={advancedHeader}
-          standard={<StandardInteractiveTabHeader title={titleSlot} actions={actionsSlot} />}
+          standard={
+            <StandardInteractiveTabHeader modeSwitch={modeSwitchSlot} title={titleSlot} actions={actionsSlot} />
+          }
         />
       )}
 

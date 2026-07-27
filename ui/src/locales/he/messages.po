@@ -1606,7 +1606,7 @@ msgstr "נכסים זמינים"
 msgid "Available on cloud"
 msgstr "זמין בענן"
 
-#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
 msgid "Available when the agent is waiting for your input"
 msgstr "זמין כאשר הסוכן ממתין לקלט שלך"
 
@@ -2045,6 +2045,10 @@ msgstr "שינויים ({0})"
 #: src/pages/flow-page/vibe-chat-pane.tsx
 #~ msgid "Changing worker requires a new chat. The current chat stays in history."
 #~ msgstr "שינוי ה-worker דורש צ'אט חדש. הצ'אט הנוכחי יישמר בהיסטוריה."
+
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
+msgid "Chat"
+msgstr ""
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
@@ -2893,6 +2897,10 @@ msgstr "אסימוני Context"
 #: src/journey/JourneyTray.tsx
 msgid "Continue"
 msgstr "המשך"
+
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
+msgid "Continue in vibe mode"
+msgstr ""
 
 #: src/journey/JourneyViewer.tsx
 msgid "Continue journey"
@@ -12195,6 +12203,10 @@ msgstr "מזהה תאימה"
 msgid "Session is not running"
 msgstr "הסדרה לא פעילה"
 
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
+msgid "Session mode"
+msgstr ""
+
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Session not found"
@@ -13168,8 +13180,8 @@ msgid "Switch to {0}?"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
-msgid "Switch to chat view"
-msgstr "עבור לתצוגת הצ'אט"
+#~ msgid "Switch to chat view"
+#~ msgstr "עבור לתצוגת הצ'אט"
 
 #: src/components/theme-toggle/theme-toggle.tsx
 msgid "Switch to dark mode"
@@ -13188,10 +13200,10 @@ msgstr "עבור למצב אור"
 #~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
-msgid "Switch to terminal view"
-msgstr "עבור לתצוגת הטרמינל"
+#~ msgid "Switch to terminal view"
+#~ msgstr "עבור לתצוגת הטרמינל"
 
-#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
 msgid "Switching…"
 msgstr "מעברים…"
 
@@ -13327,6 +13339,7 @@ msgid "Template:"
 msgstr "תבנית:"
 
 #: src/components/project-home/ProjectHome.tsx
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
 msgid "Terminal"
 msgstr "טרמינל"
 
@@ -14384,6 +14397,10 @@ msgstr "Version-bump + commit את הנכס"
 #: src/components/account/user-info.tsx
 msgid "Version:"
 msgstr "גרסה:"
+
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
+msgid "Vibe"
+msgstr ""
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Vibe agents"

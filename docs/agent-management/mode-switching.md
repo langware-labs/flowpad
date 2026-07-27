@@ -53,8 +53,12 @@ The current code routes on `pty_mode`:
   `:1315`). Body: `{"mode": "interactive" | "cli"[, cols, rows]}`.
 - **Frontend:** `AgenticProcess.switchMode(mode, opts?)`
   (`ts_sdk/src/process/agentic-process.ts:2360`).
-- **UI caller:** the bottom-ribbon chat⇄terminal toggle,
-  `InteractiveTerminal.handleToggleView` (`InteractiveTerminal.tsx:1486`).
+- **UI caller:** `useProcessModeSwitch().switchTo('chat' | 'terminal')`
+  (`interactive-terminal/use-process-mode-switch.ts`), driven by the leftmost
+  segment control in the terminal header (`TerminalModeSwitch.tsx`, built as a
+  slot by `ProcessToolbar`). `InteractiveTerminal` is the hook's ONE call site —
+  it owns the xterm ref and the readiness signal. (Historically this lived as a
+  2-state toggle button in the bottom ribbon.)
 
 ### → CLI (chat / headless)
 
@@ -93,11 +97,20 @@ Frontend `switchMode(Interactive)` (`agentic-process.ts:2361`):
 
 ### UI-side reconcile (both directions)
 
-`handleToggleView` (`InteractiveTerminal.tsx:1486`):
-- Guards: `if (!process || switching || !awaitingUserInput) return;` — the toggle
-  is disabled unless the worker is awaiting input (see gate below).
+`useProcessModeSwitch().switchTo` (`use-process-mode-switch.ts`):
+- Guards: `if (!process || switching || !awaitingUserInput) return;` — the
+  transport segments are disabled unless the worker is awaiting input (see gate
+  below).
+- Skin-only short circuit: when `process.isHeadless === toChat` the transport is
+  already where the user pointed, so it writes `chatUiOverride` and returns
+  without a lifecycle call. This is the common case, not an edge one — Standard
+  view paints the chat pane over a perfectly live PTY, so picking `terminal`
+  there means "show me the xterm", not "spawn a PTY". Keyed on the **transport**
+  (`pty_mode`, held stable by the SDK desired-value latch), NOT on the chat skin
+  — `chatUiOverride` lags under rapid switching, so a skin-keyed test could
+  short-circuit a direction that has not actually landed.
 - After the transport switch resolves, sets `chatUiOverride` and re-enables the
-  toggle **immediately**, then fires `process.loadHistory({ force: true })` in the
+  control **immediately**, then fires `process.loadHistory({ force: true })` in the
   **background** to pull in turns the *other* mode produced. History reconcile is
   deliberately not awaited (a large-session transcript parse is slow and would
   wedge rapid switching); the live WS stream keeps the pane current meanwhile.
@@ -112,10 +125,14 @@ A switch is only legal while the worker is **awaiting user input**
 (`IDLE`/`COMPLETE`/`INTERRUPTED`/`PENDING_USER` — `isAwaitingUserInput`). Enforced
 in three layers:
 1. Backend `_enter_cli_mode` 409s on the prompt lock (`:1280`).
-2. The ribbon toggle is disabled unless `awaitingUserInput`
-   (`InteractiveTerminal.tsx:218`, gate reads the reactive `liveProcess.workerStatus`).
-3. `handleToggleView` re-checks `awaitingUserInput` as a belt-and-suspenders guard
-   for non-click callers (`:1490`).
+2. The header switch's chat/terminal segments are disabled unless
+   `awaitingUserInput` (gate reads the reactive `liveProcess.workerStatus` in
+   `InteractiveTerminal` and is threaded to `ProcessToolbar` as `switchEnabled`).
+   Gating is per segment: a pick that needs no transport work (the segment
+   already matching `pty_mode` — Standard paints the chat pane over a live PTY —
+   and the **vibe** segment, which only navigates) is never gated.
+3. `switchTo` re-checks `awaitingUserInput` as a belt-and-suspenders guard for
+   non-click callers.
 
 Note: the backend mid-turn guard only covers the **→CLI** direction (it lives in
 `_enter_cli_mode`). The →Interactive branch goes straight to `_perform_open` with
