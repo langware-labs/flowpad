@@ -8,7 +8,7 @@
  * project-local skill/image viewers. They require no model response.
  */
 import { expect, test } from '@playwright/test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 
@@ -201,6 +201,95 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await page.reload();
       await expect(page.getByTestId('media-viewer-image')).toBeVisible();
     } finally {
+      await destroyVibeFixture(request, fixture);
+    }
+  });
+
+  test('VW-17/VW-18/VW-19/VW-20: asset entry stays URL-first, updates live, and shown related assets become children', async ({
+    page,
+    request,
+  }) => {
+    const fixture = await createVibeFixture(request, 'vibe-asset-origin');
+    const createdIds: string[] = [];
+    try {
+      const createMarkdown = async (name: string, marker: string) => {
+        const response = await request.post(
+          `${API}/api/v1/graph/project/${fixture.projectId}/markdown`,
+          { data: { name } },
+        );
+        expect(response.status()).toBe(200);
+        const entity = (await response.json()).data as {
+          id: string;
+          asset_ref: string;
+        };
+        createdIds.push(entity.id);
+        const scaffold = readFileSync(entity.asset_ref, 'utf8');
+        writeFileSync(entity.asset_ref, `${scaffold}\n# ${marker}\n`, 'utf8');
+        return entity;
+      };
+
+      const source = await createMarkdown('vibe-origin-source', 'VW17_ORIGINAL');
+      const related = await createMarkdown('vibe-origin-related', 'VW20_RELATED');
+      const processResponse = await request.get(
+        `${API}/api/v1/graph/agentic_process/${fixture.processId}`,
+      );
+      const process = (await processResponse.json()).data;
+      const updateProcess = await request.put(
+        `${API}/api/v1/graph/agentic_process/${fixture.processId}`,
+        {
+          data: {
+            ...process,
+            process_type: 'chat',
+            target_typeid_str: `markdown-${source.id}`,
+          },
+        },
+      );
+      expect(updateProcess.status()).toBe(200);
+
+      await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+      await page.goto(
+        `/dock/assets/editor/markdown/typeid/markdown-${source.id}?viewMode=standard`,
+      );
+      await expect(page.getByText('vibe-origin-source.md')).toBeVisible();
+      await expect(
+        page.getByTestId('assets-page-header').getByTestId('asset-discuss-in-vibe'),
+      ).toBeVisible();
+      const before = new URL(page.url());
+      await page.getByTestId('asset-discuss-in-vibe').click();
+
+      await expect(page).toHaveURL(/\/dock\/assets\/editor\/markdown\/.*viewMode=vibe/);
+      const after = new URL(page.url());
+      expect(after.pathname).toBe(before.pathname);
+      await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
+      await expect(page.getByText('vibe-origin-source.md')).toBeVisible();
+      await expect(page.getByTestId('workspace-child-strip')).toBeVisible();
+
+      writeFileSync(
+        source.asset_ref,
+        `${readFileSync(source.asset_ref, 'utf8')}\n# VW18_LIVE_UPDATE\n`,
+        'utf8',
+      );
+      const reindex = await request.post(
+        `${API}/api/v1/graph/compute_node/@local/fs-records/invalidate`,
+        { data: { paths: [source.asset_ref], deleted_paths: [] } },
+      );
+      expect(reindex.status()).toBe(200);
+      await expect(page.getByText('VW18_LIVE_UPDATE')).toBeVisible();
+
+      await showTypeId(request, fixture.processId, `markdown-${related.id}`);
+      await expect(page).toHaveURL(
+        new RegExp(`/dock/assets/editor/markdown/typeid/markdown-${related.id}`),
+      );
+      await expect(page.getByText('VW20_RELATED')).toBeVisible();
+      await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
+      await expect(page.getByTestId('workspace-child-strip')).toBeVisible();
+      await page.reload();
+      await expect(page.getByText('VW20_RELATED')).toBeVisible();
+      await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
+    } finally {
+      for (const id of createdIds) {
+        await request.delete(`${API}/api/v1/graph/markdown/${id}`).catch(() => undefined);
+      }
       await destroyVibeFixture(request, fixture);
     }
   });

@@ -17,7 +17,8 @@ interface TerminalTargetFields {
 
 /** Provider/display kind for a terminal chip (vendor→glyph) denormalized onto
  *  `Tab.icon_key`. Shells use `'shell'`; an AgenticProcess maps its
- *  `worker_type`; unset/unknown → `'claude'` (the spawn default). */
+ *  `worker_type`; unset/unknown uses the generic process presentation. Runtime
+ *  defaults are resolved by the backend `harness` capability at creation. */
 function providerKindForWorkerType(workerType: string | null | undefined): string {
   const wt = (workerType ?? '').toLowerCase();
   if (wt === 'codex') return 'codex';

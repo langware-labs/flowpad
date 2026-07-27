@@ -6429,11 +6429,16 @@ class AgenticProcess(Entity):
             )
 
     async def _process_transcript_entries(self, entries: list) -> None:
-        """Per-entry side effects: plan.create + file-op cross-link emission.
+        """Per-flush entry side effects: live reindex + plan/file events.
 
         Extracted from :meth:`_flush_transcript_change` so unit tests can drive
         the loop without manipulating the AP's lifecycle ``status`` field.
-        FileEditEntry maps to ``file.write`` (semantically: contents changed).
+        Every FileWriteEntry/FileEditEntry path is deduplicated and scheduled
+        for reindex immediately at this transcript flush. FileEditEntry maps to
+        ``file.write`` (semantically: contents changed). ``file.write`` is
+        emitted for every file type so open raw/binary-backed viewers can
+        invalidate immediately; markdown cross-links, ``file.read``, and docs
+        tracking remain markdown-only.
         """
         from flow_sdk.core.entity.cross_link import cross_link_entities
         from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
@@ -6445,6 +6450,8 @@ class AgenticProcess(Entity):
         # often write+read the same .md file multiple times in a turn, and the
         # helper hits the DB once per call (5 markdown-subclass lookups each).
         cross_linked: set[str] = set()
+        touched: list[str] = []
+        touched_set: set[str] = set()
         for entry in entries:
             if isinstance(entry, ExitPlanModeEntry) and entry.plan_file_path:
                 # Order matters: cross-link save first so the entity-update
@@ -6457,19 +6464,28 @@ class AgenticProcess(Entity):
                 )
                 continue
 
+            if isinstance(entry, (FileWriteEntry, FileEditEntry)):
+                path = getattr(entry, "path", None)
+                if path and path not in touched_set:
+                    touched_set.add(path)
+                    touched.append(path)
+
             if isinstance(entry, (FileReadEntry, FileWriteEntry, FileEditEntry)):
                 path = getattr(entry, "path", None)
-                if not path or not path.endswith(".md"):
+                if not path:
                     continue
-                op = "read" if isinstance(entry, FileReadEntry) else "write"
+                is_markdown = path.endswith(".md")
+                if isinstance(entry, FileReadEntry) and not is_markdown:
+                    continue
                 # Cross-link save before the file.{op} broadcast — WS messages
                 # are delivered in send order, so a consumer subscribed to both
                 # sees the cross-link applied before acting on file.{op}.
-                if path not in cross_linked:
+                if is_markdown and path not in cross_linked:
                     md = await Entity.get_by_asset_ref(path)
                     if md is not None:
                         await cross_link_entities(md, self, b_data={"path": path})
                     cross_linked.add(path)
+                op = "read" if isinstance(entry, FileReadEntry) else "write"
                 await self.emit_entity_event(
                     f"file.{op}",
                     {"path": path, "tool_name": getattr(entry, "tool_name", "")},
@@ -6480,9 +6496,33 @@ class AgenticProcess(Entity):
                 # tracked on the persisted ``markdown_docs`` list (parallel to
                 # ``plan_path`` + ``plan.create``). Plan files and agent-internal
                 # docs are excluded so they don't double up with the Open-Plan chip.
-                if isinstance(entry, (FileWriteEntry, FileEditEntry)) and self._is_user_doc(path):
+                if (
+                    is_markdown
+                    and isinstance(entry, (FileWriteEntry, FileEditEntry))
+                    and self._is_user_doc(path)
+                ):
                     change = "create" if isinstance(entry, FileWriteEntry) else "update"
                     await self._track_markdown_doc(path, change)
+
+        # This helper is the existing per-debounce-flush seam, so scheduling
+        # here refreshes indexed assets while a turn is still running. The
+        # transcript-tail collector below remains the transport-wide turn-end
+        # fallback (including headless turns that do not populate this buffer).
+        self._schedule_reindex_paths(touched, "flush")
+
+    def _schedule_reindex_paths(self, paths: "Iterable[str]", source: str) -> None:
+        """Fire-and-forget one deduplicated reindex batch.
+
+        Shared by live transcript flushes and the transport-wide turn-end
+        fallback so reindex ownership does not split into parallel paths.
+        """
+        unique = list(dict.fromkeys(path for path in paths if path))
+        if not unique:
+            return
+        asyncio.create_task(
+            self._reindex_touched(unique),
+            name=f"ap-reindex-{source}-{self.id[:8]}",
+        )
 
     def _schedule_turn_end_reindex(self, source: str) -> None:
         """Push-reindex the files this turn wrote/edited (fire-and-forget).
@@ -6495,8 +6535,7 @@ class AgenticProcess(Entity):
         ``data_op_msg`` (updated_date bump → frontend body re-read)."""
         try:
             touched = self._collect_touched_from_transcript_tail()
-            if touched:
-                asyncio.create_task(self._reindex_touched(touched), name=f"ap-reindex-{self.id[:8]}")
+            self._schedule_reindex_paths(touched, f"turn-end-{source}")
         except Exception:
             logger.debug("AP %s: turn-end reindex schedule failed [%s]", self.id, source, exc_info=True)
 
@@ -6509,7 +6548,7 @@ class AgenticProcess(Entity):
 
             result = await reindex_paths(paths)
             logger.debug(
-                "AP %s turn-end reindex: %s (in=%d)",
+                "AP %s write reindex: %s (in=%d)",
                 self.id,
                 result.as_dict()["counts"],
                 len(paths),

@@ -140,7 +140,7 @@ export function useAssetsModel() {
   // The compute node whose VFS backs the "Files" root and the fs-drop copy —
   // the same resolution the body's fs/ file manager (ContextFolderBrowser) uses,
   // so tree and table browse one VFS.
-  const { typeId: fsTypeId } = useExplorerComputeNode();
+  const { typeId: fsTypeId, locatorTypeId: fsLocatorTypeId } = useExplorerComputeNode();
   // The SCOPED project's mount (not the ambient active project's) — the Files
   // root anchors at the project the tree is showing.
   const filesAnchor = useMemo(() => {
@@ -275,7 +275,7 @@ export function useAssetsModel() {
       await removeContextDir(dir);
       // If the body is showing the removed folder (or a subfolder of it), fall
       // back to the plain asset list so the view isn't stranded.
-      const rel = normalizeRel(DockPointer.parseAssetFsPointer(effectivePointer) ?? '');
+      const rel = normalizeRel(DockPointer.parseAssetFsPointer(effectivePointer)?.entitySubPath ?? '');
       const removed = normalizeRel(dir);
       if (rel && removed && (rel === removed || rel.startsWith(`${removed}/`))) {
         navigateAsset(DockPointer.forAssetList('all'));
@@ -439,28 +439,10 @@ export function useAssetsModel() {
     [navigation],
   );
 
-  const treeActivePointer = useMemo<DockPointer | null>(() => {
-    if (isProjectView) {
-      // The sidebar tree (markdown folder tree especially) is vfs-keyed, but an
-      // asset editor URL addresses the doc by its stable typeid
-      // (`editor/<t>/typeid/<id>`). Once the open entity is resolved, re-address
-      // it to the tree by its vfs `asset_ref` so the (vfs) tree can auto-expand
-      // + highlight it via its existing path resolution. Falls back to the raw
-      // pointer until the entity resolves (or for non-typeid/vfs pointers).
-      const assetRef = openAssetFields?.asset_ref;
-      if (assetRef && openAssetTypeId) {
-        // forAssetEditor already returns a ViewType.ASSETS editor pointer.
-        return DockPointer.forAssetEditor(openAssetTypeId.type, assetRef);
-      }
-      // Bare project home (no asset sub-pointer) → address the project pointer so
-      // the "Project home" top entry highlights (it owns exactly this pointer).
-      if (!effectivePointer && scopeProjectId) {
-        return DockPointer.forProject(scopeProjectId);
-      }
-      return new DockPointer(ViewType.ASSETS, effectivePointer || undefined);
-    }
-    return currentDock ?? null;
-  }, [isProjectView, effectivePointer, scopeProjectId, currentDock, openAsset, openAssetTypeId]);
+  // URL-first: the active row is derived from the real dock. DockPointer itself
+  // exposes cross-route resource identity (`resourceVfsPath`), so the tree
+  // never rewrites an editor URL into a synthetic filesystem pointer.
+  const treeActivePointer = currentDock ?? null;
 
   const handleNew = useCallback((type: string) => {
     setNewTypeTarget(type);
@@ -646,20 +628,15 @@ export function useAssetsModel() {
     // Files — the scoped project's real on-disk tree, right below the Task
     // section. Rows address the Assets body's fs/ file manager (the same body
     // the context-folder rows use), and are draggable onto context folder rows.
-    if (hasScopeProject && fsTypeId && filesAnchor) {
+    if (hasScopeProject && fsTypeId && fsLocatorTypeId && filesAnchor) {
       const filesRoot = fsFolderRoot({
         typeId: fsTypeId,
         anchorRelPath: filesAnchor,
         scope: effectiveFilter.scope,
         label: 'Files',
         rootIcon: <FolderOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
-        pointerForRel: (rel) => DockPointer.forAssetFsFolder(rel),
-        ownsPointer: (p) => {
-          if (p.viewType !== ViewType.ASSETS) return false;
-          const rel = normalizeRel(DockPointer.parseAssetFsPointer(p.pointer) ?? '');
-          return !!rel && (rel === filesAnchor || rel.startsWith(`${filesAnchor}/`));
-        },
-        relForPointer: (p) => DockPointer.parseAssetFsPointer(p.pointer),
+        locatorTypeId: fsLocatorTypeId,
+        pointerForVfs: (path) => DockPointer.forAssetFs(path),
         draggable: true,
       });
       const taskIdx = displayTypes.findIndex((t) => t.type_name === (RecordType.TASK as string));
@@ -673,6 +650,7 @@ export function useAssetsModel() {
         assetContextFoldersRoot({
           dirs: contextDirInfos,
           fsTypeId,
+          fsLocatorTypeId,
           onAdd: ctxFolder.openSource,
           onRemove: handleRemoveContextDir,
           onDropItem: handleDropIntoContextDir,
@@ -695,6 +673,7 @@ export function useAssetsModel() {
     scopeProjectId,
     hasScopeProject,
     fsTypeId,
+    fsLocatorTypeId,
     filesAnchor,
     contextDirInfos,
     ctxFolder.openSource,
@@ -702,7 +681,6 @@ export function useAssetsModel() {
     handleDropIntoContextDir,
     handleExternalDropIntoContextDir,
   ]);
-
   return {
     roots,
     treeActivePointer,

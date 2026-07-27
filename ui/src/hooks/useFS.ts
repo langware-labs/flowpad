@@ -66,6 +66,7 @@ export function useFS(typeid?: TypeId) {
   });
   const existsCache = useFSStore((state) => state.existsCache);
   const browseCache = useFSStore((state) => state.browseCache);
+  const pathRevisions = useFSStore((state) => state.pathRevisions);
 
   if (!typeid) {
     return null;
@@ -91,6 +92,14 @@ export function useFS(typeid?: TypeId) {
 
       // Check for text content first, then blob
       return textResult || blobResult || null;
+    },
+
+    /** Monotonic change token for this exact path. Folder paths also advance
+     * when a descendant changes, as owned by FSStore.invalidate(). */
+    revision: (path: string): number => {
+      const normalizedPath =
+        path.replace(/\/+/g, '/').replace(/\/$/, '').replace(/^\/+/, '') || '/';
+      return pathRevisions.get(`${typeid.toString()}:${normalizedPath}`) ?? 0;
     },
 
     /**

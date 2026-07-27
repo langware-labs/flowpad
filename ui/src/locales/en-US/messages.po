@@ -1780,7 +1780,7 @@ msgstr "buffer row"
 #~ msgid "Buffer terminal sync updates (prevents scroll jumps)"
 #~ msgstr "Buffer terminal sync updates (prevents scroll jumps)"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Build history"
 msgstr "Build history"
 
@@ -2033,8 +2033,8 @@ msgstr "Changes ({0})"
 #~ msgstr "Changes saved successfully"
 
 #: src/pages/flow-page/vibe-workspace.tsx
-msgid "Changing worker requires a new chat. The current chat stays in history."
-msgstr "Changing worker requires a new chat. The current chat stays in history."
+#~ msgid "Changing worker requires a new chat. The current chat stays in history."
+#~ msgstr "Changing worker requires a new chat. The current chat stays in history."
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
@@ -3151,7 +3151,6 @@ msgstr "Could not resolve this folder"
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not start"
 msgstr "Could not start"
 
@@ -4043,6 +4042,10 @@ msgstr "Discovering {typeLabel}…"
 #: src/components/triggers-view/TriggersList.tsx
 msgid "Discovering…"
 msgstr "Discovering…"
+
+#: src/components/assets/editor/AssetDiscussButton.tsx
+msgid "Discuss"
+msgstr "Discuss"
 
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
@@ -5173,7 +5176,6 @@ msgstr "Failed to start session"
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Failed to start the build session."
 msgstr "Failed to start the build session."
 
@@ -5385,6 +5387,10 @@ msgstr "Filter…"
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Filters"
 msgstr "Filters"
+
+#: src/components/assets/editor/AssetDiscussButton.tsx
+msgid "Finishing asset load…"
+msgstr "Finishing asset load…"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Fire (synthetic test)"
@@ -7827,7 +7833,7 @@ msgstr "new"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/quick-create/DesktopSurface.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "New"
 msgstr "New"
@@ -7861,8 +7867,8 @@ msgstr "New asset"
 msgid "New bookmark folder"
 msgstr "New bookmark folder"
 
-#: src/pages/flow-page/vibe-workspace.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "New build"
 msgstr "New build"
 
@@ -8512,7 +8518,7 @@ msgstr "No orphans right now. Click to re-scan and confirm."
 msgid "No page exists with this name yet."
 msgstr "No page exists with this name yet."
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "No past builds"
 msgstr "No past builds"
 
@@ -9754,7 +9760,7 @@ msgstr "Past analyses"
 #~ msgid "Past attempts"
 #~ msgstr "Past attempts"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Past builds"
 msgstr "Past builds"
 
@@ -10617,7 +10623,7 @@ msgid "Recency Factor (k)"
 msgstr "Recency Factor (k)"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Recent"
 msgstr "Recent"
 
@@ -11892,6 +11898,10 @@ msgstr "Select a project"
 #~ msgid "Select a project or open a new folder."
 #~ msgstr "Select a project or open a new folder."
 
+#: src/components/assets/editor/AssetDiscussButton.tsx
+msgid "Select a project to discuss this file"
+msgstr "Select a project to discuss this file"
+
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Select a project to view resources"
@@ -12303,7 +12313,6 @@ msgstr "Share this plan with someone"
 #~ msgstr "Share this repo to a conversation"
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 msgid "Share to a conversation"
 msgstr "Share to a conversation"
 
@@ -12872,19 +12881,17 @@ msgstr "Start journey"
 msgid "Start live session"
 msgstr "Start live session"
 
-#. placeholder {0}: workerLabel(pendingWorkerSwitch.workerType)
 #: src/pages/flow-page/vibe-workspace.tsx
-msgid "Start new {0} chat?"
-msgstr "Start new {0} chat?"
+#~ msgid "Start new {0} chat?"
+#~ msgstr "Start new {0} chat?"
 
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Start new chat"
 msgstr "Start new chat"
 
 #: src/pages/flow-page/vibe-workspace.tsx
-msgid "Start new chat?"
-msgstr "Start new chat?"
+#~ msgid "Start new chat?"
+#~ msgstr "Start new chat?"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
@@ -14543,7 +14550,7 @@ msgstr "What do you need help with?"
 msgid "What do you want to collaborate on?"
 msgstr "What do you want to collaborate on?"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "What do you want to work on"
 msgstr "What do you want to work on"
 
@@ -14695,6 +14702,11 @@ msgstr "Working Dir"
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Working directory"
 msgstr "Working directory"
+
+#. placeholder {0}: promptContext.label
+#: src/pages/flow-page/vibe-chat-pane.tsx
+msgid "Working on {0}"
+msgstr "Working on {0}"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Working on {hostName}'s machine…"

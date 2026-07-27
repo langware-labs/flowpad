@@ -11,8 +11,6 @@ import { notify } from '@src/notifications';
 import { FlaskConical, History } from 'lucide-react';
 import { useCallback, useMemo, useRef } from 'react';
 import { UsagePanel } from './UsagePanel';
-import { launchSkillTest } from './skill-eval-analysis';
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 
 interface SkillAssetEditorProps {
   /** FSRef to the skill folder. SKILL.md is resolved via child(). */
@@ -105,33 +103,21 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
       }
     };
     return (
-      <>
-        <button
-          type="button"
-          onClick={toggle}
-          aria-pressed={isEval}
-          title={isEval ? 'Under eval — click to stop evaluating' : 'Mark skill for eval'}
-          data-testid="skill-eval-toggle"
-          className={cn(
-            'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors',
-            isEval
-              ? 'bg-accent text-accent-foreground'
-              : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-          )}
-        >
-          <FlaskConical className="h-3.5 w-3.5" />
-        </button>
-        {/* Quick-start testing toolbar: spin up an interactive worker with this
-            skill, pre-filled (queue) but not auto-submitted. Shared WorkerToolbar
-            so it matches every other worker-launch surface. */}
-        <span className="mx-0.5 h-4 w-px flex-shrink-0 bg-border" aria-hidden />
-        <WorkerToolbar
-          onLaunch={(worker) => {
-            if (skillRef.current) void launchSkillTest(skillRef.current, worker);
-          }}
-          testIdPrefix="skill-test"
-        />
-      </>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-pressed={isEval}
+        title={isEval ? 'Under eval — click to stop evaluating' : 'Mark skill for eval'}
+        data-testid="skill-eval-toggle"
+        className={cn(
+          'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors',
+          isEval
+            ? 'bg-accent text-accent-foreground'
+            : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+        )}
+      >
+        <FlaskConical className="h-3.5 w-3.5" />
+      </button>
     );
     // Stable identity: reads the live skill via `skillRef`, so it never rebuilds
     // on a skill ref change (only `fields`/`setField` from the editor drive it).

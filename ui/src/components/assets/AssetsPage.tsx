@@ -1,7 +1,7 @@
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { AssetEditor, AssetMode, AssetRoutingMethod, DEFAULT_WIKI_SPACE, WIKI_FRAGMENT_PARAM } from '@src/navigation/asset-doc-types';
+import { AssetEditor, AssetMode, AssetRoutingMethod, DEFAULT_WIKI_SPACE, EDITOR_TYPES, WIKI_FRAGMENT_PARAM } from '@src/navigation/asset-doc-types';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { ShareContextFolderButton } from '@src/components/assets/ShareContextFolderButton';
 import { useContextFolderForRel } from '@src/hooks/use-context-folder-for-rel';
@@ -12,11 +12,16 @@ import { getDescriptor } from '@src/components/quick-create';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, RecordType, systemTools, TypeId } from '@sdk';
-import type { Project } from '@sdk';
+import { copyToClipboard, dataContext, FSRef, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
+import type { APIEntity, Project } from '@sdk';
+import { useContext as useDataContext } from '@src/hooks/useContext';
+import { useEntityByPath } from '@src/hooks/use-entity-by-path';
+import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
+import { AssetDiscussButton } from '@src/components/assets/editor/AssetDiscussButton';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import apiClient from '@sdk/client';
-import { BookOpen, ChevronRight, PackageSearch, Trash2, X } from 'lucide-react';
+import { BookOpen, ChevronRight, Copy, PackageSearch, Trash2, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Breadcrumb,
@@ -77,8 +82,8 @@ interface ParsedAssetPointer {
   wikiName: string | null;
   /** Only set when mode === 'wiki'. The space the name resolves within (default @local). */
   wikiSpace: string | null;
-  /** Only set when mode === 'fs'. Compute-node-relative folder path. */
-  fsRelPath: string | null;
+  /** Only set when mode === 'fs'. Canonical filesystem identity. */
+  fsVfsPath: VFSPath | null;
 }
 
 function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
@@ -89,7 +94,7 @@ function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
     folderRelPath: null,
     wikiName: null,
     wikiSpace: null,
-    fsRelPath: null,
+    fsVfsPath: null,
   };
   if (!pointer) return empty;
   if (pointer === (AssetMode.PROJECT_HOME as string)) {
@@ -98,9 +103,9 @@ function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
   if (pointer.startsWith('editor/')) {
     return { ...empty, mode: 'editor' };
   }
-  const fsRelPath = DockPointer.parseAssetFsPointer(pointer);
-  if (fsRelPath !== null) {
-    return { ...empty, mode: 'fs', fsRelPath };
+  const fsVfsPath = DockPointer.parseAssetFsPointer(pointer);
+  if (fsVfsPath !== null) {
+    return { ...empty, mode: 'fs', fsVfsPath };
   }
   if (pointer.startsWith('list/')) {
     return { ...empty, mode: 'list', typeName: pointer.slice('list/'.length) || null };
@@ -138,6 +143,19 @@ function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
     };
   }
   return empty;
+}
+
+/** Normalize a machine path only for identity comparison in the header. */
+function comparableMachinePath(path: string): string {
+  const normalized = path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '').replace(/\/+$/, '');
+  return normalized.startsWith('/') ? normalized : `/${normalized}`;
+}
+
+/** Folder-backed assets own every file below their asset_ref. */
+function assetRefOwnsPath(assetRef: string, resourcePath: string): boolean {
+  const owner = comparableMachinePath(assetRef);
+  const resource = comparableMachinePath(resourcePath);
+  return resource === owner || resource.startsWith(`${owner}/`);
 }
 
 /** Given a parsed folder pointer and a list of vaults, return the absolute
@@ -239,6 +257,7 @@ function FolderBreadcrumb({
 export function AssetsPage() {
   const { t } = useLingui();
   const { currentDock, navigation } = useDockNavigation();
+  const { activeEntity, activeEntityTypeId } = useDataContext();
   const { types: allTypes } = useAssetTypes({ vibeAsStandard: true });
   const { busy, resetAndRescan } = useSystemTools();
 
@@ -317,19 +336,26 @@ export function AssetsPage() {
   // scope bucket onto the filter so it stays visible while you view it. The
   // union is derived (recomputed per open, never accumulated); a manual scope
   // change suppresses it for that one asset (see handleScopeChange).
-  const openAssetTypeId = useMemo<TypeId | null>(() => {
+  const editorPointer = useMemo<AssetDocPointer | null>(() => {
     if (!effectivePointer.startsWith('editor/')) return null;
     try {
       const p = AssetDocPointer.parse(effectivePointer);
-      if (p.editor !== AssetEditor.CODE && p.method === AssetRoutingMethod.TYPEID) {
-        return new TypeId(p.value);
-      }
+      p.validate();
+      return p;
     } catch {
-      // not an editor/typeid pointer — nothing to union
+      return null;
+    }
+  }, [effectivePointer]);
+  const openAssetTypeId = useMemo<TypeId | null>(() => {
+    if (
+      editorPointer &&
+      editorPointer.editor !== AssetEditor.CODE &&
+      editorPointer.method === AssetRoutingMethod.TYPEID
+    ) {
+      return new TypeId(editorPointer.value);
     }
     return null;
-  }, [effectivePointer]);
-  const openAssetId = openAssetTypeId?.toString() ?? null;
+  }, [editorPointer]);
   const { data: openAsset } = useEntity(openAssetTypeId);
   const openAssetBucket = useMemo<AssetScopeBucket>(
     () => assetScopeBucket(openAsset as { scope?: string | null; project_id?: string | null } | null),
@@ -407,8 +433,9 @@ export function AssetsPage() {
     folderRelPath,
     wikiName,
     wikiSpace,
-    fsRelPath,
+    fsVfsPath,
   } = parseAssetPointer(effectivePointer);
+  const fsRelPath = fsVfsPath?.entitySubPath ?? null;
   const isEditorMode = mode === 'editor';
   const isFolderMode = mode === 'folder';
   const isWikiMode = mode === 'wiki';
@@ -416,6 +443,65 @@ export function AssetsPage() {
   const isProjectHomeMode = isProjectView
     ? !effectivePointer && !!scopeProjectId
     : mode === 'projectHome' && urlScope.mode === 'project' && !!urlScope.activeProjectId;
+
+  // The loader is the single writer of active entity context. For a VFS route,
+  // accept that context only when the resolved entity owns the URL's resource
+  // path, so a miss can never leak the previously-open entity into this header.
+  const resourceVfsPath = isEditorMode ? currentDock?.resourceVfsPath ?? null : null;
+  const activeAssetRef = (activeEntity as { asset_ref?: string | null } | null)?.asset_ref ?? null;
+  const activeEntityMatchesResource =
+    !!resourceVfsPath?.machinePath &&
+    !!activeAssetRef &&
+    assetRefOwnsPath(activeAssetRef, resourceVfsPath.machinePath);
+  const headerEntityTypeId =
+    openAssetTypeId ??
+    (editorPointer?.method === AssetRoutingMethod.VFS && activeEntityMatchesResource
+      ? activeEntityTypeId
+      : null);
+  const editorEntityType =
+    editorPointer ? (EDITOR_TYPES[editorPointer.editor][0] as string | undefined) ?? null : null;
+  const editorPrimaryType = editorEntityType ?? editorPointer?.editor ?? null;
+  const resourceVfsValue = resourceVfsPath?.absVfsPath ?? null;
+  const unresolvedVfsRef = useMemo(
+    () => {
+      if (!resourceVfsValue || !editorEntityType || activeEntityMatchesResource) return null;
+      const path = VFSPath.parse(resourceVfsValue);
+      return path.typeId ? new FSRef(path.entitySubPath, path.typeId) : null;
+    },
+    [resourceVfsValue, editorEntityType, activeEntityMatchesResource],
+  );
+  // A just-created VFS file may not have resolved in the loader yet. Join the
+  // same cached path-resolution query used by the editor: React Query dedupes
+  // the lookup/discovery work, while this header remains render-only and never
+  // writes entity context itself.
+  const { entity: vfsHeaderEntity } = useEntityByPath<APIEntity<APIEntity<unknown>>>(
+    unresolvedVfsRef ? editorEntityType : null,
+    unresolvedVfsRef,
+  );
+  const resolvedHeaderEntityTypeId = headerEntityTypeId ?? vfsHeaderEntity?.typeId ?? null;
+  const headerAssetType = resolvedHeaderEntityTypeId?.type ?? editorPrimaryType;
+  const HeaderIcon = isEditorMode && headerAssetType ? iconForType(headerAssetType) : BookOpen;
+  const headerEntity = (openAsset ??
+    (activeEntityMatchesResource ? activeEntity : null) ??
+    vfsHeaderEntity) as {
+    asset_ref?: string | null;
+    displayName?: string | null;
+    name?: string | null;
+  } | null;
+  const entityAssetName = headerEntity?.asset_ref
+    ?.replace(/[\\/]+$/, '')
+    .split(/[\\/]/)
+    .pop();
+  const editorHeaderTitle =
+    resourceVfsPath?.filename ||
+    entityAssetName ||
+    headerEntity?.displayName?.trim() ||
+    headerEntity?.name?.trim() ||
+    null;
+  const editorSourcePath = resourceVfsPath?.machinePath || headerEntity?.asset_ref || null;
+  const editorParentPath = editorSourcePath
+    ? editorSourcePath.replace(/[\\/]+$/, '').replace(/[\\/][^\\/]+$/, '') || editorSourcePath
+    : null;
 
   // The folder the header's Share acts on: the context folder CONTAINING the
   // browsed path when there is one (only its root is a repo — an `fs/` pointer
@@ -530,22 +616,65 @@ export function AssetsPage() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex h-[52px] flex-shrink-0 items-center gap-1 border-b px-3">
-        <BookOpen className="h-4 w-4 text-muted-foreground" />
-        <span className="ml-1 text-sm font-medium">
-          {/* An open VFS document and a context folder get their own names as
-              the pane title; everything else keeps the generic Assets heading. */}
-          {isEditorMode && currentDock?.vfsPath?.filename ? (
-            currentDock.vfsPath.filename
-          ) : isFsMode && fsRelPath ? (
-            fsRelPath.replace(/\/+$/, '').split('/').pop() || <Trans>Assets</Trans>
-          ) : isProjectView ? (
-            <Trans>Project assets</Trans>
-          ) : (
-            <Trans>Assets</Trans>
-          )}
-        </span>
+      <div
+        className="flex h-[52px] flex-shrink-0 items-center gap-1 border-b px-3"
+        data-testid="assets-page-header"
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <HeaderIcon
+            className="h-4 w-4 flex-shrink-0 text-muted-foreground"
+            data-testid={isEditorMode ? 'assets-page-header-type-icon' : undefined}
+          />
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium">
+              {/* An open VFS document and a context folder get their own names
+                  as the pane title; everything else keeps Assets. */}
+              {isEditorMode && editorHeaderTitle ? (
+                editorHeaderTitle
+              ) : isFsMode && fsRelPath ? (
+                fsRelPath.replace(/\/+$/, '').split('/').pop() || <Trans>Assets</Trans>
+              ) : isProjectView ? (
+                <Trans>Project assets</Trans>
+              ) : (
+                <Trans>Assets</Trans>
+              )}
+            </div>
+            {isEditorMode && editorParentPath && (
+              <div className="flex min-w-0 items-center gap-1">
+                <span
+                  className="min-w-0 truncate text-[11px] text-muted-foreground"
+                  title={editorParentPath}
+                  data-testid="assets-page-header-path"
+                >
+                  {editorParentPath}
+                </span>
+                {editorSourcePath && (
+                  <button
+                    type="button"
+                    title={t`Copy path`}
+                    aria-label={t`Copy path`}
+                    onClick={() => void copyToClipboard(editorSourcePath)}
+                    data-testid="assets-page-header-copy-path"
+                    className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <Copy className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
         <div className="ml-auto flex items-center gap-2">
+          {isEditorMode && resolvedHeaderEntityTypeId ? (
+            <EntityActionsToolbar
+              typeId={resolvedHeaderEntityTypeId}
+              favoriteTitle={editorHeaderTitle ?? resolvedHeaderEntityTypeId.toString()}
+              variant="prominent"
+              trailing={<AssetDiscussButton />}
+            />
+          ) : isEditorMode ? (
+            <AssetDiscussButton />
+          ) : null}
           {/* Share the folder this pane is browsing. Only an fs pointer has a
               folder to share; the button hides itself for a legacy dir with no
               linked Folder entity. Search lives on the list's own bar below,
@@ -574,8 +703,8 @@ export function AssetsPage() {
             header + content router only. */}
         {/* Main content: editor when in editor mode, list view otherwise */}
         <div className="min-w-0 flex-1">
-          {isFsMode && fsRelPath !== null ? (
-            <ContextFolderBrowser relPath={fsRelPath} onNavigate={navigateAsset} projectId={scopeProjectId} />
+          {isFsMode && fsVfsPath ? (
+            <ContextFolderBrowser vfsPath={fsVfsPath} onNavigate={navigateAsset} projectId={scopeProjectId} />
           ) : isWikiMode && wikiName ? (
             <WikiResolveView
               name={wikiName}

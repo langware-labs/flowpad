@@ -16,7 +16,7 @@ export function MediaViewer({
   path: string;
   kind: AssetEditor.IMAGE | AssetEditor.VIDEO | AssetEditor.AUDIO;
 }) {
-  const { url, subPath } = useDownloadUrl(path);
+  const { url, subPath, revision } = useDownloadUrl(path);
 
   if (!url) {
     return (
@@ -29,12 +29,12 @@ export function MediaViewer({
   return (
     <div className="flex h-full w-full items-center justify-center overflow-auto bg-background p-4">
       {kind === AssetEditor.IMAGE && (
-        <img src={url} alt={subPath} className="max-h-full max-w-full object-contain" data-testid="media-viewer-image" />
+        <img key={revision} src={url} alt={subPath} className="max-h-full max-w-full object-contain" data-testid="media-viewer-image" />
       )}
       {kind === AssetEditor.VIDEO && (
-        <video src={url} controls className="max-h-full max-w-full" data-testid="media-viewer-video" />
+        <video key={revision} src={url} controls className="max-h-full max-w-full" data-testid="media-viewer-video" />
       )}
-      {kind === AssetEditor.AUDIO && <audio src={url} controls className="w-full max-w-xl" data-testid="media-viewer-audio" />}
+      {kind === AssetEditor.AUDIO && <audio key={revision} src={url} controls className="w-full max-w-xl" data-testid="media-viewer-audio" />}
     </div>
   );
 }

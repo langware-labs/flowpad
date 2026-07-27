@@ -316,6 +316,27 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   private onFlowData(typeId: TypeId, flowDataJson: any) {
+    // Parse the envelope before cache resolution. Entity events are also
+    // surfaced at manager level so late-mounting hosts can key directly on the
+    // target TypeId without depending on which entity instance is hydrated.
+    const elementType = flowDataJson.element_type || flowDataJson.elementType || 'notification';
+    const attributes = flowDataJson.attributes || {};
+    if (elementType === 'entity_event') {
+      const event = String(attributes.event ?? '');
+      const payload = (attributes.payload as Record<string, unknown>) ?? {};
+      this.emit('on_entity_event', typeId, event, payload);
+
+      const entity = this.getByTypeIdFromCache<T>(typeId);
+      if (!entity) {
+        console.debug(`[DataManager.onFlowData] Entity not found in cache for typeId: ${typeId.toString()}`);
+        return;
+      }
+      if (typeof (entity as any).onEntityEvent === 'function') {
+        (entity as any).onEntityEvent(event, payload);
+      }
+      return;
+    }
+
     // Get entity from cache
     const entity = this.getByTypeIdFromCache<T>(typeId);
     if (!entity) {
@@ -324,21 +345,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
 
     // Create FlowData from JSON
-    const elementType = flowDataJson.element_type || flowDataJson.elementType || 'notification';
-    const attributes = flowDataJson.attributes || {};
-
-    // Transport-level envelope from Python Entity.emit_entity_event — never
-    // ingested into the flow stream or renderer pipeline. Route straight to
-    // the entity's onEntityEvent hook.
-    if (elementType === 'entity_event') {
-      const event = String(attributes.event ?? '');
-      const payload = (attributes.payload as Record<string, unknown>) ?? {};
-      if (typeof (entity as any).onEntityEvent === 'function') {
-        (entity as any).onEntityEvent(event, payload);
-      }
-      return;
-    }
-
     // Backend sends content as 'flow_value', fallback to 'content' for compatibility
     const content = flowDataJson.flow_value ?? flowDataJson.content ?? '';
 

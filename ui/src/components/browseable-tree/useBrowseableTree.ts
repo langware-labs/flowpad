@@ -57,7 +57,7 @@ function readPersistedExpandedIds(persistKey: string): Set<string> | null {
  *    pass `persistKey` to restore/persist via localStorage, and
  *    `defaultExpandedIds` to seed first-open expansion).
  *  - `loadStates` tracks per-node children fetches (idle / loading / ready / error).
- *  - `expandParentsForPointer(p)` walks the owning root's pathFor() and
+ *  - `expandParentsForPointer(p)` walks every owning root's pathFor() and
  *    expands every ancestor, priming the cache for each along the way.
  */
 export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTreeOptions = {}) {
@@ -256,66 +256,70 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
   );
 
   /**
-   * Expand every ancestor of the node addressed by `pointer`. The first
-   * root whose `ownsPointer` returns true is used; its `pathFor` is walked
-   * and each non-leaf ancestor is added to `expandedIds`. Cached results
-   * are primed from the returned chain so the rendered tree doesn't need
-   * to refetch.
+   * Expand every ancestor of every node addressed by `pointer`. All roots
+   * whose `ownsPointer` returns true participate; this lets one canonical VFS
+   * resource expand in multiple presentations (for example Markdown + Files).
+   * Leaves are returned in root order so the renderer can scroll the first
+   * visible match deterministically.
    */
   const expandParentsForPointer = useCallback(
-    async (pointer: DockPointer | null): Promise<Browseable | null> => {
-      if (!pointer) return null;
-      const owner = roots.find((r) => r.ownsPointer(pointer));
-      if (!owner) return null;
+    async (pointer: DockPointer | null): Promise<Browseable[]> => {
+      if (!pointer) return [];
+      const owners = roots.filter((r) => r.ownsPointer(pointer));
+      if (owners.length === 0) return [];
 
-      let chain: Browseable[];
-      try {
-        chain = await owner.pathFor(pointer);
-      } catch {
-        return null;
-      }
-      if (chain.length === 0) return null;
+      const leaves: Browseable[] = [];
+      for (const owner of owners) {
+        let chain: Browseable[];
+        try {
+          chain = await owner.pathFor(pointer);
+        } catch {
+          continue;
+        }
+        if (chain.length === 0) continue;
 
-      // Expand every node in the chain whose `hasChildren !== false`.
-      // This keeps editor-file leaves (hasChildren: false) untouched while
-      // ensuring folder leaves auto-expand themselves on deep-link.
-      const nodesToExpand = chain.filter((n) => n.hasChildren !== false);
-      setState((prev) => {
-        const expandedIds = new Set(prev.expandedIds);
-        for (const n of nodesToExpand) expandedIds.add(n.id);
-        return { ...prev, expandedIds };
-      });
+        // Expand every node in the chain whose `hasChildren !== false`.
+        // This keeps editor-file leaves (hasChildren: false) untouched while
+        // ensuring folder leaves auto-expand themselves on deep-link.
+        const nodesToExpand = chain.filter((n) => n.hasChildren !== false);
+        setState((prev) => {
+          const expandedIds = new Set(prev.expandedIds);
+          for (const n of nodesToExpand) expandedIds.add(n.id);
+          return { ...prev, expandedIds };
+        });
 
-      // Load each expandable node; capture the parent-of-leaf's children so
-      // the freshness check below sees them without a stale closure read.
-      const leaf = chain[chain.length - 1];
-      const parent = chain.length >= 2 ? chain[chain.length - 2] : null;
-      let parentChildren: Browseable[] | null = null;
-      for (const node of nodesToExpand) {
-        if (!node.listChildren) continue;
-        const existing = loadStatesRef.current.get(node.id);
-        const children = existing?.status === 'ready' ? existing.children : await loadChildren(node);
-        if (parent && node.id === parent.id) parentChildren = children;
-      }
+        // Load each expandable node; capture the parent-of-leaf's children so
+        // the freshness check below sees them without a stale closure read.
+        const leaf = chain[chain.length - 1];
+        leaves.push(leaf);
+        const parent = chain.length >= 2 ? chain[chain.length - 2] : null;
+        let parentChildren: Browseable[] | null = null;
+        for (const node of nodesToExpand) {
+          if (!node.listChildren) continue;
+          const existing = loadStatesRef.current.get(node.id);
+          const children = existing?.status === 'ready' ? existing.children : await loadChildren(node);
+          if (parent && node.id === parent.id) parentChildren = children;
+        }
 
-      // Deep-link freshness: leaf missing from parent's listing → just-created
-      // file the cached listing pre-dates. Force-refresh past both caches.
-      if (parent && parent.listChildren && parentChildren) {
-        const leafPresent = parentChildren.some((c) => c.id === leaf.id);
-        if (!leafPresent) {
-          inflight.current.delete(parent.id);
-          setLoadState(parent.id, { status: 'loading' });
-          try {
-            const refreshed = await parent.listChildren({ refresh: true });
-            setLoadState(parent.id, { status: 'ready', children: refreshed });
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            setLoadState(parent.id, { status: 'error', message });
+        // Deep-link freshness: leaf missing from parent's listing → just-created
+        // file the cached listing pre-dates. Force-refresh past both caches.
+        if (parent && parent.listChildren && parentChildren) {
+          const leafPresent = parentChildren.some((c) => c.id === leaf.id);
+          if (!leafPresent) {
+            inflight.current.delete(parent.id);
+            setLoadState(parent.id, { status: 'loading' });
+            try {
+              const refreshed = await parent.listChildren({ refresh: true });
+              setLoadState(parent.id, { status: 'ready', children: refreshed });
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              setLoadState(parent.id, { status: 'error', message });
+            }
           }
         }
       }
 
-      return leaf;
+      return leaves;
     },
     // `setLoadState` is stable (useCallback []), so listing it doesn't
     // reintroduce identity churn. `state.loadStates` is deliberately read via

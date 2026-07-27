@@ -26,7 +26,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LastScanResult } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { VIBE_MODEL_DEFAULT, type VibeModelTier } from '@src/pages/flow-page/vibe-model-select';
-import { DEFAULT_WORKER_TYPE, type WorkerType } from '@src/components/workers/worker-types';
 
 /**
  * HomeLanding - Welcome view with greeting and quick action buttons
@@ -84,7 +83,6 @@ export function HomeLanding() {
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
   const vibeModel: VibeModelTier = VIBE_MODEL_DEFAULT;
-  const vibeWorker: WorkerType = DEFAULT_WORKER_TYPE;
   const { scope: searchScope, isLoading: searchScopeLoading } = useGlobalSearchScope();
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
@@ -150,7 +148,7 @@ export function HomeLanding() {
                   value={draftPrompt}
                   onChange={setDraftPrompt}
                   allowAttachments
-                  onSubmit={(msg, files) => void handleVibeSubmit(msg, files, vibeModel, vibeWorker)}
+                  onSubmit={(msg, files) => void handleVibeSubmit(msg, files, vibeModel)}
                 />
               </div>
             </div>

@@ -288,6 +288,25 @@ async def test_parent_tab_id_set_on_create() -> None:
 
 
 @pytest.mark.asyncio
+async def test_raw_editor_pointer_is_adoptable_but_empty_editor_is_not() -> None:
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+
+    raw_file = await ensure_tab(
+        _jptr("editor", "/tmp/project/main.py"),
+        parent_tab_id=parent.id,
+    )
+    assert raw_file.parent_tab_id == parent.id
+
+    import json as _j
+
+    empty_editor = await ensure_tab(
+        _j.dumps({"viewType": "editor", "pointer": ""}),
+        parent_tab_id=parent.id,
+    )
+    assert empty_editor.parent_tab_id is None
+
+
+@pytest.mark.asyncio
 async def test_parent_tab_id_adopted_on_reopen_and_preserved_on_none() -> None:
     # A tab already open with no parent gets adopted when reopened from inside a
     # workspace; a later reopen with no hint (None) preserves the group.

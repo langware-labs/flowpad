@@ -9,7 +9,9 @@ import { describe, expect, it } from 'vitest';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { ViewType } from '@src/types/ViewType';
-import { AssetEditor } from '@sdk';
+import { AssetEditor, ComputeProviderType, VFSPath } from '@sdk';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
+import { vfsLocatorForComputeNode } from '@src/navigation/vfs-locator';
 
 // Valid v4-shaped UUIDs (TypeId enforces the entity-id policy).
 const U = (h: string) => `${h.padEnd(8, '0').slice(0, 8)}-0000-4000-8000-000000000000`;
@@ -56,5 +58,63 @@ describe('DockPointer.vfsPath', () => {
 
   it('is null for a non-asset dock', () => {
     expect(new DockPointer(ViewType.SHELL, `shell-${U('5e11')}`).vfsPath).toBeNull();
+  });
+});
+
+describe('DockPointer.resourceVfsPath', () => {
+  const file = VFSPath.fromTypeId(LOCAL_COMPUTE_NODE, 'Users/x/proj/docs/note.md');
+
+  it('uses one VFS identity across asset editor, Files, Explorer, and project-rebased routes', () => {
+    const editor = DockPointer.forAssetEditor('markdown', file.absVfsPath);
+    const files = DockPointer.forAssetFs(file);
+    const explorer = DockPointer.forExplorer(file.absVfsPath);
+    const projectFiles = DockPointer.rebaseAssetsOntoProject(files, U('9b0a'));
+
+    expect(files.pointer).toBe(`fs/vfs/${file.absVfsPath}`);
+    for (const dock of [editor, files, explorer, projectFiles]) {
+      expect(dock.resourceVfsPath?.equals(file)).toBe(true);
+    }
+  });
+
+  it('keeps vfsPath as a compatibility alias', () => {
+    const dock = DockPointer.forAssetFs(file);
+    expect(dock.vfsPath?.equals(dock.resourceVfsPath)).toBe(true);
+  });
+
+  it('rejects a relative VFS identity at the canonical builder', () => {
+    expect(() => DockPointer.forAssetFs(VFSPath.parse('Users/x/note.md'))).toThrow(
+      'Asset filesystem pointers require an absolute VFS path',
+    );
+  });
+});
+
+describe('vfsLocatorForComputeNode', () => {
+  it('uses @local for bootstrap and provider-shaped local nodes', () => {
+    expect(
+      vfsLocatorForComputeNode({
+        type: 'compute_node',
+        id: U('10ca1'),
+        name: '@local',
+        uname: 'local',
+      })?.equals(LOCAL_COMPUTE_NODE),
+    ).toBe(true);
+    expect(
+      vfsLocatorForComputeNode({
+        type: 'compute_node',
+        id: U('10ca2'),
+        node_provider_type: ComputeProviderType.LOCAL_MACHINE,
+      })?.equals(LOCAL_COMPUTE_NODE),
+    ).toBe(true);
+  });
+
+  it('retains a remote compute node UUID', () => {
+    const id = U('a11ce');
+    expect(
+      vfsLocatorForComputeNode({
+        type: 'compute_node',
+        id,
+        node_provider_type: ComputeProviderType.SSH,
+      })?.toString(),
+    ).toBe(`compute_node-${id}`);
   });
 });

@@ -80,6 +80,19 @@ async function ensureComputeNodeLoaded(): Promise<void> {
   }
 }
 
+/**
+ * Heal the pre-VFS Assets Files route (`fs/<relative>`) at the loader seam.
+ * The replacement happens only after compute-node setup and before tab
+ * materialization, so neither a tab nor UI context can adopt the legacy
+ * identity. DockPointer owns the grammar conversion; React Router owns history.
+ */
+export function redirectLegacyAssetFsDock(dock: DockPointer, requestPath: string): void {
+  const canonical = dock.canonicalLegacyAssetFsDock();
+  if (!canonical) return;
+  // eslint-disable-next-line @typescript-eslint/only-throw-error
+  throw replace(canonical.toUrl(requestPath));
+}
+
 export async function loadAgentApp(args: LoaderArgs) {
   const { params } = args;
   const requestUrl = new URL(args.request.url);
@@ -217,6 +230,9 @@ export async function loadAgentApp(args: LoaderArgs) {
     // Project is already loaded by initSdk -> setupProject, just ensure compute node.
     await ensureComputeNodeLoaded();
     t.time('ensureComputeNode');
+    if (dockForSetup) {
+      redirectLegacyAssetFsDock(dockForSetup, requestUrl.pathname);
+    }
     let setupHandled = false;
 
     const runSetup = async (setupContent: () => Promise<string>) => {

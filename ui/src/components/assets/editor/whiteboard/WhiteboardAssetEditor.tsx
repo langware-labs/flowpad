@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Trans } from '@lingui/react/macro';
 // Without this CSS the canvas inflates to ~2^25 px (unconstrained resize observer).
 import '@excalidraw/excalidraw/index.css';
 import { Button } from '@src/components/ui/button';
@@ -15,9 +15,6 @@ import {
 } from '@src/components/ui/dialog';
 import { downloadFile, FSRef, type Whiteboard } from '@sdk';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
-import { ShareButton } from '@src/components/entity-actions/ShareButton';
-import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
-import { genericEntityShareSource } from '@src/hooks/share-sources';
 import { excalidrawToMermaid } from './excalidrawToMermaid';
 
 type LoadedExcalidrawLib = {
@@ -121,8 +118,7 @@ function spliceMermaidBlock(currentDoc: string, mermaid: string): string {
   return `${trimmed}\n${wrapped}\n`;
 }
 
-export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEditorProps) {
-  const { t } = useLingui();
+export function WhiteboardAssetEditor({ fsRef }: WhiteboardAssetEditorProps) {
   const boardRef = useMemo(() => fsRef.child('board.json'), [fsRef]);
   const docRef = useMemo(() => fsRef.child('WHITE_BOARD.md'), [fsRef]);
   const thumbRef = useMemo(() => fsRef.child('thumbnail.svg'), [fsRef]);
@@ -163,18 +159,6 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
   const [importBusy, setImportBusy] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
-  // Whiteboard rides as a TYPE_ID attachment, identical to every MarkdownEditor
-  // surface — keeps asset-page share "same same" across all asset types. Keyed
-  // on shareOpen so each open gets a fresh resolve-once source.
-  const shareSource = useMemo(
-    () =>
-      whiteboard
-        ? genericEntityShareSource(whiteboard.typeId, { label: folderName })
-        : null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [whiteboard, folderName, shareOpen],
-  );
   const apiRef = useRef<ExcalidrawAPI | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The serialized board.json bytes we last wrote. Excalidraw emits spurious
@@ -391,14 +375,6 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
         onRevealInFinder={handleRevealInFinder}
         actions={
           <>
-            {shareSource && (
-              <ShareButton
-                variant="compact"
-                onClick={() => setShareOpen(true)}
-                tooltip={t`Share to a conversation`}
-                testId="whiteboard-editor-share"
-              />
-            )}
             <Button
               size="sm"
               variant="outline"
@@ -444,13 +420,6 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
           </div>
         </Suspense>
       </div>
-      {shareSource && shareOpen && (
-        <ShareToConversationDialog
-          open={shareOpen}
-          onClose={() => setShareOpen(false)}
-          source={shareSource}
-        />
-      )}
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
         <DialogContent>
           <DialogHeader>

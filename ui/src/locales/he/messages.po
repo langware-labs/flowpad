@@ -1780,7 +1780,7 @@ msgstr "שורת מאגר"
 #~ msgid "Buffer terminal sync updates (prevents scroll jumps)"
 #~ msgstr "שמור עדכוני סנכרון טרמינל בחוצץ (מונע קפיצות גלילה)"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Build history"
 msgstr "היסטוריית בנייה"
 
@@ -2033,8 +2033,8 @@ msgstr "שינויים ({0})"
 #~ msgstr "השינויים נשמרו בהצלחה"
 
 #: src/pages/flow-page/vibe-workspace.tsx
-msgid "Changing worker requires a new chat. The current chat stays in history."
-msgstr "שינוי ה-worker דורש צ'אט חדש. הצ'אט הנוכחי יישמר בהיסטוריה."
+#~ msgid "Changing worker requires a new chat. The current chat stays in history."
+#~ msgstr "שינוי ה-worker דורש צ'אט חדש. הצ'אט הנוכחי יישמר בהיסטוריה."
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
@@ -3151,7 +3151,6 @@ msgstr "לא ניתן לפתור את התיקייה"
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not start"
 msgstr "לא ניתן להתחיל"
 
@@ -4043,6 +4042,10 @@ msgstr "מגלה {typeLabel}…"
 #: src/components/triggers-view/TriggersList.tsx
 msgid "Discovering…"
 msgstr "גילוי..."
+
+#: src/components/assets/editor/AssetDiscussButton.tsx
+msgid "Discuss"
+msgstr ""
 
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
@@ -5173,7 +5176,6 @@ msgstr "כישלון בהתחלת הפגישה"
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Failed to start the build session."
 msgstr "התחלת השיחה נכשלה"
 
@@ -5385,6 +5387,10 @@ msgstr "סנן…"
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Filters"
 msgstr "סינונים"
+
+#: src/components/assets/editor/AssetDiscussButton.tsx
+msgid "Finishing asset load…"
+msgstr ""
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Fire (synthetic test)"
@@ -7827,7 +7833,7 @@ msgstr "חדש"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/quick-create/DesktopSurface.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "New"
 msgstr "חדש"
@@ -7861,8 +7867,8 @@ msgstr "נכס חדש"
 msgid "New bookmark folder"
 msgstr "תיקיית סימניות חדשה"
 
-#: src/pages/flow-page/vibe-workspace.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "New build"
 msgstr "בנייה חדשה"
 
@@ -8512,7 +8518,7 @@ msgstr "אין יתומים כרגע. לחץ כדי לסרוק מחדש ולאש
 msgid "No page exists with this name yet."
 msgstr "עדיין אין עמוד בשם זה."
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "No past builds"
 msgstr "אין בניות קודמות"
 
@@ -9754,7 +9760,7 @@ msgstr "ניתוחים קודמים"
 #~ msgid "Past attempts"
 #~ msgstr "ניסיונות קודמים"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Past builds"
 msgstr "בניות קודמות"
 
@@ -10617,7 +10623,7 @@ msgid "Recency Factor (k)"
 msgstr "גורם העדכניות (k)"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Recent"
 msgstr "אחרוני"
 
@@ -11892,6 +11898,10 @@ msgstr "בחר פרויקט"
 #~ msgid "Select a project or open a new folder."
 #~ msgstr "בחר פרויקט או פתח תיקייה חדשה."
 
+#: src/components/assets/editor/AssetDiscussButton.tsx
+msgid "Select a project to discuss this file"
+msgstr ""
+
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Select a project to view resources"
@@ -12303,7 +12313,6 @@ msgstr "שתף את התכנית עם מישהו"
 #~ msgstr "שתף מאגר זה לשיחה"
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 msgid "Share to a conversation"
 msgstr "שתף לשיחה"
 
@@ -12872,19 +12881,17 @@ msgstr "התחילו את המסע"
 msgid "Start live session"
 msgstr "התחלת סשן חי"
 
-#. placeholder {0}: workerLabel(pendingWorkerSwitch.workerType)
 #: src/pages/flow-page/vibe-workspace.tsx
-msgid "Start new {0} chat?"
-msgstr "צ'אט חדש עם {0}?"
+#~ msgid "Start new {0} chat?"
+#~ msgstr "צ'אט חדש עם {0}?"
 
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Start new chat"
 msgstr "התחילו שיחה חדשה"
 
 #: src/pages/flow-page/vibe-workspace.tsx
-msgid "Start new chat?"
-msgstr "להתחיל צ'אט חדש?"
+#~ msgid "Start new chat?"
+#~ msgstr "להתחיל צ'אט חדש?"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
@@ -14543,7 +14550,7 @@ msgstr "עם מה אתה צריך עזרה?"
 msgid "What do you want to collaborate on?"
 msgstr "על מה רוצים לשתף פעולה?"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "What do you want to work on"
 msgstr "על מה תרצו לעבוד?"
 
@@ -14695,6 +14702,11 @@ msgstr "ספריית עבודה"
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Working directory"
 msgstr "תיקיית עבודה"
+
+#. placeholder {0}: promptContext.label
+#: src/pages/flow-page/vibe-chat-pane.tsx
+msgid "Working on {0}"
+msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Working on {hostName}'s machine…"

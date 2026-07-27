@@ -495,28 +495,32 @@ export function markdownFolderRoot(
     hasChildren: visibleVaults.length > 0,
     pointer: DockPointer.forAssetList(type.type_name),
     toolbar: rootToolbar(type, deps),
-    listChildren: async () => visibleVaults.map(buildVaultNode),
+    listChildren: () => Promise.resolve(visibleVaults.map(buildVaultNode)),
     ownsPointer: (p) => {
+      // A canonical VFS resource is owned independently of the route used to
+      // present it (editor, Assets Files, Explorer).
+      const resourcePath = p.resourceVfsPath?.machinePath;
+      if (resourcePath && !!findVaultForAbsPath(visibleVaults, resourcePath)) return true;
       if (p.viewType !== ViewType.ASSETS) return false;
-      // Own list/markdown, editor/markdown/..., and folder/markdown/...
+      // Non-resource routes retain their semantic ownership.
       const flat = parseAssetPointer(p.pointer ?? null);
       if (flat.typeName === type.type_name) return true;
       const folder = DockPointer.parseAssetFolderPointer(p.pointer);
       return folder !== null && folder.typeName === type.type_name;
     },
-    pathFor: async (p) => {
+    pathFor: (p) => {
       // Folder pointer → walk vault + descendant folders
       const folder = DockPointer.parseAssetFolderPointer(p.pointer);
       if (folder) {
         const vault = findVaultForTypeidRel(vaults, folder.typeid, folder.relPath);
-        if (!vault) return [root];
+        if (!vault) return Promise.resolve([root]);
         const chain: Browseable[] = [root, buildVaultNode(vault)];
-        if (folder.relPath === vault.relPath) return chain;
+        if (folder.relPath === vault.relPath) return Promise.resolve(chain);
         const extra = folder.relPath
           .slice(vault.relPath.length)
           .replace(/^\/+/, '')
           .replace(/\/+$/, '');
-        if (!extra) return chain;
+        if (!extra) return Promise.resolve(chain);
         let currentPrefix = '';
         for (const seg of extra.split('/')) {
           currentPrefix = currentPrefix ? `${currentPrefix}/${seg}` : seg;
@@ -534,21 +538,22 @@ export function markdownFolderRoot(
             }),
           );
         }
-        return chain;
+        return Promise.resolve(chain);
       }
 
-      // Editor pointer → walk vault + intermediate folders + leaf file
-      const flat = parseAssetPointer(p.pointer ?? null);
-      if (flat.mode === 'editor' && flat.typeName === type.type_name && flat.vfsPath) {
-        const absPath = flat.vfsPath.startsWith('/') ? flat.vfsPath : `/${flat.vfsPath}`;
+      // VFS resource → walk vault + intermediate folders + leaf file,
+      // regardless of whether the active route is editor, fs, or Explorer.
+      const resourcePath = p.resourceVfsPath?.machinePath;
+      if (resourcePath) {
+        const absPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
         const vault = findVaultForAbsPath(vaults, absPath);
-        if (!vault) return [root];
+        if (!vault) return Promise.resolve([root]);
         const chain: Browseable[] = [root, buildVaultNode(vault)];
         const remainder = absPath
           .slice(vault.absPath.length)
           .replace(/^\/+/, '')
           .replace(/\/+$/, '');
-        if (!remainder) return chain;
+        if (!remainder) return Promise.resolve(chain);
         const segments = remainder.split('/');
         const fileName = segments.pop()!;
         let currentPrefix = '';
@@ -576,10 +581,10 @@ export function markdownFolderRoot(
           hasChildren: false,
           pointer: DockPointer.forAssetEditor(type.type_name, absPath),
         });
-        return chain;
+        return Promise.resolve(chain);
       }
 
-      return [root];
+      return Promise.resolve([root]);
     },
   };
   return root;

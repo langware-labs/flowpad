@@ -3,7 +3,6 @@ import { MarkdownEditor } from './MarkdownEditor';
 import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
 import { RunButton } from '@src/components/assets/editor/run/RunButton';
 import { useRunOnFile } from '@src/components/assets/editor/run/useRunOnFile';
-import { DiscussDocButtons } from '@src/components/assets/editor/discuss/DiscussDocButtons';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { ProcessRunsPanel } from '@src/components/process-runs/ProcessRunsPanel';
 import type { ProcessEntry } from '@src/components/process-runs/process-run-store';
@@ -107,25 +106,20 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
 
   const isRunning = !!processEntry;
 
-  const toolbar = (
-    <>
-      <DiscussDocButtons fsRef={fsRef} />
-      {isAdvanced && (
-        <AssetPickerPopover
-          trigger={
-            <RunButton
-              iconOnly
-              isRunning={isRunning}
-              isStarting={isStarting}
-              disabled={!chatTarget}
-              title={!chatTarget ? 'No backing entity yet' : undefined}
-            />
-          }
-          onPick={(d) => void runWithAsset(d)}
+  const toolbar = isAdvanced ? (
+    <AssetPickerPopover
+      trigger={
+        <RunButton
+          iconOnly
+          isRunning={isRunning}
+          isStarting={isStarting}
+          disabled={!chatTarget}
+          title={!chatTarget ? 'No backing entity yet' : undefined}
         />
-      )}
-    </>
-  );
+      }
+      onPick={(d) => void runWithAsset(d)}
+    />
+  ) : undefined;
 
   const runsTab: ExtraSideTab = {
     id: 'runs',

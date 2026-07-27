@@ -1,5 +1,6 @@
 import { Tab } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import {
   closeTabWithLifecycle,
   excludeClosingTabs,
@@ -120,6 +121,38 @@ describe('tab lifecycle registry', () => {
     const result = await resultPromise;
 
     expect(result.tab?.id).toBe(tab.id);
+    expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.Opened);
+  });
+
+  it('reuses an opened content-asset tab while rerunning loader-owned context setup', async () => {
+    const d = new DockPointer(
+      ViewType.ASSETS,
+      'editor/markdown/typeid/markdown-30c05e11-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    );
+    const tab = new Tab({
+      id: nextTabId(),
+      pointer: d.toJSON() ?? '',
+      target_type: 'markdown',
+      target_id: '30c05e11-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      project_id: '40c05e11-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      visible: true,
+    });
+    vi.spyOn(Tab, 'listAll').mockResolvedValueOnce([]).mockResolvedValue([tab]);
+    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tab]);
+    vi.spyOn(Tab, 'activateById').mockResolvedValue([]);
+
+    await setupTab(d);
+
+    const list = vi.spyOn(Tab, 'listAll');
+    const mint = vi.spyOn(Tab, 'getFromDockPointer');
+    list.mockClear();
+    mint.mockClear();
+    const setupContent = vi.fn().mockResolvedValue(undefined);
+    await setupTab(d.withViewMode(ViewMode.Vibe), { setupContent });
+
+    expect(setupContent).toHaveBeenCalledTimes(1);
+    expect(list).not.toHaveBeenCalled();
+    expect(mint).not.toHaveBeenCalled();
     expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.Opened);
   });
 
@@ -268,6 +301,9 @@ describe('workspace child adoption guard', () => {
   function projectDock(): DockPointer {
     return new DockPointer(ViewType.PROJECT, MD);
   }
+  function rawFileDock(): DockPointer {
+    return DockPointer.forFile('/project/src/main.ts');
+  }
 
   afterEach(() => setActiveTabParent(null));
 
@@ -284,6 +320,10 @@ describe('workspace child adoption guard', () => {
 
   it('adopts a content-asset dock into the registered workspace', async () => {
     expect(await materializedParent(assetDock())).toBe(PARENT);
+  });
+
+  it('adopts a raw file editor dock into the registered workspace', async () => {
+    expect(await materializedParent(rawFileDock())).toBe(PARENT);
   });
 
   it('never adopts a process dock', async () => {
@@ -350,9 +390,14 @@ describe('workspace child adoption guard', () => {
       parent_tab_id: null,
     });
     vi.spyOn(Tab, 'listAll').mockResolvedValue([existing]);
-    const spy = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([existing]);
+    const spy = vi.spyOn(Tab, 'newTab').mockResolvedValue([
+      new Tab({ ...existing, parent_tab_id: PARENT }),
+    ]);
     await setupTab(d);
     expect(spy).toHaveBeenCalledTimes(1);
-    expect((spy.mock.calls[0][1] as { parentTabId?: string | null } | undefined)?.parentTabId).toBe(PARENT);
+    expect(
+      (spy.mock.calls[0][1] as { parentTabId?: string | null } | undefined)
+        ?.parentTabId,
+    ).toBe(PARENT);
   });
 });
