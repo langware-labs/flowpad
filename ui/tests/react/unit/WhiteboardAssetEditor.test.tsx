@@ -18,6 +18,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import React from 'react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── Mock @excalidraw/excalidraw before the editor import ─────────────────────
@@ -117,6 +118,14 @@ vi.mock(
 // eslint-disable-next-line import/first
 import { WhiteboardAssetEditor } from '@src/components/assets/editor/whiteboard/WhiteboardAssetEditor';
 
+function renderEditor(fsRef: import('@sdk').FSRef) {
+  return render(
+    <MemoryRouter>
+      <WhiteboardAssetEditor fsRef={fsRef} />
+    </MemoryRouter>,
+  );
+}
+
 /** A tiny FSRef-shaped stub the editor can call: `.child(name)`, `.read()`, `.write()`. */
 function makeFsRef(name: string, files: Record<string, string>, writeLog: Array<{ path: string; body: string }>) {
   return {
@@ -167,7 +176,7 @@ describe('WhiteboardAssetEditor', () => {
     files['root/board.json'] = INITIAL_BOARD;
     const fsRef = makeFsRef('root', files, writeLog);
 
-    render(<WhiteboardAssetEditor fsRef={fsRef} />);
+    renderEditor(fsRef);
 
     await waitFor(() => expect(screen.queryByTestId('whiteboard-editor')).not.toBeNull());
     await waitFor(() => expect(screen.queryByTestId('trigger-change')).not.toBeNull());
@@ -182,7 +191,7 @@ describe('WhiteboardAssetEditor', () => {
     });
     const fsRef = makeFsRef('root', files, writeLog);
 
-    render(<WhiteboardAssetEditor fsRef={fsRef} />);
+    renderEditor(fsRef);
 
     await screen.findByTestId('whiteboard-editor');
     await waitFor(() =>
@@ -198,7 +207,7 @@ describe('WhiteboardAssetEditor', () => {
     const fsRef = makeFsRef('root', files, writeLog);
 
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<WhiteboardAssetEditor fsRef={fsRef} />);
+    renderEditor(fsRef);
 
     const trigger = await screen.findByTestId('trigger-change');
 
@@ -244,7 +253,7 @@ describe('WhiteboardAssetEditor', () => {
     const fsRef = makeFsRef('root', files, writeLog);
 
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<WhiteboardAssetEditor fsRef={fsRef} />);
+    renderEditor(fsRef);
 
     const trigger = await screen.findByTestId('trigger-change');
     await user.click(trigger);
@@ -268,7 +277,7 @@ describe('WhiteboardAssetEditor', () => {
     const fsRef = makeFsRef('root', files, writeLog);
 
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<WhiteboardAssetEditor fsRef={fsRef} />);
+    renderEditor(fsRef);
 
     // Wait for the Excalidraw stub to mount so the API ref is captured.
     await screen.findByTestId('trigger-change');

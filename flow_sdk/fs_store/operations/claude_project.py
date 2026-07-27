@@ -6,12 +6,12 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.indexer.functions.claude_projects import (
     _claude_projects_dir,
-    _is_valid_mount_path,
-    _is_valid_project_dir,
+    _decode_claude_encoded,
 )
+from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.utils.file_system import is_temp_path
 
 
 def _read_meta_field(record_dir: Path, key: str) -> str | None:
@@ -51,7 +51,7 @@ async def clean_temp_projects() -> int:
             if not d.is_dir():
                 continue
             mount_path = _read_mount_path(d) or _read_cwd(d)
-            if mount_path and not _is_valid_mount_path(mount_path):
+            if mount_path and is_temp_path(mount_path):
                 # Just remove the shadow folder. Entity row cleanup happens
                 # via the Entity API path; here we only handle disk hygiene.
                 shutil.rmtree(d, ignore_errors=True)
@@ -60,7 +60,12 @@ async def clean_temp_projects() -> int:
     projects_dir = _claude_projects_dir()
     if projects_dir.is_dir():
         for d in list(projects_dir.iterdir()):
-            if d.is_dir() and not _is_valid_project_dir(d):
+            if not d.is_dir():
+                continue
+            # Deletion requires positive temp-path evidence. Undecodable or
+            # structurally unsafe non-temp sources fail safe and stay intact.
+            decoded = _decode_claude_encoded(d)
+            if decoded is not None and is_temp_path(decoded):
                 shutil.rmtree(d, ignore_errors=True)
                 removed += 1
 

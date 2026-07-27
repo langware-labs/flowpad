@@ -1,5 +1,5 @@
 import { useAgentContext } from '@src/contexts/agent-context';
-import { ActionInfo } from '@sdk';
+import { ActionInfo, dataManager } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { ScrollArea } from '@src/components/ui/scroll-area';
@@ -83,23 +83,9 @@ export const LogsViewer = forwardRef<LogsViewerHandle, LogsViewerProps>(
 
       try {
         const actionInfo = new ActionInfo('ops/logs', 'compute_node', computeNode.id, 'POST');
-        const response = await fetch(actionInfo.fullActionUrl, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ limit: 200 }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch logs: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        if (data.data) {
-          setLogs(data.data);
-        } else if (data.message) {
-          setError(data.message);
-        }
+        actionInfo.bodyParameters = { limit: 200 };
+        const data = await dataManager.callAction<{ limit: number }, LogEntry[]>(actionInfo);
+        setLogs(data || []);
       } catch (err) {
         setError(err instanceof Error ? err.message : t`Failed to fetch logs`);
       } finally {

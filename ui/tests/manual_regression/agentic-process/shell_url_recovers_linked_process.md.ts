@@ -11,12 +11,7 @@
  * own shell URL to trigger the redirect.
  */
 import { test, expect } from '@playwright/test';
-
-async function dismissSetupModal(page: import('@playwright/test').Page) {
-  await page.addInitScript(() => {
-    localStorage.setItem('llm-setup-modal-seen', 'true');
-  });
-}
+import { apiBase, dismissSetupModal, fetchProcess, gotoNewShell, startClaude } from './_ap_helpers';
 
 // Cold-nav redirect now works: routePlainShellPointer resolves the owning
 // process by shell_id via the backend (AgenticProcess.getByShellId →
@@ -31,19 +26,12 @@ test('navigating to shell URL with linked agentic process redirects to agentic_p
   await dismissSetupModal(page);
 
   // Step 1: go to a new terminal
-  await page.goto('/dock/shell/new_terminal');
-  const skip = page.getByRole('button', { name: 'Skip' });
-  if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
-  await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 60_000 });
-  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
-  await page.waitForTimeout(2_000);
+  await gotoNewShell(page);
 
   // Step 2: start Claude → URL moves to agentic_process-
   // Use the always-present "+" tab opener menu; the inline Claude button only
   // renders once that opener has been pinned (default pinned list is empty).
-  await page.locator('[data-testid="opener-plus-button"]').click();
-  await page.locator('[data-testid="opener-menu-row-claude"]').click();
-  await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 30_000 });
+  await startClaude(page);
 
   const processMatch = page.url().match(/agentic_process-([\w-]+)/);
   if (!processMatch) throw new Error('Could not capture agentic_process ID from URL');
@@ -51,14 +39,8 @@ test('navigating to shell URL with linked agentic process redirects to agentic_p
 
   // Step 3: fetch the process entity to get its own shell_id
   // (the process has a dedicated PTY shell, separate from the user's interactive shell)
-  const shellId = await page.evaluate(
-    async ({ id }) => {
-      const res = await fetch(`/api/v1/graph/agentic_process/${id}`);
-      const json = await res.json();
-      return json?.data?.shell_id as string | null;
-    },
-    { id: processId },
-  );
+  const process = await fetchProcess(page, apiBase(), processId);
+  const shellId = process.shell_id as string | null;
   if (!shellId) throw new Error(`Process ${processId} has no shell_id`);
 
   // Step 4: navigate directly to the process's shell URL
@@ -74,16 +56,8 @@ test('navigating to shell URL with linked agentic process redirects to agentic_p
     .first()
     .waitFor({ state: 'attached', timeout: 10_000 });
 
-  // The behavior under test is the shell→agentic_process REDIRECT. Step-4's
-  // `page.goto` boots the app (which fires the background project-list poll),
-  // then the redirect (step 5) navigates away mid-fetch, aborting it. An
-  // aborted fetch surfaces as `TypeError: Failed to fetch` from
-  // listProjectsFromComputeNode — a transport-layer abort, not a real error
-  // (the backend is healthy; a 404/500 would throw a different, resolved
-  // error). Exclude it alongside the already-filtered net::ERR_ transport noise.
   const criticalErrors = errors.filter(e =>
-    !e.includes('favicon') && !e.includes('ResizeObserver') && !e.includes('net::ERR_') &&
-    !e.includes('Failed to list projects'),
+    !e.includes('favicon') && !e.includes('ResizeObserver') && !e.includes('net::ERR_'),
   );
   expect(criticalErrors).toHaveLength(0);
 });

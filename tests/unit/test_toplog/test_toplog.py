@@ -1,4 +1,4 @@
-"""Unit tests for toplog — topic-based runtime logging (flow_sdk/toplog.py).
+"""Unit tests for toplog — tag-based runtime logging (flow_sdk/toplog.py).
 
 The file is authority; the in-memory state is always derived from it. These
 tests drive the file synchronously (no awatch, no sleep) and assert the derived
@@ -25,7 +25,7 @@ def _toplog_file(tmp_path: Path, monkeypatch):
     """Redirect toplog's config path into a temp file and reset module state."""
     path = tmp_path / "toplog.json"
     monkeypatch.setattr(toplog, "_config_path", lambda: path)
-    toplog._active_topics.clear()
+    toplog._active_tags.clear()
     monkeypatch.setattr(toplog, "_enabled", False, raising=False)
     toplog._apply_from_file()  # derive from the (missing) file → all off
     yield path
@@ -40,13 +40,13 @@ def _read(path: Path) -> dict:
 
 def test_default_everything_off(_toplog_file):
     assert toplog.is_enabled() is False
-    assert toplog.active_topics() == set()
+    assert toplog.active_tags() == set()
     assert toplog.is_on("pty") is False
 
 
 def test_log_is_noop_when_disabled(_toplog_file, caplog):
     caplog.set_level(logging.INFO, logger="toplog")
-    toplog.on("pty")  # topic on, but master switch still off
+    toplog.on("pty")  # tag on, but master switch still off
     toplog.log("pty", "should not emit")
     assert caplog.records == []
 
@@ -61,7 +61,7 @@ def test_on_writes_file_and_derives_state(_toplog_file):
     assert toplog.is_on("pty") is True
 
 
-def test_off_removes_topic(_toplog_file):
+def test_off_removes_tag(_toplog_file):
     toplog.enable()
     toplog.on("pty", "sync")
     toplog.off("pty")
@@ -70,7 +70,7 @@ def test_off_removes_topic(_toplog_file):
     assert "pty" not in _read(_toplog_file)["filter"]
 
 
-def test_log_emits_when_topic_active(_toplog_file, caplog):
+def test_log_emits_when_tag_active(_toplog_file, caplog):
     caplog.set_level(logging.INFO, logger="toplog")
     toplog.enable()
     toplog.on("pty")
@@ -85,10 +85,10 @@ def test_log_emits_when_topic_active(_toplog_file, caplog):
 def test_or_semantics_any_active_emits(_toplog_file, caplog):
     caplog.set_level(logging.INFO, logger="toplog")
     toplog.enable()
-    toplog.on("sync")  # only one of the two listed topics is on
+    toplog.on("sync")  # only one of the two listed tags is on
     toplog.log(["pty", "sync"], "multi")
     assert len(caplog.records) == 1
-    # Only the active topic(s) are in the prefix.
+    # Only the active tag(s) are in the prefix.
     assert caplog.records[0].getMessage() == "[sync] multi"
 
 
@@ -111,7 +111,7 @@ def test_disable_gates_everything(_toplog_file, caplog):
     assert toplog.is_on("pty") is False
     toplog.log("pty", "nope")
     assert caplog.records == []
-    # Re-enabling restores the still-present topic.
+    # Re-enabling restores the still-present tag.
     toplog.enable()
     assert toplog.is_on("pty") is True
 
@@ -119,7 +119,7 @@ def test_disable_gates_everything(_toplog_file, caplog):
 # ── merge / tolerance ────────────────────────────────────────────────────────
 
 
-def test_merge_does_not_clobber_other_topics(_toplog_file):
+def test_merge_does_not_clobber_other_tags(_toplog_file):
     toplog.enable()
     toplog.on("a")
     toplog.on("b")  # second write must not drop "a"
@@ -137,7 +137,7 @@ def test_tolerant_read_of_corrupt_file(_toplog_file):
     _toplog_file.write_text("{not json")
     toplog._apply_from_file()  # must not raise
     assert toplog.is_enabled() is False
-    assert toplog.active_topics() == set()
+    assert toplog.active_tags() == set()
     # A subsequent mutate recovers to a valid shape.
     toplog.enable()
     assert _read(_toplog_file)["enabled"] is True

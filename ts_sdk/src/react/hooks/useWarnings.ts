@@ -7,6 +7,7 @@ import {
   createHubRequestFailedWarning,
   createNoComputeNodeWarning,
   createNoHarnessWarning,
+  SNIFFER_ACTIVE_WARNING,
   createSnifferNotFoundWarning,
   dataContext,
   HubClientErrorInfo,
@@ -72,6 +73,7 @@ export function useWarnings() {
     cloudLoginAvailable,
     computeNode,
     snifferEnabled,
+    snifferInstalled,
     cloudConnectionStatus,
   } = context;
 
@@ -156,13 +158,20 @@ export function useWarnings() {
       warnings.push(createHarnessLoginWarning());
     }
 
+    // Sniffer hooks are live in the harness settings file — surface it for as
+    // long as that holds, with a one-click way out. Keyed on what is installed
+    // (not on the local entity) so a sniffer another instance wrote still shows.
+    if (snifferInstalled) {
+      warnings.push(SNIFFER_ACTIVE_WARNING);
+    }
+
     // Sniffer enabled but hook entity not found (pre-bootstrap race or creation failure)
-    if (snifferEnabled && !dataContext.snifferHook) {
+    if (snifferEnabled && !snifferInstalled && !dataContext.snifferHook) {
       warnings.push(createSnifferNotFoundWarning());
     }
 
     return warnings;
-  }, [isDesktop, cloudLoginAvailable, cloudConnectionStatus, computeNode, snifferEnabled, lastHubError, noHarnessFound, harnessLoginRequired]);
+  }, [isDesktop, cloudLoginAvailable, cloudConnectionStatus, computeNode, snifferEnabled, snifferInstalled, lastHubError, noHarnessFound, harnessLoginRequired]);
 
   // Update context warnings when computed warnings change
   useEffect(() => {

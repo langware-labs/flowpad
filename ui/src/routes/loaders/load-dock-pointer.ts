@@ -1,6 +1,7 @@
 import {
   AgenticProcess,
   dataContext,
+  isValidTag,
   Plan,
   Project,
   QueryRequest,
@@ -38,8 +39,7 @@ export interface DockLoaderContext {
  * Best-effort — a missing project must not fail a browse landing.
  */
 async function adoptScopeProject(dock: DockPointer): Promise<void> {
-  const scope = dock.scopeFilter;
-  const projectId = scope?.mode === 'project' ? (scope.activeProjectId ?? null) : null;
+  const projectId = dock.scopeProjectId;
   if (!projectId || dataContext.project?.id === projectId) return;
   await loadProject(new TypeId(Project.type, projectId)).catch(() => {});
 }
@@ -169,6 +169,40 @@ export async function loadGraphIdentityRoute(dock: DockPointer, surface: 'graph'
   }
 }
 
+/** `/dock/tag/graph[/<name>]` — shape check only (loaders stay near-empty). */
+function loadTagRoute(dock: DockPointer): void {
+  const parsed = DockPointer.parseTagPointer(dock.pointer);
+  const tagName = parsed?.tag;
+  if (!parsed || (tagName !== null && !isValidTag(tagName))) {
+    throw new DockLoadError(
+      'malformed_tag_pointer',
+      'hard',
+      {
+        action: 'render_error',
+        title: 'Tag view not found',
+        message: 'Expected /dock/tag/graph or /dock/tag/graph/<dot.tag.name>.',
+      },
+      'tag',
+    );
+  }
+}
+
+/** `/dock/subgraph/<projection>[/<focusKey>]` — non-empty projection only. */
+function loadSubgraphRoute(dock: DockPointer): void {
+  if (!DockPointer.parseSubgraphPointer(dock.pointer)) {
+    throw new DockLoadError(
+      'malformed_subgraph_pointer',
+      'hard',
+      {
+        action: 'render_error',
+        title: 'Subgraph not found',
+        message: 'Expected /dock/subgraph/<projection>.',
+      },
+      'subgraph',
+    );
+  }
+}
+
 export async function loadDockPointer(dock: DockPointer, context: DockLoaderContext): Promise<string> {
   const label = `loadDockPointer:${dock.viewType ?? 'unknown'}`;
   try {
@@ -210,6 +244,14 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         break;
       case ViewType.WORLDVIEW:
         await loadGraphIdentityRoute(dock, 'worldview');
+        break;
+      case ViewType.TAG:
+        // URL-first + near-empty: validate shape only. NO entity resolution —
+        // anonymous (ghost) tags are first-class in the tag graph.
+        loadTagRoute(dock);
+        break;
+      case ViewType.SUBGRAPH:
+        loadSubgraphRoute(dock);
         break;
       default:
         // Explorer, desktop, and other loader-less views: still honor a

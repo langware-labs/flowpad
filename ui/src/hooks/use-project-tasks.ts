@@ -1,6 +1,6 @@
 import { QueryRequest, Task } from '@sdk';
 import { useEntitiesQuery, useProject } from '@sdk/react/hooks';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 /**
  * Hook to fetch all tasks visible to the current user.
@@ -50,15 +50,20 @@ export function useProjectTasks() {
     });
   }, []);
 
-  // Sort tasks by created_date descending (immutable — no in-place mutation)
-  const sortedTasks = [...tasks].sort((a, b) => {
-    const aTime = new Date(a.created_date || 0).getTime();
-    const bTime = new Date(b.created_date || 0).getTime();
-    return bTime - aTime;
-  });
-
-  // Apply optimistic exclusion filter
-  const filteredTasks = excludeIds.size > 0 ? sortedTasks.filter((t) => !t.id || !excludeIds.has(t.id)) : sortedTasks;
+  // Sort by created_date descending (immutable — no in-place mutation), then apply
+  // the optimistic exclusion filter.
+  //
+  // Memoized because the rail (CollapsedSidebar) mounts this hook on EVERY screen
+  // and re-reads it on every render: unmemoized, each render cloned the whole task
+  // array and allocated two Date objects per comparison over an unscoped corpus.
+  const filteredTasks = useMemo(() => {
+    const sorted = [...tasks].sort((a, b) => {
+      const aTime = new Date(a.created_date || 0).getTime();
+      const bTime = new Date(b.created_date || 0).getTime();
+      return bTime - aTime;
+    });
+    return excludeIds.size > 0 ? sorted.filter((t) => !t.id || !excludeIds.has(t.id)) : sorted;
+  }, [tasks, excludeIds]);
 
   return {
     data: filteredTasks,

@@ -7,15 +7,15 @@ import { notify } from '@src/notifications';
 import { Bot, Loader2, Plus, Sparkles, X } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { topicTag } from '@src/topics/topic-tag';
+import { tagAttrs } from '@src/tags/tag-attrs';
 
 interface VibeAgentsCardProps {
   project: Project | null | undefined;
 }
 
-/** The topic word this card answers to (`?highlight=`, click observability).
+/** The tag word this card answers to (`?highlight=`, click observability).
  *  Exported so the tab that hosts the card can open itself for it. */
-export const VIBE_AGENTS_TOPIC = 'VibeAgents';
+export const VIBE_AGENTS_TAG = 'VibeAgents';
 
 /**
  * Project "Vibe agents" — the agents layered on top of the standard vibe agent
@@ -63,11 +63,11 @@ export const VibeAgentsCard: React.FC<VibeAgentsCardProps> = ({ project }) => {
   };
 
   return (
-    // Highlightable + observable purely via the topic tag — the generic
-    // TopicHighlightObserver applies the ring/beacon when a journey (or any
+    // Highlightable + observable purely via the tag tag — the generic
+    // TagHighlightObserver applies the ring/beacon when a journey (or any
     // ?highlight=VibeAgents URL) points here. No component-local wiring.
     <div
-      {...topicTag(VIBE_AGENTS_TOPIC, 'button')}
+      {...tagAttrs(VIBE_AGENTS_TAG, 'button')}
       className="relative rounded-lg border border-border p-4 transition-all duration-500"
       data-testid="vibe-agents-card"
     >

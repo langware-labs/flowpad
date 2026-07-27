@@ -169,7 +169,12 @@ def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
             p.kill()
         except gone:
             pass
-    psutil.wait_procs(alive, timeout=2)
+    _gone, survivors = psutil.wait_procs(alive, timeout=2)
+    if survivors:
+        survivor_pids = sorted(p.pid for p in survivors)
+        raise RuntimeError(
+            f"instance '{name}' still owns live process(es) after SIGKILL: {survivor_pids}"
+        )
     return sorted(targets)
 
 
@@ -223,12 +228,12 @@ def _purge_keychain(name: str) -> str:
     if os.environ.get("SOD_ENC_KEY") or os.environ.get("FLOWPAD_DESKTOP") == "1":
         return "skipped (env-provided key / desktop)"
     try:
-        from flow_sdk.instance_settings.base_settings import SOD_KEY_KEYCHAIN_SERVICE
         from flow_sdk.flow_rs_binary import (
             FLOW_RS_ACCOUNT_SUFFIX,
             flow_rs_delete_restricted,
             vendored_flow_rs_enabled,
         )
+        from flow_sdk.instance_settings.base_settings import SOD_KEY_KEYCHAIN_SERVICE
     except Exception as e:  # pragma: no cover
         return f"unavailable ({e})"
 
@@ -316,6 +321,59 @@ def _relaunch_backend_only(name: str) -> int:
         )
 
 
+def _record_backend_pid(name: str, backend_pid: int) -> None:
+    """Keep launcher bookkeeping pointed at the current backend owner."""
+    lpath = _instance_dir(name) / "launcher.json"
+    launcher = _read_json(lpath)
+    if launcher:
+        launcher["backend_pid"] = backend_pid
+        lpath.write_text(json.dumps(launcher, indent=2))
+
+
+# ── command ───────────────────────────────────────────────────────────────────
+@instance_app.command("restart-backend")
+def restart_backend(
+    name: Annotated[str, typer.Argument(help="Instance name (e.g. qa-cycle, dev-1).")],
+    json_out: Annotated[bool, typer.Option("--json", help="Emit a machine-readable summary.")] = False,
+) -> None:
+    """Restart only a named instance's backend, preserving all instance data."""
+    from flow_sdk.builtin.process_lifecycle import request_backend_restart
+
+    t0 = time.monotonic()
+    instance_dir = _instance_dir(name)
+    server_pid = _read_json(instance_dir / "server.json").get("server_pid")
+    try:
+        server_pid = int(server_pid)
+    except (TypeError, ValueError):
+        raise RuntimeError(
+            f"instance '{name}' has no recorded backend server PID"
+        ) from None
+    marker = request_backend_restart(instance_dir, server_pid)
+    try:
+        killed = _kill_instance_processes(name, backend_only=True)
+        new_pid = _relaunch_backend_only(name)
+        _record_backend_pid(name, new_pid)
+    except BaseException:
+        # A failed replacement must not leave the surviving/next backend
+        # looking like the intentionally terminated generation.
+        marker.unlink(missing_ok=True)
+        raise
+
+    summary = {
+        "instance": name,
+        "killed_pids": killed,
+        "backend_pid": new_pid,
+        "elapsed_s": round(time.monotonic() - t0, 2),
+    }
+    if json_out:
+        typer.echo(json.dumps(summary))
+    else:
+        typer.echo(
+            f"restart-backend '{name}': killed {len(killed)} pid(s), "
+            f"new backend pid={new_pid}"
+        )
+
+
 # ── command ───────────────────────────────────────────────────────────────────
 @instance_app.command("reset")
 def reset(
@@ -352,11 +410,7 @@ def reset(
             # now-dead backend_pid. Consumers that SIGTERM launcher.json['backend_pid']
             # to restart the backend (e.g. the ws-reconnect-after-restart api test)
             # would kill a stale pid and never actually restart the live backend.
-            lpath = _instance_dir(name) / "launcher.json"
-            launcher = _read_json(lpath)
-            if launcher:
-                launcher["backend_pid"] = new_pid
-                lpath.write_text(json.dumps(launcher, indent=2))
+            _record_backend_pid(name, new_pid)
         else:
             _relaunch_full(name)
         _pin_view_mode_for_qa(name)

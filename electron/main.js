@@ -404,7 +404,7 @@ function createWindow() {
   // [nav] tracing: every back/forward source and every resulting history
   // transition is logged so a double-navigation (e.g. "back jumps two") shows
   // up as either two trigger lines for one gesture, or one trigger followed by
-  // two did-navigate lines. Pairs with the frontend toplog `navigation` topic
+  // two did-navigate lines. Pairs with the frontend toplog `navigation` tag
   // (window.history pushState/popstate from NavigationActions) — together they
   // tell us whether the main process or the renderer is double-stepping.
   const navState = () => {

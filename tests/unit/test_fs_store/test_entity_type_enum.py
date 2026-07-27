@@ -174,8 +174,9 @@ EXPECTED = {
     # brand-new types, no existing value changed, so no migration. Their
     # introducing commits missed this freeze.
     "DECK": "deck", "SPREADSHEET": "spreadsheet",
-    # Flow-graph slice (d6f25601 → v2 26d290ad): TOPIC retired with the topic
-    # bus (rows left inert); AGENTIC_FLOW_RUN added by the v2 run model.
+    # Tag vocabulary consolidation: blessed taxonomy tags are a first-class
+    # entity type. Flow-graph v2 added the run model.
+    "TAG": "tag",
     "AGENTIC_FLOW": "agentic_flow", "FLOW_NODE": "flow_node",
     "AGENTIC_FLOW_RUN": "agentic_flow_run",
     # Journeys (0.2.105): folder-backed guided-onboarding doc + per-user

@@ -9,6 +9,7 @@ from flow_sdk.core import Entity, action
 from flow_sdk.core.capabilities import (
     CapabilityResult,
     CapabilitySpec,
+    CapabilityState,
     get_capability_registry,
     get_default_capability_specs,
 )
@@ -16,8 +17,29 @@ from flow_sdk.db.drivers.query import QueryFilter
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 
-def capability_id_for_kind(kind: str) -> str:
-    return mint_uuid(f"flow-sdk:capability:{kind}")
+def capability_id_for_kind(kind: str, scope_type: str | None = None, scope_id: str | None = None) -> str:
+    scope = f":{scope_type or ''}:{scope_id or ''}"
+    return mint_uuid(f"flow-sdk:capability:{kind}{scope}")
+
+
+async def restamp_capability_state(kind: str, *, attempted: bool = True) -> None:
+    """Re-check a capability and persist its four-state verdict.
+
+    For out-of-band credential changes the discovery sweep can't see coming —
+    e.g. GitHub OAuth connect/disconnect flips source_control.git.github without
+    any CLI changing on disk. Best-effort: never raises."""
+    try:
+        row = await Capability.get_by_kind(kind)
+        if row is None:
+            return
+        check = await get_capability_registry().test(kind)
+        row.last_check = check.result.model_dump(mode="json")
+        row.state = row.derive_state(check.result, attempted=attempted)
+        await row.save(notify=True)
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).exception("restamp_capability_state failed for %s", kind)
 
 
 class Capability(Entity):
@@ -27,6 +49,8 @@ class Capability(Entity):
     type: str = APIField(default="capability")
     name: str = APIField(default="")
     kind: str = APIField(default="")
+    scope_type: str | None = APIField(default=None)
+    scope_id: str | None = APIField(default=None)
     description: str = APIField(default="")
     icon: str = APIField(default="BadgeCheck")
     homepage_url: str | None = APIField(default=None)
@@ -49,8 +73,14 @@ class Capability(Entity):
     # what the UI shows IS what workers consume.
     value: dict[str, Any] | None = APIField(default=None)
     value_type: str | None = APIField(default=None)
+    # Four-state readiness (CapabilityState): available / not_available /
+    # none / error. Runtime progress like reference_kind/auth_mode — NOT in the
+    # ensure_seeded reconcile list, so seeding never resets it. Written via
+    # derive_state() by discovery mirroring, the explicit verbs, and the
+    # install monitor.
+    state: str = APIField(default=CapabilityState.NONE.value)
     last_check: dict[str, Any] | None = APIField(default=None)
-    last_install: dict[str, Any] | None = APIField(default=None)
+    last_setup: dict[str, Any] | None = APIField(default=None)
     last_test: dict[str, Any] | None = APIField(default=None)
     # Device-login session state — runtime-only, broadcast but never persisted
     # (same shape as AgenticProcess.connection_id / Tab.status). Mirrors the
@@ -136,9 +166,21 @@ class Capability(Entity):
         return seeded
 
     @classmethod
-    async def get_by_kind(cls, kind: str) -> "Capability | None":
+    async def get_by_kind(cls, kind: str, scope_type: str | None = None, scope_id: str | None = None) -> "Capability | None":
         await cls.ensure_seeded()
-        return await cls._db.get_by_id(capability_id_for_kind(kind), cls.get_type())
+        return await cls._db.get_by_id(capability_id_for_kind(kind, scope_type, scope_id), cls.get_type())
+
+    @classmethod
+    async def get_or_create_scoped(cls, kind: str, scope_type: str, scope_id: str) -> "Capability":
+        existing = await cls.get_by_kind(kind, scope_type, scope_id)
+        if existing is not None:
+            return existing
+        spec = next(spec for spec in get_default_capability_specs() if spec.kind == kind)
+        row = cls.from_spec(spec)
+        row.id = capability_id_for_kind(kind, scope_type, scope_id)
+        row.scope_type = scope_type
+        row.scope_id = scope_id
+        return await row.save(notify=False)
 
     @classmethod
     async def get_by_id(cls, eid: str) -> "Capability | None":
@@ -158,12 +200,39 @@ class Capability(Entity):
             entities_filter = QueryFilter(type=cls.get_type())
         return await super().get_all(entities_filter, source_entity)
 
-    async def _record_result(self, field: str, result: CapabilityResult) -> None:
+    def derive_state(self, result: CapabilityResult, *, attempted: bool = False) -> str:
+        """Map a probe result to the persisted four-state readiness.
+
+        NONE → NOT_AVAILABLE only when the user has engaged with the
+        capability (an explicit verb passes ``attempted=True``, or the row
+        already left NONE, or an install ran). Passive background discovery
+        of an absent capability keeps "never tried" honest.
+        """
+        if result.state == CapabilityState.ERROR:
+            return CapabilityState.ERROR.value
+        if result.available:
+            return CapabilityState.AVAILABLE.value
+        engaged = attempted or self.state != CapabilityState.NONE or self.last_setup is not None
+        return CapabilityState.NOT_AVAILABLE.value if engaged else CapabilityState.NONE.value
+
+    async def _record_result(
+        self,
+        field: str,
+        result: CapabilityResult,
+        *,
+        attempted: bool = False,
+        stamp_state: bool = True,
+    ) -> None:
+        # stamp_state=False for in-flight results (install start): the state
+        # must not flip to NOT_AVAILABLE while the install process is still
+        # running — the install monitor writes the real post-install state.
         setattr(self, field, result.model_dump(mode="json"))
+        if stamp_state:
+            self.state = self.derive_state(result, attempted=attempted)
         await self.save(notify=True)
 
-    @action.post(action_name="check")
-    async def check_action(self) -> ApiSuccessResponse:
+    @action.post(action_name="test")
+    async def test_action(self) -> ApiSuccessResponse:
         # Check = refresh: re-run discovery from scratch for this kind (the
         # capability window's Check/Refresh button). ``run_discovery`` already
         # mirrors value + last_check onto the row and broadcasts the update, so
@@ -179,19 +248,21 @@ class Capability(Entity):
 
             await reconcile_mcp_capabilities()
         await run_discovery([self.kind])
-        result = await get_capability_registry().check(self.kind)
-        return ApiSuccessResponse(data=result.model_dump(mode="json"))
-
-    @action.post(action_name="install")
-    async def install_action(self) -> ApiSuccessResponse:
-        result = await get_capability_registry().install(self.kind)
-        await self._record_result("last_install", result.result)
-        return ApiSuccessResponse(data=result.model_dump(mode="json"))
-
-    @action.post(action_name="test")
-    async def test_action(self) -> ApiSuccessResponse:
         result = await get_capability_registry().test(self.kind)
-        await self._record_result("last_test", result.result)
+        # An explicit Check is user engagement: it may promote NONE →
+        # NOT_AVAILABLE (unlike the passive discovery mirror above).
+        new_state = self.derive_state(result.result, attempted=True)
+        if new_state != self.state:
+            self.state = new_state
+            await self.save(notify=True)
+        return ApiSuccessResponse(data=result.model_dump(mode="json"))
+
+    @action.post(action_name="setup")
+    async def setup_action(self) -> ApiSuccessResponse:
+        result = await get_capability_registry().setup(self.kind)
+        await self._record_result(
+            "last_setup", result.result, attempted=True, stamp_state=result.result.process_id is None
+        )
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
     # ── Device login (harness CLIs) ─────────────────────────────────────────
@@ -200,6 +271,36 @@ class Capability(Entity):
         from flow_sdk.core.capabilities.registry import worker_type_for_kind
 
         return worker_type_for_kind(self.kind)
+
+    def _device_login_runner(self):
+        """The runner behind this kind, when it drives its OWN device login
+        (non-worker CLIs like gh expose ``device_login_spec`` + ``login_probe``
+        — see GhCliCapabilityRunner). None for worker-backed harnesses."""
+        try:
+            runner = get_capability_registry().get(self.kind)
+        except KeyError:
+            return None
+        if getattr(runner, "device_login_spec", None) is None:
+            return None
+        return runner if hasattr(runner, "login_probe") else None
+
+    def _login_session_key(self) -> str | None:
+        """Key into the device-login session registry: the worker type for
+        harness CLIs, the capability kind for spec-driven runners."""
+        worker_type = self._login_worker_type()
+        if worker_type is not None:
+            return worker_type
+        return self.kind if self._device_login_runner() is not None else None
+
+    async def _apply_login_session_and_refresh(self, session) -> None:
+        """Spec-driven runners have no worker auth pipeline: when the login
+        session lands on ``authenticated``, re-discover this kind so the
+        availability + state flip and broadcast."""
+        await self._apply_login_session(session)
+        if session.state.value == "authenticated":
+            from flow_sdk.core.capabilities.discovery import run_discovery
+
+            await run_discovery([self.kind])
 
     def _set_login_fields(
         self,
@@ -237,13 +338,25 @@ class Capability(Entity):
         ``authenticated`` when the CLI already holds credentials, so a click
         never wastes a one-time device code.
         """
-        worker_type = self._login_worker_type()
-        if worker_type is None:
-            return ApiFailResponse(message=f"capability {self.kind!r} has no device login")
         from flow_sdk.builtin.agentic_process.cli_drivers.device_login import start_device_login
 
-        session = await start_device_login(worker_type, on_change=self._apply_login_session)
-        await self._apply_login_session(session)
+        worker_type = self._login_worker_type()
+        if worker_type is not None:
+            session = await start_device_login(worker_type, on_change=self._apply_login_session)
+            await self._apply_login_session(session)
+            return ApiSuccessResponse(data=session.to_json())
+        runner = self._device_login_runner()
+        if runner is None:
+            return ApiFailResponse(message=f"capability {self.kind!r} has no device login")
+        # Spec-driven login (no worker driver): session keyed by kind; probe +
+        # spec come from the runner; success re-discovers the kind.
+        session = await start_device_login(
+            self.kind,
+            on_change=self._apply_login_session_and_refresh,
+            spec=runner.device_login_spec,
+            probe_fn=runner.login_probe,
+        )
+        await self._apply_login_session_and_refresh(session)
         return ApiSuccessResponse(data=session.to_json())
 
     @action.post(action_name="device-login-code")
@@ -255,8 +368,8 @@ class Capability(Entity):
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else None
         code = str((body or {}).get("code", "")).strip()
-        worker_type = self._login_worker_type()
-        session = get_device_login_session(worker_type) if worker_type else None
+        session_key = self._login_session_key()
+        session = get_device_login_session(session_key) if session_key else None
         if not code or session is None or not session.submit_code(code):
             return ApiFailResponse(message="no login awaiting a code")
         return ApiSuccessResponse(data={"submitted": True})
@@ -265,8 +378,8 @@ class Capability(Entity):
     async def device_login_cancel_action(self) -> ApiSuccessResponse:
         from flow_sdk.builtin.agentic_process.cli_drivers.device_login import get_device_login_session
 
-        worker_type = self._login_worker_type()
-        session = get_device_login_session(worker_type) if worker_type else None
+        session_key = self._login_session_key()
+        session = get_device_login_session(session_key) if session_key else None
         if session is not None:
             session.cancel()
         self._set_login_fields(state=None)
@@ -282,7 +395,17 @@ class Capability(Entity):
         """
         worker_type = self._login_worker_type()
         if worker_type is None:
-            return ApiFailResponse(message=f"capability {self.kind!r} has no worker auth")
+            runner = self._device_login_runner()
+            if runner is None:
+                return ApiFailResponse(message=f"capability {self.kind!r} has no worker auth")
+            result = await runner.login_probe()
+            if self.login_state not in ("awaiting_user", "starting"):
+                new_state = "authenticated" if result.status.value == "logged_in" else "idle"
+                if new_state != self.login_state or result.message != self.login_message:
+                    self.login_state = new_state
+                    self.login_message = result.message
+                    await self.notify_updated()
+            return ApiSuccessResponse(data=result.to_json())
         from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
         from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
         from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (

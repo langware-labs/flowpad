@@ -14,7 +14,13 @@ from flow_sdk.transcript_analyzer import (
     TranscriptFormat,
     UserMessageEntry,
 )
-from flow_sdk.transcript_analyzer.entries import UnknownEntry
+from flow_sdk.transcript_analyzer.entries import (
+    FileEditEntry,
+    FileReadEntry,
+    FileWriteEntry,
+    ShellCommandEntry,
+    UnknownEntry,
+)
 from flow_sdk.transcript_analyzer.parsers.copilot import CopilotParser
 
 
@@ -82,15 +88,22 @@ def test_user_message_drops_one_stdin_terminator_only():
 
 def test_tool_failure_is_tool_result_not_worker_failure(copilot_tool_failure_jsonl):
     transcript = AgentTranscriptFile("copilot", copilot_tool_failure_jsonl)
-    uses = [e for e in transcript.entries if isinstance(e, ToolUseEntry)]
-    results = [e for e in transcript.entries if isinstance(e, ToolResultEntry)]
+    shells = [e for e in transcript.entries if isinstance(e, ShellCommandEntry)]
 
-    assert any(e.tool_name == "bash" and e.tool_input["command"] == "false" for e in uses)
-    failed = [e for e in results if e.tool_use_id == "toolu_01AYUR5ZY8bFroFxXYDWFq8y"]
+    # Copilot's ``bash`` maps onto the semantic ShellCommandEntry, same as
+    # Claude's ``Bash`` — so the UI renders one chip shape for both workers,
+    # and the failed result folds INTO the call (one row per operation) rather
+    # than surviving as a standalone ToolResultEntry.
+    failed = [e for e in shells if e.tool_use_id == "toolu_01AYUR5ZY8bFroFxXYDWFq8y"]
     assert len(failed) == 1
     assert failed[0].tool_name == "bash"
+    assert failed[0].command == "false"
     assert failed[0].exit_code == 1
     assert failed[0].is_error is True
+    assert not any(
+        isinstance(e, ToolResultEntry) and e.tool_use_id == "toolu_01AYUR5ZY8bFroFxXYDWFq8y"
+        for e in transcript.entries
+    )
 
 
 def test_kind_breakdown_has_no_unknowns(copilot_tool_failure_jsonl):
@@ -98,8 +111,7 @@ def test_kind_breakdown_has_no_unknowns(copilot_tool_failure_jsonl):
     kinds = {e.kind for e in transcript.entries}
 
     assert EntryKind.UNKNOWN not in kinds
-    assert EntryKind.TOOL_USE in kinds
-    assert EntryKind.TOOL_RESULT in kinds
+    assert EntryKind.SHELL_COMMAND in kinds
     assert EntryKind.ASSISTANT_MESSAGE in kinds
     assert any(isinstance(e, MetaEntry) for e in transcript.entries)
 
@@ -136,3 +148,66 @@ def test_copilot_session_title_is_meta_not_unknown(tmp_path):
     assert "session.title" in meta_kinds
     assert not any(isinstance(e, UnknownEntry) for e in transcript.entries)
     assert not any("unknown entry type" in str(w.message) for w in caught)
+
+
+# ── semantic tool mapping ────────────────────────────────────────────────────
+#
+# Copilot names its file tools differently from Claude and publishes no stable
+# list, so the parser recognizes file ops by INPUT SHAPE. These lock the shapes
+# down: without them a Copilot session renders generic wrench rows while the
+# same operations render as file chips under Claude.
+
+
+def _copilot_tool_entry(name: str, arguments: dict):
+    parser = CopilotParser(session_id="s1")
+    [entry] = parser.feed(
+        {
+            "type": "assistant.message",
+            "data": {
+                "messageId": "m1",
+                "content": "",
+                "toolRequests": [
+                    {"toolCallId": "tc1", "name": name, "type": "function", "arguments": arguments}
+                ],
+            },
+        },
+        0,
+    )
+    return entry
+
+
+def test_path_plus_content_is_a_file_write():
+    entry = _copilot_tool_entry("create", {"path": "/tmp/a.txt", "content": "hello"})
+
+    assert isinstance(entry, FileWriteEntry)
+    assert entry.path == "/tmp/a.txt"
+    assert entry.line_count == 1
+
+
+def test_path_plus_old_new_is_a_file_edit():
+    entry = _copilot_tool_entry(
+        "str_replace", {"path": "/tmp/a.txt", "old_str": "a", "new_str": "b"}
+    )
+
+    assert isinstance(entry, FileEditEntry)
+    assert entry.hunks == [{"old": "a", "new": "b", "replace_all": False}]
+
+
+def test_bare_path_on_a_read_ish_tool_is_a_file_read():
+    entry = _copilot_tool_entry("view", {"path": "/tmp/a.txt"})
+
+    assert isinstance(entry, FileReadEntry)
+    assert entry.path == "/tmp/a.txt"
+
+
+def test_bare_path_on_an_unrelated_tool_stays_generic():
+    entry = _copilot_tool_entry("lint", {"path": "/tmp/a.txt"})
+
+    assert isinstance(entry, ToolUseEntry)
+    assert not isinstance(entry, FileReadEntry)
+
+
+def test_mcp_tool_with_a_path_key_is_never_a_file_op():
+    entry = _copilot_tool_entry("mcp__server__read", {"path": "/tmp/a.txt"})
+
+    assert type(entry) is ToolUseEntry

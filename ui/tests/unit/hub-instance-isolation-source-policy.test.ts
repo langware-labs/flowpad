@@ -26,7 +26,6 @@ const TWO_INSTANCE_FILES = [
   'community_two_client.test.ts',
   'doc_comment_sync.test.ts',
   'git_artifact_bookmark_two_client.test.ts',
-  'git_artifact_share_wizard.test.ts',
   'member_role_change.test.ts',
   'plan_share.test.ts',
   'share_matrix.ui.test.ts',

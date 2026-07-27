@@ -149,8 +149,54 @@ export class NavigationActions {
    * Used by the WikiTip backward link ("click here to highlight the feedentry").
    */
   highlight(wikiword: string): void {
+    this.openHomeRoot(wikiword);
+  }
+
+  /**
+   * THE primitive for editing query params on the LIVE URL without any other
+   * navigation: read the current URL, apply the mutator, no-op when nothing
+   * changed, commit. Every "tweak a param in place" flow goes through here —
+   * hand-rolling the split/mutate/clear/commit ritual per caller is how the
+   * `path || '/'` guard and the pending-nav clear drift apart.
+   */
+  private updateLiveUrlParams(mutate: (params: URLSearchParams) => void): void {
+    const current = NavigationActions.getCurrentBrowserUrl();
+    const [path, query] = current.split('?');
+    const params = new URLSearchParams(query ?? '');
+    mutate(params);
+    const rest = params.toString();
+    const url = rest ? `${path || '/'}?${rest}` : path || '/';
+    if (current === url) return;
     NavigationActions.clearCommittedPendingNavigation();
-    const url = `/?${HIGHLIGHT_PARAM}=${encodeURIComponent(wikiword)}`;
+    this.commitBrowserNavigation(url, url);
+  }
+
+  /**
+   * Set `?highlight=` on the LIVE URL without any other navigation — the
+   * transparent form of highlighting: wherever the user is (or is arriving,
+   * mid-route-change), only the param changes. Rebuilding from `currentDock`
+   * here would race an in-flight navigation and yank the user backwards.
+   */
+  applyHighlightInPlace(wikiword: string): void {
+    this.updateLiveUrlParams((params) => params.set(HIGHLIGHT_PARAM, wikiword));
+  }
+
+  /**
+   * Navigate to the app home root `/`, optionally with `?highlight=`, CARRYING
+   * the sticky URL options (journeyId) from the live URL — the home root is not
+   * a dock URL, so openDock's carry-forward can't do it. This is also the
+   * "start dock" surface a journey can name (`start: {kind: "root"}`).
+   */
+  openHomeRoot(highlightWord?: string): void {
+    NavigationActions.clearCommittedPendingNavigation();
+    const params = new URLSearchParams();
+    if (highlightWord) params.set(HIGHLIGHT_PARAM, highlightWord);
+    for (const key of STICKY_OPTION_PARAMS) {
+      const live = NavigationActions.currentUrlOption(key);
+      if (live) params.set(key, live);
+    }
+    const rest = params.toString();
+    const url = rest ? `/?${rest}` : '/';
     if (NavigationActions.getCurrentBrowserUrl() === url) return;
     this.commitBrowserNavigation(url, url);
   }
@@ -197,14 +243,7 @@ export class NavigationActions {
     const dock = this.currentDock;
     if (!dock?.journeyId) {
       // Home root (or any non-dock URL) carrying the param: drop just that key.
-      const current = NavigationActions.getCurrentBrowserUrl();
-      NavigationActions.clearCommittedPendingNavigation();
-      const [path, query] = current.split('?');
-      const params = new URLSearchParams(query ?? '');
-      params.delete(JOURNEY_PARAM);
-      const rest = params.toString();
-      const url = rest ? `${path}?${rest}` : path || '/';
-      this.commitBrowserNavigation(url, url);
+      this.updateLiveUrlParams((params) => params.delete(JOURNEY_PARAM));
       return;
     }
     NavigationActions.clearCommittedPendingNavigation();
@@ -493,6 +532,18 @@ export class NavigationActions {
    */
   openFile(path: string, options?: FileOptions): void {
     this.openDock(dockPointerForFile(path, options));
+  }
+
+  /**
+   * Open a FILE addressed by ABSOLUTE MACHINE path, on a given entity.
+   *
+   * Dock pointers address files as VFS paths (`compute_node-<id>/abs/path`), so
+   * every caller holding a real filesystem path has to convert first — and each
+   * one that did it inline was a chance for the two forms to drift. Same job as
+   * `openFolder` does for directories; `openFile` remains the VFS-path entry.
+   */
+  openMachinePath(machinePath: string, typeId: TypeId, options?: FileOptions): void {
+    this.openFile(VFSPath.fromMachinePath(machinePath, typeId).rawPath, options);
   }
 
   /**

@@ -12,6 +12,8 @@ export const CapabilityKinds = {
   Codex: 'harness.codex.cli',
   Copilot: 'harness.copilot.cli',
   ChromeAuthenticated: 'browsing.chrome.authenticated',
+  GitHub: 'source_control.git.github',
+  GitHubGh: 'source_control.git.github.gh',
 } as const;
 
 export type CapabilityKindKey = keyof typeof CapabilityKinds;

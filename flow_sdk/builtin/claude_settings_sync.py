@@ -11,7 +11,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from flow_sdk.config import default_service_config
 from flow_sdk.core.urls.service_urls import urls_service
@@ -20,6 +20,52 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agent_hook import AgentHook, HookScope
 else:
     from flow_sdk.builtin.agent_hook import HookScope
+
+
+#: The sniffer's ``hook_name``, and — as ``--name=…`` inside the command —
+#: what marks a settings.json entry as the sniffer's. Claude Code strips custom
+#: keys from the entry, so the command string is the only durable marker.
+SNIFFER_HOOK_NAME = "flowpad_sniffer"
+SNIFFER_COMMAND_MARKER = f"--name={SNIFFER_HOOK_NAME}"
+_ENTRY_ID_ARG = "--hook-entry-id="
+
+CommandPredicate = Callable[[str], bool]
+
+
+def is_sniffer_command(command: str) -> bool:
+    return SNIFFER_COMMAND_MARKER in command
+
+
+def _has_hook_command(settings: dict[str, Any], matches: CommandPredicate) -> bool:
+    """True when any installed hook command matches."""
+    return any(
+        matches(h.get("command", ""))
+        for hook_entries in (settings.get("hooks") or {}).values()
+        if isinstance(hook_entries, list)
+        for entry in hook_entries
+        for h in entry.get("hooks", [])
+    )
+
+
+def _drop_hook_commands(settings: dict[str, Any], matches: CommandPredicate) -> None:
+    """Remove every matching command in place, pruning emptied entries and events."""
+    hooks = settings.get("hooks")
+    if not isinstance(hooks, dict):
+        return
+    for event_name in list(hooks):
+        hook_entries = hooks[event_name]
+        if not isinstance(hook_entries, list):
+            continue
+        kept_entries = []
+        for entry in hook_entries:
+            kept_hooks = [h for h in entry.get("hooks", []) if not matches(h.get("command", ""))]
+            if kept_hooks:
+                entry["hooks"] = kept_hooks
+                kept_entries.append(entry)
+        if kept_entries:
+            hooks[event_name] = kept_entries
+        else:
+            del hooks[event_name]
 
 
 def _build_matcher_str(hook: "AgentHook") -> str:
@@ -342,29 +388,10 @@ async def sync_sniffer_hook_to_settings(hook: "AgentHook", project_path: Optiona
             settings["hooks"] = {}
 
         # Clean any existing sniffer entries to avoid duplicates (including orphaned entries from old sniffers)
-        events_to_delete = []
-        for event_name, hook_entries in settings["hooks"].items():
-            if not isinstance(hook_entries, list):
-                continue
-            new_entries = []
-            for entry in hook_entries:
-                hooks_list = entry.get("hooks", [])
-
-                def _is_sniffer_or_ours(h: dict) -> bool:
-                    cmd = h.get("command", "")
-                    return "--name=flowpad_sniffer" in cmd or f"--hook-entry-id={hook.id}" in cmd
-
-                filtered_hooks = [h for h in hooks_list if not _is_sniffer_or_ours(h)]
-                if filtered_hooks:
-                    entry["hooks"] = filtered_hooks
-                    new_entries.append(entry)
-            if new_entries:
-                settings["hooks"][event_name] = new_entries
-            else:
-                events_to_delete.append(event_name)
-
-        for event_name in events_to_delete:
-            del settings["hooks"][event_name]
+        _drop_hook_commands(
+            settings,
+            lambda cmd: is_sniffer_command(cmd) or f"{_ENTRY_ID_ARG}{hook.id}" in cmd,
+        )
 
         matcher_str = _build_matcher_str(hook)
 
@@ -376,13 +403,13 @@ async def sync_sniffer_hook_to_settings(hook: "AgentHook", project_path: Optiona
                 hooks_list = entry.get("hooks", [])
                 for h in hooks_list:
                     cmd = h.get("command", "")
-                    if "--name=flowpad_sniffer" in cmd or f"--hook-entry-id={hook.id}" in cmd:
+                    if is_sniffer_command(cmd) or f"{_ENTRY_ID_ARG}{hook.id}" in cmd:
                         existing_entry_idx = idx
                         break
                 if existing_entry_idx is not None:
                     break
 
-            command = hook.command if hook.command else generate_hook_command(hook.id, event_name, name="flowpad_sniffer")
+            command = hook.command if hook.command else generate_hook_command(hook.id, event_name, name=SNIFFER_HOOK_NAME)
             new_entry = {
                 "matcher": matcher_str,
                 "hooks": [
@@ -406,50 +433,44 @@ async def sync_sniffer_hook_to_settings(hook: "AgentHook", project_path: Optiona
         return False
 
 
-async def remove_sniffer_hook_from_settings(hook: "AgentHook", project_path: Optional[Path] = None) -> bool:
-    """
-    Remove sniffer hook entries from Claude Code settings.json for ALL hook events.
+def sniffer_installed_in_settings(
+    hook_scope: "HookScope" = HookScope.USER, project_path: Optional[Path] = None
+) -> bool:
+    """Whether settings.json currently carries sniffer commands.
+
+    The settings file — not the local DB — is what makes the sniffer *actually*
+    run: Claude Code reads it, and any instance on this machine can have written
+    it. Callers use this to report (and clear) a sniffer that this instance's DB
+    knows nothing about.
     """
     try:
-        if not hook.id:
-            logging.warning("Cannot remove sniffer hook without ID")
+        settings_path = get_settings_path(hook_scope, project_path)
+        if not settings_path.exists():
             return False
+        return _has_hook_command(load_settings(settings_path), is_sniffer_command)
+    except Exception as e:
+        logging.error(f"Failed to read sniffer entries from settings: {e}")
+        return False
 
-        settings_path = get_settings_path(hook.hook_scope, project_path)
+
+def purge_sniffer_entries_from_settings(
+    hook_scope: "HookScope" = HookScope.USER, project_path: Optional[Path] = None
+) -> bool:
+    """Remove EVERY sniffer command from settings.json, whoever installed it.
+
+    Entity-free on purpose: disabling must clear the hooks even when this
+    instance has no sniffer AgentHook (e.g. another instance installed them).
+    """
+    try:
+        settings_path = get_settings_path(hook_scope, project_path)
         if not settings_path.exists():
             return True
-
         settings = load_settings(settings_path)
-        if "hooks" not in settings:
-            return True
-
-        events_to_delete = []
-        for event_name, hook_entries in settings["hooks"].items():
-            if not isinstance(hook_entries, list):
-                continue
-            new_entries = []
-            for entry in hook_entries:
-                hooks_list = entry.get("hooks", [])
-
-                def _is_sniffer(h: dict) -> bool:
-                    cmd = h.get("command", "")
-                    return "--name=flowpad_sniffer" in cmd
-
-                filtered_hooks = [h for h in hooks_list if not _is_sniffer(h)]
-                if filtered_hooks:
-                    entry["hooks"] = filtered_hooks
-                    new_entries.append(entry)
-            if new_entries:
-                settings["hooks"][event_name] = new_entries
-            else:
-                events_to_delete.append(event_name)
-
-        for event_name in events_to_delete:
-            del settings["hooks"][event_name]
-
+        _drop_hook_commands(settings, is_sniffer_command)
         save_settings(settings_path, settings)
         return True
-
     except Exception as e:
         logging.error(f"Failed to remove sniffer hook from settings: {e}")
         return False
+
+

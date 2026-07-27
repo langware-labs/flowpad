@@ -295,7 +295,7 @@ async def test_clean_claude_pty_stress(bootstrapped_client):
             workdir=FLOWPAD_TEMP_DIR,
             visible=True,
         )
-        await process.save([])
+        await process.save()
 
         try:
             start_resp = await process.start_pty()

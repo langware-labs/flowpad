@@ -191,9 +191,6 @@ interface FlowMessageBubbleProps {
    *  responder's `sender_id` is intentionally absent from the guest's roster,
    *  so we suppress the unresolved-sender alert and its telemetry. */
   isCommunity?: boolean;
-  /** Parent conversation's `message_status_visible` flag — passed straight
-   *  through to the receipt indicator. Defaults to true. */
-  conversationStatusVisible?: boolean;
   /** Project shell to use when opening asset entity attachments. */
   attachmentProjectId?: string | null;
   /** Staged MessageAttachment rows for THIS message (parent-resolved via the
@@ -226,7 +223,6 @@ export function FlowMessageBubble({
   participants,
   rosterReady = false,
   isCommunity = false,
-  conversationStatusVisible = true,
   attachmentProjectId,
   messageAttachments,
 }: FlowMessageBubbleProps) {
@@ -681,7 +677,6 @@ export function FlowMessageBubble({
         footer={footer}
         isSelected={isSelected}
         onSelect={onSelect}
-        conversationStatusVisible={conversationStatusVisible}
       />
       {forwardOpen && forwardSource && (
         <ShareToConversationDialog

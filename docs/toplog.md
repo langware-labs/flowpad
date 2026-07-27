@@ -2,14 +2,14 @@
 id: 9fb012f7-e604-5a89-ac22-ac19d765461e
 ---
 
-# Toplog — topic-based runtime logging
+# Toplog — tag-based runtime logging
 
-Toplog is a lightweight **debug-logging tool keyed by freeform _topics_** (keywords). Sprinkle
-`toplog.log([topics], …)` lines through the code wherever you'd want optional, opt-in tracing. Those
-lines stay **silent until one of their topics is turned on** — and topics can be flipped on/off
+Toplog is a lightweight **debug-logging tool keyed by freeform _tags_** (keywords). Sprinkle
+`toplog.log([tags], …)` lines through the code wherever you'd want optional, opt-in tracing. Those
+lines stay **silent until one of their tags is turned on** — and tags can be flipped on/off
 **at runtime, from either the backend or the frontend, without a restart**.
 
-It's built for tests and debug sessions: leave the hints in the code, turn a topic on only while you
+It's built for tests and debug sessions: leave the hints in the code, turn a tag on only while you
 need it, turn it off when you're done.
 
 ## Usage
@@ -19,14 +19,14 @@ need it, turn it off when you're done.
 ```python
 from flow_sdk import toplog
 
-# Log under one or more topics. OR semantics: emits if ANY listed topic is on.
+# Log under one or more tags. OR semantics: emits if ANY listed tag is on.
 toplog.log("pty", "attached shell %s", shell_id)
 toplog.log(["pty", "sync"], "reconciled %d rows", n)
 
 # Toggle at runtime (writes toplog.json — the authority).
 toplog.enable()            # master switch on
-toplog.on("pty", "sync")   # turn topics on
-toplog.off("pty")          # turn a topic off
+toplog.on("pty", "sync")   # turn tags on
+toplog.off("pty")          # turn a tag off
 toplog.disable()           # master switch off — every log() becomes a no-op
 
 # Cheap guard for expensive payloads:
@@ -35,7 +35,7 @@ if toplog.is_on("sync"):
 ```
 
 Output goes through the standard library logger `logging.getLogger("toplog")`, prefixed with the
-active topic(s): `[pty] attached shell abc123`.
+active tag(s): `[pty] attached shell abc123`.
 
 ### Frontend (TypeScript)
 
@@ -70,8 +70,8 @@ The single source of truth is the per-instance file `~/.flow/instances/<name>/to
 { "enabled": true, "filter": { "pty": true, "sync": true } }
 ```
 
-- **`enabled`** — the master switch. When `false`, every `log()` is a no-op regardless of topics.
-- **`filter`** — `topic → bool`. A topic is *on* when present and truthy. **Everything is off by
+- **`enabled`** — the master switch. When `false`, every `log()` is a no-op regardless of tags.
+- **`filter`** — `tag → bool`. A tag is *on* when present and truthy. **Everything is off by
   default** (empty filter).
 
 You can edit this file by hand; the change is picked up live (see the watcher below).
@@ -106,7 +106,7 @@ manual edit of the file   ──┘             │
 Key properties:
 
 - **`log()` is a cheap in-memory guard** — no file read on the hot path. The in-memory state
-  (`_active_topics`, `_enabled`) is always *derived from the file* via `_apply_from_file()`.
+  (`_active_tags`, `_enabled`) is always *derived from the file* via `_apply_from_file()`.
 - **The sync mutators never touch the event loop.** `on/off/enable/disable` do a synchronous
   read-modify-**merge**-write of the JSON plus a synchronous local re-derive. They do **not**
   broadcast. This keeps them callable from any sync code and keeps them out of the asyncio machinery.
@@ -138,8 +138,8 @@ All routes return the standard `{status, data}` envelope; `data` is the current
 | Method | Path | Body | Effect |
 | --- | --- | --- | --- |
 | `GET`  | `/api/v1/toplog/state`   | — | current state |
-| `POST` | `/api/v1/toplog/on`      | `{"topics": ["pty"]}` | turn topics on |
-| `POST` | `/api/v1/toplog/off`     | `{"topics": ["pty"]}` | turn topics off |
+| `POST` | `/api/v1/toplog/on`      | `{"tags": ["pty"]}` | turn tags on |
+| `POST` | `/api/v1/toplog/off`     | `{"tags": ["pty"]}` | turn tags off |
 | `POST` | `/api/v1/toplog/enable`  | — | master switch on |
 | `POST` | `/api/v1/toplog/disable` | — | master switch off |
 
@@ -147,6 +147,6 @@ All routes return the standard `{status, data}` envelope; `data` is the current
 
 - **Live re-toggling inside an already-running worker process is out of scope.** Workers inherit
   `FLOW_INSTANCE` and read the same `toplog.json`, but only the main backend process runs the FSOp
-  watcher. A worker derives its state once at module import (spawn time); toggle topics *before*
+  watcher. A worker derives its state once at module import (spawn time); toggle tags *before*
   spawning a worker if you need them traced.
-- **On/off only — no per-topic log levels.** Everything emits at `INFO` under the `toplog` logger.
+- **On/off only — no per-tag log levels.** Everything emits at `INFO` under the `toplog` logger.

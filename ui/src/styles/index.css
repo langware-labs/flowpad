@@ -430,3 +430,13 @@
 .animate-fade-in {
   animation: fadeIn 0.5s ease-out forwards;
 }
+
+/*
+ * Deep-linked line in the code editor (`?line=` — e.g. an interface block's
+ * source preview). Scrolling to a line is not enough to SEE it in a wall of
+ * code, so the line is marked until the next deep link replaces it.
+ */
+.flowpad-deep-link-line {
+  background-color: hsl(var(--primary) / 0.15);
+  box-shadow: inset 2px 0 0 0 hsl(var(--primary) / 0.6);
+}

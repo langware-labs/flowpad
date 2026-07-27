@@ -21,7 +21,7 @@ const EXAMPLES: string[] = [
   'Daily news summary on…',
   'Qualify these sales leads',
   'Extract data from PDFs / invoices',
-  'Watch a topic and alert me',
+  'Watch a tag and alert me',
   'How to set up Claude Code?',
   'How to migrate from Lovable',
   'I need bug fixing',

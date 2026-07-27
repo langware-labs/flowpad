@@ -12,6 +12,7 @@
 
 import { EventEmitter } from 'events';
 import apiClient from '../client';
+import { sdkConfig } from '../config/index';
 import { API_PREFIX } from '../config/SDKConfig';
 import { isHubOnly } from '../utils/hub-runtime';
 import { User } from '../entities/user';
@@ -138,7 +139,9 @@ class CloudManager extends EventEmitter {
     this._initialized = true;
 
     if (isHubOnly()) {
-      this._cloudUrl = window.location.origin;
+      // Hub-mode API traffic uses the configured hub origin directly. Keep the
+      // status tooltip truthful when the UI is served by a separate Vite port.
+      this._cloudUrl = sdkConfig.apiUrl;
 
       const { ConnectionManager } = await import('../websocket');
       const cm = ConnectionManager.getInstance();

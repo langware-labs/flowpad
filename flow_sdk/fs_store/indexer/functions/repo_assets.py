@@ -8,10 +8,10 @@ its own type's ``from_disk_fn``. Parentage is NOT derived from location here —
 rides in each asset's ``metadata.json`` ``parent_type_id`` (the source of truth);
 this walker only discovers folders so their bytes get indexed at all.
 
-Registered on the scope-root input types with ``output_type=None`` (always runs —
-repo discovery is a cheap dir scan and the walker emits many types, so per-type
-output gating doesn't apply). Mirrors the single-pass shape of ``skill_fn``.
+Registered on the scope-root input types with the explicit set of repository
+record types it can emit. Mirrors the single-pass shape of ``skill_fn``.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -33,6 +33,7 @@ def repo_assets_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
     type_infos = SchemaRegistry.repo_family_to_info()
     if not type_infos:
         return []
+    requested_types = set(opts.types) if opts.types is not None else None
     out: list[FSRef] = []
 
     def scan(container: Path, parent_ref: FSRef, depth: int) -> None:
@@ -51,6 +52,7 @@ def repo_assets_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
             if info is None:
                 continue
             record_type = EntityType(info.type_name)
+            wanted = requested_types is None or record_type in requested_types
             is_folder = info.main_layout == "folder"
             for entry in sorted(type_dir.iterdir()):
                 if is_folder:
@@ -66,12 +68,16 @@ def repo_assets_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
                     if info.main_file and not (entry / info.main_file).is_file():
                         continue
                     ref = FSRef(info.asset_ref_for(entry), record_type=record_type, parent=parent_ref)
-                    out.append(ref)
+                    if wanted:
+                        out.append(ref)
+                    # Traverse unrequested folder assets too: a requested SPEC
+                    # may be nested below an unrequested TASK/DECK parent.
                     scan(entry, ref, depth + 1)
                 elif entry.is_file() and entry.suffix == info.main_ext:
                     # File asset (markdown/prompt…): the <name>.<ext> file IS the
                     # asset — a leaf, no nesting.
-                    out.append(FSRef(entry, record_type=record_type, parent=parent_ref))
+                    if wanted:
+                        out.append(FSRef(entry, record_type=record_type, parent=parent_ref))
 
     for node in nodes:
         scan(Path(node.path), node, 0)

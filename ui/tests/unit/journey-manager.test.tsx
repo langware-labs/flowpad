@@ -49,7 +49,7 @@ describe('useJourneyManager — awaits ride the unified bus', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('event-only await: matching bus event advances the step exactly once', async () => {
-    const state = makeState(makeStep({ topic: 'app.page.signal', target: 'next' }));
+    const state = makeState(makeStep({ tag: 'app.page.signal', target: 'next' }));
     renderHook(() => useJourneyManager(state));
 
     EventBus.emit('app.page.signal', 'next', {}, { origin: 'sandbox' });
@@ -60,7 +60,7 @@ describe('useJourneyManager — awaits ride the unified bus', () => {
   });
 
   it('event-only await: wrong target never advances (event-only steps do not auto-satisfy)', async () => {
-    const state = makeState(makeStep({ topic: 'app.page.signal', target: 'next' }));
+    const state = makeState(makeStep({ tag: 'app.page.signal', target: 'next' }));
     renderHook(() => useJourneyManager(state));
 
     EventBus.emit('app.page.signal', 'finish', {}, { origin: 'sandbox' });
@@ -72,7 +72,7 @@ describe('useJourneyManager — awaits ride the unified bus', () => {
     const query = vi.spyOn(dataManager, 'query').mockResolvedValue([]);
     const state = makeState(
       makeStep({
-        topic: 'app.entity.created',
+        tag: 'app.entity.created',
         target: 'agent:*',
         confirm: { type: 'agent', match: { kind: 'vibe' }, min: 1 },
       }),
@@ -97,7 +97,7 @@ describe('useJourneyManager — awaits ride the unified bus', () => {
   it('confirm-gated await auto-satisfies on mount when already true (reload-safety)', async () => {
     vi.spyOn(dataManager, 'query').mockResolvedValue([{ id: 'a1' } as never]);
     const state = makeState(
-      makeStep({ topic: 'app.entity.created', target: 'agent:*', confirm: { type: 'agent', min: 1 } }),
+      makeStep({ tag: 'app.entity.created', target: 'agent:*', confirm: { type: 'agent', min: 1 } }),
     );
     renderHook(() => useJourneyManager(state));
 

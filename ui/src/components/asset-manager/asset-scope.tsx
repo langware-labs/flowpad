@@ -166,32 +166,39 @@ function ScopeGlyph({ scope }: { scope: AssetScope }) {
 }
 
 /**
- * The scope icon + name pair. The icon reveals the asset's own file in the OS
- * file browser; with no file (an inline persona) it renders inert rather than
- * offering a click that would do nothing.
+ * The scope icon + name pair. The whole chip — glyph and label both — reveals the
+ * asset's own file in the OS file browser; with no file (an inline persona) it
+ * renders inert rather than offering a click that would do nothing.
  */
 export function AssetScopeChip({ scope, testidSuffix }: { scope: AssetScope; testidSuffix: string }) {
   const revealPath = scope.revealPath;
+  // One element, two grid cells: `display:contents` lets the glyph and the name
+  // sit in the row's own tracks while staying a single chip, so the reveal
+  // behaviour is written once instead of once per cell.
+  const Cell = revealPath ? 'button' : 'span';
   return (
-    <>
-      {revealPath ? (
-        <button
-          type="button"
-          className="flex items-center justify-center rounded hover:bg-muted"
-          title={`${scope.tooltip}\n\nClick to reveal in the file browser`}
-          data-testid={`asset-manager-scope-${testidSuffix}`}
-          onClick={() => void openExternalFromComputeNode('@local', revealPath, { select: true })}
-        >
-          <ScopeGlyph scope={scope} />
-        </button>
-      ) : (
-        <span className="flex items-center justify-center" title={scope.tooltip}>
-          <ScopeGlyph scope={scope} />
-        </span>
-      )}
-      <span className="min-w-0 truncate text-[10px] uppercase tracking-wider text-muted-foreground">
+    <Cell
+      {...(revealPath ?
+        {
+          type: 'button' as const,
+          onClick: () => void openExternalFromComputeNode('@local', revealPath, { select: true }),
+          title: `${scope.tooltip}\n\nClick to reveal in the file browser`,
+        }
+      : { title: scope.tooltip })}
+      className="contents"
+      data-testid={`asset-manager-scope-${testidSuffix}`}
+    >
+      <span className={cn('flex items-center justify-center rounded', revealPath && 'hover:bg-muted')}>
+        <ScopeGlyph scope={scope} />
+      </span>
+      <span
+        className={cn(
+          'min-w-0 truncate rounded text-left text-[10px] uppercase tracking-wider text-muted-foreground',
+          revealPath && 'hover:bg-muted hover:text-foreground',
+        )}
+      >
         {scope.label}
       </span>
-    </>
+    </Cell>
   );
 }

@@ -9,6 +9,7 @@ FAILS while bug is present. PASSES once the fix lands.
 """
 
 import asyncio
+
 import pytest
 
 from tests.test_settings import test_service_config
@@ -38,7 +39,7 @@ async def test_clean_claude_pty(bootstrapped_client, tmp_path):
         workdir=str(tmp_path),
         visible=True,
     )
-    await process.save([])
+    await process.save()
 
     try:
         await process.start_pty()

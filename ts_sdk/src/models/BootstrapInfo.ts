@@ -130,6 +130,9 @@ export interface BootstrapInfo {
   /** All capabilities + how to access each, grouped by intent (see CapabilityManager). */
   capabilities_summary?: CapabilitiesSummary;
   sniffer_hook?: AgentHook;
+  /** Harness settings file actually carries sniffer hooks — true even when
+   *  another instance on this machine installed them (no local entity). */
+  sniffer_installed?: boolean;
   scan_info?: ScanInfo;
   records_root?: string;
   /** Locales the app ships translations for (backend is the source of truth).
