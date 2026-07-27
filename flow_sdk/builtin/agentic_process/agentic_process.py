@@ -2633,11 +2633,8 @@ class AgenticProcess(Entity):
 
     async def _auto_bookmark_show(self, payload: dict) -> None:
         """Drop the shown target into the nested ``Auto / <type> / item`` favorites
-        tree (idempotent). Owned by the local user and STAMPED with this process's
-        project, so the auto tree scopes like every other project artifact instead
-        of piling up in the bookmarks slider of unrelated projects. A project-less
-        process (EMBEDDED/INLINE) mints an unscoped row, which stays global.
-        Every leaf create broadcasts, so the folder counters tick live."""
+        tree (idempotent). Owned by the local user and scoped to this process's
+        project. Every leaf create broadcasts, so the folder counters tick live."""
         from flow_sdk.builtin.bookmark import mint_auto_favorite  # noqa: PLC0415
         from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
 
