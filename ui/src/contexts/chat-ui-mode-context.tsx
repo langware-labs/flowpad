@@ -1,5 +1,6 @@
 import { instancePreferences, PrefKey } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
+import { getViewMode, isAdvancedMode, useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { defineGlobal } from '@sdk/utils';
 import { useEffect, useSyncExternalStore } from 'react';
@@ -34,10 +35,19 @@ declare global {
 
 const LEGACY_BOOL_KEY = 'chatUiMode';
 
+/** Stored sentinel for "no override, follow View mode". The Preferences select
+ *  cannot render an empty-string option, so the absent state is explicit; the
+ *  historical '' is still read as auto. */
+export const CHAT_MODE_AUTO = 'auto';
+
+function isAuto(v: unknown): boolean {
+  return v === CHAT_MODE_AUTO || v === '' || v == null;
+}
+
 // One-time migration of the legacy boolean flag (true meant "force chat").
 if (
   typeof localStorage !== 'undefined' &&
-  instancePreferences.get(PrefKey.CHAT_UI_MODE) === '' &&
+  isAuto(instancePreferences.get(PrefKey.CHAT_UI_MODE)) &&
   localStorage.getItem(LEGACY_BOOL_KEY) === 'true'
 ) {
   instancePreferences.set(PrefKey.CHAT_UI_MODE, 'chat');
@@ -49,7 +59,7 @@ function toOverride(v: unknown): ChatUiOverride {
 }
 
 export function setChatUiOverride(val: ChatUiOverride): void {
-  instancePreferences.set(PrefKey.CHAT_UI_MODE, val ?? '');
+  instancePreferences.set(PrefKey.CHAT_UI_MODE, val ?? CHAT_MODE_AUTO);
 }
 
 export function getChatUiOverride(): ChatUiOverride {
@@ -104,6 +114,43 @@ export function useDockChatModeOverrideSync(): void {
   }, [override]);
 
   useEffect(() => () => setDockChatModeOverride(null), []);
+}
+
+/**
+ * The ONE resolution rule for "which mode is this session in": the override when
+ * set, otherwise the View-mode default (Standard ⇒ chat, Advanced/Dev ⇒
+ * terminal). `InteractiveTerminal` renders by it and new sessions launch by it,
+ * so what the user picks in the switch is what the next session opens as.
+ */
+export function resolveChatMode(override: ChatUiOverride, advanced: boolean): ChatMode {
+  return override ?? (advanced ? 'terminal' : 'chat');
+}
+
+/** Reactive form — re-renders on either input changing. */
+export function useEffectiveChatMode(): ChatMode {
+  return resolveChatMode(useChatUiOverride(), useIsAdvanced());
+}
+
+/** Imperative form for non-React callers (the launch path). Reads the persisted
+ *  view mode; a URL `?viewMode` is adopted into that pref on load, so the two
+ *  agree everywhere a session is launched from. */
+export function effectiveChatMode(): ChatMode {
+  return resolveChatMode(getChatUiOverride(), isAdvancedMode(getViewMode()));
+}
+
+/**
+ * `createProcess` arguments that launch a new session in the preferred mode.
+ * Chat is the headless print-mode transport (no PTY, streams JSON); terminal is
+ * an auto-started interactive PTY. Spread `context` into the first argument and
+ * `options` into the second.
+ */
+export function chatModeLaunchArgs(): {
+  context: { outputFormat?: 'stream-json' };
+  options: { visible: boolean; pty_mode: boolean };
+} {
+  return effectiveChatMode() === 'chat'
+    ? { context: { outputFormat: 'stream-json' }, options: { visible: false, pty_mode: false } }
+    : { context: {}, options: { visible: true, pty_mode: true } };
 }
 
 export function useChatUiOverride(): ChatUiOverride {
