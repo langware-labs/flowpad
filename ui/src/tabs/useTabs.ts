@@ -197,11 +197,19 @@ export function useSyncContentTabNames(): void {
       if (type && TERMINAL_TARGET_TYPES.has(type)) return;
       const id = data?.id;
       const name = (data as { name?: string | null } | null)?.name;
-      if (!id || !name) return;
-      const tab = getAllTabsSnapshot().find((t) => t.target_id === id);
-      if (tab && tab.name !== name) {
-        void Tab.setNameById(tab.id, name).then(() => void refreshAllTabs());
-      }
+      const remote = (data as { remote?: unknown } | null)?.remote;
+      if (!type || !id) return;
+      const tab = getAllTabsSnapshot().find(
+        (candidate) => candidate.target_type === type && candidate.target_id === id,
+      );
+      if (!tab) return;
+      const nameChanged = typeof name === 'string' && name.length > 0 && tab.name !== name;
+      const remoteChanged = typeof remote === 'boolean' && tab.target_remote !== remote;
+      if (!nameChanged && !remoteChanged) return;
+      void (async () => {
+        if (nameChanged) await Tab.setNameById(tab.id, name);
+        await refreshAllTabs();
+      })();
     };
     cm.on('on_data_op', handler);
     return () => {

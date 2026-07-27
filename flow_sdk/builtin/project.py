@@ -949,6 +949,7 @@ class Project(Entity):
             AssetDescriptor,
             AssetSource,
             collect_base_source_dirs,
+            hydrate_asset_descriptor_remote,
             scan_path_asset_descriptors,
         )
 
@@ -1009,9 +1010,11 @@ class Project(Entity):
                         ),
                         posix_path=None,
                         project_id=str(spec_project_id) if spec_project_id else None,
+                        remote=bool(getattr(spec_entity, "remote", False)),
                     )
                 )
 
+        await hydrate_asset_descriptor_remote(descriptors)
         return ApiSuccessResponse(
             data={
                 "assets": [d.to_row() for d in descriptors],

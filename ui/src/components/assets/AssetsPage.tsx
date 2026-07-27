@@ -18,7 +18,7 @@ import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { AssetDiscussButton } from '@src/components/assets/editor/AssetDiscussButton';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import apiClient from '@sdk/client';
 import { BookOpen, ChevronRight, Copy, PackageSearch, Trash2, X } from 'lucide-react';
@@ -474,19 +474,25 @@ export function AssetsPage() {
   // same cached path-resolution query used by the editor: React Query dedupes
   // the lookup/discovery work, while this header remains render-only and never
   // writes entity context itself.
-  const { entity: vfsHeaderEntity } = useEntityByPath<APIEntity<APIEntity<unknown>>>(
+  const {
+    entity: vfsHeaderEntity,
+    state: vfsHeaderState,
+  } = useEntityByPath<APIEntity<APIEntity<unknown>>>(
     unresolvedVfsRef ? editorEntityType : null,
     unresolvedVfsRef,
   );
-  const resolvedHeaderEntityTypeId = headerEntityTypeId ?? vfsHeaderEntity?.typeId ?? null;
+  const resolvedVfsHeaderEntity =
+    vfsHeaderState === 'resolved' ? vfsHeaderEntity : null;
+  const resolvedHeaderEntityTypeId =
+    headerEntityTypeId ?? resolvedVfsHeaderEntity?.typeId ?? null;
   const headerAssetType = resolvedHeaderEntityTypeId?.type ?? editorPrimaryType;
-  const HeaderIcon = isEditorMode && headerAssetType ? iconForType(headerAssetType) : BookOpen;
   const headerEntity = (openAsset ??
     (activeEntityMatchesResource ? activeEntity : null) ??
-    vfsHeaderEntity) as {
+    resolvedVfsHeaderEntity) as {
     asset_ref?: string | null;
     displayName?: string | null;
     name?: string | null;
+    remote?: boolean;
   } | null;
   const entityAssetName = headerEntity?.asset_ref
     ?.replace(/[\\/]+$/, '')
@@ -621,10 +627,17 @@ export function AssetsPage() {
         data-testid="assets-page-header"
       >
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <HeaderIcon
-            className="h-4 w-4 flex-shrink-0 text-muted-foreground"
-            data-testid={isEditorMode ? 'assets-page-header-type-icon' : undefined}
-          />
+          {isEditorMode && headerAssetType ? (
+            <EntityIcon
+              type={headerAssetType}
+              remote={headerEntity?.remote}
+              aria-label={editorHeaderTitle ?? headerAssetType}
+              className="h-4 w-4 flex-shrink-0 text-muted-foreground"
+              data-testid="assets-page-header-type-icon"
+            />
+          ) : (
+            <BookOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+          )}
           <div className="min-w-0">
             <div className="truncate text-sm font-medium">
               {/* An open VFS document and a context folder get their own names

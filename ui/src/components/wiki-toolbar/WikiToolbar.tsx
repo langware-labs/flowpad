@@ -1,6 +1,6 @@
 /**
  * WikiToolbar — wiki-linkage actions, rendered inline at the right end of
- * Milkdown's static toolbar (same `FormatButton` style as Bold/Italic/etc).
+ * Milkdown's formatting toolbar (same `FormatButton` style as Bold/Italic/etc).
  * Currently a single button: "Add entity link" → opens the search modal.
  */
 

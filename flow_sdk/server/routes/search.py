@@ -59,6 +59,7 @@ async def _entity_to_result(ent) -> dict:
         "snippet": getattr(ent, "_fts_snippet", None),
         "status": getattr(ent, "status", None) or "",
         "scope": getattr(ent, "scope", "") or "",
+        "remote": bool(getattr(ent, "remote", False)),
         "project_id": getattr(ent, "project_id", None) or None,
         "asset_ref": await _entity_asset_ref(ent) or "",
         "created_at": str(getattr(ent, "created_date", "") or ""),

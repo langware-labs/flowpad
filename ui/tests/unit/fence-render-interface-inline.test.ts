@@ -13,7 +13,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const SOURCE = `name: createTask
 description: Create a task.
 params:
-  title: string
+  title:
+    type: string
+    description: Human-readable title.
   due: date?
 returns: Task
 errors: [NotFound, Forbidden]
@@ -27,7 +29,13 @@ beforeEach(() => {
   host = document.createElement('div');
   document.body.replaceChildren(host);
   commit = vi.fn();
-  ctx = { theme: 'dark', blockId: 'b1', editable: true, host: { openFile: () => {}, previewFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null }, commit };
+  ctx = {
+    theme: 'dark',
+    blockId: 'b1',
+    editable: true,
+    host: { openFile: () => {}, previewFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null },
+    commit,
+  };
   renderInterfaceCard(SOURCE, host, ctx);
 });
 
@@ -81,6 +89,11 @@ describe('inline editing commits', () => {
       type: 'timestamp',
       optional: true,
     });
+  });
+
+  it('commits an edited param description', () => {
+    type('interface-param-description-title', 'Title shown to people.');
+    expect(parseInterfaceBlock(committed()).params[0].description).toBe('Title shown to people.');
   });
 
   it('commits an edited error name', () => {
@@ -209,8 +222,7 @@ describe('read-only host', () => {
     expect(ro.querySelector('[data-testid="interface-card"]')).not.toBeNull();
     expect(roField('interface-name')?.textContent).toBe('createTask');
     expect(roField('interface-returns')?.textContent).toBe('Task');
-    expect([...ro.querySelectorAll('.interface-card-param-name')].map((n) => n.textContent))
-      .toEqual(['title', 'due']);
+    expect([...ro.querySelectorAll('.interface-card-param-name')].map((n) => n.textContent)).toEqual(['title', 'due']);
   });
 
   it('exposes no contenteditable fields', () => {
@@ -241,7 +253,12 @@ describe('read-only host', () => {
 
 describe('editable field wiring', () => {
   it('marks value fields as editable text boxes', () => {
-    for (const id of ['interface-name', 'interface-returns', 'interface-param-type-title']) {
+    for (const id of [
+      'interface-name',
+      'interface-returns',
+      'interface-param-type-title',
+      'interface-param-description-title',
+    ]) {
       expect(field(id).getAttribute('contenteditable')).toBe('true');
       expect(field(id).getAttribute('role')).toBe('textbox');
     }
@@ -266,25 +283,76 @@ describe('class member inline editing', () => {
         theme: 'dark',
         blockId: 'members',
         editable: true,
-        host: { openFile: () => {}, previewFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null },
+        host: {
+          openFile: () => {},
+          previewFile: () => {},
+          documentProjectRoot: () => null,
+          projectRootById: () => null,
+        },
         commit: classCommit,
       },
     );
 
     classHost.querySelector<HTMLButtonElement>('[data-testid="interface-subtab-properties"]')!.click();
-    const propertyType = classHost.querySelector<HTMLElement>(
-      '[data-testid="interface-property-type-status"]',
-    )!;
+    const propertyType = classHost.querySelector<HTMLElement>('[data-testid="interface-property-type-status"]')!;
     propertyType.textContent = 'WorkerStatus';
     propertyType.dispatchEvent(new FocusEvent('blur'));
 
     expect(parseInterfaceBlock(classCommit.mock.calls.at(-1)![0]).properties[0]).toMatchObject({
       type: 'WorkerStatus',
     });
-    expect(
-      classHost
-        .querySelector('[data-testid="interface-subtab-properties"]')
-        ?.getAttribute('aria-selected'),
-    ).toBe('true');
+    expect(classHost.querySelector('[data-testid="interface-subtab-properties"]')?.getAttribute('aria-selected')).toBe(
+      'true',
+    );
+  });
+
+  it('commits property and method descriptions through their object-form YAML', () => {
+    const classHost = document.createElement('div');
+    const classCommit = vi.fn();
+    renderInterfaceCard(
+      `name: Agent
+properties:
+  status:
+    type: ProcessStatus
+    description: Current state.
+methods:
+  start:
+    signature: "async () -> void"
+    description: Start the worker.
+`,
+      classHost,
+      {
+        theme: 'dark',
+        blockId: 'descriptions',
+        editable: true,
+        host: {
+          openFile: () => {},
+          previewFile: () => {},
+          documentProjectRoot: () => null,
+          projectRootById: () => null,
+        },
+        commit: classCommit,
+      },
+    );
+
+    const methodDescription = classHost.querySelector<HTMLElement>(
+      '[data-testid="interface-method-description-start"]',
+    )!;
+    methodDescription.textContent = 'Launch the worker.';
+    methodDescription.dispatchEvent(new FocusEvent('blur'));
+
+    classHost.querySelector<HTMLButtonElement>('[data-testid="interface-subtab-properties"]')!.click();
+    const propertyDescription = classHost.querySelector<HTMLElement>(
+      '[data-testid="interface-property-description-status"]',
+    )!;
+    propertyDescription.textContent = 'Latest state.';
+    propertyDescription.dispatchEvent(new FocusEvent('blur'));
+
+    const spec = parseInterfaceBlock(classCommit.mock.calls.at(-1)![0]);
+    expect(spec.methods[0].description).toBe('Launch the worker.');
+    expect(spec.properties[0].description).toBe('Latest state.');
+    expect(classHost.querySelector('[data-testid="interface-subtab-properties"]')?.getAttribute('aria-selected')).toBe(
+      'true',
+    );
   });
 });

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -20,7 +21,6 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
 from flow_sdk.builtin.spec import Spec
 from flow_sdk.fs_store.path_utils import canonical_posix_path
-
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
 
@@ -185,6 +185,54 @@ async def test_response_row_shape_matches_process_action(staging):
     # Process action keys + additive project_id; usage always present.
     for row in rows:
         assert set(row.keys()) == {
-            "typeid", "source", "posix_path", "source_dir", "project_id", "usage",
+            "typeid", "source", "posix_path", "source_dir", "project_id", "remote", "usage",
         }
         assert row["usage"] == []
+
+
+@pytest.mark.asyncio
+async def test_ref_only_remote_hydration_batches_once_per_type(staging):
+    from flow_sdk.builtin.agentic_process.agentic_process import AssetDescriptor
+
+    skill = staging["ents"]["u_skill"]
+    agent = staging["ents"]["other_agent"]
+    skill.remote = True
+    await skill.save()
+    descriptors = [
+        AssetDescriptor(
+            typeid=f"skill-{skill.id}",
+            source=AssetSource.USER_DIR,
+            posix_path=None,
+        ),
+        AssetDescriptor(
+            typeid=f"agent-{agent.id}",
+            source=AssetSource.USER_DIR,
+            posix_path=None,
+        ),
+    ]
+
+    with (
+        patch(
+            "flow_sdk.builtin.agentic_process.agentic_process.scan_path_asset_descriptors",
+            new=AsyncMock(return_value=descriptors),
+        ),
+        patch.object(Skill, "get_all", new=AsyncMock(wraps=Skill.get_all)) as skill_get_all,
+        patch.object(Agent, "get_all", new=AsyncMock(wraps=Agent.get_all)) as agent_get_all,
+        patch.object(
+            Skill,
+            "get_one",
+            new=AsyncMock(side_effect=AssertionError("get_one is not allowed")),
+        ),
+        patch.object(
+            Agent,
+            "get_one",
+            new=AsyncMock(side_effect=AssertionError("get_one is not allowed")),
+        ),
+    ):
+        response = await staging["project"].get_assets_action(types="skill,agent")
+
+    assert skill_get_all.await_count == 1
+    assert agent_get_all.await_count == 1
+    by_typeid = {row["typeid"]: row for row in response.data["assets"]}
+    assert by_typeid[f"skill-{skill.id}"]["remote"] is True
+    assert by_typeid[f"agent-{agent.id}"]["remote"] is False

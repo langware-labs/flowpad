@@ -157,6 +157,7 @@ export interface ITab extends IEntity {
   /** Runtime-computed fields: backing entity status and close-in-progress flag. Never persisted. */
   status?: string | null;
   is_disabled?: boolean;
+  target_remote?: boolean;
   /** name / project_id / tab_order / last_active_at come from IEntity. */
 }
 
@@ -191,6 +192,7 @@ export interface TabRow extends ITab {
   last_active_at: number | string | null;
   status: string | null;
   is_disabled: boolean;
+  target_remote?: boolean;
 }
 
 @registerEntity
@@ -210,6 +212,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
   last_active_at: number | string | null = null;
   status: string | null = null;
   is_disabled: boolean = false;
+  target_remote?: boolean;
 
   /** Computed DockPointer from the stored pointer. Parsed directly (SDK layer, no UI dependency). */
   get dockPointer(): IDockPointer | null {
@@ -444,12 +447,13 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  to reuse instances by id, preventing duplicate-registration warnings. */
   static fromResponse(data: ITab[]): Tab[] {
     return data.map((t) => {
+      const targetRemote =
+        typeof t.target_remote === 'boolean' ? t.target_remote : undefined;
       const cached = Tab.getByIdFromCache<Tab>(t.id ?? '');
-      if (cached) {
-        Object.assign(cached, t);
-        return cached;
-      }
-      return new Tab(t);
+      const tab = cached ?? new Tab(t);
+      Object.assign(tab, t);
+      tab.target_remote = targetRemote;
+      return tab;
     });
   }
 

@@ -224,6 +224,7 @@ class AssetDescriptor:
     source_dir: str | None = None  # matched source dir (path-discovered only); None for EMBEDDED/INLINE
     project_id: str | None = None  # owning project (path-discovered / spec rows); None for EMBEDDED/INLINE
     usage: list[AssetUsage] = field(default_factory=list)
+    remote: bool | None = None  # None until a reference-only descriptor is hydrated
 
     def to_row(self) -> dict:
         """Single owner of the get-assets wire row — used by BOTH the process
@@ -234,6 +235,7 @@ class AssetDescriptor:
             "posix_path": self.posix_path,
             "source_dir": self.source_dir,
             "project_id": self.project_id,
+            "remote": bool(self.remote),
             "usage": [
                 {
                     "kind": u.kind.value,
@@ -245,6 +247,63 @@ class AssetDescriptor:
                 for u in self.usage
             ],
         }
+
+
+async def hydrate_asset_descriptor_remote(
+    descriptors: list[AssetDescriptor],
+) -> None:
+    """Batch-fill cloud state for reference-only descriptors.
+
+    Producers that already hold an entity stamp ``remote`` directly. Remaining
+    real TypeIds are grouped by registered entity class and loaded once per
+    type; invalid, named, unregistered, or missing references fail closed to
+    local-only.
+    """
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    pending: dict[tuple[str, str], list[AssetDescriptor]] = {}
+    for descriptor in descriptors:
+        if descriptor.remote is not None:
+            continue
+        try:
+            typeid = TypeId(descriptor.typeid)
+        except (TypeError, ValueError):
+            descriptor.remote = False
+            continue
+        if not typeid.id or not is_valid_entity_id(str(typeid.id)):
+            descriptor.remote = False
+            continue
+        pending.setdefault((typeid.type, str(typeid.id)), []).append(descriptor)
+
+    ids_by_type: dict[str, set[str]] = {}
+    for entity_type, entity_id in pending:
+        ids_by_type.setdefault(entity_type, set()).add(entity_id)
+
+    for entity_type, ids in ids_by_type.items():
+        entity_cls = SchemaRegistry.get_entity_cls(entity_type)
+        rows = []
+        if entity_cls is not None:
+            try:
+                rows = await entity_cls.get_all(
+                    QueryFilter(
+                        match=ExpressionNode(
+                            op=QueryOp.IN,
+                            operands=["id", sorted(ids)],
+                        )
+                    )
+                )
+            except Exception:
+                logger.debug(
+                    "asset descriptor remote batch load failed for %s",
+                    entity_type,
+                    exc_info=True,
+                )
+        loaded = {str(row.id): bool(getattr(row, "remote", False)) for row in rows}
+        for entity_id in ids:
+            for descriptor in pending[(entity_type, entity_id)]:
+                descriptor.remote = loaded.get(entity_id, False)
 
 
 @dataclass
@@ -365,6 +424,7 @@ async def scan_path_asset_descriptors(
                 posix_path=ar,
                 source_dir=src_dir,
                 project_id=str(ent_project_id) if ent_project_id else None,
+                remote=bool(getattr(ent, "remote", False)),
             )
         )
     return descriptors
@@ -4802,6 +4862,7 @@ class AgenticProcess(Entity):
                 posix_path=asset_path,
                 source_dir=source_dir,
                 usage=[self._usage_from_file_read(entry, read_path)],
+                remote=bool(getattr(entity, "remote", False)),
             )
             descriptors.append(descriptor)
             descriptor_by_key[key] = descriptor
@@ -4890,6 +4951,7 @@ class AgenticProcess(Entity):
         self._annotate_asset_usage(descriptors, reads)
         self._annotate_skill_invocations(descriptors, skill_calls)
         await self._append_transcript_asset_descriptors(descriptors, reads, sources)
+        await hydrate_asset_descriptor_remote(descriptors)
         return descriptors
 
     async def _collect_source_dirs(self, assets_dir: "Path") -> list[tuple[str, AssetSource]]:
