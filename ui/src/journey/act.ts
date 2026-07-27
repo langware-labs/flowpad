@@ -120,10 +120,11 @@ async function runSetupAct(act: JourneyActSpec): Promise<boolean> {
   }
 }
 
-/** A path inside the journey's project — the same base the footer git pill
- *  uses. `rel` is optional: no `rel` is the project root itself. */
-function projectPath(rel?: string): string | null {
-  const base = dataContext.project?.fs_storage_mount_path ?? dataContext.workdir;
+/** A path inside the journey's project. The journey's own root wins; the
+ *  active project is the fallback for acts raised outside one. `rel` is
+ *  optional: no `rel` is the root itself. */
+function projectPath(rel: string | undefined, ctx: ActContext): string | null {
+  const base = ctx.projectRoot ?? dataContext.project?.fs_storage_mount_path ?? dataContext.workdir;
   if (!base) return null;
   return rel ? `${base.replace(/\/+$/, '')}/${rel.replace(/^\/+/, '')}` : base;
 }
@@ -140,9 +141,9 @@ function projectPath(rel?: string): string | null {
  * concurrent pill fetch, and refreshing the shared entry means the footer count
  * agrees with what the journey just verified.
  */
-async function runGitCheck(act: JourneyActSpec): Promise<boolean> {
+async function runGitCheck(act: JourneyActSpec, ctx: ActContext): Promise<boolean> {
   try {
-    const workdir = projectPath(act.dir);
+    const workdir = projectPath(act.dir, ctx);
     if (!workdir) return announce(act, false);
     const computeNodeId = dataContext.computeNodeTypeId?.id ?? LOCAL_COMPUTE_NODE.id;
     const git = new GitWorkdir(workdir, computeNodeId);
@@ -180,6 +181,10 @@ export interface ActContext {
   /** Aborted when the step changes or the tray unmounts, so a watcher waiting
    *  on output lets go instead of outliving the step that started it. */
   signal?: AbortSignal;
+  /** The project the JOURNEY ships in — where its try-it steps run. Not the
+   *  active project: a tour that says "the repo you're in IS syncmd" must open
+   *  its terminal and read its files THERE, whatever the user has open. */
+  projectRoot?: string | null;
 }
 
 /**
@@ -263,8 +268,8 @@ async function runOpenTerminal(act: JourneyActSpec, ctx: ActContext): Promise<bo
 }
 
 /** The project-relative file an `fs_check` act probes. */
-function projectFile(path: string): FSRef | null {
-  const full = projectPath(path);
+function projectFile(path: string, ctx: ActContext): FSRef | null {
+  const full = projectPath(path, ctx);
   return full ? new FSRef(full, dataContext.computeNodeTypeId ?? LOCAL_COMPUTE_NODE) : null;
 }
 
@@ -273,9 +278,9 @@ function projectFile(path: string): FSRef | null {
  * the filesystem is the truth. The user's terminal commands never reach the
  * bus, so "they said they ran it" is not evidence; this reads the file back.
  */
-async function runFsCheck(act: JourneyActSpec): Promise<boolean> {
+async function runFsCheck(act: JourneyActSpec, ctx: ActContext): Promise<boolean> {
   try {
-    const ref = projectFile(act.path ?? '');
+    const ref = projectFile(act.path ?? '', ctx);
     if (!ref || !act.path) return announce(act, false);
     if (!act.contains) return announce(act, await ref.exists());
     const body = await ref.read().catch(() => null);
@@ -295,9 +300,9 @@ export function runAct(act: JourneyActSpec, ctx: ActContext = {}): boolean | Pro
     case 'run':
       return runShellCommand(act, ctx);
     case 'fs_check':
-      return runFsCheck(act);
+      return runFsCheck(act, ctx);
     case 'git_check':
-      return runGitCheck(act);
+      return runGitCheck(act, ctx);
     default:
       return runSetupAct(act);
   }
