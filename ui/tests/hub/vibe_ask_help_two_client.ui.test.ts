@@ -2,15 +2,16 @@
  * "Ask someone for help" from the vibe workspace — the ONE get-help affordance,
  * driven through the REAL browser UI, across two instances.
  *
- *   alice (dev-1, browser): opens her vibe workspace, clicks the person+ button,
+ *   alice (dev-1, browser): opens her vibe workspace, clicks the raised-hand button,
  *          picks bob, writes the issue, submits. The transcript checkbox is ON
  *          by default and she leaves it that way.
  *   → the click must produce BOTH halves of the contract:
  *        1. a TASK, assigned to bob — it lands on his board with no accept;
- *        2. a CONVERSATION message to bob carrying the issue text, the task
- *           chips, and the session transcript.
- *   bob (dev-2, SDK): the member task arrives unassisted; he accepts the
- *          invitation and reads the message + its transcript attachment.
+ *        2. a CONVERSATION message to bob carrying the issue text, the ONE task
+ *           chip, and the session transcript.
+ *   bob (dev-2, SDK): the task itself arrives unassisted — assignment shares it
+ *          rather than cloning a "member task"; he accepts the invitation and
+ *          reads the message + its transcript attachment.
  *
  * The point of driving the browser is that only the UI wires title+notes into
  * the message body and defaults the transcript on — asserting `Task.assign`
@@ -175,30 +176,39 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
           new alice.sdk.QueryRequest({ type: 'task', query: { title: TITLE }, name: 'ask-help task' }),
           true,
         ).catch(() => [])) ?? []) as any[];
-        return rows.find((t) => t.title === TITLE && !t.parent_id) ?? null;
+        return rows.find((t) => t.title === TITLE) ?? null;
       },
       20_000,
       'the ask-for-help task on alice',
     );
     taskId = task.id;
     expect(task.assignee).toBe(bob.email);
+    // The ask leaves her task a PLAIN task — it is not a one-member group.
+    expect(task.kind ?? 'standard').toBe('standard');
+    expect(task.group_name ?? null).toBeNull();
     expect(task.description, 'the notes become the task body').toContain(token);
   }, 30_000);
 
-  it('the task lands on bob — no accept, no install', async () => {
+  it('the task lands on bob — one row, no accept, no install', async () => {
+    const bobTasks = async () =>
+      ((await bob.sdk.Task.query(
+        new bob.sdk.QueryRequest({ type: 'task', query: {}, name: 'bob tasks (ask-help)' }),
+        true,
+      ).catch(() => [])) ?? []) as any[];
+
+    // The SAME task alice created — assignment shares it, it does not clone it.
     const landed = await pollUntil(
-      async () => {
-        const rows: any[] = ((await bob.sdk.Task.query(
-          new bob.sdk.QueryRequest({ type: 'task', query: {}, name: 'bob tasks (ask-help)' }),
-          true,
-        ).catch(() => [])) ?? []) as any[];
-        return rows.find((t) => t.parent_id === taskId) ?? null;
-      },
+      async () => (await bobTasks()).find((t) => t.id === taskId) ?? null,
       25_000,
       'assigned task delivered to bob with him doing nothing',
     );
     expect(landed.assignee).toBe(bob.email);
     expect(landed.title).toBe(TITLE);
+    expect(landed.parent_id ?? '', 'no member-task child shape').toBe('');
+
+    // Exactly ONE row for this ask, on either side.
+    const mine = (await bobTasks()).filter((t) => t.title === TITLE);
+    expect(mine, 'one ask, one task row').toHaveLength(1);
   }, 30_000);
 
   it('a message went out to bob carrying the issue, the task, and the transcript', async () => {
@@ -261,7 +271,10 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
       'attachments materialized on bob',
     );
     const refs = attachments.map((a: any) => `${a.asset_type}-${a.asset_id}`);
-    expect(refs.some((r) => r.startsWith('task-')), `task chip in ${refs.join(',')}`).toBe(true);
+    // ONE task chip — the task itself. The old group-of-one shape shipped two
+    // (the assignee's member task plus the parent overview).
+    const taskChips = refs.filter((r) => r.startsWith('task-'));
+    expect(taskChips, `task chips in ${refs.join(',')}`).toEqual([`task-${taskId}`]);
     expect(
       refs.some((r) => r === `claude_session-${SESSION_ID}`),
       `transcript chip (attached by default) in ${refs.join(',')}`,

@@ -291,3 +291,86 @@ async def get_agentic_process(client, pid: str) -> dict:
 def default_compute_node_id(bootstrap_payload: dict) -> str:
     """``default_compute_node.id`` from the unwrapped ``bootstrap_payload``."""
     return bootstrap_payload["default_compute_node"]["id"]
+
+
+# ---------------------------------------------------------------------------
+# Task assignment / group fan-out: the faked hub boundary, shared by
+# ``test_task_assign_action`` (one shared task, one editor invite) and
+# ``test_group_task_action`` (the N-member fan-out).
+# ---------------------------------------------------------------------------
+class _FakeCreds:
+    api_key = "test-key"
+    user = {"email": "owner@x.com"}
+
+
+@pytest.fixture
+def _blob_storage(tmp_path):
+    """Task.description is a blob → get_one's expand_blobs needs embedded
+    storage. The in-process ASGI harness has no request-scoped storage
+    (middleware wiring is intentionally disabled), so install the same dev
+    storage fallback production falls back to (test_flow_message_actions
+    pattern)."""
+    import shutil
+
+    from flow_sdk.config import default_service_config
+    from flow_sdk.request_context import methods as _ctx
+    from flow_sdk.storage.local_fs_driver import LocalStorageDriver
+
+    blob_root = tmp_path / "task_blobs"
+    blob_root.mkdir(parents=True, exist_ok=True)
+    prev_dev = default_service_config.development
+    default_service_config.development = True
+    _ctx.set_default_test_storage_fallback(LocalStorageDriver(str(blob_root)))
+    try:
+        yield
+    finally:
+        _ctx.set_default_test_storage_fallback(None)
+        default_service_config.development = prev_dev
+        shutil.rmtree(blob_root, ignore_errors=True)
+
+
+@pytest.fixture
+def hub_faked(_blob_storage, monkeypatch):
+    """Fake every hub touchpoint the group-task actions use."""
+    posts: list[tuple[str, dict]] = []
+    puts: list[tuple[str, dict]] = []
+    created_children: list[tuple[str, str]] = []
+
+    async def fake_share(self, *, recursive=False):
+        self.remote = True
+        return self
+
+    async def fake_create_child(self, child):
+        created_children.append((self.id, child.id))
+        child.remote = True
+        return child
+
+    # Record hub writes as the (path, payload) the real transport would issue,
+    # so assertions keep reading like the wire contract.
+    async def fake_hub_post(entity_type, payload, entity_id=None, action=None, *a, **k):
+        etype = getattr(entity_type, "value", entity_type)
+        posts.append((f"/graph/{etype}/{entity_id}/{action}", payload))
+        return {}
+
+    async def fake_hub_put(entity_type, entity_id, payload, *a, **k):
+        etype = getattr(entity_type, "value", entity_type)
+        puts.append((f"/graph/{etype}/{entity_id}", payload))
+        return {}
+
+    import flow_sdk.app.actions.group_task_action as gta
+    import flow_sdk.app.actions.task_assign_action as taa
+    import flow_sdk.cli.auth.credentials as creds_mod
+    import flow_sdk.cli.auth.hub_login as login_mod
+    from flow_sdk.builtin.task import Task
+
+    monkeypatch.setattr(creds_mod, "load_credentials", lambda *a, **k: _FakeCreds())
+    monkeypatch.setattr(login_mod, "is_logged_in", lambda: True)
+    # BOTH modules: the group fan-out reaches the hub through the primitive's
+    # ``ensure_task_on_hub`` / ``push_hub_fields`` as well as its own hub_post.
+    monkeypatch.setattr(gta, "hub_post", fake_hub_post)
+    monkeypatch.setattr(taa, "hub_post", fake_hub_post)
+    monkeypatch.setattr(taa, "hub_put", fake_hub_put)
+    monkeypatch.setattr(taa, "_local_mode_share_blocked", lambda: False)
+    monkeypatch.setattr(Task, "share", fake_share)
+    monkeypatch.setattr(Task, "create_child", fake_create_child)
+    return {"posts": posts, "puts": puts, "children": created_children}

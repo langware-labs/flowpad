@@ -3870,11 +3870,11 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     # target locally as remote=True so the Organization tab / member list shows
     # it immediately, and notify so the UI repaints.
     if membership_target is not None and membership_target.target_type == BuiltinEntityType.TASK.value:
-        # Member-task invitation: pull the real task (+ its group parent) from
-        # the hub — the generic membership mirror below only carries name/icon
-        # and would materialize a husk.
+        # Task invitation: pull the real task (+ its group parent, if it has one)
+        # from the hub — the generic membership mirror below only carries
+        # name/icon and would materialize a husk.
         try:
-            from flow_sdk.app.actions.group_task_action import (  # noqa: PLC0415
+            from flow_sdk.app.actions.task_receive import (  # noqa: PLC0415
                 materialize_accepted_task_invitation,
             )
 

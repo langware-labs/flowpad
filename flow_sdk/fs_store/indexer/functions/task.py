@@ -19,7 +19,6 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from flow_sdk._compat import StrEnum
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer._frontmatter import (
@@ -84,25 +83,12 @@ TASK_FRONTMATTER_FIELDS = (
 )
 
 # ---------------------------------------------------------------------------
-# Domain enums (moved from flow_sdk/fs_records/task.py)
+# Domain enums live on the ENTITY — ``flow_sdk.builtin.task`` declares
+# ``TaskStatus`` / ``TaskType`` / ``TaskKind``. This module used to carry a second
+# copy of all three (unused here, and free to drift from the ones the entity
+# actually validates against); import them from there if this module ever needs
+# one. One type registry, one enum per typed value.
 # ---------------------------------------------------------------------------
-
-
-class TaskStatus(StrEnum):
-    TO_DO = "to_do"
-    IN_PROGRESS = "in_progress"
-    DONE = "done"
-
-
-class TaskType(StrEnum):
-    TASK = "Task"
-    ANALYSIS = "analysis"
-    SKILL_CREATION = "skill_creation"
-
-
-class TaskKind(StrEnum):
-    STANDARD = "standard"
-    GROUP = "group"
 
 
 # ---------------------------------------------------------------------------

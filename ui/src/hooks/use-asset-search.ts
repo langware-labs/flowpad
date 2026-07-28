@@ -97,12 +97,15 @@ export function useAssetSearch(params: UseAssetSearchParams): UseAssetSearchResu
         .then((data: unknown) => {
           if (cancelledRef.current) return;
           const d = data as { results?: SearchResult[]; total?: number } | null;
-          const rows = d?.results ?? [];
-          // Member tasks (group-task children) live in their group task's
-          // editor ("Member tasks" section), not the asset lists.
-          const visible = recordType === 'task' ? rows.filter((r) => !r.parent_id) : rows;
-          setResults(visible);
-          setTotal((d?.total ?? 0) - (rows.length - visible.length));
+          // Child tasks are NOT filtered out. They used to be, on the theory
+          // that a member task belongs in its group task's editor — but that
+          // assumes the parent is local, and on the ASSIGNEE's machine the
+          // parent is a read-only mirror, so the one row they actually own
+          // vanished from every list. The asset tree nests children under a
+          // present parent and roots the rest (`buildTaskTree`), which is the
+          // right place for that presentation decision.
+          setResults(d?.results ?? []);
+          setTotal(d?.total ?? 0);
           setIsLoading(false);
         })
         .catch(() => {

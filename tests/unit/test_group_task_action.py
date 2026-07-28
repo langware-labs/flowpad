@@ -5,11 +5,8 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.app.actions.group_task_action import (
-    _group_members,
-    _member_asset_ref,
-    _safe_task_folder_name,
-)
+from flow_sdk.app.actions.group_task_action import _group_members
+from flow_sdk.app.actions.task_receive import _member_asset_ref, _safe_task_folder_name
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.task import extract_task
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
