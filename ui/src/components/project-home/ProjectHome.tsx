@@ -1,4 +1,5 @@
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
+import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitChecksDialog';
 import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
 import { GitShareGateDialog } from '@src/components/share-to-conversation/GitShareGateDialog';
 import type { GitShareGate } from '@src/hooks/use-git-share-gate';
@@ -188,23 +189,12 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
         </div>
       )}
       {gitChecks && (
-        <div
-          className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border/50 px-4 py-2 text-xs"
-          data-testid="project-git-checks"
-        >
-          {gitChecks.map((check) => (
-            <span key={check.id} className="inline-flex items-center gap-1.5">
-              <span
-                aria-hidden
-                className={`h-1.5 w-1.5 rounded-full ${
-                  check.ok === true ? 'bg-green-500' : check.ok === false ? 'bg-red-500' : 'bg-muted-foreground/50'
-                }`}
-              />
-              <span className="text-muted-foreground">{check.label}</span>
-              {check.detail && <span className="text-muted-foreground/70">— {check.detail}</span>}
-            </span>
-          ))}
-        </div>
+        <ProjectGitChecksDialog
+          open
+          onOpenChange={(next) => !next && setGitChecks(null)}
+          checks={gitChecks}
+          onSetupRepo={gitGate.runSetup}
+        />
       )}
       {gitGateState === 'blocked' && gitGateReason && (
         <div className="border-b border-red-300 bg-red-50 px-4 py-2 text-xs text-red-800" data-testid="project-git-access-warning">
