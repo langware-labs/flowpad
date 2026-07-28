@@ -2,11 +2,10 @@ import {
   MarkdownEditor,
   type WikiLinkTarget,
 } from '@src/components/assets/editor/markdown/MarkdownEditor';
-import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { Agent, AgenticProcess, AgentKind, FSRef, ProcessKind } from '@sdk';
+import { Agent, AgentKind, FSRef } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useCallback, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
@@ -30,15 +29,10 @@ interface AgentAssetEditorProps {
 }
 
 /**
- * Agent files render two surfaces, keyed on different `target_typeid_str`
- * values so they own separate AgenticProcess rows:
- *
- *   - Side-drawer editor process — generic, no agent embed,
- *     keyed on `fsRef.vpath` (the file's compute-node-rooted VFS path).
- *     Same surface every other doc gets.
- *   - Bottom agent execution — keyed on the agent entity's typeId; first
- *     send calls `loadEmbeddedAgent` so subsequent turns adopt the agent
- *     persona (see compose_prompt single-agent branch).
+ * Agent files render the standard markdown editor plus a "Use agent" action.
+ * The side-drawer editor process is generic (no agent embed), keyed on
+ * `fsRef.vpath` (the file's compute-node-rooted VFS path) — the same surface
+ * every other doc gets.
  */
 export function AgentAssetEditor({
   fsRef,
@@ -55,17 +49,9 @@ export function AgentAssetEditor({
   // to the same file post mount-path fix, but the entity-derived ref is the
   // explicit source of truth.
   const editorRef = agent?.doc ?? fsRef;
-  const sourcePath = agent?.asset_ref ?? fsRef.path;
-  const loadAgent = useCallback(
-    async (proc: AgenticProcess) => {
-      await proc.loadEmbeddedAgent(sourcePath);
-    },
-    [sourcePath],
-  );
   // chatTarget MUST be the entity's TypeId — MarkdownEditor builds `new TypeId(chatTarget)`
   // and uses it as docTypeId. Passing a path here is what caused the "Invalid typeId" crash.
   const chatTarget = agent ? agent.typeId.toString() : null;
-  const agentExecutionTarget = agent ? agent.typeId.toString() : null;
   const { navigation } = useDockNavigation();
   const { project } = useProject();
   const onDelete = useCallback(async () => {
@@ -123,17 +109,6 @@ export function AgentAssetEditor({
           wikiLinkTarget={wikiLinkTarget}
         />
       </div>
-      {agentExecutionTarget && (
-        <div className="h-[300px] flex-shrink-0 border-t" data-testid="agent-execution">
-          <EntityExecutionPanel
-            target={agentExecutionTarget}
-            processType={ProcessKind.Execution}
-            onProcessCreated={loadAgent}
-            headerLabel="Agent execution"
-            className="h-full"
-          />
-        </div>
-      )}
     </div>
   );
 }

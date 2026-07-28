@@ -29,9 +29,9 @@ const TEXTAREA = '[data-testid="entity-execution-input"]';
  * panel resolves to is still "<recordType>-<uuid>".
  */
 // Fixtures must be ENTITIES the qa instance has indexed (so asset_ref resolves).
-// agent/skill editors EMBED the EntityExecutionPanel (composer always visible) —
-// the canonical-grammar resolution + target binding is the regression guard and
-// is identical across editors (same `chatTarget` = entity TypeId). The
+// The skill editor EMBEDS the EntityExecutionPanel (composer always visible) —
+// the canonical-grammar resolution + target binding is the regression guard.
+// (The agent editor no longer embeds an execution panel at all.) The
 // markdown-family editors (plan/claude_md/claude_memory) reach the SAME panel
 // via a Chat side-tab; covered structurally by the markdown-editor tests and
 // not re-driven here because the headless side-tab activation is unreliable.
@@ -42,14 +42,12 @@ const TEXTAREA = '[data-testid="entity-execution-input"]';
 // fs-records DELETE endpoint. Never assume these files pre-exist — squatting
 // fixtures in global dirs are indistinguishable from test leaks and get
 // wiped by cleanups.
-const FIXTURE_AGENT = 'qa-docchat-agent-fixture';
 const FIXTURE_SKILL = 'qa-docchat-skill-fixture';
 // Project-SCOPED fixtures: the asset editors resolve a vfs path under the vault
 // root (the project mount), so a user-scope ~/.claude doc is NOT vfs-addressable
 // and its chat panel never mounts. Each entry's `machinePath` (the vault-relative
 // vfs path) + `id` are filled in beforeAll from the scoped create's asset_ref.
 const DOCS: Array<{ type: string; editor: string; name: string; machinePath: string; id: string }> = [
-  { type: 'agent', editor: 'agent', name: FIXTURE_AGENT, machinePath: '', id: '' },
   { type: 'skill', editor: 'skill', name: FIXTURE_SKILL, machinePath: '', id: '' },
 ];
 
@@ -78,10 +76,9 @@ function vfsUrl(editor: string, machinePath: string): string {
 }
 
 /**
- * Reveal the doc-chat panel. The `agent` editor embeds the EntityExecutionPanel
- * directly; the `skill` editor keeps it behind its own "Chat" tab that must be
- * selected. (The markdown editor's side-window Chat tab was removed — the
- * markdown-family doc types are intentionally not driven here.)
+ * Reveal the doc-chat panel. The `skill` editor keeps it behind its own "Chat"
+ * tab that must be selected. (The markdown editor's side-window Chat tab was
+ * removed — the markdown-family doc types are intentionally not driven here.)
  */
 async function openChatPanel(page: Page) {
   // After the goto, the asset-editor loader normalizes the URL (it appends view
@@ -92,7 +89,7 @@ async function openChatPanel(page: Page) {
   // re-nav churn settle with a passive wait before probing. This is first-paint/
   // post-redirect synchronization, NOT a raised cap to ride past a slow path.
   await page.waitForTimeout(9_000);
-  // agent embeds the composer directly; skill keeps it behind a "Chat" side-tab.
+  // skill keeps the composer behind a "Chat" side-tab.
   const ta = page.locator(`${TEXTAREA}:visible`).first();
   if (await ta.isVisible({ timeout: 8_000 }).catch(() => false)) return;
   const chatTab = page.getByRole('button', { name: 'Chat', exact: true }).first();
@@ -176,31 +173,6 @@ test.describe('doc-chat per type', () => {
       expect(await page.locator('[data-testid="entity-execution-status"]:visible').count()).toBe(0);
       await expect(page.locator('[data-testid="entity-execution-history"]:visible').first()).toBeDisabled();
     }
-  });
-
-  test('test 4: target changes when switching between doc-type editors (in-app nav)', async ({ page }) => {
-    test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('viewMode', 'advanced'));
-    await dismissSetupModal(page);
-
-    // skill → agent editor: the target string must change type.
-    await page.goto(vfsUrl('skill', DOCS.find((d) => d.type === 'skill')!.machinePath));
-    await openChatPanel(page);
-    let tFirst = '';
-    await expect(async () => {
-      const t = await readPanelTarget(page);
-      expect(t).toMatch(/^skill-[0-9a-f-]{36}$/);
-      tFirst = t!;
-    }).toPass({ timeout: 20_000 });
-
-    await page.goto(vfsUrl('agent', DOCS.find((d) => d.type === 'agent')!.machinePath));
-    await openChatPanel(page);
-    await expect(async () => {
-      const t = await readPanelTarget(page);
-      expect(t).toBeTruthy();
-      expect(t).not.toBe(tFirst);
-      expect(t!).toMatch(/^agent-[0-9a-f-]{36}$/);
-    }).toPass({ timeout: 20_000 });
   });
 
   test('test 2: first send lazy-creates a process; status transitions to a terminal DONE', async () => {
