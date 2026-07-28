@@ -13,17 +13,17 @@ test 1: Doc-chat panel mounts on every editable doc-type with asset_ref-resolved
 > EDITOR_TYPES); agent→agent, skill→skill. Fixtures must be ENTITIES the instance
 > has indexed (so asset_ref → TypeId resolves via useEntityByPath).
 >
-> SCOPE: the agent and skill editors EMBED the EntityExecutionPanel (composer
-> always visible) and are the per-type regression guard here. The markdown-family
+> SCOPE: the skill editor EMBEDS the EntityExecutionPanel (composer always
+> visible) and is the per-type regression guard here. The agent editor no longer
+> embeds an execution panel at all (removed 2026-07-28). The markdown-family
 > editors reach the SAME panel via a Chat side-tab keyed by the same `chatTarget`
 > (entity typeid) — covered structurally by the markdown-editor tests; not
 > re-driven here because the headless Chat side-tab activation is unreliable.
 >
 - compute node typeid = `compute_node-<bootstrap default_compute_node.id>`
 - for each editable doc-type, open `{APP_URL}/dock/assets/editor/<editor>/vfs/<computeNodeTypeId>/<relPath>`:
-  - agent: editor=agent, path `~/.claude/agents/qa-docchat-agent-fixture.md`
   - skill: editor=skill, path `~/.claude/skills/qa-docchat-skill-fixture`
-  - (both fixtures are SELF-PROVISIONED by the test's beforeAll — written to
+  - (the fixture is SELF-PROVISIONED by the test's beforeAll — written to
     disk, indexed, then fully purged in afterAll. They must never be assumed
     to pre-exist on the machine.)
 - validate `[data-testid="entity-execution-panel"]` is present
@@ -66,15 +66,9 @@ Before the fix, hydrating history would replay assistant-START events and the in
 latched on "Thinking" with no completion event to clear it. This test will fail if that
 filter is removed.
 
-test 4: target prop changes when switching between doc-type editors (asset_ref invalidation)
-- open the plan URL; capture EntityExecutionPanel.target as `t_plan`
-- navigate to the agent URL via the same browser tab (in-app navigation, not full reload)
-- validate the new EntityExecutionPanel.target !== `t_plan` and starts with `agent-`
-- validate the chat panel resets — no leftover messages from plan visible — because `useEffect([targetStr])` clears `selectedProcessId`/`forceNew`
-
-INVARIANT: when the editor pointer changes type, the upstream target string changes →
-EntityExecutionPanel re-keys its picker state and `useProcessesForTarget(targetStr)` queries
-fresh.
+test 4: REMOVED 2026-07-28 — it navigated between two editors that each embed the
+panel, and `skill` is now the only such editor (the agent editor's execution panel
+was removed). Re-add it if a second doc type ever embeds the panel directly.
 
 test 5 (BUG already in app — keep as known issue, don't fail the run):
 - on first send to a fresh markdown doc, console may emit "Cannot update a component
