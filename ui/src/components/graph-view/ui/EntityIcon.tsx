@@ -2,6 +2,7 @@ import { useLingui } from '@lingui/react/macro';
 import type { APIEntity } from '@sdk';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { glyphActionClassName } from '@src/components/entity-actions/action-button-styles';
+import { WikiTip } from '@src/components/wiki-tip';
 import { openExternal } from '@src/lib/open-external';
 import { cn } from '@src/lib/utils';
 import { Cloud, GitBranch, HardDrive, type LucideProps } from 'lucide-react';
@@ -84,21 +85,39 @@ type LocationSpec = {
   onActivate?: () => void;
 };
 
+/** The wiki page that explains what these three glyphs mean. */
+const LOCATION_WIKI_PAGE = 'Where your assets live';
+
 /**
- * Render one location glyph, with the tooltip it always has and the activation
- * it only sometimes has. `onActivate` absent ⇒ a plain, inert glyph (what every
- * list renders); present ⇒ a button that goes to that location. The frame sits
- * inside clickable rows, so activation must never also select/navigate the entity.
+ * Render one location glyph, with the tip it always has and the activation it
+ * only sometimes has. `onActivate` absent ⇒ a plain, inert glyph under a plain
+ * tooltip (what every list renders); present ⇒ a button that goes to that
+ * location, under a WikiTip whose Learn-more explains the location itself. The
+ * frame sits inside clickable rows, so activation must never also select the
+ * entity.
+ *
+ * The tooltip/hover-card split is not cosmetic: a tooltip is `pointer-events:
+ * none`, so a Learn-more inside one could never be clicked. It also keeps lists
+ * cheap — they pass no link props, so they never build a hover card.
  *
  * A plain function, not a component: it holds no hooks, and every list row would
  * otherwise pay for an extra fiber per glyph.
  */
-function locationGlyph(spec: LocationSpec, size: number): ReactElement {
+function locationGlyph(spec: LocationSpec, size: number, learnMore: string): ReactElement {
   const { key, Icon, className, label, showTooltip, onActivate } = spec;
   const glyph = (
     <Icon size={size} className={cn('shrink-0', className)} data-location-glyph={key} aria-hidden="true" />
   );
-  const body = onActivate ? (
+  if (!onActivate) {
+    if (!showTooltip || !label) return glyph;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{glyph}</TooltipTrigger>
+        <TooltipContent>{label}</TooltipContent>
+      </Tooltip>
+    );
+  }
+  const button = (
     <button
       type="button"
       onClick={(e: MouseEvent<HTMLButtonElement>) => {
@@ -112,15 +131,12 @@ function locationGlyph(spec: LocationSpec, size: number): ReactElement {
     >
       {glyph}
     </button>
-  ) : (
-    glyph
   );
-  if (!showTooltip || !label) return body;
+  if (!showTooltip || !label) return button;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{body}</TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <WikiTip wikiword={LOCATION_WIKI_PAGE} fragment={key} label={label} linkText={learnMore}>
+      {button}
+    </WikiTip>
   );
 }
 
@@ -152,6 +168,7 @@ function EntityIconFrame({
   const locationSize = Math.max(8, typeSize - 4);
   const locationLabel = useEntityLocationLabel(remote);
   const compositeLabel = [ariaLabel, locationLabel].filter(Boolean).join(', ') || undefined;
+  const learnMore = t`Learn more`;
 
   // One entry per location this entity can be reached at, in glyph order. The
   // `unknown` case simply contributes nothing, and "is anything activatable"
@@ -162,7 +179,7 @@ function EntityIconFrame({
       key: 'cloud',
       Icon: Cloud,
       className: 'text-cloud',
-      label: cloudUrl ? t`Open on the cloud` : locationLabel,
+      label: cloudUrl ? t`On the cloud, click to open.` : locationLabel,
       showTooltip: showLocationTooltip,
       onActivate: cloudUrl ? () => openExternal(cloudUrl) : undefined,
     });
@@ -171,7 +188,7 @@ function EntityIconFrame({
       key: 'local',
       Icon: HardDrive,
       className: 'text-muted-foreground',
-      label: onRevealLocal ? t`Reveal in the file browser` : locationLabel,
+      label: onRevealLocal ? t`Local file, click to reveal.` : locationLabel,
       showTooltip: showLocationTooltip,
       onActivate: onRevealLocal,
     });
@@ -181,7 +198,7 @@ function EntityIconFrame({
       key: 'git',
       Icon: GitBranch,
       className: 'text-muted-foreground',
-      label: gitLabel ? t`Open ${gitLabel}` : t`Open in repository`,
+      label: gitLabel ? t`In git (${gitLabel}), click to open.` : t`In git, click to open.`,
       showTooltip: showLocationTooltip,
       onActivate: () => openExternal(gitUrl),
     });
@@ -204,7 +221,7 @@ function EntityIconFrame({
       aria-hidden={ariaHidden || undefined}
     >
       {specs.map((spec) => (
-        <Fragment key={spec.key}>{locationGlyph(spec, locationSize)}</Fragment>
+        <Fragment key={spec.key}>{locationGlyph(spec, locationSize, learnMore)}</Fragment>
       ))}
       {children}
     </span>
