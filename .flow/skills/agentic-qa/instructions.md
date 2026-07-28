@@ -6,6 +6,11 @@
 
 ## Testing Environment
 
+- Focused run (2026-07-28, Hub Wiki editor toolbar): OSS desktop UI
+  `http://localhost:5025` configured directly against Hub
+  `http://localhost:8093`, Playwright Chromium on macOS. The folder-backed
+  Wiki resolved and downloaded its main ref from Hub with all graph requests
+  returning 200 and no console errors.
 - Focused run (2026-07-27, document-to-worker handoff): isolated `assetvibe-24`
   backend `http://127.0.0.1:6024` and production-preview frontend
   `http://127.0.0.1:5122`, local Playwright Chromium on macOS. One tester held
@@ -31,6 +36,16 @@
 - Last cycle (2026-05-30, record-removal branch): backend 9008 + frontend 4098 both reachable (HTTP 200) throughout. Phases 1-4 green (1522 / 441 / 51 / 907). 1 real fix (bootstrap `types` shape, 4 tests). No port conflicts this run.
 
 ## Learnings
+
+### 2026-07-28 — Hub Wiki editor-toolbar stability
+
+- Sample the top editor header on animation frames during a fresh direct-Hub
+  navigation. The settled plain Wiki contract is exactly `Share` + `Original`;
+  `View` / `Review` / `Editor` / `Markdown` appearing in any sampled frame is
+  the regression signature.
+- The folder-backed path is proven end-to-end by the Hub requests for
+  `wiki/<id>/resolve`, `skill/<id>/record/refs`, and
+  `skill/<id>/fs/download/SKILL.md`, not merely by rendered text.
 
 ### 2026-07-27 — Document Discuss to alternative-worker continuation
 
