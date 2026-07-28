@@ -149,6 +149,38 @@ def _write_asset(root: Path, type_name: str, name: str) -> Path:
             _TASK_MD.format(tid=str(uuid.uuid4()), name=name), encoding="utf-8"
         )
         return target
+    if type_name == "plan":
+        target = root / ".claude" / "plans" / f"{name}.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f"---\ntitle: {name}\n---\n\n# {name}\n\nfixture plan\n", encoding="utf-8")
+        return target
+    if type_name == "claude_rules":
+        target = root / ".claude" / "rules" / f"{name}.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f"# {name}\n\nfixture rule\n", encoding="utf-8")
+        return target
+    if type_name == "whiteboard":
+        # whiteboard_fn requires the WHITE_BOARD.md marker; board.json is the
+        # scene the editor loads.
+        target = root / ".claude" / "whiteboards" / name
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "WHITE_BOARD.md").write_text(
+            f'---\nname: {name}\ndescription: ""\n---\n\n# {name}\n', encoding="utf-8"
+        )
+        (target / "board.json").write_text(
+            '{"kind":"excalidraw","version":1,"data":{"elements":[],"appState":{},"files":{}}}',
+            encoding="utf-8",
+        )
+        return target
+    if type_name == "spec":
+        # Repo-asset family like task; spec's asset_ref is the inner spec.md.
+        target = root / "agentic-assets" / "spec" / name
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "spec.md").write_text(
+            f"---\nid: {uuid.uuid4()}\ntitle: {name}\nspec_type: plan\n---\n\n# {name}\n\nfixture spec\n",
+            encoding="utf-8",
+        )
+        return target
     raise ValueError(f"unsupported fixture asset type: {type_name}")
 
 
