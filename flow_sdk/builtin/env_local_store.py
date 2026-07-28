@@ -9,14 +9,27 @@ value never travels when the project's folder is git-shared.
 Invariant: ``write_env_local`` force-adds ``.env.local`` to the project's
 ``.gitignore`` BEFORE writing, and refuses to write if that assertion cannot be
 established. See ``docs/secret_share.md``.
+
+Two read surfaces, deliberately split by side effect:
+
+* :func:`list_env_local` and :func:`gitignore_status` are **read-only**. They
+  never touch the filesystem's contents — ``gitignore_status`` in particular
+  must not be confused with :func:`ensure_gitignored`, which *appends* a line.
+* :func:`list_env_local` returns **key names and line numbers only, never
+  values**. Naming a key is safe; the value is what must not travel.
+
+There is deliberately **no delete helper**. Flowpad never removes an entry from
+a user's ``.env.local`` — the app (vite, dotenv, whatever else the project runs)
+loads that file, and keeping it in sync is the user's business, not ours.
 """
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from dotenv import dotenv_values, set_key, unset_key
+from dotenv import dotenv_values, set_key
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.project import Project
@@ -26,6 +39,25 @@ logger = logging.getLogger(__name__)
 ENV_LOCAL_FILENAME = ".env.local"
 _GITIGNORE_FILENAME = ".gitignore"
 _GITIGNORE_LINE = ".env.local"
+
+# ``FOO=``/``export FOO=`` — the assignment forms dotenv recognizes. Anchored on
+# the key so the value (everything past the ``=``) is never captured.
+_ASSIGNMENT_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
+
+# gitignore_status result codes.
+GITIGNORE_NO_DIR = "no-project-dir"
+GITIGNORE_NOT_A_REPO = "not-a-repo"
+GITIGNORE_IGNORED = "ignored"
+GITIGNORE_NOT_IGNORED = "not-ignored"
+GITIGNORE_GIT_FAILURE = "git-failure"
+
+_REASONS = {
+    GITIGNORE_NO_DIR: "The project has no readable folder on this machine.",
+    GITIGNORE_NOT_A_REPO: "Not a git repository — nothing for a value to leak into.",
+    GITIGNORE_IGNORED: ".env.local is excluded by git.",
+    GITIGNORE_NOT_IGNORED: ".env.local is NOT excluded by git — values would be committable.",
+    GITIGNORE_GIT_FAILURE: "Could not ask git whether .env.local is ignored.",
+}
 
 
 class EnvLocalNotWritable(RuntimeError):
@@ -44,6 +76,106 @@ def _project_dir(project: "Project") -> Optional[Path]:
 def _env_path(project: "Project") -> Optional[Path]:
     d = _project_dir(project)
     return (d / ENV_LOCAL_FILENAME) if d is not None else None
+
+
+def env_local_path(project: "Project") -> Optional[Path]:
+    """The project's ``.env.local`` path, whether or not the file exists.
+
+    Public because callers need somewhere to point the user (the editor
+    deep-link on the detected-keys table opens exactly this path).
+    """
+    return _env_path(project)
+
+
+def list_env_local(project: "Project") -> list[dict[str, Any]]:
+    """Key names present in the project's ``.env.local``, with line numbers.
+
+    **Names only — a value is never read, returned, or logged.** That is why
+    this parses by hand instead of calling ``dotenv_values``: the latter
+    materializes every value just to hand back the keys.
+
+    Duplicate keys collapse to the **last** definition, matching dotenv's
+    last-wins resolution, so the reported line is the one actually in effect.
+    Results are ordered by that effective line.
+    """
+    path = _env_path(project)
+    if path is None or not path.exists():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:  # noqa: BLE001
+        logger.warning("[env-local] could not read %s: %s", path, e)
+        return []
+
+    effective: dict[str, int] = {}
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = _ASSIGNMENT_RE.match(raw)
+        if match is None:
+            continue
+        effective[match.group(1)] = lineno
+
+    return [{"key": key, "line": line} for key, line in sorted(effective.items(), key=lambda kv: kv[1])]
+
+
+def gitignore_status(project: "Project") -> dict[str, Any]:
+    """Is ``.env.local`` excluded by git? **Read-only** — never mutates.
+
+    Asks git rather than reading ``.gitignore`` by hand, because only git
+    resolves the full rule set: ``*.local`` / ``.env*`` wildcards, a global
+    ``core.excludesFile``, nested ``.gitignore`` files, and — the case a
+    line-match gets backwards — a later ``!.env.local`` negation re-including
+    the file.
+
+    Returns ``{in_repo, ignored, code, reason}``. A missing folder or a repo-less
+    directory reports ``ignored=True``: there is no git history for a value to
+    leak into, which is the same call :func:`ensure_gitignored` already makes.
+    """
+    from flow_sdk.utils.git import _run_git  # noqa: PLC0415
+
+    d = _project_dir(project)
+    if d is None:
+        return {"in_repo": False, "ignored": True, "code": GITIGNORE_NO_DIR, "reason": _REASONS[GITIGNORE_NO_DIR]}
+
+    cwd = str(d)
+    try:
+        inside = _run_git(["git", "rev-parse", "--is-inside-work-tree"], cwd, timeout=10)
+        if inside.returncode != 0 or inside.stdout.strip() != "true":
+            return {
+                "in_repo": False,
+                "ignored": True,
+                "code": GITIGNORE_NOT_A_REPO,
+                "reason": _REASONS[GITIGNORE_NOT_A_REPO],
+            }
+        # check-ignore: 0 = ignored, 1 = not ignored, anything else = failure.
+        probe = _run_git(["git", "check-ignore", "-q", "--", ENV_LOCAL_FILENAME], cwd, timeout=10)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[env-local] gitignore probe failed for %s: %s", cwd, e)
+        return {
+            "in_repo": True,
+            "ignored": False,
+            "code": GITIGNORE_GIT_FAILURE,
+            "reason": _REASONS[GITIGNORE_GIT_FAILURE],
+        }
+
+    if probe.returncode == 0:
+        return {"in_repo": True, "ignored": True, "code": GITIGNORE_IGNORED, "reason": _REASONS[GITIGNORE_IGNORED]}
+    if probe.returncode == 1:
+        return {
+            "in_repo": True,
+            "ignored": False,
+            "code": GITIGNORE_NOT_IGNORED,
+            "reason": _REASONS[GITIGNORE_NOT_IGNORED],
+        }
+    logger.warning("[env-local] check-ignore exited %s for %s", probe.returncode, cwd)
+    return {
+        "in_repo": True,
+        "ignored": False,
+        "code": GITIGNORE_GIT_FAILURE,
+        "reason": _REASONS[GITIGNORE_GIT_FAILURE],
+    }
 
 
 def ensure_gitignored(project: "Project") -> bool:
@@ -96,10 +228,3 @@ def read_env_local(project: "Project", key: str) -> Optional[str]:
     if path is None or not path.exists():
         return None
     return dotenv_values(str(path)).get(key)
-
-
-def delete_env_local(project: "Project", key: str) -> None:
-    path = _env_path(project)
-    if path is None or not path.exists():
-        return
-    unset_key(str(path), key)
