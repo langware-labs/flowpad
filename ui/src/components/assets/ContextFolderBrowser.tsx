@@ -57,12 +57,9 @@ export function ContextFolderBrowser({ vfsPath, onNavigate, projectId }: Context
     (vfs: string) => {
       const locatorTypeId = vfsPath.typeId;
       if (!locatorTypeId) return;
-      // The file manager reports a VFS path (`compute_node-<id>/Users/…`), not a
-      // relative one. Without the strip the typeid rides into the pointer and
-      // comes back as part of the browsed path, which lists as an empty folder.
-      onNavigate(
-        DockPointer.forAssetFs(VFSPath.fromTypeId(locatorTypeId, normalizeRel(VFSPath.parse(vfs).entitySubPath))),
-      );
+      // SimpleFileManager reports a full VFS path on the LIVE compute node;
+      // re-stamp it onto the root's durable locator typeId.
+      onNavigate(DockPointer.forAssetFs(VFSPath.fromTypeId(locatorTypeId, VFSPath.parse(vfs).entitySubPath)));
     },
     [onNavigate, vfsPath],
   );

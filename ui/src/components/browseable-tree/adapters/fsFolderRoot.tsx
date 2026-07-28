@@ -39,8 +39,7 @@ export interface FsFolderRootDeps {
   /** Route-specific destination builder. It receives the complete canonical
    *  VFS identity, never a competing relative-path serialization. */
   pointerForVfs?: (path: VFSPath) => DockPointer;
-  /** Destination override for FILE rows only — see `FsNodeCtx.filePointerFor`.
-   *  Default: the same `pointerForVfs` folder grammar. */
+  /** Destination override for FILE rows only — see `FsNodeCtx.filePointerFor`. */
   filePointerForVfs?: (path: VFSPath) => DockPointer;
   /** When true, file/folder rows carry an `FsDragItem` drag payload so drop
    *  targets (e.g. the Assets context-folder rows) can accept them. */
@@ -132,7 +131,7 @@ interface FsNodeCtx {
    *  The Explorer leaves this unset: its body trims a file path down to the
    *  containing directory, so a file leaf just lands the table on that folder.
    *  The Assets `fs/` body has no such trim (a file path lists as an EMPTY
-   *  folder), so its roots pass `fsFileViewerPointer` here and a file leaf opens
+   *  folder), so its roots pass `fsFileViewerPointerForVfs` here and a file leaf opens
    *  the file in its viewer instead. */
   filePointerFor?: (path: VFSPath) => DockPointer;
   draggable: boolean;
@@ -142,18 +141,12 @@ interface FsNodeCtx {
   folderDrop?: (rel: string) => FsFolderDrop;
 }
 
-/** The canonical "open this file" pointer for an fs row: the row's VFS path put
+/** The "open this file" pointer for an fs row: the row's VFS identity put
  *  through `dockPointerForFile` — the same extension dispatch (markdown → the
  *  markdown editor, everything else → the code editor) the file manager's
  *  double-click uses, so the tree and the table open a file identically. */
-export function fsFileViewerPointer(typeId: TypeId, rel: string): DockPointer {
-  return fsFileViewerPointerForVfs(VFSPath.fromTypeId(typeId, normalizeRel(rel)));
-}
-
-/** `fsFileViewerPointer` on an already-resolved VFS identity — the form the
- *  node context hands out (it never re-serializes to a relative path). */
 export function fsFileViewerPointerForVfs(path: VFSPath): DockPointer {
-  return dockPointerForFile(path.rawPath);
+  return dockPointerForFile(path.absVfsPath);
 }
 
 function explorerCtx(typeId: TypeId, scope: ScopeFilter, locatorTypeId: TypeId = typeId): FsNodeCtx {
@@ -182,9 +175,6 @@ function fileNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
     label,
     icon: <File className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />,
     hasChildren: false,
-    // Roots whose body can't render a file path (Assets `fs/`) route the leaf to
-    // the file's viewer; the Explorer keeps the folder grammar and lands its
-    // table on the containing directory. See FsNodeCtx.filePointerFor.
     pointer: (ctx.filePointerFor ?? ctx.pointerFor)(vfsForRel(ctx, rel)),
     dragData: dragDataFor(ctx, id, rel, label, false),
   };
