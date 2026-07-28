@@ -73,10 +73,17 @@ export type SodStore = 'sodot' | 'env-local';
 export interface ProjectSecretOriginSummary {
   typeid: string;
   name: string;
+  /** Half of the identity — `(project_id, env_var)` is what names a secret. */
+  project_id?: string;
   env_var: string;
+  /** Where to FETCH from. Declaration detail, not identity: it may change
+   *  without the secret becoming a different secret. */
   kind: SecretOriginLocator['kind'] | string;
   locator: Partial<SecretOriginLocator>;
   scope: SecretPointerScope | string;
+  /** Which local store the wizard caches a provided value into. The backend has
+   *  always emitted this; the type omitted it. */
+  sod_store?: SodStore | string;
 }
 
 /** One row of the value-free resolve-status the Secrets card / wizard reads. */
@@ -88,13 +95,45 @@ export interface SecretResolveStatus {
   scope: string;
   sod_store: SodStore | string;
   status: 'available' | 'missing';
+  /** Which store on THIS machine can satisfy the declaration, if any. */
+  found_in?: 'env-local' | 'sodot' | 'provider' | null;
+  /** `missing-value` when nothing here can satisfy it — what a receiver of a
+   *  shared project sees for every secret they have not provided. */
+  warning?: 'missing-value' | null;
   setup_hint: {
     kind: string;
     sod_store: SodStore | string;
     provider_label: string;
     prompt: string;
     coming_soon?: boolean;
+    coord_fields?: string[];
   };
+}
+
+/** One `.env.local` key. Names and line numbers only — never a value. */
+export interface EnvLocalKey {
+  key: string;
+  /** 1-indexed line of the effective (last) definition, for the editor jump. */
+  line: number;
+  declared: boolean;
+}
+
+export interface EnvLocalStatus {
+  path: string | null;
+  exists: boolean;
+  gitignore: { in_repo: boolean; ignored: boolean; tracked?: boolean; code: string; reason: string };
+  /** A hard block: the file is committable, so no value may be written to it. */
+  blocked: boolean;
+  block_code: string | null;
+  block_reason: string | null;
+  keys: EnvLocalKey[];
+}
+
+/** One row of the opt-in drift check. */
+export interface SecretDriftStatus {
+  typeid: string;
+  env_var: string;
+  warning: 'value-changed' | null;
 }
 
 export interface ProjectContextFolderResolveResult {
@@ -502,6 +541,22 @@ export class Project extends APIEntity<Project> {
   async secretResolveStatus(): Promise<SecretResolveStatus[]> {
     const actionInfo = new ActionInfo('secret-resolve-status', Project.type, this.typeId.id, 'POST');
     const res = await dataManager.callAction<undefined, { secrets?: SecretResolveStatus[] }>(actionInfo);
+    return Array.isArray(res?.secrets) ? res!.secrets : [];
+  }
+
+  /** What is in the project's `.env.local`, and may we write to it?
+   *  Names and line numbers only — a value cannot cross this boundary. */
+  async envLocalStatus(): Promise<EnvLocalStatus | null> {
+    const actionInfo = new ActionInfo('env-local-status', Project.type, this.typeId.id, 'POST');
+    return (await dataManager.callAction<undefined, EnvLocalStatus>(actionInfo)) ?? null;
+  }
+
+  /** Which declared secrets hold a different value than when last provided.
+   *  Separate from resolveStatus because answering it requires fetching values,
+   *  so it runs only when someone is looking at the Secrets tab. */
+  async secretDriftStatus(): Promise<SecretDriftStatus[]> {
+    const actionInfo = new ActionInfo('secret-drift-status', Project.type, this.typeId.id, 'POST');
+    const res = await dataManager.callAction<undefined, { secrets?: SecretDriftStatus[] }>(actionInfo);
     return Array.isArray(res?.secrets) ? res!.secrets : [];
   }
 

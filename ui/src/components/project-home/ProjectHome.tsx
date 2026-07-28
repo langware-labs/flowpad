@@ -7,6 +7,7 @@ import apiClient from '@sdk/client';
 import { launchWizard, CapabilityKinds } from '@sdk';
 import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
 import type { PanelHandlers } from '@src/components/quick-create';
+import { EnvLocalCard } from './EnvLocalCard';
 import { SecretsCard } from './SecretsCard';
 import { HomeCustomizationCard } from './HomeCustomizationCard';
 import { VIBE_AGENTS_TAG, VibeAgentsCard } from './VibeAgentsCard';
@@ -231,7 +232,16 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
                 )}
               </TabsContent>
 
-              <TabsContent value="secrets">{project && <SecretsCard project={project} />}</TabsContent>
+              <TabsContent value="secrets">
+                {project && (
+                  <div className="flex flex-col gap-3">
+                    {/* Declarations first, then what was merely detected on
+                        disk — the model, in the order it reads. */}
+                    <SecretsCard project={project} />
+                    <EnvLocalCard project={project} />
+                  </div>
+                )}
+              </TabsContent>
             </Tabs>
           )}
         </div>
