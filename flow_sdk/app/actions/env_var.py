@@ -463,8 +463,13 @@ async def get_env_vars_table_action() -> ApiSuccessResponse:
         raise HTTPException(status_code=400, detail="Target entity not found")
 
     if target_entity.type == BuiltinEntityType.USER.value:
-        # In local mode, no OAuth providers; return empty table
-        return ApiSuccessResponse(data=EntityEnvVars(values=[]))
+        # A USER's table IS the provider table: one value-free OAUTH_PROVIDER_ID
+        # row per provider, merged against the user's own credentials for
+        # status. Returning an empty list here is why the Connections tab
+        # rendered nothing.
+        from flow_sdk.core.oauth import get_oauth_providers_as_env_table  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=await get_oauth_providers_as_env_table(target_entity))
     else:
         user_table = user.env_vars or EntityEnvVars(values=[])
         project_table = target_entity.env_vars or EntityEnvVars(values=[])
