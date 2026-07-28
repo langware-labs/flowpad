@@ -128,17 +128,15 @@ def normalize_secret_origin_kind(kind: Any) -> str:
 
 def _build_default_registry() -> SecretOriginDriverRegistry:
     from flow_sdk.builtin.drivers.env_local_secret_driver import EnvLocalSecretDriver
+    from flow_sdk.builtin.drivers.hub_secret_driver import HubSecretDriver
     from flow_sdk.builtin.drivers.local_secret_driver import LocalSecretDriver
 
     registry = SecretOriginDriverRegistry()
     registry.register(LocalSecretDriver())     # sodot (local encrypted store)
     registry.register(EnvLocalSecretDriver())  # project .env.local store
-    # External / hub provider slots — pointer travels, value can't resolve locally
-    # yet, so they route to the setup wizard.
-    registry.register(ProviderStubDriver(
-        "flowpad-hub", ("secret_id",), "Flowpad Hub",
-        "Hub-hosted secret fetch is coming soon — paste the value to cache it locally.",
-    ))
+    registry.register(HubSecretDriver())       # the hub — the system of record
+    # External provider slots — the pointer travels and materializes, but the
+    # value stays with the provider, so they route to the setup wizard.
     registry.register(ProviderStubDriver(
         "gcp", ("gcp_project", "secret", "version"), "Google Secret Manager",
         "Connect Google Secret Manager, or paste the value to cache it locally.",
