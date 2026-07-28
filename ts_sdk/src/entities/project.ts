@@ -3,7 +3,7 @@ import apiClient from '../client';
 import { QueryRequest } from '../FlowSync/query';
 import { ActionInfo, TypeId, gitOriginFromUrl, type GitOrigin } from '../models';
 import { DockPointerData } from '../models/DockPointer';
-import type { AssetDescriptor } from '../process/asset-descriptor';
+import type { AssetDescriptor, AssetSource } from '../process/asset-descriptor';
 import { isHubOnly } from '../utils/hub-runtime';
 import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
@@ -123,6 +123,73 @@ export interface ProjectCustomization {
   home_title?: string | null;
   /** True when `.flow/customization/home.png` exists → render it as background. */
   has_home_background?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Asset menu — 1:1 mirror of `flow_sdk/builtin/asset_menu.py`. Snake_case is the
+// wire's and is kept verbatim: new fields land on the backend model first, this
+// file only reflects them.
+//
+// The menu is STRUCTURE + COUNTS, never leaves. Type rows still load their
+// entities lazily from `/search` on expand, and the filesystem subtree under a
+// folder row stays lazy DFS browsing — nothing that is lazy today becomes eager
+// because of this payload.
+// ---------------------------------------------------------------------------
+
+/** One per-type row of a node's menu. Counts only — icon, label, and view-mode
+ *  tier are looked up from the bootstrap type registry the client already
+ *  holds, never re-sent per response. */
+export interface ProjectMenuGroup {
+  type_name: string;
+  /** Assets under THIS node's own directory. */
+  own_count: number;
+  /** Accumulated: own plus every descendant's, so a collapsed row tells the
+   *  truth about what is under it. */
+  count: number;
+}
+
+/** One directory in the menu: the project's own mount, or a context folder.
+ *  Recursive by construction — a context folder that is itself a Project
+ *  carries that Project's own context folders, 3+ levels deep. */
+export interface ProjectMenuNode {
+  /** Canonical POSIX path — the node's identity. */
+  path: string;
+  name: string;
+  /** 'project_dir' for the root, 'context_dir' for every descendant. */
+  source: AssetSource;
+  /** Distance from the root project (root = 0). */
+  depth: number;
+  /** Null when this folder is not a Project (then `children` is always empty —
+   *  only a Project has context folders of its own). */
+  project_id: string | null;
+  is_project: boolean;
+  /** The linked Folder entity, from `context_dir_infos`. */
+  folder_typeid: string | null;
+  /** "git" | "local" — git-backed folders render distinctly. */
+  origin_kind: string | null;
+  /** Null for non-project nodes. True when the project has no index sentinel,
+   *  so its zero counts mean "never scanned", not "empty". */
+  never_indexed: boolean | null;
+  groups: ProjectMenuGroup[];
+  children: ProjectMenuNode[];
+}
+
+export interface ProjectAssetMenu {
+  root: ProjectMenuNode;
+  truncated: boolean;
+}
+
+export interface ProjectAssetMenuOptions {
+  /** Narrow to these record types. Default: every browseable scannable type. */
+  types?: string[];
+  /** Recurse into context folders that are themselves Projects. Default true. */
+  recursive?: boolean;
+  /** Hard cap on DFS depth (root = 0). Backend clamps to 1..16. */
+  maxDepth?: number;
+}
+
+interface ProjectAssetMenuResponse {
+  menu?: ProjectAssetMenu;
 }
 
 interface ProjectContextFolderResolveResponse {
@@ -286,6 +353,45 @@ export class Project extends APIEntity<Project> {
     actionInfo.queryParameters = queryParameters;
     const response = await dataManager.callAction<void, { assets?: AssetDescriptor[] }>(actionInfo);
     return response?.assets ?? [];
+  }
+
+  /**
+   * The Assets menu for this project: per-type groups with counts, and the same
+   * nested under each context folder — recursively, because a context folder
+   * that is itself a Project has its own context folders. Counts accumulate, so
+   * a collapsed row already reports its whole subtree.
+   *
+   * Same action as {@link getAssets} (`project/{id}/get-assets`), menu mode —
+   * a sibling method rather than an option, because `getAssets`' flat
+   * `AssetDescriptor[]` return is consumed directly by the asset-manager
+   * surfaces and must not become a union.
+   *
+   * READ-ONLY: mints nothing, indexes nothing. A folder whose assets were never
+   * indexed counts zero (and its node flags `never_indexed`). Carries no leaves —
+   * type rows still load their entities from `/search` on expand.
+   *
+   * Returns null on a backend that predates menu mode, so callers can fall back.
+   */
+  async getAssetMenu(options?: ProjectAssetMenuOptions): Promise<ProjectAssetMenu | null> {
+    return Project.getAssetMenuById(this.typeId.id, options);
+  }
+
+  /** Static form for callers without a Project instance (mirrors `getAssetsById`). */
+  static async getAssetMenuById(
+    projectId: string,
+    options?: ProjectAssetMenuOptions,
+  ): Promise<ProjectAssetMenu | null> {
+    const actionInfo = new ActionInfo('get-assets', Project.type, projectId, 'GET');
+    // Backend kwarg names on the wire (`max_depth`); the SDK option stays
+    // camelCase. Arrays are pre-joined — query values are stringified one by one.
+    // `assets=false` skips the flat descriptor scan this caller would discard.
+    const queryParameters: Record<string, string | number> = { menu: 'true', assets: 'false' };
+    if (options?.types?.length) queryParameters.types = options.types.join(',');
+    if (options?.recursive === false) queryParameters.recursive = 'false';
+    if (options?.maxDepth != null) queryParameters.max_depth = options.maxDepth;
+    actionInfo.queryParameters = queryParameters;
+    const response = await dataManager.callAction<void, ProjectAssetMenuResponse>(actionInfo);
+    return response?.menu ?? null;
   }
 
   /**

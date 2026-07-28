@@ -13,6 +13,7 @@ import { useAssetStats } from '@src/hooks/use-asset-stats';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useAssetTreeRefresh } from '@src/hooks/useAssetTreeRefresh';
 import { useAddContextFolder } from '@src/hooks/use-add-context-folder';
+import { useProjectAssetMenu } from '@src/hooks/use-project-asset-menu';
 import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { useIsDev } from '@src/contexts/view-mode-context';
@@ -22,6 +23,7 @@ import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
 import {
+  ASSET_CONTEXT_FOLDERS_ROOT_ID,
   assetContextFolderNodeId,
   assetContextFoldersRoot,
 } from '@src/components/browseable-tree/adapters/assetContextFoldersRoot';
@@ -177,7 +179,28 @@ export function useAssetsModel() {
   }, [assetFilter, urlScope, openAssetBucket, openAssetId, suppressedAssetId]);
 
   const { stats: assetStats, isLoading: statsLoading } = useAssetStats(effectiveFilter.scope);
-  const typeCounts = useMemo(() => new Map(Object.entries(assetStats.per_type)), [assetStats.per_type]);
+
+  // The scoped project's server-computed menu: per-type counts for the project
+  // AND, nested under it, for every context folder (recursively). Backs both the
+  // type-row counts below and the nested rows under each context-folder row.
+  const { menu: assetMenu, nodesByPath: menuNodesByPath } = useProjectAssetMenu(scopeProject);
+
+  const typeCounts = useMemo(() => {
+    const counts = new Map(Object.entries(assetStats.per_type));
+    // Fold in the menu's accumulated counts, which INCLUDE the project's context
+    // folders — assets that are scope-invisible to `asset-stats` (they index as
+    // user-scope with no project id) and so never reached the menu before.
+    //
+    // Max, not replace: the two count different things and neither is a superset.
+    // The path-attributed menu can't see a non-file-backed type (`spec` has no
+    // `asset_ref`), while `asset-stats` can't see context folders. Taking the
+    // larger keeps every row that shows today and adds the ones that were
+    // missing — a count only ever gates a row IN.
+    for (const group of assetMenu?.root?.groups ?? []) {
+      counts.set(group.type_name, Math.max(counts.get(group.type_name) ?? 0, group.count));
+    }
+    return counts;
+  }, [assetStats.per_type, assetMenu]);
 
   // Dev mode sees every registered type regardless of count; everyone else only
   // sees types that actually have items in the current scope.
@@ -228,6 +251,9 @@ export function useAssetsModel() {
   // (and primes empty-at-mount roots) so the list never goes stale until a
   // manual refresh. See useAssetTreeRefresh.
   const visibleTypeNames = useMemo(() => visibleTypes.map((t) => t.type_name), [visibleTypes]);
+  // Same mode-filtered set the type roots are built from — handed to the
+  // context-folder adapter so its nested per-type rows honor the same gate.
+  const visibleTypeNameSet = useMemo(() => new Set(visibleTypeNames), [visibleTypeNames]);
   useAssetTreeRefresh(visibleTypeNames, effectiveFilter.scope);
   const creatableTypes = useMemo(
     () => new Set(allTypes.filter((t) => t.creatable).map((t) => t.type_name)),
@@ -273,6 +299,11 @@ export function useAssetsModel() {
   const handleRemoveContextDir = useCallback(
     async (dir: string) => {
       await removeContextDir(dir);
+      // Drop the root's cached children: the tree caches `listChildren` per node
+      // id, so rebuilding `roots` from the updated entity is not enough — an
+      // expanded root keeps rendering the rows it already fetched, leaving the
+      // removed folder on screen next to counts that already dropped.
+      refreshNode(ASSET_CONTEXT_FOLDERS_ROOT_ID);
       // If the body is showing the removed folder (or a subfolder of it), fall
       // back to the plain asset list so the view isn't stranded.
       const rel = normalizeRel(DockPointer.parseAssetFsPointer(effectivePointer)?.entitySubPath ?? '');
@@ -656,6 +687,8 @@ export function useAssetsModel() {
           onDropItem: handleDropIntoContextDir,
           onExternalDrop: handleExternalDropIntoContextDir,
           projectId: scopeProjectId,
+          menuByPath: menuNodesByPath,
+          visibleTypes: visibleTypeNameSet,
         }),
       );
     }
@@ -680,6 +713,8 @@ export function useAssetsModel() {
     handleRemoveContextDir,
     handleDropIntoContextDir,
     handleExternalDropIntoContextDir,
+    menuNodesByPath,
+    visibleTypeNameSet,
   ]);
   return {
     roots,
