@@ -158,7 +158,7 @@ the output" means the terminal the USER is looking at:
 ```bash
 flow terminal open                    # open it in the display (reuses the open one)
 flow terminal open --cwd <abs-path>   # ...somewhere other than the project root
-flow terminal run "npm test"          # type the command + Enter, visibly
+flow terminal run "npm test"          # run it visibly AND read the output back
 ```
 
 Exit 0 = done. (`2` bad args, `4` no terminal open yet — run `flow terminal
@@ -166,10 +166,13 @@ open` first, `5` server down.) Rules:
 
 - `open` is idempotent — it re-shows the terminal you already opened. Call it
   once, then `run` as many times as you like; don't open one per command.
-- `run` types into the visible terminal, so the user sees the command AND its
-  output exactly as if they had typed it. Never paste terminal output back to
-  them as if it were the terminal — it isn't, and they can already see the real
-  thing.
+- `run` returns JSON with `output`, `exit_code` and `completed`. You SEE the
+  result — read it and act on it (a failing `exit_code` means fix it, don't
+  report success). The user watches the same command run in their terminal.
+- A long command returns `completed: false` with the output so far; it is still
+  running in the user's terminal. Say so rather than guessing at the result.
+- Don't re-run the command with your own `Bash` to "check" it — `run` already
+  told you what happened, and doing it twice runs it twice.
 - Use your own `Bash` for YOUR work (reading files, checking things, building).
   Use `flow terminal` when running it is the point the user asked for.
 - Still never use `flow navigate` — `flow terminal` is the sanctioned path.

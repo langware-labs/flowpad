@@ -9,10 +9,15 @@ backend-owned PTY a guided journey types into, so agent-typed and user-typed
 commands are indistinguishable on screen.
 
     flow terminal open [--cwd PATH] [--command CMD]
-    flow terminal run "<command>" [--shell ID]
+    flow terminal run "<command>" [--shell ID] [--timeout SECONDS]
 
 ``open`` is idempotent: it re-shows the terminal this process already opened
 rather than stacking up new ones, so ``run`` needs no ``--shell``.
+
+``run`` returns the command's own ``output`` and ``exit_code`` alongside
+running it visibly — one call serves both the user and the caller. When the
+command outlives ``--timeout`` it keeps running in the user's terminal and the
+result comes back with ``completed: false`` and the output so far.
 
 The target process is the calling AgenticProcess (``FLOWPAD_EXECUTION_SCOPE``,
 injected into every worker) or an explicit ``--process``.
@@ -99,22 +104,26 @@ def terminal_open(
 
 @terminal_app.command(
     "run",
-    help="Type a command into the user-visible terminal and press Enter.",
+    help="Run a command in the user-visible terminal and return its output.",
 )
 def terminal_run(
     command: Annotated[
         str,
-        typer.Argument(help="The command to type, e.g. 'npm test'"),
+        typer.Argument(help="The command to run, e.g. 'npm test'"),
     ],
     shell: Annotated[
         Optional[str],
         typer.Option("--shell", help="Target Shell id (defaults to the terminal this process opened)."),
     ] = None,
+    timeout: Annotated[
+        float,
+        typer.Option("--timeout", help="Seconds to wait for the command to finish before returning partial output."),
+    ] = 120.0,
     process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
 ) -> None:
     if not command or not command.strip():
         _fail(EXIT_INVALID_ARG, "INVALID_COMMAND", "Empty command")
-    body: dict = {"command": command.strip()}
+    body: dict = {"command": command.strip(), "timeout": timeout}
     if shell and shell.strip():
         body["shell_id"] = shell.strip()
     _post_terminal(process, "terminal-input", body)
