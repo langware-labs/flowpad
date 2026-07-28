@@ -857,6 +857,12 @@ msgstr "Add context folder"
 msgid "Add entity link"
 msgstr "Add entity link"
 
+#: src/components/project-home/ProjectGitChip.tsx
+#: src/components/project-home/ProjectGitChip.tsx
+#: src/components/project-home/ProjectGitChip.tsx
+msgid "Add Git"
+msgstr "Add Git"
+
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Add Git folder"
 msgstr "Add Git folder"
@@ -1615,8 +1621,8 @@ msgid "Available on cloud"
 msgstr "Available on cloud"
 
 #: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
-msgid "Available when the agent is waiting for your input"
-msgstr "Available when the agent is waiting for your input"
+#~ msgid "Available when the agent is waiting for your input"
+#~ msgstr "Available when the agent is waiting for your input"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
@@ -2055,8 +2061,8 @@ msgstr "Changes ({0})"
 #~ msgstr "Changing worker requires a new chat. The current chat stays in history."
 
 #: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
-msgid "Chat"
-msgstr "Chat"
+#~ msgid "Chat"
+#~ msgstr "Chat"
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
@@ -2442,6 +2448,7 @@ msgstr "Cloning…"
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 #: src/components/login-required-dialog.tsx
+#: src/components/project-home/ProjectGitChecksDialog.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/tabs/TabStrip.tsx
@@ -2907,8 +2914,8 @@ msgid "Continue"
 msgstr "Continue"
 
 #: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
-msgid "Continue in vibe mode"
-msgstr "Continue in vibe mode"
+#~ msgid "Continue in vibe mode"
+#~ msgstr "Continue in vibe mode"
 
 #: src/journey/JourneyViewer.tsx
 msgid "Continue journey"
@@ -5795,6 +5802,10 @@ msgstr "Git is required to share files"
 msgid "git push"
 msgstr "git push"
 
+#: src/components/project-home/ProjectGitChecksDialog.tsx
+msgid "Git readiness"
+msgstr "Git readiness"
+
 #: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Git repo (optional)"
 msgstr "Git repo (optional)"
@@ -5802,6 +5813,10 @@ msgstr "Git repo (optional)"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Git repository"
 msgstr "Git repository"
+
+#: src/components/project-home/ProjectGitChip.tsx
+msgid "Git tooling installed"
+msgstr "Git tooling installed"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "GitHub connected"
@@ -6508,6 +6523,10 @@ msgstr "Install failed"
 #: src/components/version-popover/version-popover.tsx
 msgid "Install failed."
 msgstr "Install failed."
+
+#: src/components/project-home/ProjectGitChecksDialog.tsx
+msgid "Install gh"
+msgstr "Install gh"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -7591,7 +7610,6 @@ msgstr "members"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
-#: src/components/project-home/ProjectHome.tsx
 msgid "Members"
 msgstr "Members"
 
@@ -9236,6 +9254,10 @@ msgstr "Open"
 msgid "Open {0} on…"
 msgstr "Open {0} on…"
 
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "Open {gitLabel}"
+msgstr "Open {gitLabel}"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetPickerPopover.tsx
 msgid "Open {label}"
@@ -9440,6 +9462,10 @@ msgstr "Open in external terminal"
 msgid "Open in new tab"
 msgstr "Open in new tab"
 
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "Open in repository"
+msgstr "Open in repository"
+
 #: src/components/project-activity-strip/LearningCard.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
 msgid "Open in Skills tab"
@@ -9497,6 +9523,10 @@ msgstr "Open message"
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 msgid "Open new tab menu"
 msgstr "Open new tab menu"
+
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "Open on the cloud"
+msgstr "Open on the cloud"
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
@@ -11055,6 +11085,10 @@ msgstr "Reporting needs an internet connection"
 msgid "Repos"
 msgstr "Repos"
 
+#: src/components/project-home/ProjectGitChip.tsx
+msgid "Repository and remote configured"
+msgstr "Repository and remote configured"
+
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Repository name"
 msgstr "Repository name"
@@ -11253,6 +11287,10 @@ msgstr "Reveal in Finder/Explorer: {childPath}"
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Reveal in folder"
 msgstr "Reveal in folder"
+
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "Reveal in the file browser"
+msgstr "Reveal in the file browser"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #~ msgid "Reveal the message that produced this transcript"
@@ -12241,8 +12279,8 @@ msgid "Session is not running"
 msgstr "Session is not running"
 
 #: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
-msgid "Session mode"
-msgstr "Session mode"
+#~ msgid "Session mode"
+#~ msgstr "Session mode"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -12327,9 +12365,17 @@ msgstr "Set up an existing git repository as the context folder"
 msgid "Set up as this name"
 msgstr "Set up as this name"
 
+#: src/components/project-home/ProjectGitChecksDialog.tsx
+msgid "Set up Git"
+msgstr "Set up Git"
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Set up GitHub"
 msgstr "Set up GitHub"
+
+#: src/components/project-home/ProjectGitChecksDialog.tsx
+#~ msgid "Set up GitHub access first — the rest needs it."
+#~ msgstr "Set up GitHub access first — the rest needs it."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up project"
@@ -12619,6 +12665,7 @@ msgstr "sidechain"
 msgid "Sigma graph view"
 msgstr "Sigma graph view"
 
+#: src/components/project-home/ProjectGitChecksDialog.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Sign in"
 msgstr "Sign in"
@@ -12654,6 +12701,10 @@ msgstr "Sign in with your {account} to let {name} write and run code for you. A 
 #: src/components/account/user-info.tsx
 msgid "Signed in"
 msgstr "Signed in"
+
+#: src/components/project-home/ProjectGitChip.tsx
+msgid "Signed in to the remote"
+msgstr "Signed in to the remote"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Simple actions — click to show all git operations"
@@ -13241,8 +13292,8 @@ msgstr "Switch to light mode"
 #~ msgstr "Switch to terminal view"
 
 #: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
-msgid "Switching…"
-msgstr "Switching…"
+#~ msgid "Switching…"
+#~ msgstr "Switching…"
 
 #: src/components/graph-view/GraphView.tsx
 #~ msgid "Sync"
@@ -13376,7 +13427,6 @@ msgid "Template:"
 msgstr "Template:"
 
 #: src/components/project-home/ProjectHome.tsx
-#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
 msgid "Terminal"
 msgstr "Terminal"
 
@@ -13679,6 +13729,14 @@ msgstr "This process has no transcript session yet."
 #: src/pages/discover-page/discover-page.tsx
 msgid "This project has no assets yet."
 msgstr "This project has no assets yet."
+
+#: src/components/project-home/ProjectGitChecksDialog.tsx
+#~ msgid "This project is ready to publish and share over Git."
+#~ msgstr "This project is ready to publish and share over Git."
+
+#: src/components/project-home/ProjectGitChecksDialog.tsx
+#~ msgid "This project's folder needs a repository and a remote."
+#~ msgstr "This project's folder needs a repository and a remote."
 
 #: src/components/version-popover/diagnose-modal.tsx
 #~ msgid "This runs in the background — feel free to close this and keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
@@ -14448,8 +14506,8 @@ msgid "Version:"
 msgstr "Version:"
 
 #: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
-msgid "Vibe"
-msgstr "Vibe"
+#~ msgid "Vibe"
+#~ msgstr "Vibe"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Vibe agents"
@@ -14669,6 +14727,10 @@ msgstr "What do you need help with?"
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "What do you want to work on"
 msgstr "What do you want to work on"
+
+#: src/components/project-home/ProjectGitChecksDialog.tsx
+msgid "What Flowpad found when it checked this project's Git setup."
+msgstr "What Flowpad found when it checked this project's Git setup."
 
 #. placeholder {0}: tile.label
 #: src/components/quick-create/QuickCreatePanel.tsx
