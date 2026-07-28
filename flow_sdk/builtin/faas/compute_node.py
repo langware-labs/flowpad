@@ -1520,6 +1520,13 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     @asynccontextmanager
     async def ready_session(self):
+        """Bring the node up. Deliberately does NO secret work in any branch.
+
+        Loading is bound to Project.initialize, not to a state transition.
+        Resolving again on resume would be exactly the re-resolution "trust what
+        is there" rules out — and there is nothing on the node to refresh
+        anyway, since values are only ever a per-command prefix.
+        """
         current_status = await self.get_node_status()
         if current_status == ExecutionEnvironmentStatus.READY:
             await self.startup()

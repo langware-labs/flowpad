@@ -310,6 +310,11 @@ class ComputeSourceControl:
         if not initialize_options:
             initialize_options = ComputeSourceControlInitializeOptions()
 
+        # Deliberately `if env:` and not `self._env = env`. A later
+        # initialize(env=None) must KEEP what is already loaded — "trust what is
+        # there" — rather than silently unloading the secrets mid-session. There
+        # is nothing to invalidate: values only ever exist as a per-command
+        # prefix, so a stale _env cannot outlive the connector object.
         if env:
             self._env = env
 
