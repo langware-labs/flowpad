@@ -67,6 +67,40 @@ describe('AgenticProcess canonical history replay', () => {
     callActionSpy.mockRestore();
   });
 
+  it('retires the optimistic echo when history replays the same user message', async () => {
+    // The bug: `appendUserMessage` stamps the echo when the user hits SUBMIT and
+    // gives it no transcript id; the persisted row carries the id and the
+    // backend's RECORD time. Neither reconcile tier can match them, so the
+    // non-forced replay appended a second copy and the pane showed "hi" twice.
+    const history = [
+      historyItem('user-1', FlowElementTypes.USER_MESSAGE, 'hi', '2026-07-10T06:00:12.275Z', {
+        role: 'user',
+        subtype: 'user_message',
+      }),
+      historyItem('chat-1', FlowElementTypes.CHAT, 'Hey!', '2026-07-10T06:00:14.142Z', {
+        role: 'assistant',
+        subtype: 'assistant_message',
+      }),
+    ];
+    callActionSpy.mockResolvedValue({
+      history,
+      count: history.length,
+      session_id: 'session-echo',
+      use_worker_history: true,
+    } as never);
+    const process = new AgenticProcess({ id: PROCESS_ID });
+    // Submit-time echo: same text, earlier clock, no transcript id.
+    process.appendUserMessage('hi');
+    expect(process.getOutputs()).toHaveLength(1);
+
+    await process.loadHistory();
+
+    const userRows = process.getOutputs().filter((item) => item.elementType === FlowElementTypes.USER_MESSAGE);
+    expect(userRows).toHaveLength(1);
+    // The survivor is the persisted row, not the placeholder.
+    expect(transcriptEntryOf(userRows[0])?.id).toBe('user-1');
+  });
+
   it('force reload preserves complete repeated turns, adjacent chats, objects, and typed identity', async () => {
     const history = [
       historyItem('user-1', FlowElementTypes.USER_MESSAGE, 'same prompt', '2026-07-10T06:00:00.100Z', {
