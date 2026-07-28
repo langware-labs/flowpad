@@ -183,6 +183,25 @@ async def test_dirty(tmp_path, monkeypatch):
     res = await _preflight(monkeypatch, str(asset))
     assert res["available"] is False
     assert res["code"] == "dirty"
+    # A repo that can't be shared YET is still a repo. The origin is derived
+    # before the blocking check anyway, and callers that only want to NAME it
+    # (the project header's git chip) must not be told there isn't one —
+    # otherwise "dirty" is indistinguishable from "no remote".
+    assert res["git_origin"] is not None
+    assert res["git_origin"]["name"] == "Widgets"
+
+
+@pytest.mark.asyncio
+async def test_no_remote_names_nothing(tmp_path, monkeypatch):
+    """The other side of that: with no remote there is genuinely nothing to
+    name, so the origin stays null and a caller can offer to add one."""
+    repo = tmp_path / "repo"
+    _init(repo, remote=None)
+    asset = _skill(repo)
+    _commit(repo)
+    res = await _preflight(monkeypatch, str(asset))
+    assert res["code"] == "missing-remote"
+    assert res["git_origin"] is None
 
 
 @pytest.mark.asyncio

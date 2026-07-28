@@ -17,6 +17,12 @@ export interface GitSharePreflight {
   /** Stable machine code for the state (tests / branching). */
   code: string | null;
   /**
+   * The repo this asset comes from, when one could be derived — present even
+   * when `available` is false (a dirty tree still has an origin). Null only
+   * when there is genuinely no repo/remote to name.
+   */
+  origin: GitOriginInfo | null;
+  /**
    * True once the backend has answered for the current ref. IDLE and "available"
    * both carry `code: null`, so callers that branch on the code need this to
    * tell "not asked yet" from "asked, and it's fine".
@@ -31,6 +37,14 @@ export interface GitSharePreflight {
   refetch: () => void;
 }
 
+/** The subset of the backend `GitOrigin` a caller needs to name and link a repo. */
+export interface GitOriginInfo {
+  provider: string;
+  owner: string;
+  name: string;
+  branch?: string | null;
+}
+
 interface PreflightResponse {
   available: boolean;
   reason: string | null;
@@ -38,14 +52,29 @@ interface PreflightResponse {
   git_origin: Record<string, unknown> | null;
 }
 
+function toOrigin(raw: Record<string, unknown> | null | undefined): GitOriginInfo | null {
+  if (!raw) return null;
+  const { provider, owner, name, branch } = raw as Record<string, string | null | undefined>;
+  if (!provider || !owner || !name) return null;
+  return { provider, owner, name, branch: branch ?? null };
+}
+
 type PreflightState = Omit<GitSharePreflight, 'refetch'>;
 
-const IDLE: PreflightState = { loading: false, available: false, reason: null, code: null, answered: false };
+const IDLE: PreflightState = {
+  loading: false,
+  available: false,
+  reason: null,
+  code: null,
+  origin: null,
+  answered: false,
+};
 const FAILED: PreflightState = {
   loading: false,
   available: false,
   reason: 'Could not check Git eligibility.',
   code: 'status-failure',
+  origin: null,
   answered: true,
 };
 
@@ -87,6 +116,7 @@ export function useGitSharePreflight(
           available: !!res.available,
           reason: res.reason ?? null,
           code: res.code ?? null,
+          origin: toOrigin(res.git_origin),
           answered: true,
         });
       })
