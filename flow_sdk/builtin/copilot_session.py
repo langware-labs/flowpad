@@ -3,9 +3,10 @@
 Source: ``~/.copilot/session-state/<session_id>/events.jsonl`` discovered by the
 copilot indexer walker. The session id is the session-state directory name.
 """
+
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import ClassVar, Optional
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
@@ -24,5 +25,11 @@ class CopilotSession(Entity):
     cwd: str | None = APIField(default=None)
     slug: str | None = APIField(default=None)
     worker_session_id: str | None = APIField(default=None)
+    # The events JSONL — see ``ClaudeSession.asset_ref`` for why this must be
+    # declared rather than inherited from the record.
+    asset_ref: Optional[str] = APIField(None)
+    received: bool = APIField(default=False)
+
+    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = Entity.LOCAL_ONLY_FIELDS | frozenset({"received"})
 
     _api_visible: ClassVar[bool] = False

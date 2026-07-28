@@ -9384,8 +9384,8 @@ msgid "Open in terminal"
 msgstr "פתיחה בטרמינל"
 
 #: src/components/conversation/ConversationContextPanel.tsx
-msgid "Open in the transcript viewer"
-msgstr "פתח בתצוגת התמלול"
+#~ msgid "Open in the transcript viewer"
+#~ msgstr "פתח בתצוגת התמלול"
 
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 msgid "Open in Worktree"
@@ -9533,8 +9533,8 @@ msgid "Open the live session in a terminal"
 msgstr "פתח את החילוק החי בטרמינל"
 
 #: src/components/conversation/ConversationContextPanel.tsx
-msgid "Open the raw JSONL in a new tab"
-msgstr "פתח JSONL גולמי בכרטיסייה חדשה"
+#~ msgid "Open the raw JSONL in a new tab"
+#~ msgstr "פתח JSONL גולמי בכרטיסייה חדשה"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."
@@ -11184,8 +11184,8 @@ msgid "Reveal in folder"
 msgstr "הצג בתיקייה"
 
 #: src/components/conversation/ConversationContextPanel.tsx
-msgid "Reveal the message that produced this transcript"
-msgstr "חשוף את ההודעה שיצרה את התמלול הזה"
+#~ msgid "Reveal the message that produced this transcript"
+#~ msgstr "חשוף את ההודעה שיצרה את התמלול הזה"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Reveal the message this file is attached to"
@@ -12337,8 +12337,8 @@ msgid "Shared"
 msgstr "משותף"
 
 #: src/components/conversation/FlowMessageBubble.tsx
-msgid "Shared a session transcript — see the Context tab"
-msgstr "שיתוף תמלול הפעילות - ראה את כרטיסיית ההקשר"
+#~ msgid "Shared a session transcript — see the Context tab"
+#~ msgstr "שיתוף תמלול הפעילות - ראה את כרטיסיית ההקשר"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -13840,7 +13840,6 @@ msgstr "אירועי עקיבוי"
 msgid "Traceback ({0} lines)"
 msgstr "מעקב שגיאה ({0} שורות)"
 
-#: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Transcript"
 msgstr "תמלול"
@@ -14333,7 +14332,6 @@ msgid "Vibe agents"
 msgstr "סוכני Vibe"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx

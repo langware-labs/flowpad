@@ -20,16 +20,6 @@
 import { AgenticProcess, Conversation, FlowMessage, Task, TypeId } from '@sdk';
 import { AttachmentType, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 
-const TRANSCRIPT_FILENAME = 'conversation.jsonl';
-
-/** Detect the `conversation.jsonl` file attachment — surfaced as its own row
- *  in Shared Context rather than as a generic file. */
-export function isTranscriptAttachment(a: Attachment): boolean {
-  if (a.attachment_type !== AttachmentType.FILE) return false;
-  const d = attachmentDataString(a);
-  return !!d && d.endsWith(TRANSCRIPT_FILENAME);
-}
-
 // ─────────────────────────────────────────────────────────────────────────
 //  Row shapes
 // ─────────────────────────────────────────────────────────────────────────
@@ -62,13 +52,6 @@ export interface SharedEntityAgg extends OriginSet {
   /** The earliest message that contributed this entity as an attachment — the
    *  one whose `downloadAttachments()` the panel triggers. */
   downloadOriginMessageId?: string;
-}
-
-export interface TranscriptEntry extends OriginSet {
-  /** The FlowMessage whose attachment this is — used to build the download
-   *  URL and view affordances on the row. */
-  messageId: string;
-  attachment: Attachment;
 }
 
 /** A file attached to a message (either as a regular FILE or as a prompt-slot
@@ -228,34 +211,21 @@ export function buildSharedEntities(
   return Array.from(byKey.values());
 }
 
-/** Surface every `conversation.jsonl` transcript attachment in the thread as
- *  its own row. Each entry's `originMessageIds` is just the message it lives
- *  on — transcripts don't dedupe across messages. */
-export function buildTranscriptEntries(orderedMessages: FlowMessage[]): TranscriptEntry[] {
-  const out: TranscriptEntry[] = [];
-  for (const fm of orderedMessages) {
-    if (!fm.id) continue;
-    for (const a of fm.attachment ?? []) {
-      if (isTranscriptAttachment(a)) {
-        out.push({ messageId: fm.id, attachment: a, originMessageIds: [fm.id] });
-      }
-    }
-  }
-  return out;
-}
-
 /** File attachments (regular + prompt-slot files) across the thread, one row
  *  per attachment. Inline-text PROMPT attachments are skipped — those are
- *  rendered by the attachment-actions row's PromptAttachmentPreview, not as context rows.
- *  Transcript files are excluded (they're surfaced by `buildTranscriptEntries`
- *  separately). */
+ *  rendered by the attachment-actions row's PromptAttachmentPreview, not as
+ *  context rows.
+ *
+ *  No transcript exclusion: a shared session is an entity attachment now, so it
+ *  is aggregated as a shared ENTITY (its own chip) and never reaches this
+ *  file lane. It used to arrive as a raw FILE named `conversation.jsonl` and
+ *  needed its own row type to keep it out of the file list. */
 export function buildAttachmentEntries(orderedMessages: FlowMessage[]): AttachmentEntry[] {
   const out: AttachmentEntry[] = [];
   for (const fm of orderedMessages) {
     if (!fm.id) continue;
     for (const a of fm.attachment ?? []) {
       if (a.attachment_type === AttachmentType.FILE) {
-        if (isTranscriptAttachment(a)) continue;
         out.push({ messageId: fm.id, attachment: a, kind: 'file', originMessageIds: [fm.id] });
       } else if (a.attachment_type === AttachmentType.PROMPT && attachmentDataString(a).startsWith('prompt/')) {
         out.push({ messageId: fm.id, attachment: a, kind: 'prompt-file', originMessageIds: [fm.id] });

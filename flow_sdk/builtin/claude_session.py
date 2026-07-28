@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Optional
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
@@ -24,13 +24,21 @@ class ClaudeSession(Entity):
     cwd: str | None = APIField(default=None)
     slug: str | None = APIField(default=None)
     worker_session_id: str | None = APIField(default=None)
-    # True when this session's transcript arrived via a shared message and was
-    # materialized under ``<instance>/received_transcripts/<worker>/<id>.jsonl``.
-    # Such a session NEVER ran on this machine (its id is not under
-    # ``~/.claude/projects/``), so it cannot be ``claude --resume``-d locally —
-    # the UI hides the resume affordance and offers an analyze-transcript worker
-    # instead. Locally-created sessions are indexed from their on-disk JSONL and
-    # never set this, so they default ``False``.
+    # The transcript JSONL itself — a session's entire substance is this file, so
+    # it is a file-backed asset like any other (see the ``transcripts`` family in
+    # ``claude_session_type_info``). MUST be declared: the indexer's FSRecord
+    # already carries the path in ``meta_dict()``, but an undeclared field is
+    # dropped by pydantic ``extra="ignore"``, which left every row with a null
+    # asset_ref and made the type look file-LESS to the bundle packer. That one
+    # gap is what forced the transcript to travel as a separately-named raw file
+    # and be re-paired by content sniffing on the receiver.
+    asset_ref: Optional[str] = APIField(None)
+    # True when this session's transcript arrived via a shared message. Such a
+    # session NEVER ran on this machine, so it cannot be ``claude --resume``-d
+    # locally — the UI hides the resume affordance and offers an
+    # analyze-transcript worker instead. Stamped at install through the generic
+    # ``TypeInfo.receive_row_overrides`` slot; locally-indexed sessions never set
+    # it, so they default ``False``.
     received: bool = APIField(default=False)
 
     # Local copy state — a received session is local-authoritative and has no hub
@@ -41,20 +49,23 @@ class ClaudeSession(Entity):
 
     @classmethod
     async def get_by_id(cls, eid: str) -> "ClaudeSession | None":
-        """DB lookup, with on-disk recovery for unindexed sessions.
+        """DB lookup, with on-disk recovery for unindexed LOCAL sessions.
 
-        A session is a ``claude_session`` ENTITY only after the indexer scans it
-        (click-triggered) — so the live session, or any never-indexed transcript,
-        has no DB row and the plain lookup returns ``None``. Consumers that only
-        need the owning project (the lens loader's project heal, the Tab project
-        mint) then can't resolve it, even though the transcript is sitting on
-        disk under ``~/.claude/projects/<cwd-encoded>/<id>.jsonl`` and its cwd
-        maps to a project. Recover that here, server-side, so every caller of
-        ``get_by_id`` heals uniformly: resolve the transcript → read its cwd →
-        stamp ``project_id`` via the SAME primitive the indexer uses
-        (``resolve_project_id_for_cwd``), so a later real index reconciles
-        cleanly. The recovered entity is transient (NOT persisted — persisting is
-        what indexing does); ``None`` still means "no transcript anywhere".
+        A session becomes an entity only once the indexer scans it, so a live or
+        never-indexed run has no row and the plain lookup misses — leaving the
+        lens loader and the Tab project mint unable to resolve a project that is
+        sitting right there in the transcript's ``cwd``. Recover it server-side
+        so every caller heals uniformly: resolve the transcript → read its cwd →
+        stamp ``project_id`` through the SAME primitive the indexer uses, so a
+        later real index reconciles cleanly. Transient (never persisted —
+        persisting is what indexing does); ``None`` still means "no transcript".
+
+        Safe for foreign sessions BECAUSE ``resolve_session_jsonl`` now searches
+        only this machine's CLI dirs. A RECEIVED session is a real installed row
+        (with ``received=True`` and its own ``asset_ref``), so it is found by the
+        DB lookup above and never reaches recovery. Before the received-store
+        fallback was removed, this path could hand back another user's
+        transcript and make their live session look resumable.
         """
         found = await super().get_by_id(eid)
         if found is not None:
@@ -71,7 +82,7 @@ class ClaudeSession(Entity):
         try:
             path = resolve_session_jsonl("claude", eid)
         except (TranscriptNotFoundError, ValueError):
-            return None  # no transcript on disk → genuinely unknown
+            return None  # no local transcript → genuinely unknown
         except Exception:  # never let recovery turn a miss into a 500
             logger.debug("ClaudeSession recovery: resolve failed for %s", eid, exc_info=True)
             return None
@@ -82,10 +93,9 @@ class ClaudeSession(Entity):
             from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd  # noqa: PLC0415
 
             project_id = resolve_project_id_for_cwd(cwd)
-        # A received transcript lives under the instance store, never under
-        # ``~/.claude/projects`` — it never ran on this machine.
-        received = "received_transcripts" in path.parts
-        return cls(id=eid, cwd=cwd, project_id=project_id, received=received)
+        # Only a locally-run transcript can be recovered, so this is never a
+        # received session (those resolve from their DB row above).
+        return cls(id=eid, cwd=cwd, project_id=project_id, asset_ref=str(path))
 
     @staticmethod
     def _read_cwd(path: Path) -> str | None:
@@ -107,4 +117,3 @@ class ClaudeSession(Entity):
         except OSError:
             pass
         return None
-

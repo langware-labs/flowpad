@@ -9379,8 +9379,8 @@ msgid "Open in terminal"
 msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
-msgid "Open in the transcript viewer"
-msgstr ""
+#~ msgid "Open in the transcript viewer"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 msgid "Open in Worktree"
@@ -9528,8 +9528,8 @@ msgid "Open the live session in a terminal"
 msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
-msgid "Open the raw JSONL in a new tab"
-msgstr ""
+#~ msgid "Open the raw JSONL in a new tab"
+#~ msgstr ""
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."
@@ -11177,8 +11177,8 @@ msgid "Reveal in folder"
 msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
-msgid "Reveal the message that produced this transcript"
-msgstr ""
+#~ msgid "Reveal the message that produced this transcript"
+#~ msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Reveal the message this file is attached to"
@@ -12328,8 +12328,8 @@ msgid "Shared"
 msgstr ""
 
 #: src/components/conversation/FlowMessageBubble.tsx
-msgid "Shared a session transcript — see the Context tab"
-msgstr ""
+#~ msgid "Shared a session transcript — see the Context tab"
+#~ msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -13831,7 +13831,6 @@ msgstr ""
 msgid "Traceback ({0} lines)"
 msgstr ""
 
-#: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Transcript"
 msgstr ""
@@ -14324,7 +14323,6 @@ msgid "Vibe agents"
 msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx

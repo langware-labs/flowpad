@@ -1,21 +1,26 @@
-"""ClaudeSession bundle pack/unpack: the DB-record (header.json) family path.
+"""ClaudeSession bundle pack/unpack: the FILE-BACKED asset family path.
+
+A session IS its transcript file, so ``claude_session`` declares a placement
+(``asset_class="harness"`` / ``family="transcripts"``) and rides the ONE generic
+``_pack_file_backed_attachment`` — the same lane as skill/spec/markdown. There is
+no bespoke session packer, no separately-named transcript FILE attachment, and no
+private received-transcripts store.
 
 Two real-DB, no-mock tests:
 
-  1. PACK — ``_pack_claude_session_attachment`` writes a header.json whitelisted
-     to exactly ``{id,type,name,slug,message_count}``; sender-local ``cwd`` /
-     ``worker_session_id`` are STRIPPED. A get_one-miss writes no entry.
+  1. PACK — the transcript lands INSIDE the session's own entry dir at its
+     declared subdir, identified structurally by the entry key. Nothing is
+     written for a session that does not exist locally.
 
-  2. UNPACK — the CLAUDE_SESSION branch in ``unpack_bundle`` materializes the row
-     (stamped ``received=True`` / ``remote=False``), then on re-receive FILL-MERGES
-     blank fields without clobbering receiver-set fields (``_fill_merge_entity``
-     skip_keys + never-clobber-already-set), creating no duplicate row.
+  2. UNPACK — the entry STAGES for review (``receive_policy`` is unset, so a
+     transcript follows the normal dashed-chip → pick-a-project → install gate)
+     rather than materializing a row at unpack time.
 
 Real test DB + real pack/unpack code; no entity get_one/save patching.
 """
+
 from __future__ import annotations
 
-import json
 import zipfile
 
 import pytest
@@ -23,15 +28,18 @@ import pytest
 from flow_sdk.builtin.claude_session import ClaudeSession
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
 from flow_sdk.builtin.flow_message_bundle import pack_bundle, unpack_bundle
+from flow_sdk.builtin.message_attachment import MessageAttachment
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 SESS_ID = "5e551011-0000-4000-8000-000000000001"
 MISSING_SESS_ID = "deadbeef-0000-4000-8000-00000000ffff"
 FM_ID = "fa11fa11-0000-4000-8000-000000000001"
-FM_ID_2 = "fa11fa11-0000-4000-8000-000000000002"
 
-CLAUDE_SESSION_WHITELIST = {"id", "type", "name", "slug", "message_count"}
+TRANSCRIPT_LINES = (
+    '{"type":"user","message":{"role":"user","content":"hi"},"cwd":"/Users/alice/repo"}\n'
+    '{"type":"assistant","message":{"role":"assistant","content":"hello"}}\n'
+)
 
 
 def _fm_with_session(fm_id: str, *extra_session_ids: str) -> FlowMessage:
@@ -43,95 +51,75 @@ def _fm_with_session(fm_id: str, *extra_session_ids: str) -> FlowMessage:
     return fm
 
 
-async def test_pack_claude_session_header_whitelist_strips_sender_local(tmp_path):
-    # Sender-side row carries local-only fields that must NOT ride the wire.
+async def _sender_session(tmp_path) -> ClaudeSession:
+    """A local session whose ``asset_ref`` points at a real transcript file."""
+    transcript = tmp_path / "src" / f"{SESS_ID}.jsonl"
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    transcript.write_text(TRANSCRIPT_LINES, encoding="utf-8")
     sess = ClaudeSession(
         name="Sender Session",
         slug="sender-slug",
         message_count=7,
         cwd="/Users/alice/secret/repo",
         worker_session_id="worker-abc-123",
+        asset_ref=str(transcript),
     )
     sess.id = SESS_ID
     await sess.save(notify=False)
+    return sess
 
-    # A second attachment points at a session that does NOT exist locally:
-    # _pack_claude_session_attachment's get_one-miss must write no entry.
+
+async def test_pack_puts_transcript_inside_the_session_entry(tmp_path):
+    """The bytes travel inside ``attachment/claude_session-<id>/`` — so the
+    receiver identifies them by the entry key, never by sniffing a filename or
+    grepping file contents for the session id."""
+    await _sender_session(tmp_path)
+
+    # A second attachment points at a session that does NOT exist locally: the
+    # generic packer's source-miss must write no entry.
     fm = _fm_with_session(FM_ID, MISSING_SESS_ID)
     zip_path = await pack_bundle(fm, dest_dir=tmp_path)
 
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
-        header_name = f"attachment/claude_session-{SESS_ID}/header.json"
-        assert header_name in names
 
-        header = json.loads(zf.read(header_name))
-        # Exactly the whitelist — no more, no less.
-        assert set(header.keys()) == CLAUDE_SESSION_WHITELIST, header
-        assert header["id"] == SESS_ID
-        assert header["type"] == "claude_session"
-        assert header["name"] == "Sender Session"
-        assert header["slug"] == "sender-slug"
-        assert header["message_count"] == 7
-        # Sender-local fields stripped.
-        assert "cwd" not in header
-        assert "worker_session_id" not in header
+    entry_prefix = f"attachment/claude_session-{SESS_ID}/"
+    carried = [n for n in names if n.startswith(entry_prefix)]
+    assert carried, f"no entry dir for the session; got {names}"
 
-        # get_one-miss → no entry written for the missing session.
-        assert not any(f"claude_session-{MISSING_SESS_ID}" in n for n in names)
+    # The transcript rides at the type's declared subdir inside the entry.
+    transcript_entries = [n for n in carried if n.endswith(".jsonl")]
+    assert transcript_entries, f"transcript not carried inside the entry: {carried}"
+    assert any(".claude/transcripts/" in n for n in transcript_entries), transcript_entries
+
+    # It is NOT smuggled through the raw-file lane under a transport name.
+    assert not any(n.startswith("attachment/files/") for n in names), names
+    assert not any(n.endswith("attachment/files/conversation.jsonl") for n in names), names
+
+    # Source-miss → nothing written for the session that does not exist locally.
+    assert not any(f"claude_session-{MISSING_SESS_ID}" in n for n in names)
 
 
-async def test_unpack_materializes_claude_session_and_fill_merges_on_re_receive(tmp_path):
-    # Sender packs a session with a name/slug/count.
-    sess = ClaudeSession(
-        name="Sender Session",
-        slug="sender-slug",
-        message_count=7,
-        cwd="/Users/alice/secret/repo",
-        worker_session_id="worker-abc-123",
-    )
-    sess.id = SESS_ID
-    await sess.save(notify=False)
-    # Pack BOTH bundles from the pristine sender state (before any receiver
-    # mutation) so each header carries the real name/slug/count.
+async def test_unpack_stages_for_review_instead_of_auto_installing(tmp_path):
+    """``claude_session`` no longer declares ``receive_policy='auto'``: unpack
+    stages a MessageAttachment and STOPS. The row is materialized only by the
+    explicit install action, once the user has picked a scope/project."""
+    sess = await _sender_session(tmp_path)
     zip_path = await pack_bundle(_fm_with_session(FM_ID), dest_dir=tmp_path)
-    zip_path_2 = await pack_bundle(_fm_with_session(FM_ID_2), dest_dir=tmp_path / "two")
 
-    # Clean receiver: wipe the local row so the first unpack materializes it.
+    # Clean receiver: no local row for this session.
     await sess.delete()
     assert await ClaudeSession.get_one({"id": SESS_ID}) is None
 
-    # --- First unpack: materialize the row, stamped received=True / remote=False.
     await unpack_bundle(zip_path, local_user_id="receiver")
-    landed = await ClaudeSession.get_one({"id": SESS_ID})
-    assert landed is not None, "first unpack did not materialize the claude_session row"
-    assert landed.received is True
-    assert landed.remote is False
-    assert landed.name == "Sender Session"
-    assert landed.slug == "sender-slug"
-    assert landed.message_count == 7
 
-    # Receiver edits a field (receiver-set), and clears another (now blank) to
-    # prove the next re-receive fill-merges the blank but preserves the edit.
-    landed.slug = "receiver-edited-slug"  # receiver-set → must survive re-receive
-    landed.name = ""                      # blank → must be filled from the bundle
-    await landed.save(notify=False)
+    # Staged for review…
+    mas = await MessageAttachment.get_all({"flow_message_id": FM_ID})
+    staged = [m for m in mas if m.asset_type == "claude_session"]
+    assert staged, f"unpack did not stage the session entry; got {[m.asset_type for m in mas]}"
+    assert staged[0].installed_at is None, "session auto-installed despite the review gate"
 
-    # --- Re-receive: a follow-up message re-attaches the SAME session. The
-    # second FlowMessage has a distinct id so the unpack proceeds to the
-    # fill-merge branch (rather than short-circuiting on the FM-exists guard).
-    await unpack_bundle(zip_path_2, local_user_id="receiver")
-
-    merged = await ClaudeSession.get_one({"id": SESS_ID})
-    assert merged is not None
-    # Blank field filled from the bundle header.
-    assert merged.name == "Sender Session", "blank field was not fill-merged from bundle"
-    # Receiver-set field NOT clobbered (never-clobber-already-set).
-    assert merged.slug == "receiver-edited-slug", "re-receive clobbered receiver-set field"
-    assert merged.message_count == 7
-    assert merged.received is True
-    assert merged.remote is False
-
-    # No duplicate row created by the re-receive.
-    rows = await ClaudeSession.get_all({"id": SESS_ID})
-    assert len(rows) == 1, f"re-receive created a duplicate row: {len(rows)} rows"
+    # …and NOT installed: no entity row until the user chooses.
+    assert await ClaudeSession.get_one({"id": SESS_ID}) is None, (
+        "unpack materialized the row — the review gate was bypassed"
+    )
