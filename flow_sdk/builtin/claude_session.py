@@ -60,17 +60,48 @@ class ClaudeSession(Entity):
         later real index reconciles cleanly. Transient (never persisted —
         persisting is what indexing does); ``None`` still means "no transcript".
 
-        Safe for foreign sessions BECAUSE ``resolve_session_jsonl`` now searches
-        only this machine's CLI dirs. A RECEIVED session is a real installed row
-        (with ``received=True`` and its own ``asset_ref``), so it is found by the
-        DB lookup above and never reaches recovery. Before the received-store
-        fallback was removed, this path could hand back another user's
-        transcript and make their live session look resumable.
+        NOT safe to decide anything durable from. On a machine where two
+        instances share a home dir, the id-keyed scan will happily return
+        ANOTHER user's transcript — and a shared session has no row yet at the
+        moment its conversation is materialized, so it DOES reach recovery. Any
+        caller making a persistent choice from this must go through
+        ``Entity.project_id_of(..., persisted_only=True)``, which skips this
+        override; see ``Conversation.resolve_project_id``. Recovery exists for
+        display-time healing of a LOCAL unindexed session (the lens loader's
+        project heal, the Tab project mint), where the user is already looking
+        at the thing and a wrong answer is visible immediately.
         """
         found = await super().get_by_id(eid)
         if found is not None:
             return found
+        if await cls._arrived_as_attachment(eid):
+            return None
         return cls._recover_from_disk(eid)
+
+    @classmethod
+    async def _arrived_as_attachment(cls, eid: str) -> bool:
+        """True when this session came in on a message and is NOT installed.
+
+        Such a session is by definition not this machine's, so recovering "some
+        transcript with that id" from disk is wrong for every caller — it is the
+        SENDER's file whenever two instances share a home dir. Without this the
+        invented entity made the chip render solid instead of dashed (so the
+        review dialog never opened) and made the lens open in the sender's
+        project.
+
+        Scoped to the un-installed case on purpose: once the user installs it,
+        the row is real and the DB lookup above answers first.
+        """
+        from flow_sdk.builtin.message_attachment import MessageAttachment  # noqa: PLC0415
+
+        try:
+            staged = await MessageAttachment.get_all(
+                {"asset_type": cls.get_type(), "asset_id": eid}
+            )
+        except Exception:  # a lookup failure must not block recovery
+            logger.debug("ClaudeSession: attachment probe failed for %s", eid, exc_info=True)
+            return False
+        return any(not ma.installed for ma in staged)
 
     @classmethod
     def _recover_from_disk(cls, eid: str) -> "ClaudeSession | None":
