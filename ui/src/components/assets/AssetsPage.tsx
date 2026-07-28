@@ -12,9 +12,11 @@ import { getDescriptor } from '@src/components/quick-create';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { copyToClipboard, dataContext, FSRef, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
+import { cloudManager, copyToClipboard, dataContext, FSRef, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
 import type { APIEntity, Project } from '@sdk';
 import { useContext as useDataContext } from '@src/hooks/useContext';
+import { useAssetGitLink } from '@src/hooks/use-asset-git-link';
+import { hubPageUrl } from '@src/lib/hub-page-url';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { AssetDiscussButton } from '@src/components/assets/editor/AssetDiscussButton';
@@ -505,6 +507,23 @@ export function AssetsPage() {
     headerEntity?.name?.trim() ||
     null;
   const editorSourcePath = resourceVfsPath?.machinePath || headerEntity?.asset_ref || null;
+  // The open asset's three locations, each glyph going where it points: git (its
+  // repo page), cloud (its hub page), local (the OS file browser). The git probe
+  // shells out to git on the backend, so it is gated to a single open, on-disk,
+  // non-cloud asset — never a list, and never something with no path to resolve.
+  const assetGitLink = useAssetGitLink(
+    resolvedHeaderEntityTypeId,
+    isEditorMode && !!editorSourcePath && headerEntity?.remote !== true,
+  );
+  const assetCloudUrl = hubPageUrl(cloudManager.cloudUrl, resolvedHeaderEntityTypeId);
+  // Reveal through the compute node the path actually belongs to — the VFS
+  // pointer names it, so this keeps working for an asset on a remote node.
+  // `localComputeNodeId` is the same gate the markdown editor's reveal uses.
+  const revealLocal = useMemo(() => {
+    const nodeTypeId = resourceVfsPath?.typeId ?? new TypeId('compute_node', '@local');
+    const fsRef = editorSourcePath ? new FSRef(editorSourcePath, nodeTypeId) : null;
+    return fsRef?.localComputeNodeId ? () => void fsRef.open({ select: true }) : undefined;
+  }, [resourceVfsPath, editorSourcePath]);
   const editorParentPath = editorSourcePath
     ? editorSourcePath.replace(/[\\/]+$/, '').replace(/[\\/][^\\/]+$/, '') || editorSourcePath
     : null;
@@ -631,6 +650,10 @@ export function AssetsPage() {
             <EntityIcon
               type={headerAssetType}
               remote={headerEntity?.remote}
+              gitUrl={assetGitLink.url}
+              gitLabel={assetGitLink.repoLabel}
+              cloudUrl={assetCloudUrl}
+              onRevealLocal={revealLocal}
               aria-label={editorHeaderTitle ?? headerAssetType}
               className="h-4 w-4 flex-shrink-0 text-muted-foreground"
               data-testid="assets-page-header-type-icon"
