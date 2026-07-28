@@ -42,7 +42,7 @@ import { ProcessToolbar } from './ProcessToolbar';
 import { ChatComposerBar } from './ChatComposerBar';
 import { ChatPlanModeProvider } from './chat-plan-mode-context';
 import { SimpleChatPane } from './SimpleChatPane';
-import { useProcessModeSwitch } from './use-process-mode-switch';
+import { useProcessSurface } from './use-process-surface';
 
 import { useIsAdvanced } from '@src/components/view-mode';
 import { useSessionSurface } from '@src/contexts/view-mode-context';
@@ -232,21 +232,19 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // already mounted (first death, or a failed Retry), the only signal is the
   // entity update flipping `start_failure`. The loader-context `process` is
   // not reactive, so subscribe via useEntity and surface the banner here.
-  // ── Session mode switch (chat ⇄ terminal ⇄ vibe) ──────────────────────────
-  // Owned by `useProcessModeSwitch` (this is the ONE call site for this mount —
-  // a second would own a second, disagreeing `switching` state). It derives the
-  // transport and the readiness gate from the reactive entity itself; all this
-  // mount contributes is the live xterm size for the →terminal direction. The
-  // control renders leftmost in the header, built as a slot by ProcessToolbar.
+  // ── Session surface ───────────────────────────────────────────────────────
+  // The footer ViewToggle is the mode selector; this keeps the worker's
+  // TRANSPORT aligned with whatever mode it picks. All this mount contributes is
+  // the live xterm size for the →terminal direction.
   const getTerminalDims = useCallback(
     () => (terminalRef.current ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows } : undefined),
     [],
   );
-  const modeSwitch = useProcessModeSwitch({ process, getDims: getTerminalDims });
+  const processSurface = useProcessSurface({ process, getDims: getTerminalDims });
 
   // The reactive entity comes from the mode-switch hook, which already
   // subscribes to it — one subscription per process, not two.
-  const liveStartFailure = modeSwitch.live?.start_failure ?? null;
+  const liveStartFailure = processSurface.live?.start_failure ?? null;
   useEffect(() => {
     if (!liveStartFailure || !process) return;
     dataContext.setTerminalRuntimeError({
@@ -1609,7 +1607,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             embedded={embedded}
             onClose={onClose}
             shell={shell}
-            modeSwitch={canToggleView && !surfacePending ? modeSwitch : undefined}
           />
         )}
         {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}

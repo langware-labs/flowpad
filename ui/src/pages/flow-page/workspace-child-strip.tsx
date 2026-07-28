@@ -1,6 +1,6 @@
 import { Tab } from '@sdk';
 import { Monitor, X } from 'lucide-react';
-import React, { useCallback, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { TabStrip, type TabStripItem } from '@src/components/tabs/TabStrip';
@@ -14,10 +14,6 @@ import { tabKey } from '@src/tabs/useTabs';
 import { useLingui } from '@lingui/react/macro';
 
 interface WorkspaceChildStripProps {
-  /** Optional control rendered flush left, before the Display header. The
-   *  workspace owns what goes there (today: the session mode switch) — this
-   *  strip stays dumb and knows nothing about processes. */
-  leading?: React.ReactNode;
   /** The workspace's fixed tab (the vibe display / process tab). Children are the
    *  tabs whose `parent_tab_id` is this tab's id. */
   processTab: Tab | null;
@@ -40,7 +36,6 @@ interface WorkspaceChildStripProps {
  * vibe-mode continuity by the navigation layer — so this component stays dumb.
  */
 export function WorkspaceChildStrip({
-  leading,
   processTab,
   processDock,
   projectId,
@@ -119,7 +114,6 @@ export function WorkspaceChildStrip({
 
   return (
     <div className="flex shrink-0 items-stretch border-b border-border bg-muted/20">
-      {leading && <div className="flex shrink-0 items-center border-r border-border px-1.5">{leading}</div>}
       {/* Fixed, SQUARE Display header — deliberately NOT tab-shaped (no rounded
           chip, a solid right border) so it reads as the persistent surface, not
           a closable tab. The child tab strip begins to its right. */}

@@ -29,9 +29,7 @@ import { notify } from '@src/notifications/notify';
 import { shellIdFromShowTarget } from '@src/navigation/shell-show-target';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { WorkspaceChildStrip } from './workspace-child-strip';
-import { TerminalModeSwitch } from '@src/components/terminal/interactive-terminal/TerminalModeSwitch';
-import { useProcessModeSwitch } from '@src/components/terminal/interactive-terminal/use-process-mode-switch';
-import { useViewMode } from '@src/contexts/view-mode-context';
+import { useProcessSurface } from '@src/components/terminal/interactive-terminal/use-process-surface';
 import { ContentPanel } from './content-panel/content-panel';
 import { launchVibeSessionForProject } from './use-start-vibe-session';
 import { VIBE_STARTER_PROMPTS } from './vibe-starter-prompts';
@@ -151,16 +149,9 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // Bind by the workspace session id. The same hook also owns parent
   // registration/materialization for process and child presentations.
   const activeProcess = useVibeWorkspaceSessionHost(session);
-  // Same control and same hook as the terminal header — here `vibe` is the
-  // selected segment, so picking chat/terminal navigates back out to that
-  // renderer. Built here (not inside the strip) so the strip stays dumb: it
-  // takes a `leading` node and knows nothing about processes. No xterm is
-  // mounted in vibe, hence no dims for the →terminal direction.
-  const viewMode = useViewMode();
-  const modeSwitch = useProcessModeSwitch({ process: activeProcess });
-  const modeSwitchSlot = activeProcess ? (
-    <TerminalModeSwitch current={viewMode} showVibe modeSwitch={modeSwitch} />
-  ) : null;
+  // Vibe has no InteractiveTerminal, so this is where the session's transport
+  // is kept aligned with the view mode while the workspace is on screen.
+  useProcessSurface({ process: activeProcess });
 
   const streamItems = useAgenticProcessStream(activeProcess);
   const focus = useVibeFocus(streamItems);
@@ -569,7 +560,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       <ResizablePanel defaultSize={64} minSize={45}>
         <div className="flex h-full flex-col">
           <WorkspaceChildStrip
-            leading={modeSwitchSlot}
             processTab={session.processTab}
             processDock={session.processDock}
             projectId={project?.id ?? null}

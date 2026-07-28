@@ -14,9 +14,6 @@ import type { ReactNode } from 'react';
 export const ROW = 'flex items-center gap-0.5 border-b bg-background px-2 py-1';
 
 export interface HeaderSlots {
-  /** Leftmost chat|terminal|vibe mode switch. `null` when the tab can't switch
-   * (embedded panel, or no AgenticProcess) — every layout still takes the slot. */
-  modeSwitch: ReactNode;
   /** Left debug/trace controls (CLI Options + Columns & Trace dropdowns). */
   debug: ReactNode;
   /** Restart control. */
@@ -43,11 +40,10 @@ function CenteredTitle({ title }: Pick<HeaderSlots, 'title'>) {
   );
 }
 
-/** Full toolbar: [modeSwitch][debug][restart] — (centered title) — [download][right][actions]. */
-export function AdvancedInteractiveTabHeader({ modeSwitch, debug, restart, title, actions, download, right }: HeaderSlots) {
+/** Full toolbar: [debug][restart] — (centered title) — [download][right][actions]. */
+export function AdvancedInteractiveTabHeader({ debug, restart, title, actions, download, right }: HeaderSlots) {
   return (
     <div data-testid="process-toolbar" className={`${ROW} relative`}>
-      {modeSwitch}
       {debug}
       {restart}
       <CenteredTitle title={title} />
@@ -59,17 +55,10 @@ export function AdvancedInteractiveTabHeader({ modeSwitch, debug, restart, title
   );
 }
 
-/** Minimal toolbar: [modeSwitch] — (centered title) — Share + Bookmark right.
- * An explicit flex-1 spacer rather than `justify-end` (which would pack the
- * leading mode switch right up against the actions). */
-export function StandardInteractiveTabHeader({
-  modeSwitch,
-  title,
-  actions,
-}: Pick<HeaderSlots, 'modeSwitch' | 'title' | 'actions'>) {
+/** Minimal toolbar: centered title with Share + Bookmark aligned right. */
+export function StandardInteractiveTabHeader({ title, actions }: Pick<HeaderSlots, 'title' | 'actions'>) {
   return (
     <div data-testid="process-toolbar" className={`${ROW} relative`}>
-      {modeSwitch}
       <CenteredTitle title={title} />
       <div className="flex-1" />
       {actions}
