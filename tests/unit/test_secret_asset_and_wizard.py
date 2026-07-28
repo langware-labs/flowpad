@@ -136,3 +136,87 @@ async def test_provide_external_provider_is_coming_soon(tmp_path):
     assert row["status"] == "missing" and row["setup_hint"].get("coming_soon") is True
     prov = await project.provide_secret(env_var="GCP_KEY", value="x")
     assert prov.status == "FAIL" and "coming soon" in prov.message.lower()
+
+
+# ── the .env.local hard block + detected-keys status ──────────────────────────
+
+
+def _git_init(path):
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=str(path), capture_output=True, timeout=10)
+
+
+@pytest.mark.asyncio
+async def test_env_local_status_reports_names_only(tmp_path):
+    project = await _project(tmp_path)
+    (tmp_path / ".env.local").write_text(
+        "# comment\nOPENAI_API_KEY=sk-must-not-appear\nOTHER=2\n", encoding="utf-8"
+    )
+    await project.add_secret_pointer(
+        name="openai", env_var="OPENAI_API_KEY", scope="private",
+        locator={"kind": "env-local", "env_key": "OPENAI_API_KEY"},
+    )
+
+    resp = await project.env_local_status()
+
+    assert resp.status == "SUCCESS", resp
+    data = resp.data
+    assert [k["key"] for k in data["keys"]] == ["OPENAI_API_KEY", "OTHER"]
+    assert [k["line"] for k in data["keys"]] == [2, 3]
+    # The declared flag is what lets the UI offer "declare" only where it helps.
+    assert data["keys"][0]["declared"] is True
+    assert data["keys"][1]["declared"] is False
+    # No value crosses this boundary, ever.
+    assert "sk-must-not-appear" not in json.dumps(data)
+
+
+@pytest.mark.asyncio
+async def test_env_local_status_flags_the_hard_block(tmp_path):
+    project = await _project(tmp_path)
+    _git_init(tmp_path)  # a repo with no .gitignore — .env.local is committable
+
+    resp = await project.env_local_status()
+
+    assert resp.data["blocked"] is True
+    assert resp.data["block_code"] == "not-ignored"
+    assert resp.data["gitignore"]["in_repo"] is True
+
+
+@pytest.mark.asyncio
+async def test_provide_secret_is_blocked_when_env_local_is_committable(tmp_path):
+    project = await _project(tmp_path)
+    _git_init(tmp_path)
+    (tmp_path / ".gitignore").write_text("node_modules\n", encoding="utf-8")
+    # Make the block unfixable-by-append: git already tracks the file.
+    (tmp_path / ".env.local").write_text("EXISTING=1\n", encoding="utf-8")
+    import subprocess
+
+    subprocess.run(["git", "add", "-f", ".env.local"], cwd=str(tmp_path), capture_output=True, timeout=10)
+
+    await project.add_secret_pointer(
+        name="openai", env_var="OPENAI_API_KEY", scope="private",
+        locator={"kind": "env-local", "env_key": "OPENAI_API_KEY"},
+    )
+    resp = await project.provide_secret(env_var="OPENAI_API_KEY", value="sk-must-not-land")
+
+    assert resp.status == "FAIL", resp
+    assert resp.data["block_code"] == "tracked"
+    assert "sk-must-not-land" not in (tmp_path / ".env.local").read_text()
+
+
+@pytest.mark.asyncio
+async def test_provide_secret_succeeds_once_the_block_clears(tmp_path):
+    """Regression guard: the block must not break the ordinary path."""
+    project = await _project(tmp_path)
+    _git_init(tmp_path)
+    await project.add_secret_pointer(
+        name="openai", env_var="OPENAI_API_KEY", scope="private",
+        locator={"kind": "env-local", "env_key": "OPENAI_API_KEY"},
+    )
+
+    resp = await project.provide_secret(env_var="OPENAI_API_KEY", value="sk-fine")
+
+    assert resp.status == "SUCCESS", resp
+    assert "sk-fine" in (tmp_path / ".env.local").read_text()
+    assert ".env.local" in (tmp_path / ".gitignore").read_text()

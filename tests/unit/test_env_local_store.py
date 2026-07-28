@@ -20,9 +20,14 @@ from flow_sdk.builtin.env_local_store import (
     GITIGNORE_NO_DIR,
     GITIGNORE_NOT_A_REPO,
     GITIGNORE_NOT_IGNORED,
+    GITIGNORE_TRACKED,
+    EnvLocalNotWritable,
+    ensure_gitignored,
+    env_local_block,
     env_local_path,
     gitignore_status,
     list_env_local,
+    write_env_local,
 )
 from flow_sdk.builtin.project import Project
 
@@ -216,3 +221,91 @@ def test_env_local_filename_is_the_only_file_we_look_at(tmp_path, marker):
     (tmp_path / marker).write_text("REAL_KEY=2\n", encoding="utf-8")
 
     assert [r["key"] for r in list_env_local(_project(tmp_path))] == ["REAL_KEY"]
+
+
+# ── the hard block ────────────────────────────────────────────────────────────
+
+
+def test_ensure_gitignored_appends_and_verifies(tmp_path):
+    _init_repo(tmp_path)
+
+    assert ensure_gitignored(_project(tmp_path)) is True
+    assert ".env.local" in (tmp_path / ".gitignore").read_text()
+    assert gitignore_status(_project(tmp_path))["ignored"] is True
+
+
+def test_ensure_gitignored_overrides_an_earlier_negation(tmp_path):
+    """A `!` rule re-includes the file, but our appended line comes after it and
+    git's last matching rule wins — so this IS fixable. The verify step is what
+    tells us so, rather than us assuming either way."""
+    _init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text("*.local\n!.env.local\n", encoding="utf-8")
+
+    assert ensure_gitignored(_project(tmp_path)) is True
+    assert gitignore_status(_project(tmp_path))["ignored"] is True
+
+
+def test_a_tracked_env_local_is_blocked_however_gitignore_reads(tmp_path):
+    """The case a gitignore-only check calls safe when it is not: git ignore
+    rules do not apply to files it already tracks, so a tracked .env.local keeps
+    being committed no matter what the ignore file says."""
+    _init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text(".env.local\n", encoding="utf-8")
+    (tmp_path / ".env.local").write_text("TOKEN=already-committed\n", encoding="utf-8")
+    _git(tmp_path, "add", "-f", ".env.local")
+
+    status = gitignore_status(_project(tmp_path))
+    assert status["tracked"] is True
+    assert status["ignored"] is False
+    assert status["code"] == GITIGNORE_TRACKED
+
+    with pytest.raises(EnvLocalNotWritable) as excinfo:
+        write_env_local(_project(tmp_path), "NEW_TOKEN", "sk-must-not-land")
+    assert excinfo.value.code == GITIGNORE_TRACKED
+    assert "sk-must-not-land" not in (tmp_path / ".env.local").read_text()
+
+
+def test_write_env_local_refuses_when_not_excluded(tmp_path):
+    _init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text(".env.local\n!.env.local\n", encoding="utf-8")
+
+    with pytest.raises(EnvLocalNotWritable) as excinfo:
+        write_env_local(_project(tmp_path), "TOKEN", "sk-should-never-land")
+
+    assert excinfo.value.code == GITIGNORE_NOT_IGNORED
+    assert not (tmp_path / ".env.local").exists(), "the file must not even be created"
+
+
+def test_write_env_local_succeeds_once_excluded(tmp_path):
+    _init_repo(tmp_path)
+    project = _project(tmp_path)
+
+    write_env_local(project, "TOKEN", "sk-fine")
+
+    assert "TOKEN" in (tmp_path / ".env.local").read_text()
+    assert ".env.local" in (tmp_path / ".gitignore").read_text()
+
+
+def test_write_env_local_outside_a_repo_is_allowed(tmp_path):
+    """No git history means no way to leak — same call ensure_gitignored made
+    before this change."""
+    write_env_local(_project(tmp_path), "TOKEN", "sk-fine")
+
+    assert "TOKEN" in (tmp_path / ".env.local").read_text()
+
+
+def test_env_local_block_is_none_when_writable(tmp_path):
+    _init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text(".env.local\n", encoding="utf-8")
+
+    assert env_local_block(_project(tmp_path)) is None
+
+
+def test_env_local_block_reports_a_code(tmp_path):
+    _init_repo(tmp_path)
+
+    block = env_local_block(_project(tmp_path))
+
+    assert block is not None
+    assert block["code"] == GITIGNORE_NOT_IGNORED
+    assert "NOT excluded" in block["reason"]
