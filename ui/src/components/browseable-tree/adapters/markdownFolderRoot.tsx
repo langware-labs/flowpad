@@ -2,7 +2,6 @@ import React from 'react';
 import { FileText, Folder, FolderPlus, Library, Network, Plus, RefreshCw, User as UserIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
-import { CountChip } from '@src/components/browseable-tree/CountChip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import type { AssetTypeInfo, AssetTypeVault } from '@src/hooks/use-asset-types';
@@ -12,12 +11,9 @@ import type {
   BrowseableRoot,
   ToolbarAction,
 } from '@src/components/browseable-tree/types';
-import { parseAssetPointer } from './assetTypeRoot';
+import { AssetTypeCountBadge, parseAssetPointer } from './assetTypeRoot';
 import { scopeFilterKey, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
-import {
-  DEFAULT_ASSET_FILTER,
-  applyFilterToParams,
-} from '@src/components/assets/assetFilter';
+import { DEFAULT_ASSET_FILTER } from '@src/components/assets/assetFilter';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 
 export interface MarkdownFolderRootDeps {
@@ -133,41 +129,6 @@ function folderToolbar(
 function resolveAssetIcon(iconName: string | null | undefined): React.ReactNode {
   const Icon = lucideByName(iconName);
   return <Icon className="h-4 w-4 flex-shrink-0" />;
-}
-
-/** Count badge — reuses the existing `/search` count trick (limit=1).
- *  Honors the active filter so the chip reflects what the user actually sees. */
-function MarkdownCountBadge({ filter }: { filter: AssetFilter }) {
-  const [total, setTotal] = React.useState<number | null>(null);
-  const filterKey = React.useMemo(() => {
-    const p = new URLSearchParams();
-    applyFilterToParams(p, filter);
-    return p.toString();
-  }, [filter]);
-  React.useEffect(() => {
-    let cancelled = false;
-    const params = new URLSearchParams();
-    params.set('record_type', 'markdown');
-    params.set('offset', '0');
-    params.set('limit', '1');
-    applyFilterToParams(params, filter);
-    apiClient
-      .get(`/search?${params.toString()}`)
-      .then((d: unknown) => {
-        if (cancelled) return;
-        const data = d as { total?: number } | null;
-        setTotal(data?.total ?? 0);
-      })
-      .catch(() => {
-        if (!cancelled) setTotal(0);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterKey]);
-  if (total === null || total === 0) return null;
-  return <CountChip count={total} />;
 }
 
 /** Build the root-level toolbar: Scan + New. */
@@ -491,7 +452,12 @@ export function markdownFolderRoot(
     kind: 'root',
     label: type.label,
     icon: resolveAssetIcon(type.icon),
-    badge: <MarkdownCountBadge filter={filter} />,
+    // The SAME badge every other type root uses, so markdown reports the same
+    // thing they do — a count accumulated over the project AND its context
+    // folders. Its old private `/search?limit=1` probe was scoped to the project
+    // alone, which left this row silently under-reporting next to the others
+    // (and cost one extra request per mount).
+    badge: <AssetTypeCountBadge typeName={type.type_name} />,
     hasChildren: visibleVaults.length > 0,
     pointer: DockPointer.forAssetList(type.type_name),
     toolbar: rootToolbar(type, deps),
