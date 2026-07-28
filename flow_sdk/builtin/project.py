@@ -1236,21 +1236,100 @@ class Project(Entity):
                 driver = get_secret_origin_driver(loc.kind)
             except Exception:  # noqa: BLE001
                 continue
-            try:
-                available = await driver.can_resolve(loc, project=self)
-            except Exception:  # noqa: BLE001
-                available = False
+            env_var = entry.get("env_var") or ""
+            found_in = await self._where_is_secret_value(env_var, loc, driver)
             hint = driver.setup_hint(loc)
             rows.append(
                 {
                     "typeid": entry.get("typeid"),
                     "name": entry.get("name"),
-                    "env_var": entry.get("env_var"),
+                    "env_var": env_var,
                     "kind": loc.kind,
                     "scope": entry.get("scope"),
                     "sod_store": entry.get("sod_store") or hint.get("sod_store"),
-                    "status": "available" if available else "missing",
+                    "status": "available" if found_in else "missing",
+                    "found_in": found_in,
+                    # The receiver-facing warning: a declaration this machine
+                    # cannot satisfy. Computed, never stored.
+                    "warning": None if found_in else "missing-value",
                     "setup_hint": hint,
+                }
+            )
+        return ApiSuccessResponse(data={"secrets": rows})
+
+    async def _where_is_secret_value(self, env_var: str, loc, driver) -> str | None:
+        """Which store on THIS machine can satisfy this declaration, if any.
+
+        Deliberately a UNION across both local stores and the declared provider,
+        not just the provider the declaration names. The local stores exist for
+        usage — a value sitting in .env.local under the right env var satisfies a
+        `gcp` declaration on this machine just as well, and reporting it missing
+        would be wrong.
+
+        Every probe is existence-only. No value is fetched here; that contract is
+        what lets the Secrets card call this on every render.
+        """
+        from flow_sdk.builtin.env_local_store import list_env_local  # noqa: PLC0415
+
+        if env_var:
+            try:
+                if any(row["key"] == env_var for row in list_env_local(self)):
+                    return "env-local"
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                from flow_sdk.cli.auth.secrets import get_secrets  # noqa: PLC0415
+
+                # Names only — get_secrets never reads a value out of the store.
+                if any(entry.get("name") == env_var for entry in get_secrets()):
+                    return "sodot"
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            if await driver.can_resolve(loc, project=self):
+                return "provider"
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+    @action.post(action_name="secret-drift-status")
+    async def secret_drift_status(self) -> "ApiResponse":
+        """Which declared secrets hold a different value than when last provided.
+
+        Separate from ``secret-resolve-status`` on purpose: answering this
+        REQUIRES fetching values, which would violate ``can_resolve``'s
+        documented no-fetch contract. Keeping it a distinct, opt-in action means
+        the cheap status call stays cheap and honest, and values are only pulled
+        when someone is actually looking at the Secrets tab.
+
+        Values are hashed and discarded — never returned, logged, or persisted.
+        """
+        from flow_sdk.builtin.secret_origin_digest import check_drift  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_driver import get_secret_origin_driver  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+
+        rows: list[dict[str, Any]] = []
+        for entry in self.secret_origins:
+            env_var = entry.get("env_var") or ""
+            try:
+                loc = SECRET_ORIGIN_ADAPTER.validate_python(entry.get("locator") or {})
+                driver = get_secret_origin_driver(loc.kind)
+            except Exception:  # noqa: BLE001
+                continue
+            try:
+                resolved = await driver.resolve(loc, project=self)
+            except Exception:  # noqa: BLE001
+                resolved = None
+            if resolved is None:
+                continue
+            drifted = await asyncio.to_thread(
+                check_drift, str(self.id), env_var, resolved.get_secret_value()
+            )
+            rows.append(
+                {
+                    "typeid": entry.get("typeid"),
+                    "env_var": env_var,
+                    "warning": "value-changed" if drifted else None,
                 }
             )
         return ApiSuccessResponse(data={"secrets": rows})
@@ -1306,6 +1385,11 @@ class Project(Entity):
             return ApiFailResponse(message=str(e), data={"block_code": e.code})
         except Exception as e:  # noqa: BLE001
             return ApiFailResponse(message=f"could not store value: {e}")
+        from flow_sdk.builtin.secret_origin_digest import record_digest  # noqa: PLC0415
+
+        # Baseline for the value-changed warning. Best-effort and value-free —
+        # only a salted digest is kept, in the encrypted store.
+        await asyncio.to_thread(record_digest, str(self.id), entry.get("env_var") or "", value)
         return ApiSuccessResponse(data={"ok": True, "env_var": entry.get("env_var")})
 
     @action.post(action_name="env-local-status")

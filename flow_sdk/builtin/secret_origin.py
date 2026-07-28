@@ -36,6 +36,12 @@ _FORBIDDEN_VALUE_KEYS = {
     "secret_value",
     "plaintext",
     "plain_value",
+    # A salted digest is kept per-machine in the encrypted sodot and must never
+    # reach a reference json or a hub payload. Naming it here makes a refactor
+    # that tries fail loudly instead of leaking quietly.
+    "digest",
+    "value_digest",
+    "value_hash",
 }
 
 
