@@ -334,6 +334,14 @@ class Entity(DBEntity):
             "system",
             "fetched_at",
             "asset_occurrences",
+            # This machine's on-disk path for the asset. The hub payload carries
+            # the SENDER's absolute path, which is never valid here — letting it
+            # land (or letting a hub refresh blank it) makes the next save
+            # re-derive placement from scratch, which is how a child's folder
+            # ended up nested inside its parent's. ``_BASE_LOCAL_FIELDS`` already
+            # strips it from the portable JSON for the same reason; the hub
+            # boundary must agree.
+            "asset_ref",
         }
     )
 
@@ -2051,6 +2059,13 @@ class Entity(DBEntity):
         sync catch-up (``_materialize_remote_child``). The child's own
         ``parent_type_id`` in the payload wins over ``parent_ref`` (the hub
         container it was pulled from); ``remote`` is stamped True.
+
+        It is an UPSERT, not a create: when the row already exists locally the
+        hub payload is merged over it through ``merge_hub_payload`` so
+        ``LOCAL_ONLY_FIELDS`` survive. A blind ``model_validate`` here dropped
+        the local ``asset_ref`` — and since the ORIGIN also receives an op for
+        the child it just created, it clobbered its own row and the next save
+        re-derived the folder under the parent, nesting the asset inside itself.
         """
         effective_parent = (data.get("parent_type_id") if isinstance(data, dict) else None) or parent_ref
         sanitized = {k: v for k, v in (data or {}).items() if cls.is_api_field(k)}
@@ -2065,6 +2080,12 @@ class Entity(DBEntity):
             pid = await cls.materialize_share_parent(sanitized, someone_typeid)
             if pid and "parent_type_id" in cls.model_fields:
                 sanitized["parent_type_id"] = pid
+        existing = await cls.get_one({"id": sanitized["id"]}) if sanitized.get("id") else None
+        if existing is not None:
+            # Same LWW refresh the FlowMessage catch-up uses (see
+            # ``flow_message_action`` → ``merge_hub_payload``): hub-owned fields
+            # move, locally-authoritative ones stay.
+            sanitized = cls.merge_hub_payload(existing, sanitized)
         ent = cls.model_validate(sanitized)
         if "remote" in cls.model_fields:
             ent.remote = True

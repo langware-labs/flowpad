@@ -2,10 +2,15 @@
  * Task assignment across TWO instances — JIRA-like, and nothing else.
  *
  *   alice: create a task (title + body) in her project
- *   alice: assign it to bob
- *   bob:   the task IS on his machine — assigned to him, with the body
+ *   alice: assign it to bob  (`assign-task` = share + one editor invite)
+ *   bob:   the SAME task IS on his machine — assigned to him, with the body
  *   bob:   he moves it to in_progress; alice sees that
  *   both:  comment on the assigned task, live both ways — no sync, no watch setup
+ *
+ * ONE ROW. There is no child "member task": that belongs to the contacts-group
+ * fan-out, where N members each need their own status. This file used to drive
+ * `create-group-task` with a single-member roster — the group flow wearing the
+ * assign flow's name — and asserted bob's row by `parent_id`.
  *
  * The point of this file is what it REFUSES to do. Bob never accepts an
  * invitation, never opens a conversation, never installs an attachment, and
@@ -43,8 +48,7 @@ const token = `ta-${randomUUID()}`;
 const TITLE = `assign me ${token.slice(-8)}`;
 const BODY = `Please look into the login flow.\n\n${token}`;
 
-let taskId = '';
-let childId = ''; // bob's member task — the entity both hold and comment on
+let taskId = ''; // the ONE task — the entity both hold, mutate and comment on
 
 const getApi = (apiUrl: string, p: string) => fetch(`${apiUrl}/api/v1${p}`).then((r) => r.json());
 
@@ -117,26 +121,34 @@ describe('task assignment — alice assigns, it lands on bob', () => {
   });
 
   it('alice assigns it to bob', async () => {
-    const assigned = await postApi(alice.apiUrl, `/graph/task/${taskId}/create-group-task`, {
-      members: [{ email: bob.email, name: 'Bob' }],
+    const assigned = await postApi(alice.apiUrl, `/graph/task/${taskId}/assign-task`, {
+      email: bob.email,
+      name: 'Bob',
+      message: 'please take a look',
     });
     expect(assigned.status, JSON.stringify(assigned)).toBe('SUCCESS');
-    expect(assigned.data.created, 'bob is the assignee').toContain(bob.email);
+    expect(assigned.data.assignee, 'bob is the assignee').toBe(bob.email);
+    expect(assigned.data.self).toBe(false);
 
-    // The member task typeid (task-<uuid>) → the uuid both realms hold.
-    childId = String(assigned.data.children?.[0] ?? '').split('-').slice(1).join('-');
-    expect(childId, 'assignment returns bob’s member task').toBeTruthy();
+    // No second row anywhere, and alice's task is still a plain task.
+    const mine = await getApi(alice.apiUrl, `/graph/task/${taskId}`);
+    expect(mine?.data?.kind ?? 'standard').toBe('standard');
+    expect(mine?.data?.group_name ?? null).toBeNull();
+    const kids = (await alice.sdk.Task.query(
+      new alice.sdk.QueryRequest({ type: 'task', query: { parent_id: taskId }, name: 'children' }),
+      true,
+    ).catch(() => [])) as any[];
+    expect(kids, 'assignment creates NO child task').toHaveLength(0);
   });
 
   it('the task is on bob — no accept, no conversation, no install', async () => {
-    // His task is the one assigned to HIM: the member task under the assigned
-    // parent. The parent rides along as the read-only context (it carries the
-    // body and every display field) but is not the row he owns.
+    // The SAME task, on his machine. Nothing was cloned for him.
     const landed = await pollUntil(
-      async () => (await bobTasks()).find((t) => t.parent_id === taskId) ?? null,
+      async () => (await bobTasks()).find((t) => t.id === taskId) ?? null,
       20_000,
       'assigned task delivered to bob without him doing anything',
     );
+    expect(landed.parent_id ?? '', 'his row is the task itself, not a child of it').toBe('');
 
     expect(landed.assignee, 'it is assigned to him').toBe(bob.email);
     expect(landed.title).toBe(TITLE);
@@ -166,28 +178,30 @@ describe('task assignment — alice assigns, it lands on bob', () => {
   });
 
   it("bob moves it to in_progress and alice sees it", async () => {
-    const mine = (await bobTasks()).find((t) => t.parent_id === taskId);
+    const mine = (await bobTasks()).find((t) => t.id === taskId);
     expect(mine, 'precondition: bob holds the task').toBeTruthy();
     mine.status = 'in_progress';
     await mine.save();
 
+    // NO sync call: one shared row, so the hub pushes bob's write straight to
+    // alice. `sync-group` is the group flow's owner-side poll and has no part
+    // in a 1:1 assignment.
     const seen = await pollUntil(
       async () => {
-        await postApi(alice.apiUrl, `/graph/task/${taskId}/sync-group`, {});
-        const rows = (await getApi(alice.apiUrl, `/graph/task/${mine.id}`))?.data;
+        const rows = (await getApi(alice.apiUrl, `/graph/task/${taskId}`))?.data;
         return rows?.status === 'in_progress' ? rows : null;
       },
       20_000,
-      "alice sees bob's progress",
+      "alice sees bob's progress with no sync call",
     );
     expect(seen.assignee).toBe(bob.email);
+    expect(seen.title, "and bob's write did not revert alice's content").toBe(TITLE);
   });
 
   // ── Live comment thread on the assigned task ───────────────────────────────
-  // The thread hangs on bob's MEMBER task (childId) — the row both hold with a
-  // mutating role (alice owner-via-cascade, bob editor); the parent overview
-  // stays read-only context. The generic children-sync path (independent of
-  // sync-group): a comment is an is_child of that task; the hub emits a
+  // The thread hangs on THE task — the one row both hold with a mutating role
+  // (alice owner, bob editor via the assignment invite). The generic
+  // children-sync path: a comment is an is_child of that task; the hub emits a
   // `child_created` op addressed to the task, and under auto-watch it fans out
   // to every role-holder with a live connection — so it reaches the peer with
   // no watch set up. Each peer materializes it with notify; the receiver calls
@@ -195,21 +209,21 @@ describe('task assignment — alice assigns, it lands on bob', () => {
 
   it('alice comments on the assigned task — bob sees it live, no sync call', async () => {
     const text = `alice-comment-${token.slice(-6)}`;
-    const a = await postApi(alice.apiUrl, `/graph/task/${childId}/comment`, {
+    const a = await postApi(alice.apiUrl, `/graph/task/${taskId}/comment`, {
       raw_content: text,
       data: { line: 1 },
     });
     expect(a.status, JSON.stringify(a)).toBe('SUCCESS');
-    await expectLiveComment(bob, childId, a.data.id as string, text);
+    await expectLiveComment(bob, taskId, a.data.id as string, text);
   }, 30_000); // do not increase timeout without approval
 
   it('bob replies on the assigned task — alice sees it live, no sync call', async () => {
     const text = `bob-reply-${token.slice(-6)}`;
-    const b = await postApi(bob.apiUrl, `/graph/task/${childId}/comment`, {
+    const b = await postApi(bob.apiUrl, `/graph/task/${taskId}/comment`, {
       raw_content: text,
       data: { line: 2 },
     });
     expect(b.status, JSON.stringify(b)).toBe('SUCCESS');
-    await expectLiveComment(alice, childId, b.data.id as string, text);
+    await expectLiveComment(alice, taskId, b.data.id as string, text);
   }, 30_000); // do not increase timeout without approval
 });

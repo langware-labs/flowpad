@@ -184,6 +184,35 @@ def _parse_to_entity(to_entity: Any) -> tuple[Optional[str], Optional[str]]:
     return None, None
 
 
+async def _fill_empty_blobs(cls: Any, entity_type: str, entity_id: str, data: Any) -> Any:
+    """Refill blob fields a hub op left empty, from one ``expand=blobs`` GET.
+
+    The hub op usually embeds the in-memory entity (blobs included), but a
+    payload built from the hub's DB row carries blob fields EMPTY — they're
+    db-excluded. Materializing that leaves the row bodyless, and on a row we
+    already hold it would BLANK a body we have. So when a blob-declaring type
+    arrives with every blob field empty, fetch the expanded entity once and
+    merge. Harmless when the body is genuinely empty; a no-op for types with no
+    blob fields.
+
+    Shared by every inbound op that materializes an entity (children and tasks
+    alike) — the guard belongs to the boundary, not to one handler.
+    """
+    blob_fields = cls.get_blob_fields_names() if hasattr(cls, "get_blob_fields_names") else []
+    if not blob_fields or not isinstance(data, dict) or any(data.get(f) for f in blob_fields):
+        return data
+    try:
+        from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
+        from flow_sdk.utils.hub import hub_get  # noqa: PLC0415
+
+        expanded = await hub_get(BuiltinEntityType(entity_type), entity_id, params={"expand": "blobs"})
+        if isinstance(expanded, dict) and any(expanded.get(f) for f in blob_fields):
+            return {**data, **{f: expanded[f] for f in blob_fields if expanded.get(f)}}
+    except Exception:  # noqa: BLE001
+        logger.debug("hub_bridge: blob follow-up fetch failed for %s-%s", entity_type, entity_id, exc_info=True)
+    return data
+
+
 class HubWsBridge:
     """Glue layer: hub WS frames ↔ local entity save path."""
 
@@ -416,25 +445,7 @@ class HubWsBridge:
         # hub container (e.g. the conversation, used only for fanout).
         if isinstance(data, dict) and not data.get("id"):
             data = {**data, "id": child_id}
-        # Blob fallback: the hub op usually embeds the in-memory entity (blobs
-        # included), but a payload built from the hub's DB row carries blob
-        # fields EMPTY (they're db-excluded). Materializing that would clobber
-        # nothing locally yet still leave the child bodyless — so when a
-        # blob-declaring type arrives with all blob fields empty, fetch the
-        # expanded entity once and merge. Harmless when the body is genuinely
-        # empty; skipped entirely for types without blob fields.
-        blob_fields = cls.get_blob_fields_names() if hasattr(cls, "get_blob_fields_names") else []
-        if blob_fields and isinstance(data, dict) and not any(data.get(f) for f in blob_fields):
-            try:
-                from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-                from flow_sdk.utils.hub import hub_get  # noqa: PLC0415
-
-                etype = BuiltinEntityType(child_type)
-                expanded = await hub_get(etype, child_id, params={"expand": "blobs"})
-                if isinstance(expanded, dict) and any(expanded.get(f) for f in blob_fields):
-                    data = {**data, **{f: expanded[f] for f in blob_fields if expanded.get(f)}}
-            except Exception:  # noqa: BLE001
-                logger.debug("hub_bridge: blob follow-up fetch failed for %s-%s", child_type, child_id, exc_info=True)
+        data = await _fill_empty_blobs(cls, child_type, child_id, data)
         envelope_ref = f"{parent_type}-{parent_id}" if parent_type and parent_id else None
         local_user = await User.get_local()
         someone_typeid = local_user.typeid if local_user else None
@@ -829,7 +840,7 @@ class HubWsBridge:
         """
         if op == "delete":
             return
-        from flow_sdk.app.actions.group_task_action import (
+        from flow_sdk.app.actions.task_receive import (
             materialize_accepted_task_invitation,
             materialize_remote_task,
         )
@@ -845,10 +856,20 @@ class HubWsBridge:
         # the child's folder. Once it's local, an update is just this row — the
         # parent almost never changes, and re-pulling it on every status flip
         # would double the hub traffic and re-notify a parent nobody touched.
-        if await Task.get_one({"id": task_id}) is None:
+        existing = await Task.get_one({"id": task_id})
+        if existing is None:
             task = await materialize_accepted_task_invitation(task_id, local_user.typeid)
         else:
-            task = await materialize_remote_task({**data, "id": task_id}, local_user.typeid)
+            # The sender receives its OWN op too, so check staleness before doing
+            # any work: an echo would otherwise spend a hub round-trip refilling
+            # blobs for a merge that then declines to run.
+            if not Task.is_stale(existing, data):
+                return
+            # Same blob guard the child path uses: a DB-row payload carries
+            # ``description`` empty, and this row already HAS a body — merging
+            # the empty value would blank the issue text on a status flip.
+            payload = await _fill_empty_blobs(Task, "task", task_id, {**data, "id": task_id})
+            task = await materialize_remote_task(payload, local_user.typeid)
         logger.info("[bridge] task op %s materialized %s", op, getattr(task, "id", None))
 
     # ------------------------------------------------------------------
