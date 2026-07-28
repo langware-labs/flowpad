@@ -560,6 +560,24 @@ export class Project extends APIEntity<Project> {
     return Array.isArray(res?.secrets) ? res!.secrets : [];
   }
 
+  /** Store a secret on the hub, which is the system of record.
+   *
+   *  Fails with `project_not_published` when the project has no hub row yet —
+   *  the caller offers to publish rather than parsing the message. */
+  async pushSecretToCloud(envVar: string, value: string): Promise<void> {
+    const actionInfo = new ActionInfo('push-secret-to-cloud', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { env_var: envVar, value };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /** Delete a secret from the hub — CLOUD ONLY. The local declaration, the
+   *  sodot entry and `.env.local` are all deliberately left alone. */
+  async deleteSecretFromCloud(envVar: string): Promise<void> {
+    const actionInfo = new ActionInfo('delete-secret-from-cloud', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { env_var: envVar };
+    await dataManager.callAction(actionInfo);
+  }
+
   /** Setup wizard: store a user-provided value in the secret's designated SOD
    *  store (sodot or the project .env.local). The value never touches the
    *  reference json or any hub payload. */

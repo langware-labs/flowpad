@@ -95,9 +95,14 @@ def _shared_secret_origin_payload(
     except Exception as exc:  # noqa: BLE001
         logger.debug("[membership-sync] invalid secret origin locator: %s", exc)
         return None
-    if kind == "flowpad-hub" and not (getattr(locator, "secret_id", "") or "").strip():
-        logger.debug("[membership-sync] flowpad-hub secret origin missing secret_id")
-        return None
+    if kind == "flowpad-hub":
+        # Either the typed coordinates or the legacy opaque id — but not neither,
+        # or there is nothing on the hub to point at.
+        has_coords = bool((getattr(locator, "project_id", "") or "").strip())
+        has_legacy = bool((getattr(locator, "secret_id", "") or "").strip())
+        if not has_coords and not has_legacy:
+            logger.debug("[membership-sync] flowpad-hub secret origin has no hub coordinates")
+            return None
     env_var = (item.get("env_var") or "").strip()
     if not env_var or not is_valid_secret_origin_env_var(env_var):
         logger.debug("[membership-sync] invalid secret origin env_var: %r", env_var)
