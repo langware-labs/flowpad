@@ -13615,6 +13615,14 @@ msgstr "קובץ עקיבה זה אינו קשור לסשן עובד."
 msgid "This trace predates the call-stack view. Re-run the analysis (Refresh) to generate it."
 msgstr "עקבה זו קדומה מתצוגת stack הקריאות. הפעל מחדש את הניתוח (רענן) כדי ליצור אותה."
 
+#: src/components/conversation/asset-review/StagedTranscriptPreview.tsx
+msgid "This transcript could not be read."
+msgstr "לא ניתן לקרוא את התמליל הזה."
+
+#: src/components/conversation/asset-review/StagedTranscriptPreview.tsx
+msgid "This transcript has no messages."
+msgstr "אין הודעות בתמליל הזה."
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 msgstr "פעולה זו תמחק את כל יומני הניפוי מ-<0>~/.claude/debug/</0> ואת כל רשומות השגיאות שנותחו."

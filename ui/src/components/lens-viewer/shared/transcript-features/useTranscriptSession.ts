@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { AgenticProcess, ClaudeSession, dataContext, ProcessKind, TypeId } from '@sdk';
+import { AgenticProcess, dataContext, ProcessKind, TypeId } from '@sdk';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
@@ -7,14 +7,7 @@ import { buildSharedAndPrivateContextSection } from '@src/components/conversatio
 import { mostRecentProcess } from '@src/utils/process-recency';
 import type { WorkerType as ConversationWorkerType } from '@src/components/conversation/conversation-session-constants';
 import type { WorkerType } from '@src/hooks/use-transcript';
-
-/** Worker → session entity-type slug. claude is the only one with a frontend
- *  entity class (`ClaudeSession`); codex/copilot use their backend slug. */
-const SESSION_TYPE_BY_WORKER: Record<WorkerType, string> = {
-  claude: ClaudeSession.type,
-  codex: 'codex_session',
-  copilot: 'copilot_session',
-};
+import { SESSION_TYPE_BY_WORKER } from './transcript-utils';
 
 /** Fixed first instruction for the analyze-transcript worker. */
 const ANALYZE_PROMPT = 'Load this transcript using transcript analyzer and summarise it.';
@@ -36,7 +29,10 @@ const ANALYZE_PROMPT = 'Load this transcript using transcript analyzer and summa
  * "load + summarise" instruction, and the worker session itself as context.
  * Runs in the current active project (`dataContext.project`).
  */
-export function useTranscriptSession(workerType: WorkerType, sessionId: string | null): {
+export function useTranscriptSession(
+  workerType: WorkerType,
+  sessionId: string | null,
+): {
   process: AgenticProcess | null;
   starting: boolean;
   launch: (worker: ConversationWorkerType) => void;
@@ -50,7 +46,7 @@ export function useTranscriptSession(workerType: WorkerType, sessionId: string |
   const { processes } = useProcessesForTarget(target, { processType: ProcessKind.Analysis });
   const process = useMemo(() => mostRecentProcess(processes), [processes]);
 
-  const launch = useCallback(
+  const startLaunch = useCallback(
     async (worker: ConversationWorkerType) => {
       if (!sessionId || !target || starting) return;
       const project = dataContext.project;
@@ -81,6 +77,16 @@ export function useTranscriptSession(workerType: WorkerType, sessionId: string |
       }
     },
     [sessionId, target, sessionType, starting],
+  );
+
+  // Fire-and-forget wrapper: callers hand `launch` straight to an onClick, and a
+  // promise-returning handler there is unhandled-rejection bait (the async body
+  // already notifies on its own failures).
+  const launch = useCallback(
+    (worker: ConversationWorkerType) => {
+      void startLaunch(worker);
+    },
+    [startLaunch],
   );
 
   const open = useCallback(() => {

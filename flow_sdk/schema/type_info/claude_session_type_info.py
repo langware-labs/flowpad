@@ -8,12 +8,18 @@ from flow_sdk.fs_store.indexer.functions.claude_sessions import (
     claude_session_stable_key,
     extract_claude_session,
 )
+from flow_sdk.fs_store.placement import TRANSCRIPTS_FAMILY
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
 
 CLAUDE_SESSION = TypeMetadata(
     type=EntityType.CLAUDE_SESSION,
     indexed_by_default=True,
+    # The vendor logo, resolved through the custom-icon seam in
+    # ``ts_sdk``/``lucide-by-name``. Declared here so EVERY surface picks it up
+    # via ``iconForType`` — including a received transcript's attachment chip,
+    # which had no per-type glyph and fell back to the generic document icon.
+    icon="ClaudeCode",
     from_disk_fn=extract_claude_session,
     identity_backend=derived_identity(claude_session_id_from_file),
     id_stable_key_fn=claude_session_stable_key,
@@ -25,7 +31,7 @@ CLAUDE_SESSION = TypeMetadata(
     # the class that allows a global install alongside a project one.
     asset_class="harness",
     harness="claude",
-    family="transcripts",
+    family=TRANSCRIPTS_FAMILY,
     main_layout="file",
     main_ext=".jsonl",
     # No ``receive_policy``: a shared transcript stages and waits for the normal
