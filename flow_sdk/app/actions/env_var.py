@@ -12,14 +12,16 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
 from starlette.requests import Request
 
-from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.actions import action
-from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.core.entity.entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
 from flow_sdk.core.entity.entity_env.env_utils import is_confidential, mask_confidential_value
+from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.core.oauth.provider_registry import user_credentials_name
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import (
     delete_entity_credentials,
+    delete_user_credentials,
     get_current_request_info,
     set_entity_credentials,
     set_user_credentials,
@@ -47,6 +49,40 @@ async def store_env_var_value(entity_var: EnvVar, value: str, entity_typeid: Typ
         entity_var.visible_value = mask_confidential_value(value)
     else:
         entity_var.visible_value = value
+
+
+def owns_its_value(entity_var: EnvVar, entity: Entity) -> bool:
+    """Does ``entity`` hold this var's value, or is it borrowing someone else's?
+
+    Two owner shapes: a plain row with no ref at all, and a self-pointing row
+    (``ref_type`` equal to the entity's own type) — which is what a user's own
+    API key or OAuth token looks like, because ``store_env_var_value`` routes
+    those through ``set_user_credentials`` on the user itself.
+
+    A row whose ``ref_type`` names a DIFFERENT type is a borrowed reference —
+    a project pointing at a user's token. Deleting that row must never destroy
+    the owner's secret.
+    """
+    if not entity_var.is_ref:
+        return True
+    return str(entity_var.ref_type) == str(entity.type)
+
+
+async def delete_env_var_value(entity_var: EnvVar, entity: Entity) -> None:
+    """Remove the stored value, mirroring ``store_env_var_value``'s own branch.
+
+    The write side composes a *different* SOD key per branch, so deletion has
+    to take the same branch or it silently orphans the entry: a user API key
+    written via ``set_user_credentials(..., foreign_key=user.id)`` is not
+    reachable by ``delete_entity_credentials``.
+    """
+    if not is_confidential(entity_var.var_type) or not owns_its_value(entity_var, entity):
+        return
+    if entity_var.ref_type == BuiltinEntityType.USER:
+        cred_name = entity_var.ref_name or entity_var.name
+        await delete_user_credentials(entity, cred_name, entity.id)
+    else:
+        await delete_entity_credentials(entity, entity_var.name)
 
 
 def validate_env_var_name(name: str) -> str:
@@ -92,7 +128,15 @@ async def add_env_var_to_entity(
     ref_type = None
     ref_name = None
 
-    if var_type == EnvVarType.API_KEY:
+    if var_type == EnvVarType.OAUTH_TOKEN:
+        # An OAuth token always lives in the USER's credential store, under the
+        # provider's own SOD name. Without this, merge_env_tables sees a
+        # non-ref row and a connected provider reads as MISSING.
+        cred_name = user_credentials_name(name)
+        if cred_name:
+            ref_type = BuiltinEntityType.USER
+            ref_name = cred_name
+    elif var_type == EnvVarType.API_KEY:
         # For API keys stored on user entities, set ref_type to USER so they can be retrieved via get_user_credentials
         if entity.type == BuiltinEntityType.USER.value:
             ref_type = BuiltinEntityType.USER
@@ -389,8 +433,10 @@ async def delete_env_var(env_var_info: EnvVarInfo) -> ApiResponse:
     if not entity_var:
         raise HTTPException(status_code=404, detail="env var not found")
 
-    if is_confidential(entity_var.var_type) and not entity_var.is_ref:
-        await delete_entity_credentials(target_entity, var_name)
+    # Drop the stored value only when THIS entity owns it — a borrowed
+    # reference (a project row pointing at a user's token) must leave the
+    # owner's secret intact.
+    await delete_env_var_value(entity_var, target_entity)
 
     target_entity.remove_env_var(var_name)
     await target_entity.update()
