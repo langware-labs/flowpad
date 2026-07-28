@@ -46,25 +46,30 @@ const getSnapshot = () => instancePreferences.version;
  * PREFERENCES_LOADED, so the wait ends the moment the value lands.
  */
 export function usePreferenceResolved(tag: PrefKey): boolean {
-  useEffect(() => {
-    if (!instancePreferences.isLoaded) {
-      void instancePreferences.loadJson();
-    }
-  }, []);
-
-  useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-
+  usePreferencesVersion();
   return instancePreferences.isResolved(tag);
 }
 
-export function usePreference<T = unknown>(tag: PrefKey): [T, (value: T) => void] {
+/**
+ * Subscribe to *any* preference change, without binding to one key.
+ *
+ * The load-on-mount + subscribe primitive both other hooks in this file are built
+ * on, and the one consumers use directly when they read several prefs imperatively
+ * — the Preferences screen's `visibleWhen` filter, whose hook count must not depend
+ * on how many rows it is about to render.
+ */
+export function usePreferencesVersion(): number {
   useEffect(() => {
     if (!instancePreferences.isLoaded) {
       void instancePreferences.loadJson();
     }
   }, []);
 
-  useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export function usePreference<T = unknown>(tag: PrefKey): [T, (value: T) => void] {
+  usePreferencesVersion();
 
   const setValue = useCallback(
     (value: T) => {

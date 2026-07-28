@@ -1364,6 +1364,12 @@ class Project(Entity):
         await super().save(owner, notify=notify)
         if was_create:
             await self._stamp_index_sentinel()
+            # Auto-index trigger "Project Create". Detached: a project create must
+            # never wait on (or fail because of) a filesystem walk. The hook
+            # itself no-ops unless the preference selects that trigger.
+            from flow_sdk.fs_store.indexer.auto_index import maybe_auto_index
+
+            asyncio.create_task(maybe_auto_index(str(self.id), created=True))
         # Every Project owns one deterministic DB-only Wiki. This idempotent
         # repair also converges Projects created before Wiki existed.
         from flow_sdk.wiki.service import ensure_default_wiki
@@ -1381,6 +1387,31 @@ class Project(Entity):
                 record.write_hash()
         except Exception:
             log.debug("[project] index-sentinel stamp on create failed", exc_info=True)
+
+    @action.post(action_name="activate")
+    async def activate(self) -> "ApiResponse":
+        """Project activation — the one "the user is now in this project" signal.
+
+        Overrides the generic all-types ``activate`` for projects only:
+        ``ActionRegistry.get_by_name`` resolves ``project.activate`` before the
+        bare ``activate``, and ``action.all`` builds that key from this class's
+        ``type`` field default. The recency stamp is delegated to the generic
+        handler verbatim, so the response contract (``{"last_active_at": …}``) is
+        unchanged.
+
+        The auto-index is a DETACHED task, never awaited. The caller is a
+        fire-and-forget recency stamp from ``setContextEntityTypeId`` on the
+        frontend, whose equality guard means this fires exactly once per real
+        project switch. Detaching is what guarantees an index conflict (409) or a
+        slow walk can never reach the activation response.
+        """
+        from flow_sdk.core.entity.entity_model import _http_activate
+        from flow_sdk.fs_store.indexer.auto_index import maybe_auto_index
+
+        resp = await _http_activate(self)
+        if isinstance(resp, ApiSuccessResponse):
+            asyncio.create_task(maybe_auto_index(str(self.id), created=False))
+        return resp
 
     @action.post(action_name="add-context-dir")
     async def add_context_dir(self, path: str, scope: str = "private") -> "ApiResponse":
