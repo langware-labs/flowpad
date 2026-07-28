@@ -17,7 +17,6 @@ from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.core.entity.entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
 from flow_sdk.core.entity.entity_env.env_utils import is_confidential, mask_confidential_value
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.core.oauth.provider_registry import user_credentials_name
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import (
     delete_entity_credentials,
@@ -128,16 +127,16 @@ async def add_env_var_to_entity(
     ref_type = None
     ref_name = None
 
-    if var_type == EnvVarType.OAUTH_TOKEN:
-        # An OAuth token always lives in the USER's credential store, under the
-        # provider's own SOD name. Without this, merge_env_tables sees a
-        # non-ref row and a connected provider reads as MISSING.
-        cred_name = user_credentials_name(name)
-        if cred_name:
-            ref_type = BuiltinEntityType.USER
-            ref_name = cred_name
-    elif var_type == EnvVarType.API_KEY:
-        # For API keys stored on user entities, set ref_type to USER so they can be retrieved via get_user_credentials
+    if var_type in (EnvVarType.API_KEY, EnvVarType.OAUTH_TOKEN):
+        # A confidential var owned by a USER is a self-pointing row: ref_type
+        # USER, ref_name itself. That is what routes store/delete through
+        # set_user_credentials, and what a project's borrowed reference points
+        # BACK at (a project row carries ref_name=<this row's name>).
+        #
+        # The row is named for the credential (e.g. "github_credentials"), not
+        # for the provider — the provider is a separate OAUTH_PROVIDER_ID row
+        # whose ref_name names this one. Mapping provider → credential name is
+        # the caller's job, via the provider registry.
         if entity.type == BuiltinEntityType.USER.value:
             ref_type = BuiltinEntityType.USER
             ref_name = name
