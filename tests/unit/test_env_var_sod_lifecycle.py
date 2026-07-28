@@ -93,12 +93,13 @@ async def test_user_api_key_deletes_from_the_user_scoped_key(sod_env):
 
 
 @pytest.mark.asyncio
-async def test_user_oauth_token_points_at_the_provider_credentials_name(sod_env):
-    """An OAUTH_TOKEN row must name the provider's SOD entry, or a connected
-    provider reads as MISSING in the merged table."""
+async def test_user_oauth_token_is_a_self_pointing_owner_row(sod_env):
+    """The credential row is named for the CREDENTIAL and points at itself. A
+    project that borrows it mints its own row naming this one; the provider row
+    (OAUTH_PROVIDER_ID) likewise names this one. Neither is this row's job."""
     user = await _user()
 
-    var = await add_env_var_to_entity(user, "github", EnvVarType.OAUTH_TOKEN, value="gho_abcdefgh")
+    var = await add_env_var_to_entity(user, "github_credentials", EnvVarType.OAUTH_TOKEN, value="gho_abcdefgh")
 
     assert var.ref_type == BuiltinEntityType.USER
     assert var.ref_name == "github_credentials"
@@ -116,7 +117,9 @@ async def test_borrowed_reference_never_deletes_the_owners_value(sod_env):
     user = await _user()
     project = await _project()
 
-    owner = await add_env_var_to_entity(user, "github", EnvVarType.OAUTH_TOKEN, value="gho_owner_key")
+    owner = await add_env_var_to_entity(
+        user, "github_credentials", EnvVarType.OAUTH_TOKEN, value="gho_owner_key"
+    )
     borrowed = await add_env_var_to_entity(
         project, "GITHUB_OF_PROJECT", EnvVarType.OAUTH_TOKEN, value=None, skip_if_exists=True
     )
@@ -129,12 +132,12 @@ async def test_borrowed_reference_never_deletes_the_owners_value(sod_env):
 
 
 @pytest.mark.asyncio
-async def test_unknown_oauth_provider_gets_no_ref(sod_env):
-    """A provider this instance can't complete a flow for still creates a row —
-    it just has nothing to point at, so the merged table reads it as non-ref."""
-    user = await _user()
+async def test_a_confidential_var_on_a_project_is_not_a_ref(sod_env):
+    """Only USER-owned confidential vars self-point; a project's own key has no
+    ref at all, so it stores through set_entity_credentials."""
+    project = await _project()
 
-    var = await add_env_var_to_entity(user, "notaprovider", EnvVarType.OAUTH_TOKEN, value="tok-1234")
+    var = await add_env_var_to_entity(project, "PROJECT_ONLY", EnvVarType.API_KEY, value="tok-1234")
 
     assert var.ref_type is None
     assert var.ref_name is None
