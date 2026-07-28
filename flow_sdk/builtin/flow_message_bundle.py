@@ -241,7 +241,13 @@ async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path
     the receiver re-materializes the row via ``.save()`` — the same create-or-
     fill-merge contract as TASK / CLAUDE_SESSION. Without this the forwarded
     diagnosis never transfers, the receiver can't materialize it, and their
-    ``body_downloaded`` (hence the Download button) never clears."""
+    ``body_downloaded`` (hence the Download button) never clears.
+
+    The environment snapshot (``reported_by`` / ``occurred_at`` / ``os`` /
+    ``app_version``) is part of the header because the receiver cannot recompute
+    it — their machine's OS and version describe the helper, not the reporter.
+    ``occurred_at`` is carried instead of ``created_date`` for the same reason:
+    the install stamps ``created_date`` locally."""
     from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis
 
     diag = await FlowpadDiagnosis.get_one({"id": entry_id})
@@ -251,7 +257,21 @@ async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path
     diag_dir.mkdir(parents=True, exist_ok=True)
     diag_data = diag.model_dump(
         mode="python",
-        include={"id", "type", "name", "title", "symptoms", "rca", "fix", "summary", "user_report"},
+        include={
+            "id",
+            "type",
+            "name",
+            "title",
+            "symptoms",
+            "rca",
+            "fix",
+            "summary",
+            "user_report",
+            "reported_by",
+            "occurred_at",
+            "os",
+            "app_version",
+        },
         context={"skip_api_serializer": True},
     )
     (diag_dir / "header.json").write_text(

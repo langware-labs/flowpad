@@ -3871,6 +3871,7 @@ msgstr "Detach"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "Details"
 msgstr "Details"
