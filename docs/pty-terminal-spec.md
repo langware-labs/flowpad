@@ -950,18 +950,24 @@ never resets the PTY.
 All in `InteractiveTerminal.tsx` (the `showSimpleChat` derivation):
 
 ```
-isAdvanced   = useIsAdvanced()                    // View mode (Standard ⊂ Advanced ⊂ Dev)
-chatOverride = useChatUiOverride()                // 'chat'|'terminal'|null — URL ?chatMode, else pref
-wantChat     = chatOverride != null ? chatOverride === 'chat' : !isAdvanced
+surface      = useSessionSurface()                // 'vibe'|'chat'|'terminal', or null = not known yet
+wantChat     = surface === 'chat'
 isHeadless   = !embedded && process.pty_mode === false
 showSimpleChat = isHeadless || (wantChat && !embedded && process)
 canToggleView  = !embedded && process
 ```
 
-- **Default skin** (no override): Standard ⇒ chat UI, Advanced/Dev ⇒ xterm.
-- **Override** (`preferences.ui.chat_ui_mode`, a boot pref; `chat-ui-mode-context.tsx`)
-  takes priority over View mode until cleared. Console/global helpers
-  `window.setChatUi('chat'|'terminal'|null)` / `getChatUi()`.
+- **One mode.** The surface is derived from the View mode alone
+  (`surfaceForViewMode`): Vibe ⇒ the vibe workspace, Standard ⇒ chat pane,
+  Advanced/Dev ⇒ xterm. There is no second "chat mode" preference — it existed
+  briefly and could drift out of sync with View mode (both carried a `vibe`, and
+  each control wrote only its own), so it was folded into this one.
+- **`null` = not known yet.** On the first load in a browser profile there is no
+  localStorage boot seed, so painting the registry default would flash the wrong
+  surface for ~1s. `InteractiveTerminal` covers the pane until it resolves
+  (`surfacePending`); see `tests/unit/session-surface-first-paint.test.tsx`.
+- Console/global helpers: `window.setView('vibe'|'standard'|'advanced'|'dev')` /
+  `getView()`.
 - **Embedded** terminals (chat side panel) and **shell-only** tabs (no
   `AgenticProcess`) always keep the xterm — `showSimpleChat` requires `process`
   and `!embedded`.
@@ -971,20 +977,20 @@ canToggleView  = !embedded && process
   missing ref, so no `PtySync` attach is attempted for a process that has no
   shell.
 
-**The control** is `TerminalModeSwitch.tsx` — a 3-segment control (chat |
-terminal | vibe) rendered **leftmost in the terminal header** and again leading
-vibe's display tab strip (`HeaderSlots.modeSwitch`,
-built by `ProcessToolbar` and placed by both `InteractiveTabHeader` layouts), where
-the CURRENT mode is the selected segment. The header sits *above* the pane, so the
-chat overlay (`absolute inset-0` inside the pane) never covers it. `chat`/`terminal`
-are the two transports and run `useProcessModeSwitch().switchTo` (see
-`docs/agent-management/mode-switching.md`); `vibe` is a skin, not a transport — it
-reuses the Discuss affordance (`?viewMode=vibe` navigation onto the very same
-process dock) and is never gated. Every pick is URL-first — the renderer choice
-rides `?chatMode` (see `docs/agent-management/mode-switching.md`), so it is
-shareable and back-safe. In the terminal header `vibe` is never the selected
-segment (vibe replaces the page with `VibeWorkspace`, so this header isn't
-mounted there); at the vibe mount it is.
+**The controls** are the footer `ViewToggle` and `TerminalModeSwitch.tsx` — the
+in-context twin rendered **leftmost in the terminal header** (`HeaderSlots.modeSwitch`,
+built by `ProcessToolbar`, placed by both `InteractiveTabHeader` layouts) and
+again leading vibe's display tab strip. Both write the SAME preference, so they
+cannot disagree; both show the CURRENT mode as the selected segment. The header
+sits *above* the pane, so the chat overlay (`absolute inset-0` inside the pane)
+never covers it.
+
+Every pick is URL-first: the click only navigates (`?viewMode=`), and the mounted
+URL adopts the mode as the preference, so the arrangement is shareable and
+back-safe. Picking a mode whose surface implies a different TRANSPORT also moves
+the worker — that reconcile lives in an effect (`useSessionSurfaceReconcile`), not
+in the click handler, so it happens however the mode changed: from either control
+or from `window.setView()`. See `docs/agent-management/mode-switching.md`.
 
 ### 14.3 Where the chat UI's content comes from (NOT the PTY)
 

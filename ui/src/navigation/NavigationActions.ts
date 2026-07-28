@@ -585,7 +585,7 @@ export class NavigationActions {
 
   async openShellProcess(
     agenticProcessId: string,
-    options?: { t?: string; windows?: string; activeWindow?: string; viewMode?: string; chatMode?: string },
+    options?: { t?: string; windows?: string; activeWindow?: string; viewMode?: string },
   ): Promise<AgenticProcess | null> {
     const extraOptions = toStringRecord(options);
     const process =
@@ -597,8 +597,7 @@ export class NavigationActions {
     // rendering mode of that same tab — `extraOptions.viewMode` rides the URL
     // as `?viewMode=vibe` via the openDock options merge, never a second URL
     // family (the display tab identity is gone; legacy /dock/display URLs
-    // redirect in canonicalProcessDockPath). `chatMode` rides the same way,
-    // selecting the renderer one level down.
+    // redirect in canonicalProcessDockPath).
     this.openDock(process.terminalDockPointer, extraOptions);
     return process;
   }

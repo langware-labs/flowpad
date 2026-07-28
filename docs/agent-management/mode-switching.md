@@ -53,24 +53,31 @@ The current code routes on `pty_mode`:
   `:1315`). Body: `{"mode": "interactive" | "cli"[, cols, rows]}`.
 - **Frontend:** `AgenticProcess.switchMode(mode, opts?)`
   (`ts_sdk/src/process/agentic-process.ts:2360`).
-- **UI caller:** `useProcessModeSwitch().select('chat' | 'terminal' | 'vibe')`
-  (`interactive-terminal/use-process-mode-switch.ts`), driven by
-  `TerminalModeSwitch.tsx` — the same 3-segment control mounted twice: leftmost
+- **UI caller:** `useSessionSurfaceReconcile`
+  (`interactive-terminal/use-process-mode-switch.ts`), driven by the **View
+  mode** — the one mode preference. Two controls write it: the footer
+  `ViewToggle` and `TerminalModeSwitch.tsx`, the in-context twin mounted leftmost
   in the terminal header (a `ProcessToolbar` slot) and leading vibe's display tab
-  strip (`WorkspaceChildStrip`), where `vibe` is the selected segment. Each mount
-  calls the hook once (a second call would own a second, disagreeing `switching`
-  state); the hook derives the transport and the readiness gate from the reactive
-  entity itself. (Historically this was a 2-state toggle in the bottom ribbon.)
+  strip (`WorkspaceChildStrip`). Each mount calls `useProcessModeSwitch` once (a
+  second call would own a second, disagreeing `switching` state); the hook derives
+  the transport and the readiness gate from the reactive entity itself.
 
-**Every pick is URL-first.** `select` navigates — `?chatMode=chat|terminal`
-(`DockPointer.withChatMode`) for the renderers, `?viewMode=vibe` for vibe — and
-the mounted URL is the single writer: `useDockChatModeOverrideSync` pins the mode
-and adopts it into `PrefKey.CHAT_UI_MODE`, exactly as `useDockViewModeOverrideSync`
-does one level up. So the mode is shareable, back-safe, and survives the URL. The
-one thing navigation cannot express is the TRANSPORT, which is why `select` also
-runs `switchMode` when — and only when — the pick disagrees with `pty_mode`.
-Both params are threaded through the shell loader's scope-align redirect
-(`ProcessRouteCarry`), which otherwise rebuilds the URL and drops query options.
+**Every pick is URL-first.** Selecting a mode only navigates (`?viewMode=`); the
+mounted URL is the single writer, adopting it via `useDockViewModeOverrideSync`.
+So the mode is shareable, back-safe, and survives the URL. `viewMode` is threaded
+through the shell loader's scope-align redirect (`ProcessRouteCarry`), which
+otherwise rebuilds the URL and drops query options.
+
+The one thing navigation cannot express is the TRANSPORT — the terminal surface is
+an interactive PTY, vibe and chat are headless. That reconcile lives in an
+**effect**, not the click handler, so it happens however the mode changed (either
+control, or `window.setView()`). It fires on a mode CHANGE only, never on mount:
+merely opening a session must not kill or spawn a worker.
+
+(Historically this was a 2-state toggle in the bottom ribbon, then a separate
+3-valued "chat mode" preference. The latter could drift out of sync with View
+mode — both carried a `vibe`, and each control wrote only its own — so it was
+folded into View mode.)
 
 ### → CLI (chat / headless)
 

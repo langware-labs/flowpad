@@ -49,7 +49,6 @@ export enum PrefKey {
   // i18n / ui (boot keys read at module load, gate first paint)
   LOCALE = 'preferences.i18n.locale',
   VIEW_MODE = 'preferences.ui.view_mode',
-  CHAT_UI_MODE = 'preferences.ui.chat_ui_mode',
   CHAT_SHOW_TOOLS = 'preferences.chat.show_tools',
   ONBOARDING_DISMISSED = 'preferences.ui.onboarding_dismissed',
   SHOW_SYSTEM_PROJECTS = 'preferences.ui.show_system_projects',
@@ -369,7 +368,7 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
   },
 
   // ===== Migrated from localStorage =====
-  // Boot keys (i18n.locale, ui.view_mode, ui.chat_ui_mode) are seeded synchronously
+  // Boot keys (i18n.locale, ui.view_mode) are seeded synchronously
   // from localStorage at construction and mirrored back on set, so first paint is
   // correct before the backend loads.
   [PrefKey.LOCALE]: {
@@ -414,22 +413,6 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     options: [
       { value: 'desk', label: 'Desktop' },
       { value: 'hub', label: 'Hub' },
-    ],
-  },
-  [PrefKey.CHAT_UI_MODE]: {
-    key: PrefKey.CHAT_UI_MODE,
-    boot: true,
-    surfaced: true,
-    legacyLocalStorageKey: 'chatUiOverride',
-    category: 'ui',
-    label: 'Chat mode',
-    description: 'Which surface a chat opens in. The mode switch updates this, so new chats open in whatever you last picked.',
-    dataType: PrefDataType.STRING,
-    defaultValue: 'vibe',
-    options: [
-      { value: 'vibe', label: 'Vibe' },
-      { value: 'chat', label: 'Chat' },
-      { value: 'terminal', label: 'Terminal' },
     ],
   },
   [PrefKey.CHAT_SHOW_TOOLS]: {

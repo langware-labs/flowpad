@@ -2,7 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { isReadyForInput, ProcessStatus } from '@sdk';
 import { TerminalModeSwitch } from '@src/components/terminal/interactive-terminal/TerminalModeSwitch';
-import type { ChatMode } from '@src/contexts/chat-ui-mode-context';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => cleanup());
@@ -42,7 +42,7 @@ describe('isReadyForInput — the "your turn" switch gate', () => {
 
     render(
       <TerminalModeSwitch
-        current="chat"
+        current={ViewMode.Standard}
         showVibe={false}
         modeSwitch={{ ptyMode: false, awaitingUserInput: enabled, switching: false, select: onSelect }}
       />,
@@ -51,7 +51,7 @@ describe('isReadyForInput — the "your turn" switch gate', () => {
     const btn = screen.getByRole('radio', { name: 'Terminal' });
     expect(btn.disabled).toBe(false);
     await userEvent.click(btn);
-    expect(onSelect).toHaveBeenCalledWith('terminal');
+    expect(onSelect).toHaveBeenCalledWith(ViewMode.Advanced);
   });
 
   it('is false when busy (turn in flight) and for non-live states with no live headless session', () => {
@@ -83,16 +83,16 @@ describe('TerminalModeSwitch — transport segment gating', () => {
    *  fields, reassembled into the `modeSwitch` object the component takes. */
   const renderSwitch = (
     over: Partial<{
-      current: ChatMode;
+      current: ViewMode;
       showVibe: boolean;
       ptyMode: boolean;
       switching: boolean;
       enabled: boolean;
-      onSelect: (m: ChatMode) => void;
+      onSelect: (m: ViewMode) => void;
     }> = {},
   ) => {
     const props = {
-      current: 'chat' as ChatMode,
+      current: ViewMode.Standard,
       showVibe: false,
       // Default: headless, so picking `terminal` is a real transport switch.
       ptyMode: false,
@@ -117,7 +117,7 @@ describe('TerminalModeSwitch — transport segment gating', () => {
   };
 
   it('marks the current mode as the selected segment', () => {
-    renderSwitch({ current: 'chat' });
+    renderSwitch({ current: ViewMode.Standard });
     expect(screen.getByRole('radio', { name: 'Chat' }).getAttribute('aria-checked')).toBe('true');
     expect(screen.getByRole('radio', { name: 'Terminal' }).getAttribute('aria-checked')).toBe('false');
   });
@@ -141,7 +141,7 @@ describe('TerminalModeSwitch — transport segment gating', () => {
     expect(btn.disabled).toBe(false);
 
     await userEvent.click(btn);
-    expect(onSelect).toHaveBeenCalledWith('terminal');
+    expect(onSelect).toHaveBeenCalledWith(ViewMode.Advanced);
   });
 
   it('stays disabled mid-switch even if the status would otherwise allow it', () => {
@@ -163,14 +163,14 @@ describe('TerminalModeSwitch — transport segment gating', () => {
     expect(btn.getAttribute('aria-checked')).toBe('false');
 
     await userEvent.click(btn);
-    expect(onSelect).toHaveBeenCalledWith('vibe');
+    expect(onSelect).toHaveBeenCalledWith(ViewMode.Vibe);
   });
 
   it('selects vibe at the vibe mount, where the transport is still one of the two', () => {
     // The vibe display strip renders the same control with current="vibe": the
     // session is shown in vibe while its transport stays chat or terminal, so
     // both renderer segments are live exits, not no-ops.
-    renderSwitch({ current: 'vibe', ptyMode: true, showVibe: true, enabled: true });
+    renderSwitch({ current: ViewMode.Vibe, ptyMode: true, showVibe: true, enabled: true });
     expect(screen.getByRole('radio', { name: 'Vibe' }).getAttribute('aria-checked')).toBe('true');
     expect(screen.getByRole('radio', { name: 'Chat' }).getAttribute('aria-checked')).toBe('false');
     expect(screen.getByRole('radio', { name: 'Terminal' }).disabled).toBe(false);
@@ -186,12 +186,12 @@ describe('TerminalModeSwitch — transport segment gating', () => {
     // terminal. Picking `terminal` is a free skin flip, so the mid-turn gate must
     // not swallow it — watching the raw terminal while the agent works is exactly
     // when you want it. The other direction (`chat` = kill the PTY) stays gated.
-    const { onSelect } = renderSwitch({ current: 'chat', ptyMode: true, enabled: false });
+    const { onSelect } = renderSwitch({ current: ViewMode.Standard, ptyMode: true, enabled: false });
 
     const terminalBtn = screen.getByRole('radio', { name: 'Terminal' });
     expect(terminalBtn.disabled).toBe(false);
     await userEvent.click(terminalBtn);
-    expect(onSelect).toHaveBeenCalledWith('terminal');
+    expect(onSelect).toHaveBeenCalledWith(ViewMode.Advanced);
 
     expect(screen.getByRole('radio', { name: 'Chat' }).disabled).toBe(true);
   });

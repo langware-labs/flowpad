@@ -16,6 +16,7 @@ import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActio
 import { ExportEntityButton } from '@src/components/entity-actions/ExportEntityButton';
 import { AssetManagerButton } from '@src/components/asset-manager';
 import { ViewSwap } from '@src/components/view-mode';
+import { useViewMode } from '@src/contexts/view-mode-context';
 import { AdvancedInteractiveTabHeader, StandardInteractiveTabHeader } from './InteractiveTabHeader';
 import { TerminalModeSwitch } from './TerminalModeSwitch';
 import type { ProcessModeSwitch } from './use-process-mode-switch';
@@ -73,10 +74,6 @@ interface ProcessToolbarProps {
   /** Shell entity for PTY Viewer (dev mode only). */
   shell?: Shell | null;
   // ── Mode switch (chat | terminal | vibe), rendered leftmost in the header ──
-  /** True when the chat skin is up (⇒ the `chat` segment is selected). Comes from
-   * InteractiveTerminal, which owns the skin decision. Do NOT re-derive it here:
-   * this component's useSyncExternalStore snapshot excludes `pty_mode`. */
-  chatActive?: boolean;
   /** The shared mode switch. Undefined ⇒ this tab can't switch (embedded panel),
    * and the whole control is hidden. */
   modeSwitch?: ProcessModeSwitch;
@@ -93,12 +90,12 @@ export function ProcessToolbar({
   embedded,
   onClose,
   shell,
-  chatActive,
   modeSwitch,
 }: ProcessToolbarProps) {
   const { t, i18n } = useLingui();
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
   const { navigation, windowMode } = useDockNavigation();
+  const viewMode = useViewMode();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
   const [showPtyEventsViewer, setShowPtyEventsViewer] = useState(false);
   const [showCommandStatus, setShowCommandStatus] = useState(false);
@@ -206,7 +203,7 @@ export function ProcessToolbar({
   // detached window has no business swapping itself for a full-page workspace
   // (the reason AssetDiscussButton excludes windowMode too).
   const modeSwitchSlot = modeSwitch ? (
-    <TerminalModeSwitch current={chatActive ? 'chat' : 'terminal'} showVibe={!windowMode} modeSwitch={modeSwitch} />
+    <TerminalModeSwitch current={viewMode} showVibe={!windowMode} modeSwitch={modeSwitch} />
   ) : null;
 
   const debugSlot = (

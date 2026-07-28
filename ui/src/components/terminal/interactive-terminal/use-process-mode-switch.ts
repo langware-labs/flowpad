@@ -1,8 +1,7 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { isReadyForInput, WorkerMode, type AgenticProcess } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
-import { useIsVibe } from '@src/contexts/view-mode-context';
-import { chatModeNavOptions, chatModePtyMode, type ChatMode } from '@src/contexts/chat-ui-mode-context';
+import { useViewMode, viewModePtyMode, ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 
@@ -25,96 +24,115 @@ export interface ProcessModeSwitch {
   /** A transport switch is in flight. */
   switching: boolean;
   /** Pick a mode. URL-first: this navigates; the URL load applies and adopts it. */
-  select: (mode: ChatMode) => void;
+  select: (mode: ViewMode) => void;
 }
 
 /**
- * The session mode switch — chat ⇄ terminal ⇄ vibe — for one agentic process.
- * One definition of "what picking a mode means", shared by every mount of
- * `TerminalModeSwitch` (the terminal header and the vibe display strip).
+ * The session mode switch for one agentic process — the in-context twin of the
+ * footer `ViewToggle`, writing the same single preference (view mode).
  *
- * **Every pick navigates:** `?chatMode=<mode>` for the two renderers,
- * `?viewMode=vibe` for vibe. The mounted URL pins the mode for as long as it is
- * mounted (`useDockChatModeOverrideSync` / `useDockViewModeOverrideSync`), which
- * keeps the arrangement browsable, and the URL load is what adopts the mode as
- * the preference — so nothing here writes a pref from the click path.
+ * **Picking a mode only navigates** (`?viewMode=`); the mounted URL is the single
+ * writer, adopting the mode as the preference (`useDockViewModeOverrideSync`).
  *
- * The one thing navigation cannot do is move the TRANSPORT, because that is a
- * worker lifecycle action, not a view: chat = headless print-mode (no PTY),
- * terminal = interactive PTY. So when — and only when — the pick disagrees with
- * `pty_mode`, this also runs the standardized `switchMode(WorkerMode.CLI|
- * Interactive)`: →terminal spawns + resumes the PTY; →chat kills the PTY worker,
- * keeping `session_id` and the transcript, and reverts to headless routing. Both
- * reconcile the transcript so the destination shows turns the other mode
- * produced. The backend 409s a mid-turn switch; `switching` guards against
- * double-trigger and drives the spinner.
+ * The one thing navigation cannot express is the TRANSPORT, because that is a
+ * worker lifecycle action rather than a view: the terminal surface is an
+ * interactive PTY, vibe and chat are headless print-mode. That reconcile lives in
+ * an effect (`useSessionSurfaceReconcile`) rather than in this click handler, so
+ * it happens however the mode changed — from here, from the footer toggle, or
+ * from `window.setView()`.
  *
  * Call this ONCE per mount — a second call site would own a second, disagreeing
  * `switching` state.
  */
 export function useProcessModeSwitch({ process, getDims }: UseProcessModeSwitchOptions): ProcessModeSwitch {
-  const [switching, setSwitching] = useState(false);
-  const { navigation } = useDockNavigation();
-  const isVibe = useIsVibe();
+  const { navigation, currentDock } = useDockNavigation();
+  const viewMode = useViewMode();
   // The reactive entity: `pty_mode` and the worker status both move underneath
   // us mid-session, and the switch's selection + gate must follow.
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
   const live = liveProcess ?? process ?? null;
   const ptyMode = live?.pty_mode !== false;
   const awaitingUserInput = isReadyForInput(live ?? {});
+  const { switching } = useSessionSurfaceReconcile({ process: live, viewMode, ptyMode, awaitingUserInput, getDims });
 
   const select = useCallback(
-    (mode: ChatMode) => {
-      if (!process) return;
-
+    (mode: ViewMode) => {
       // Address the PROCESS, never the ambient dock. This hook is mounted in the
       // vibe display strip too, where `currentDock` is often a CHILD tab (an
       // asset editor opened from inside the workspace) — stamping the mode onto
       // that URL would navigate the user to the child in the new mode instead of
       // to their session. `openShellProcess` is the one place that knows how to
-      // build a process URL, and every other open-in-vibe call site uses it.
-      //
-      // Vibe is a view mode of that URL; chat/terminal is the renderer one level
-      // down. Leaving vibe restores the mode in use before it — entering vibe
-      // overwrote the persisted preference, so inheriting would pin the user in
-      // vibe and hardcoding Standard would quietly demote an Advanced user.
-      void navigation.openShellProcess(process.id, chatModeNavOptions(mode, isVibe));
-
-      // …and the part the URL can't express: move the worker when the pick
-      // disagrees with the live transport. Keyed on `pty_mode` (held stable by
-      // the SDK desired-value latch) and NOT on the chat skin, whose preference
-      // lags under rapid switching — a skin-keyed test could short-circuit a
-      // direction that has not actually landed. `awaitingUserInput` mirrors the
-      // control's own disabled gate (the backend 409s a mid-turn switch).
-      if (mode === 'vibe' || switching || chatModePtyMode(mode) === ptyMode || !awaitingUserInput) return;
-
-      const toChat = mode === 'chat';
-      setSwitching(true);
-      void (async () => {
-        try {
-          await process.switchMode(toChat ? WorkerMode.CLI : WorkerMode.Interactive, toChat ? undefined : getDims?.());
-          // The transcript reconcile pulls in turns the other mode produced. It
-          // is a VIEW concern and slow on a large session (backend transcript
-          // parse), so it is never awaited — holding the control behind it
-          // wedged rapid switching. `loadHistory({ force: true })` REPLACES the
-          // stream with the transcript (clears internally); the live WS stream
-          // keeps the pane current meanwhile.
-          void process
-            .loadHistory({ force: true })
-            .catch((err) => console.debug('[useProcessModeSwitch] post-switch reconcile deferred:', err));
-        } catch (err) {
-          console.error('[useProcessModeSwitch] mode switch failed', err);
-          notify.error({
-            title: toChat ? 'Could not switch to chat' : 'Could not switch to terminal',
-            message: err instanceof Error ? err.message : String(err),
-          });
-        } finally {
-          setSwitching(false);
-        }
-      })();
+      // build a process URL.
+      if (process) void navigation.openShellProcess(process.id, { viewMode: mode });
+      else if (currentDock) navigation.openDock(currentDock.withViewMode(mode));
     },
-    [process, switching, awaitingUserInput, ptyMode, getDims, isVibe, navigation],
+    [process, navigation, currentDock],
   );
 
   return { live, ptyMode, awaitingUserInput, switching, select };
+}
+
+/**
+ * Align a session's TRANSPORT with the view mode's surface: terminal ⇒ an
+ * interactive PTY, vibe/chat ⇒ headless print-mode. One standardized
+ * `switchMode(WorkerMode.Interactive|CLI)` — →terminal spawns + resumes the PTY,
+ * →headless kills the PTY worker while keeping `session_id` and the transcript.
+ * Both then reconcile the transcript so the destination shows turns the other
+ * mode produced.
+ *
+ * Deliberately reconciles on mode CHANGE only, never on mount: merely opening a
+ * session must not kill or spawn workers, or every navigation to an old process
+ * URL would churn one. The first observed mode is recorded, not acted on.
+ */
+function useSessionSurfaceReconcile({
+  process,
+  viewMode,
+  ptyMode,
+  awaitingUserInput,
+  getDims,
+}: {
+  process: AgenticProcess | null;
+  viewMode: ViewMode;
+  ptyMode: boolean;
+  awaitingUserInput: boolean;
+  getDims?: () => { cols: number; rows: number } | undefined;
+}): { switching: boolean } {
+  const [switching, setSwitching] = useState(false);
+  const lastMode = useRef<ViewMode | null>(null);
+
+  useEffect(() => {
+    const previous = lastMode.current;
+    lastMode.current = viewMode;
+    if (previous === null || previous === viewMode) return; // mount, or no change
+    if (!process || switching) return;
+    const wantPty = viewModePtyMode(viewMode);
+    if (wantPty === ptyMode) return; // transport already matches the surface
+    if (!awaitingUserInput) return; // the backend 409s a mid-turn switch
+
+    setSwitching(true);
+    void (async () => {
+      try {
+        await process.switchMode(wantPty ? WorkerMode.Interactive : WorkerMode.CLI, wantPty ? getDims?.() : undefined);
+        // The transcript reconcile pulls in turns the other mode produced. It is
+        // a VIEW concern and slow on a large session (backend transcript parse),
+        // so it is never awaited — holding the control behind it wedged rapid
+        // switching. `loadHistory({ force: true })` REPLACES the stream with the
+        // transcript (clears internally); the live WS stream keeps the pane
+        // current meanwhile.
+        void process
+          .loadHistory({ force: true })
+          .catch((err) => console.debug('[sessionSurface] post-switch reconcile deferred:', err));
+      } catch (err) {
+        console.error('[sessionSurface] mode switch failed', err);
+        notify.error({
+          title: wantPty ? 'Could not switch to terminal' : 'Could not switch to chat',
+          message: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        setSwitching(false);
+      }
+    })();
+  }, [viewMode, process, ptyMode, awaitingUserInput, switching, getDims]);
+
+  return { switching };
 }

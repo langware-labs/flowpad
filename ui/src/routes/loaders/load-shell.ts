@@ -37,7 +37,6 @@ import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
 import type { ViewMode } from '@src/contexts/view-mode-context';
-import type { ChatMode } from '@src/contexts/chat-ui-mode-context';
 
 /**
  * The URL-derived values that must SURVIVE the scope-align redirect in
@@ -50,7 +49,6 @@ import type { ChatMode } from '@src/contexts/chat-ui-mode-context';
 export interface ProcessRouteCarry {
   scope?: ScopeFilter | null;
   viewMode?: ViewMode | null;
-  chatMode?: ChatMode | null;
 }
 import { ViewType } from '@sdk';
 import { projectScope, scopeFilterEqual, type ScopeFilter } from '@src/lib/scope-filter';
@@ -271,15 +269,12 @@ async function reconcileProcessScope(
   // loader `requestPath` contract to include the search string (touches
   // detectLayout / buildShellRedirectUrl across all routes) — tracked separately;
   // not fixed here. See dir_panel_scroll.md.ts for the affected deep-link.
-  // TWO exceptions, threaded explicitly, both for the same reason: they select
-  // which renderer the process's single shell URL shows, so dropping them here
-  // would silently land the user in the wrong one. `?viewMode` — vibe is a
-  // rendering mode of that URL, and every project-owned vibe entry would fall
-  // back to standard. `?chatMode` — chat vs xterm, same story one level down.
+  // ONE exception, threaded explicitly: `?viewMode`. It selects which surface
+  // the process's single shell URL shows (vibe workspace / chat pane / xterm),
+  // so dropping it here would silently land the user in the wrong one.
   const url = new DockPointer(ViewType.SHELL, proc.terminalDockPointer.pointer, undefined, detectLayout(requestPath))
     .withScopeFilter(want)
     .withViewMode(carry?.viewMode ?? null)
-    .withChatMode(carry?.chatMode ?? null)
     .toUrl(requestPath);
   // eslint-disable-next-line @typescript-eslint/only-throw-error
   throw replace(url);
