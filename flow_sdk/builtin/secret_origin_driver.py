@@ -6,12 +6,9 @@ runtime context such as worker launch or the setup wizard.
 """
 from __future__ import annotations
 
-import uuid
 from typing import TYPE_CHECKING, Any, Iterable, Optional, Protocol, runtime_checkable
 
 from pydantic import SecretStr
-
-from flow_sdk.fs_store.identifier import mint_uuid
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.secret_origin_locator import SecretOriginLocator
@@ -27,23 +24,28 @@ class SecretProvideUnsupported(RuntimeError):
     """A driver whose value can't be cached locally yet (external provider slot)."""
 
 
-def origin_key(kind: str, *fields: Any) -> str:
-    """Convergent, machine-independent id for a locator: ``uuid5`` of the kind +
-    its discriminator fields. Shared by every driver so ids converge across
-    machines (the sharing invariant)."""
-    disc = ":".join(str(f or "") for f in fields)
-    return mint_uuid(key=f"secret-origin:{kind}:{disc}", namespace=uuid.NAMESPACE_URL)
-
-
 def make_setup_hint(
-    kind: str, *, sod_store: str, provider_label: str, prompt: str, coming_soon: bool = False
+    kind: str,
+    *,
+    sod_store: str,
+    provider_label: str,
+    prompt: str,
+    coming_soon: bool = False,
+    coord_fields: Iterable[str] = (),
 ) -> dict[str, Any]:
-    """The value-free hint that drives the setup wizard (uniform shape)."""
+    """The value-free hint that drives the setup wizard (uniform shape).
+
+    ``coord_fields`` names the provider coordinates the UI should ask for
+    (``gcp`` wants three, ``local`` wants one). It is the ONLY thing the old
+    per-kind field table was still needed for once identity stopped being
+    locator-derived — so it lives here, once, instead of in four places.
+    """
     hint: dict[str, Any] = {
         "kind": kind,
         "sod_store": sod_store,
         "provider_label": provider_label,
         "prompt": prompt,
+        "coord_fields": list(coord_fields),
     }
     if coming_soon:
         hint["coming_soon"] = True
@@ -53,9 +55,6 @@ def make_setup_hint(
 @runtime_checkable
 class SecretOriginDriver(Protocol):
     kind: str
-
-    def key(self, locator: "SecretOriginLocator") -> str:
-        ...
 
     async def resolve(self, locator: "SecretOriginLocator", **context: Any) -> Optional[SecretStr]:
         ...
@@ -83,14 +82,11 @@ class ProviderStubDriver:
     locally yet, so it always routes to the setup wizard as 'coming soon'.
     Parametrized so gcp / 1password / … share one implementation."""
 
-    def __init__(self, kind: str, key_fields: Iterable[str], provider_label: str, prompt: str) -> None:
+    def __init__(self, kind: str, coord_fields: Iterable[str], provider_label: str, prompt: str) -> None:
         self.kind = kind
-        self._key_fields = tuple(key_fields)
+        self.coord_fields = tuple(coord_fields)
         self._provider_label = provider_label
         self._prompt = prompt
-
-    def key(self, locator: "SecretOriginLocator") -> str:
-        return origin_key(self.kind, *(getattr(locator, f, "") for f in self._key_fields))
 
     async def resolve(self, locator: "SecretOriginLocator", **context: Any) -> Optional[SecretStr]:
         return None
@@ -101,7 +97,7 @@ class ProviderStubDriver:
     def setup_hint(self, locator: "SecretOriginLocator") -> dict[str, Any]:
         return make_setup_hint(
             self.kind, sod_store="sodot", provider_label=self._provider_label,
-            prompt=self._prompt, coming_soon=True,
+            prompt=self._prompt, coming_soon=True, coord_fields=self.coord_fields,
         )
 
     async def store(self, locator: "SecretOriginLocator", value: str, **context: Any) -> None:
