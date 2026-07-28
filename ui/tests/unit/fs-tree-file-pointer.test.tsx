@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { TypeId } from '@sdk';
+import { TypeId, VFSPath } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import { allScope } from '@src/lib/scope-filter';
 
@@ -15,7 +15,7 @@ vi.mock('@sdk', async () => {
   return { ...actual, fsStore: { getState: () => ({ listDirectory, invalidate }) } };
 });
 
-const { assetsFsFolderNode, fsFileViewerPointer, fsFolderRoot } =
+const { assetsFsFolderNode, fsFileViewerPointerForVfs, fsFolderRoot } =
   await import('@src/components/browseable-tree/adapters/fsFolderRoot');
 
 const CN = new TypeId('compute_node', '@local');
@@ -32,15 +32,15 @@ beforeEach(() => {
   });
 });
 
-describe('fsFileViewerPointer', () => {
+describe('fsFileViewerPointerForVfs', () => {
   it('routes a markdown file to the assets markdown editor', () => {
-    const p = fsFileViewerPointer(CN, `${DIR}/Ex1.md`);
+    const p = fsFileViewerPointerForVfs(VFSPath.fromTypeId(CN, `${DIR}/Ex1.md`));
     expect(p.viewType).toBe(ViewType.ASSETS);
     expect(p.pointer).toBe(`editor/markdown/vfs/${CN.toString()}/${DIR}/Ex1.md`);
   });
 
   it('routes a non-markdown file to the code editor', () => {
-    const p = fsFileViewerPointer(CN, `${DIR}/run.py`);
+    const p = fsFileViewerPointerForVfs(VFSPath.fromTypeId(CN, `${DIR}/run.py`));
     expect(p.viewType).toBe(ViewType.EDITOR);
     expect(p.pointer).toBe(`${CN.toString()}/${DIR}/run.py`);
   });
