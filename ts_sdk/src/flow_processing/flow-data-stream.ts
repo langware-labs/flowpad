@@ -460,6 +460,29 @@ export class FlowDataStream extends EventEmitter {
     this._openGroups.clear();
   }
 
+  /**
+   * Drop the items matching `predicate` from this stream's OWN items.
+   *
+   * For retiring placeholders that an authoritative source has since replaced —
+   * e.g. the optimistic user-message echo, which is minted at submit time and
+   * therefore carries neither a transcript id nor the transcript's timestamp,
+   * so it can never be matched against its own persisted row. Substreams are
+   * left alone: this stream doesn't own them.
+   *
+   * @returns how many items were removed.
+   */
+  retract(predicate: (fd: FlowData) => boolean): number {
+    const kept = this._ownItems.filter((item) => !predicate(item));
+    const removed = this._ownItems.length - kept.length;
+    if (removed === 0) return 0;
+    this._invalidateItems();
+    this._ownItems = kept;
+    // Same signal consumers already re-render on; the payload is the surviving
+    // set, so a subscriber that rebuilds from it lands on the right list.
+    this.emit('data', [], this);
+    return removed;
+  }
+
   clear(): void {
     this._invalidateItems();
     this._ownItems = [];

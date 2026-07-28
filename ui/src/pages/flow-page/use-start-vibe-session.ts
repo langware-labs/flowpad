@@ -133,8 +133,13 @@ export async function createVibeProcessForProject(opts: {
     // terminal; PTY transport would pre-fill (not run) the first prompt.
     { pty_mode: false },
   );
-  await embedVibeAgent(proc);
+  // Navigate the moment the process EXISTS — its id is all the URL needs, and
+  // the workspace can mount and show its pending state while setup finishes.
+  // Persona embedding is several more round trips; it only has to be done
+  // before the first PROMPT, and every caller that prompts awaits this function,
+  // so ordering is preserved without making the user watch the hero for it.
   if (open) navigation?.openShellProcess(proc.id, { viewMode: ViewMode.Vibe });
+  await embedVibeAgent(proc);
   return proc;
 }
 
