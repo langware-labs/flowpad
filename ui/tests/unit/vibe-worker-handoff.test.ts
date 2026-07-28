@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => {
     project_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     prompt,
     loadEmbeddedAgent: vi.fn().mockResolvedValue(undefined),
+    // The vibe start path establishes the entity subscription itself rather
+    // than letting createProcess await it (that await cost ~2.7s of the click).
+    watch: vi.fn().mockResolvedValue(undefined),
   };
   return {
     prompt,
@@ -65,7 +68,9 @@ describe('continueVibeSessionForProject', () => {
         workerType: 'codex',
         targetVfsPath: 'markdown-cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       }),
-      { pty_mode: false },
+      // `watchProcess: false` = the watch is established by the caller instead
+      // of being awaited inside createProcess, which cost ~2.7s of the click.
+      { pty_mode: false, watchProcess: false },
     );
     expect(mocks.prompt).toHaveBeenCalledWith('HANDOFF PROMPT — unchanged');
   });
