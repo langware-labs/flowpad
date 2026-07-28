@@ -57,6 +57,7 @@ def build_default_indexer() -> FSIndexer:
         # TypeInfo registry must still be complete — scan-projection callers
         # run from_disk_fn Python-side on the adapter's FSRefs.
         import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
+
         return rs
     # Ensure all TypeInfo metadata (slot fns, post_sync_fn, presentation) is
     # registered before any indexing/sync runs. Type metadata now lives in
@@ -89,6 +90,10 @@ def build_default_indexer() -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.codex_sessions import codex_sessions_fn
     from flow_sdk.fs_store.indexer.functions.copilot_sessions import copilot_sessions_fn
     from flow_sdk.fs_store.indexer.functions.dynamic_workflows import dynamic_workflows_fn
+    from flow_sdk.fs_store.indexer.functions.installed_transcripts import (
+        installed_transcript_output_types,
+        installed_transcripts_fn,
+    )
     from flow_sdk.fs_store.indexer.functions.journey import journey_fn
     from flow_sdk.fs_store.indexer.functions.markdown import (
         markdown_flat_fn,
@@ -215,14 +220,27 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.CWD_ROOT, project_folder_walker_fn, RecordType.FOLDER)
     idx.add_function(RecordType.CWD_ROOT, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)
 
+    # Installed (received) transcripts: <harness prefix>/transcripts/*.jsonl under
+    # every scope root. The per-worker walkers above only glob each harness's OWN
+    # session store, so without this an installed transcript has no row and its
+    # attachment chip can never resolve. One walker covers all workers (the subdir
+    # → type map is derived from the type registry), registered on the same roots
+    # a transcript can install into: project scope (REAL_PROJECT_CWD / CWD_ROOT)
+    # and user scope (USER_HOME_FOLDER).
+    _transcript_outputs = installed_transcript_output_types()
+    for _root in (
+        RecordType.USER_HOME_FOLDER,
+        RecordType.REAL_PROJECT_CWD,
+        RecordType.CWD_ROOT,
+    ):
+        idx.add_function(_root, installed_transcripts_fn, _transcript_outputs)
+
     # Repo assets: the recursive agentic-assets/<type> hierarchy. One walker
     # discovers the whole nested tree per scope root (in-function recursion), so
     # it registers on the roots only (not per repo type). Its explicit output
     # set keeps typed scans prunable without pretending this multi-output walker
     # is unknown.
-    repo_output_types = frozenset(
-        RecordType(type_name) for type_name in SchemaRegistry.get_repo_types()
-    )
+    repo_output_types = frozenset(RecordType(type_name) for type_name in SchemaRegistry.get_repo_types())
     for _root in (
         RecordType.USER_HOME_FOLDER,
         RecordType.REAL_PROJECT_CWD,
@@ -270,6 +288,7 @@ def _maybe_rs_indexer():
         bin_path = resolve_rs_indexer_bin()
         if bin_path is None:
             import logging  # noqa: PLC0415
+
             logging.warning(
                 "indexer_backend=rust selected but no usable binary "
                 "(set FLOWPAD_RS_INDEXER_BIN); using the Python FSIndexer"
@@ -278,6 +297,7 @@ def _maybe_rs_indexer():
         return RSIndexerAdapter(bin_path)
     except Exception:
         import logging  # noqa: PLC0415
+
         logging.warning("RSIndexer backend selection failed; using FSIndexer", exc_info=True)
         return None
 

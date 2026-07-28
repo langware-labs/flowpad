@@ -33,6 +33,12 @@ def _make_diagnosis() -> FlowpadDiagnosis:
         fix="Pack the diagnosis header.json and re-materialize on unpack.",
         summary="Diagnosis entity now travels in the bundle and re-materializes.",
         user_report="the forwarded report just shows a broken chip",
+        # Environment snapshot of the REPORTING machine — must survive the trip
+        # verbatim; the receiver cannot recompute any of it.
+        reported_by="Shani <shanis@example.test>",
+        occurred_at="2026-07-16T07:21:52.884575+00:00",
+        os="Windows-10-10.0.26200-SP0",
+        app_version="0.2.102",
     )
 
 
@@ -75,6 +81,12 @@ async def test_pack_unpack_diagnosis_roundtrip(tmp_path):
     assert restored.fix.startswith("Pack the diagnosis header.json")
     assert restored.summary.startswith("Diagnosis entity now travels")
     assert restored.user_report == "the forwarded report just shows a broken chip"
+    # The Details block the receiver sees describes the REPORTER's machine, not
+    # theirs — so the whole snapshot has to come back off the wire unchanged.
+    assert restored.reported_by == "Shani <shanis@example.test>"
+    assert restored.occurred_at == "2026-07-16T07:21:52.884575+00:00"
+    assert restored.os == "Windows-10-10.0.26200-SP0"
+    assert restored.app_version == "0.2.102"
 
     await restored.delete()
 
@@ -89,16 +101,24 @@ async def test_pack_diagnosis_header_is_exact_whitelist(tmp_path):
     attachment_dir.mkdir(parents=True, exist_ok=True)
     await _pack_flowpad_diagnosis_attachment(diag.id, attachment_dir)
 
-    header_path = (
-        attachment_dir
-        / f"{EntityType.FLOWPAD_DIAGNOSIS.value}-{diag.id}"
-        / "header.json"
-    )
+    header_path = attachment_dir / f"{EntityType.FLOWPAD_DIAGNOSIS.value}-{diag.id}" / "header.json"
     assert header_path.exists()
     header = json.loads(header_path.read_text(encoding="utf-8"))
 
     expected_keys = {
-        "id", "type", "name", "title", "symptoms", "rca", "fix", "summary", "user_report",
+        "id",
+        "type",
+        "name",
+        "title",
+        "symptoms",
+        "rca",
+        "fix",
+        "summary",
+        "user_report",
+        "reported_by",
+        "occurred_at",
+        "os",
+        "app_version",
     }
     assert set(header.keys()) == expected_keys
     assert header["type"] == EntityType.FLOWPAD_DIAGNOSIS.value
