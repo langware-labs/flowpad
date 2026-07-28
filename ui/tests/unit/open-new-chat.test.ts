@@ -127,3 +127,37 @@ describe('openNewChat + NavigationActions', () => {
     expect(navigate).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('pending-navigation marker vs a loader-rewritten URL', () => {
+  afterEach(() => {
+    NavigationActions.resetPendingNavigationForTests();
+    vi.restoreAllMocks();
+  });
+
+  it('keeps suppressing the dock after the committed URL differs from the stamped one', () => {
+    // `commitBrowserNavigation` stamps the EXACT target URL as pending, and
+    // `openDock` hard no-ops while `pendingDockNavigationUrl === fullUrl`
+    // (NavigationActions.ts:351). The stamp is only released when the browser
+    // URL becomes byte-identical to it — or by a 1000ms fallback timer.
+    //
+    // Shell loaders redirect to append scope params, so the URL that actually
+    // COMMITS is never the one that was stamped. This pins what that costs: a
+    // repeat navigation to the same dock inside the window is dropped, and the
+    // only thing that clears it is the timer.
+    window.history.pushState({}, '', '/dock/home');
+    const navigate = vi.fn();
+    const navigation = new NavigationActions(navigate, null);
+    const pointer = new DockPointerData(ViewType.SHELL, 'agentic_process-p1');
+
+    navigation.openDock(pointer);
+    expect(navigate).toHaveBeenCalledTimes(1);
+
+    // The loader redirects; the browser lands on the same dock PLUS scope params.
+    window.history.pushState({}, '', '/dock/shell/agentic_process-p1?scope-mode=project&scope-activeProjectId=proj-1');
+
+    // Same dock again — e.g. the workspace re-asserting its URL. The stamp still
+    // holds the param-less URL, so this is silently dropped.
+    navigation.openDock(pointer);
+    expect(navigate).toHaveBeenCalledTimes(1);
+  });
+});
