@@ -1,6 +1,7 @@
 import {
   Capability,
   capabilityManager,
+  CapabilityKinds,
   copyToClipboard,
   HARNESS_CAPABILITY_KINDS,
   LMApiProvider,
