@@ -1311,6 +1311,11 @@ class Project(Entity):
         await super().save(owner, notify=notify)
         if was_create:
             await self._stamp_index_sentinel()
+        # Every Project owns one deterministic DB-only Wiki. This idempotent
+        # repair also converges Projects created before Wiki existed.
+        from flow_sdk.wiki.service import ensure_default_wiki
+
+        await ensure_default_wiki(self)
         return self
 
     async def _stamp_index_sentinel(self) -> None:

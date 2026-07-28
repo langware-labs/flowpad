@@ -144,6 +144,10 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/assets/editor/WikiResolveView.tsx
+msgid "[[{name}]] is ambiguous"
+msgstr ""
+
+#: src/components/assets/editor/WikiResolveView.tsx
 msgid "[[{name}]] not found"
 msgstr ""
 
@@ -1297,6 +1301,10 @@ msgstr ""
 msgid "App page"
 msgstr ""
 
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "App runtime"
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 msgid "App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store third-party API keys and other secrets used by your flows."
 msgstr ""
@@ -1557,8 +1565,8 @@ msgid "Authorization failed or was denied. Click Retry to try again."
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "auto"
-msgstr ""
+#~ msgid "auto"
+#~ msgstr ""
 
 #: src/components/tasks-viewer/TasksViewer.tsx
 #~ msgid "Auto-archive after..."
@@ -2055,8 +2063,8 @@ msgid "Chat history"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Chat mode"
-msgstr ""
+#~ msgid "Chat mode"
+#~ msgstr ""
 
 #: src/components/ui/settings-pane.tsx
 msgid "Chat Settings"
@@ -2576,16 +2584,16 @@ msgid "Codex session"
 msgstr ""
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Collaborate"
-msgstr ""
+#~ msgid "Collaborate"
+#~ msgstr ""
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Collaborate on this session"
-msgstr ""
+#~ msgid "Collaborate on this session"
+#~ msgstr ""
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Collaboration"
-msgstr ""
+#~ msgid "Collaboration"
+#~ msgstr ""
 
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
@@ -2826,8 +2834,8 @@ msgid "Connecting..."
 msgstr ""
 
 #: src/components/assets/editor/WikiResolveView.tsx
-msgid "Connecting…"
-msgstr ""
+#~ msgid "Connecting…"
+#~ msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -3390,7 +3398,11 @@ msgid "Creates a link anyone can use to join as a member."
 msgstr ""
 
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
-msgid "Creates a task in this project and assigns it — it shows up on their board."
+#~ msgid "Creates a task in this project and assigns it — it shows up on their board."
+#~ msgstr ""
+
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Creates a task, assigns it to them, and sends them a message with the details."
 msgstr ""
 
 #. placeholder {0}: classificationInfo.category
@@ -3902,6 +3914,10 @@ msgstr ""
 msgid "Details"
 msgstr ""
 
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "Dev"
+msgstr ""
+
 #: src/components/account/settings-section.tsx
 msgid "Dev mode"
 msgstr ""
@@ -4082,8 +4098,6 @@ msgstr ""
 msgid "Dismiss"
 msgstr ""
 
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Dismiss all"
 msgstr ""
@@ -5607,8 +5621,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Force chat UI"
-msgstr ""
+#~ msgid "Force chat UI"
+#~ msgstr ""
 
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Fork Session"
@@ -7055,6 +7069,10 @@ msgstr ""
 msgid "Loading . . ."
 msgstr ""
 
+#: src/components/assets/editor/WikiResolveView.tsx
+msgid "Loading [[{name}]]…"
+msgstr ""
+
 #. placeholder {0}: params.uname
 #: src/components/app-host/AppHost.tsx
 msgid "Loading {0}..."
@@ -7732,6 +7750,10 @@ msgstr ""
 msgid "More pages"
 msgstr ""
 
+#: src/components/assets/editor/WikiResolveView.tsx
+msgid "More than one readable asset matches this word. Bind it to a specific asset."
+msgstr ""
+
 #: src/components/workers/WorkerToolbar.tsx
 msgid "More…"
 msgstr ""
@@ -8126,6 +8148,10 @@ msgstr ""
 
 #: src/components/artifacts/artifacts-list.tsx
 msgid "No artifacts yet"
+msgstr ""
+
+#: src/components/assets/editor/WikiResolveView.tsx
+msgid "No asset editor is registered for this Wiki target."
 msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
@@ -9257,8 +9283,8 @@ msgid "Open Backup Folder"
 msgstr ""
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Open collaboration"
-msgstr ""
+#~ msgid "Open collaboration"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Open command in external terminal"
@@ -9647,8 +9673,8 @@ msgid "Opened existing project"
 msgstr ""
 
 #: src/components/assets/editor/WikiResolveView.tsx
-msgid "Opening [[{name}]]…"
-msgstr ""
+#~ msgid "Opening [[{name}]]…"
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Opening task…"
@@ -12113,8 +12139,8 @@ msgid "Send failed."
 msgstr ""
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Send invite"
-msgstr ""
+#~ msgid "Send invite"
+#~ msgstr ""
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Send message"
@@ -12130,6 +12156,10 @@ msgstr ""
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "Sent"
+msgstr ""
+
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "Served"
 msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
@@ -13501,6 +13531,7 @@ msgstr ""
 
 #: src/components/webapp-viewer.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-workspace.tsx
 msgid "The web app is not working, please try to fix it."
 msgstr ""
 
@@ -13671,6 +13702,10 @@ msgstr ""
 
 #: src/components/assets/editor/agent-trace/CallTreeView.tsx
 msgid "This trace predates the call-stack view. Re-run the analysis (Refresh) to generate it."
+msgstr ""
+
+#: src/components/assets/editor/WikiResolveView.tsx
+msgid "This Wiki target has no readable content."
 msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
@@ -14612,8 +14647,8 @@ msgid "What do you need help with?"
 msgstr ""
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "What do you want to collaborate on?"
-msgstr ""
+#~ msgid "What do you want to collaborate on?"
+#~ msgstr ""
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "What do you want to work on"

@@ -12,6 +12,7 @@ import { type ConversationParticipant } from './conversation';
 import { ComputeNode } from './compute_node';
 import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
+import { Wiki } from './wiki';
 
 export interface ProjectMember {
   member_id: string;
@@ -249,6 +250,16 @@ export class Project extends APIEntity<Project> {
     const computeNode = dataManager.updateEntityFromJson<ComputeNode>(responseComputeNode.compute_node);
     this.computeNode = computeNode;
     return computeNode;
+  }
+
+  /**
+   * Return this Project's stable default Wiki, lazily creating it server-side
+   * for Projects that predate the Wiki invariant.
+   */
+  async getDefaultWiki(): Promise<Wiki> {
+    const action = new ActionInfo('default-wiki', Project.type, this.id, 'GET');
+    const result = await dataManager.callAction<void, IEntity>(action);
+    return dataManager.updateEntityFromJson<Wiki>(result);
   }
 
   /**

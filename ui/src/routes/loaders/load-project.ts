@@ -248,10 +248,6 @@ export async function loadProjectRoute(
 
   if (!conversationId && !roomId && assetSubPointer) {
     await loadAssetRoute(assetSubPointer);
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProjectTypeId,
-      projectTypeId,
-    );
   }
 
   if (roomId) {

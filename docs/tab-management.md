@@ -542,7 +542,7 @@ DockPointer.ts`, ~30 constructors) crossed with the **ViewType registry**
 | spec / task / whiteboard                                                   | per-type pointers                    | **yes**                                          | A                                        |
 | code editor file                                                           | `forFile(path)`                      | **no** — `load-asset.ts:78`: CODE is file-only   | ~~B~~ → C _(Part 3: bucket B dissolved)_ |
 | file browser / explorer                                                    | `forExplorer(path)`                  | **no** — raw VFS path                            | ~~B~~ → C _(Part 3: bucket B dissolved)_ |
-| wiki page                                                                  | `forWiki(name)`                      | indirect — resolves to a `markdown` at view time | A (resolves at view time)                |
+| wiki page                                                                  | `forWiki(name, …, wikiRef)`          | indirect — resolves to an asset `TypeId` at view time | A (resolves at view time)                |
 | diff / checkpoint                                                          | `forCheckpoint(hash)`                | no — git hash                                    | C                                        |
 | webapp preview                                                             | port                                 | no                                               | C                                        |
 | scan page / llm-indexers / graph / lens / settings / inbox / search / home | page pointers                        | no                                               | C                                        |
@@ -561,7 +561,8 @@ DockPointer.ts`, ~30 constructors) crossed with the **ViewType registry**
   surfaces simply ride the URL-dock transient slot like bucket C. No minted
   path-entities, no client-persisted membership for them, and the
   rename-lifecycle problem (§6) disappears entirely. Wiki pages still resolve
-  to a `markdown` at view time → fold into A.
+  to their target entity at view time (Markdown, Skill, or another registered
+  asset type) → fold into A.
 - **(C) Inherently transient — never persisted.** Diff hashes, webapp ports,
   scan page, lens/transcripts, settings/inbox/search/home. These are the
   **URL-dock transient tab**: present while the URL points at them, target

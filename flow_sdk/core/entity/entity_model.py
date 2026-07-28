@@ -1954,6 +1954,12 @@ class Entity(DBEntity):
             await client.post(path, body)
         if "remote" in type(child).model_fields:
             child.remote = True
+            # Direct and recursive child creation use the same byte-transport
+            # seam as top-level share. The Hub entity must exist before its
+            # entity-scoped fs/upload endpoint can accept content.
+            from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub  # noqa: PLC0415
+
+            await push_entity_files_to_hub(child)
         return child
 
     async def _share_children(self: EntityType) -> None:
