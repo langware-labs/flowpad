@@ -224,6 +224,71 @@ async def test_not_file_backed(tmp_path, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# PROJECT preflight — a project is not file-backed, but it IS a directory. Its
+# mount is the tree to ask about. Without that, every project answered
+# "isn't file-backed, so it has no Git origin to share" — an asset-share
+# sentence that tells a project owner nothing and hides the real state.
+# --------------------------------------------------------------------------- #
+
+PROJECT_ID = "3c9e5d21-77aa-4b0e-9d18-2f4a6b8c0d13"
+
+
+def _stub_project(monkeypatch, mount: str | None):
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    class _FakeProject:
+        fs_storage_mount_path = mount
+
+    async def _get_one(query):  # noqa: ARG001
+        return _FakeProject()
+
+    monkeypatch.setattr(Project, "get_one", staticmethod(_get_one))
+
+
+async def _project_preflight(monkeypatch, mount: str | None) -> dict:
+    _stub_project(monkeypatch, mount)
+    return await git_share_preflight(EntityType.PROJECT.value, PROJECT_ID)
+
+
+@pytest.mark.asyncio
+async def test_project_reports_its_repo_not_a_file_backed_excuse(tmp_path, monkeypatch):
+    """The regression this exists for: a project in a real repo used to answer
+    `not-file-backed`. It must answer about the repo."""
+    repo = tmp_path / "repo"
+    _init_pushed(repo)
+    res = await _project_preflight(monkeypatch, str(repo))
+    assert res["code"] != "not-file-backed"
+    assert res["available"] is True
+    assert res["git_origin"]["name"] == "origin"
+
+
+@pytest.mark.asyncio
+async def test_project_without_a_repo_says_so(tmp_path, monkeypatch):
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    res = await _project_preflight(monkeypatch, str(plain))
+    assert res["code"] == "not-in-repo"
+
+
+@pytest.mark.asyncio
+async def test_project_without_a_remote_says_so(tmp_path, monkeypatch):
+    repo = tmp_path / "no-remote"
+    _init(repo, remote=None)
+    _skill(repo)
+    _commit(repo)
+    res = await _project_preflight(monkeypatch, str(repo))
+    assert res["code"] == "missing-remote"
+
+
+@pytest.mark.asyncio
+async def test_project_with_no_mount_is_still_not_file_backed(monkeypatch):
+    """A project row with no mount path has nothing to probe — the old answer is
+    the right one there."""
+    res = await _project_preflight(monkeypatch, None)
+    assert res["code"] == "not-file-backed"
+
+
+# --------------------------------------------------------------------------- #
 # FOLDER preflight — a context folder has no asset_ref by design, so it resolves
 # through its own local `path`. These are the states the share gate branches on.
 # --------------------------------------------------------------------------- #

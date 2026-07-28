@@ -114,6 +114,19 @@ async def _resolve_asset_git_path(entity_type: str, entity_id: str) -> str | Non
 
         return await _entity_local_path(Folder, entity_id)
 
+    if entity_type == EntityType.PROJECT.value:
+        # A Project is not file-backed, but it is a DIRECTORY — its mount is the
+        # tree to ask about. Without this it fell through to the file-backed
+        # resolver, came back empty, and every project answered
+        # "isn't file-backed, so it has no Git origin to share" — an asset-share
+        # sentence that says nothing about a project and hid the real state
+        # (no repo? no remote? unpushed?) from the project header's Git chip.
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        project = await Project.get_one({"id": entity_id})
+        mount = (getattr(project, "fs_storage_mount_path", "") or "").strip() if project else ""
+        return mount or None
+
     # File-backed asset (skill/spec/agent/…): reuse the pack-time resolver so
     # preflight and packing agree on WHICH subtree defines the origin.
     from flow_sdk.builtin.flow_message_bundle import _resolve_file_backed_source  # noqa: PLC0415
