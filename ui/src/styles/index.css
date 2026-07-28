@@ -27,6 +27,12 @@
     --primary: 0 0% 9%;
     --primary-foreground: 0 0% 98%;
 
+    /* Brand blue. `--primary` is theme-local (near-black in light,
+       near-white in dark), so a call-to-action that must read as OUR blue
+       everywhere — Invite — cannot use it. Same hue the vibe theme sets. */
+    --brand: 221 87% 45%;
+    --brand-foreground: 0 0% 100%;
+
     --secondary: 0 0% 96.1%;
     --secondary-foreground: 0 0% 9%;
 
@@ -85,6 +91,9 @@
 
     --primary: 0 0% 98%;
     --primary-foreground: 0 0% 9%;
+
+    --brand: 221 87% 58%;
+    --brand-foreground: 0 0% 100%;
 
     --secondary: 0 0% 14.9%;
     --secondary-foreground: 0 0% 98%;

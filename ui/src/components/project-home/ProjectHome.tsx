@@ -168,29 +168,21 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
 
   return (
     <div className="flex h-full flex-col">
-      {/* Members — project-level roster + invite (role-gated inside the stack). */}
+      {/* Project header: git state on the left, roster + invite on the right.
+          The roster names itself (avatars / "No members" / Invite), so a
+          separate "Members" caption was one label too many. */}
       {projectTypeId && (
         <div
           className="flex items-center justify-between border-b border-border/50 px-4 py-2"
           data-testid="project-home-members"
         >
           <div className="flex min-w-0 items-center gap-3">
-            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              <Trans>Members</Trans>
-            </span>
-            {projectId && (
-              <ProjectGitChip
-                projectTypeId={projectTypeId}
-                projectId={projectId}
-                onChecked={setGitChecks}
-              />
-            )}
+            <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
           </div>
           <MembersAvatarStack
             typeId={projectTypeId}
             allowInviteLink
             showInviteButton
-            hideEmptyLabel
             beforeInvite={beforeProjectInvite}
           />
         </div>
