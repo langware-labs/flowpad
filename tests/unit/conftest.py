@@ -43,6 +43,64 @@ async def node():
         await provider.shutdown(node_id)
 
 
+@pytest.fixture(params=["local", "e2b"])
+def compute_provider_kind(request):
+    """Parameterizes a test across both providers we ship a node for.
+
+    Mirrors the hub's ``test_compute_provider_type`` fixture, minus the
+    credentials: the hub boots a real E2B sandbox, which we cannot do in the
+    unit tier.
+    """
+    return request.param
+
+
+@pytest.fixture
+async def any_provider(compute_provider_kind):
+    """``(provider, node_id)`` for the local provider AND for E2B.
+
+    The E2B leg is a real ``E2BComputeProvider`` with one seam replaced —
+    ``_get_or_boot_sandbox`` returns a :class:`FakeSandbox` instead of calling
+    the E2B API. Everything the provider does with the command (prefix
+    construction, quoting, ``background``, ``CLICommand`` wiring) still runs.
+    What is NOT covered here: sandbox boot, pause/resume, PTY, and filesystem
+    ops — those live in ``tests/long_tests`` behind the ``E2B_KEY`` gate.
+
+    ``provider.fake_sandbox`` is attached so a test can inspect the exact
+    command string that reached the shell.
+    """
+    if compute_provider_kind == "local":
+        provider = LocalComputeProvider()
+        node_id = await provider.create_node("unit-test-node", RuntimeEnvironment(name="unit-test"))
+        await provider.startup(node_id)
+        try:
+            yield provider, node_id
+        finally:
+            await provider.shutdown(node_id)
+        return
+
+    from flow_sdk.compute.providers.e2b import provider as e2b_module
+    from tests.unit.fakes.fake_e2b_sandbox import FakeSandbox
+
+    # The provider's __init__ refuses to construct without the e2b SDK. The
+    # module imports fine without it (AsyncSandbox is None), so bypass only
+    # that guard — the class under test is otherwise untouched.
+    provider = object.__new__(e2b_module.E2BComputeProvider)
+    ComputeProviderBase = type(provider).__mro__[1]
+    ComputeProviderBase.__init__(provider)
+    provider._sandboxes = {}
+    provider._pty_processes = {}
+    provider._keepalive_tasks = {}
+
+    sandbox = FakeSandbox()
+    provider.fake_sandbox = sandbox
+
+    async def _fake_boot(_provider_node_id):
+        return sandbox
+
+    provider._get_or_boot_sandbox = _fake_boot
+    yield provider, "fake-sandbox"
+
+
 def py_command(script: str, *, unbuffered: bool = False) -> str:
     """A shell command that runs ``script`` under this interpreter. Pass
     ``unbuffered=True`` for line-timely streaming (``python -u``)."""
