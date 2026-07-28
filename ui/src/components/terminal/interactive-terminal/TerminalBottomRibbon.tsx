@@ -73,7 +73,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
       {/* Controls strip: status LED + plan/doc chips + side-tab launchers. */}
       <div className="flex items-center px-4 py-1.5">
       {/* Left: worker status LED. The chat⇄terminal toggle that used to live
-          here is now the 3-mode switch in the terminal HEADER (TerminalModeSwitch). */}
+          here is now the mode selector in the footer (ViewToggle). */}
       <div className="flex items-center gap-2">
         <span className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
         {hasLastPlan && onOpenLastPlan && (

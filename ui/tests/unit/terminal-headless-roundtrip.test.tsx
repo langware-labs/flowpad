@@ -210,6 +210,8 @@ vi.mock('@src/hooks/use-instance-preferences', () => ({ useInstancePreferences: 
 vi.mock('@src/hooks/use-preference', () => {
   const tuples = new Map<string, [Record<string, never>, () => void]>();
   return {
+    // Resolved: the surface reconcile only acts once the mode is known.
+    usePreferenceResolved: () => true,
     usePreference: (key: string) => {
       if (!tuples.has(key)) tuples.set(key, [{}, () => {}]);
       return tuples.get(key);

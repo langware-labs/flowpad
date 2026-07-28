@@ -166,11 +166,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const process = propProcess ?? contextProcess ?? undefined;
   const { navigation } = useDockNavigation();
   const { resolvedTheme } = useTheme();
-  // Skin layer: the chat mode (the header switch's saved pick) decides which
-  // surface shows. The xterm stays mounted underneath the chat overlay (same
-  // session, same PTY — see SimpleChatPane), so toggling is instant and never
-  // resets the terminal. Embedded terminals (chat side panel) and shell-only
-  // tabs (no AgenticProcess) always keep the xterm.
+  // Skin layer: the view mode's SURFACE decides which pane shows (the footer
+  // ViewToggle is the selector). The xterm stays mounted underneath the chat
+  // overlay (same session, same PTY — see SimpleChatPane), so switching is
+  // instant and never resets the terminal. Embedded terminals (chat side panel)
+  // and shell-only tabs (no AgenticProcess) always keep the xterm.
   const isAdvanced = useIsAdvanced();
   // Only the `chat` surface forces the pane. `vibe` renders VibeWorkspace, not
   // this component, so reaching here in vibe means the surfaces disagree (a
@@ -180,9 +180,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const surface = useSessionSurface();
   const wantChat = surface === 'chat';
   // Headless (`pty_mode === false`): there is no PTY/xterm to skin — the chat
-  // pane is the ONLY view. Force it on regardless of the chat/terminal skin
-  // override, and (in the render) skip mounting the xterm container entirely so
-  // no PtySync attach is attempted for a process that has no shell.
+  // pane is the ONLY view. Force it on regardless of the surface, and (in the
+  // render) skip mounting the xterm container entirely so no PtySync attach is
+  // attempted for a process that has no shell.
   const isHeadless = !embedded && !!process && process.isHeadless;
   const showSimpleChat = isHeadless || (wantChat && !embedded && !!process);
   // `null` = the mode is not known yet (first load in this browser profile, no
@@ -190,7 +190,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // resolves — a headless process needs no wait (its transport decides), and the
   // xterm keeps mounting and attaching underneath, so this costs no open latency.
   const surfacePending = surface === null && !isHeadless && !embedded && !!process;
-  const canToggleView = !embedded && !!process;
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
 
@@ -240,11 +239,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     () => (terminalRef.current ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows } : undefined),
     [],
   );
-  const processSurface = useProcessSurface({ process, getDims: getTerminalDims });
+  const liveProcess = useProcessSurface({ process, getDims: getTerminalDims });
 
   // The reactive entity comes from the mode-switch hook, which already
   // subscribes to it — one subscription per process, not two.
-  const liveStartFailure = processSurface.live?.start_failure ?? null;
+  const liveStartFailure = liveProcess?.start_failure ?? null;
   useEffect(() => {
     if (!liveStartFailure || !process) return;
     dataContext.setTerminalRuntimeError({

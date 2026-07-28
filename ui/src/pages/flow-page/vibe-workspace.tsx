@@ -12,7 +12,6 @@ import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { useViewerStore, useProcessWebApp, useAppDisplay } from '@src/hooks/flow-hooks';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, editorForPath, editorForType } from '@src/navigation/asset-doc-types';
-import { useEntity } from '@src/hooks/entity-hooks';
 import { DisplayHistoryButton } from './display-history-button';
 import {
   AgenticProcess,
@@ -149,14 +148,14 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // Bind by the workspace session id. The same hook also owns parent
   // registration/materialization for process and child presentations.
   const activeProcess = useVibeWorkspaceSessionHost(session);
-  // Vibe has no InteractiveTerminal, so this is where the session's transport
-  // is kept aligned with the view mode while the workspace is on screen.
-  useProcessSurface({ process: activeProcess });
+  // Vibe has no InteractiveTerminal, so this is where the session's transport is
+  // kept aligned with the view mode while the workspace is on screen. It also
+  // hands back the reactive entity, so this component needs no subscription of
+  // its own.
+  const persistedProcess = useProcessSurface({ process: activeProcess });
 
   const streamItems = useAgenticProcessStream(activeProcess);
   const focus = useVibeFocus(streamItems);
-  const reactiveProcess = useEntity<AgenticProcess>(activeProcess?.typeId ?? null);
-  const persistedProcess = reactiveProcess.data ?? activeProcess;
   const displayStack = persistedProcess?.displayStack ?? [];
   const lastShown = (
     persistedProcess?.context_data as { last_shown?: DisplayShowTarget } | undefined

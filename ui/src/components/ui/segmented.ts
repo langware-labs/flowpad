@@ -1,9 +1,8 @@
 /**
- * The app's segmented control look — one definition, so the footer `ViewToggle`
- * and the terminal header's `TerminalModeSwitch` can never drift apart (they sit
- * within a screen height of each other; a themed ring or height change must land
- * on both). Class strings only: the two controls have different semantics
- * (view-mode selection vs. a session's transport/skin) and keep their own markup.
+ * The app's segmented control look — one definition, so every segmented control
+ * stays in step when a themed ring or height changes. Consumers today: the
+ * footer `ViewToggle` (mode selection) and `WebappDisplayToolbar`. Class strings
+ * only — the controls have different semantics and keep their own markup.
  */
 
 /** Container: `role="radiogroup"` row that frames the segments. */

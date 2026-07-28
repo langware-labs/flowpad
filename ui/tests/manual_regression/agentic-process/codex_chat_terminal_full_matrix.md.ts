@@ -164,16 +164,13 @@ test.describe('Codex durable transcript projection', () => {
       join(repo, 'ui/src/components/terminal/TabbedTerminal.tsx'),
       'utf8',
     );
-    // The chat⇄terminal switch moved out of the bottom ribbon: the transport
-    // action lives in the hook, the control is the 3-mode header switch.
+    // One mode selector (the footer ViewToggle); the transport reconcile that
+    // follows a mode change lives in the useProcessSurface effect.
     const modeSwitchHook = readFileSync(
-      join(repo, 'ui/src/components/terminal/interactive-terminal/use-process-mode-switch.ts'),
+      join(repo, 'ui/src/components/terminal/interactive-terminal/use-process-surface.ts'),
       'utf8',
     );
-    const modeSwitch = readFileSync(
-      join(repo, 'ui/src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx'),
-      'utf8',
-    );
+    const modeSwitch = readFileSync(join(repo, 'ui/src/components/view-toggle/view-toggle.tsx'), 'utf8');
     const toolbar = readFileSync(
       join(repo, 'ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx'),
       'utf8',
@@ -185,12 +182,12 @@ test.describe('Codex durable transcript projection', () => {
     expect(backend).toContain('@action.post(action_name="switch-mode")');
     expect(backend).toContain('restart_required');
     expect(backend).toContain('ensure_embedded_assets');
-    expect(terminal).toContain('useProcessModeSwitch');
-    expect(modeSwitchHook).toContain('process.switchMode');
+    expect(terminal).toContain('useProcessSurface');
+    expect(modeSwitchHook).toContain('.switchMode(');
     expect(modeSwitchHook).toContain('loadHistory({ force: true })');
     expect(terminalPanel).toContain('data-pty-mode');
-    expect(modeSwitch).toContain('terminal-mode-switch');
-    expect(modeSwitch).toContain('terminal-mode-vibe');
+    expect(modeSwitch).toContain('view-toggle-${m}');
+    expect(modeSwitch).toContain('ViewMode.Vibe');
     expect(toolbar).toContain("if (wt === 'codex') return 'Codex'");
     expect(toolbar).toContain('permission_mode');
   });

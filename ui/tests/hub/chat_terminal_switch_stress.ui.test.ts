@@ -10,13 +10,13 @@
  * in-flight entity broadcast carrying the pre-switch
  * `pty_mode` must NOT flip the pane back after the user toggles.
  *
- * The chat⇄terminal switch (`useProcessModeSwitch`) does TWO things at once: it
+ * Picking a mode (footer `ViewToggle`) does TWO things at once: it
  * flips the UI SKIN (chat pane over the PTY ⇄ raw xterm) and the TRANSPORT
  * (`switchMode` → `pty_mode` true⇄false). One live session underneath both.
  *
  * Two clients, one backend (the explicit `SHARE_INST_1`):
  *   • the browser PAGE drives the toggle / types tokens (production path:
- *     click → switchTo → switchMode);
+ *     click → navigate → useProcessSurface effect → switchMode);
  *   • an SDK realm (`getInstance(INSTANCE)`) creates the watched process and is
  *     the AUTHORITATIVE observer — `loadHistory({force})` re-reads the on-disk
  *     transcript so a token hit means the worker actually took it (not the
@@ -140,7 +140,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
       proc.id as string,
     );
     try {
-      await page.page.getByTestId('terminal-mode-switch').waitFor({ state: 'visible', timeout: 20_000 });
+      await page.page.getByTestId('view-toggle').waitFor({ state: 'visible', timeout: 20_000 });
     } catch (error) {
       const diagnostics = await page.page.evaluate(() => ({
         url: window.location.href,
@@ -190,11 +190,15 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
   /** Read the mode switch's three state attrs in ONE round-trip. They live on
    *  the segmented control's CONTAINER (the segments themselves are per-mode). */
   async function readToggle(): Promise<{ enabled: boolean; switching: boolean; chatActive: boolean }> {
-    return page!.page.getByTestId('terminal-mode-switch').evaluate((el) => ({
-      enabled: el.getAttribute('data-toggle-enabled') === 'true',
-      switching: el.getAttribute('data-switching') === 'true',
-      chatActive: el.getAttribute('data-chat-active') === 'true',
-    }));
+    // The mode selector is the footer ViewToggle now, and it carries no
+    // in-flight state of its own — the transport reconcile is an effect. Read
+    // the live transport instead; `currentPty()` below is the authoritative
+    // signal this suite already keys on.
+    return page!.page.evaluate(() => {
+      const el = document.querySelector('[data-testid="terminal-panel"][data-active="true"]');
+      const busy = document.querySelector('[data-testid="view-toggle"]') === null;
+      return { enabled: !busy, switching: false, chatActive: el?.getAttribute('data-pty-mode') === 'false' };
+    });
   }
 
   /** The transport segments are enabled iff the agent is awaiting input AND not
@@ -247,7 +251,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
       // Fire onClick directly: a Playwright pointer-click can miss on a small
       // segment; el.click() always invokes the handler.
       await page!.page
-        .getByTestId(targetPty ? 'terminal-mode-terminal' : 'terminal-mode-chat')
+        .getByTestId(targetPty ? 'view-toggle-advanced' : 'view-toggle-standard')
         .evaluate((el) => (el as HTMLButtonElement).click());
       const end = Date.now() + SWITCH_BUDGET_MS;
       let settled = false;

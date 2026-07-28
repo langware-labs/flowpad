@@ -13,6 +13,16 @@ declare global {
   }
 }
 
+/**
+ * View mode fuses TWO axes on purpose, so one control picks both:
+ *  - the session SURFACE — read with `surfaceForViewMode` (vibe workspace / chat
+ *    pane / xterm);
+ *  - the chrome TIER — read with `isAdvancedMode` (debug toolbars, trace
+ *    gutters, `AdvancedOnly`).
+ * So `Advanced` means "a terminal AND the full chrome", not just a terminal.
+ * Keep that in mind before gating anything new on `isAdvancedMode`: you are
+ * attaching it to a surface choice as well as a complexity preference.
+ */
 export enum ViewMode {
   // Hierarchy (simplest → fullest): Vibe ⊂ Standard ⊂ Advanced ⊂ Dev.
   Vibe = 'vibe',
@@ -71,11 +81,6 @@ export function surfaceForViewMode(mode: ViewMode): SessionSurface {
 /** Transport for a mode: only the terminal surface runs an interactive PTY. */
 export function viewModePtyMode(mode: ViewMode): boolean {
   return surfaceForViewMode(mode) === 'terminal';
-}
-
-/** The surface the CURRENT view mode shows — for non-React callers (the launcher). */
-export function currentSessionSurface(): SessionSurface {
-  return surfaceForViewMode(getViewMode());
 }
 
 /**
