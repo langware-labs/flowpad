@@ -33,10 +33,7 @@ import {
 import { dockOptionsToSideWindows, withSideWindowsOptions, type SideWindowsState } from '@src/lib/side-windows';
 import type { ViewMode } from '@src/contexts/view-mode-context';
 import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/types/WorldViewColorMode';
-import {
-  DEFAULT_GRAPH_PRESENTATION,
-  type GraphPresentation,
-} from '@src/types/GraphPresentation';
+import { DEFAULT_GRAPH_PRESENTATION, type GraphPresentation } from '@src/types/GraphPresentation';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -1119,12 +1116,7 @@ export class DockPointer implements IDockPointer {
     const pointer = tag ? `graph/${encodeURIComponent(tag)}` : 'graph';
     const carry = { ...(options?.carry ?? {}) };
     if (options?.view) carry.view = options.view;
-    return new DockPointer(
-      ViewType.TAG,
-      pointer,
-      DockPointer.subgraphOptions({ ...options, carry }),
-      layout,
-    );
+    return new DockPointer(ViewType.TAG, pointer, DockPointer.subgraphOptions({ ...options, carry }), layout);
   }
 
   /** Split a TAG pointer: `graph[/<name>]` → `{ sub: 'graph', tag }`. */
@@ -1168,9 +1160,7 @@ export class DockPointer implements IDockPointer {
   }
 
   /** Split a SUBGRAPH pointer into `{ projection, focus }`. */
-  static parseSubgraphPointer(
-    pointer: string | undefined,
-  ): { projection: string; focus: string | null } | null {
+  static parseSubgraphPointer(pointer: string | undefined): { projection: string; focus: string | null } | null {
     if (!pointer) return null;
     const idx = pointer.indexOf('/');
     if (idx < 0) return { projection: pointer, focus: null };
@@ -1418,8 +1408,13 @@ export class DockPointer implements IDockPointer {
     layout: Layout = Layout.DOCK,
     options?: Record<string, string>,
   ): DockPointer {
-    const safeRef = workerType === 'claude' ? ref : encodeURIComponent(ref);
-    return DockPointer.forLens(workerType, 'transcript', safeRef, layout, options);
+    // Uniform across workers: encode. Claude used to be exempt so its legacy
+    // two-segment ref (`<projectEncodedName>/<sessionId>`) kept its slash, but
+    // nothing constructs that shape any more — claude now emits the same two
+    // forms as codex/copilot (bare session id, or an absolute transcript path),
+    // and encoding a bare UUID is a no-op. LensViewer still PARSES the legacy
+    // form for old bookmarks.
+    return DockPointer.forLens(workerType, 'transcript', encodeURIComponent(ref), layout, options);
   }
 
   /**

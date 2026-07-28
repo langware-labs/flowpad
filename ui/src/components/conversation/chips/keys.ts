@@ -1,5 +1,4 @@
 import type { Task, TypeId } from '@sdk';
-import type { ConversationTranscriptInfo } from '../find-conversation-transcript';
 
 /**
  * Stable, deterministic chip identifiers. Each chip is keyed once so the
@@ -16,7 +15,6 @@ export const ChipKey = {
   task: (id?: string | null) => `task:${id ?? ''}`,
   spec: (id?: string | null) => `spec:${id ?? ''}`,
   process: (taskId?: string | null) => `process:${taskId ?? ''}`,
-  transcript: (vfsPath?: string | null) => `transcript:${vfsPath ?? ''}`,
   sharedTerminal: (processId?: string | null) => `shared-terminal:${processId ?? ''}`,
   download: (messageId?: string | null) => `download:${messageId ?? ''}`,
   /** Generic key for any context-entity TypeId (``<type>:<id>``). */
@@ -40,17 +38,6 @@ export function taskChipKeys(task: Task | null | undefined): Set<string> {
   // The process button has its own dedup key (keyed on the parent task)
   // so MessageChips can suppress a future "open Claude" chip if added.
   if (task.id) keys.add(ChipKey.process(task.id));
-  return keys;
-}
-
-/** Chips that ``ConversationChips`` would render given its inputs. */
-export function conversationChipKeys(args: {
-  transcript?: ConversationTranscriptInfo | null;
-  sharedTerminalId?: string | null;
-}): Set<string> {
-  const keys = new Set<string>();
-  if (args.transcript) keys.add(ChipKey.transcript(args.transcript.vfsPath));
-  if (args.sharedTerminalId) keys.add(ChipKey.sharedTerminal(args.sharedTerminalId));
   return keys;
 }
 
