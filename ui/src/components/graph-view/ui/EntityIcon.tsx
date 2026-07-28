@@ -6,7 +6,7 @@ import { WikiTip } from '@src/components/wiki-tip';
 import { openExternal } from '@src/lib/open-external';
 import { cn } from '@src/lib/utils';
 import { Cloud, GitBranch, HardDrive, type LucideProps } from 'lucide-react';
-import { Fragment, type ComponentType, type MouseEvent, type ReactElement, type ReactNode } from 'react';
+import type { ComponentType, MouseEvent, ReactElement, ReactNode } from 'react';
 import { iconForType } from '../icons/iconRegistry';
 import { IconWithBadge } from '../icons/IconWithBadge';
 import { subIconForEntity } from '../icons/subIconRegistry';
@@ -89,6 +89,18 @@ type LocationSpec = {
 const LOCATION_WIKI_PAGE = 'Where your assets live';
 
 /**
+ * Heading slugs on that page, one per glyph. Deliberately NOT the bare glyph key:
+ * the deep-link scroll matches a heading by slug across the whole document, so a
+ * one-word slug like `git` would collide with any heading in the doc already open
+ * behind the modal.
+ */
+const LOCATION_WIKI_FRAGMENT: Record<LocationSpec['key'], string> = {
+  cloud: 'the-cloud-badge',
+  local: 'the-local-badge',
+  git: 'the-git-badge',
+};
+
+/**
  * Render one location glyph, with the tip it always has and the activation it
  * only sometimes has. `onActivate` absent ⇒ a plain, inert glyph under a plain
  * tooltip (what every list renders); present ⇒ a button that goes to that
@@ -103,22 +115,14 @@ const LOCATION_WIKI_PAGE = 'Where your assets live';
  * A plain function, not a component: it holds no hooks, and every list row would
  * otherwise pay for an extra fiber per glyph.
  */
-function locationGlyph(spec: LocationSpec, size: number, learnMore: string): ReactElement {
+function locationGlyph(spec: LocationSpec, size: number): ReactElement {
   const { key, Icon, className, label, showTooltip, onActivate } = spec;
   const glyph = (
-    <Icon size={size} className={cn('shrink-0', className)} data-location-glyph={key} aria-hidden="true" />
+    <Icon key={key} size={size} className={cn('shrink-0', className)} data-location-glyph={key} aria-hidden="true" />
   );
-  if (!onActivate) {
-    if (!showTooltip || !label) return glyph;
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>{glyph}</TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
-    );
-  }
-  const button = (
+  const body = onActivate ? (
     <button
+      key={key}
       type="button"
       onClick={(e: MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();
@@ -131,13 +135,24 @@ function locationGlyph(spec: LocationSpec, size: number, learnMore: string): Rea
     >
       {glyph}
     </button>
+  ) : (
+    glyph
   );
-  if (!showTooltip || !label) return button;
-  return (
-    <WikiTip wikiword={LOCATION_WIKI_PAGE} fragment={key} label={label} linkText={learnMore}>
-      {button}
-    </WikiTip>
-  );
+  if (!showTooltip || !label) return body;
+  return onActivate ?
+      <WikiTip
+        key={key}
+        wikiword={LOCATION_WIKI_PAGE}
+        fragment={LOCATION_WIKI_FRAGMENT[key]}
+        label={label}
+        learnMore
+      >
+        {body}
+      </WikiTip>
+    : <Tooltip key={key}>
+        <TooltipTrigger asChild>{body}</TooltipTrigger>
+        <TooltipContent>{label}</TooltipContent>
+      </Tooltip>;
 }
 
 function EntityIconFrame({
@@ -168,41 +183,39 @@ function EntityIconFrame({
   const locationSize = Math.max(8, typeSize - 4);
   const locationLabel = useEntityLocationLabel(remote);
   const compositeLabel = [ariaLabel, locationLabel].filter(Boolean).join(', ') || undefined;
-  const learnMore = t`Learn more`;
 
-  // One entry per location this entity can be reached at, in glyph order. The
-  // `unknown` case simply contributes nothing, and "is anything activatable"
-  // falls out of the list instead of being restated.
-  const specs: LocationSpec[] = [];
-  if (location === 'cloud') {
-    specs.push({
+  // One entry per location this entity can be reached at, listed in glyph order
+  // so the order is the code's shape rather than an emergent property of
+  // statement order. Cloud and local are two branches of the one `remote`
+  // tri-state; git is an independent axis, hence the separate condition. The
+  // `unknown` case contributes nothing, and "is anything activatable" falls out
+  // of the list instead of being restated.
+  const specs = [
+    location === 'cloud' && {
       key: 'cloud',
       Icon: Cloud,
       className: 'text-cloud',
       label: cloudUrl ? t`On the cloud, click to open.` : locationLabel,
       showTooltip: showLocationTooltip,
       onActivate: cloudUrl ? () => openExternal(cloudUrl) : undefined,
-    });
-  } else if (location === 'local') {
-    specs.push({
+    },
+    location === 'local' && {
       key: 'local',
       Icon: HardDrive,
       className: 'text-muted-foreground',
       label: onRevealLocal ? t`Local file, click to reveal.` : locationLabel,
       showTooltip: showLocationTooltip,
       onActivate: onRevealLocal,
-    });
-  }
-  if (gitUrl) {
-    specs.push({
+    },
+    !!gitUrl && {
       key: 'git',
       Icon: GitBranch,
       className: 'text-muted-foreground',
       label: gitLabel ? t`In git (${gitLabel}), click to open.` : t`In git, click to open.`,
       showTooltip: showLocationTooltip,
       onActivate: () => openExternal(gitUrl),
-    });
-  }
+    },
+  ].filter(Boolean) as LocationSpec[];
   const interactive = specs.some((s) => s.onActivate);
 
   return (
@@ -220,9 +233,7 @@ function EntityIconFrame({
       aria-label={ariaHidden ? undefined : compositeLabel}
       aria-hidden={ariaHidden || undefined}
     >
-      {specs.map((spec) => (
-        <Fragment key={spec.key}>{locationGlyph(spec, locationSize, learnMore)}</Fragment>
-      ))}
+      {specs.map((spec) => locationGlyph(spec, locationSize))}
       {children}
     </span>
   );

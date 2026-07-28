@@ -6,12 +6,12 @@ title: Where your assets live
 # Where your assets live
 
 Every asset in Flowpad carries a small badge showing where it can be reached.
-It sits just left of the asset's type icon, and each badge is clickable — it
-takes you to that copy.
+It sits just left of the asset's type icon. Where the badge is a link, clicking
+it takes you to that copy — in a list the badges are indicators only.
 
 ## The badges
 
-### Local
+### The local badge
 
 A hard-drive glyph. This asset is a real file on this machine and nowhere else.
 Click it to reveal the file in Finder or Explorer, exactly where it sits on
@@ -20,7 +20,7 @@ disk.
 Most things start here. Notes you write, skills you author, a project you
 created this morning — all local until you decide otherwise.
 
-### Cloud
+### The cloud badge
 
 A cloud glyph. There is a copy of this asset on Flowpad cloud. Click it to open
 that copy in your browser.
@@ -30,7 +30,7 @@ Read this one carefully: **it means "there is also a copy on the cloud", not
 is recording something that happened — you shared this, or someone shared it
 with you — not moving it somewhere else.
 
-### Git
+### The git badge
 
 A branch glyph, shown when the asset sits inside a git repository that has a
 remote. Click it to open that exact file on GitHub, GitLab or Bitbucket, on the
@@ -50,12 +50,7 @@ tells you which side of the valve a given asset already sits on.
 - In **Local** mode the valve is shut. Nothing new can cross, and anything that
   crossed before stops being updated there.
 
-Two consequences worth knowing:
-
 **Switching to Local does not un-share anything.** Assets that already have a
 cloud copy keep that copy and keep the cloud badge. The badge is being honest
 about the past. What stops is traffic — your later edits stay on this machine,
 so the two copies quietly drift apart until you switch back.
-
-**A cloud badge is not a leak.** It appears only after a deliberate share. If
-you have never shared an asset, it will not have one.

@@ -18,6 +18,9 @@ interface WikiButtonProps {
   className?: string;
 }
 
+const ICON_SKIN = 'flex shrink-0 items-center text-muted-foreground/70 transition-colors hover:text-primary';
+const LINK_SKIN = 'shrink-0 text-xs text-primary underline-offset-2 hover:underline';
+
 /**
  * Peeks a wiki page in a modal (via {@link openWikiModal}) without leaving the
  * current view — the "open the docs" affordance paired with {@link WikiTip}.
@@ -27,17 +30,15 @@ interface WikiButtonProps {
  * `linkText` is given.
  */
 export function WikiButton({ wikiword, fragment, label, linkText, className }: WikiButtonProps) {
-  const title = label ?? wikiword;
+  // The link skin's visible wording IS its name — announcing the page title
+  // instead would leave the accessible name without the label a user can see
+  // (and would announce untranslated English against localized text).
+  const title = label ?? linkText ?? wikiword;
   return (
     <button
       type="button"
       onClick={() => openWikiModal(wikiword, undefined, fragment)}
-      className={cn(
-        linkText ?
-          'shrink-0 text-xs text-primary underline-offset-2 hover:underline'
-        : 'flex shrink-0 items-center text-muted-foreground/70 transition-colors hover:text-primary',
-        className,
-      )}
+      className={cn(linkText ? LINK_SKIN : ICON_SKIN, className)}
       aria-label={title}
       title={title}
     >

@@ -19,6 +19,11 @@ import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
  * where it points. The contract that matters to every other surface: a glyph
  * with no link prop stays the inert indicator it has always been — lists must
  * not sprout buttons (or the backend round-trip behind them).
+ *
+ * The two event libraries are deliberate, not drift: `fireEvent.click` for
+ * activation (it bubbles, so the row-propagation assertion below still means
+ * something), `userEvent.hover` for the Radix tip, which only opens on a real
+ * pointer sequence.
  */
 function renderIcon(props: React.ComponentProps<typeof EntityIcon>) {
   return render(
@@ -86,18 +91,7 @@ describe('EntityIcon location links', () => {
     expect(frame).toHaveAccessibleName('My skill, Local only');
   });
 
-  it('says what a click does, per glyph', async () => {
-    const user = userEvent.setup();
-    const { container, findByText } = renderIcon({
-      type: 'markdown',
-      remote: false,
-      onRevealLocal: vi.fn(),
-    });
-    await user.hover(container.querySelector('[data-location-glyph="local"]')!);
-    expect(await findByText('Local file, click to reveal.')).toBeInTheDocument();
-  });
-
-  it('offers Learn more into the location wiki page, at the glyph’s own section', async () => {
+  it('says what a click does, and offers Learn more at the glyph’s own section', async () => {
     const user = userEvent.setup();
     const { container, findByText } = renderIcon({
       type: 'task',
@@ -105,8 +99,16 @@ describe('EntityIcon location links', () => {
       cloudUrl: 'https://hub.test/task/abc',
     });
     await user.hover(container.querySelector('[data-location-glyph="cloud"]')!);
+    expect(await findByText('On the cloud, click to open.')).toBeInTheDocument();
+
     await user.click(await findByText('Learn more'));
-    expect(openWikiModal).toHaveBeenCalledWith('Where your assets live', undefined, 'cloud');
+    // Not the bare glyph key: the deep-link scroll matches a heading slug across
+    // the whole document, so `cloud` would collide with the doc open behind it.
+    expect(openWikiModal).toHaveBeenCalledWith(
+      'Where your assets live',
+      undefined,
+      'the-cloud-badge',
+    );
   });
 
   it('keeps inert glyphs on a plain tooltip — no hover card, no wiki round-trip', async () => {
