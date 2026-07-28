@@ -347,6 +347,10 @@ async def _handle_github_disconnect() -> ApiResponse:
         if not user:
             return ApiFailResponse(message="User not found")
         await delete_user_credentials(user, "github_credentials", user.id)
+        # Drop the visibility row too, or the provider keeps reading CONNECTED.
+        from flow_sdk.app.actions.desktop_oauth import _drop_credential_row  # noqa: PLC0415
+
+        await _drop_credential_row(user, "github_credentials")
         from flow_sdk.builtin.capability import restamp_capability_state
         from flow_sdk.core.capabilities import CapabilityKind
 
