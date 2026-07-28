@@ -23,6 +23,7 @@ from pydantic.alias_generators import to_camel
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.api.type_id import TypeId
+from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
@@ -34,7 +35,6 @@ from flow_sdk.core.flow.mcp_server import MCPConnector, mcp_connector_pool
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.identifier import mint_uuid
-from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.fs_store.path_utils import (
     canonical_posix_path,
     is_protected_path,
@@ -1293,13 +1293,58 @@ class Project(Entity):
 
         # Driver-dispatched, symmetric with resolve(): the driver owns which SOD
         # store it writes to. External-provider slots raise SecretProvideUnsupported.
+        from flow_sdk.builtin.env_local_store import EnvLocalNotWritable  # noqa: PLC0415
+
         try:
             await get_secret_origin_driver(loc.kind).store(loc, value, project=self)
         except SecretProvideUnsupported as e:
             return ApiFailResponse(message=str(e))
+        except EnvLocalNotWritable as e:
+            # Hard block, not a warning: the destination file is committable, so
+            # writing the value there would leak it on the next git share. The
+            # code lets the UI render the specific fix.
+            return ApiFailResponse(message=str(e), data={"block_code": e.code})
         except Exception as e:  # noqa: BLE001
             return ApiFailResponse(message=f"could not store value: {e}")
         return ApiSuccessResponse(data={"ok": True, "env_var": entry.get("env_var")})
+
+    @action.post(action_name="env-local-status")
+    async def env_local_status(self) -> "ApiResponse":
+        """What is in this project's ``.env.local``, and may we write to it?
+
+        **Names only — no value ever crosses this boundary.** The detected-keys
+        table renders straight from this, so the response physically cannot
+        carry one.
+
+        ``blocked`` is the hard block: ``.env.local`` sits in a git repo that
+        does not exclude it, so a value written there would be committable.
+        """
+        from flow_sdk.builtin.env_local_store import (  # noqa: PLC0415
+            env_local_block,
+            env_local_path,
+            gitignore_status,
+            list_env_local,
+        )
+
+        path = env_local_path(self)
+        gitignore = gitignore_status(self)
+        block = env_local_block(self)
+        declared = {row.get("env_var") for row in self.secret_origins if row.get("env_var")}
+        keys = [
+            {"key": row["key"], "line": row["line"], "declared": row["key"] in declared}
+            for row in list_env_local(self)
+        ]
+        return ApiSuccessResponse(
+            data={
+                "path": str(path) if path is not None else None,
+                "exists": bool(path is not None and path.exists()),
+                "gitignore": gitignore,
+                "blocked": block is not None,
+                "block_code": block["code"] if block else None,
+                "block_reason": block["reason"] if block else None,
+                "keys": keys,
+            }
+        )
 
     # ── Context folders (Folder entities linked via context buckets) ────────
 
