@@ -69,8 +69,16 @@ async def get_oauth_providers_as_env_table(user=None) -> EntityEnvVars:
     Rows carry ``var_status``: MISSING while the user holds no credential for
     that provider, AVAILABLE once they do. Without the merge the tab could list
     providers but never say whether any were connected.
+
+    Hub-defined providers are unioned in on top of the local ones — connections
+    work directly with the hub, so its catalogue belongs in the same list. Local
+    wins a name collision: a desktop credential is resolvable here and a hub one
+    is not, so shadowing would send the user through a flow for a token they
+    already hold.
     """
-    providers = oauth_provider_rows()
+    from flow_sdk.core.oauth.hub_providers import hub_provider_rows, union_providers  # noqa: PLC0415
+
+    providers = union_providers(oauth_provider_rows(), await hub_provider_rows())
     if user is None:
         return providers
     return merge_env_tables(providers, user.get_env_table())
