@@ -15,6 +15,10 @@ interface WikiTipProps {
   label?: ReactNode;
   /** Accessible label / hover title for the W-button. Defaults to the wiki word. */
   buttonLabel?: string;
+  /** Heading slug to deep-link into a section of the page. */
+  fragment?: string;
+  /** Render the wiki affordance as a text link with this wording (e.g. "Learn more"). */
+  linkText?: string;
   /** Hover dwell before the tip opens. Raise it on dense surfaces (a grid of
    *  tipped tiles pops a card under every tile the pointer crosses). */
   openDelay?: number;
@@ -32,7 +36,7 @@ interface WikiTipProps {
  * `children` must forward its ref and spread props onto a DOM node — the
  * trigger is `asChild`, so a component that swallows them leaves the tip inert.
  */
-export function WikiTip({ wikiword, children, label, buttonLabel, openDelay = 200, side = 'top' }: WikiTipProps) {
+export function WikiTip({ wikiword, children, label, buttonLabel, fragment, linkText, openDelay = 200, side = 'top' }: WikiTipProps) {
   return (
     <HoverCard openDelay={openDelay} closeDelay={100}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
@@ -47,7 +51,7 @@ export function WikiTip({ wikiword, children, label, buttonLabel, openDelay = 20
         {label != null && (
           <span className="truncate text-xs text-muted-foreground">{label}</span>
         )}
-        <WikiButton wikiword={wikiword} label={buttonLabel} />
+        <WikiButton wikiword={wikiword} label={buttonLabel} fragment={fragment} linkText={linkText} />
       </HoverCardContent>
     </HoverCard>
   );

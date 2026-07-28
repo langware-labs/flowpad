@@ -1,11 +1,16 @@
 import React from 'react';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 
-const { openExternal } = vi.hoisted(() => ({ openExternal: vi.fn() }));
+const { openExternal, openWikiModal } = vi.hoisted(() => ({
+  openExternal: vi.fn(),
+  openWikiModal: vi.fn(),
+}));
 vi.mock('@src/lib/open-external', () => ({ openExternal }));
+vi.mock('@src/components/wiki-tip/wiki-modal', () => ({ openWikiModal }));
 
 import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 
@@ -79,6 +84,54 @@ describe('EntityIcon location links', () => {
     // rather than dropping its name.
     expect(frame).toHaveAttribute('role', 'group');
     expect(frame).toHaveAccessibleName('My skill, Local only');
+  });
+
+  it('says what a click does, per glyph', async () => {
+    const user = userEvent.setup();
+    const { container, findByText } = renderIcon({
+      type: 'markdown',
+      remote: false,
+      onRevealLocal: vi.fn(),
+    });
+    await user.hover(container.querySelector('[data-location-glyph="local"]')!);
+    expect(await findByText('Local file, click to reveal.')).toBeInTheDocument();
+  });
+
+  it('offers Learn more into the location wiki page, at the glyph’s own section', async () => {
+    const user = userEvent.setup();
+    const { container, findByText } = renderIcon({
+      type: 'task',
+      remote: true,
+      cloudUrl: 'https://hub.test/task/abc',
+    });
+    await user.hover(container.querySelector('[data-location-glyph="cloud"]')!);
+    await user.click(await findByText('Learn more'));
+    expect(openWikiModal).toHaveBeenCalledWith('Where your assets live', undefined, 'cloud');
+  });
+
+  it('keeps inert glyphs on a plain tooltip — no hover card, no wiki round-trip', async () => {
+    const user = userEvent.setup();
+    // What every list renders. A HoverCard per row would be both a behaviour
+    // change and a per-row cost.
+    const { container, findByRole, queryByText } = renderIcon({ type: 'skill', remote: false });
+    await user.hover(container.querySelector('[data-location-glyph="local"]')!);
+    expect(await findByRole('tooltip')).toHaveTextContent('Local only');
+    expect(queryByText('Learn more')).toBeNull();
+  });
+
+  it('suppresses both the tooltip and the tip when the caller turns them off', async () => {
+    const user = userEvent.setup();
+    const { container, queryByRole, queryByText } = renderIcon({
+      type: 'markdown',
+      remote: false,
+      onRevealLocal: vi.fn(),
+      showLocationTooltip: false,
+    });
+    await user.hover(container.querySelector('[data-location-glyph="local"]')!);
+    expect(queryByRole('tooltip')).toBeNull();
+    expect(queryByText('Learn more')).toBeNull();
+    // …but the glyph is still a working button.
+    expect(container.querySelector('[data-testid="entity-icon-local-link"]')).toBeInTheDocument();
   });
 
   it('shows git alongside the local glyph, in location order', () => {
