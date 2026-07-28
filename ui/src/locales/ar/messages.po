@@ -13606,6 +13606,14 @@ msgstr ""
 msgid "This trace predates the call-stack view. Re-run the analysis (Refresh) to generate it."
 msgstr ""
 
+#: src/components/conversation/asset-review/StagedTranscriptPreview.tsx
+msgid "This transcript could not be read."
+msgstr ""
+
+#: src/components/conversation/asset-review/StagedTranscriptPreview.tsx
+msgid "This transcript has no messages."
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 msgstr ""

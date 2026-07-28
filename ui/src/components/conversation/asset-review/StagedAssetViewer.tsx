@@ -3,6 +3,8 @@ import { Trans } from '@lingui/react/macro';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { MarkdownView } from '@src/components/markdown-view';
+import { workerForSessionType } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
+import { StagedTranscriptPreview } from './StagedTranscriptPreview';
 
 /** Strip a leading YAML frontmatter block.
  *
@@ -60,8 +62,14 @@ export function StagedAssetViewer({ attachment }: { attachment: MessageAttachmen
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attachment.id]);
 
+  // A worker transcript renders from its staged file directly (server-side
+  // parse by absolute path), so it never needs — and must not pay for — the
+  // raw-text read below: it's a multi-MB JSONL whose text form is unreadable.
+  const transcriptWorker = workerForSessionType(attachment.asset_type);
+  const isTranscript = Boolean(transcriptWorker) && Boolean(selected?.endsWith('.jsonl'));
+
   useEffect(() => {
-    if (!selected) return;
+    if (!selected || isTranscript) return;
     let cancelled = false;
     setLoadingFile(true);
     setContent(null);
@@ -101,30 +109,33 @@ export function StagedAssetViewer({ attachment }: { attachment: MessageAttachmen
     );
   }
 
-  const pane = loadingFile ? (
-    <div className="flex items-center justify-center py-8 text-muted-foreground">
-      <Loader2 className="h-4 w-4 animate-spin" />
-    </div>
-  ) : content == null ? (
-    <div className="py-6 text-center text-sm text-muted-foreground">
-      <Trans>Select a file to preview.</Trans>
-    </div>
-  ) : (
-    <div className="min-w-0">
-      {selected?.endsWith('.md') ? (
-        <MarkdownView value={stripFrontmatter(content)} compact />
-      ) : (
-        <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 text-[12px]">
-          {content}
-        </pre>
-      )}
-      {truncated && (
-        <div className="mt-2 text-[11px] italic text-muted-foreground">
-          <Trans>Preview truncated.</Trans>
-        </div>
-      )}
-    </div>
-  );
+  const pane =
+    isTranscript && transcriptWorker && selected ? (
+      <StagedTranscriptPreview workerType={transcriptWorker} path={`${listing.abs_root}/${selected}`} />
+    ) : loadingFile ? (
+      <div className="flex items-center justify-center py-8 text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+      </div>
+    ) : content == null ? (
+      <div className="py-6 text-center text-sm text-muted-foreground">
+        <Trans>Select a file to preview.</Trans>
+      </div>
+    ) : (
+      <div className="min-w-0">
+        {selected?.endsWith('.md') ? (
+          <MarkdownView value={stripFrontmatter(content)} compact />
+        ) : (
+          <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 text-[12px]">
+            {content}
+          </pre>
+        )}
+        {truncated && (
+          <div className="mt-2 text-[11px] italic text-muted-foreground">
+            <Trans>Preview truncated.</Trans>
+          </div>
+        )}
+      </div>
+    );
 
   // Single content pane only — the main file (task.md / SKILL.md / …). The old
   // multi-file path rail was removed: the review dialog shows the entity's own
