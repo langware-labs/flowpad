@@ -1,13 +1,5 @@
 import { useState } from 'react';
-import {
-  AgenticProcess,
-  Conversation,
-  dataManager,
-  FlowMessage,
-  Spec,
-  Task,
-  TypeId,
-} from '@sdk';
+import { AgenticProcess, Conversation, dataManager, FlowMessage, Spec, Task, TypeId } from '@sdk';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
 import { AttachmentType } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
@@ -50,39 +42,33 @@ export async function buildReceiverContextPrompt(
   const pointers = conv?.conversationMessageIds ?? [];
 
   const messages = await Promise.all(
-    pointers.map((ptr) =>
-      dataManager.getByTypeId<FlowMessage>(new TypeId(FlowMessage.type, ptr.id)),
-    ),
+    pointers.map((ptr) => dataManager.getByTypeId<FlowMessage>(new TypeId(FlowMessage.type, ptr.id))),
   );
 
   const formatMsg = (fm: FlowMessage | null) => {
     if (!fm) return null;
     const isSender = fm.sender_id && task.shared_by_id && fm.sender_id === task.shared_by_id;
-    const label = isSender ? (fm.sender_name || senderName || 'Sender') : (fm.sender_name || 'You');
+    const label = isSender ? fm.sender_name || senderName || 'Sender' : fm.sender_name || 'You';
     return `[${label}]: ${fm.text ?? ''}`;
   };
 
   const allFiles = messages
     .flatMap((fm) => fm?.attachment ?? [])
     .filter((a) => a.attachment_type === AttachmentType.FILE);
-  const transcript = allFiles.find((a) => a.data.endsWith('conversation.jsonl'));
-  const otherFileLines = allFiles
-    .filter((a) => a !== transcript)
-    .map((a) => {
-      const absPath = a.local_path ?? a.data;
-      const filename = a.data.split('/').pop() ?? a.data;
-      return `- ${filename} (path: ${absPath})`;
-    });
-  const transcriptPath = transcript ? (transcript.local_path ?? transcript.data) : null;
+  // No transcript carve-out: a shared session is a normal entity attachment
+  // now, so its on-disk path arrives with the other entity paths below rather
+  // than as a raw FILE named `conversation.jsonl`.
+  const otherFileLines = allFiles.map((a) => {
+    const absPath = a.local_path ?? a.data;
+    const filename = a.data.split('/').pop() ?? a.data;
+    return `- ${filename} (path: ${absPath})`;
+  });
 
   // A shared "plan" is either a Spec(spec_type=plan) or the plan-mode artifact
   // (type='plan'); both carry the body the worker should read. Spec wins.
   const specTypeId = task.firstContextOfType('spec') ?? task.firstContextOfType('plan');
   const spec = specTypeId
-    ? await dataManager.getByTypeId<Spec>(
-        specTypeId,
-        new ExpansionRequest({ expand: ['blobs'] }),
-      ).catch(() => null)
+    ? await dataManager.getByTypeId<Spec>(specTypeId, new ExpansionRequest({ expand: ['blobs'] })).catch(() => null)
     : null;
 
   const effectiveSpecType = task.spec_type ?? spec?.spec_type ?? 'plan';
@@ -106,9 +92,6 @@ export async function buildReceiverContextPrompt(
     parts.push(`Task: ${task.displayName}`);
   }
 
-  if (transcriptPath) {
-    parts.push('', "Sender's Claude Code transcript (conversation.jsonl):", transcriptPath);
-  }
   if (msgLines) {
     parts.push('', 'Conversation between the two users:', msgLines);
   }
@@ -137,10 +120,7 @@ export async function buildReceiverContextPrompt(
   // two sections — private wins for the local user's view.
   const privateKeys = new Set(privateTypeIds.map((t) => t.toString()));
   for (const k of privateKeys) sharedTypeIds.delete(k);
-  const ctxSection = buildSharedAndPrivateContextSection(
-    Array.from(sharedTypeIds.values()),
-    privateTypeIds,
-  );
+  const ctxSection = buildSharedAndPrivateContextSection(Array.from(sharedTypeIds.values()), privateTypeIds);
   if (ctxSection) {
     parts.push('', ctxSection);
   }
@@ -186,9 +166,9 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
     setBusy(true);
     try {
       if (myProcessId) {
-        const existing = await dataManager.getByTypeId<AgenticProcess>(
-          new TypeId(AgenticProcess.type, myProcessId),
-        ).catch(() => null);
+        const existing = await dataManager
+          .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, myProcessId))
+          .catch(() => null);
         // Diagnostic: log when we're about to open an AP whose creator is
         // not the local user. This means the leak is still happening — the
         // ownership check is here only to surface the problem, not to
@@ -196,17 +176,17 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
         // should never fire. ``created_by`` is a bare UUID (see
         // flow_sdk/db/drivers/db_driver.py), not a `user-<uuid>` typeid.
         if (
-          existing
-          && !!localUser?.id
-          && typeof existing.created_by === 'string'
-          && existing.created_by !== localUser.id
+          existing &&
+          !!localUser?.id &&
+          typeof existing.created_by === 'string' &&
+          existing.created_by !== localUser.id
         ) {
           console.warn(
             '[useMyProcess] task.my_process_id points at a foreign AgenticProcess. ' +
-            'This means a sender-side process id is leaking into a receiver task. ' +
-            `task=${taskId} my_process_id=${myProcessId} ` +
-            `existing.created_by=${existing.created_by} ` +
-            `localUser.id=${localUser.id}`,
+              'This means a sender-side process id is leaking into a receiver task. ' +
+              `task=${taskId} my_process_id=${myProcessId} ` +
+              `existing.created_by=${existing.created_by} ` +
+              `localUser.id=${localUser.id}`,
           );
         }
         if (existing) {
@@ -218,9 +198,7 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
 
       // Start path: spawn a brand-new process. Recipient gets the conversation
       // context injected as the first instruction; initiator starts clean.
-      const instruction = isInitiator
-        ? undefined
-        : await buildReceiverContextPrompt(task, conversationId, senderName);
+      const instruction = isInitiator ? undefined : await buildReceiverContextPrompt(task, conversationId, senderName);
       const { process: spawned } = await AgenticProcess.spawn(
         { workdir, projectId: task.project_id ?? undefined },
         { instruction, visible: true },

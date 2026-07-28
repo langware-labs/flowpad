@@ -3871,6 +3871,7 @@ msgstr "Detach"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "Details"
 msgstr "Details"
@@ -9383,8 +9384,8 @@ msgid "Open in terminal"
 msgstr "Open in terminal"
 
 #: src/components/conversation/ConversationContextPanel.tsx
-msgid "Open in the transcript viewer"
-msgstr "Open in the transcript viewer"
+#~ msgid "Open in the transcript viewer"
+#~ msgstr "Open in the transcript viewer"
 
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 msgid "Open in Worktree"
@@ -9532,8 +9533,8 @@ msgid "Open the live session in a terminal"
 msgstr "Open the live session in a terminal"
 
 #: src/components/conversation/ConversationContextPanel.tsx
-msgid "Open the raw JSONL in a new tab"
-msgstr "Open the raw JSONL in a new tab"
+#~ msgid "Open the raw JSONL in a new tab"
+#~ msgstr "Open the raw JSONL in a new tab"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."
@@ -11183,8 +11184,8 @@ msgid "Reveal in folder"
 msgstr "Reveal in folder"
 
 #: src/components/conversation/ConversationContextPanel.tsx
-msgid "Reveal the message that produced this transcript"
-msgstr "Reveal the message that produced this transcript"
+#~ msgid "Reveal the message that produced this transcript"
+#~ msgstr "Reveal the message that produced this transcript"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Reveal the message this file is attached to"
@@ -12336,8 +12337,8 @@ msgid "Shared"
 msgstr "Shared"
 
 #: src/components/conversation/FlowMessageBubble.tsx
-msgid "Shared a session transcript — see the Context tab"
-msgstr "Shared a session transcript — see the Context tab"
+#~ msgid "Shared a session transcript — see the Context tab"
+#~ msgstr "Shared a session transcript — see the Context tab"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -13614,6 +13615,14 @@ msgstr "This trace is not linked to a worker session."
 msgid "This trace predates the call-stack view. Re-run the analysis (Refresh) to generate it."
 msgstr "This trace predates the call-stack view. Re-run the analysis (Refresh) to generate it."
 
+#: src/components/conversation/asset-review/StagedTranscriptPreview.tsx
+msgid "This transcript could not be read."
+msgstr "This transcript could not be read."
+
+#: src/components/conversation/asset-review/StagedTranscriptPreview.tsx
+msgid "This transcript has no messages."
+msgstr "This transcript has no messages."
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 msgstr "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
@@ -13839,7 +13848,6 @@ msgstr "Trace events"
 msgid "Traceback ({0} lines)"
 msgstr "Traceback ({0} lines)"
 
-#: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Transcript"
 msgstr "Transcript"
@@ -14332,7 +14340,6 @@ msgid "Vibe agents"
 msgstr "Vibe agents"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx

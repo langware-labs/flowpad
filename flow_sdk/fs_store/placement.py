@@ -20,6 +20,7 @@ The module is deliberately dependency-light: only stdlib + ``_compat``, with
 ``SchemaRegistry`` and ``instance_settings`` lazy-imported inside the functions
 that need them (avoids an import cycle at load time).
 """
+
 from __future__ import annotations
 
 import os
@@ -49,10 +50,10 @@ class AssetClass(StrEnum):
     """The "definition" axis — what an asset type fundamentally is."""
 
     INTERNAL = "internal"  # flowpad's own subtree; no harness prefix, no fan-out
-    HARNESS = "harness"    # tied to ONE harness (declared via ``TypeInfo.harness``)
-    SHARED = "shared"      # every harness understands it → syncmd fan-out
-    NONE = "none"          # raw files, no TypeInfo, no harness semantics
-    REPO = "repo"          # flowpad-native repo asset under ``agentic-assets/<type>``;
+    HARNESS = "harness"  # tied to ONE harness (declared via ``TypeInfo.harness``)
+    SHARED = "shared"  # every harness understands it → syncmd fan-out
+    NONE = "none"  # raw files, no TypeInfo, no harness semantics
+    REPO = "repo"  # flowpad-native repo asset under ``agentic-assets/<type>``;
     #                        folder-backed, children nest recursively (see AGENTIC_ASSETS_DIR)
 
 
@@ -168,6 +169,11 @@ class LayoutClass:
         return False  # SYSTEM (or anything else) is never a placement input
 
 
+# The family every worker-session type declares. A received transcript installs
+# to ``<scope root>/<harness prefix>/transcripts/<id>.jsonl``; the indexer walks
+# exactly those subdirs via ``installed_transcripts.transcript_subdir_to_info``.
+TRANSCRIPTS_FAMILY = "transcripts"
+
 # The recursive repo-asset container. A REPO asset lives at
 # ``<container>/agentic-assets/<type>/<name>``; its children nest under the
 # asset's own ``agentic-assets/`` subfolder — the same segment, recursively.
@@ -178,9 +184,7 @@ LAYOUT_REGISTRY: dict[AssetClass, LayoutClass] = {
     AssetClass.HARNESS: LayoutClass(harness_scoped=True, fan_out=False, user_scope=True),
     AssetClass.SHARED: LayoutClass(harness_scoped=True, fan_out=True, user_scope=True),
     AssetClass.NONE: LayoutClass(harness_scoped=True, fan_out=False, user_scope=True),
-    AssetClass.REPO: LayoutClass(
-        harness_scoped=False, fan_out=False, user_scope=True, root_prefix=AGENTIC_ASSETS_DIR
-    ),
+    AssetClass.REPO: LayoutClass(harness_scoped=False, fan_out=False, user_scope=True, root_prefix=AGENTIC_ASSETS_DIR),
 }
 
 
@@ -214,9 +218,7 @@ def root_for_scope(scope: str, *, project_mount: str | Path | None = None) -> Pa
     return None  # SYSTEM is never a write destination
 
 
-def effective_harness(
-    asset_class: AssetClass, declared: HarnessType | None, default_worker: str
-) -> str | None:
+def effective_harness(asset_class: AssetClass, declared: HarnessType | None, default_worker: str) -> str | None:
     """Which harness's convention this write uses: the type's declared harness
     for HARNESS types, the caller's ``default_worker`` for SHARED/NONE, and none
     for INTERNAL (which is harness-less)."""

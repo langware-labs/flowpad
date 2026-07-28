@@ -24,11 +24,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
 import { BodyStatus, FlowMessageKind, forwardMessage } from '@sdk/entities/flow-message';
-import { AlertCircle, Download, File, FileText, Loader2, Play, X } from 'lucide-react';
+import { AlertCircle, Download, File, Loader2, Play, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { MessageContextButton } from './MessageContextButton';
 import { MessageRunStatus } from './MessageRunStatus';
-import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
@@ -263,8 +262,6 @@ export function FlowMessageBubble({
     items: attachmentItems,
     entities,
     downloaded,
-    sharesTranscript,
-    hasPrompt,
     assetCount,
     assetLabels,
     assetTypeChips,
@@ -433,15 +430,12 @@ export function FlowMessageBubble({
   // A transcript-only share renders a fully blank bubble without this note:
   // the backend synthesizes the "Please run the following prompt:" placeholder
   // for any empty-text send (MessageBubble suppresses it, assuming a prompt
-  // row takes its place), the conversation.jsonl transcript is deliberately
-  // NOT a chip (it lives in the Context tab), and the structural TYPE_ID
-  // self-refs are filtered too. When the message carries a transcript but no
-  // prompt and no renderable chips, say what was shared instead of nothing.
-  const isBareTranscriptShare =
-    sharesTranscript &&
-    !hasPrompt &&
-    !hasAttachments &&
-    (!message.content || message.content === PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT);
+  // row takes its place) and the structural TYPE_ID self-refs are filtered too.
+  //
+  // A shared session used to need a "see the Context tab" note here, because
+  // its transcript rode as a hidden raw file and produced no chip at all. It is
+  // an ordinary entity attachment now, so it renders as its own chip like every
+  // other shared entity and needs no special-case copy.
 
   // One click pulls the whole bundle (files + entities). Downloads STAGE into
   // the message's record-data dir — no project mapping needed; installing into
@@ -478,14 +472,8 @@ export function FlowMessageBubble({
   const progressPct = progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
 
   const attachmentFooter =
-    hasAttachments || downloadError || isBareTranscriptShare ? (
+    hasAttachments || downloadError ? (
       <div className="mt-2 space-y-1.5">
-        {isBareTranscriptShare && (
-          <div className="flex items-center gap-1.5 text-[11px] italic text-muted-foreground">
-            <FileText className="h-3 w-3 shrink-0" />
-            <Trans>Shared a session transcript — see the Context tab</Trans>
-          </div>
-        )}
         {downloadError && (
           <div
             className="flex items-start gap-2 rounded-md border border-orange-500/30 bg-orange-500/10 px-2 py-1.5 text-[11px] text-orange-700 dark:text-orange-300"

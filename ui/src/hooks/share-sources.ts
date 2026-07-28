@@ -13,15 +13,7 @@
  * `prepare()` is resolve-once: its result is cached, so a click → error → retry
  * reuses the same payload instead of re-resolving.
  */
-import {
-  AgenticProcess,
-  Artifact,
-  dataManager,
-  fsManager,
-  TypeId,
-  type ConversationSendPayload,
-} from '@sdk';
-import { loadOptionalTranscript } from '@src/components/conversation/transcript-attachment';
+import { AgenticProcess, Artifact, dataManager, fsManager, TypeId, type ConversationSendPayload } from '@sdk';
 
 export interface SharePrepPayload {
   /** Serialized TypeIds → TYPE_ID attachments on the FlowMessage. */
@@ -199,47 +191,36 @@ export function agenticProcessShareSource(
 }
 
 /**
- * Read a vibe/agentic session's transcript: resolve the process, then load the
- * raw jsonl through the shared attach rules (own session, else the fork parent
- * trimmed to the fork point). The single owner of "which session, which bytes"
- * — every surface that offers an attach-transcript toggle goes through here, so
- * the chip id and the file can't drift apart.
+ * Resolve which session a vibe/agentic process is running.
  *
- * `files` seeds the list so a caller with its own attachments keeps them.
- * Never throws: a missing transcript comes back as `attached: false` with a
+ * The frontend no longer reads or ships transcript BYTES. A session is a
+ * file-backed entity, so attaching ``claude_session-<id>`` is enough — the
+ * bundle packer carries the transcript from the session's own ``asset_ref``,
+ * inside the session's entry, like every other file-backed asset. The browser
+ * used to read the jsonl and attach it as a file named ``conversation.jsonl``,
+ * a name reserved for message transport, which is why the receiver then had to
+ * re-pair file↔session by searching file contents for the session id.
+ *
+ * Never throws: an unresolvable session comes back as `attached: false` with a
  * reason the caller can surface.
  */
 export async function loadSessionTranscript(
   typeId: TypeId,
-  { attach = true, files = [] }: { attach?: boolean; files?: File[] } = {},
-): Promise<{ files: File[]; sessionId?: string; attached: boolean; failureReason?: string }> {
+): Promise<{ sessionId?: string; attached: boolean; failureReason?: string }> {
   const proc = await dataManager
     .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, typeId.id))
     .catch(() => null);
-  const result = await loadOptionalTranscript(files, {
-    attach,
-    proc: proc ?? undefined,
-    projectPath: (proc as { workdir?: string } | null)?.workdir ?? undefined,
-  });
-  return {
-    files: result.files,
-    sessionId: proc?.session_id ?? undefined,
-    attached: result.attached,
-    failureReason: result.failureReason,
-  };
+  const sessionId = proc?.session_id ?? undefined;
+  return sessionId
+    ? { sessionId, attached: true }
+    : { attached: false, failureReason: 'This process has no session yet.' };
 }
 
-/** Shared transcript prep for the AgenticProcess (session) shares: resolves the
- *  process, optionally attaches the raw jsonl, and rides the ClaudeTranscript
- *  (`claude_session-<id>`) as the chip + shared context. */
-async function prepareProcessTranscript(
-  typeId: TypeId,
-  o: SharePrepOptions,
-): Promise<SharePrepPayload> {
-  const { files, sessionId } = await loadSessionTranscript(typeId, {
-    attach: o.attachTranscript !== false,
-    files: o.files ?? [],
-  });
+/** Share prep for an AgenticProcess (session): the ClaudeTranscript
+ *  (`claude_session-<id>`) is the chip and rides the shared context alongside
+ *  the process, so the backend's mutual context linking connects the two. */
+async function prepareProcessTranscript(typeId: TypeId, o: SharePrepOptions): Promise<SharePrepPayload> {
+  const { sessionId } = o.attachTranscript === false ? { sessionId: undefined } : await loadSessionTranscript(typeId);
 
   const transcriptRef = sessionId ? `claude_session-${sessionId}` : null;
   const processRef = `${AgenticProcess.type}-${typeId.id}`;
@@ -247,7 +228,7 @@ async function prepareProcessTranscript(
     // The chip: the transcript when a session exists, else the process.
     assetReferences: [transcriptRef ?? processRef],
     sharedContextEntities: transcriptRef ? [transcriptRef, processRef] : [processRef],
-    files: files.length > 0 ? files : undefined,
+    files: o.files?.length ? o.files : undefined,
   };
 }
 
@@ -258,10 +239,7 @@ async function prepareProcessTranscript(
  * When no session process is active yet (`typeId` is null), falls back to a
  * title-only invite with nothing attached, so the modal still works.
  */
-export function collaborateShareSource(
-  typeId: TypeId | null,
-  opts: { label?: string } = {},
-): ShareSource {
+export function collaborateShareSource(typeId: TypeId | null, opts: { label?: string } = {}): ShareSource {
   return {
     label: opts.label ?? 'Collaborate',
     typeLabel: 'COLLABORATE',
@@ -282,10 +260,7 @@ export function collaborateShareSource(
  * bytes ride as a FILE attachment in the body bundle — the same mechanism as
  * pasted screenshots. No entity is minted; the receiver gets the file itself.
  */
-export function fileShareSource(args: {
-  computeNodeTypeId: TypeId;
-  absPath: string;
-}): ShareSource {
+export function fileShareSource(args: { computeNodeTypeId: TypeId; absPath: string }): ShareSource {
   const fileName = args.absPath.split('/').pop() || args.absPath;
   return {
     label: fileName,
@@ -316,9 +291,7 @@ function noAssetShareSource(label: string, typeLabel: string): ShareSource {
     label,
     typeLabel,
     defaultTitle: label,
-    prepare: resolveOnce(() =>
-      Promise.resolve({ assetReferences: [], sharedContextEntities: [] }),
-    ),
+    prepare: resolveOnce(() => Promise.resolve({ assetReferences: [], sharedContextEntities: [] })),
   };
 }
 
