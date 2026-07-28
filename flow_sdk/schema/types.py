@@ -144,6 +144,8 @@ class EntityType(StrEnum):
     # A blessed dot-taxonomy tag name (flow_sdk/builtin/tag.py). Optional
     # enrichment — anonymous tags (plain strings) need no entity at all.
     TAG = "tag"
+    WIKI = "wiki"
+    WIKI_ENTRY = "wiki_entry"
 
     # ── DB / hub entity types (formerly BuiltinEntityType-only) ──────────────
     USER = "user"

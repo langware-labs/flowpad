@@ -235,10 +235,11 @@ async def handle_record_action():
     if rec is None:
         return ApiFailResponse(message="Record not found", status_code=404)
 
-    type_id_str = str(request_info.target_entity_typeid)
-
-    record_folder_ref_dict = rec.record_folder_ref.to_dict(type_id_str) if rec.record_folder_ref is not None else None
-    main_ref_dict = rec.main_ref.to_dict(type_id_str) if rec.main_ref is not None else None
+    # Local record refs remain owned by their filesystem provider (normally
+    # compute_node-@local). Hub record refs target the asset entity instead.
+    # Never overwrite the ref's own transport identity here.
+    record_folder_ref_dict = rec.record_folder_ref.to_dict() if rec.record_folder_ref is not None else None
+    main_ref_dict = rec.main_ref.to_dict() if rec.main_ref is not None else None
 
     return ApiSuccessResponse(data={"record_folder_ref": record_folder_ref_dict, "main_ref": main_ref_dict})
 

@@ -12,7 +12,7 @@ import { History } from 'lucide-react';
 import { DockPointer, HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
-import { FSRef, TypeId, PrefKey, copyToClipboard, dataManager, looksBinaryText } from '@sdk';
+import { FSRef, PageId, TypeId, PrefKey, copyToClipboard, dataManager, looksBinaryText } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
@@ -136,6 +136,8 @@ interface MarkdownEditorProps {
    * (e.g. `(share) => <>{open}{share}{switcher}</>`).
    */
   plainHeaderActions?: (share: React.ReactNode) => React.ReactNode;
+  /** Wiki links in this document stay on this URL authority/namespace. */
+  wikiLinkTarget?: { page: PageId; space: string };
 }
 
 /**
@@ -163,6 +165,7 @@ export function MarkdownEditor({
   missingFileCopy,
   variant,
   plainHeaderActions,
+  wikiLinkTarget,
 }: MarkdownEditorProps) {
   return (
     <MarkdownEditorContent
@@ -181,6 +184,7 @@ export function MarkdownEditor({
       missingFileCopy={missingFileCopy}
       variant={variant}
       plainHeaderActions={plainHeaderActions}
+      wikiLinkTarget={wikiLinkTarget}
     />
   );
 }
@@ -239,6 +243,7 @@ function MarkdownEditorContent({
   missingFileCopy,
   variant,
   plainHeaderActions,
+  wikiLinkTarget,
 }: {
   fsRef: FSRef;
   sourcePath: string;
@@ -255,6 +260,7 @@ function MarkdownEditorContent({
   missingFileCopy?: MarkdownEditorProps['missingFileCopy'];
   variant?: MarkdownEditorProps['variant'];
   plainHeaderActions?: MarkdownEditorProps['plainHeaderActions'];
+  wikiLinkTarget?: MarkdownEditorProps['wikiLinkTarget'];
 }) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
@@ -356,11 +362,16 @@ function MarkdownEditorContent({
   // directory (git walks up to the enclosing .git) with the bare filename as the
   // pathspec. `lastSync` (set on every autosave) re-fetches after the backend
   // auto-commits the file.
+  // The plain document surface has no revision pill or revision side panel.
+  // Its FSRef may also be Hub-backed, where the TypeId identifies the asset,
+  // not a local compute node. Passing that id to git-ops creates an invalid
+  // local-history request on every read-only Hub Wiki page.
+  const revisionsEnabled = variant !== 'plain';
   const gitComputeNodeId = fsRef.typeId.id;
   const gitFileDir = fsRef.parent.path;
   const gitFileName = fsRef.path.slice(fsRef.path.lastIndexOf('/') + 1);
   const revisionStatus = useAssetRevisionStatus(
-    gitComputeNodeId,
+    revisionsEnabled ? gitComputeNodeId : null,
     gitFileDir,
     gitFileName,
     lastSync,
@@ -453,6 +464,40 @@ function MarkdownEditorContent({
     };
   }, [onDelete, deleteLabel, fileName]);
 
+  // Plain documents (Hub Wiki and WikiTip) must keep the same compact,
+  // read-only header through every content state. Rendering the full editor
+  // header while a remote read is pending makes View/Edit chips flash before
+  // the settled plain branch replaces them.
+  const shareButton = shareSource ? (
+    <ShareButton
+      onClick={() => setShareOpen(true)}
+      tooltip={t`Share to a conversation`}
+      testId="markdown-editor-share"
+    />
+  ) : null;
+  const shareDialog =
+    shareSource && shareOpen ? (
+      <ShareToConversationDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        source={shareSource}
+      />
+    ) : null;
+  const transientHeader = variant === 'plain' ? (
+    <PlainDocumentHeader>{plainHeaderActions?.(shareButton)}</PlainDocumentHeader>
+  ) : (
+    <EditorHeader
+      dirty={false}
+      viewMode={viewMode}
+      onViewModeChange={setViewMode}
+      onOpenExternal={handleOpenExternal}
+      onDownload={handleDownload}
+      onDelete={handleDelete}
+      actions={toolbar}
+      showLearningMode={showLearningMode}
+    />
+  );
+
   const handleLinkClick = useCallback((href: string) => {
     // WikiTip backward link: `/?highlight=<wikiword>` routes home and highlights
     // the matching feed entry. URL-carried so it is shareable + back-safe — see
@@ -476,7 +521,13 @@ function MarkdownEditorContent({
     if (wikiMatch) {
       const name = decodeURIComponent(wikiMatch[1]).replace(/\.md$/i, '');
       const frag = wikiMatch[2] ? decodeURIComponent(wikiMatch[2]) : undefined;
-      navigation.openDock(DockPointer.forWiki(name, undefined, undefined, frag));
+      const pointer = DockPointer.forWiki(
+        name,
+        undefined,
+        wikiLinkTarget?.space,
+        frag,
+      );
+      navigation.openDock(wikiLinkTarget ? pointer.withPage(wikiLinkTarget.page) : pointer);
       return;
     }
 
@@ -484,7 +535,7 @@ function MarkdownEditorContent({
     const resolvedPath = href.startsWith('/') ? href : `${dir}/${href}`;
     const assetType = currentDock?.pointer?.split('/')?.[1] ?? 'claude_memory';
     navigation.openDock(DockPointer.forAssetEditor(assetType, resolvedPath));
-  }, [sourcePathStr, currentDock, navigation]);
+  }, [sourcePathStr, currentDock, navigation, wikiLinkTarget]);
 
   // Deep-link scroll: when opened with a `fragment` (wiki anchor), scroll to the
   // matching heading once, after the body paints. Milkdown renders headings — and
@@ -528,16 +579,8 @@ function MarkdownEditorContent({
   if (isLoading) {
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <EditorHeader
-          dirty={false}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          onOpenExternal={handleOpenExternal}
-          onDownload={handleDownload}
-          onDelete={handleDelete}
-          actions={toolbar}
-          showLearningMode={showLearningMode}
-        />
+        {transientHeader}
+        {shareDialog}
         <div className="flex flex-1 items-center justify-center">
           <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
@@ -549,16 +592,8 @@ function MarkdownEditorContent({
   if (isMissing) {
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <EditorHeader
-          dirty={false}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          onOpenExternal={handleOpenExternal}
-          onDownload={handleDownload}
-          onDelete={handleDelete}
-          actions={toolbar}
-          showLearningMode={showLearningMode}
-        />
+        {transientHeader}
+        {shareDialog}
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <p className="text-sm font-medium text-foreground">
             {missingFileCopy?.note ?? <Trans>Note: File is missing</Trans>}
@@ -579,16 +614,8 @@ function MarkdownEditorContent({
   if (loadError) {
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <EditorHeader
-          dirty={false}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          onOpenExternal={handleOpenExternal}
-          onDownload={handleDownload}
-          onDelete={handleDelete}
-          actions={toolbar}
-          showLearningMode={showLearningMode}
-        />
+        {transientHeader}
+        {shareDialog}
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <p className="text-sm text-muted-foreground">{loadError.message}</p>
           <Button variant="outline" size="sm" onClick={reload}>
@@ -607,16 +634,8 @@ function MarkdownEditorContent({
   if (looksBinaryText(body)) {
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <EditorHeader
-          dirty={false}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          onOpenExternal={handleOpenExternal}
-          onDownload={handleDownload}
-          onDelete={handleDelete}
-          actions={toolbar}
-          showLearningMode={showLearningMode}
-        />
+        {transientHeader}
+        {shareDialog}
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <p className="text-sm font-medium text-foreground"><Trans>This file isn't text</Trans></p>
           <p className="max-w-md text-xs text-muted-foreground">
@@ -631,24 +650,6 @@ function MarkdownEditorContent({
       </div>
     );
   }
-
-  // The stripped wiki/plain variant owns its compact Share control locally.
-  // Full asset pages render entity actions in AssetsPage's primary header.
-  const shareButton = shareSource ? (
-    <ShareButton
-      onClick={() => setShareOpen(true)}
-      tooltip={t`Share to a conversation`}
-      testId="markdown-editor-share"
-    />
-  ) : null;
-  const shareDialog =
-    shareSource && shareOpen ? (
-      <ShareToConversationDialog
-        open={shareOpen}
-        onClose={() => setShareOpen(false)}
-        source={shareSource}
-      />
-    ) : null;
 
   // Body renderer — the single Milkdown invocation both paths share, so a
   // body-mount change (a new prop, plugin, direction/fragment tweak) can't drift
@@ -678,9 +679,7 @@ function MarkdownEditorContent({
   if (variant === 'plain') {
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        <div className="flex flex-shrink-0 items-center justify-end gap-1 border-b px-3 py-2">
-          {plainHeaderActions?.(shareButton)}
-        </div>
+        <PlainDocumentHeader>{plainHeaderActions?.(shareButton)}</PlainDocumentHeader>
         {shareDialog}
         <div className="min-h-0 flex-1 overflow-hidden">{milkdownBody('view')}</div>
       </div>
@@ -768,6 +767,17 @@ function MarkdownEditorContent({
           </EditorWithSidePanel>
         )}
       </div>
+    </div>
+  );
+}
+
+function PlainDocumentHeader({ children }: { children?: React.ReactNode }) {
+  return (
+    <div
+      className="flex flex-shrink-0 items-center justify-end gap-1 border-b px-3 py-2"
+      data-testid="plain-markdown-header"
+    >
+      {children}
     </div>
   );
 }

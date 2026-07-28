@@ -2,6 +2,7 @@ import {
   AgenticProcess,
   dataContext,
   isValidTag,
+  PageId,
   Plan,
   Project,
   QueryRequest,
@@ -222,7 +223,10 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         break;
       case ViewType.ASSETS:
         await adoptScopeProject(dock);
-        await loadAssetRoute(dock.pointer);
+        await loadAssetRoute(dock.pointer, {
+          allowLocalWikiAlias: dock.page !== PageId.HUB,
+          wikiAuthority: dock.page === PageId.HUB ? 'hub' : 'local',
+        });
         break;
       case ViewType.TASKS:
         await loadTasksRoute(dock.pointer);

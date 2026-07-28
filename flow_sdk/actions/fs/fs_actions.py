@@ -186,11 +186,20 @@ async def push_entity_files_to_hub(entity) -> int:
     ``_hub_reflect._reflect_fs_to_hub``; that only fires once the entity is
     ALREADY remote, which is exactly the window this closes.
 
-    Type-agnostic, like ``share()``. Best-effort: a hub failure must never fail
-    the share, and an entity with no files costs one empty directory listing.
+    File-backed types own their Hub layout through ``_hub_asset_layout`` and
+    ``_hub_main_file`` class metadata:
+
+    * ``file`` publishes the record's main ref under its canonical Hub name;
+    * ``folder`` recursively publishes the record's asset folder, preserving
+      relative paths.
+
+    Other entity types keep the generic embedded-VFS fallback used before this
+    record-aware transport existed. Best-effort: a hub failure must never fail
+    the share.
     """
     if not getattr(entity, "id", None) or not getattr(entity, "remote", False):
         return 0
+
     try:
         from pathlib import Path
 
@@ -198,6 +207,61 @@ async def push_entity_files_to_hub(entity) -> int:
         from flow_sdk.utils.hub import hub_upload_entity_file
 
         et = BuiltinEntityType(entity.get_type())
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"share: unsupported file push for {entity.typeid}: {e}")
+        return 0
+
+    layout = getattr(type(entity), "_hub_asset_layout", None)
+    canonical_main = getattr(type(entity), "_hub_main_file", None)
+    if layout in {"file", "folder"}:
+        try:
+            record = await entity.get_record()
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"share: record unavailable for {entity.typeid}: {e}")
+            return 0
+        if record is None:
+            return 0
+
+        if layout == "file":
+            main_ref = record.main_ref
+            source = Path(main_ref.path) if main_ref is not None else None
+            if source is None or not source.is_file() or not canonical_main:
+                return 0
+            try:
+                await hub_upload_entity_file(et, entity.id, canonical_main, source.read_bytes())
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"share: file push failed for {entity.typeid}/{canonical_main}: {e}")
+                return 0
+            return 1
+
+        asset_ref = record.asset_ref
+        root = Path(asset_ref.path) if asset_ref is not None else None
+        if root is None or not root.is_dir():
+            return 0
+
+        pushed = 0
+        for source in sorted(root.rglob("*")):
+            # Never follow a sender-local symlink outside the declared asset.
+            if source.is_symlink() or not source.is_file():
+                continue
+            rel = source.relative_to(root)
+            parent = rel.parent.as_posix()
+            sub_path = "upload" if parent == "." else f"upload/{parent}"
+            try:
+                await hub_upload_entity_file(
+                    et,
+                    entity.id,
+                    rel.name,
+                    source.read_bytes(),
+                    sub_path=sub_path,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"share: file push failed for {entity.typeid}/{rel.as_posix()}: {e}")
+                continue
+            pushed += 1
+        return pushed
+
+    try:
         storage = get_entity_storage(entity.typeid)
         root = VFSPath.from_entity_path(entity.typeid, "").abs_vfspath.strip("/")
         items = await storage.list_dir(root)

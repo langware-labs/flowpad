@@ -75,6 +75,16 @@ class TestMarkdownLinks:
         links = parse_links("See [foo](/dock/assets/wiki/foo#install).")
         assert _raws(links) == ["foo"]
 
+    def test_canonical_local_wiki_url_carries_namespace(self):
+        links = parse_links("See [foo](/dock/assets/wiki/@local/foo).")
+        assert _raws(links) == ["foo"]
+        assert links[0].wiki_ref == "@local"
+
+    def test_canonical_hub_wiki_url_carries_namespace(self):
+        links = parse_links("See [foo](/dock/hub/assets/wiki/@team/foo%20bar).")
+        assert _raws(links) == ["foo bar"]
+        assert links[0].wiki_ref == "@team"
+
 
 class TestCodeFenceSkipping:
     def test_links_inside_fenced_block_are_skipped(self):

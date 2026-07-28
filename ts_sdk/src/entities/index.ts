@@ -81,3 +81,4 @@ export * from './team';
 export * from './members';
 export * from './git-workdir';
 export * from './journey';
+export * from './wiki';

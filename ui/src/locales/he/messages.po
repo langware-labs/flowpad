@@ -144,6 +144,10 @@ msgstr "(ללא שם)"
 #~ msgstr "(שינויים שלא נשמרו)"
 
 #: src/components/assets/editor/WikiResolveView.tsx
+msgid "[[{name}]] is ambiguous"
+msgstr ""
+
+#: src/components/assets/editor/WikiResolveView.tsx
 msgid "[[{name}]] not found"
 msgstr "[[{name}]] לא נמצאה"
 
@@ -1297,6 +1301,10 @@ msgstr "מפתחות API"
 msgid "App page"
 msgstr "דף האפליקציה"
 
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "App runtime"
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 msgid "App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store third-party API keys and other secrets used by your flows."
 msgstr "סודות האפליקציה מאוחסנים במחזיק המפתחות של מערכת ההפעלה שלך. הפעל כדי לאפשר ל-Flowpad לאחסן בצורה מאובטחת מפתחות API של צד שלישי וסודות אחרים המשמשים את הזרימות שלך."
@@ -1557,8 +1565,8 @@ msgid "Authorization failed or was denied. Click Retry to try again."
 msgstr "ההרשאה נכשלה או נדחתה. לחץ על Retry כדי לנסות שנית."
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "auto"
-msgstr "אוטומטי"
+#~ msgid "auto"
+#~ msgstr "אוטומטי"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
 #~ msgid "Auto-archive after..."
@@ -2055,8 +2063,8 @@ msgid "Chat history"
 msgstr "היסטוריית צ'אט"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Chat mode"
-msgstr "מצב צ'אט"
+#~ msgid "Chat mode"
+#~ msgstr "מצב צ'אט"
 
 #: src/components/ui/settings-pane.tsx
 msgid "Chat Settings"
@@ -2576,16 +2584,16 @@ msgid "Codex session"
 msgstr "הפעלת Codex"
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Collaborate"
-msgstr "שיתוף פעולה"
+#~ msgid "Collaborate"
+#~ msgstr "שיתוף פעולה"
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Collaborate on this session"
-msgstr "שיתוף פעולה בסשן זה"
+#~ msgid "Collaborate on this session"
+#~ msgstr "שיתוף פעולה בסשן זה"
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Collaboration"
-msgstr "שיתוף פעולה"
+#~ msgid "Collaboration"
+#~ msgstr "שיתוף פעולה"
 
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
@@ -2826,8 +2834,8 @@ msgid "Connecting..."
 msgstr "מתחבר..."
 
 #: src/components/assets/editor/WikiResolveView.tsx
-msgid "Connecting…"
-msgstr "מתחברת..."
+#~ msgid "Connecting…"
+#~ msgstr "מתחברת..."
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -3390,8 +3398,12 @@ msgid "Creates a link anyone can use to join as a member."
 msgstr "יוצר קישור שמאפשר לכל אחד להצטרף כחבר"
 
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
-msgid "Creates a task in this project and assigns it — it shows up on their board."
-msgstr "נוצרת משימה בפרויקט הזה ומוקצית למי שנבחר — היא מופיעה בלוח המשימות שלהם."
+#~ msgid "Creates a task in this project and assigns it — it shows up on their board."
+#~ msgstr "נוצרת משימה בפרויקט הזה ומוקצית למי שנבחר — היא מופיעה בלוח המשימות שלהם."
+
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Creates a task, assigns it to them, and sends them a message with the details."
+msgstr ""
 
 #. placeholder {0}: classificationInfo.category
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
@@ -3902,6 +3914,10 @@ msgstr "נתק"
 msgid "Details"
 msgstr "פרטים"
 
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "Dev"
+msgstr ""
+
 #: src/components/account/settings-section.tsx
 msgid "Dev mode"
 msgstr "מצב מפתח"
@@ -4082,8 +4098,6 @@ msgstr ""
 msgid "Dismiss"
 msgstr "סגור"
 
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx
-#: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Dismiss all"
 msgstr ""
@@ -5610,8 +5624,8 @@ msgstr "היקף"
 #~ msgstr "עבור"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Force chat UI"
-msgstr "הכפה ממשק צ'אט"
+#~ msgid "Force chat UI"
+#~ msgstr "הכפה ממשק צ'אט"
 
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Fork Session"
@@ -7058,6 +7072,10 @@ msgstr "טוען"
 msgid "Loading . . ."
 msgstr "טוען . . ."
 
+#: src/components/assets/editor/WikiResolveView.tsx
+msgid "Loading [[{name}]]…"
+msgstr ""
+
 #. placeholder {0}: params.uname
 #: src/components/app-host/AppHost.tsx
 msgid "Loading {0}..."
@@ -7735,6 +7753,10 @@ msgstr "פעולות נוספות"
 msgid "More pages"
 msgstr "עמודים נוספים"
 
+#: src/components/assets/editor/WikiResolveView.tsx
+msgid "More than one readable asset matches this word. Bind it to a specific asset."
+msgstr ""
+
 #: src/components/workers/WorkerToolbar.tsx
 msgid "More…"
 msgstr "עוד…"
@@ -8130,6 +8152,10 @@ msgstr "אין שיחות ממופקדות"
 #: src/components/artifacts/artifacts-list.tsx
 msgid "No artifacts yet"
 msgstr "אין קבצים עדיין"
+
+#: src/components/assets/editor/WikiResolveView.tsx
+msgid "No asset editor is registered for this Wiki target."
+msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "No assets match those filters."
@@ -9260,8 +9286,8 @@ msgid "Open Backup Folder"
 msgstr "פתח תיקיית גיבוי"
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Open collaboration"
-msgstr "פתיחת שיתוף הפעולה"
+#~ msgid "Open collaboration"
+#~ msgstr "פתיחת שיתוף הפעולה"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Open command in external terminal"
@@ -9652,8 +9678,8 @@ msgid "Opened existing project"
 msgstr "פתח פרויקט קיים"
 
 #: src/components/assets/editor/WikiResolveView.tsx
-msgid "Opening [[{name}]]…"
-msgstr "פותחת [[{name}]]..."
+#~ msgid "Opening [[{name}]]…"
+#~ msgstr "פותחת [[{name}]]..."
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Opening task…"
@@ -12120,8 +12146,8 @@ msgid "Send failed."
 msgstr "השליחה נכשלה."
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Send invite"
-msgstr "שלחו הזמנה"
+#~ msgid "Send invite"
+#~ msgstr "שלחו הזמנה"
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Send message"
@@ -12138,6 +12164,10 @@ msgstr "משלח…"
 #: src/components/conversation/MessageBubble.tsx
 msgid "Sent"
 msgstr "נשלח"
+
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "Served"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Server did not come back. Restart Flowpad manually."
@@ -13510,6 +13540,7 @@ msgstr "הערך מאוחסן במחזיק המפתחות של מערכת ההפ
 
 #: src/components/webapp-viewer.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-workspace.tsx
 msgid "The web app is not working, please try to fix it."
 msgstr "האפליקציה לא עובדת, בבקשה נסה להתקן את זה."
 
@@ -13681,6 +13712,10 @@ msgstr "קובץ עקיבה זה אינו קשור לסשן עובד."
 #: src/components/assets/editor/agent-trace/CallTreeView.tsx
 msgid "This trace predates the call-stack view. Re-run the analysis (Refresh) to generate it."
 msgstr "עקבה זו קדומה מתצוגת stack הקריאות. הפעל מחדש את הניתוח (רענן) כדי ליצור אותה."
+
+#: src/components/assets/editor/WikiResolveView.tsx
+msgid "This Wiki target has no readable content."
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
@@ -14621,8 +14656,8 @@ msgid "What do you need help with?"
 msgstr "עם מה אתה צריך עזרה?"
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "What do you want to collaborate on?"
-msgstr "על מה רוצים לשתף פעולה?"
+#~ msgid "What do you want to collaborate on?"
+#~ msgstr "על מה רוצים לשתף פעולה?"
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "What do you want to work on"

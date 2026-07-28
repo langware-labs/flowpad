@@ -42,8 +42,11 @@ export function parseAssetDocPointer(assetsPointer: string | undefined): ParsedA
   const mode = parts[0];
 
   if (mode === String(AssetMode.WIKI)) {
-    const space = parts[1] ?? '';
-    const name = parts.slice(2).join('/');
+    // Canonical: wiki/<wiki-ref>/<word...>. Keep the historical
+    // wiki/<word> deep link as the project-scoped @local Wiki.
+    const legacy = parts.length === 2;
+    const space = legacy ? DEFAULT_WIKI_SPACE : (parts[1] ?? '');
+    const name = legacy ? (parts[1] ?? '') : parts.slice(2).join('/');
     return { mode: AssetMode.WIKI, value: `${space}/${name}` };
   }
 

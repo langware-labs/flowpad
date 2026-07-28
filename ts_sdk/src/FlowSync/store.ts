@@ -1209,10 +1209,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       };
     }
 
-    // Per-call hub-reflection opt-in: send the `Hub-Reflect` header so the local
-    // server forwards this call to the hub (default is don't-reflect). Applies to
-    // every verb branch below since they all pass `requestConfig`.
-    if (actionInfo.hubReflect) {
+    // Per-call hub-reflection opt-in: send the `Hub-Reflect` header only to a
+    // desktop/local server, which owns the forwarding bridge. In Hub-only mode
+    // this client already targets Hub directly, so reflecting again is neither
+    // meaningful nor part of the Hub API contract.
+    if (actionInfo.hubReflect && !isHubOnly()) {
       requestConfig = {
         ...(requestConfig ?? {}),
         headers: { ...(requestConfig?.headers ?? {}), 'Hub-Reflect': 'true' },
@@ -1287,7 +1288,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       sub_path: actionInfo.subpath,
       query_params: actionInfo.queryParameters as Record<string, unknown> | null,
       body: actionInfo.bodyParameters as Record<string, unknown> | null,
-      hub_reflect: actionInfo.hubReflect,
+      hub_reflect: actionInfo.hubReflect && !isHubOnly(),
     };
 
     const response = await connectionManager.sendRestApiMessage<Res>(message, options);

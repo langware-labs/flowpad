@@ -25,6 +25,10 @@ interface PlainMarkdownAssetEditorProps {
   fsRef: FSRef;
   /** Entity type string (e.g. `"plan"`, `"claude_md"`, `"markdown"`). */
   assetType: string;
+  /** Entity already resolved by a TypeId route; skips local path discovery. */
+  resolvedEntity?: APIEntity<APIEntity<any>>;
+  /** Optional wiki heading slug. */
+  fragment?: string;
 }
 
 /**
@@ -39,8 +43,17 @@ interface PlainMarkdownAssetEditorProps {
  * referenced in the prompt; the live run streams into a "Runs" side tab
  * (same panel used by the workflow editor).
  */
-export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAssetEditorProps) {
-  const { entity } = useEntityByPath<APIEntity<APIEntity<any>>>(assetType, fsRef);
+export function PlainMarkdownAssetEditor({
+  fsRef,
+  assetType,
+  resolvedEntity,
+  fragment,
+}: PlainMarkdownAssetEditorProps) {
+  const { entity: pathEntity } = useEntityByPath<APIEntity<APIEntity<any>>>(
+    resolvedEntity ? null : assetType,
+    resolvedEntity ? null : fsRef,
+  );
+  const entity = resolvedEntity ?? pathEntity;
   const chatTarget = entity ? entity.typeId.toString() : null;
   const assetRef = (entity as { asset_ref?: string } | null)?.asset_ref;
   const [externalRevision, setExternalRevision] = useState(0);
@@ -67,8 +80,12 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
   // Memoize: useFSRefContent's load effect is keyed on fsRef identity, so a
   // fresh FrontMatterFsRef every render re-downloads the file on every re-render.
   const baseEditorRef = useMemo(
-    () => (assetRef && localTypeId ? new FrontMatterFsRef(assetRef, localTypeId) : fsRef),
-    [assetRef, localTypeId, fsRef],
+    () => (
+      !resolvedEntity && assetRef && localTypeId
+        ? new FrontMatterFsRef(assetRef, localTypeId)
+        : fsRef
+    ),
+    [resolvedEntity, assetRef, localTypeId, fsRef],
   );
 
   // Document translation: the `?lang=` inline body swap, completion auto-refresh,
@@ -161,6 +178,7 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
           onDelete={deletable?.delete ? onDelete : undefined}
           deleteLabel={deletable?.name ?? undefined}
           reloadKey={reloadKey}
+          fragment={fragment}
         />
       </AssetCollisionProvider>
       {mcpModal}

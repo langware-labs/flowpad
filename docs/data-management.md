@@ -194,9 +194,9 @@ The LLMIndexer → `index.md` → MarkdownIndex-entity pipeline — a separate s
 
 ### [Wiki Link Graph](llm_wiki.md)
 
-The `[[wiki-link]]` edge graph: link parsing, edge extraction inside every `sync_to_db()`, the `AsyncLinkStore` edge table, name resolution, backlinks, and cleanup on delete/orphan sweep.
+Project-scoped Wiki namespaces plus the `[[wiki-link]]` occurrence graph: `Wiki`/`WikiEntry`, default-Wiki resolution, local and Hub URL/API contracts, link parsing, edge extraction inside every `sync_to_db()`, backlinks, and cleanup on delete/orphan sweep.
 
-**Key source files:** `flow_sdk/wiki/`, `flow_sdk/fs_store/fs_record.py` (`sync_to_db`, `get_links`/`get_backlinks`)
+**Key source files:** `flow_sdk/builtin/wiki.py`, `flow_sdk/wiki/`, `flow_sdk/app/actions/wiki_action.py`, `flow_sdk/fs_store/fs_record.py` (`sync_to_db`, `get_links`/`get_backlinks`)
 
 ***
 

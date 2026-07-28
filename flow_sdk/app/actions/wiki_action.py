@@ -86,3 +86,69 @@ async def wiki_action():
         message=f"Unknown wiki action: {method} sub-path={sub!r}",
         status_code=404,
     )
+
+
+async def _target_entity(expected_type: str):
+    info = get_current_request_info()
+    if not info or info.target_entity_typeid is None:
+        raise HTTPException(status_code=400, detail=f"{expected_type} action requires a target")
+    target = getattr(getattr(info, "auth_result", None), "target", None)
+    if target is not None:
+        return target
+    model = SchemaRegistry.get_entity_cls(expected_type)
+    entity = await model.get_by_typeid(info.target_entity_typeid) if model else None
+    if entity is None:
+        raise HTTPException(status_code=404, detail=f"{expected_type} not found")
+    return entity
+
+
+@action.get(action_name="resolve", types=["wiki"])
+async def resolve_wiki():
+    from flow_sdk.wiki.service import resolve
+
+    info = get_current_request_info()
+    wiki_entity = await _target_entity("wiki")
+    word = (info.request_parameters or {}).get("word") if info else None
+    try:
+        result = await resolve(wiki_entity, word)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ApiSuccessResponse(data=result)
+
+
+@action.post(action_name="bind", types=["wiki"])
+async def bind_wiki():
+    from flow_sdk.wiki.service import bind
+
+    info = get_current_request_info()
+    wiki_entity = await _target_entity("wiki")
+    data = await info.get_post_data() if info else None
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="bind requires a JSON body")
+    try:
+        entry = await bind(wiki_entity, data.get("word"), data.get("target_typeid"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ApiSuccessResponse(data=entry)
+
+
+@action.delete(action_name="unbind", types=["wiki"])
+async def unbind_wiki():
+    from flow_sdk.wiki.service import unbind
+
+    info = get_current_request_info()
+    wiki_entity = await _target_entity("wiki")
+    word = (info.request_parameters or {}).get("word") if info else None
+    try:
+        deleted = await unbind(wiki_entity, word)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ApiSuccessResponse(data=deleted)
+
+
+@action.get(action_name="default-wiki", types=["project"])
+async def default_project_wiki():
+    from flow_sdk.wiki.service import ensure_default_wiki
+
+    project = await _target_entity("project")
+    return ApiSuccessResponse(data=await ensure_default_wiki(project))

@@ -322,3 +322,149 @@ async def test_share_push_reads_via_entity_relative_path(monkeypatch, tmp_path):
 
     assert pushed == 1, "the file must be pushed (a directory is skipped)"
     assert sent == [("abc123", "a1.md", b"payload")]
+
+
+class _RecordBackedEntity:
+    remote = True
+
+    def __init__(self, *, entity_type: str, record):
+        self.id = str(uuid.uuid4())
+        self.typeid = f"{entity_type}-{self.id}"
+        self._entity_type = entity_type
+        self._record = record
+
+    def get_type(self):
+        return self._entity_type
+
+    async def get_record(self):
+        return self._record
+
+
+class _FileBackedEntity(_RecordBackedEntity):
+    _hub_asset_layout = "file"
+    _hub_main_file = "document.md"
+
+
+class _FolderBackedEntity(_RecordBackedEntity):
+    _hub_asset_layout = "folder"
+    _hub_main_file = "SKILL.md"
+
+
+@pytest.mark.asyncio
+async def test_share_push_publishes_markdown_under_canonical_hub_name(monkeypatch, tmp_path):
+    import flow_sdk.utils.hub as hub
+    from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub
+
+    source = tmp_path / "sender-name.md"
+    source.write_bytes(b"# Wiki doc")
+    record = SimpleNamespace(main_ref=SimpleNamespace(path=str(source)), asset_ref=SimpleNamespace(path=str(source)))
+    entity = _FileBackedEntity(entity_type="markdown", record=record)
+    sent = []
+
+    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+        sent.append((entity_id, filename, content, sub_path))
+
+    monkeypatch.setattr(hub, "hub_upload_entity_file", _fake_upload)
+
+    assert await push_entity_files_to_hub(entity) == 1
+    assert sent == [(entity.id, "document.md", b"# Wiki doc", "upload")]
+
+
+@pytest.mark.asyncio
+async def test_share_push_recursively_preserves_skill_folder_paths(monkeypatch, tmp_path):
+    import flow_sdk.utils.hub as hub
+    from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub
+
+    skill_root = tmp_path / "my-skill"
+    nested = skill_root / "references"
+    nested.mkdir(parents=True)
+    (skill_root / "SKILL.md").write_bytes(b"# Skill")
+    (nested / "guide.md").write_bytes(b"guide")
+    record = SimpleNamespace(
+        main_ref=SimpleNamespace(path=str(skill_root / "SKILL.md")),
+        asset_ref=SimpleNamespace(path=str(skill_root)),
+    )
+    entity = _FolderBackedEntity(entity_type="skill", record=record)
+    sent = []
+
+    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+        sent.append((filename, content, sub_path))
+
+    monkeypatch.setattr(hub, "hub_upload_entity_file", _fake_upload)
+
+    assert await push_entity_files_to_hub(entity) == 2
+    assert sent == [
+        ("SKILL.md", b"# Skill", "upload"),
+        ("guide.md", b"guide", "upload/references"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_share_push_does_not_publish_symlinks_outside_skill(monkeypatch, tmp_path):
+    import flow_sdk.utils.hub as hub
+    from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub
+
+    skill_root = tmp_path / "my-skill"
+    skill_root.mkdir()
+    (skill_root / "SKILL.md").write_bytes(b"# Skill")
+    outside = tmp_path / "private.txt"
+    outside.write_bytes(b"secret")
+    (skill_root / "private-link.txt").symlink_to(outside)
+    record = SimpleNamespace(
+        main_ref=SimpleNamespace(path=str(skill_root / "SKILL.md")),
+        asset_ref=SimpleNamespace(path=str(skill_root)),
+    )
+    entity = _FolderBackedEntity(entity_type="skill", record=record)
+    sent = []
+
+    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+        sent.append(filename)
+
+    monkeypatch.setattr(hub, "hub_upload_entity_file", _fake_upload)
+
+    assert await push_entity_files_to_hub(entity) == 1
+    assert sent == ["SKILL.md"]
+
+
+@pytest.mark.asyncio
+async def test_create_child_pushes_existing_record_bytes_after_hub_create(monkeypatch):
+    import flow_sdk.actions.fs.fs_actions as fs_actions
+    import flow_sdk.cli.auth.credentials as credentials
+    import flow_sdk.cloud_client.client as cloud_client
+    from flow_sdk.builtin.claude_memory_entities import Docs
+    from flow_sdk.builtin.project import Project
+
+    posted = []
+    pushed = []
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, path, body):
+            posted.append((path, body))
+
+    async def _fake_push(entity):
+        pushed.append(entity)
+        return 1
+
+    monkeypatch.setattr(credentials, "load_credentials", lambda: SimpleNamespace(api_key="key"))
+    monkeypatch.setattr(cloud_client, "FlowpadClient", _Client)
+    monkeypatch.setattr(cloud_client.ApiConfig, "from_env", classmethod(lambda cls: SimpleNamespace()))
+    monkeypatch.setattr(fs_actions, "push_entity_files_to_hub", _fake_push)
+
+    project = Project(id=str(uuid.uuid4()), name="Shared", remote=True)
+    child = Docs(id=str(uuid.uuid4()), name="Guide", remote=False)
+
+    result = await project.create_child(child)
+
+    assert result is child
+    assert child.remote is True
+    assert len(posted) == 1
+    assert pushed == [child]
