@@ -1,9 +1,8 @@
 import { GitBranch, Loader2, Plus } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useState } from 'react';
-import apiClient from '@sdk/client';
-import { CapabilityKinds } from '@sdk';
-import type { TypeId } from '@sdk';
+import { capabilityManager, CapabilityKinds } from '@sdk';
+import type { CapabilityAccess, TypeId } from '@sdk';
 import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 
 /** Browse URL for a repo coordinate. Providers we can't map get no link. */
@@ -23,7 +22,6 @@ export interface GitCheck {
 
 interface ProjectGitChipProps {
   projectTypeId: TypeId;
-  projectId: string;
   /** Called with the check results when the user asks to add git. */
   onChecked?: (checks: GitCheck[]) => void;
 }
@@ -35,7 +33,7 @@ interface ProjectGitChipProps {
  * and now returns it even when the tree is dirty or unpushed, so a real repo is
  * still named rather than being offered an "Add git" button it doesn't need.
  */
-export function ProjectGitChip({ projectTypeId, projectId, onChecked }: ProjectGitChipProps) {
+export function ProjectGitChip({ projectTypeId, onChecked }: ProjectGitChipProps) {
   const { t } = useLingui();
   const preflight = useGitSharePreflight(projectTypeId, true);
   const [checking, setChecking] = useState(false);
@@ -79,43 +77,48 @@ export function ProjectGitChip({ projectTypeId, projectId, onChecked }: ProjectG
   const runChecks = async () => {
     setChecking(true);
     try {
-      const github = await apiClient
-        .post<{ result?: { available?: boolean; message?: string } }>('/graph/capabilities/test', {
-          kind: CapabilityKinds.GitHub,
-          scope_type: 'project',
-          scope_id: projectId,
-        })
-        .catch(() => null);
-      const gh = await apiClient
-        .post<{ result?: { available?: boolean; message?: string } }>('/graph/capabilities/test', {
-          kind: CapabilityKinds.GitHubGh,
-        })
-        .catch(() => null);
+      // Read the capability SUMMARY, not `capabilities/test`. The test endpoint
+      // only accepts `source_control.git.github` WITH a scope, and its
+      // project-scoped probe walks git and can reach the remote (~1s+ here) to
+      // answer a question this button already knows: there is no origin. The
+      // summary is the backend's own cached snapshot, seeded into the client at
+      // bootstrap — so this is local, and returns in a frame.
+      const summary = await capabilityManager.getSummary();
+      const byKind = new Map<string, CapabilityAccess>(
+        (summary?.capabilities ?? []).map((c) => [c.kind, c]),
+      );
+      const gh = byKind.get(CapabilityKinds.GitHubGh);
+      const github = byKind.get(CapabilityKinds.GitHub);
 
-      preflight.refetch();
       onChecked?.([
         {
-          // No probe exists for the git binary itself — the closest signal we
-          // have is the gh CLI capability, which reports installed+authed
-          // together. Reported honestly rather than inferred.
+          // No probe exists for the git binary itself — the nearest signal is
+          // the gh CLI capability, which reports installed+authenticated
+          // together. Named for what it measures rather than what we wish it did.
           id: 'installed',
           label: t`Git tooling installed`,
-          ok: gh?.result?.available ?? null,
-          detail: gh?.result?.message ?? null,
+          ok: gh ? gh.available : null,
+          detail: gh?.message || null,
         },
         {
+          // This button only renders when no origin could be derived, so the
+          // answer is already known — the preflight's reason says which part is
+          // missing (no repo / no remote / an origin we can't place).
           id: 'setup',
           label: t`Repository and remote configured`,
-          ok: preflight.code !== 'not-in-repo' && preflight.code !== 'missing-remote' ? null : false,
+          ok: false,
           detail: preflight.reason,
         },
         {
           id: 'logged-in',
           label: t`Signed in to the remote`,
-          ok: github?.result?.available ?? null,
-          detail: github?.result?.message ?? null,
+          ok: github ? github.available : null,
+          detail: github?.message || null,
         },
       ]);
+      // Re-read the local git state so the chip flips to the repo name if one
+      // appeared since mount. Not awaited: nothing above depends on it.
+      preflight.refetch();
     } finally {
       setChecking(false);
     }
