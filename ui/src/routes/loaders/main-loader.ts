@@ -241,8 +241,8 @@ export async function loadAgentApp(args: LoaderArgs) {
       const wrappedSetup = async () => {
         label = await setupContent();
       };
-      // Timed: tab materialization dominates this loader — it gates the URL
-      // commit, so a slow ensure-tab is felt as a slow navigation.
+      // Timed: tab materialization gates the URL commit, so a slow ensure-tab
+      // is felt as a slow navigation.
       if (dockForSetup) await perfTime('setupTabAndAdopt', () => setupTabAndAdopt(dockForSetup, { setupContent: wrappedSetup }));
       else await wrappedSetup();
       t.time(label);

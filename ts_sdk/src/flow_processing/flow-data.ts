@@ -43,6 +43,9 @@ export enum FlowDataAttribute {
   PATH = 'path',
   WARNING = 'warning',
   ERROR = 'error',
+  /** Marks a client-minted placeholder row that an authoritative source will
+   *  replace — see `FlowData.isOptimisticEcho`. */
+  OPTIMISTIC_ECHO = 'optimistic-echo',
 }
 
 /**
@@ -464,6 +467,19 @@ export class FlowData<T = any> extends EventEmitter implements IFlowData<T> {
    */
   get isFinal(): boolean {
     return this.attributes[FlowDataAttribute.FINAL] === 'true';
+  }
+
+  /**
+   * Whether this row is a client-minted PLACEHOLDER rather than an observation.
+   *
+   * A submitted user message is shown immediately, stamped with the client
+   * clock and carrying no transcript id — so it can never be matched against
+   * the persisted row the backend later records for it. Marked rows are
+   * retired once the authoritative source arrives, instead of being
+   * reconciled (which is impossible) or left to duplicate.
+   */
+  get isOptimisticEcho(): boolean {
+    return this.attributes[FlowDataAttribute.OPTIMISTIC_ECHO] === 'true';
   }
 
   /**

@@ -461,26 +461,27 @@ export class FlowDataStream extends EventEmitter {
   }
 
   /**
-   * Drop the items matching `predicate` from this stream's OWN items.
+   * Drop the own-items matching `predicate`.
    *
-   * For retiring placeholders that an authoritative source has since replaced —
-   * e.g. the optimistic user-message echo, which is minted at submit time and
-   * therefore carries neither a transcript id nor the transcript's timestamp,
-   * so it can never be matched against its own persisted row. Substreams are
-   * left alone: this stream doesn't own them.
+   * For retiring placeholders an authoritative source has since replaced — see
+   * `FlowData.isOptimisticEcho`. Substreams are left alone: this stream doesn't
+   * own them.
    *
-   * @returns how many items were removed.
+   * NOTE it does not rewind `_openGroups`/`_currentGroupId`, so retracting a row
+   * that heads an open group would leave the group pointing at a removed item
+   * and the next chunk would consolidate into a detached object. Safe for
+   * non-streamable element types (a user message is never a group head); give
+   * this a group-aware path before retracting CHAT or other streamable rows.
    */
-  retract(predicate: (fd: FlowData) => boolean): number {
+  retract(predicate: (fd: FlowData) => boolean): void {
     const kept = this._ownItems.filter((item) => !predicate(item));
-    const removed = this._ownItems.length - kept.length;
-    if (removed === 0) return 0;
-    this._invalidateItems();
+    if (kept.length === this._ownItems.length) return;
     this._ownItems = kept;
-    // Same signal consumers already re-render on; the payload is the surviving
-    // set, so a subscriber that rebuilds from it lands on the right list.
+    // Membership changed. `emit` is the single invalidation chokepoint, so the
+    // items cache is dropped there. The payload is the conventional "items just
+    // added" — empty here, because this only removes; subscribers re-read
+    // `.items`.
     this.emit('data', [], this);
-    return removed;
   }
 
   clear(): void {

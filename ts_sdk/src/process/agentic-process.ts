@@ -16,7 +16,7 @@ import { ClaudeCliOptions, factory as cliOptionsFactory } from '../cli_workers';
 import { dataContext } from '../FlowSync/context';
 import { FlowDataFactory } from '../flow_processing/flow-data-factory';
 import { Shell, ShellStatus } from '../entities/shell';
-import { FlowData, FlowDataSource } from '../flow_processing';
+import { FlowData, FlowDataAttribute, FlowDataSource } from '../flow_processing';
 import { FlowElementTypes } from '../flow_processing/flow-element-types';
 import { ActionInfo } from '../models/ActionInfo';
 import { toplog } from '../services/toplog';
@@ -129,14 +129,6 @@ interface HistoryMatchCandidate {
  * Returns null for rows with no transcript id — those reconcile via
  * `historyFallbackKey` instead.
  */
-/**
- * Attribute marking the submit-time user-message placeholder minted by
- * `appendUserMessage`, so `loadHistory` can retire it when the persisted row
- * arrives. History is authoritative for user messages; the echo exists only to
- * show the message instantly while the turn runs.
- */
-const OPTIMISTIC_ECHO_ATTR = 'optimistic-echo';
-
 function historyIdentityKey(item: FlowData): string | null {
   const processEntry = item.processEntry as { transcript_entry?: { id?: unknown; kind?: unknown } } | null;
   const transcriptEntry = processEntry?.transcript_entry;
@@ -1767,15 +1759,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       return;
     }
 
-    const existing = [...this.flowDataStream.items]
-      .reverse()
-      .find(
-        (item) =>
-          item.elementType === FlowElementTypes.USER_MESSAGE &&
-          (item.attributes.role ?? '') === 'user' &&
-          item.content === trimmed,
-      );
-    if (existing) {
+    // Guard against double-submitting the SAME text — but only against a live
+    // placeholder, never against a persisted row: matching history too would
+    // silently swallow a message the user deliberately sends twice ("hi", then
+    // "hi" again), leaving nothing on screen until the next replay.
+    if (this.flowDataStream.ownItems.some((item) => item.isOptimisticEcho && item.content === trimmed)) {
       return;
     }
 
@@ -1786,12 +1774,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       {
         role: 'user',
         t: timestamp,
-        // Marks this row as the submit-time PLACEHOLDER, not an observation.
-        // It is stamped with the client clock and has no transcript id, so it
-        // can never be matched against its own persisted row — `loadHistory`
-        // retires it by this flag once history (which owns user messages)
-        // arrives. Genuine id-less live rows are unaffected.
-        [OPTIMISTIC_ECHO_ATTR]: 'true',
+        // A placeholder, not an observation — see `FlowData.isOptimisticEcho`.
+        [FlowDataAttribute.OPTIMISTIC_ECHO]: 'true',
       },
       true,
     );
@@ -1894,17 +1878,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         // callers only force-reload when no turn is in flight (post-switchMode
         // reconcile behind the isReadyForInput toggle gate; the chat pane's
         // useTurnCompletionReconcile on the busy→ready edge).
-        // History is AUTHORITATIVE for user messages, so retire the optimistic
-        // echo rather than trying to reconcile it. `appendUserMessage` mints the
-        // echo at submit time with no transcript id and a client timestamp; the
-        // persisted row carries the id and the backend's record time, so the two
-        // never match on either tier and history appends a second copy of every
-        // message the user sent. The echo exists only to show the message
-        // instantly while the turn runs — once history arrives it has served its
-        // purpose. Only id-less rows go: a user message that already carries a
-        // transcript id IS the persisted row.
-        if (!force && historyItems.some((item) => item.elementType === FlowElementTypes.USER_MESSAGE)) {
-          this.flowDataStream.retract((item) => item.attributes[OPTIMISTIC_ECHO_ATTR] === 'true');
+        // History is AUTHORITATIVE for user messages, so retire the echo of a
+        // message it now carries rather than trying to reconcile it (the echo
+        // is stamped at submit with a client clock and no transcript id, so it
+        // matches neither tier). Paired by content: an echo minted WHILE this
+        // fetch was in flight has no counterpart in the payload and must
+        // survive, or the message the user just sent vanishes from the pane.
+        const persistedUserMessages = new Set(
+          historyItems.filter((item) => item.elementType === FlowElementTypes.USER_MESSAGE).map((item) => item.content),
+        );
+        if (persistedUserMessages.size > 0) {
+          this.flowDataStream.retract((item) => item.isOptimisticEcho && persistedUserMessages.has(item.content));
         }
         const newItems = force ? historyItems : reconcileHistoryOverlap(historyItems, this.flowDataStream.items);
         if (newItems.length > 0) this.flowDataStream.append(newItems);
