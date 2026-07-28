@@ -77,3 +77,35 @@ def test_sentinel_grammar_is_pinned() -> None:
     """
     assert Shell.SENTINEL_PREFIX == "__flow_"
     assert Shell.sentinel_command("ls -la", "__flow_abc123") == 'ls -la; echo "__flow_abc123_$?"'
+
+
+def test_sentinel_body_drops_the_echoed_command() -> None:
+    """The terminal echoes what was typed, and what was typed ENDS in the
+    sentinel echo — so the first marker-bearing line is the echo, never output.
+    Without dropping it, every captured result is prefixed by the command that
+    produced it."""
+    from flow_sdk.builtin.shell import _sentinel_body
+
+    marker = "__flow_abc123"
+    stream = (
+        f'shlom@Mac proj % ls -la; echo "{marker}_$?"\n'
+        "total 8\n"
+        "drwxr-xr-x  2 shlom  staff   64 Jul 27 20:31 .\n"
+        f"{marker}_0\n"
+    )
+    end = stream.index(f"{marker}_0")
+
+    body = _sentinel_body(stream, marker, end)
+
+    assert "echo" not in body, "the echoed command must not be reported as output"
+    assert body.splitlines()[0] == "total 8"
+    assert body.splitlines()[-1].endswith(" .")
+
+
+def test_strip_pty_keeps_line_structure() -> None:
+    # Unlike strip_pty_controls (which flattens everything for marker search),
+    # captured output must stay readable.
+    from flow_sdk.builtin.shell import _strip_pty_keep_lines
+
+    raw = b"\x1b[0m\x1b[32mfile.txt\x1b[0m\r\nsecond\r\n"
+    assert _strip_pty_keep_lines(raw) == "file.txt\nsecond\n"
