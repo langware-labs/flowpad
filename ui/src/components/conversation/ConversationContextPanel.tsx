@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   AgenticProcess,
+  ClaudeSession,
   Conversation,
   dataManager,
   FlowMessage,
@@ -14,6 +15,7 @@ import {
   TypeId,
 } from '@sdk';
 import { useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
+import { useSessionDisplayName } from '@src/hooks/use-session-display-name';
 import { attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import {
   Download,
@@ -42,7 +44,6 @@ import {
   buildPrivateTypeIds,
   buildSharedEntities,
   buildSkipKeys,
-  buildTranscriptEntries,
   flowMessageIdSet as buildFlowMessageIdSet,
   orderMessagesByConversation,
   resolveAnchorMessage,
@@ -52,7 +53,6 @@ import {
   type PrivateProcessAgg,
   type PrivateTaskAgg,
   type SharedEntityAgg,
-  type TranscriptEntry,
 } from './conversation-context-aggregation';
 
 interface ConversationContextPanelProps {
@@ -203,8 +203,6 @@ export function ConversationContextPanel({
     [orderedMessages, skipKeys, conversation],
   );
 
-  const transcriptEntries = useMemo(() => buildTranscriptEntries(orderedMessages), [orderedMessages]);
-
   const attachmentEntries = useMemo(() => buildAttachmentEntries(orderedMessages), [orderedMessages]);
 
   // ── Private Context (aggregated across the whole conversation) ───────
@@ -323,7 +321,6 @@ export function ConversationContextPanel({
     <div className="h-full space-y-4 overflow-y-auto p-3" data-testid="conversation-context-panel">
       <SharedContextSection
         sharedEntities={sharedEntities}
-        transcriptEntries={transcriptEntries}
         attachmentEntries={attachmentEntries}
         conversationId={conversationId}
         selectedSet={selectedSet}
@@ -356,7 +353,6 @@ export function ConversationContextPanel({
 
 interface SharedContextSectionProps {
   sharedEntities: SharedEntityAgg[];
-  transcriptEntries: TranscriptEntry[];
   attachmentEntries: AttachmentEntry[];
   conversationId: string;
   selectedSet: ReadonlySet<string>;
@@ -370,7 +366,6 @@ interface SharedContextSectionProps {
 
 function SharedContextSection({
   sharedEntities,
-  transcriptEntries,
   attachmentEntries,
   conversationId,
   selectedSet,
@@ -383,7 +378,7 @@ function SharedContextSection({
   const { navigation } = useDockNavigation();
   const containerInside = useMemo(() => ({ type: Conversation.type, id: conversationId }), [conversationId]);
 
-  const isEmpty = sharedEntities.length === 0 && transcriptEntries.length === 0 && attachmentEntries.length === 0;
+  const isEmpty = sharedEntities.length === 0 && attachmentEntries.length === 0;
 
   // When an entity is the selection origin, only the matching row lights;
   // otherwise we fall back to "any origin in selectedSet" so message-driven
@@ -424,23 +419,6 @@ function SharedContextSection({
                   const ptr = dockPointerFor(entry.typeId, containerInside, projectId);
                   if (ptr) navigation.openDock(ptr);
                 }}
-              />
-            );
-          })}
-          {transcriptEntries.map((t) => {
-            const rowKey = `transcript:${t.messageId}:${attachmentDataString(t.attachment)}`;
-            return (
-              <TranscriptRow
-                key={rowKey}
-                messageId={t.messageId}
-                attachment={t.attachment}
-                originMessageIds={t.originMessageIds}
-                isHighlighted={isRowHighlighted(rowKey, t.originMessageIds)}
-                onSelect={
-                  onSelectEntity && t.originMessageIds.length > 0
-                    ? () => onSelectEntity(rowKey, t.originMessageIds)
-                    : undefined
-                }
               />
             );
           })}
@@ -497,7 +475,13 @@ function SharedEntityRow({
 }: SharedEntityRowProps) {
   const { t } = useLingui();
   const { data: entity } = useEntity(typeId);
-  const name = entity?.displayName ?? typeId.id;
+  // A just-started claude_session has no title in its transcript yet, so the
+  // indexer falls back to the bare session id and this row renders a UUID.
+  // Heal it to the owning process's label; no-op for every other type.
+  const name = useSessionDisplayName(
+    typeId.type === ClaudeSession.type ? typeId.id : null,
+    entity?.displayName ?? typeId.id,
+  );
   const assetRef = (entity as unknown as { asset_ref?: string | null })?.asset_ref ?? undefined;
   const Icon = ICON_BY_TYPE[typeId.type] ?? ExternalLink;
   // Tasks in a parent/child relationship get a refined type label
@@ -536,62 +520,6 @@ function SharedEntityRow({
           {primaryLabel}
         </RowAction>
       )}
-    </Row>
-  );
-}
-
-interface TranscriptRowProps {
-  messageId: string;
-  attachment: Attachment;
-  originMessageIds: string[];
-  isHighlighted: boolean;
-  onSelect?: () => void;
-}
-
-function TranscriptRow({ messageId, attachment, isHighlighted, onSelect }: TranscriptRowProps) {
-  const { t } = useLingui();
-  const { navigation } = useDockNavigation();
-  // ``attachment.local_path`` is synthesized at serialization time by
-  // ``flow_message.py::_serialize_with_local_paths`` from the local backend's
-  // ``tempfile.gettempdir()``. On macOS that's ``/var/folders/.../T/…`` and on
-  // Windows that's ``C:\Users\…\AppData\Local\Temp\…`` — both valid local paths
-  // for the backend that produced them. The download URL is the fallback when
-  // no local path is populated.
-  const localPath = attachment.local_path ?? null;
-  // Defensive: stale/malformed rows can have a non-string `data`; the bare
-  // `.split` used to take down the whole context panel.
-  const dataStr = attachmentDataString(attachment);
-  // Only resolves to a URL when the bytes are local — a not-yet-downloaded /
-  // dangling transcript yields null, so "View" stays inert rather than 404ing.
-  const downloadUrl = localAttachmentUrl(messageId, attachment);
-
-  const handleView = () => {
-    if (localPath) {
-      // ``claude/transcript`` handles the absolute-path form via LensViewer's
-      // Form 2 branch (POSIX or Windows-style absolute paths are both
-      // forwarded to ``TranscriptViewer path={…}``).
-      navigation.openLens('claude', 'transcript', encodeURIComponent(localPath));
-    } else if (downloadUrl) {
-      window.open(downloadUrl, '_blank', 'noopener,noreferrer');
-    }
-  };
-
-  return (
-    <Row
-      icon={ICON_BY_TYPE.conversation ?? ExternalLink}
-      type={t`Transcript`}
-      name={dataStr.split('/').pop() || dataStr || '(unknown)'}
-      isHighlighted={isHighlighted}
-      onFocus={onSelect}
-      focusTitle={t`Reveal the message that produced this transcript`}
-    >
-      <RowAction
-        onClick={handleView}
-        title={localPath ? t`Open in the transcript viewer` : t`Open the raw JSONL in a new tab`}
-      >
-        <Eye className="h-3 w-3" />
-        <Trans>View</Trans>
-      </RowAction>
     </Row>
   );
 }

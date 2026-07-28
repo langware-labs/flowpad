@@ -55,12 +55,12 @@ def test_path_alias_routes_through_exact_dns_minter_key():
 
 
 def test_hub_body_publishes_under_own_id():
-    """_hub_body posts under self.id (no cloud id), maps name->title, strips local fields."""
+    """_hub_body posts under self.id (no cloud id), sends ``name`` verbatim, strips local fields."""
     p = Project(name="demo", fs_storage_mount_path="/tmp/demo_proj_hub")
     body = p._hub_body()
     assert body["id"] == p.id, "hub row is keyed by the project's own id"
-    assert body["title"] == "demo"
-    assert "name" not in body
+    assert body["name"] == "demo", "a project's label is ``name`` on both sides — no rename in transit"
+    assert "title" not in body, "``title`` is unset on a project; exclude_none keeps it out of the body"
     for leaked in ("fs_storage_mount_path", "members", "session_code", "include_dirs"):
         assert leaked not in body, f"{leaked} must be stripped from the hub body"
 

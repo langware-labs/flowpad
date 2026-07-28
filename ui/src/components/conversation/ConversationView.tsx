@@ -16,7 +16,7 @@ import {
 import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { ConversationKind } from '@sdk/entities/conversation';
-import { syncConversationMessages } from '@src/components/inbox-view/inbox-api';
+import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { LiveSessionGroup, SessionEventLine } from './LiveSessionGroup';
@@ -446,6 +446,34 @@ export function ConversationView({
     !!cloudUserId &&
     ((!!conversation?.created_by && conversation.created_by === cloudUserId) ||
       (participants ?? []).some((p) => p.user_id === cloudUserId && (p.role ?? '').toLowerCase() === 'owner'));
+
+  // Open-to-read (URL-first): viewing a conversation marks its latest received
+  // message read — the mutation lives HERE, on the mounted view, so the Inbox
+  // row click / banner click / direct link only navigate (single writer:
+  // navigation → view → action; the backend then reconciles
+  // InboxManager.unread). Focus-gated: a message arriving while the window is
+  // backgrounded must stay unread (it drives the badge) until the user
+  // actually returns — hence the re-run on window focus.
+  const readMarkedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const markLatestRead = () => {
+      if (!document.hasFocus()) return;
+      const latestId = pointers[pointers.length - 1]?.id;
+      const latest = latestId ? messagesById.get(latestId) : undefined;
+      if (!latest?.id || latest.is_read) return;
+      const senderId = latest.sender_id ?? null;
+      if (senderId && (senderId === cloudUserId || senderId === localUser?.id)) return;
+      const key = `${conversationId}:${latest.id}`;
+      if (readMarkedRef.current === key) return;
+      readMarkedRef.current = key;
+      void updateMessage(latest.id, { is_read: true }).catch(() => {
+        readMarkedRef.current = null; // transient failure — retry on next tick/focus
+      });
+    };
+    markLatestRead();
+    window.addEventListener('focus', markLatestRead);
+    return () => window.removeEventListener('focus', markLatestRead);
+  }, [conversationId, pointers, messagesById, cloudUserId, localUser?.id]);
 
   // Delete a message everywhere. The loader/live-query owns the list, so we
   // only fire the SDK action and let the resulting data-op re-render the view

@@ -187,6 +187,10 @@ export interface UiCommandMessage extends BaseMessage {
   id?: string;
   /** For `navigate_vfs`: the absolute file path to open in the asset editor. */
   path?: string;
+  /** For `desktop_notify`: the notification kind (e.g. "message"). */
+  notify_type?: string;
+  /** For `desktop_notify`: the kind-specific payload (conversation_id, message_id, sender_name, preview, …). */
+  info?: Record<string, unknown>;
 }
 
 export interface LlmConfigMessage extends BaseMessage {

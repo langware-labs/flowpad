@@ -31,6 +31,7 @@ import { flatEntityRoots } from '@src/components/browseable-tree/adapters/flatEn
 import {
   basename as fsBasename,
   fsDragEntries,
+  fsFileViewerPointerForVfs,
   fsFolderNodeId,
   fsFolderRoot,
   normalizeRel,
@@ -668,6 +669,7 @@ export function useAssetsModel() {
         rootIcon: <FolderOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
         locatorTypeId: fsLocatorTypeId,
         pointerForVfs: (path) => DockPointer.forAssetFs(path),
+        filePointerForVfs: fsFileViewerPointerForVfs,
         draggable: true,
       });
       const taskIdx = displayTypes.findIndex((t) => t.type_name === (RecordType.TASK as string));

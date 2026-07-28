@@ -118,7 +118,6 @@ _HEADER_SERIALIZED_TYPES = frozenset(
     {
         "conversation",
         "flow_message",
-        "claude_session",
         "flowpad_diagnosis",
         "remote_worker_session",
     }
@@ -207,32 +206,6 @@ def _pack_file_attachment(entry, flow_message: "FlowMessage", attachment_dir: Pa
     shutil.copy2(file_path, files_dir / file_path.name)
 
 
-async def _pack_claude_session_attachment(entry_id: str, attachment_dir: Path) -> None:
-    """Write ``attachment/claude_session-@<id>/header.json`` (whitelisted
-    ClaudeTranscript fields).
-
-    Sender-local fields are stripped: ``cwd`` is the sender's filesystem path
-    and ``worker_session_id`` is the sender's AgenticProcess worker — both
-    meaningless (and path-leaking) on the receiver. The transcript *content*
-    rides separately as the share's FILE attachment; this header materializes
-    the entity row so the receiver's chip resolves a real name."""
-    from flow_sdk.builtin.claude_session import ClaudeSession
-
-    sess = await ClaudeSession.get_one({"id": entry_id})
-    if not sess:
-        return
-    sess_dir = attachment_dir / _entry_key("claude_session", entry_id)
-    sess_dir.mkdir(parents=True, exist_ok=True)
-    sess_data = sess.model_dump(
-        mode="python",
-        include={"id", "type", "name", "slug", "message_count"},
-        context={"skip_api_serializer": True},
-    )
-    (sess_dir / "header.json").write_text(
-        json.dumps(sess_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-    )
-
-
 async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path) -> None:
     """Write ``attachment/flowpad_diagnosis-@<id>/header.json`` (the recorded
     diagnosis fields).
@@ -241,7 +214,13 @@ async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path
     the receiver re-materializes the row via ``.save()`` — the same create-or-
     fill-merge contract as TASK / CLAUDE_SESSION. Without this the forwarded
     diagnosis never transfers, the receiver can't materialize it, and their
-    ``body_downloaded`` (hence the Download button) never clears."""
+    ``body_downloaded`` (hence the Download button) never clears.
+
+    The environment snapshot (``reported_by`` / ``occurred_at`` / ``os`` /
+    ``app_version``) is part of the header because the receiver cannot recompute
+    it — their machine's OS and version describe the helper, not the reporter.
+    ``occurred_at`` is carried instead of ``created_date`` for the same reason:
+    the install stamps ``created_date`` locally."""
     from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis
 
     diag = await FlowpadDiagnosis.get_one({"id": entry_id})
@@ -251,7 +230,21 @@ async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path
     diag_dir.mkdir(parents=True, exist_ok=True)
     diag_data = diag.model_dump(
         mode="python",
-        include={"id", "type", "name", "title", "symptoms", "rca", "fix", "summary", "user_report"},
+        include={
+            "id",
+            "type",
+            "name",
+            "title",
+            "symptoms",
+            "rca",
+            "fix",
+            "summary",
+            "user_report",
+            "reported_by",
+            "occurred_at",
+            "os",
+            "app_version",
+        },
         context={"skip_api_serializer": True},
     )
     (diag_dir / "header.json").write_text(
@@ -380,8 +373,6 @@ async def _pack_attachment_entry(
         await _pack_conversation_attachment(entry_id, flow_message, attachment_dir)
     elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
         await _pack_flow_message_entry(entry_id, attachment_dir)
-    elif entry_type == BuiltinEntityType.CLAUDE_SESSION.value:
-        await _pack_claude_session_attachment(entry_id, attachment_dir)
     elif entry_type == EntityType.FLOWPAD_DIAGNOSIS.value:
         await _pack_flowpad_diagnosis_attachment(entry_id, attachment_dir)
     elif entry_type == EntityType.REMOTE_WORKER_SESSION.value:
@@ -1759,9 +1750,6 @@ _MARKDOWN_SUFFIXES = frozenset({".md", ".markdown"})
 # Videos the bubble renders inline as a card — no staged chip. Images use the
 # shared ``is_image_filename`` predicate (single source of truth for pictures).
 _INLINE_VIDEO_SUFFIXES = frozenset({".mp4", ".webm", ".mov", ".m4v", ".ogg"})
-# Transcripts (worker sessions / conversation.jsonl) ride as FILE attachments
-# but are consumed by ``_materialize_received_transcripts`` — never a user doc.
-_NON_STAGED_FILE_SUFFIXES = frozenset({".jsonl"})
 
 
 def is_markdown_filename(filename: str) -> bool:
@@ -1780,8 +1768,6 @@ def file_attachment_rel_subdir(filename: str) -> str:
 def _should_stage_file_attachment(filename: str) -> bool:
     if is_image_filename(filename) or PurePosixPath(filename).suffix.lower() in _INLINE_VIDEO_SUFFIXES:
         return False  # renders inline as an image/video card
-    if PurePosixPath(filename).suffix.lower() in _NON_STAGED_FILE_SUFFIXES:
-        return False  # transcript, not a user document
     return True
 
 
@@ -2246,79 +2232,6 @@ def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, fm_id: str) -> None
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
         att["data"] = vfs_subpath
-
-
-# ---------------------------------------------------------------------------
-# _materialize_received_transcripts
-# ---------------------------------------------------------------------------
-
-# Worker-session entity types → worker key. A shared session's chip opens its
-# transcript *by session id*, resolved against the local CLI dirs; on a
-# receiver that never ran the session those are empty, so we persist the
-# carried transcript where ``resolve_session_jsonl`` falls back to.
-_WORKER_SESSION_TYPES = {
-    "claude_session": "claude",
-    "codex_session": "codex",
-    "copilot_session": "copilot",
-}
-
-
-def _file_contains(path: Path, needle: str) -> bool:
-    try:
-        return needle in path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return False
-
-
-def _materialize_received_transcripts(fm_data: dict, tmp_root: Path) -> None:
-    """Persist any carried worker-session transcript into the instance's
-    received-transcripts store, keyed by (worker, session_id).
-
-    The transcript rides in as the share's FILE attachment; copying it to the
-    received store makes the by-session-id transcript chip open on a receiver
-    that never ran the session — exactly as it does on the sender. No-op when
-    the message carries no worker session (the common case) or the sender
-    opted not to attach the transcript. Worker-generic (claude/codex/copilot).
-
-    The FILE is paired to its session by matching the session id inside the
-    file's content: every worker transcript embeds its own session id, so the
-    pairing is unambiguous even when several files ride along.
-    """
-    from flow_sdk.transcript_analyzer.resolver import received_transcript_dest
-
-    atts = fm_data.get("attachment", []) or []
-    sessions: list[tuple[str, str]] = []
-    for att in atts:
-        if not isinstance(att, dict) or att.get("attachment_type") != AttachmentType.TYPE_ID.value:
-            continue
-        tid = TypeId(att.get("data") or "")
-        worker = _WORKER_SESSION_TYPES.get(tid.type)
-        if worker and tid.id:
-            sessions.append((worker, tid.id))
-    if not sessions:
-        return
-
-    file_srcs: list[Path] = []
-    for att in atts:
-        if not isinstance(att, dict) or att.get("attachment_type") != AttachmentType.FILE.value:
-            continue
-        rel = att.get("data") or ""
-        if rel.startswith("attachment/files/"):
-            src = tmp_root / rel
-            if src.exists():
-                file_srcs.append(src)
-    if not file_srcs:
-        return
-
-    for worker, sid in sessions:
-        dest = received_transcript_dest(worker, sid)
-        if dest is None or dest.exists():
-            continue
-        match = next((f for f in file_srcs if _file_contains(f, sid)), None)
-        if match is None:
-            continue
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(match, dest)
 
 
 # ---------------------------------------------------------------------------
@@ -2897,9 +2810,6 @@ async def unpack_bundle(
         from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
 
         # (top_fm_id was resolved early — the staging dirs are keyed by it.)
-        # Persist any carried worker-session transcript BEFORE the rewrite
-        # mutates attachment paths — it reads the FILE sources from tmp_root.
-        _materialize_received_transcripts(msg_data, tmp_root)
         # Stage raw FILE attachments (the OS-file-picker lane) as MessageAttachment
         # rows so they join the same download→review→install flow as asset
         # entities. Runs BEFORE _rewrite_file_attachments, which reads the FILE

@@ -990,6 +990,23 @@ class Shell(Entity):
     @action.post(action_name="close")
     async def close(self) -> ApiResponse:
         """Kill worker + PTY + delete disk record + delete entity. Permanent teardown."""
+        owner = None
+        if self.agentic_process_id:
+            try:
+                from flow_sdk.builtin.agentic_process import AgenticProcess
+                from flow_sdk.builtin.process_lifecycle import ProcessStatus
+
+                owner = await AgenticProcess.get_by_id(self.agentic_process_id)
+                if owner is not None and owner.shell_id == self.id:
+                    owner.status = ProcessStatus.STOPPING.value
+                    owner.context_data = {
+                        **owner.context_data,
+                        "_shell_exit_pending": True,
+                    }
+                    await owner.save()
+            except Exception as e:
+                logging.warning(f"[Shell.close] owner stop transition failed: {e}")
+
         try:
             await self.terminate_worker()
         except Exception as e:
@@ -1010,6 +1027,29 @@ class Shell(Entity):
             logging.warning(f"[Shell.close] PTY kill failed: {e}")
 
         await self.delete()
+
+        # A direct shell close is an explicit lifecycle action, not an
+        # externally interrupted worker that restart recovery should preserve.
+        # Persist the terminal owner state before returning so the next entity
+        # read cannot race the PTY reader thread's on_exit callback.
+        if owner is not None:
+            try:
+                from flow_sdk.builtin.process_lifecycle import ProcessStatus
+
+                latest_owner = await type(owner).get_by_id(owner.id)
+                if latest_owner is not None and latest_owner.shell_id == self.id:
+                    latest_owner.context_data = {
+                        key: value
+                        for key, value in latest_owner.context_data.items()
+                        if key != "_shell_exit_pending"
+                    }
+                    latest_owner.sidecar_shell_id = None
+                    latest_owner.status = ProcessStatus.STOPPED.value
+                    latest_owner.visible = False
+                    await latest_owner.save()
+            except Exception as e:
+                logging.warning(f"[Shell.close] owner stopped transition failed: {e}")
+
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
     @action.post(action_name="run")

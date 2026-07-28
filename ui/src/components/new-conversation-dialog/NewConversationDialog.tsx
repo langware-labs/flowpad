@@ -10,16 +10,10 @@ import { AutofillInput } from '@src/components/ui/autofill-input';
 import { Button } from '@src/components/ui/button';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
-import { AttachMenu } from '@src/components/conversation/AttachMenu';
+import { AttachMenu, AssetRefChips } from '@src/components/conversation/AttachMenu';
 import { MAX_FILE_SIZE_BYTES } from '@src/components/conversation/constants';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@src/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { MessageSquarePlus, Pencil } from 'lucide-react';
@@ -68,11 +62,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const autofillTitle = useAutoTitle(open, participants);
   const placeholderTitle = autofillTitle;
 
-  const canCreate =
-    !busy
-    && (isRemote || !!projectId)
-    && participants.length > 0
-    && !!initialMessage.trim();
+  const canCreate = !busy && (isRemote || !!projectId) && participants.length > 0 && !!initialMessage.trim();
 
   const handleCreate = async () => {
     if (!canCreate) return;
@@ -88,8 +78,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     const payload: ConversationSendPayload = {
       text: initialMessage.trim(),
       files: files.length > 0 ? files : undefined,
-      assetReferences:
-        assetRefs.length > 0 ? assetRefs.map((a) => a.typeid) : undefined,
+      assetReferences: assetRefs.length > 0 ? assetRefs.map((a) => a.typeid) : undefined,
     };
     const conversationId = await send(target, payload);
     if (conversationId) {
@@ -111,7 +100,9 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         <div className="flex flex-col gap-4 text-sm">
           {isRemote && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="font-medium"><Trans>From:</Trans></span>
+              <span className="font-medium">
+                <Trans>From:</Trans>
+              </span>
               {editingName ? (
                 <input
                   className="border-b border-input bg-transparent text-xs text-foreground focus:outline-none"
@@ -135,7 +126,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
                   <button
                     type="button"
                     onClick={() => setEditingName(true)}
-                    className="text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                    className="text-muted-foreground/50 transition-colors hover:text-muted-foreground"
                     title={t`Edit sender name`}
                     disabled={busy}
                   >
@@ -231,8 +222,14 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
                   setFiles(next);
                 }}
                 disabled={busy}
+                hideAssetList
               />
             </div>
+            {/* Asset chips render below the label row, not inside it: inside a
+                flex row the chip list sizes to its content (min-width:auto),
+                so a long asset label pushes the row past the dialog edge
+                instead of truncating. */}
+            <AssetRefChips assetRefs={assetRefs} onChange={setAssetRefs} disabled={busy} />
             <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
           </div>
 
