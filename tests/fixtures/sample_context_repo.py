@@ -19,19 +19,28 @@ whatever the test asserts is exactly what a user cloning the repo gets.
 
 from __future__ import annotations
 
-# What the generator writes. `spec` is deliberately absent: its record carries
-# embedded blob storage, which needs a request context to save, so indexing one
-# from a plain directory walk fails (`get_embedded_storage: No parent_storage`).
-# Shipping a type that silently fails to index would make the repo lie.
-AUTHORED_ASSETS: dict[str, int] = {
-    "skill": 6,
-    "agent": 6,
-    "markdown": 8,
-    "task": 5,
-    "plan": 4,
-    "claude_rules": 3,
-    "whiteboard": 2,
+# What the generator writes, named so the repo reads like something a person
+# made. The NAMES are the declaration and the counts derive from them, so there
+# is nothing to keep in sync and no runtime guard reconciling two lists.
+#
+# `spec` is deliberately absent: its record carries embedded blob storage, which
+# needs a request context to save, so indexing one from a plain directory walk
+# fails (`get_embedded_storage: No parent_storage`). Shipping a type that
+# silently fails to index would make the repo lie.
+SAMPLE_ASSET_NAMES: dict[str, tuple[str, ...]] = {
+    "skill": ("changelog-writer", "commit-splitter", "dep-auditor", "flaky-finder", "perf-profiler", "test-namer"),
+    "agent": ("api-reviewer", "docs-editor", "migration-planner", "release-captain", "schema-checker", "triage-bot"),
+    "markdown": (
+        "architecture", "code-review-guide", "data-model", "glossary",
+        "onboarding", "release-process", "style-guide", "troubleshooting",
+    ),
+    "task": ("audit-dependencies", "cut-release", "harden-error-paths", "raise-coverage", "trim-cold-start"),
+    "plan": ("auth-rework", "cache-layer", "observability", "search-rollout"),
+    "claude_rules": ("commit-style", "no-secrets-in-logs", "test-first"),
+    "whiteboard": ("request-lifecycle", "service-map"),
 }
+
+AUTHORED_ASSETS: dict[str, int] = {t: len(names) for t, names in SAMPLE_ASSET_NAMES.items()}
 
 # What the MENU reports, which is one more markdown than we authored: README.md
 # sits at the repo root and is itself a document, so the indexer counts it.
@@ -127,7 +136,6 @@ def readme_text() -> str:
         "plan": "plans",
         "claude_rules": "rules",
         "whiteboard": "whiteboards",
-        "spec": "specs",
     }
     rows = "\n".join(
         f"| {labels.get(t, t)} | {n} |" for t, n in sorted(SAMPLE_CONTEXT_ASSETS.items(), key=lambda kv: -kv[1])

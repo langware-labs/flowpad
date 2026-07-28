@@ -20,28 +20,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tests.fixtures.asset_tree import _write_asset  # noqa: E402
+from tests.fixtures.asset_tree import write_asset  # noqa: E402
 from tests.fixtures.sample_context_repo import (  # noqa: E402
-    AUTHORED_ASSETS,
+    SAMPLE_ASSET_NAMES,
     SAMPLE_CONTEXT_TOTAL,
     readme_text,
 )
-
-# A name per asset, so the repo reads like something a person made rather than
-# thing1..thing35. Length must be >= the count declared for each type.
-NAMES: dict[str, list[str]] = {
-    "skill": ["changelog-writer", "commit-splitter", "dep-auditor", "flaky-finder", "perf-profiler", "test-namer"],
-    "agent": ["api-reviewer", "docs-editor", "migration-planner", "release-captain", "schema-checker", "triage-bot"],
-    "markdown": [
-        "architecture", "code-review-guide", "data-model", "glossary",
-        "onboarding", "release-process", "style-guide", "troubleshooting",
-    ],
-    "task": ["audit-dependencies", "cut-release", "harden-error-paths", "raise-coverage", "trim-cold-start"],
-    "plan": ["auth-rework", "cache-layer", "observability", "search-rollout"],
-    "claude_rules": ["commit-style", "no-secrets-in-logs", "test-first"],
-    "whiteboard": ["request-lifecycle", "service-map"],
-}
-
 
 def write_repo(target: Path) -> dict[str, int]:
     target.mkdir(parents=True, exist_ok=True)
@@ -51,13 +35,10 @@ def write_repo(target: Path) -> dict[str, int]:
     (target / ".gitignore").write_text(".flow/\n", encoding="utf-8")
 
     written: dict[str, int] = {}
-    for type_name, count in AUTHORED_ASSETS.items():
-        names = NAMES[type_name]
-        if len(names) < count:
-            raise RuntimeError(f"{type_name}: need {count} names, have {len(names)}")
-        for name in names[:count]:
-            _write_asset(target, type_name, name)
-        written[type_name] = count
+    for type_name, names in SAMPLE_ASSET_NAMES.items():
+        for name in names:
+            write_asset(target, type_name, name)
+        written[type_name] = len(names)
     return written
 
 

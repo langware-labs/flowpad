@@ -30,6 +30,7 @@ from flow_sdk.builtin.folder import Folder
 from flow_sdk.builtin.project import Project
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from scripts.make_sample_context_repo import write_repo
+from tests.fixtures.asset_tree import AssetTree, teardown_asset_tree
 from tests.fixtures.sample_context_repo import SAMPLE_CONTEXT_ASSETS, SAMPLE_CONTEXT_TOTAL
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase without approval
@@ -91,17 +92,7 @@ async def attached(tmp_path: Path, monkeypatch):
 
     yield {"project": project, "clone": clone, "origin": origin}
 
-    for tid in list(project.context_of_type("folder", bucket="both")):
-        try:
-            folder = await Folder.get_by_id(tid.id)
-            if folder is not None:
-                await folder.delete()
-        except Exception:
-            pass
-    try:
-        await project.delete()
-    except Exception:
-        pass
+    await teardown_asset_tree(AssetTree(base=base, projects={"P": project}))
     reset_instance_settings()
 
 
@@ -150,8 +141,27 @@ async def test_the_context_folder_reports_a_git_origin(attached):
     assert origin.clone_url().startswith("file://")
 
 
-async def test_readme_describes_the_repo(attached):
-    readme = (attached["clone"] / "README.md").read_text(encoding="utf-8")
+async def test_no_markdown_comes_from_a_dot_directory(attached):
+    """The manifest says the menu reports one MORE markdown than we author,
+    because README.md is a document. That only holds because the walk skips
+    dot-directories — otherwise every .claude/plans and .claude/rules file would
+    be counted twice. Pin the rule here, so a regression in it fails pointing at
+    the rule rather than at an arithmetic mismatch in the manifest."""
+    from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions
+
+    entities = await Entity.assets_by_path(
+        PathQueryOptions(search_dirs=[str(attached["clone"])], types=["markdown"], limit=200)
+    )
+    offenders = [e.asset_ref for e in entities if "/.claude/" in (e.asset_ref or "")]
+    assert not offenders, f"markdown counted from dot-directories: {offenders}"
+    assert len(entities) == SAMPLE_CONTEXT_ASSETS["markdown"]
+
+
+def test_readme_describes_the_repo(tmp_path):
+    """Reads a generated file — deliberately NOT on the `attached` fixture, which
+    would spend a git publish, a clone and an indexer walk to open a README."""
+    write_repo(tmp_path / "repo")
+    readme = (tmp_path / "repo" / "README.md").read_text(encoding="utf-8")
     assert "# sample-context-git" in readme
     assert "context folder" in readme
     assert str(SAMPLE_CONTEXT_TOTAL) in readme

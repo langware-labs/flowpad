@@ -117,71 +117,59 @@ class AssetTree:
 # ── Writers ──────────────────────────────────────────────────────────────────
 
 
-def _write_asset(root: Path, type_name: str, name: str) -> Path:
-    """Write one asset of ``type_name`` where its walker will find it."""
-    if type_name == "skill":
-        target = root / ".claude" / "skills" / name
-        target.mkdir(parents=True, exist_ok=True)
-        (target / "SKILL.md").write_text(
-            f"---\nname: {name}\ndescription: {name} fixture skill\n---\n\n# {name}\n", encoding="utf-8"
-        )
-        return target
-    if type_name == "agent":
-        target = root / ".claude" / "agents" / f"{name}.md"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            f"---\nname: {name}\ndescription: {name} fixture agent\n---\n\n{name} system prompt\n", encoding="utf-8"
-        )
-        return target
-    if type_name == "markdown":
-        # NOT under .claude/skills|agents or agentic-assets/task — markdown skips
-        # any file with a typed-record ancestor, so those would silently vanish.
-        target = root / "docs" / f"{name}.md"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(f"# {name}\n\nfixture note\n", encoding="utf-8")
-        return target
-    if type_name == "task":
-        # `agentic-assets/task/`, discovered by repo_assets_fn. The `tasks/`
-        # layout that task_fn scans is dead code — never registered.
-        target = root / "agentic-assets" / "task" / name
-        target.mkdir(parents=True, exist_ok=True)
-        (target / "task.md").write_text(
-            _TASK_MD.format(tid=str(uuid.uuid4()), name=name), encoding="utf-8"
-        )
-        return target
-    if type_name == "plan":
-        target = root / ".claude" / "plans" / f"{name}.md"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(f"---\ntitle: {name}\n---\n\n# {name}\n\nfixture plan\n", encoding="utf-8")
-        return target
-    if type_name == "claude_rules":
-        target = root / ".claude" / "rules" / f"{name}.md"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(f"# {name}\n\nfixture rule\n", encoding="utf-8")
-        return target
-    if type_name == "whiteboard":
-        # whiteboard_fn requires the WHITE_BOARD.md marker; board.json is the
-        # scene the editor loads.
-        target = root / ".claude" / "whiteboards" / name
-        target.mkdir(parents=True, exist_ok=True)
-        (target / "WHITE_BOARD.md").write_text(
-            f'---\nname: {name}\ndescription: ""\n---\n\n# {name}\n', encoding="utf-8"
-        )
-        (target / "board.json").write_text(
-            '{"kind":"excalidraw","version":1,"data":{"elements":[],"appState":{},"files":{}}}',
-            encoding="utf-8",
-        )
-        return target
-    if type_name == "spec":
-        # Repo-asset family like task; spec's asset_ref is the inner spec.md.
-        target = root / "agentic-assets" / "spec" / name
-        target.mkdir(parents=True, exist_ok=True)
-        (target / "spec.md").write_text(
-            f"---\nid: {uuid.uuid4()}\ntitle: {name}\nspec_type: plan\n---\n\n# {name}\n\nfixture spec\n",
-            encoding="utf-8",
-        )
-        return target
-    raise ValueError(f"unsupported fixture asset type: {type_name}")
+# The BODY each type's reader needs — the only genuinely per-type thing here.
+# Placement is NOT listed: it comes from the registry (see ``write_asset``).
+_BODIES: dict[str, str] = {
+    "skill": "---\nname: {name}\ndescription: {name} fixture skill\n---\n\n# {name}\n",
+    "agent": "---\nname: {name}\ndescription: {name} fixture agent\n---\n\n{name} system prompt\n",
+    "markdown": "# {name}\n\nfixture note\n",
+    "task": _TASK_MD,
+    "plan": "---\ntitle: {name}\n---\n\n# {name}\n\nfixture plan\n",
+    "claude_rules": "# {name}\n\nfixture rule\n",
+    "whiteboard": '---\nname: {name}\ndescription: ""\n---\n\n# {name}\n',
+}
+
+# Extra files a type needs beyond its main file. Only whiteboard has one: the
+# scene the editor loads, which no template can express as a body.
+_SIDECARS: dict[str, dict[str, str]] = {
+    "whiteboard": {
+        "board.json": '{"kind":"excalidraw","version":1,"data":{"elements":[],"appState":{},"files":{}}}'
+    },
+}
+
+
+def write_asset(root: Path, type_name: str, name: str) -> Path:
+    """Write one asset of ``type_name`` where its walker will find it.
+
+    Placement is derived from the type registry — ``main_subdir`` for the
+    directory, ``main_layout``/``main_file``/``main_ext`` for the file, and
+    ``asset_ref_for`` for the folder-vs-inner-file rule that
+    ``main_file_is_asset_ref`` selects. Transcribing those paths by hand (as an
+    earlier version did) buys no independence: the copy was taken *from* the
+    registry, and because the tests assert discovery COUNTS rather than paths, a
+    hand-written writer would keep placing files where the walker looks even if
+    ``main_subdir`` drifted — passing green over a broken placement seam.
+    Deriving makes that drift fail loudly and by name (``plan: expected 4, got 0``).
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(type_name)
+    if info is None or not info.main_subdir or type_name not in _BODIES:
+        raise ValueError(f"unsupported fixture asset type: {type_name}")
+
+    body = _BODIES[type_name].format(name=name, tid=str(uuid.uuid4()))
+    subdir = root / info.main_subdir
+    if info.main_layout == "folder":
+        folder = subdir / name
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / info.main_file).write_text(body, encoding="utf-8")
+        for filename, content in _SIDECARS.get(type_name, {}).items():
+            (folder / filename).write_text(content, encoding="utf-8")
+        return Path(info.asset_ref_for(folder))
+    target = subdir / f"{name}{info.main_ext}"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(body, encoding="utf-8")
+    return target
 
 
 def _git(cwd: Path, *args: str) -> None:
@@ -254,7 +242,7 @@ async def build_asset_tree(
             root.mkdir(parents=True, exist_ok=True)
         for type_name, count in spec.assets.items():
             for i in range(count):
-                _write_asset(root, type_name, f"{spec.key.lower()}_{type_name}{'' if count == 1 else i}")
+                write_asset(root, type_name, f"{spec.key.lower()}_{type_name}{'' if count == 1 else i}")
         if spec.kind == "git":
             _git(root, "add", "-A")
             _git(root, "commit", "-qm", "assets")
