@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { isReadyForInput, WorkerMode, type AgenticProcess } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useViewMode, viewModePtyMode, ViewMode } from '@src/contexts/view-mode-context';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 
-interface UseProcessModeSwitchOptions {
+interface UseProcessSurfaceOptions {
   process?: AgenticProcess | null;
   /** Live xterm dimensions for the →terminal direction, when a terminal is
    *  mounted. Ref-free so this hook stays testable and has no opinion about who
@@ -13,63 +12,35 @@ interface UseProcessModeSwitchOptions {
   getDims?: () => { cols: number; rows: number } | undefined;
 }
 
-export interface ProcessModeSwitch {
-  /** The reactive entity this hook already subscribes to — exposed so a caller
-   *  doesn't open a second subscription to the same process. */
-  live: AgenticProcess | null;
-  /** Whether the session is actually on a PTY (`pty_mode`), reactively. */
-  ptyMode: boolean;
-  /** `isReadyForInput` — the backend 409s a mid-turn transport switch. */
-  awaitingUserInput: boolean;
-  /** A transport switch is in flight. */
-  switching: boolean;
-  /** Pick a mode. URL-first: this navigates; the URL load applies and adopts it. */
-  select: (mode: ViewMode) => void;
-}
-
 /**
- * The session mode switch for one agentic process — the in-context twin of the
- * footer `ViewToggle`, writing the same single preference (view mode).
+ * Keep one process's transport aligned with the view mode — the whole of what a
+ * session needs beyond rendering, now that the footer `ViewToggle` is the single
+ * mode selector.
  *
- * **Picking a mode only navigates** (`?viewMode=`); the mounted URL is the single
- * writer, adopting the mode as the preference (`useDockViewModeOverrideSync`).
+ * Mode selection itself is pure navigation (`?viewMode=`, adopted as the
+ * preference on load). The one thing navigation cannot express is the TRANSPORT,
+ * because that is a worker lifecycle action: the terminal surface is an
+ * interactive PTY, vibe and chat are headless print-mode. Mount this wherever a
+ * session is on screen and the reconcile happens however the mode changed.
  *
- * The one thing navigation cannot express is the TRANSPORT, because that is a
- * worker lifecycle action rather than a view: the terminal surface is an
- * interactive PTY, vibe and chat are headless print-mode. That reconcile lives in
- * an effect (`useSessionSurfaceReconcile`) rather than in this click handler, so
- * it happens however the mode changed — from here, from the footer toggle, or
- * from `window.setView()`.
- *
- * Call this ONCE per mount — a second call site would own a second, disagreeing
- * `switching` state.
+ * Returns the reactive entity it already subscribes to, so callers don't open a
+ * second subscription to the same process.
  */
-export function useProcessModeSwitch({ process, getDims }: UseProcessModeSwitchOptions): ProcessModeSwitch {
-  const { navigation, currentDock } = useDockNavigation();
+export function useProcessSurface({ process, getDims }: UseProcessSurfaceOptions): {
+  live: AgenticProcess | null;
+  switching: boolean;
+} {
   const viewMode = useViewMode();
-  // The reactive entity: `pty_mode` and the worker status both move underneath
-  // us mid-session, and the switch's selection + gate must follow.
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
   const live = liveProcess ?? process ?? null;
-  const ptyMode = live?.pty_mode !== false;
-  const awaitingUserInput = isReadyForInput(live ?? {});
-  const { switching } = useSessionSurfaceReconcile({ process: live, viewMode, ptyMode, awaitingUserInput, getDims });
-
-  const select = useCallback(
-    (mode: ViewMode) => {
-      // Address the PROCESS, never the ambient dock. This hook is mounted in the
-      // vibe display strip too, where `currentDock` is often a CHILD tab (an
-      // asset editor opened from inside the workspace) — stamping the mode onto
-      // that URL would navigate the user to the child in the new mode instead of
-      // to their session. `openShellProcess` is the one place that knows how to
-      // build a process URL.
-      if (process) void navigation.openShellProcess(process.id, { viewMode: mode });
-      else if (currentDock) navigation.openDock(currentDock.withViewMode(mode));
-    },
-    [process, navigation, currentDock],
-  );
-
-  return { live, ptyMode, awaitingUserInput, switching, select };
+  const { switching } = useSessionSurfaceReconcile({
+    process: live,
+    viewMode,
+    ptyMode: live?.pty_mode !== false,
+    awaitingUserInput: isReadyForInput(live ?? {}),
+    getDims,
+  });
+  return { live, switching };
 }
 
 /**

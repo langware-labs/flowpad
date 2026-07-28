@@ -18,9 +18,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { flushSync } from 'react-dom';
 import { ContentPanel } from './content-panel/content-panel';
 import { WorkspaceChildStrip } from './workspace-child-strip';
-import { TerminalModeSwitch } from '@src/components/terminal/interactive-terminal/TerminalModeSwitch';
-import { useProcessModeSwitch } from '@src/components/terminal/interactive-terminal/use-process-mode-switch';
-import { useViewMode } from '@src/contexts/view-mode-context';
+import { useProcessSurface } from '@src/components/terminal/interactive-terminal/use-process-surface';
 import { VibeChatPane } from './vibe-chat-pane';
 import {
   type VibeWorkspaceSession,
@@ -84,16 +82,9 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
       ? provisionalSession.process
       : null;
   const process = watchedProcess ?? provisionalProcess;
-  // Same control and same hook as the terminal header — here `vibe` is the
-  // selected segment, so picking chat/terminal navigates back out to that
-  // renderer. Built here (not inside the strip) so the strip stays dumb: it
-  // takes a `leading` node and knows nothing about processes. No xterm is
-  // mounted in vibe, hence no dims for the →terminal direction.
-  const viewMode = useViewMode();
-  const modeSwitch = useProcessModeSwitch({ process: process });
-  const modeSwitchSlot = process ? (
-    <TerminalModeSwitch current={viewMode} showVibe modeSwitch={modeSwitch} />
-  ) : null;
+  // Vibe has no InteractiveTerminal, so this is where the session's transport
+  // is kept aligned with the view mode while the workspace is on screen.
+  useProcessSurface({ process: process });
 
 
   const resolvedAsset = dataContext.activeEntity as
@@ -351,8 +342,7 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
           <div className={isVibe ? 'block' : 'hidden'}>
             {effectiveSession ? (
               <WorkspaceChildStrip
-                leading={modeSwitchSlot}
-                processTab={effectiveSession.processTab}
+                    processTab={effectiveSession.processTab}
                 processDock={effectiveSession.processDock}
                 projectId={project?.id ?? null}
               />

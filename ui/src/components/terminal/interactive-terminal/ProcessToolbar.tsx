@@ -16,10 +16,7 @@ import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActio
 import { ExportEntityButton } from '@src/components/entity-actions/ExportEntityButton';
 import { AssetManagerButton } from '@src/components/asset-manager';
 import { ViewSwap } from '@src/components/view-mode';
-import { useViewMode } from '@src/contexts/view-mode-context';
 import { AdvancedInteractiveTabHeader, StandardInteractiveTabHeader } from './InteractiveTabHeader';
-import { TerminalModeSwitch } from './TerminalModeSwitch';
-import type { ProcessModeSwitch } from './use-process-mode-switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import {
@@ -73,10 +70,6 @@ interface ProcessToolbarProps {
   onClose?: () => void;
   /** Shell entity for PTY Viewer (dev mode only). */
   shell?: Shell | null;
-  // ── Mode switch (chat | terminal | vibe), rendered leftmost in the header ──
-  /** The shared mode switch. Undefined ⇒ this tab can't switch (embedded panel),
-   * and the whole control is hidden. */
-  modeSwitch?: ProcessModeSwitch;
 }
 
 export function ProcessToolbar({
@@ -90,12 +83,10 @@ export function ProcessToolbar({
   embedded,
   onClose,
   shell,
-  modeSwitch,
 }: ProcessToolbarProps) {
   const { t, i18n } = useLingui();
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
-  const { navigation, windowMode } = useDockNavigation();
-  const viewMode = useViewMode();
+  const { navigation } = useDockNavigation();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
   const [showPtyEventsViewer, setShowPtyEventsViewer] = useState(false);
   const [showCommandStatus, setShowCommandStatus] = useState(false);
@@ -198,13 +189,6 @@ export function ProcessToolbar({
   );
 
   const setTrace = (key: keyof TraceFilters) => (val: boolean) => onTraceFiltersChange({ ...traceFilters, [key]: val });
-
-  // Vibe is offered on every switchable tab except a popped-out window — a
-  // detached window has no business swapping itself for a full-page workspace
-  // (the reason AssetDiscussButton excludes windowMode too).
-  const modeSwitchSlot = modeSwitch ? (
-    <TerminalModeSwitch current={viewMode} showVibe={!windowMode} modeSwitch={modeSwitch} />
-  ) : null;
 
   const debugSlot = (
     <>
@@ -548,7 +532,6 @@ export function ProcessToolbar({
 
   const advancedHeader = (
     <AdvancedInteractiveTabHeader
-      modeSwitch={modeSwitchSlot}
       debug={debugSlot}
       restart={restartSlot}
       title={titleSlot}
@@ -568,7 +551,7 @@ export function ProcessToolbar({
         <ViewSwap
           advanced={advancedHeader}
           standard={
-            <StandardInteractiveTabHeader modeSwitch={modeSwitchSlot} title={titleSlot} actions={actionsSlot} />
+            <StandardInteractiveTabHeader title={titleSlot} actions={actionsSlot} />
           }
         />
       )}
