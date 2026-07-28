@@ -130,7 +130,7 @@ async function materializeTab(
   options: SetupTabOptions,
 ): Promise<{ tab: Tab | null; tabs: Tab[] }> {
   const t0 = performance.now();
-  const existing = await Tab.listAll();
+  const existing = await perfTime('materializeTab Tab.listAll #1', () => Tab.listAll());
   toplog.log(
     'process_load',
     `materializeTab Tab.listAll took ${(performance.now() - t0).toFixed(1)}ms (${existing.length} tabs) dock=${dock.tabHash}`,
@@ -229,10 +229,12 @@ async function materializeTab(
   // `applyAllTabs`): doing so erases every other project's tabs, collapsing the
   // footer projects-chip to a single project. Use the scoped list only to find
   // the materialized tab, then re-read the UNSCOPED global list for adoption.
-  const scoped = await Tab.getFromDockPointer(dock, { parentTabId });
+  const scoped = await perfTime('materializeTab new_tab round trip', () =>
+    Tab.getFromDockPointer(dock, { parentTabId }),
+  );
   const scopedTab = findTabForDock(scoped, dock);
 
-  const all = await Tab.listAll();
+  const all = await perfTime('materializeTab Tab.listAll #2', () => Tab.listAll());
   const tab = findTabForDock(all, dock) ?? scopedTab;
   return { tab, tabs: all };
 }
