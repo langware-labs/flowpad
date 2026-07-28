@@ -234,13 +234,16 @@ PROJECT_ID = "3c9e5d21-77aa-4b0e-9d18-2f4a6b8c0d13"
 
 
 def _stub_project(monkeypatch, mount: str | None):
+    """A real Project entity (never saved) returned by the id lookup — same
+    shape as ``_stub_folder``, so a rename or a type change on
+    ``fs_storage_mount_path`` breaks these tests loudly instead of leaving them
+    passing against a shim that no longer resembles a Project."""
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
-    class _FakeProject:
-        fs_storage_mount_path = mount
+    ent = Project(id=PROJECT_ID, name="proj", **({"fs_storage_mount_path": mount} if mount else {}))
 
     async def _get_one(query):  # noqa: ARG001
-        return _FakeProject()
+        return ent
 
     monkeypatch.setattr(Project, "get_one", staticmethod(_get_one))
 
@@ -281,10 +284,19 @@ async def test_project_without_a_remote_says_so(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_project_with_no_mount_is_still_not_file_backed(monkeypatch):
-    """A project row with no mount path has nothing to probe — the old answer is
-    the right one there."""
-    res = await _project_preflight(monkeypatch, None)
+async def test_unknown_project_is_still_not_file_backed(monkeypatch):
+    """Nothing to probe — the old answer is the right one there.
+
+    The lookup missing is the reachable form of "no mount": a constructed
+    ``Project`` always HAS one, because ``set_fs_storage_mount_path`` derives it
+    from the name when the caller omits it."""
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    async def _get_one(query):  # noqa: ARG001
+        return None
+
+    monkeypatch.setattr(Project, "get_one", staticmethod(_get_one))
+    res = await git_share_preflight(EntityType.PROJECT.value, PROJECT_ID)
     assert res["code"] == "not-file-backed"
 
 

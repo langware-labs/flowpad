@@ -22,17 +22,65 @@ interface ProjectGitChecksDialogProps {
   onSetupRepo?: () => Promise<void>;
 }
 
-/** The one thing to do next, chosen from what actually failed.
+/** Runs the Git setup wizard on the project's own folder. Owns its busy state,
+ *  the way {@link SetupJourneyButton} does, so the row's two possible fixes
+ *  behave alike and no dialog-wide flag couples one row to another. */
+function SetupRepoButton({ run, onDone }: { run: () => Promise<void>; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      type="button"
+      size="sm"
+      disabled={busy}
+      data-testid="project-git-checks-setup-repo"
+      className="h-7 flex-shrink-0 gap-1.5 px-2.5 text-xs"
+      onClick={() => {
+        setBusy(true);
+        void run().finally(onDone);
+      }}
+    >
+      {busy && <Loader2 className="h-3 w-3 animate-spin" aria-hidden />}
+      <Trans>Set up Git</Trans>
+    </Button>
+  );
+}
+
+/** The fix for ONE step, rendered on the row it repairs.
  *
- *  Ordered by dependency, not by row order: there is no point offering to
- *  create a remote repository while the tooling that would create it is
- *  missing, so a capability failure always wins.
+ *  Only a definite failure gets a button: `ok === null` is a check we could not
+ *  read, not one we know to be missing, and offering to "fix" it would send the
+ *  user somewhere they may not need to go.
+ *
+ *  Both capability rows launch the setup-github journey — it installs the CLI
+ *  and signs in — but each is labelled for its own step, because a row reading
+ *  "Signed in to the remote ✗ [Install gh]" would name the wrong problem.
  */
-function nextAction(checks: GitCheck[]): 'github' | 'repo' | null {
-  const failed = (id: GitCheck['id']) => checks.find((c) => c.id === id)?.ok === false;
-  if (failed('installed') || failed('logged-in')) return 'github';
-  if (failed('setup')) return 'repo';
-  return null;
+function RowFix({
+  check,
+  onSetupRepo,
+  onDone,
+}: {
+  check: GitCheck;
+  onSetupRepo?: () => Promise<void>;
+  onDone: () => void;
+}) {
+  if (check.ok !== false) return null;
+  switch (check.id) {
+    case 'installed':
+      return (
+        <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID}>
+          <Trans>Install gh</Trans>
+        </SetupJourneyButton>
+      );
+    case 'logged-in':
+      return (
+        <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID}>
+          <Trans>Sign in</Trans>
+        </SetupJourneyButton>
+      );
+    case 'setup':
+      return onSetupRepo ? <SetupRepoButton run={onSetupRepo} onDone={onDone} /> : null;
+  }
 }
 
 function CheckMark({ ok }: { ok: boolean | null }) {
@@ -60,24 +108,14 @@ function CheckMark({ ok }: { ok: boolean | null }) {
   );
 }
 
-/**
- * What Git readiness looks like for this project, and the one thing to do next.
- *
- * Replaces a flat strip of "label — detail" text that stated three findings and
- * offered nothing to do about any of them. Each row is a checklist item so the
- * shape of the answer is readable at a glance; the footer turns whichever
- * failure blocks progress into a single action.
- */
+/** Git readiness for this project as a checklist, each failing row carrying the
+ *  fix for its own step. */
 export function ProjectGitChecksDialog({
   open,
   onOpenChange,
   checks,
   onSetupRepo,
 }: ProjectGitChecksDialogProps) {
-  const [busy, setBusy] = useState(false);
-  const action = nextAction(checks);
-  const allGood = checks.length > 0 && checks.every((c) => c.ok === true);
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg" data-testid="project-git-checks-dialog">
@@ -86,67 +124,39 @@ export function ProjectGitChecksDialog({
             <Trans>Git readiness</Trans>
           </DialogTitle>
           <DialogDescription>
-            {allGood ? (
-              <Trans>This project is ready to publish and share over Git.</Trans>
-            ) : (
-              <Trans>What Flowpad found when it checked this project's Git setup.</Trans>
-            )}
+            <Trans>What Flowpad found when it checked this project's Git setup.</Trans>
           </DialogDescription>
         </DialogHeader>
 
         <ul className="flex flex-col gap-3 py-1" data-testid="project-git-checks-list">
           {checks.map((check) => (
-            <li key={check.id} className="flex items-start gap-2.5" data-testid={`git-check-${check.id}`}>
-              <span className="mt-0.5">
-                <CheckMark ok={check.ok} />
-              </span>
-              <span className="min-w-0 text-sm">
-                <span className={check.ok === false ? 'text-foreground' : 'text-muted-foreground'}>
-                  {check.label}
+            <li
+              key={check.id}
+              className="flex items-start justify-between gap-3"
+              data-testid={`git-check-${check.id}`}
+            >
+              <span className="flex min-w-0 items-start gap-2.5">
+                <span className="mt-0.5">
+                  <CheckMark ok={check.ok} />
                 </span>
-                {check.detail && (
-                  <span className="block text-xs text-muted-foreground/80">{check.detail}</span>
-                )}
+                <span className="min-w-0 text-sm">
+                  <span className={check.ok === false ? 'text-foreground' : 'text-muted-foreground'}>
+                    {check.label}
+                  </span>
+                  {check.detail && (
+                    <span className="block text-xs text-muted-foreground/80">{check.detail}</span>
+                  )}
+                </span>
               </span>
+              <RowFix check={check} onSetupRepo={onSetupRepo} onDone={() => onOpenChange(false)} />
             </li>
           ))}
         </ul>
 
-        <DialogFooter className="gap-2 sm:justify-between">
-          <span className="text-xs text-muted-foreground">
-            {action === 'github' && <Trans>Set up GitHub access first — the rest needs it.</Trans>}
-            {action === 'repo' && <Trans>This project's folder needs a repository and a remote.</Trans>}
-            {!action && allGood && <Trans>Nothing to do.</Trans>}
-          </span>
-          <span className="flex items-center gap-2">
-            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-              <Trans>Close</Trans>
-            </Button>
-            {action === 'github' && (
-              <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID}>
-                <Trans>Set up GitHub</Trans>
-              </SetupJourneyButton>
-            )}
-            {action === 'repo' && onSetupRepo && (
-              <Button
-                type="button"
-                size="sm"
-                disabled={busy}
-                data-testid="project-git-checks-setup-repo"
-                className="h-7 gap-1.5 px-2.5 text-xs"
-                onClick={() => {
-                  setBusy(true);
-                  void onSetupRepo().finally(() => {
-                    setBusy(false);
-                    onOpenChange(false);
-                  });
-                }}
-              >
-                {busy && <Loader2 className="h-3 w-3 animate-spin" aria-hidden />}
-                <Trans>Set up Git</Trans>
-              </Button>
-            )}
-          </span>
+        <DialogFooter>
+          <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            <Trans>Close</Trans>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
