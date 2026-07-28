@@ -70,9 +70,6 @@ per-project, and it does not follow your account to another machine.
 
 ## What it means for a file you already have
 
-Switching to Local does not reach out and un-share anything you shared earlier.
-It closes the valve going forward. Assets that already have a cloud copy keep
-saying so — they just stop being updated there.
-
-That badge on every asset is the other half of this story: see
-[[Where your assets live]].
+Every asset carries a badge saying whether it is local, on the cloud, or in a
+git repo — and switching modes does not rewrite the past. That half of the
+story lives in [[Where your assets live]].
