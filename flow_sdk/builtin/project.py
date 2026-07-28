@@ -163,6 +163,14 @@ class Project(Entity):
         default_factory=dict,
         description="Hub-side value-free secret pointer metadata keyed by SecretOrigin typeid.",
     )
+    hub_published_at: str | None = APIField(
+        default=None,
+        description=(
+            "When THIS instance published the project to the hub. Distinct from "
+            "``remote``, which is also set when a project is shared TO us — so "
+            "``remote`` cannot answer 'may I write to the hub row?' and this can."
+        ),
+    )
     shared_context_origins: dict[str, dict[str, Any]] = APIField(
         default_factory=dict,
         persist=Persist.FALSE,
@@ -790,6 +798,10 @@ class Project(Entity):
             await client.post(build_hub_url(self.get_type()), body)
             if "remote" in type(self).model_fields:
                 self.remote = True
+            # Publication marker. Receiver materialization also sets ``remote``,
+            # so only this line distinguishes "I published it" from "it was
+            # shared to me" — which is what the push-to-cloud gate needs.
+            self.hub_published_at = _now_iso()
             if not recipients:
                 return self
             for email in recipients:
@@ -1291,6 +1303,81 @@ class Project(Entity):
         except Exception:  # noqa: BLE001
             pass
         return None
+
+    @action.post(action_name="push-secret-to-cloud")
+    async def push_secret_to_cloud(self, env_var: str = "", value: str = "") -> "ApiResponse":
+        """Store a secret on the hub, which is the system of record.
+
+        Reuses the hub's own ``env-var`` action — we are not building a second
+        secret manager. The hub stores the value through the same path as every
+        other hub secret.
+
+        Gated on publication: there is no hub row to attach a secret to until
+        the project exists there. The failure carries ``project_not_published``
+        so the UI can offer to publish rather than parse prose.
+        """
+        from flow_sdk.builtin.secret_origin import is_valid_secret_origin_env_var  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.core.entity.entity_env.env_types import EnvVarType  # noqa: PLC0415
+
+        env_var = (env_var or "").strip()
+        if not is_valid_secret_origin_env_var(env_var):
+            return ApiFailResponse(message=f"invalid env_var: {env_var!r}")
+        if not value:
+            return ApiFailResponse(message="a value is required to push a secret to the cloud")
+        if not self.hub_published_at:
+            return ApiFailResponse(
+                message="This project is not in the cloud yet.",
+                data={"error": "project_not_published"},
+            )
+
+        response = await hub_post(
+            BuiltinEntityType.PROJECT,
+            {"name": env_var, "value": value, "var_type": EnvVarType.API_KEY.value},
+            str(self.id),
+            action="env-var",
+        )
+        if response is None:
+            return ApiFailResponse(message="could not reach the hub")
+
+        # Point the local declaration at the hub copy. The value stays there.
+        await self.add_secret_pointer(
+            name=env_var,
+            env_var=env_var,
+            scope="shared",
+            locator={"kind": "flowpad-hub", "project_id": str(self.id), "name": env_var},
+        )
+        return ApiSuccessResponse(data={"ok": True, "env_var": env_var})
+
+    @action.post(action_name="delete-secret-from-cloud")
+    async def delete_secret_from_cloud(self, env_var: str = "") -> "ApiResponse":
+        """Delete a secret from the hub — CLOUD ONLY.
+
+        The local copy is deliberately untouched: not the SecretOrigin
+        declaration, not the sodot entry, not ``.env.local``, not this project's
+        own env_vars. "Delete from cloud" means exactly that and nothing more.
+
+        Calls hub_delete directly rather than routing through _hub_reflect,
+        which silently no-ops when ``remote`` is false — unacceptable for a
+        destructive operation the user believes happened.
+        """
+        from flow_sdk.cloud_client.transport.hub_http import hub_delete  # noqa: PLC0415
+
+        env_var = (env_var or "").strip()
+        if not env_var:
+            return ApiFailResponse(message="env_var is required")
+        if not self.hub_published_at:
+            return ApiFailResponse(
+                message="This project is not in the cloud.",
+                data={"error": "project_not_published"},
+            )
+
+        response = await hub_delete(
+            BuiltinEntityType.PROJECT, str(self.id), action="env-var", sub_path=env_var
+        )
+        if response is None:
+            return ApiFailResponse(message="could not reach the hub")
+        return ApiSuccessResponse(data={"ok": True, "env_var": env_var})
 
     @action.post(action_name="secret-drift-status")
     async def secret_drift_status(self) -> "ApiResponse":

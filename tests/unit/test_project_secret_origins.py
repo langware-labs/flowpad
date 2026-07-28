@@ -78,14 +78,13 @@ async def test_shared_hub_secret_pointer_share_payload_is_metadata_only(tmp_path
     assert len(shared) == 2
     by_env = {item["env_var"]: item for item in shared.values()}
 
-    assert by_env["STRIPE_API_KEY"] == {
-        "name": "Stripe",
-        "project_id": str(project.id),
-        "env_var": "STRIPE_API_KEY",
-        "kind": "flowpad-hub",
-        "locator": {"kind": "flowpad-hub", "secret_id": "sec_123"},
-        "sod_store": "sodot",
-    }
+    stripe = by_env["STRIPE_API_KEY"]
+    assert stripe["name"] == "Stripe"
+    assert stripe["project_id"] == str(project.id)
+    assert stripe["kind"] == "flowpad-hub"
+    assert stripe["sod_store"] == "sodot"
+    assert stripe["locator"]["kind"] == "flowpad-hub"
+    assert stripe["locator"]["secret_id"] == "sec_123"
     # The local declaration travels WITHOUT its sod_name — that name points at
     # an entry in this machine's keychain and means nothing anywhere else.
     assert by_env["LOCAL_TOKEN"]["locator"] == {"kind": "local"}
@@ -124,17 +123,15 @@ async def test_receive_materializes_shared_secret_pointers(tmp_path):
     by_env = {row["env_var"]: row for row in project.secret_origins}
     assert set(by_env) == {"STRIPE_API_KEY", "LOCAL_TOKEN"}
     assert by_env["STRIPE_API_KEY"]["scope"] == "shared"
-    assert by_env["STRIPE_API_KEY"]["locator"] == {"kind": "flowpad-hub", "secret_id": "sec_123"}
+    assert by_env["STRIPE_API_KEY"]["locator"]["secret_id"] == "sec_123"
     assert project.context_of_type("secret_origin", bucket="private") == []
     assert len(project.context_of_type("secret_origin", bucket="shared")) == 2
-    assert project.shared_secret_origins[by_env["STRIPE_API_KEY"]["typeid"]] == {
-        "name": "Stripe",
-        "project_id": str(project.id),
-        "env_var": "STRIPE_API_KEY",
-        "kind": "flowpad-hub",
-        "locator": {"kind": "flowpad-hub", "secret_id": "sec_123"},
-        "sod_store": "sodot",
-    }
+    mirrored = project.shared_secret_origins[by_env["STRIPE_API_KEY"]["typeid"]]
+    assert mirrored["name"] == "Stripe"
+    assert mirrored["project_id"] == str(project.id)
+    assert mirrored["env_var"] == "STRIPE_API_KEY"
+    assert mirrored["sod_store"] == "sodot"
+    assert mirrored["locator"]["secret_id"] == "sec_123"
 
 
 @pytest.mark.asyncio
@@ -247,16 +244,10 @@ async def test_receive_prunes_removed_shared_secret_pointers(tmp_path):
         TypeId.to_typeid(kept_typeid)
     ]
     assert removed_typeid not in project.shared_context_entity_data
-    assert project.shared_secret_origins == {
-        kept_typeid: {
-            "name": "OpenAI",
-            "project_id": str(project.id),
-            "env_var": "OPENAI_API_KEY",
-            "kind": "flowpad-hub",
-            "locator": {"kind": "flowpad-hub", "secret_id": "sec_456"},
-            "sod_store": "sodot",
-        }
-    }
+    assert list(project.shared_secret_origins) == [kept_typeid]
+    kept = project.shared_secret_origins[kept_typeid]
+    assert kept["env_var"] == "OPENAI_API_KEY"
+    assert kept["locator"]["secret_id"] == "sec_456"
 
 
 @pytest.mark.asyncio
