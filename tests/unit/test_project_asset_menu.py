@@ -14,6 +14,13 @@ rows and real entity rows with ``asset_ref`` set, no mocks. Entities are written
 directly rather than discovered by a walk because counting is a pure DB read
 (``Entity.assets_by_path``); the indexer is not part of what's under test.
 
+That is also what makes this file the right home for the GUARDS — cycles,
+``max_depth``, ``recursive=False``, the wire shape, the one-``Project.get_all``
+budget — each of which needs a tree it can shape freely and cheaply.
+``tests/unit/test_project_asset_menu_indexed.py`` is the realism counterpart:
+real files in their real folders, indexed for real, proving the placements and
+the REAL_PROJECT_CWD/CWD_ROOT split this file cannot see.
+
 Layout::
   <tmp>/P      Project, ctx=[C1, plain]   .claude/skills/p_skill/     skill
   <tmp>/C1     Project, ctx=[C2]          .claude/skills/c1_skill/    skill
