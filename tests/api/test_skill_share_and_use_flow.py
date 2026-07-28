@@ -18,9 +18,11 @@ means the thing this flow actually depends on — that publishing to git is what
 makes a folder shareable — is never exercised. Here the origin is detected off
 a real remote, so ``git init`` alone is provably not enough.
 
-One gap is deliberately visible: nothing in the product creates or attaches a
-git remote. ``git-ops`` can init and push, but the remote in ``_publish`` is
-made by this test. See ``test_publishing_needs_a_remote_the_product_cannot_create``.
+One gap is deliberately visible: getting an ``origin`` remote is agent-mediated.
+``git-ops`` exposes init and push as actions, but nothing exposes "create the
+remote" — that lives only in the ``git-context-folder`` wizard, an agentic
+process handed a prose instruction. So the remote in ``_publish`` is made by
+this test. See ``test_publishing_needs_a_remote_no_action_can_create``.
 """
 
 from __future__ import annotations
@@ -88,8 +90,13 @@ async def _publish(client, node_id: str, workdir: Path, remote: Path) -> dict:
     init = await client.post(f"{base}/init", json={"workdir": str(workdir)})
     assert init.status_code == 200, init.text
 
-    # The step the product has no action for. `git-ops/push` reports `no_remote`
-    # without it, so publishing a NEW project cannot be done from the UI today.
+    # Stands in for the git-setup WIZARD, which is the product's only way to get
+    # a remote: `git_share_preflight` returns `missing-remote`, the share gate
+    # maps that to `setup`, and `use-git-share-gate.runSetup` launches the
+    # `git-context-folder` wizard — an agentic process asked in prose to
+    # "create the 'origin' remote, and push". There is no deterministic action
+    # behind it, so an api-tier test cannot call it; two lines of git is the
+    # honest substitute.
     #
     # `file://` and not a bare path: `parse_git_origin_url` reads the scheme to
     # classify a remote, and a path with no scheme has no host, so it yields no
@@ -153,14 +160,9 @@ async def test_skill_shared_by_git_is_usable_from_another_project(
     infos = {i["path"]: i for i in consumer.context_dir_infos}
     assert infos[canonical_producer]["origin_kind"] == "git"
 
-    # 4 — the skill is indexed, and OWNED by the project it lives in.
+    # 4 — the skill is indexed, and attributed to the project that LINKED it.
     #
-    # `add-context-dir` kicks a one-shot scan, so the skill becomes a real
-    # entity. Attribution follows `deepest_project_id_for_path` ("the DEEPEST
-    # project whose mount contains the path owns it") — by filesystem
-    # containment, not by who linked it. So the row belongs to the PRODUCER even
-    # though the consumer is the one using it; expecting the consumer's counts
-    # to grow would be reading the model backwards.
+    # `add-context-dir` kicks a one-shot scan, so the skill becomes a real entity.
     from flow_sdk.core.entity.entity_model import Entity
 
     indexed = await Entity.get_by_asset_ref(canonical_posix_path(str(skill_dir)))
@@ -207,16 +209,22 @@ async def test_skill_shared_by_git_is_usable_from_another_project(
 
 
 @pytest.mark.asyncio
-async def test_publishing_needs_a_remote_the_product_cannot_create(
+async def test_publishing_needs_a_remote_no_action_can_create(
     bootstrapped_client, user, bootstrap_payload, tmp_path
 ):
-    """`git init` alone leaves the folder unshareable, and nothing in the
-    product fixes that.
+    """`git init` alone leaves the folder unshareable, and no ACTION fixes it.
 
-    This is the gap the flow runs into: ``git-ops`` inits and pushes, but no
-    action creates or attaches a remote, so a freshly-initialised project stays
-    a ``LocalOrigin`` — and ``add-context-dir`` refuses to share it. The test
-    above only gets past this because it adds the remote itself.
+    The gap the flow runs into: ``git-ops`` inits and pushes, but creating the
+    ``origin`` remote exists only as an agent wizard (``git-context-folder``),
+    never as a deterministic action. So a freshly-initialised project stays a
+    ``LocalOrigin`` and ``add-context-dir`` refuses to share it — anything
+    non-interactive (a test, a script, the backend itself) is stuck here.
+
+    Worth knowing if that wizard is ever replaced by an action: the folder must
+    be RE-MINTED afterwards, not mutated. A Folder's identity is its origin key,
+    so a directory that becomes git-backed keeps its stale ``LocalOrigin``
+    forever unless it is removed and re-added (``use-git-share-gate.runSetup``
+    does exactly that today).
     """
     node_id = bootstrap_payload["default_compute_node"]["id"]
     root = tmp_path / "unpublished"
