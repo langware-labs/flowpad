@@ -31,6 +31,7 @@ import { ViewMode } from '@src/contexts/view-mode-context';
 import { WorkspaceChildStrip } from './workspace-child-strip';
 import { TerminalModeSwitch } from '@src/components/terminal/interactive-terminal/TerminalModeSwitch';
 import { useProcessModeSwitch } from '@src/components/terminal/interactive-terminal/use-process-mode-switch';
+import { useViewMode } from '@src/contexts/view-mode-context';
 import { ContentPanel } from './content-panel/content-panel';
 import { launchVibeSessionForProject } from './use-start-vibe-session';
 import { VIBE_STARTER_PROMPTS } from './vibe-starter-prompts';
@@ -155,9 +156,10 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // renderer. Built here (not inside the strip) so the strip stays dumb: it
   // takes a `leading` node and knows nothing about processes. No xterm is
   // mounted in vibe, hence no dims for the →terminal direction.
+  const viewMode = useViewMode();
   const modeSwitch = useProcessModeSwitch({ process: activeProcess });
   const modeSwitchSlot = activeProcess ? (
-    <TerminalModeSwitch current="vibe" showVibe modeSwitch={modeSwitch} />
+    <TerminalModeSwitch current={viewMode} showVibe modeSwitch={modeSwitch} />
   ) : null;
 
   const streamItems = useAgenticProcessStream(activeProcess);

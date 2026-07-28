@@ -1,5 +1,5 @@
 import { AgenticProcess, dataContext, type ComputeNode } from '@sdk';
-import { chatModeNavOptions, chatModePtyMode, getChatMode } from '@src/contexts/chat-ui-mode-context';
+import { getViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
 import type { NavigationActions } from './NavigationActions';
 
 export interface OpenNewChatOptions {
@@ -18,13 +18,11 @@ export interface OpenNewChatOptions {
  * recovery): those pin their own transport and must never follow a UI
  * preference.
  *
- * The mode comes from `getChatMode()` — one read, defaulting to vibe — and
- * decides both halves:
- *   - TRANSPORT: only `terminal` runs an interactive PTY; `chat` and `vibe` are
- *     headless print-mode.
- *   - SURFACE: `vibe` opens the vibe workspace (`?viewMode=vibe`); the other two
- *     ride `?chatMode=` on the process's own shell URL.
- * Both land on the process dock, so the URL alone reproduces what the user sees.
+ * The view mode is the one read, and decides both halves:
+ *   - TRANSPORT: only the terminal surface runs an interactive PTY; vibe and
+ *     chat are headless print-mode.
+ *   - SURFACE: the mode rides `?viewMode=` on the process's own shell URL, so the
+ *     URL alone reproduces what the user sees.
  */
 export async function openNewChat(
   navigation: Pick<NavigationActions, 'openShellProcess'>,
@@ -35,8 +33,8 @@ export async function openNewChat(
     console.error('[openNewChat] No compute node');
     return null;
   }
-  const mode = getChatMode();
-  const ptyMode = chatModePtyMode(mode);
+  const mode = getViewMode();
+  const ptyMode = viewModePtyMode(mode);
   const project = dataContext.project;
 
   const process = await computeNode.createProcess(
@@ -44,7 +42,7 @@ export async function openNewChat(
       workdir: options.cwd || project?.fs_storage_mount_path,
       ...(options.projectId ?? project?.id ? { projectId: options.projectId ?? project?.id } : {}),
       ...(options.workerType ? { workerType: options.workerType } : {}),
-      // Headless modes stream the transcript as JSON; a PTY has no such stream.
+      // Headless surfaces stream the transcript as JSON; a PTY has no such stream.
       ...(ptyMode ? {} : { outputFormat: 'stream-json' as const }),
     },
     {
@@ -54,6 +52,6 @@ export async function openNewChat(
     },
   );
 
-  await navigation.openShellProcess(process.id, chatModeNavOptions(mode));
+  await navigation.openShellProcess(process.id, { viewMode: mode });
   return process;
 }

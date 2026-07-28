@@ -162,7 +162,7 @@ export function useTerminalStripController({
       const launchProjectId = launch?.projectId ?? spawnProjectId;
       // openNewChat creates AND navigates — it owns the chat-mode propagation,
       // so a second openShellProcess here would re-navigate the same dock
-      // without `?chatMode` and strip the mode back off the URL.
+      // without `?viewMode` and strip the mode back off the URL.
       const process = await openNewChat(navigation, {
         ...(launchProjectId ? { projectId: launchProjectId } : {}),
         ...(launch?.cwd ? { cwd: launch.cwd } : {}),

@@ -43,8 +43,9 @@ import { ChatComposerBar } from './ChatComposerBar';
 import { ChatPlanModeProvider } from './chat-plan-mode-context';
 import { SimpleChatPane } from './SimpleChatPane';
 import { useProcessModeSwitch } from './use-process-mode-switch';
-import { useChatMode } from '@src/contexts/chat-ui-mode-context';
+
 import { useIsAdvanced } from '@src/components/view-mode';
+import { useSessionSurface } from '@src/contexts/view-mode-context';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
 import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
 import {
@@ -171,13 +172,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // resets the terminal. Embedded terminals (chat side panel) and shell-only
   // tabs (no AgenticProcess) always keep the xterm.
   const isAdvanced = useIsAdvanced();
-  // Only `chat` forces the pane. `vibe` renders VibeWorkspace, not this
-  // component, so reaching here in vibe means the surfaces disagree (a popped-out
-  // window, a mode-less process URL) — fall through to the process's own
-  // transport via `isHeadless` below rather than pinning the pane, which would
-  // put a chat over the live PTY of any task-runner process.
-  const chatMode = useChatMode();
-  const wantChat = chatMode === 'chat';
+  // Only the `chat` surface forces the pane. `vibe` renders VibeWorkspace, not
+  // this component, so reaching here in vibe means the surfaces disagree (a
+  // popped-out window, a mode-less process URL) — fall through to the process's
+  // own transport via `isHeadless` below rather than pinning the pane, which
+  // would put a chat over the live PTY of any task-runner process.
+  const surface = useSessionSurface();
+  const wantChat = surface === 'chat';
   // Headless (`pty_mode === false`): there is no PTY/xterm to skin — the chat
   // pane is the ONLY view. Force it on regardless of the chat/terminal skin
   // override, and (in the render) skip mounting the xterm container entirely so
@@ -188,7 +189,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // boot seed). Neither surface is the right guess, so cover the pane until it
   // resolves — a headless process needs no wait (its transport decides), and the
   // xterm keeps mounting and attaching underneath, so this costs no open latency.
-  const chatModePending = chatMode === null && !isHeadless && !embedded && !!process;
+  const surfacePending = surface === null && !isHeadless && !embedded && !!process;
   const canToggleView = !embedded && !!process;
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
@@ -1608,8 +1609,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             embedded={embedded}
             onClose={onClose}
             shell={shell}
-            chatActive={showSimpleChat}
-            modeSwitch={canToggleView && !chatModePending ? modeSwitch : undefined}
+            modeSwitch={canToggleView && !surfacePending ? modeSwitch : undefined}
           />
         )}
         {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}
@@ -1757,7 +1757,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                 )}
                 {/* Mode not resolved yet — hold the pane blank rather than paint
                   a surface the stored preference is about to contradict. */}
-                {chatModePending && <div className="absolute inset-0 z-[70] bg-background" />}
+                {surfacePending && <div className="absolute inset-0 z-[70] bg-background" />}
               </div>
 
               {/* Side window (non-Shell tabs) */}
@@ -1786,7 +1786,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           </div>
         </PtySyncProvider>
 
-        {process && !chatModePending && (
+        {process && !surfacePending && (
           <TerminalBottomRibbon
             fileCount={fileCount}
             isActive={processIsActive}

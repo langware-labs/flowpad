@@ -1,5 +1,5 @@
 import { dataContext, instancePreferences, onPreferenceChange, PREF_REGISTRY, PrefKey, type Project } from '@sdk';
-import { usePreference } from '@src/hooks/use-preference';
+import { usePreference, usePreferenceResolved } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
 import { useEffect, useSyncExternalStore } from 'react';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
@@ -50,6 +50,58 @@ function toViewMode(v: unknown): ViewMode {
  */
 export function isAdvancedMode(mode: ViewMode): boolean {
   return mode === ViewMode.Advanced || mode === ViewMode.Dev;
+}
+
+/**
+ * The SURFACE a view mode shows an agent session in — the single mapping that
+ * makes View mode the one mode selector. Vibe is the vibe workspace, Standard is
+ * the chat pane, Advanced/Dev is the raw terminal.
+ *
+ * This used to be a second preference (`chat mode`), which could and did drift
+ * out of sync with View mode — both carried a `vibe` and each control wrote only
+ * its own. One enum, one preference, one control.
+ */
+export type SessionSurface = 'vibe' | 'chat' | 'terminal';
+
+export function surfaceForViewMode(mode: ViewMode): SessionSurface {
+  if (mode === ViewMode.Vibe) return 'vibe';
+  return isAdvancedMode(mode) ? 'terminal' : 'chat';
+}
+
+/** Transport for a mode: only the terminal surface runs an interactive PTY. */
+export function viewModePtyMode(mode: ViewMode): boolean {
+  return surfaceForViewMode(mode) === 'terminal';
+}
+
+/** The surface the CURRENT view mode shows — for non-React callers (the launcher). */
+export function currentSessionSurface(): SessionSurface {
+  return surfaceForViewMode(getViewMode());
+}
+
+/**
+ * Reactive surface, or `null` for NOT KNOWN YET.
+ *
+ * On the first load in a browser profile there is no localStorage boot seed for
+ * `preferences.ui.view_mode`, so `get()` serves the registry default and the
+ * session would paint that surface for ~1s until `preferences.json` lands, then
+ * repaint into the user's real one. Callers hold the arrangement while this is
+ * null instead of painting a guess. After that first load the boot seed makes it
+ * true synchronously, so the wait is a first-run cost only.
+ *
+ * `useViewMode()` deliberately keeps its non-null contract — chrome (isAdvanced
+ * &c.) can render against the default and correct itself invisibly. Only the
+ * session SURFACE is expensive to get wrong, because it mounts a whole pane.
+ */
+export function useSessionSurface(): SessionSurface | null {
+  const mode = useViewMode();
+  const resolved = usePreferenceResolved(PrefKey.VIEW_MODE);
+  const override = useSyncExternalStore(
+    subscribeViewModeOverride,
+    getViewModeOverrideSnapshot,
+    getViewModeOverrideSnapshot,
+  );
+  if (override) return surfaceForViewMode(override);
+  return resolved ? surfaceForViewMode(mode) : null;
 }
 
 const viewModeOverrideListeners = new Set<() => void>();

@@ -212,7 +212,6 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         await loadShellRoute(dock.pointer, context.requestPath, {
           scope: dock.scopeFilter,
           viewMode: dock.viewMode,
-          chatMode: dock.chatMode,
         });
         break;
       case ViewType.PROJECT:

@@ -30,7 +30,6 @@ import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink'
 import { UiTagEmitter } from '@src/tags/ui.onTag';
 import { TagHighlightObserver } from '@src/tags/highlight.onTag';
 import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
-import { useDockChatModeOverrideSync } from '@src/contexts/chat-ui-mode-context';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 
 const queryClient = new QueryClient({
@@ -64,7 +63,6 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
     usePresenceReporter();
     useUiCommandListener();
     useDockViewModeOverrideSync();
-    useDockChatModeOverrideSync();
     useSpotlightHotkey();
     // Re-report browser_context (incl. the current URL) on every navigation.
     // The reporter's mobx autorun only fires on context-slot changes, so a

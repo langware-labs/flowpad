@@ -37,7 +37,6 @@ import {
 } from '@src/lib/scope-filter';
 import { dockOptionsToSideWindows, withSideWindowsOptions, type SideWindowsState } from '@src/lib/side-windows';
 import type { ViewMode } from '@src/contexts/view-mode-context';
-import type { ChatMode } from '@src/contexts/chat-ui-mode-context';
 import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/types/WorldViewColorMode';
 import {
   DEFAULT_GRAPH_PRESENTATION,
@@ -54,7 +53,6 @@ import {
  */
 export const HIGHLIGHT_PARAM = 'highlight';
 export const VIEW_MODE_PARAM = 'viewMode';
-export const CHAT_MODE_PARAM = 'chatMode';
 
 /**
  * URL query-param key selecting which translated body of an asset to show. It
@@ -125,10 +123,6 @@ export function decodeAssetComparePointer(pointer: string | null | undefined): A
 
 function isViewMode(value: string | undefined): value is ViewMode {
   return value === 'vibe' || value === 'standard' || value === 'advanced' || value === 'dev';
-}
-
-function isChatMode(value: string | undefined): value is ChatMode {
-  return value === 'chat' || value === 'terminal' || value === 'vibe';
 }
 
 /**
@@ -339,21 +333,6 @@ export class DockPointer implements IDockPointer {
     return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
   }
 
-  /**
-   * Which surface an agentic session shows — vibe, the chat pane, or the xterm.
-   * Same shape as `viewMode` one level down: page-local, URL-carried (so the
-   * mode is shareable and back-safe), never the persisted default. Consumers
-   * combine it with PrefKey.CHAT_UI_MODE in the chat-ui-mode context.
-   */
-  get chatMode(): ChatMode | null {
-    const value = this.options?.[CHAT_MODE_PARAM];
-    return isChatMode(value) ? value : null;
-  }
-
-  /** Clone this dock with a page-local chat-mode override, or remove it with null. */
-  withChatMode(mode: ChatMode | null): DockPointer {
-    return this.withOption(CHAT_MODE_PARAM, mode);
-  }
 
   /**
    * The translated-body language this dock asks to show, or null for the
