@@ -13,16 +13,21 @@ from typing import Any, AsyncIterator, Literal, overload
 
 from fastapi import BackgroundTasks
 from pydantic import Field
+
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.api.messages import ResponseMessage
 from flow_sdk.api.type_id import TypeId
+from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
+from flow_sdk.builtin.faas.desktop_actions import DesktopActionsMixin
+from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin
+from flow_sdk.builtin.faas.ops_actions import OpsActionsMixin
+from flow_sdk.builtin.faas.pty_actions import PtyActionsMixin
+from flow_sdk.builtin.faas.scan_actions import ScanActionsMixin
 from flow_sdk.compute.providers import ComputeProvider, get_compute_provider
 from flow_sdk.compute.providers.compute_provider import ListDirItem
 from flow_sdk.config import ComputeProviderType, StorageProvider, get_os_root_path
 from flow_sdk.config import ComputeProviderType as ComputeProviderEnum
 from flow_sdk.core import action
 from flow_sdk.core.entity import Entity
-from flow_sdk.builtin.faas.system_profile_types import SystemProfile
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.compute_types import CLICommand, SendFileEntry
 from flow_sdk.flowpad_types.machine_status import MACHINE_STATUS_SCRIPT, MachineStatus, NetworkConnection, ProcessInfo
@@ -30,13 +35,6 @@ from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize, Executio
 from flow_sdk.fs_store.operations.claude_debug_log import clear_debug_errors
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
-
-from flow_sdk.builtin.faas.desktop_actions import DesktopActionsMixin
-from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin
-from flow_sdk.builtin.faas.ops_actions import OpsActionsMixin
-from flow_sdk.builtin.faas.pty_actions import PtyActionsMixin
-from flow_sdk.builtin.faas.scan_actions import ScanActionsMixin
-from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
 
 # Module-level activity registry: key = "{entity_typeid}:{job_name}"
 # Prevents duplicate concurrent scan/index jobs on the same compute node.
@@ -87,6 +85,18 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
     template_version: str | None = APIField(default=None)
     # Track active PTY sessions for WebSocket notifications
     active_pty_sessions: list[str] = APIField(default_factory=list)
+    # Which of a project's declared secrets this node may see, per project.
+    #
+    # Value-free by construction — the token IS the env var name and the project
+    # is the namespace, so this can travel with a shared node without carrying
+    # anything secret. Which is the point: secrets are ON the node, so whoever
+    # gets the node gets them, with no extra consent step; resolution still
+    # happens on the receiver's machine from their own store.
+    #
+    # A project key that is ABSENT means "all of that project's secrets" — so
+    # nothing changes for anyone who never opens the attach UI. An explicit
+    # empty list means none.
+    attached_secrets: dict[str, list[str]] = APIField(default_factory=dict)
     # Override Entity's fs_storage fields with compute node defaults
     fs_storage_provider: StorageProvider | None = Field(default=StorageProvider.SANDBOX)
     fs_storage_mount_path: str | None = APIField(default=None)
@@ -430,7 +440,6 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
             The value if found, None otherwise
         """
         import os
-        import platform
 
         from flow_sdk.config import PLATFORM_WINDOWS
 
@@ -520,7 +529,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         Returns:
             MachineStatus object with provider status, processes, network, and resource info.
         """
-        import json
 
         # Get provider status with 10s timeout to detect unrecoverable nodes quickly
         try:
@@ -662,6 +670,104 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     # -- PTY actions (implementations in PtyActionsMixin) -----------------------
 
+    # ── Attached project secrets ──────────────────────────────────────────
+
+    def attached_env_vars(self, project_id: str, declared: list[str] | None = None) -> list[str] | None:
+        """Env vars this node may see for ``project_id``.
+
+        ``None`` means "no restriction recorded" — every declared secret. That
+        is the back-compat shape: a node that predates attachment, or one nobody
+        has curated, behaves exactly as before.
+        """
+        key = str(project_id or "")
+        if not key or key not in (self.attached_secrets or {}):
+            return None
+        attached = self.attached_secrets[key]
+        if declared is None:
+            return list(attached)
+        return [name for name in attached if name in declared]
+
+    async def _set_attached(self, project_id: str, names: list[str]) -> None:
+        current = dict(self.attached_secrets or {})
+        current[str(project_id)] = sorted(set(names))
+        self.attached_secrets = current
+        await self.update()
+
+    async def _project_env_vars(self, project_id: str) -> list[str]:
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        try:
+            project = await Project.get_by_id(str(project_id))
+        except Exception:  # noqa: BLE001
+            # A key left behind by a deleted project (or a malformed one) is
+            # inert, not fatal — the node simply has nothing to attach for it.
+            return []
+        if project is None:
+            return []
+        return [row.get("env_var") for row in project.secret_origins if row.get("env_var")]
+
+    @action.post(action_name="attach-secret")
+    async def attach_secret(self, project_id: str = "", env_var: str = "") -> "ApiResponse":
+        """Let this node see one of a project's declared secrets."""
+        project_id, env_var = str(project_id or "").strip(), str(env_var or "").strip()
+        if not project_id or not env_var:
+            return ApiFailResponse(message="project_id and env_var are required")
+        declared = await self._project_env_vars(project_id)
+        if env_var not in declared:
+            return ApiFailResponse(message=f"{env_var} is not declared on this project")
+
+        # First curation of a project turns the implicit "all" into an explicit
+        # list, so attaching one secret does not silently detach the rest.
+        current = self.attached_env_vars(project_id, declared)
+        base = declared if current is None else current
+        await self._set_attached(project_id, [*base, env_var])
+        return ApiSuccessResponse(data={"attached": self.attached_env_vars(project_id)})
+
+    @action.post(action_name="detach-secret")
+    async def detach_secret(self, project_id: str = "", env_var: str = "") -> "ApiResponse":
+        project_id, env_var = str(project_id or "").strip(), str(env_var or "").strip()
+        if not project_id or not env_var:
+            return ApiFailResponse(message="project_id and env_var are required")
+        declared = await self._project_env_vars(project_id)
+        current = self.attached_env_vars(project_id, declared)
+        base = declared if current is None else current
+        await self._set_attached(project_id, [n for n in base if n != env_var])
+        return ApiSuccessResponse(data={"attached": self.attached_env_vars(project_id)})
+
+    @action.post(action_name="attach-all-secrets")
+    async def attach_all_secrets(self, project_id: str = "") -> "ApiResponse":
+        """Attach everything the project declares RIGHT NOW.
+
+        A snapshot, not a standing '*': a sentinel would silently widen what a
+        shared node exposes every time someone declares a new secret, without
+        anyone re-confirming.
+        """
+        project_id = str(project_id or "").strip()
+        if not project_id:
+            return ApiFailResponse(message="project_id is required")
+        declared = await self._project_env_vars(project_id)
+        await self._set_attached(project_id, declared)
+        return ApiSuccessResponse(data={"attached": self.attached_env_vars(project_id)})
+
+    @action.post(action_name="list-attached-secrets")
+    async def list_attached_secrets(self, project_id: str = "") -> "ApiResponse":
+        """Every declared secret for the project, flagged attached or not."""
+        project_id = str(project_id or "").strip()
+        if not project_id:
+            return ApiFailResponse(message="project_id is required")
+        declared = await self._project_env_vars(project_id)
+        attached = self.attached_env_vars(project_id, declared)
+        allowed = set(declared if attached is None else attached)
+        return ApiSuccessResponse(
+            data={
+                "project_id": project_id,
+                # True when nothing has been curated yet — the UI shows every row
+                # checked rather than pretending someone chose them.
+                "all_attached": attached is None,
+                "secrets": [{"env_var": name, "attached": name in allowed} for name in declared],
+            }
+        )
+
     @action.post("terminal-command")
     async def terminal_command(self): return await self._pty_terminal_command()
 
@@ -737,8 +843,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     async def _terminal_close(self, body: dict, background_tasks: BackgroundTasks) -> ApiResponse:
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.shell import Shell as ShellEntity
         from flow_sdk.builtin.process_lifecycle import ProcessStatus
+        from flow_sdk.builtin.shell import Shell as ShellEntity
 
         targets = body.get("targets") if isinstance(body, dict) else None
         if not isinstance(targets, list):
@@ -834,9 +940,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         Body: ``{ "dangling_id": "<uuid>" }``
         """
-        from flow_sdk.builtin.shell import Shell as ShellEntity
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.project import Project
+        from flow_sdk.builtin.shell import Shell as ShellEntity
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
@@ -915,7 +1021,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         """
         from flow_sdk.app.actions.oauth_action import _get_github_token_for_current_user
         from flow_sdk.builtin.git_origin import GitOrigin
-        from flow_sdk.builtin.project import Project
         from flow_sdk.config import AGENT_MOUNT_FOLDER
         from flow_sdk.utils.git import derive_repo_leaf_from_url, git_clone
 
