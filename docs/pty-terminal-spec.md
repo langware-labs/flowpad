@@ -938,11 +938,11 @@ section only covers what each renderer draws and from where.**
 | Data source | **PTY byte stream** (`pty_output_msg` over WS + attach replay, §1/§13) | **`AgenticProcess.flowDataStream`** — transcript-derived `FlowData` items |
 | Transport that feeds it | PTY only | Transport-independent (see §14.3) |
 | Availability | **PTY mode only** — needs a live PTY/shell | **Both** PTY-mode and headless processes |
-| DOM | `xtermContainerRef` div, always mounted in PTY mode | absolute `z-[60]` overlay *above* the xterm (`InteractiveTerminal.tsx:1760`) |
+| DOM | `xtermContainerRef` div, always mounted in PTY mode | absolute `z-[60]` overlay *above* the xterm (`InteractiveTerminal.tsx:1753`) |
 
 The chat UI is an **opaque overlay** painted over the xterm, not a replacement:
 in PTY mode the xterm stays mounted and fitted underneath (comment at
-`InteractiveTerminal.tsx:1756-1759`), so toggling chat⇄terminal is instant and
+`InteractiveTerminal.tsx:1749-1752`), so toggling chat⇄terminal is instant and
 never resets the PTY.
 
 ### 14.2 Which renderer shows — selection logic
@@ -962,35 +962,40 @@ canToggleView  = !embedded && process
   Advanced/Dev ⇒ xterm. There is no second "chat mode" preference — it existed
   briefly and could drift out of sync with View mode (both carried a `vibe`, and
   each control wrote only its own), so it was folded into this one.
-- **`null` = not known yet.** On the first load in a browser profile there is no
-  localStorage boot seed, so painting the registry default would flash the wrong
-  surface for ~1s. `InteractiveTerminal` covers the pane until it resolves
-  (`surfacePending`); see `tests/unit/session-surface-first-paint.test.tsx`.
+- **`null` = not known yet.** `InstancePreferences.get()` cannot distinguish
+  "nothing stored" from "nothing read in yet" — both return the registry default
+  — so `useSessionSurface` gates on `usePreferenceResolved(PrefKey.VIEW_MODE)`
+  and reports `null` until the value is known. This matters only on the first
+  load in a browser profile: boot keys are seeded synchronously from
+  localStorage, so every later load resolves before first paint, but without the
+  seed the default would paint the wrong surface for ~1s until
+  `preferences.json` lands. `InteractiveTerminal` covers the pane
+  (`surfacePending`, `InteractiveTerminal.tsx:192`) and withholds the mode switch
+  and bottom ribbon until it resolves; the xterm still mounts and attaches
+  underneath, so the hold costs no open latency. See
+  `tests/unit/session-surface-first-paint.test.tsx`.
 - Console/global helpers: `window.setView('vibe'|'standard'|'advanced'|'dev')` /
   `getView()`.
 - **Embedded** terminals (chat side panel) and **shell-only** tabs (no
   `AgenticProcess`) always keep the xterm — `showSimpleChat` requires `process`
   and `!embedded`.
 - **Headless** (`pty_mode === false`): the chat pane is forced on **and the xterm
-  container is not rendered at all** (`InteractiveTerminal.tsx:1685`, `!isHeadless
+  container is not rendered at all** (`InteractiveTerminal.tsx:1675`, `!isHeadless
   && <div ref={xtermContainerRef}>`). The mount effect early-returns on the
   missing ref, so no `PtySync` attach is attempted for a process that has no
   shell.
 
-**The controls** are the footer `ViewToggle` and `TerminalModeSwitch.tsx` — the
-in-context twin rendered **leftmost in the terminal header** (`HeaderSlots.modeSwitch`,
-built by `ProcessToolbar`, placed by both `InteractiveTabHeader` layouts) and
-again leading vibe's display tab strip. Both write the SAME preference, so they
-cannot disagree; both show the CURRENT mode as the selected segment. The header
-sits *above* the pane, so the chat overlay (`absolute inset-0` inside the pane)
-never covers it.
+**The control** is the footer `ViewToggle` — the single mode selector, showing
+the CURRENT mode as the selected segment. (An in-context twin briefly lived in the
+terminal header; it was removed because two controls picking the same thing is
+exactly the overlap this design set out to end.)
 
 Every pick is URL-first: the click only navigates (`?viewMode=`), and the mounted
 URL adopts the mode as the preference, so the arrangement is shareable and
 back-safe. Picking a mode whose surface implies a different TRANSPORT also moves
-the worker — that reconcile lives in an effect (`useSessionSurfaceReconcile`), not
-in the click handler, so it happens however the mode changed: from either control
-or from `window.setView()`. See `docs/agent-management/mode-switching.md`.
+the worker — that reconcile lives in an effect (`useProcessSurface`), not in the
+click handler, so it happens however the mode changed: the toggle, a `?viewMode=`
+URL, or `window.setView()`. See `docs/agent-management/mode-switching.md`.
 
 ### 14.3 Where the chat UI's content comes from (NOT the PTY)
 
@@ -1023,7 +1028,7 @@ happens to sit over the xterm.
 **Confirmed**, with one clarification on *how*:
 
 - ✅ **xterm is PTY-only.** Headless processes render no xterm
-  (`InteractiveTerminal.tsx:1685`); the xterm's only data source is the PTY byte
+  (`InteractiveTerminal.tsx:1675`); the xterm's only data source is the PTY byte
   stream.
 - ✅ **Chat UI works over both.** In headless mode it is the sole view; in PTY mode
   it overlays the live xterm.

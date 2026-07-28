@@ -84,7 +84,7 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   const process = watchedProcess ?? provisionalProcess;
   // Vibe has no InteractiveTerminal, so this is where the session's transport
   // is kept aligned with the view mode while the workspace is on screen.
-  useProcessSurface({ process: process });
+  useProcessSurface({ process });
 
 
   const resolvedAsset = dataContext.activeEntity as

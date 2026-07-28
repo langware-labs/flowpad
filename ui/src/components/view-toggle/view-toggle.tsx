@@ -33,19 +33,9 @@ const ICONS: Record<ViewMode, LucideIcon> = {
   [ViewMode.Dev]: FlaskConical,
 };
 
-// Mode hierarchy, simplest → fullest. Rank = index.
-const HIERARCHY = [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced, ViewMode.Dev] as const;
-const rank = (m: ViewMode) => HIERARCHY.indexOf(m);
-
 // Visual order of the segmented control: fullest → simplest, so newly revealed
 // modes grow to the LEFT. Which of these actually render is decided per render.
 const DISPLAY_ORDER = [ViewMode.Dev, ViewMode.Advanced, ViewMode.Standard, ViewMode.Vibe] as const;
-
-// The next mode up the hierarchy, revealed by double-clicking the SELECTED
-// button. Only Dev is hidden now, so Terminal is the only unlock.
-const NEXT: Partial<Record<ViewMode, ViewMode>> = {
-  [ViewMode.Advanced]: ViewMode.Dev,
-};
 
 // Module scope so a reveal survives footer remounts across navigations;
 // intentionally NOT persisted — a reload hides Advanced/Dev again.
@@ -76,11 +66,12 @@ export function ViewToggle() {
     sessionRevealed = new Set([...sessionRevealed, m]);
     setRevealed(sessionRevealed);
   };
-  // Vibe / Chat / Terminal are the three surfaces and are always offered — they
-  // are the mode selector, not a power-user ladder. Only Dev stays behind the
-  // double-click reveal (on Terminal), which is where that gesture is actually used.
+  // Vibe / Chat / Terminal are the three surfaces and are always offered — this
+  // is the mode selector, not a power-user ladder. Only Dev is hidden, until the
+  // double-click reveal on Terminal (or until it IS the mode, so landing there
+  // from a stored pref or a URL can never hide the selected button).
   const modes = DISPLAY_ORDER.filter(
-    (m) => rank(m) <= rank(ViewMode.Advanced) || revealed.has(m) || rank(m) <= rank(mode),
+    (m) => m !== ViewMode.Dev || revealed.has(ViewMode.Dev) || mode === ViewMode.Dev,
   );
 
   // URL-first: the click only navigates — same pointer, requested mode. All
@@ -123,9 +114,7 @@ export function ViewToggle() {
                 // No dblclick/click disambiguation needed — the two preceding
                 // clicks hit select(m) with m === mode, which early-returns.
                 onDoubleClick={() => {
-                  if (m !== mode) return;
-                  const next = NEXT[m];
-                  if (next) reveal(next);
+                  if (m === mode && m === ViewMode.Advanced) reveal(ViewMode.Dev);
                 }}
                 className={`${SEGMENTED_BUTTON} ${active ? SEGMENTED_ACTIVE : SEGMENTED_IDLE}`}
                 aria-label={LABELS[m]}

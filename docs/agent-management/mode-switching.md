@@ -53,14 +53,14 @@ The current code routes on `pty_mode`:
   `:1315`). Body: `{"mode": "interactive" | "cli"[, cols, rows]}`.
 - **Frontend:** `AgenticProcess.switchMode(mode, opts?)`
   (`ts_sdk/src/process/agentic-process.ts:2360`).
-- **UI caller:** `useSessionSurfaceReconcile`
-  (`interactive-terminal/use-process-mode-switch.ts`), driven by the **View
-  mode** — the one mode preference. Two controls write it: the footer
-  `ViewToggle` and `TerminalModeSwitch.tsx`, the in-context twin mounted leftmost
-  in the terminal header (a `ProcessToolbar` slot) and leading vibe's display tab
-  strip (`WorkspaceChildStrip`). Each mount calls `useProcessModeSwitch` once (a
-  second call would own a second, disagreeing `switching` state); the hook derives
-  the transport and the readiness gate from the reactive entity itself.
+- **UI caller:** `useProcessSurface`
+  (`interactive-terminal/use-process-surface.ts`), driven by the **View mode** —
+  the one mode preference, selected in the one control: the footer `ViewToggle`.
+  Mount it wherever a session is on screen (`InteractiveTerminal`, and both vibe
+  workspaces, which have no terminal) and the transport follows the mode however
+  it changed. The "mode this process was last reconciled to" is keyed by process
+  id at module scope, not per mount: vibe⇄terminal swaps which component renders,
+  so a per-mount ref would lose the previous mode on exactly that transition.
 
 **Every pick is URL-first.** Selecting a mode only navigates (`?viewMode=`); the
 mounted URL is the single writer, adopting it via `useDockViewModeOverrideSync`.
@@ -116,9 +116,9 @@ Frontend `switchMode(Interactive)` (`agentic-process.ts:2361`):
 
 ### UI-side reconcile (both directions)
 
-`useProcessModeSwitch().select` (`use-process-mode-switch.ts`), after the
-navigation described above:
-- Skips the lifecycle call entirely when `transport === mode` — the URL already
+`useProcessSurface` (`use-process-surface.ts`), after the navigation described
+above:
+- Skips the lifecycle call entirely when the transport already matches the mode — the URL already
   said everything there was to say. This is the common case, not an edge one:
   Standard view paints the chat pane over a perfectly live PTY, so picking
   `terminal` there means "show me the xterm", not "spawn a PTY". The test keys on

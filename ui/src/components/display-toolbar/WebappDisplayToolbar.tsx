@@ -84,7 +84,7 @@ export function WebappDisplayToolbar({
               aria-checked={runtime === option}
               data-testid={`app-runtime-${option}`}
               onClick={() => onRuntimeChange?.(option)}
-              // Shares the app's segmented look with ViewToggle/TerminalModeSwitch
+              // Shares the app's segmented look with ViewToggle (see ui/segmented.ts)
               // so a themed ring or height change lands here too. `cn` resolves
               // the width conflict: those two hold icons in a fixed w-6 square,
               // these segments hold words.

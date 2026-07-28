@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
-import { isReadyForInput, WorkerMode, type AgenticProcess } from '@sdk';
+import { useEffect, useRef } from 'react';
+import { isReadyForInput, PrefKey, WorkerMode, type AgenticProcess } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
+import { usePreferenceResolved } from '@src/hooks/use-preference';
 import { useViewMode, viewModePtyMode, ViewMode } from '@src/contexts/view-mode-context';
 import { notify } from '@src/notifications/notify';
 
@@ -13,84 +14,86 @@ interface UseProcessSurfaceOptions {
 }
 
 /**
- * Keep one process's transport aligned with the view mode — the whole of what a
+ * The mode each process was last RECONCILED to, keyed by process id and held at
+ * module scope on purpose.
+ *
+ * Switching vibe⇄terminal swaps which component is on screen — `flow-page`
+ * renders `VibeWorkspace` or `ContentPanel`, never both — so the outgoing mount
+ * unmounts in the same commit the incoming one mounts. A per-mount ref would
+ * lose the previous mode exactly there, making the one transition that needs
+ * reconciling the one silently skipped. Keyed by process so two sessions can't
+ * shadow each other.
+ */
+const lastReconciledMode = new Map<string, ViewMode>();
+
+/** Test seam: forget what each process was reconciled to. */
+export function resetSurfaceReconcileState(): void {
+  lastReconciledMode.clear();
+}
+
+/**
+ * Keep one process's TRANSPORT aligned with the view mode — the whole of what a
  * session needs beyond rendering, now that the footer `ViewToggle` is the single
  * mode selector.
  *
  * Mode selection itself is pure navigation (`?viewMode=`, adopted as the
- * preference on load). The one thing navigation cannot express is the TRANSPORT,
+ * preference on load). The one thing navigation cannot express is the transport,
  * because that is a worker lifecycle action: the terminal surface is an
  * interactive PTY, vibe and chat are headless print-mode. Mount this wherever a
- * session is on screen and the reconcile happens however the mode changed.
+ * session is on screen and the reconcile happens however the mode changed — the
+ * footer toggle, a `?viewMode=` URL, or `window.setView()`.
  *
- * Returns the reactive entity it already subscribes to, so callers don't open a
- * second subscription to the same process.
+ * Reconciles on a mode CHANGE only, never on first sight of a process: merely
+ * opening a session must not kill or spawn a worker. Returns the reactive entity
+ * it already subscribes to, so callers don't open a second subscription.
  */
-export function useProcessSurface({ process, getDims }: UseProcessSurfaceOptions): {
-  live: AgenticProcess | null;
-  switching: boolean;
-} {
+export function useProcessSurface({ process, getDims }: UseProcessSurfaceOptions): AgenticProcess | null {
   const viewMode = useViewMode();
+  // The preference may not have been read in yet (first load in a browser
+  // profile, no localStorage boot seed). `useViewMode` serves the registry
+  // default meanwhile, and recording THAT as the process's last mode would make
+  // the real value look like a user-driven change when it lands — spawning or
+  // killing a worker purely because a preference resolved late.
+  const modeResolved = usePreferenceResolved(PrefKey.VIEW_MODE);
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
   const live = liveProcess ?? process ?? null;
-  const { switching } = useSessionSurfaceReconcile({
-    process: live,
-    viewMode,
-    ptyMode: live?.pty_mode !== false,
-    awaitingUserInput: isReadyForInput(live ?? {}),
-    getDims,
-  });
-  return { live, switching };
-}
-
-/**
- * Align a session's TRANSPORT with the view mode's surface: terminal ⇒ an
- * interactive PTY, vibe/chat ⇒ headless print-mode. One standardized
- * `switchMode(WorkerMode.Interactive|CLI)` — →terminal spawns + resumes the PTY,
- * →headless kills the PTY worker while keeping `session_id` and the transcript.
- * Both then reconcile the transcript so the destination shows turns the other
- * mode produced.
- *
- * Deliberately reconciles on mode CHANGE only, never on mount: merely opening a
- * session must not kill or spawn workers, or every navigation to an old process
- * URL would churn one. The first observed mode is recorded, not acted on.
- */
-function useSessionSurfaceReconcile({
-  process,
-  viewMode,
-  ptyMode,
-  awaitingUserInput,
-  getDims,
-}: {
-  process: AgenticProcess | null;
-  viewMode: ViewMode;
-  ptyMode: boolean;
-  awaitingUserInput: boolean;
-  getDims?: () => { cols: number; rows: number } | undefined;
-}): { switching: boolean } {
-  const [switching, setSwitching] = useState(false);
-  const lastMode = useRef<ViewMode | null>(null);
+  const ptyMode = !(live?.isHeadless ?? false);
+  const awaitingUserInput = isReadyForInput(live ?? {});
+  // Guards re-entry with the CURRENT value rather than a closed-over one, and
+  // keeps a transport switch from re-rendering every mounted session twice.
+  const switching = useRef(false);
 
   useEffect(() => {
-    const previous = lastMode.current;
-    lastMode.current = viewMode;
-    if (previous === null || previous === viewMode) return; // mount, or no change
-    if (!process || switching) return;
-    const wantPty = viewModePtyMode(viewMode);
-    if (wantPty === ptyMode) return; // transport already matches the surface
-    if (!awaitingUserInput) return; // the backend 409s a mid-turn switch
+    if (!modeResolved || !live || switching.current) return;
+    const key = live.id;
+    const previous = lastReconciledMode.get(key);
+    if (previous === undefined) {
+      lastReconciledMode.set(key, viewMode); // first sight — record, never act
+      return;
+    }
+    if (previous === viewMode) return;
 
-    setSwitching(true);
+    const wantPty = viewModePtyMode(viewMode);
+    if (wantPty === ptyMode) {
+      lastReconciledMode.set(key, viewMode); // transport already matches
+      return;
+    }
+    // The backend 409s a mid-turn switch. Deliberately do NOT record the mode
+    // here: leaving it unrecorded means this effect retries the moment the
+    // worker goes idle, instead of stranding the session on the wrong transport.
+    if (!awaitingUserInput) return;
+
+    switching.current = true;
     void (async () => {
       try {
-        await process.switchMode(wantPty ? WorkerMode.Interactive : WorkerMode.CLI, wantPty ? getDims?.() : undefined);
+        await live.switchMode(wantPty ? WorkerMode.Interactive : WorkerMode.CLI, wantPty ? getDims?.() : undefined);
+        lastReconciledMode.set(key, viewMode);
         // The transcript reconcile pulls in turns the other mode produced. It is
         // a VIEW concern and slow on a large session (backend transcript parse),
-        // so it is never awaited — holding the control behind it wedged rapid
-        // switching. `loadHistory({ force: true })` REPLACES the stream with the
-        // transcript (clears internally); the live WS stream keeps the pane
-        // current meanwhile.
-        void process
+        // so it is never awaited — holding on it wedged rapid switching.
+        // `loadHistory({ force: true })` REPLACES the stream with the transcript
+        // (clears internally); the live WS stream keeps the pane current.
+        void live
           .loadHistory({ force: true })
           .catch((err) => console.debug('[sessionSurface] post-switch reconcile deferred:', err));
       } catch (err) {
@@ -100,10 +103,10 @@ function useSessionSurfaceReconcile({
           message: err instanceof Error ? err.message : String(err),
         });
       } finally {
-        setSwitching(false);
+        switching.current = false;
       }
     })();
-  }, [viewMode, process, ptyMode, awaitingUserInput, switching, getDims]);
+  }, [viewMode, live, ptyMode, awaitingUserInput, modeResolved, getDims]);
 
-  return { switching };
+  return live;
 }
