@@ -37,6 +37,10 @@ interface MembersAvatarStackProps {
   /** Optional entity-specific prerequisite. Returning false keeps both invite
    *  paths closed; project sharing uses this for its GitHub capability test. */
   beforeInvite?: () => Promise<boolean>;
+  /** Drop the "No members" text on an empty roster, leaving just the invite
+   *  trigger. For rows that already say what they are (the project header is
+   *  labelled "Members"), the words are a second label saying nothing new. */
+  hideEmptyLabel?: boolean;
 }
 
 /**
@@ -54,6 +58,7 @@ export function MembersAvatarStack({
   allowInviteLink = false,
   showInviteButton = false,
   beforeInvite,
+  hideEmptyLabel = false,
 }: MembersAvatarStackProps) {
   const { t } = useLingui();
   const { entity, members, addMembers, removeMember, setRole, refresh, updating, stale, available, reason } =
@@ -232,10 +237,13 @@ export function MembersAvatarStack({
         >
           {members.length === 0 ? (
             // An empty roster says so in words — a lone avatar glyph reads as
-            // "someone is here" when the point is that nobody is.
-            <span className="text-xs text-muted-foreground">
-              <Trans>No members</Trans>
-            </span>
+            // "someone is here" when the point is that nobody is. Surfaces that
+            // already carry a "Members" label opt out via `hideEmptyLabel`.
+            hideEmptyLabel ? null : (
+              <span className="text-xs text-muted-foreground">
+                <Trans>No members</Trans>
+              </span>
+            )
           ) : (
             inline.map((p, i) => (
               <Avatar key={p.user_id || p.email || i} className="h-6 w-6 ring-2 ring-background">

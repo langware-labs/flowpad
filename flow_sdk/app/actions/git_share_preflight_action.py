@@ -51,7 +51,16 @@ def _result(code: str | None, git_origin: dict | None = None) -> dict:
     """Build the preflight payload from a reason code (None ⇒ available)."""
     if code is None:
         return {"available": True, "reason": None, "code": None, "git_origin": git_origin}
-    return {"available": False, "reason": _REASONS.get(code, code), "code": code, "git_origin": None}
+    # The origin rides along on the failure branch too when we managed to derive
+    # one. "Can't share yet" and "has no repo" are different states, and a
+    # caller that only wants to NAME the repo (a header chip) shouldn't have to
+    # wait for the tree to be clean and pushed before it can show it.
+    return {
+        "available": False,
+        "reason": _REASONS.get(code, code),
+        "code": code,
+        "git_origin": git_origin,
+    }
 
 
 async def _entity_local_path(cls, entity_id: str) -> str | None:
@@ -180,7 +189,7 @@ async def git_share_preflight(entity_type: str, entity_id: str) -> dict:
 
     blocking = await asyncio.to_thread(_repo_share_status, repo_root, origin)
     if blocking is not None:
-        return _result(blocking)
+        return _result(blocking, git_origin=origin.model_dump(mode="python"))
     return _result(None, git_origin=origin.model_dump(mode="python"))
 
 

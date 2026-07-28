@@ -1,4 +1,5 @@
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
+import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
 import { GitShareGateDialog } from '@src/components/share-to-conversation/GitShareGateDialog';
 import type { GitShareGate } from '@src/hooks/use-git-share-gate';
 import apiClient from '@sdk/client';
@@ -116,6 +117,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   // Customize/Secrets cards are project-entity bound — only when the resolved
   // project is the active one (they read/write live Project state).
   const project = dataCtx.project?.id === projectId ? dataCtx.project : null;
+  const [gitChecks, setGitChecks] = useState<GitCheck[] | null>(null);
   const [gitGateOpen, setGitGateOpen] = useState(false);
   const [gitGateState, setGitGateState] = useState<'setup' | 'blocked'>('setup');
   const [gitGateReason, setGitGateReason] = useState<string | null>(null);
@@ -172,10 +174,44 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
           className="flex items-center justify-between border-b border-border/50 px-4 py-2"
           data-testid="project-home-members"
         >
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            <Trans>Members</Trans>
-          </span>
-          <MembersAvatarStack typeId={projectTypeId} allowInviteLink showInviteButton beforeInvite={beforeProjectInvite} />
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              <Trans>Members</Trans>
+            </span>
+            {projectId && (
+              <ProjectGitChip
+                projectTypeId={projectTypeId}
+                projectId={projectId}
+                onChecked={setGitChecks}
+              />
+            )}
+          </div>
+          <MembersAvatarStack
+            typeId={projectTypeId}
+            allowInviteLink
+            showInviteButton
+            hideEmptyLabel
+            beforeInvite={beforeProjectInvite}
+          />
+        </div>
+      )}
+      {gitChecks && (
+        <div
+          className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-border/50 px-4 py-2 text-xs"
+          data-testid="project-git-checks"
+        >
+          {gitChecks.map((check) => (
+            <span key={check.id} className="inline-flex items-center gap-1.5">
+              <span
+                aria-hidden
+                className={`h-1.5 w-1.5 rounded-full ${
+                  check.ok === true ? 'bg-green-500' : check.ok === false ? 'bg-red-500' : 'bg-muted-foreground/50'
+                }`}
+              />
+              <span className="text-muted-foreground">{check.label}</span>
+              {check.detail && <span className="text-muted-foreground/70">— {check.detail}</span>}
+            </span>
+          ))}
         </div>
       )}
       {gitGateState === 'blocked' && gitGateReason && (
