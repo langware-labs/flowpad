@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { MarkdownEditor } from './MarkdownEditor';
+import { MarkdownEditor, type WikiLinkTarget } from './MarkdownEditor';
 import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
 import { RunButton } from '@src/components/assets/editor/run/RunButton';
 import { useRunOnFile } from '@src/components/assets/editor/run/useRunOnFile';
@@ -29,6 +29,8 @@ interface PlainMarkdownAssetEditorProps {
   resolvedEntity?: APIEntity<APIEntity<any>>;
   /** Optional wiki heading slug. */
   fragment?: string;
+  /** Wiki page/namespace to retain for links when this asset is Wiki-rendered. */
+  wikiLinkTarget?: WikiLinkTarget;
 }
 
 /**
@@ -48,6 +50,7 @@ export function PlainMarkdownAssetEditor({
   assetType,
   resolvedEntity,
   fragment,
+  wikiLinkTarget,
 }: PlainMarkdownAssetEditorProps) {
   const { entity: pathEntity } = useEntityByPath<APIEntity<APIEntity<any>>>(
     resolvedEntity ? null : assetType,
@@ -179,6 +182,7 @@ export function PlainMarkdownAssetEditor({
           deleteLabel={deletable?.name ?? undefined}
           reloadKey={reloadKey}
           fragment={fragment}
+          wikiLinkTarget={wikiLinkTarget}
         />
       </AssetCollisionProvider>
       {mcpModal}

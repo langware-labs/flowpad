@@ -1,4 +1,7 @@
-import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
+import {
+  MarkdownEditor,
+  type WikiLinkTarget,
+} from '@src/components/assets/editor/markdown/MarkdownEditor';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -22,6 +25,8 @@ interface AgentAssetEditorProps {
    * `useEntityByPath` for backwards compatibility with direct-mount callers.
    */
   agent?: Agent;
+  /** Wiki page/namespace to retain for links when this asset is Wiki-rendered. */
+  wikiLinkTarget?: WikiLinkTarget;
 }
 
 /**
@@ -35,7 +40,11 @@ interface AgentAssetEditorProps {
  *     send calls `loadEmbeddedAgent` so subsequent turns adopt the agent
  *     persona (see compose_prompt single-agent branch).
  */
-export function AgentAssetEditor({ fsRef, agent: providedAgent }: AgentAssetEditorProps) {
+export function AgentAssetEditor({
+  fsRef,
+  agent: providedAgent,
+  wikiLinkTarget,
+}: AgentAssetEditorProps) {
   const { entity: discoveredAgent } = useEntityByPath<Agent>(
     providedAgent ? null : Agent.type,
     providedAgent ? null : fsRef,
@@ -111,6 +120,7 @@ export function AgentAssetEditor({ fsRef, agent: providedAgent }: AgentAssetEdit
           chatTarget={chatTarget}
           onDelete={agent ? onDelete : undefined}
           deleteLabel={agent?.name ?? undefined}
+          wikiLinkTarget={wikiLinkTarget}
         />
       </div>
       {agentExecutionTarget && (

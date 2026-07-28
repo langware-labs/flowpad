@@ -13,6 +13,7 @@ import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
 import { MissingAssetCard } from './MissingAssetCard';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
+import type { WikiLinkTarget } from './markdown/MarkdownEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { TaskAssetEditor } from './task/TaskAssetEditor';
 import { AgentAssetEditor } from './agent/AgentAssetEditor';
@@ -38,6 +39,10 @@ interface AssetEditorRouterProps {
   pointer: string;
   /** Optional heading slug for a Wiki target rendered at its Wiki URL. */
   fragment?: string;
+  /** Reflect entity-record reads to Hub while preserving the normal editor UI. */
+  hubReflect?: boolean;
+  /** Keep links inside Wiki-rendered documents on the same page and namespace. */
+  wikiLinkTarget?: WikiLinkTarget;
 }
 
 /** True if `assetType` (a RecordType value) has an asset editor. */
@@ -68,7 +73,12 @@ function ConnectingFallback() {
  * the FSRef straight from the compute-node-rooted path; `code` → raw CodeEditor.
  * Editors resolve/refresh the backing entity off the FSRef themselves.
  */
-export function AssetEditorRouter({ pointer, fragment }: AssetEditorRouterProps) {
+export function AssetEditorRouter({
+  pointer,
+  fragment,
+  hubReflect = false,
+  wikiLinkTarget,
+}: AssetEditorRouterProps) {
   const ptr = (() => {
     try {
       const p = AssetDocPointer.parse(pointer);
@@ -92,8 +102,8 @@ export function AssetEditorRouter({ pointer, fragment }: AssetEditorRouterProps)
     isError: recordError,
     refetch: refetchRecord,
   } = useQuery({
-    queryKey: ['asset-record-refs', typeId?.toString()],
-    queryFn: () => typeIdEntity!.record(),
+    queryKey: ['asset-record-refs', hubReflect ? 'hub' : 'local', typeId?.toString()],
+    queryFn: () => typeIdEntity!.record({ hubReflect }),
     enabled: !!typeIdEntity && ptr?.method === AssetRoutingMethod.TYPEID,
   });
 
@@ -219,7 +229,7 @@ export function AssetEditorRouter({ pointer, fragment }: AssetEditorRouterProps)
           resolvedEntity={typeIdEntity as Skill | undefined}
           render={(skill) => (
             <AssetCollisionProvider entity={skill}>
-              <SkillAssetEditor fsRef={fsRef!} skill={skill} />
+              <SkillAssetEditor fsRef={fsRef!} skill={skill} wikiLinkTarget={wikiLinkTarget} />
             </AssetCollisionProvider>
           )}
         />
@@ -247,7 +257,7 @@ export function AssetEditorRouter({ pointer, fragment }: AssetEditorRouterProps)
           resolvedEntity={typeIdEntity as Agent | undefined}
           render={(agent) => (
             <AssetCollisionProvider entity={agent}>
-              <AgentAssetEditor fsRef={fsRef!} agent={agent} />
+              <AgentAssetEditor fsRef={fsRef!} agent={agent} wikiLinkTarget={wikiLinkTarget} />
             </AssetCollisionProvider>
           )}
         />
@@ -386,6 +396,7 @@ export function AssetEditorRouter({ pointer, fragment }: AssetEditorRouterProps)
           assetType={assetType}
           resolvedEntity={typeIdEntity as APIEntity<APIEntity<any>> | undefined}
           fragment={fragment}
+          wikiLinkTarget={wikiLinkTarget}
         />
       );
     default:

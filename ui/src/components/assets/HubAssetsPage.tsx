@@ -34,7 +34,6 @@ export function HubAssetsPage() {
         name={pointer.wikiName}
         space={pointer.space}
         fragment={currentDock?.options?.[WIKI_FRAGMENT_PARAM]}
-        variant="plain"
         authority="hub"
       />
     </div>

@@ -1,4 +1,8 @@
-import { MarkdownEditor, type MarkdownHeaderExtrasCtx } from '@src/components/assets/editor/markdown/MarkdownEditor';
+import {
+  MarkdownEditor,
+  type MarkdownHeaderExtrasCtx,
+  type WikiLinkTarget,
+} from '@src/components/assets/editor/markdown/MarkdownEditor';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
@@ -21,6 +25,8 @@ interface SkillAssetEditorProps {
    * falls back to `useEntityByPath` for backwards compatibility.
    */
   skill?: Skill;
+  /** Wiki page/namespace to retain for links when this asset is Wiki-rendered. */
+  wikiLinkTarget?: WikiLinkTarget;
 }
 
 /**
@@ -30,7 +36,11 @@ interface SkillAssetEditorProps {
  * into its folder tree (see the `skillFolder` adapter) — there is no second
  * tree here.
  */
-export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEditorProps) {
+export function SkillAssetEditor({
+  fsRef,
+  skill: providedSkill,
+  wikiLinkTarget,
+}: SkillAssetEditorProps) {
   const { entity: discoveredSkill } = useEntityByPath<Skill>(
     providedSkill ? null : Skill.type,
     providedSkill ? null : fsRef,
@@ -175,6 +185,7 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
       onDelete={skillKey ? onDelete : undefined}
       deleteLabel={skill?.name ?? undefined}
       reloadKey={reloadKey}
+      wikiLinkTarget={wikiLinkTarget}
     />
   );
 }
