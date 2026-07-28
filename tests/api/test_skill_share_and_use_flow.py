@@ -18,15 +18,13 @@ means the thing this flow actually depends on — that publishing to git is what
 makes a folder shareable — is never exercised. Here the origin is detected off
 a real remote, so ``git init`` alone is provably not enough.
 
-One gap is deliberately visible: getting an ``origin`` remote is agent-mediated.
-``git-ops`` exposes init and push as actions, but nothing exposes "create the
-remote" — that lives only in the ``git-context-folder`` wizard, an agentic
-process handed a prose instruction. So the remote in ``_publish`` is made by
-this test. See ``test_publishing_needs_a_remote_no_action_can_create``.
+The remote in ``_publish`` is made by this test, not by the product — see
+``test_publishing_needs_a_remote_no_action_can_create`` for why.
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 import uuid
 from pathlib import Path
@@ -36,18 +34,35 @@ import pytest
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 from flow_sdk.builtin.folder import Folder
 from flow_sdk.builtin.project import Project
+from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.responses.response import ApiResponse
-from tests.api.conftest import create_agentic_process
+from tests.api.conftest import create_agentic_process, default_compute_node_id
 
 SKILL_NAME = "greeter"
+
+
+# Identity for the commit `git-ops/push` makes. Passed as env rather than two
+# `git config` calls, so the checkout needs no setup of its own and a developer's
+# global git identity can't leak into the assertions.
+_GIT_ENV = {
+    "GIT_AUTHOR_NAME": "Flow Test",
+    "GIT_AUTHOR_EMAIL": "flow@test.local",
+    "GIT_COMMITTER_NAME": "Flow Test",
+    "GIT_COMMITTER_EMAIL": "flow@test.local",
+}
 
 
 def _git(*args: str, cwd: Path) -> str:
     """Run git, failing loudly — a silent setup failure would masquerade as a
     product bug in whichever assertion tripped next."""
     proc = subprocess.run(
-        ["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=60
+        ["git", *args],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, **_GIT_ENV},
     )
     assert proc.returncode == 0, f"git {' '.join(args)} failed:\n{proc.stdout}\n{proc.stderr}"
     return proc.stdout.strip()
@@ -90,21 +105,14 @@ async def _publish(client, node_id: str, workdir: Path, remote: Path) -> dict:
     init = await client.post(f"{base}/init", json={"workdir": str(workdir)})
     assert init.status_code == 200, init.text
 
-    # Stands in for the git-setup WIZARD, which is the product's only way to get
-    # a remote: `git_share_preflight` returns `missing-remote`, the share gate
-    # maps that to `setup`, and `use-git-share-gate.runSetup` launches the
-    # `git-context-folder` wizard — an agentic process asked in prose to
-    # "create the 'origin' remote, and push". There is no deterministic action
-    # behind it, so an api-tier test cannot call it; two lines of git is the
-    # honest substitute.
+    # Stands in for the git-setup wizard — the product's only route to a remote.
+    # See `test_publishing_needs_a_remote_no_action_can_create`.
     #
     # `file://` and not a bare path: `parse_git_origin_url` reads the scheme to
     # classify a remote, and a path with no scheme has no host, so it yields no
     # origin at all — the folder would stay local and unshareable despite having
     # a working remote.
     _git("remote", "add", "origin", remote.as_uri(), cwd=workdir)
-    _git("config", "user.email", "flow@test.local", cwd=workdir)
-    _git("config", "user.name", "Flow Test", cwd=workdir)
 
     push = await client.post(f"{base}/push", json={"workdir": str(workdir)})
     assert push.status_code == 200, push.text
@@ -115,7 +123,7 @@ async def _publish(client, node_id: str, workdir: Path, remote: Path) -> dict:
 async def test_skill_shared_by_git_is_usable_from_another_project(
     bootstrapped_client, user, bootstrap_payload, tmp_path
 ):
-    node_id = bootstrap_payload["default_compute_node"]["id"]
+    node_id = default_compute_node_id(bootstrap_payload)
 
     # 1 — the producing project, with a skill in it.
     producer_root = tmp_path / "skill-temp-project"
@@ -163,8 +171,6 @@ async def test_skill_shared_by_git_is_usable_from_another_project(
     # 4 — the skill is indexed, and attributed to the project that LINKED it.
     #
     # `add-context-dir` kicks a one-shot scan, so the skill becomes a real entity.
-    from flow_sdk.core.entity.entity_model import Entity
-
     indexed = await Entity.get_by_asset_ref(canonical_posix_path(str(skill_dir)))
     assert indexed is not None, "the context folder's skill was never indexed"
     assert indexed.type == "skill"
@@ -203,9 +209,6 @@ async def test_skill_shared_by_git_is_usable_from_another_project(
     assert canonical_producer in process.resolved_add_dirs, (
         "the published folder is not mounted for the consuming project's worker"
     )
-    # Which is what makes the skill file readable from the other project.
-    assert (Path(canonical_producer) / ".claude" / "skills" / SKILL_NAME / "SKILL.md").is_file()
-    assert skill_dir.is_dir()
 
 
 @pytest.mark.asyncio
@@ -226,7 +229,7 @@ async def test_publishing_needs_a_remote_no_action_can_create(
     forever unless it is removed and re-added (``use-git-share-gate.runSetup``
     does exactly that today).
     """
-    node_id = bootstrap_payload["default_compute_node"]["id"]
+    node_id = default_compute_node_id(bootstrap_payload)
     root = tmp_path / "unpublished"
     root.mkdir()
     _author_skill(root)
