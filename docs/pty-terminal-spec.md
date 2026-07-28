@@ -1047,3 +1047,43 @@ so the composer is identical whether the chat overlay or the xterm is on top;
 `SimpleChatPane` deliberately does not carry its own composer (comment at
 `SimpleChatPane.tsx:20-33`).
 
+
+---
+
+## 15. Startup Budget — how long a session takes to accept input
+
+Measured on one macOS dev host (`claude` 2.1.220, local backend, warm), 5 runs
+per layer. All four use the **same readiness criterion** — the driver's
+`pty_composer_ready_pattern` (`cli_drivers/claude/driver.py:70`,
+`❯ Try "` / `❯ ───`), i.e. the composer is painted and will accept a keystroke —
+so the layers are directly comparable.
+
+| Layer | What is timed | ready (median) | range |
+|---|---|---|---|
+| Bare CLI | `claude` in a raw PTY, no Flowpad | **953 ms** | 872–1796 |
+| Python / HTTP | `createProcess` → `open`, polling the framed stream | **1816 ms** | 1623–2231 |
+| ts_sdk | `ComputeNode.createProcess` → `open` → `attachPty` | **1638 ms** | 1499–1991 |
+| Browser | click *Start Claude* → composer in the xterm | **2100 ms** | 1659–2182 |
+
+Reading it:
+
+- **Flowpad's overhead over the bare CLI is ~700–1150 ms**, and ~850 ms of that
+  lands before the PTY exists: `createProcess` (entity mint + save) then `open`
+  (shell materialize + spawn). Claude's own ~950 ms boot then overlaps the tail.
+- **Python vs ts_sdk is not a real gap.** Both drive the identical two actions;
+  the difference is measurement — the HTTP harness polls
+  `GET /shell/{id}/pty-stream` on an interval, the SDK reads the live WS chunk
+  store. Treat both as ~1.6–1.8 s.
+- **The browser adds ~300–450 ms** over the SDK path: route navigation, terminal
+  mount, and replay-through-headless-xterm (§13) before the live attach.
+- **The first click in a freshly loaded page cost 7547 ms** — capability probe
+  (`capabilityManager.ensureChecked`) plus first terminal mount. Every subsequent
+  tab in the same page was ~1.7–2.2 s. That cold path, not the steady-state
+  number, is where the remaining headroom is.
+
+The nearest standing guard is `ui/tests/long_tests/open_tab_timing.test.ts`
+(execute < 4500 ms, prompt visible in the scrollback < 7000 ms) — budgets loose
+enough that a regression of the size this table would show slips under them;
+`create_process_claude_timing.test.ts` logs its number without asserting one.
+Absolute numbers are host-bound, so the decomposition (which layer owns which
+slice) is the durable part, not the millisecond values.
