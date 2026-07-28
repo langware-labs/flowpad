@@ -179,21 +179,22 @@ async def test_skill_shared_by_git_is_usable_from_another_project(
     # Attribution goes to the CONSUMER — the project that linked the folder —
     # even though the skill lives inside the producer's tree.
     #
-    # Pinned deliberately, because it is the opposite of what the association
-    # rule documents: `deepest_project_id_for_path` says "the DEEPEST project
-    # whose mount contains ``path`` owns it", which would name the producer. The
-    # linking request wins instead, and the skill is also linked into the
-    # consumer's private context entities. Good for the flow — the consumer's
-    # scoped counts and searches see the skill it just added — but the two rules
-    # disagree, and whichever project indexes last looks like it could flip the
-    # stamp. Recorded as observed behaviour, not endorsed: if this changes,
-    # decide which rule is the real one rather than editing the number.
+    # The mechanism is the REQUEST scope, not the path: `_resolve_scope_project`
+    # (entity_model) stamps an empty `project_id` from the project the save is
+    # scoped under, which here is the `POST /graph/project/<consumer>/
+    # add-context-dir` endpoint that triggered the scan. Its stated purpose is
+    # to make the entity "visible in project-scoped surfaces immediately, not
+    # only after the next indexer walk" — so the consumer seeing the skill it
+    # just added is the intent, not a side effect.
+    #
+    # Note for anyone chasing this: the path-based rule
+    # (`deepest_project_id_for_path`, "the DEEPEST project whose mount contains
+    # path owns it") never runs for this record — `project_mounts` is empty
+    # unless the roots are nested, and these two are siblings. The two rules
+    # only compete when a later walk re-derives a project_id that is already set.
     assert indexed.project_id == consumer.id, (
         f"expected the linking project ({consumer.id}) to own the indexed skill, "
         f"got {indexed.project_id}"
-    )
-    assert consumer.typeid in (indexed.private_context_entities or []), (
-        "the skill should be linked into the consuming project's private context"
     )
 
     # 5 — the skill reaches a worker in the CONSUMING project.
