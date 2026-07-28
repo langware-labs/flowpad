@@ -69,9 +69,8 @@ export function ProjectGitChip({ projectTypeId, onChecked }: ProjectGitChipProps
     );
   }
 
-  // Nothing to name yet. The button's ONLY job is to report where git stands —
-  // what to do about each answer isn't defined yet, so it deliberately starts
-  // nothing.
+  // Nothing to name yet. This button reports where git stands; the dialog it
+  // feeds owns the remedy for each answer.
   const runChecks = async () => {
     setChecking(true);
     try {
@@ -99,12 +98,16 @@ export function ProjectGitChip({ projectTypeId, onChecked }: ProjectGitChipProps
           detail: gh?.message || null,
         },
         {
-          // This button only renders when no origin could be derived, so the
-          // answer is already known — the preflight's reason says which part is
-          // missing (no repo / no remote / an origin we can't place).
+          // Read from the preflight like the two capability rows above, rather
+          // than asserting `false` because of which branch of this component
+          // rendered. Before the backend answered for projects at all that
+          // assertion was the only signal available; now it would also paint a
+          // definite ✗ (and offer a fix) in the window before an answer arrives,
+          // and for `status-failure` — states that mean "couldn't tell", not
+          // "not configured".
           id: 'setup',
           label: t`Repository and remote configured`,
-          ok: false,
+          ok: preflight.answered ? preflight.available : null,
           detail: preflight.reason,
         },
         {
