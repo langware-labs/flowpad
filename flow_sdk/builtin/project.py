@@ -34,6 +34,7 @@ from flow_sdk.core.flow.mcp_server import MCPConnector, mcp_connector_pool
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.identifier import mint_uuid
+from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.fs_store.path_utils import (
     canonical_posix_path,
     is_protected_path,
@@ -493,6 +494,30 @@ class Project(Entity):
         return None
 
     @classmethod
+    async def index_by_mount(cls) -> dict[str, "Project"]:
+        """One read → ``{canonical_mount: Project}``, for resolving MANY paths.
+
+        ``find_by_cwd`` is O(all projects) *per call*; a caller resolving a whole
+        tree of paths with it does one full table read per path. This is the
+        object-carrying twin of ``indexer.roots.load_project_mounts()``, which
+        returns ``(mount, id)`` pairs only — callers that must then read each
+        project's fields (``context_dir_infos``, ``name``) need the entities.
+
+        Read-only: a pure lookup that never mints. Callers wanting find-or-create
+        want ``recover_by_path`` instead. First mount wins on a duplicate,
+        matching ``find_by_cwd``'s first-match contract.
+        """
+        out: dict[str, Project] = {}
+        for proj in await cls.get_all():
+            mount = proj.fs_storage_mount_path
+            if not mount or not is_valid_project_cwd(mount, include_temp=True):
+                continue
+            key = canonical_posix_path(mount).rstrip("/")
+            if key and key not in out:
+                out[key] = proj
+        return out
+
+    @classmethod
     async def recover_by_path(cls, path: str) -> "Project | None":
         """Recover (or materialize) a Project for ``path``.
 
@@ -932,7 +957,12 @@ class Project(Entity):
         return ApiSuccessResponse(data={"compute_node": compute_node.model_dump() if compute_node else None})
 
     @action.get(action_name="get-assets")
-    async def get_assets_action(self, types: str | None = None, limit: int = 1000):
+    async def get_assets_action(
+        self,
+        types: str | None = None,
+        limit: int = 1000,
+        browsing: BrowsingOptions | None = None,
+    ):
         """Discoverable assets for this project, pre-process (staging).
 
         The project-level counterpart of ``agentic_process/{id}/get-assets``:
@@ -944,6 +974,15 @@ class Project(Entity):
         ``project_id`` per row and a top-level ``truncated`` flag — the seam
         for FTS-backed long-tail search. Never unbounded: ``limit`` is
         clamped; callers wanting more should search, not list.
+
+        ``browsing.menu`` adds ONE key, ``menu`` — the Assets navigator's
+        structure (per-type groups with accumulated counts) for this project and,
+        recursively, for each of its context folders. ``assets`` and
+        ``truncated`` are unchanged and always present, so the existing flat
+        consumers are untouched. The menu carries no leaves: type rows still
+        load their entities lazily from ``/search`` on expand.
+
+        Read-only throughout — no mint, no write, no indexer walk.
         """
         from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
             AssetDescriptor,
@@ -965,9 +1004,10 @@ class Project(Entity):
         )
         limit = max(1, min(int(limit), 2000))
 
+        want_assets = browsing is None or browsing.assets
         sources, _seen = collect_base_source_dirs(self)
 
-        file_backed = [t for t in requested if t != "spec"]
+        file_backed = [t for t in requested if t != "spec"] if want_assets else []
         descriptors: list[AssetDescriptor] = []
         if file_backed:
             descriptors = await scan_path_asset_descriptors(
@@ -977,7 +1017,7 @@ class Project(Entity):
                 limit=limit,
             )
 
-        if "spec" in requested and len(descriptors) < limit:
+        if want_assets and "spec" in requested and len(descriptors) < limit:
             from flow_sdk.builtin.spec import Spec  # noqa: PLC0415
             from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
 
@@ -1015,12 +1055,25 @@ class Project(Entity):
                 )
 
         await hydrate_asset_descriptor_remote(descriptors)
-        return ApiSuccessResponse(
-            data={
-                "assets": [d.to_row() for d in descriptors],
-                "truncated": len(descriptors) >= limit,
-            }
-        )
+        data = {
+            "assets": [d.to_row() for d in descriptors],
+            "truncated": len(descriptors) >= limit,
+        }
+        if browsing is not None and browsing.menu:
+            from flow_sdk.builtin.asset_menu import build_asset_menu  # noqa: PLC0415
+
+            menu = await build_asset_menu(
+                self,
+                # Only narrow when the CALLER asked for types. ``requested``
+                # defaults to the flat staging list (skill/agent/markdown/spec);
+                # the menu's own default is every browseable scannable type,
+                # because it stands in for the whole Assets navigator.
+                types=requested if types else None,
+                recursive=browsing.recursive,
+                max_depth=browsing.max_depth,
+            )
+            data["menu"] = menu.to_row()
+        return ApiSuccessResponse(data=data)
 
     @action.get(action_name="get-worker-sessions")
     async def _get_worker_sessions_action(self):

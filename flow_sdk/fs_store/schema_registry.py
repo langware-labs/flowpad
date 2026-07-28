@@ -1189,6 +1189,20 @@ class SchemaRegistry:
         projects = list(getattr(scope, "projects", None) or []) if scope is not None else []
         return projects[0] if len(projects) == 1 else None
 
+    @classmethod
+    def project_never_indexed(cls, project_id: str) -> bool:
+        """True when this project has no index sentinel on disk.
+
+        The per-project form of ``get_index_status``'s project branch, which
+        cannot serve a caller holding SEVERAL projects: ``_single_project_id``
+        returns None the moment a scope names more than one, so a multi-project
+        view (e.g. a project plus its context folders) has to ask per project.
+
+        Pure filesystem read (``FSRecord.indexed_at``) — no DB, no write, no walk.
+        """
+        prec = cls._project_record_for_status(project_id)
+        return prec is None or getattr(prec, "indexed_at", None) is None
+
     @staticmethod
     def _project_record_for_status(project_id: str) -> "object | None":
         """Load the project record with its asset_ref bound to the project
