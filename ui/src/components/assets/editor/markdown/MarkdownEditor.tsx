@@ -67,6 +67,11 @@ export interface MarkdownHeaderExtrasCtx {
   setField: (key: string, value: string) => void;
 }
 
+export interface WikiLinkTarget {
+  page: PageId;
+  space: string;
+}
+
 interface MarkdownEditorProps {
   /** FSRef to the .md file — carries path + typeId + read/write. */
   fsRef: FSRef;
@@ -137,7 +142,7 @@ interface MarkdownEditorProps {
    */
   plainHeaderActions?: (share: React.ReactNode) => React.ReactNode;
   /** Wiki links in this document stay on this URL authority/namespace. */
-  wikiLinkTarget?: { page: PageId; space: string };
+  wikiLinkTarget?: WikiLinkTarget;
 }
 
 /**
@@ -288,8 +293,7 @@ function MarkdownEditorContent({
 
   const setViewMode = useCallback((mode: ViewMode) => {
     if (!currentDock) return; // outside dock context — shouldn't happen for MarkdownEditor
-    const nextOptions = { ...(currentDock.options ?? {}), [EDITOR_MODE_PARAM]: mode };
-    navigation.openDock(new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout));
+    navigation.openDock(currentDock.withOption(EDITOR_MODE_PARAM, mode));
   }, [currentDock, navigation]);
 
   // Restore from a stale 'learning' selection when the chip is hidden for this doc.
@@ -305,9 +309,7 @@ function MarkdownEditorContent({
   useEffect(() => {
     if (urlMode !== 'learning' || showLearningMode || !currentDock) return;
     const handle = window.setTimeout(() => {
-      const nextOptions = { ...(currentDock.options ?? {}) };
-      delete nextOptions[EDITOR_MODE_PARAM];
-      navigation.openDock(new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout));
+      navigation.openDock(currentDock.withOption(EDITOR_MODE_PARAM, null));
     }, 1500);
     return () => window.clearTimeout(handle);
   }, [urlMode, showLearningMode, currentDock, navigation]);
@@ -362,12 +364,11 @@ function MarkdownEditorContent({
   // directory (git walks up to the enclosing .git) with the bare filename as the
   // pathspec. `lastSync` (set on every autosave) re-fetches after the backend
   // auto-commits the file.
-  // The plain document surface has no revision pill or revision side panel.
-  // Its FSRef may also be Hub-backed, where the TypeId identifies the asset,
-  // not a local compute node. Passing that id to git-ops creates an invalid
-  // local-history request on every read-only Hub Wiki page.
-  const revisionsEnabled = variant !== 'plain';
-  const gitComputeNodeId = fsRef.typeId.id;
+  // The plain document surface has no revision UI. Full editors retain their
+  // normal chrome for every authority, while Git/OS actions are enabled only
+  // when the ref is actually backed by a local compute node.
+  const gitComputeNodeId = fsRef.localComputeNodeId;
+  const revisionsEnabled = variant !== 'plain' && gitComputeNodeId !== null;
   const gitFileDir = fsRef.parent.path;
   const gitFileName = fsRef.path.slice(fsRef.path.lastIndexOf('/') + 1);
   const revisionStatus = useAssetRevisionStatus(
@@ -397,13 +398,17 @@ function MarkdownEditorContent({
         onRestored={reload}
       />
     ),
-  }), [revisionStatus, gitComputeNodeId, gitFileDir, gitFileName, reload]);
+  }), [t, revisionStatus, gitComputeNodeId, gitFileDir, gitFileName, reload]);
 
   const collisionTab = useAssetCollisionSideTab();
 
   const allSideTabs = useMemo(
-    () => [revisionsTab, ...(collisionTab ? [collisionTab] : []), ...(extraSideTabs ?? [])],
-    [revisionsTab, collisionTab, extraSideTabs],
+    () => [
+      ...(revisionsEnabled ? [revisionsTab] : []),
+      ...(collisionTab ? [collisionTab] : []),
+      ...(extraSideTabs ?? []),
+    ],
+    [revisionsEnabled, revisionsTab, collisionTab, extraSideTabs],
   );
 
   const shareSource = useMemo(() => {
@@ -443,9 +448,15 @@ function MarkdownEditorContent({
 
   const sourcePathStr = typeof sourcePath === 'string' ? sourcePath : '';
   const fileName = sourcePathStr.split('/').pop() || sourcePathStr;
-  const handleOpenExternal = useCallback(() => {
-    void fsRef.open({ select: true });
-  }, [fsRef]);
+  const handleOpenExternal = useMemo(
+    () =>
+      fsRef.localComputeNodeId
+        ? () => {
+            void fsRef.open({ select: true });
+          }
+        : undefined,
+    [fsRef],
+  );
 
   const handleDownload = useCallback(() => {
     void (async () => {
@@ -464,10 +475,9 @@ function MarkdownEditorContent({
     };
   }, [onDelete, deleteLabel, fileName]);
 
-  // Plain documents (Hub Wiki and WikiTip) must keep the same compact,
-  // read-only header through every content state. Rendering the full editor
-  // header while a remote read is pending makes View/Edit chips flash before
-  // the settled plain branch replaces them.
+  // Plain WikiTips keep the same compact, read-only header through every
+  // content state. Dock Wiki pages use the full editor header for both local
+  // and Hub authorities.
   const shareButton = shareSource ? (
     <ShareButton
       onClick={() => setShareOpen(true)}
@@ -687,7 +697,7 @@ function MarkdownEditorContent({
   }
 
   // ── Editor ─────────────────────────────────────────────────────────────────
-  const leadingActions = (
+  const leadingActions = revisionsEnabled ? (
     <AssetGitPill
       version={revisionStatus.version}
       unpushed={revisionStatus.unpushed}
@@ -697,7 +707,7 @@ function MarkdownEditorContent({
       onOpenHistory={() => openSideWindow('revisions')}
       onAfterPublish={revisionStatus.refresh}
     />
-  );
+  ) : null;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -876,7 +886,7 @@ interface EditorHeaderProps {
   dirty: boolean;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
-  onOpenExternal: () => void;
+  onOpenExternal?: () => void;
   onDownload?: () => void;
   onDelete?: () => void;
   actions?: React.ReactNode;

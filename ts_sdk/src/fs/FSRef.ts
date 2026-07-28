@@ -29,6 +29,17 @@ export class FSRef {
     this.readOnly = readOnly;
   }
 
+  /**
+   * The local compute node that can service OS- and Git-specific file actions.
+   *
+   * Hub-backed refs deliberately return null: they still support the ordinary
+   * FSRef read/write/download contract, but their TypeId identifies the asset
+   * rather than a machine whose filesystem can be opened or queried with git.
+   */
+  get localComputeNodeId(): string | null {
+    return this.typeId.type === 'compute_node' ? this.typeId.id : null;
+  }
+
   static fromJson(json: FSRefJson): FSRef {
     return new FSRef(json.path, new TypeId(json.type_id), json.ref_type, json.read_only);
   }

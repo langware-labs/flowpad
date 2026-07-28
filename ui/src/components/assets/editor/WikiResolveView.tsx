@@ -40,7 +40,7 @@ interface WikiResolveViewProps {
   space?: string;
   /** Optional heading slug to scroll to once rendered. */
   fragment?: string;
-  /** Read-only body used by WikiTip and the Hub surface. */
+  /** Read-only body used by WikiTip. Dock Wiki routes use the full editor. */
   variant?: 'full' | 'plain';
   /** Selects the local graph or the authenticated Hub graph transport. */
   authority?: WikiAuthority;
@@ -235,6 +235,11 @@ function ResolvedWikiAsset({
     <AssetEditorRouter
       pointer={AssetDocPointer.forTypeId(editor, target).toPointer()}
       fragment={fragment}
+      hubReflect={authority === 'hub'}
+      wikiLinkTarget={{
+        page: authority === 'hub' ? PageId.HUB : PageId.DESK,
+        space: wikiRef,
+      }}
     />
   );
 }
