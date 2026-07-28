@@ -13,6 +13,7 @@ from typing import Any
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.builtin.local_secret_ref import LocalSecretRef
 from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER, SecretOriginField
+from flow_sdk.builtin.secret_origin_identity import secret_origin_id
 from flow_sdk.builtin.secret_origin_locator import SecretOriginLocator
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
@@ -67,6 +68,10 @@ class SecretOrigin(Entity):
         description="Which SOD store the setup wizard caches a provided value into: "
         "'sodot' | 'env-local'. Empty = derive from locator kind.",
     )
+    project_id: str = APIField(
+        default="",
+        description="The project this declaration belongs to. Half of the identity — see secret_origin_identity.",
+    )
 
     def effective_sod_store(self) -> str:
         """The SOD store the wizard writes a provided value into. Explicit
@@ -77,15 +82,18 @@ class SecretOrigin(Entity):
         return SOD_STORE_ENV_LOCAL if self.locator.kind == "env-local" else SOD_STORE_SODOT
 
     @staticmethod
-    def id_for_locator(locator: SecretOriginLocator) -> str:
-        return locator.key()
+    def id_for(project_id: str, env_var: str) -> str:
+        """Identity is ``(project_id, env_var)`` and nothing else — so changing
+        a declaration's provider or store keeps the same secret."""
+        return secret_origin_id(project_id, env_var)
 
     def reference_json(self) -> dict[str, Any]:
         """The value-free reference document persisted at ``assets/sodot/<name>.json``.
         Guarded to never carry a value."""
         data = {
-            "id": str(self.id or self.id_for_locator(self.locator)),
+            "id": str(self.id or self.id_for(self.project_id, self.env_var)),
             "name": self.name or "",
+            "project_id": self.project_id,
             "env_var": self.env_var,
             "locator": self.locator.model_dump(mode="json"),
             "sod_store": self.effective_sod_store(),
@@ -94,9 +102,9 @@ class SecretOrigin(Entity):
         return {"data": data}
 
     def to_json_asset(self, path: "Path") -> "Path":
-        """Write the value-free reference to ``path`` (``assets/sodot/<name>.json``).
-        Convergent id (``key()``) is stamped in so a file-indexed row and a
-        DB-minted row collide on one id across machines."""
+        """Write the value-free reference to ``path`` (``assets/sodot/<ENV_VAR>.json``).
+        The convergent id is stamped in so a file-indexed row and a DB-minted
+        row collide on one id across machines."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(self.reference_json(), indent=2, sort_keys=True), encoding="utf-8")
@@ -138,24 +146,38 @@ class SecretOrigin(Entity):
     async def mint_for(
         cls,
         *,
-        locator: SecretOriginLocator | dict[str, Any],
-        name: str,
+        project_id: str,
         env_var: str,
+        locator: SecretOriginLocator | dict[str, Any],
+        name: str = "",
         sod_store: str = "",
         remote: bool = False,
     ) -> "SecretOrigin":
+        """Get-or-update the declaration of ``env_var`` in ``project_id``.
+
+        Re-declaring an env var UPDATES it in place: the name is the key, so
+        pointing it at a different provider or store is an edit, not a second
+        secret. That is exactly what makes moving a value between stores safe.
+        """
+        if not project_id:
+            raise ValueError("SecretOrigin requires a project_id — it is half the identity")
+        if not is_valid_secret_origin_env_var(env_var):
+            raise ValueError(f"invalid env_var for a SecretOrigin: {env_var!r}")
         loc = SECRET_ORIGIN_ADAPTER.validate_python(locator)
         sod_store = sod_store if sod_store in _VALID_SOD_STORES else ""
-        secret_id = cls.id_for_locator(loc)
+        name = name or env_var
+        secret_id = cls.id_for(project_id, env_var)
         existing = await cls.get_by_id(secret_id)
         if existing is not None:
             changed = False
-            if existing.name != name:
-                existing.name = name
-                changed = True
-            if existing.env_var != env_var:
-                existing.env_var = env_var
-                changed = True
+            for field, value in (
+                ("name", name),
+                ("env_var", env_var),
+                ("project_id", str(project_id)),
+            ):
+                if getattr(existing, field) != value:
+                    setattr(existing, field, value)
+                    changed = True
             if existing.locator.model_dump(mode="json") != loc.model_dump(mode="json"):
                 existing.locator = loc
                 changed = True
@@ -169,6 +191,14 @@ class SecretOrigin(Entity):
                 await existing.save()
             return existing
 
-        ent = cls(id=secret_id, name=name, env_var=env_var, locator=loc, sod_store=sod_store, remote=remote)
+        ent = cls(
+            id=secret_id,
+            name=name,
+            project_id=str(project_id),
+            env_var=env_var,
+            locator=loc,
+            sod_store=sod_store,
+            remote=remote,
+        )
         await ent.save()
         return ent

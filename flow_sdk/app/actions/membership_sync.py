@@ -72,10 +72,15 @@ def _validated_field(cls: Type[Entity], name: str, value: Any) -> Any:
 def _shared_secret_origin_payload(
     item: dict[str, Any],
 ) -> tuple[str, str, Any, str] | None:
-    """Parse one value-free shared secret pointer → ``(name, env_var, locator,
-    sod_store)``. Accepts every non-``local`` provider kind (env-local / gcp /
-    1password / flowpad-hub); ``local`` (sodot-by-name) is machine-specific and
-    never travels."""
+    """Parse one value-free shared secret declaration → ``(name, env_var,
+    locator, sod_store)``.
+
+    EVERY kind is accepted, ``local`` included: a receiver must see a
+    declaration in order to be warned that its value is missing here. The
+    sender already strips the machine-specific coordinate (a ``sod_name`` names
+    an entry in their keychain), so what arrives is a value-free declaration
+    the receiver satisfies from their own store.
+    """
     from flow_sdk.builtin.secret_origin import is_valid_secret_origin_env_var  # noqa: PLC0415
     from flow_sdk.builtin.secret_origin_driver import normalize_secret_origin_kind  # noqa: PLC0415
     from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
@@ -85,8 +90,6 @@ def _shared_secret_origin_payload(
         logger.debug("[membership-sync] secret origin missing locator")
         return None
     kind = normalize_secret_origin_kind(locator_data.get("kind") or item.get("kind"))
-    if kind == "local":
-        return None  # machine-local; a sod_name is meaningless off-machine
     try:
         locator = SECRET_ORIGIN_ADAPTER.validate_python({**locator_data, "kind": kind})
     except Exception as exc:  # noqa: BLE001
@@ -99,9 +102,9 @@ def _shared_secret_origin_payload(
     if not env_var or not is_valid_secret_origin_env_var(env_var):
         logger.debug("[membership-sync] invalid secret origin env_var: %r", env_var)
         return None
-    name = (item.get("name") or "").strip()
-    if not name:
-        return None
+    # The env var IS the identity, so it is a fine default display name; a
+    # missing name is not a reason to drop the declaration.
+    name = (item.get("name") or "").strip() or env_var
     sod_store = (item.get("sod_store") or "").strip()
     return name, env_var, locator, sod_store
 
@@ -266,6 +269,7 @@ async def materialize_project_secret_origins(
     count = 0
     expected_shared_typeids: set[str] = set()
     normalized_shared: dict[str, dict[str, Any]] = {}
+    seen_env_vars: set[str] = set()
     for item in shared.values():
         if not isinstance(item, dict):
             continue
@@ -273,12 +277,28 @@ async def materialize_project_secret_origins(
         if parsed is None:
             continue
         name, env_var, locator, sod_store = parsed
+        # env_var is unique within a project by definition, so two payload
+        # entries naming the same one are a sender-side bug. First wins and we
+        # say so — last-wins would silently clobber.
+        if env_var in seen_env_vars:
+            logger.warning(
+                "[membership-sync] duplicate env_var %r in shared_secret_origins; keeping the first",
+                env_var,
+            )
+            continue
+        seen_env_vars.add(env_var)
         secret = await SecretOrigin.mint_for(
-            locator=locator, name=name, env_var=env_var, sod_store=sod_store, remote=True
+            project_id=str(project.id),
+            env_var=env_var,
+            locator=locator,
+            name=name,
+            sod_store=sod_store,
+            remote=True,
         )
         expected_shared_typeids.add(str(secret.typeid))
         normalized_shared[str(secret.typeid)] = {
             "name": name,
+            "project_id": str(project.id),
             "env_var": env_var,
             "kind": locator.kind,
             "locator": locator.model_dump(mode="json"),

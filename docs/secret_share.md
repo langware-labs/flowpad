@@ -68,20 +68,52 @@ defaults to `local`. `SECRET_ORIGIN_ADAPTER` is the cached `TypeAdapter`. **Enti
 and payload fields must be typed as `SecretOriginField`, not the bare base**, or
 the subclass pointer fields drop on load.
 
-**`key()` is machine-independent and byte-stable** — the shared-identity
-requirement. Local = `uuid5("secret-origin:local:<sod_name>")`, hub =
-`uuid5("secret-origin:flowpad-hub:<secret_id>")`. Because sender and receiver
-compute the same key, a shared secret pointer converges to the **same**
-`SecretOrigin` id on both machines, so the project's context ref resolves.
+**A locator is not an identity.** It deliberately has no `key()` — see below.
+
+## Identity — `(project_id, ENV_VAR_NAME)`
+
+A secret belongs to a project and is named by the environment variable it
+arrives as. **That pair is the whole identity**, minted in one place
+(`flow_sdk/builtin/secret_origin_identity.py`):
+
+```
+stable_key(project_id, env_var) = f"secret-origin:{project_id}:{env_var}"
+secret_origin_id(...)           = uuid5(NAMESPACE_URL, stable_key(...))
+```
+
+Why not the locator, which is what this used to hash: a secret must be able to
+**move between stores** — `.env.local` → the encrypted `sodot` → the hub vault —
+without becoming a different secret. Under locator-derived ids every such move
+minted a new entity and orphaned the project links, the sidecar, and any
+receiver's converged id.
+
+Consequences worth stating:
+
+- **Uniqueness is structural, not a check.** Re-declaring an env var mints the
+  same id and updates the row in place: pointing it at a different provider is
+  an edit, not a second secret.
+- **Still convergent across machines**, because `project_id` is the shared hub
+  identity — a shared project keeps its id, so sender and receiver compute the
+  same secret id.
+- `env_var` is used **verbatim and case-sensitively**. POSIX environments are
+  case-sensitive; folding here would make the id lie about what gets injected.
+  (The UI upper-cases input — an affordance, not identity.)
+- `kind` / `locator` / `sod_store` demote to **declaration detail**: where to
+  fetch, where to cache. They may change freely.
+- The sidecar is `assets/sodot/<ENV_VAR>.json` — the filename *is* the identity.
+
+**No migration.** Rows and sidecars minted under the old locator-derived scheme
+are never matched again; they linger inert and are left on disk untouched. A
+sidecar without `project_id` is skipped by the indexer with a log line.
 
 ## Entity + driver
 
-`SecretOrigin(Entity)` (`EntityType.SECRET_ORIGIN`) holds `name`, `env_var`, and
-`locator: SecretOriginField`. `env_var` is validated against
-`^[A-Za-z_][A-Za-z0-9_]*$`. Identity is `id_for_locator(locator) = locator.key()`;
-`mint_for(locator, name, env_var, sod_store=, remote=)` is the idempotent
-get-or-create keyed by that id (updates name/env_var/locator/sod_store/remote in
-place on re-mint).
+`SecretOrigin(Entity)` (`EntityType.SECRET_ORIGIN`) holds `name`, `project_id`,
+`env_var`, and `locator: SecretOriginField`. `env_var` is validated against
+`^[A-Za-z_][A-Za-z0-9_]*$`. Identity is `id_for(project_id, env_var)`;
+`mint_for(project_id=, env_var=, locator=, name=, sod_store=, remote=)` is the
+idempotent get-or-create keyed by that id (updates name/locator/sod_store/remote
+in place on re-mint).
 
 `get_secret_origin_driver(kind)` resolves the behavior driver
 (`hub`/`flowpad_hub` alias-fold onto `flowpad-hub`; unknown kind → `KeyError`):
@@ -92,9 +124,10 @@ place on re-mint).
   Secrets UI *writes* the sodot entry; a local `SecretOrigin` *points* at it by
   name. (It does **not** use `get_entity_credentials`, whose composed key is a
   different namespace nothing populates.)
-- **`HubSecretDriver.resolve` returns `None`** — the deferred seam; the pointer
-  can be carried and materialized, but no value is injected until the hub value
-  endpoint exists.
+- **`flowpad-hub` is a `ProviderStubDriver`** whose `resolve` returns `None` —
+  the deferred seam; the pointer can be carried and materialized, but no value
+  is injected until the hub value endpoint exists. (There is no
+  `hub_secret_driver.py`; earlier revisions of this doc described one.)
 
 ## Project linking (actions)
 
@@ -130,10 +163,13 @@ guess), and `secret_origins: ProjectSecretOriginSummary[]` is the value-free vie
 `Project.share()` merges a value-free `shared_secret_origins` map into the hub
 project body, built by `_shared_secret_origin_payload()`:
 
-- keyed by `SecretOrigin` typeid, each entry `{name, env_var, kind, locator,
-  sod_store}`;
-- **`local`-kind entries are skipped** (a SOD name is meaningless off-machine);
-  every other kind (`env-local` / `gcp` / `1password` / `flowpad-hub`) travels;
+- keyed by `SecretOrigin` typeid, each entry `{name, project_id, env_var, kind,
+  locator, sod_store}`;
+- **every kind travels, `local` included.** A receiver has to *see* a
+  declaration in order to be told its value is missing here; dropping it would
+  silently hide a secret the project needs. What does not travel is the
+  machine-specific *coordinate* — a `sod_name` names an entry in the sender's
+  keychain, so it is stripped from the wire locator;
 - **only the locator + `sod_store` travel — never a value, never credentials.**
 
 The map rides in the hub project body (the hub `Project` model declares
@@ -149,12 +185,11 @@ On invitation-accept, `materialize_remote_membership_entity` calls
 `materialize_project_secret_origins(project, data)`:
 
 1. reads `shared_secret_origins` from the hub payload;
-2. validates each entry via `_shared_secret_origin_payload` — **every non-`local`
-   kind is accepted** (`local` is rejected as machine-specific; `flowpad-hub`
-   additionally requires `secret_id`), `env_var` re-validated;
-3. `SecretOrigin.mint_for(locator, name, env_var, sod_store=, remote=True)` —
-   because `locator.key()` converges, the receiver mints the **same** id as the
-   sender;
+2. validates each entry via `_shared_secret_origin_payload` — **every kind is
+   accepted** (`flowpad-hub` additionally requires `secret_id`), `env_var`
+   re-validated, and duplicate `env_var`s deduped first-wins with a warning;
+3. `SecretOrigin.mint_for(project_id=, env_var=, ...)` — because a shared
+   project keeps its id, the receiver mints the **same** secret id as the sender;
 4. links the ref into the receiver's **shared** bucket and reflects
    `shared_secret_origins` onto the local mirror — the mirror, not the sidecar, is
    the receiver's authoritative read (see `Project.secret_origins` above);

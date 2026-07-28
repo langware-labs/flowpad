@@ -15,8 +15,8 @@ import pytest
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers import apply_worker_secret_env
 from flow_sdk.builtin.project import Project
-from flow_sdk.builtin.secret_origin import SecretOrigin, assert_value_free
-from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER
+from flow_sdk.builtin.secret_origin import assert_value_free
+from flow_sdk.builtin.secret_origin_identity import secret_origin_id
 from flow_sdk.schema.type_info import register_all
 
 register_all()
@@ -38,14 +38,51 @@ async def test_add_secret_pointer_writes_value_free_convergent_asset(tmp_path):
     )
     assert resp.status == "SUCCESS", resp
 
-    asset = tmp_path / "assets" / "sodot" / "openai.json"
+    # The sidecar is keyed by the ENV VAR — that is the identity, so the
+    # filename cannot collide within a project and cannot drift from the row.
+    asset = tmp_path / "assets" / "sodot" / "OPENAI_API_KEY.json"
     assert asset.exists(), "reference json not written under assets/sodot/"
     doc = json.loads(asset.read_text())
     assert_value_free(doc)  # no plaintext key
-    # Convergent id: the file id equals the SecretOrigin key() for that locator.
-    loc = SECRET_ORIGIN_ADAPTER.validate_python({"kind": "env-local", "env_key": "OPENAI_API_KEY"})
-    assert doc["data"]["id"] == SecretOrigin.id_for_locator(loc)
+    assert doc["data"]["id"] == secret_origin_id(project.id, "OPENAI_API_KEY")
+    assert doc["data"]["project_id"] == str(project.id)
     assert doc["data"]["sod_store"] == "env-local"
+
+
+@pytest.mark.asyncio
+async def test_redeclaring_an_env_var_updates_in_place(tmp_path):
+    """The env var IS the identity, so pointing it at a different provider is an
+    edit — one row, one sidecar, same id. This is what lets a value move between
+    stores without becoming a different secret."""
+    project = await _project(tmp_path)
+    await project.add_secret_pointer(
+        name="openai", env_var="OPENAI_API_KEY", scope="private",
+        locator={"kind": "env-local", "env_key": "OPENAI_API_KEY"},
+    )
+    first_id = project.secret_origins[0]["typeid"]
+
+    await project.add_secret_pointer(
+        name="openai", env_var="OPENAI_API_KEY", scope="private",
+        locator={"kind": "local", "sod_name": "openai"},
+    )
+
+    assert len(project.secret_origins) == 1
+    assert project.secret_origins[0]["typeid"] == first_id
+    assert project.secret_origins[0]["locator"]["kind"] == "local"
+    assert sorted(p.name for p in (tmp_path / "assets" / "sodot").iterdir()) == ["OPENAI_API_KEY.json"]
+
+
+@pytest.mark.asyncio
+async def test_same_env_var_in_two_projects_is_two_secrets(tmp_path):
+    a = await _project(tmp_path / "a")
+    b = await _project(tmp_path / "b")
+    for project in (a, b):
+        await project.add_secret_pointer(
+            name="openai", env_var="OPENAI_API_KEY", scope="private",
+            locator={"kind": "local", "sod_name": "openai"},
+        )
+
+    assert a.secret_origins[0]["typeid"] != b.secret_origins[0]["typeid"]
 
 
 @pytest.mark.asyncio
@@ -66,7 +103,7 @@ async def test_resolve_status_and_provide_env_local_then_worker_resolves(tmp_pat
     gi = (tmp_path / ".gitignore").read_text()
     assert ".env.local" in gi
     assert "sk-env-secret" in (tmp_path / ".env.local").read_text()
-    assert "sk-env-secret" not in (tmp_path / "assets" / "sodot" / "openai.json").read_text()
+    assert "sk-env-secret" not in (tmp_path / "assets" / "sodot" / "OPENAI_API_KEY.json").read_text()
 
     st2 = await project.secret_resolve_status()
     assert st2.data["secrets"][0]["status"] == "available"
@@ -117,8 +154,14 @@ async def test_env_local_pointer_shares_value_free_across_hub(tmp_path):
     got = bob.secret_origins[0]
     assert got["env_var"] == "OPENAI_API_KEY" and got["locator"]["kind"] == "env-local"
     assert got["sod_store"] == "env-local"
-    # Convergent id: alice's shared typeid == bob's materialized typeid.
-    assert next(iter(payload.keys())).split("-", 1)[1] == got["typeid"].split("-", 1)[1]
+
+    # Convergence. The id is uuid5(project_id, env_var), so both sides compute
+    # the same one *because a shared project keeps its id* — the receiver's
+    # mirror is the same project, not a copy. Here alice and bob are two
+    # distinct projects, so their ids differ by construction; what is asserted
+    # is the recipe both sides run.
+    assert next(iter(payload.keys())).split("-", 1)[1] == secret_origin_id(alice.id, "OPENAI_API_KEY")
+    assert got["typeid"].split("-", 1)[1] == secret_origin_id(bob.id, "OPENAI_API_KEY")
     # Bob can't resolve it yet → wizard path (his .env.local has no value).
     st = await bob.secret_resolve_status()
     assert st.data["secrets"][0]["status"] == "missing"

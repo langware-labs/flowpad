@@ -714,16 +714,20 @@ class Project(Entity):
                 name = secret.name or ""
                 env_var = secret.env_var
                 sod_store = secret.effective_sod_store()
-            # ``local`` (sodot-by-name) is machine-specific — the sod_name is
-            # meaningless off-machine, so it never travels. Every other kind
-            # (env-local / gcp / 1password / flowpad-hub) is a value-free pointer
-            # the receiver resolves with their own store/provider.
-            if (locator or {}).get("kind") == "local":
-                continue
+            # EVERY declaration travels, including ``local``. A receiver has to
+            # SEE a declaration in order to be told they are missing its value —
+            # dropping it would silently hide the secret the project needs. What
+            # does not travel is the machine-specific coordinate: a sod_name
+            # names an entry in the sender's keychain and means nothing
+            # elsewhere, so it is stripped from the wire locator.
+            locator = dict(locator or {})
+            if locator.get("kind") == "local":
+                locator.pop("sod_name", None)
             payload[str(tid)] = {
                 "name": name,
+                "project_id": str(self.id),
                 "env_var": env_var,
-                "kind": (locator or {}).get("kind"),
+                "kind": locator.get("kind"),
                 "locator": locator,
                 "sod_store": sod_store,
             }
@@ -1142,21 +1146,17 @@ class Project(Entity):
         except Exception as e:  # noqa: BLE001
             return ApiFailResponse(message=f"Invalid secret locator: {e}")
 
-        # ``local`` (sodot by name) is machine-local — a sod_name is meaningless
-        # off-machine, so it can't be a shared pointer (docs/secret_share.md).
-        if loc.kind == "local":
-            if scope == "shared":
-                return ApiFailResponse(message="Local (sodot-by-name) secret pointers can only be private")
-            if not getattr(loc, "sod_name", ""):
-                return ApiFailResponse(message="sod_name is required for local secret pointers")
-        name = name or getattr(loc, "sod_name", "") or getattr(loc, "secret_id", "") or loc.kind
+        if loc.kind == "local" and not getattr(loc, "sod_name", ""):
+            return ApiFailResponse(message="sod_name is required for local secret pointers")
+        name = name or getattr(loc, "sod_name", "") or getattr(loc, "secret_id", "") or env_var
 
-        candidate_typeid = f"{BuiltinEntityType.SECRET_ORIGIN.value}-{SecretOrigin.id_for_locator(loc)}"
-        for existing in self.secret_origins:
-            if existing.get("env_var") == env_var and existing.get("typeid") != candidate_typeid:
-                return ApiFailResponse(message=f"env_var {env_var} is already bound to another secret pointer")
-
-        secret = await SecretOrigin.mint_for(locator=loc, name=name, env_var=env_var, sod_store=sod_store)
+        # No uniqueness CHECK is needed any more: the id is (project_id, env_var),
+        # so re-declaring an env var mints the same row and updates it in place.
+        # The name is the key — pointing it at a different provider is an edit,
+        # not a second secret.
+        secret = await SecretOrigin.mint_for(
+            project_id=str(self.id), env_var=env_var, locator=loc, name=name, sod_store=sod_store
+        )
         data = secret.context_data(scope=scope)
         if scope == "shared":
             self.add_shared_context_entities(secret.typeid, data=data)
@@ -1168,7 +1168,7 @@ class Project(Entity):
         sodot_dir = self._assets_sodot_dir()
         if sodot_dir is not None:
             try:
-                secret.to_json_asset(sodot_dir / f"{name}.json")
+                secret.to_json_asset(sodot_dir / f"{env_var}.json")
             except Exception as e:  # noqa: BLE001
                 log.warning("[secret] could not write reference asset for %s: %s", name, e)
 
@@ -1207,10 +1207,10 @@ class Project(Entity):
             if sodot_dir is not None:
                 for tid in targets:
                     entry = self.get_context_entry_data(tid) or {}
-                    nm = (entry.get("name") or "").strip()
-                    if nm:
+                    ev = (entry.get("env_var") or "").strip()
+                    if ev:
                         try:
-                            (sodot_dir / f"{nm}.json").unlink(missing_ok=True)
+                            (sodot_dir / f"{ev}.json").unlink(missing_ok=True)
                         except OSError:
                             pass
             self.remove_shared_context_entities(*targets)
