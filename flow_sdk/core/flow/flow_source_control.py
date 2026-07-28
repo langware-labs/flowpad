@@ -10,11 +10,13 @@ from fastapi import UploadFile
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from flow_sdk.config import ComputeProviderType, PLATFORM_WIN32
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.git_origin import GitOrigin
+from flow_sdk.config import PLATFORM_WIN32, ComputeProviderType
+from flow_sdk.core.entity.entity_env.env_utils import build_shared_var_name
 from flow_sdk.core.flow.models.execution.env_context import FlowEnv
+from flow_sdk.core.oauth.provider_registry import GITHUB, user_credentials_name
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 
 class ComputeSourceControlInitializeOptions(BaseModel):
@@ -189,7 +191,10 @@ class ComputeSourceControl:
             )
 
     async def _setup_remote_repo(self, clone_url: str) -> bool:
-        env_variable_name = oauth_providers_config_cache["github"].user_credentials_name
+        # The token itself is never interpolated here — only its NAME. The value
+        # reaches git because run_command(env=self._env) prefixes it onto the
+        # command, so the credential helper below reads it from the environment.
+        env_variable_name = user_credentials_name(GITHUB) or "github_credentials"
         project_env_variable_name = build_shared_var_name(env_variable_name, BuiltinEntityType.PROJECT.value.upper())
         logging.info(f"Looking for GitHub token in env variable: {project_env_variable_name}")
 
