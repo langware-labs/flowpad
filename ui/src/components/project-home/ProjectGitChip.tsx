@@ -1,16 +1,10 @@
 import { GitBranch, Loader2, Plus } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useState } from 'react';
-import { capabilityManager, CapabilityKinds } from '@sdk';
+import { capabilityManager, CapabilityKinds, gitOriginRepoFullName, gitOriginWebUrl } from '@sdk';
 import type { CapabilityAccess, TypeId } from '@sdk';
 import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
-
-/** Browse URL for a repo coordinate. Providers we can't map get no link. */
-const BROWSE_HOST: Record<string, string> = {
-  github: 'https://github.com',
-  gitlab: 'https://gitlab.com',
-  bitbucket: 'https://bitbucket.org',
-};
+import { openExternal } from '@src/lib/open-external';
 
 /** One readiness question and how it came out. */
 export interface GitCheck {
@@ -40,9 +34,9 @@ export function ProjectGitChip({ projectTypeId, onChecked }: ProjectGitChipProps
 
   const origin = preflight.origin;
   if (origin) {
-    const repo = `${origin.owner}/${origin.name}`;
-    const host = BROWSE_HOST[origin.provider.toLowerCase()];
-    const href = host ? `${host}/${repo}` : null;
+    // Repo root, not a deep link: the chip names the project's repo, not a file.
+    const repo = gitOriginRepoFullName(origin);
+    const href = gitOriginWebUrl({ ...origin, rel_path: '.' });
     const body = (
       <>
         <GitBranch className="h-3.5 w-3.5" aria-hidden />
@@ -52,8 +46,12 @@ export function ProjectGitChip({ projectTypeId, onChecked }: ProjectGitChipProps
     return href ? (
       <a
         href={href}
-        target="_blank"
-        rel="noreferrer noopener"
+        onClick={(e) => {
+          // Keep the repo in the user's real browser: a bare target=_blank does
+          // not escape the Electron shell.
+          e.preventDefault();
+          openExternal(href);
+        }}
         title={href}
         data-testid="project-git-repo"
         className="inline-flex max-w-[16rem] items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:underline"

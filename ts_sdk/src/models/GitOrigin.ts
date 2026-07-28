@@ -106,6 +106,51 @@ export function gitOriginCloneUrl(o: GitOrigin): string {
 }
 
 /**
+ * Per-provider path segment for browsing a ref inside a repo's web UI. Anything
+ * not listed has no known browse grammar (and ``file`` origins have no web UI at
+ * all) — the caller then has no link to offer.
+ */
+function providerBrowseSegment(provider: string, isDir: boolean): string | null {
+  switch (provider.trim().toLowerCase()) {
+    case 'github':
+      return isDir ? 'tree' : 'blob';
+    case 'gitlab':
+      return isDir ? '-/tree' : '-/blob';
+    case 'bitbucket':
+      return 'src';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Browsable web URL for a GitOrigin — the page a human opens, NOT the clone URL
+ * (see {@link gitOriginCloneUrl}). Deep-links to ``rel_path`` at the origin's
+ * branch (or, on a detached head, its commit); degrades to the repo root when
+ * there is no ref or no safe path to point at.
+ *
+ * Returns null when the provider has no known web UI (e.g. a ``file`` origin) or
+ * the origin doesn't name a repo — callers should render no link at all.
+ */
+export function gitOriginWebUrl(o: GitOrigin, opts?: { isDir?: boolean }): string | null {
+  if (!o?.owner || !o?.name) return null;
+  // No known browse grammar (a ``file`` remote, a self-hosted host we can't
+  // address) ⇒ no page to send anyone to. Say so instead of guessing a URL.
+  const segment = providerBrowseSegment(o.provider, opts?.isDir === true);
+  if (!segment) return null;
+
+  const root = `https://${providerHost(o.provider)}/${encodeURIComponent(o.owner)}/${encodeURIComponent(stripGitSuffix(o.name))}`;
+  const ref = (o.branch || o.head_commit || '').trim();
+  const rel = (o.rel_path || '').trim().replace(/\\/g, '/').replace(/^\.\/+/, '');
+  if (!ref || rel === '.' || !isSafeRelPath(rel)) return root;
+
+  // Segment-wise, never whole-string: a `feature/x` branch must keep its slash —
+  // providers do not resolve `feature%2Fx` in a tree/blob path.
+  const encodePath = (p: string) => p.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+  return `${root}/${segment}/${encodePath(ref)}/${encodePath(rel)}`;
+}
+
+/**
  * Mirror of the backend ``is_safe_rel_path``: a repo-relative path is safe iff
  * it stays inside the repo root — reject empty, absolute, a Windows drive, or
  * any ``..`` segment. FE and BE MUST agree on this.

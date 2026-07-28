@@ -1,25 +1,52 @@
 import { useLingui } from '@lingui/react/macro';
 import type { APIEntity } from '@sdk';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import { glyphActionClassName } from '@src/components/entity-actions/action-button-styles';
+import { openExternal } from '@src/lib/open-external';
 import { cn } from '@src/lib/utils';
-import { Cloud, HardDrive, type LucideProps } from 'lucide-react';
-import type { ReactElement, ReactNode } from 'react';
+import { Cloud, GitBranch, HardDrive, type LucideProps } from 'lucide-react';
+import { Fragment, type ComponentType, type MouseEvent, type ReactElement, type ReactNode } from 'react';
 import { iconForType } from '../icons/iconRegistry';
 import { IconWithBadge } from '../icons/IconWithBadge';
 import { subIconForEntity } from '../icons/subIconRegistry';
 
 export type EntityIconDensity = 'default' | 'compact';
 
-export type EntityIconProps = Omit<LucideProps, 'ref' | 'type' | 'size'> & {
-  type: string;
-  remote?: boolean;
-  size?: number;
-  density?: EntityIconDensity;
-  containerClassName?: string;
-  showLocationTooltip?: boolean;
+/**
+ * Makes the location glyphs go to the location they name: cloud → the hub page,
+ * local → the OS file browser, git → the repo. Git is simply the third location
+ * an asset can live in, which is why it belongs here and not in an action bar.
+ *
+ * All opt-in per call site — a glyph without its prop stays the inert indicator
+ * it has always been. Resolving an asset's repo costs a backend round-trip (see
+ * `useAssetGitLink`), so lists must NOT pass `gitUrl`.
+ */
+export type EntityLocationLinkProps = {
+  /** Browsable repo URL for this entity. Absent/null ⇒ no git glyph at all. */
+  gitUrl?: string | null;
+  /** Repo name for the tooltip, e.g. `owner/repo`. */
+  gitLabel?: string | null;
+  /** Hub page URL — makes the cloud glyph open the entity on the cloud. */
+  cloudUrl?: string | null;
+  /**
+   * Reveals the asset in the OS file browser — makes the local glyph a button.
+   * A callback, not a path: the reveal must go through the entity's OWN compute
+   * node (`FSRef.open({select:true})`), which this shared icon has no way to know.
+   */
+  onRevealLocal?: () => void;
 };
 
-export type EntityIconWithSubProps = {
+export type EntityIconProps = Omit<LucideProps, 'ref' | 'type' | 'size'> &
+  EntityLocationLinkProps & {
+    type: string;
+    remote?: boolean;
+    size?: number;
+    density?: EntityIconDensity;
+    containerClassName?: string;
+    showLocationTooltip?: boolean;
+  };
+
+export type EntityIconWithSubProps = EntityLocationLinkProps & {
   entity: APIEntity<any>;
   density?: EntityIconDensity;
   containerClassName?: string;
@@ -47,16 +74,70 @@ function isAriaHidden(value: LucideProps['aria-hidden']): boolean {
   return value === true || value === 'true';
 }
 
+/** One location this entity can be reached at, and how to get there. */
+type LocationSpec = {
+  key: 'cloud' | 'local' | 'git';
+  Icon: ComponentType<LucideProps>;
+  className: string;
+  label: string | undefined;
+  showTooltip: boolean;
+  onActivate?: () => void;
+};
+
+/**
+ * Render one location glyph, with the tooltip it always has and the activation
+ * it only sometimes has. `onActivate` absent ⇒ a plain, inert glyph (what every
+ * list renders); present ⇒ a button that goes to that location. The frame sits
+ * inside clickable rows, so activation must never also select/navigate the entity.
+ *
+ * A plain function, not a component: it holds no hooks, and every list row would
+ * otherwise pay for an extra fiber per glyph.
+ */
+function locationGlyph(spec: LocationSpec, size: number): ReactElement {
+  const { key, Icon, className, label, showTooltip, onActivate } = spec;
+  const glyph = (
+    <Icon size={size} className={cn('shrink-0', className)} data-location-glyph={key} aria-hidden="true" />
+  );
+  const body = onActivate ? (
+    <button
+      type="button"
+      onClick={(e: MouseEvent<HTMLButtonElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onActivate();
+      }}
+      aria-label={label}
+      data-testid={`entity-icon-${key}-link`}
+      className={glyphActionClassName}
+    >
+      {glyph}
+    </button>
+  ) : (
+    glyph
+  );
+  if (!showTooltip || !label) return body;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{body}</TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function EntityIconFrame({
   remote,
   density,
   typeSize,
   containerClassName,
   showLocationTooltip,
+  gitUrl,
+  gitLabel,
+  cloudUrl,
+  onRevealLocal,
   ariaLabel,
   ariaHidden,
   children,
-}: {
+}: EntityLocationLinkProps & {
   remote: boolean | undefined;
   density: EntityIconDensity;
   typeSize: number;
@@ -66,37 +147,46 @@ function EntityIconFrame({
   ariaHidden: boolean;
   children: ReactNode;
 }): ReactElement {
+  const { t } = useLingui();
   const location = entityLocation(remote);
   const locationSize = Math.max(8, typeSize - 4);
   const locationLabel = useEntityLocationLabel(remote);
   const compositeLabel = [ariaLabel, locationLabel].filter(Boolean).join(', ') || undefined;
 
-  const locationGlyph =
-    location === 'unknown' ? null : location === 'cloud' ? (
-      <Cloud
-        size={locationSize}
-        className="shrink-0 text-cloud"
-        data-location-glyph="cloud"
-        aria-hidden="true"
-      />
-    ) : (
-      <HardDrive
-        size={locationSize}
-        className="shrink-0 text-muted-foreground"
-        data-location-glyph="local"
-        aria-hidden="true"
-      />
-    );
-
-  const locationNode =
-    locationGlyph && showLocationTooltip ? (
-      <Tooltip>
-        <TooltipTrigger asChild>{locationGlyph}</TooltipTrigger>
-        <TooltipContent>{locationLabel}</TooltipContent>
-      </Tooltip>
-    ) : (
-      locationGlyph
-    );
+  // One entry per location this entity can be reached at, in glyph order. The
+  // `unknown` case simply contributes nothing, and "is anything activatable"
+  // falls out of the list instead of being restated.
+  const specs: LocationSpec[] = [];
+  if (location === 'cloud') {
+    specs.push({
+      key: 'cloud',
+      Icon: Cloud,
+      className: 'text-cloud',
+      label: cloudUrl ? t`Open on the cloud` : locationLabel,
+      showTooltip: showLocationTooltip,
+      onActivate: cloudUrl ? () => openExternal(cloudUrl) : undefined,
+    });
+  } else if (location === 'local') {
+    specs.push({
+      key: 'local',
+      Icon: HardDrive,
+      className: 'text-muted-foreground',
+      label: onRevealLocal ? t`Reveal in the file browser` : locationLabel,
+      showTooltip: showLocationTooltip,
+      onActivate: onRevealLocal,
+    });
+  }
+  if (gitUrl) {
+    specs.push({
+      key: 'git',
+      Icon: GitBranch,
+      className: 'text-muted-foreground',
+      label: gitLabel ? t`Open ${gitLabel}` : t`Open in repository`,
+      showTooltip: showLocationTooltip,
+      onActivate: () => openExternal(gitUrl),
+    });
+  }
+  const interactive = specs.some((s) => s.onActivate);
 
   return (
     <span
@@ -106,11 +196,16 @@ function EntityIconFrame({
         containerClassName,
       )}
       data-entity-location={location}
-      role={ariaHidden ? undefined : 'img'}
+      // `role="img"` would swallow the glyph buttons from the a11y tree, but the
+      // frame still has to carry the entity's name — so it becomes a labelled
+      // group instead of dropping its role (and its label) entirely.
+      role={ariaHidden ? undefined : interactive ? 'group' : 'img'}
       aria-label={ariaHidden ? undefined : compositeLabel}
       aria-hidden={ariaHidden || undefined}
     >
-      {locationNode}
+      {specs.map((spec) => (
+        <Fragment key={spec.key}>{locationGlyph(spec, locationSize)}</Fragment>
+      ))}
       {children}
     </span>
   );
@@ -123,6 +218,10 @@ export function EntityIcon({
   density = 'default',
   containerClassName,
   showLocationTooltip = true,
+  gitUrl,
+  gitLabel,
+  cloudUrl,
+  onRevealLocal,
   className,
   color,
   'aria-label': ariaLabel,
@@ -140,6 +239,10 @@ export function EntityIcon({
       typeSize={typeSize}
       containerClassName={containerClassName}
       showLocationTooltip={showLocationTooltip}
+      gitUrl={gitUrl}
+      gitLabel={gitLabel}
+      cloudUrl={cloudUrl}
+      onRevealLocal={onRevealLocal}
       ariaLabel={ariaLabel}
       ariaHidden={ariaHidden}
     >
@@ -166,6 +269,10 @@ export function EntityIconWithSub({
   containerClassName,
   typeStackClassName,
   showLocationTooltip = true,
+  gitUrl,
+  gitLabel,
+  cloudUrl,
+  onRevealLocal,
   'aria-label': ariaLabel,
 }: EntityIconWithSubProps): ReactElement {
   const typeSize = density === 'compact' ? 14 : 16;
@@ -177,6 +284,10 @@ export function EntityIconWithSub({
       typeSize={typeSize}
       containerClassName={containerClassName}
       showLocationTooltip={showLocationTooltip}
+      gitUrl={gitUrl}
+      gitLabel={gitLabel}
+      cloudUrl={cloudUrl}
+      onRevealLocal={onRevealLocal}
       ariaLabel={ariaLabel}
       ariaHidden={false}
     >
