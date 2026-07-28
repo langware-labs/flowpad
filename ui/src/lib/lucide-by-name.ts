@@ -1,15 +1,26 @@
 import * as lucideIcons from 'lucide-react';
 import { FileText, type LucideIcon } from 'lucide-react';
+import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
+import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { WikiIcon } from '@src/components/icons/WikiIcon';
 
 /**
  * Custom (non-lucide) icon components addressable by the same string name that
  * the backend type registry publishes in `TypeInfo.icon`. Lets a type opt into
- * a bespoke glyph (e.g. the wiki "W") while keeping the backend as the single
- * source of truth for which icon a type uses. Consulted before lucide.
+ * a bespoke glyph (e.g. the wiki "W", a worker's vendor logo) while keeping the
+ * backend as the single source of truth for which icon a type uses. Consulted
+ * before lucide.
  */
 const CUSTOM_ICONS: Record<string, LucideIcon> = {
   WikiW: WikiIcon as unknown as LucideIcon,
+  // Worker-session vendor logos. Registered here rather than mapped at a call
+  // site so `iconForType('claude_session')` resolves the real glyph on EVERY
+  // surface — search rows, project resource lists, and the attachment chip a
+  // received transcript renders as.
+  ClaudeCode: ClaudeIcon as unknown as LucideIcon,
+  Codex: CodexIcon as unknown as LucideIcon,
+  Copilot: CopilotIcon as unknown as LucideIcon,
 };
 
 /**

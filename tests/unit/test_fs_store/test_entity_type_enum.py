@@ -136,6 +136,7 @@ EXPECTED = {
     "MESSAGE_ATTACHMENT": "message_attachment",
     "TEAM_SPACE": "team_space",
     "NOTIFICATION": "notification",
+    "INBOX_MANAGER": "inbox_manager",
     "RUN": "run",
     "PROMPT_RESULT": "prompt_result",
     "REMOTE_WORKER_SESSION": "remote_worker_session",

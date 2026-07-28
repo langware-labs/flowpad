@@ -20,7 +20,8 @@ the backend is running, which is the point: ``flow diagnose`` runs precisely whe
 the backend may be down):
 
   1. Always creates a ``flowpad_diagnosis`` record (title / symptoms / rca / fix /
-     summary).
+     summary), stamped with the reporting machine's environment snapshot (who /
+     when / OS / app version) so those details survive a forward to another machine.
   2. ONLY when an issue was found (``--status`` in ``fixed | needs_action |
      unrecognized``) it also creates the *support artifact* the report buttons act
      on: a hidden ``Conversation`` + a summary ``FlowMessage`` (carrying the
@@ -36,6 +37,7 @@ either the modal or the Feed card.
 The @local user/project are CREATED if they don't exist yet (idempotent).
 The `flow diagnose` runner cross-links the diagnosis to the calling process itself.
 """
+
 from __future__ import annotations
 
 import logging
@@ -69,9 +71,33 @@ def _format_message(*, summary: str, status: str, details: str, platform: str) -
     return "\n".join(lines)
 
 
-async def _create_diagnosis_record(
-    *, title: str, symptoms: str, rca: str, fix: str, summary: str
-) -> str:
+def _environment_snapshot() -> dict:
+    """Who / when / where, as of the machine that is recording the diagnosis.
+
+    Persisted ONTO the record rather than computed when it is read, because both
+    read surfaces are potentially on someone else's machine: the "Report issue"
+    email can be sent by a helper the diagnosis was forwarded to, and the details
+    the receiver sees must still describe the reporter's Windows box, not theirs.
+    """
+    import platform
+
+    from flow_sdk.server.routes.bootstrap import get_email, get_name
+
+    name, email = get_name(), get_email()
+    try:
+        from flow_sdk._version import __version__ as app_version
+    except Exception:  # noqa: BLE001
+        app_version = None
+
+    return {
+        "reported_by": f"{name} <{email}>" if name and email else (email or name or "unknown"),
+        "occurred_at": datetime.now(UTC).isoformat(),
+        "os": platform.platform(),
+        "app_version": app_version or "",
+    }
+
+
+async def _create_diagnosis_record(*, title: str, symptoms: str, rca: str, fix: str, summary: str) -> str:
     """Create + persist a ``flowpad_diagnosis`` record; return its id."""
     import flow_sdk.models.entities  # noqa: F401 — registers entity classes
     from flow_sdk.api.api_types.identifier import mint_uuid
@@ -84,7 +110,13 @@ async def _create_diagnosis_record(
     info = SchemaRegistry.get(EntityType.FLOWPAD_DIAGNOSIS)
     assert info and info.meta_model, f"{EntityType.FLOWPAD_DIAGNOSIS} type is not registered"
     meta = info.meta_model(
-        name=title, title=title, symptoms=symptoms, rca=rca, fix=fix, summary=summary
+        name=title,
+        title=title,
+        symptoms=symptoms,
+        rca=rca,
+        fix=fix,
+        summary=summary,
+        **_environment_snapshot(),
     )
     rec = FSRecord(EntityType.FLOWPAD_DIAGNOSIS, id=mint_uuid(), **meta.model_dump(exclude_none=True))
     rec.save()
@@ -143,16 +175,12 @@ async def create_support_conversation(
     # 1) Conversation — created normally, hidden at the end (step 3) so the
     #    message it carries can't auto-revive it in the Recent strip.
     title = f"Flowpad diagnostics — {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
-    conv = Conversation.model_validate(
-        {"project_id": project.id, "participants": [], "title": title, "name": title}
-    )
+    conv = Conversation.model_validate({"project_id": project.id, "participants": [], "title": title, "name": title})
     conv.id = Conversation.allocate_id(conv.model_dump())
     conv = await conv.save(owner)
     await project.attach_child(conv)
 
-    rec = from_jsonl(
-        default_jsonl_path(conv.id), project.id, conv.id, parent_type=RecordType.PROJECT
-    )
+    rec = from_jsonl(default_jsonl_path(conv.id), project.id, conv.id, parent_type=RecordType.PROJECT)
     rec.save()
 
     # 2) Summary FlowMessage, appended to the conversation (local pointer path —
@@ -164,9 +192,7 @@ async def create_support_conversation(
         sender_id=user.id,
         sender_name=getattr(user, "name", None) or "Flowpad Diagnostics",
         attachment=(
-            [Attachment(attachment_type=AttachmentType.TYPE_ID, data=attachment_type_id)]
-            if attachment_type_id
-            else []
+            [Attachment(attachment_type=AttachmentType.TYPE_ID, data=attachment_type_id)] if attachment_type_id else []
         ),
     )
     msg = await msg.save(owner)
@@ -182,7 +208,8 @@ async def create_support_conversation(
 
     logger.info(
         "[diagnose-report] created support conversation=%s flow_message=%s",
-        conv.id, msg.id,
+        conv.id,
+        msg.id,
     )
     return {
         "conversation_id": conv.id,

@@ -2,6 +2,7 @@ import { FSItem, TypeId, VFSPath, fsStore } from '@sdk';
 import { File, Folder } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { DockPointer, normalizeRel } from '@src/navigation/DockPointer';
+import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 import type { ScopeFilter } from '@src/lib/scope-filter';
 import type { Browseable, BrowseableDragData, BrowseableRoot } from '@src/components/browseable-tree/types';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
@@ -38,6 +39,9 @@ export interface FsFolderRootDeps {
   /** Route-specific destination builder. It receives the complete canonical
    *  VFS identity, never a competing relative-path serialization. */
   pointerForVfs?: (path: VFSPath) => DockPointer;
+  /** Destination override for FILE rows only — see `FsNodeCtx.filePointerFor`.
+   *  Default: the same `pointerForVfs` folder grammar. */
+  filePointerForVfs?: (path: VFSPath) => DockPointer;
   /** When true, file/folder rows carry an `FsDragItem` drag payload so drop
    *  targets (e.g. the Assets context-folder rows) can accept them. */
   draggable?: boolean;
@@ -124,11 +128,32 @@ interface FsNodeCtx {
   /** Stable identity used in locators and equality. */
   locatorTypeId: TypeId;
   pointerFor: (path: VFSPath) => DockPointer;
+  /** Pointer a FILE row navigates to, when it differs from the folder grammar.
+   *  The Explorer leaves this unset: its body trims a file path down to the
+   *  containing directory, so a file leaf just lands the table on that folder.
+   *  The Assets `fs/` body has no such trim (a file path lists as an EMPTY
+   *  folder), so its roots pass `fsFileViewerPointer` here and a file leaf opens
+   *  the file in its viewer instead. */
+  filePointerFor?: (path: VFSPath) => DockPointer;
   draggable: boolean;
   /** When present, EVERY folder node in the subtree becomes a drop target —
    *  the factory binds the handlers to that folder's rel path (e.g. copy
    *  dropped rows into that exact subfolder). */
   folderDrop?: (rel: string) => FsFolderDrop;
+}
+
+/** The canonical "open this file" pointer for an fs row: the row's VFS path put
+ *  through `dockPointerForFile` — the same extension dispatch (markdown → the
+ *  markdown editor, everything else → the code editor) the file manager's
+ *  double-click uses, so the tree and the table open a file identically. */
+export function fsFileViewerPointer(typeId: TypeId, rel: string): DockPointer {
+  return fsFileViewerPointerForVfs(VFSPath.fromTypeId(typeId, normalizeRel(rel)));
+}
+
+/** `fsFileViewerPointer` on an already-resolved VFS identity — the form the
+ *  node context hands out (it never re-serializes to a relative path). */
+export function fsFileViewerPointerForVfs(path: VFSPath): DockPointer {
+  return dockPointerForFile(path.rawPath);
 }
 
 function explorerCtx(typeId: TypeId, scope: ScopeFilter, locatorTypeId: TypeId = typeId): FsNodeCtx {
@@ -156,11 +181,11 @@ function fileNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
     kind: 'file',
     label,
     icon: <File className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />,
-    // Leaves are not openable from the tree; the table opens files. A click here
-    // just lands the file manager on the file (its parent dir, via the body's
-    // file-detection), so the table shows the containing folder.
     hasChildren: false,
-    pointer: ctx.pointerFor(vfsForRel(ctx, rel)),
+    // Roots whose body can't render a file path (Assets `fs/`) route the leaf to
+    // the file's viewer; the Explorer keeps the folder grammar and lands its
+    // table on the containing directory. See FsNodeCtx.filePointerFor.
+    pointer: (ctx.filePointerFor ?? ctx.pointerFor)(vfsForRel(ctx, rel)),
     dragData: dragDataFor(ctx, id, rel, label, false),
   };
 }
@@ -212,6 +237,7 @@ export function assetsFsFolderNode(
     typeId,
     locatorTypeId,
     pointerFor: (path) => DockPointer.forAssetFs(path),
+    filePointerFor: fsFileViewerPointerForVfs,
     draggable: true,
     folderDrop,
   };
@@ -294,6 +320,7 @@ export function fsFolderRoot(deps: FsFolderRootDeps): BrowseableRoot {
     typeId,
     locatorTypeId,
     pointerFor: deps.pointerForVfs ?? ((path) => DockPointer.forExplorer(path.absVfsPath).withScopeFilter(scope)),
+    filePointerFor: deps.filePointerForVfs,
     draggable: deps.draggable ?? false,
   };
 

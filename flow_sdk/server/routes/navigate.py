@@ -9,9 +9,7 @@ The server picks the single "active" browser tab via
 and performs the actual in-app navigation.
 """
 
-import json
 from typing import Optional, Union
-from uuid import uuid4
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -21,11 +19,12 @@ from flow_sdk.core.display_target import DisplayTargetKind, resolve_display_targ
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.type_id import TypeId, is_named_id
 
+from flow_sdk.notifications import send_ui_command
+
 from .websocket import (
     get_active_connection,
     get_active_connection_info,
     get_connection_infos,
-    send_personal_message,
 )
 
 router = APIRouter()
@@ -73,14 +72,9 @@ def _pick_target(connection_id: Optional[str]) -> Union[tuple, JSONResponse]:
     return active
 
 
-async def _send_ui_command(ws, kind: str, **fields) -> None:
-    """Send a targeted ``ui_command`` WS frame (adds ``message_type`` + id)."""
-    await send_personal_message(
-        json.dumps(
-            {"message_type": "ui_command", "message_id": str(uuid4()), "kind": kind, **fields}
-        ),
-        ws,
-    )
+# Targeted ``ui_command`` sender — the shared builder in flow_sdk.notifications.
+# navigate/* is one consumer of the envelope; it does not own the frame shape.
+_send_ui_command = send_ui_command
 
 
 async def _lookup_entity(type_name: str, entity_id: str) -> Optional[Entity]:

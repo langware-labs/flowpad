@@ -109,6 +109,14 @@ async def test_reserved_root_rejected_for_user_tags():
 async def test_seed_system_tags_idempotent():
     from flow_sdk.builtin.tag import SYSTEM_TAG_SEED, seed_system_tags
 
+    # A TestClient lifespan earlier in the full suite performs the real server
+    # seed. Establish the fresh-seed precondition explicitly, then leave the
+    # canonical vocabulary restored for subsequent tests.
+    for name, _title, _description in SYSTEM_TAG_SEED:
+        existing = await Tag.get_by_id(Tag(name=name).id)
+        if existing is not None:
+            await existing.delete()
+
     first = await seed_system_tags()
     assert first == len(SYSTEM_TAG_SEED)  # fresh DB: every row written
     assert await seed_system_tags() == 0  # re-run converges to a no-op

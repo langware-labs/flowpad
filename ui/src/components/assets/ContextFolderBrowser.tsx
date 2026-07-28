@@ -54,10 +54,15 @@ export function ContextFolderBrowser({ vfsPath, onNavigate, projectId }: Context
   );
 
   const handlePathChange = useCallback(
-    (path: string) => {
+    (vfs: string) => {
       const locatorTypeId = vfsPath.typeId;
       if (!locatorTypeId) return;
-      onNavigate(DockPointer.forAssetFs(VFSPath.fromTypeId(locatorTypeId, normalizeRel(path))));
+      // The file manager reports a VFS path (`compute_node-<id>/Users/…`), not a
+      // relative one. Without the strip the typeid rides into the pointer and
+      // comes back as part of the browsed path, which lists as an empty folder.
+      onNavigate(
+        DockPointer.forAssetFs(VFSPath.fromTypeId(locatorTypeId, normalizeRel(VFSPath.parse(vfs).entitySubPath))),
+      );
     },
     [onNavigate, vfsPath],
   );

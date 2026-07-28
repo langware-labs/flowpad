@@ -3910,6 +3910,7 @@ msgstr "נתק"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "Details"
 msgstr "פרטים"
@@ -9454,8 +9455,8 @@ msgid "Open in terminal"
 msgstr "פתיחה בטרמינל"
 
 #: src/components/conversation/ConversationContextPanel.tsx
-msgid "Open in the transcript viewer"
-msgstr "פתח בתצוגת התמלול"
+#~ msgid "Open in the transcript viewer"
+#~ msgstr "פתח בתצוגת התמלול"
 
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 msgid "Open in Worktree"
@@ -9603,8 +9604,8 @@ msgid "Open the live session in a terminal"
 msgstr "פתח את החילוק החי בטרמינל"
 
 #: src/components/conversation/ConversationContextPanel.tsx
-msgid "Open the raw JSONL in a new tab"
-msgstr "פתח JSONL גולמי בכרטיסייה חדשה"
+#~ msgid "Open the raw JSONL in a new tab"
+#~ msgstr "פתח JSONL גולמי בכרטיסייה חדשה"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."
@@ -11254,8 +11255,8 @@ msgid "Reveal in folder"
 msgstr "הצג בתיקייה"
 
 #: src/components/conversation/ConversationContextPanel.tsx
-msgid "Reveal the message that produced this transcript"
-msgstr "חשוף את ההודעה שיצרה את התמלול הזה"
+#~ msgid "Reveal the message that produced this transcript"
+#~ msgstr "חשוף את ההודעה שיצרה את התמלול הזה"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Reveal the message this file is attached to"
@@ -12422,8 +12423,8 @@ msgid "Shared"
 msgstr "משותף"
 
 #: src/components/conversation/FlowMessageBubble.tsx
-msgid "Shared a session transcript — see the Context tab"
-msgstr "שיתוף תמלול הפעילות - ראה את כרטיסיית ההקשר"
+#~ msgid "Shared a session transcript — see the Context tab"
+#~ msgstr "שיתוף תמלול הפעילות - ראה את כרטיסיית ההקשר"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -13717,6 +13718,14 @@ msgstr "עקבה זו קדומה מתצוגת stack הקריאות. הפעל מ�
 msgid "This Wiki target has no readable content."
 msgstr ""
 
+#: src/components/conversation/asset-review/StagedTranscriptPreview.tsx
+msgid "This transcript could not be read."
+msgstr "לא ניתן לקרוא את התמליל הזה."
+
+#: src/components/conversation/asset-review/StagedTranscriptPreview.tsx
+msgid "This transcript has no messages."
+msgstr "אין הודעות בתמליל הזה."
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 msgstr "פעולה זו תמחק את כל יומני הניפוי מ-<0>~/.claude/debug/</0> ואת כל רשומות השגיאות שנותחו."
@@ -13946,7 +13955,6 @@ msgstr "אירועי עקיבוי"
 msgid "Traceback ({0} lines)"
 msgstr "מעקב שגיאה ({0} שורות)"
 
-#: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Transcript"
 msgstr "תמלול"
@@ -14448,7 +14456,6 @@ msgid "Vibe agents"
 msgstr "סוכני Vibe"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx

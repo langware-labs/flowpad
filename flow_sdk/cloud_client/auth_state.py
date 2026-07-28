@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 
 from flow_sdk.api.messages import AuthExpiredMessage
+
+from flow_sdk import inbox
 from flow_sdk.cloud_client.auth_status import (
     CloudConnectionStatusMessage,
     CloudLoginStatusMessage,
@@ -66,6 +68,11 @@ async def set_login_status(
         await broadcast(msg.model_dump_json())
     except Exception:
         pass
+
+    # Login transitions change viewer identity, which changes which
+    # invitations/messages count as unread — repair the projection here so a
+    # stale account can't keep driving the badge.
+    inbox.touch(f"login-status:{status.value if hasattr(status, 'value') else status}")
 
     if status == HubLoginStatus.LOGGED_OUT:
         await broadcast_auth_expired(reason or "logged_out")

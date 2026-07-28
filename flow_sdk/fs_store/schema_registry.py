@@ -27,6 +27,8 @@ from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
 
 _MAX_LOG_ENTRIES: int = 100
+
+
 def _schema_dir() -> Path:
     """Resolve the per-instance schema dir at call time.
 
@@ -123,8 +125,6 @@ class IndexResult:
 
 
 PROGRESS_EMIT_EVERY: int = 25  # emit one event per this many records
-
-
 
 
 @dataclass
@@ -290,8 +290,8 @@ class TypeInfo:
     # a DERIVED, read-only property (below) — the canonical claude-default family
     # subdir (``.claude/skills``, ``docs``) — so the many legacy consumers keep
     # working unchanged. Not hashed.
-    asset_class: Any = None            # placement.AssetClass | None
-    harness: Any = None                # placement.HarnessType | None
+    asset_class: Any = None  # placement.AssetClass | None
+    harness: Any = None  # placement.HarnessType | None
     family: str | None = None
     main_layout: str = "file"
     # For ``main_layout == "folder"`` owned types: the fixed inner filename of
@@ -435,11 +435,7 @@ class TypeInfo:
             raise ValueError("proposed entity id must be a UUID v4 or v5")
 
         path = self.capsule_target_for(ref)
-        observation = (
-            self.identity_backend.observe(path)
-            if self.identity_backend is not None
-            else None
-        )
+        observation = self.identity_backend.observe(path) if self.identity_backend is not None else None
         if observation is not None and observation.state is IdentityState.MALFORMED:
             if observation.error is not None:
                 raise observation.error
@@ -465,6 +461,7 @@ class TypeInfo:
                     MalformedCapsuleError,
                     UnsupportedCapsuleVersionError,
                 )
+
                 # OS/storage write failures fall back deterministically below;
                 # source corruption still fails closed.
                 if isinstance(
@@ -647,13 +644,15 @@ class SchemaRegistry:
         (GET returns an empty list instead of 400). They are never auto-indexed,
         browseable, or creatable.
         """
-        cls.register(TypeInfo(
-            type_name=type_name,
-            icon=icon,
-            indexed_by_default=False,
-            browseable_by=None,
-            creatable=False,
-        ))
+        cls.register(
+            TypeInfo(
+                type_name=type_name,
+                icon=icon,
+                indexed_by_default=False,
+                browseable_by=None,
+                creatable=False,
+            )
+        )
 
     @classmethod
     def register(cls, info: TypeInfo) -> None:
@@ -696,16 +695,13 @@ class SchemaRegistry:
                     current = merged_capsules.get(spec.name)
                     if current is not None and current != spec:
                         raise ValueError(
-                            f"Conflicting capsule declaration for type {info.type_name!r}: "
-                            f"{current!r} vs {spec!r}"
+                            f"Conflicting capsule declaration for type {info.type_name!r}: {current!r} vs {spec!r}"
                         )
                     merged_capsules[spec.name] = spec
                 existing.capsules = tuple(merged_capsules[name] for name in sorted(merged_capsules))
             if info.identity_backend is not None:
                 if existing.identity_backend is not None and existing.identity_backend != info.identity_backend:
-                    raise ValueError(
-                        f"Conflicting identity backend registration for type {info.type_name!r}"
-                    )
+                    raise ValueError(f"Conflicting identity backend registration for type {info.type_name!r}")
                 existing.identity_backend = info.identity_backend
             if info.id_stable_key_fn is not None:
                 existing.id_stable_key_fn = info.id_stable_key_fn
@@ -847,11 +843,7 @@ class SchemaRegistry:
         from flow_sdk.fs_store.placement import AssetClass  # noqa: PLC0415
 
         cls._ensure_loaded()
-        return {
-            v.family: v
-            for v in cls._types.values()
-            if v.asset_class == AssetClass.REPO and v.family
-        }
+        return {v.family: v for v in cls._types.values() if v.asset_class == AssetClass.REPO and v.family}
 
     @classmethod
     def repo_family_to_type(cls) -> dict[str, str]:
@@ -863,6 +855,21 @@ class SchemaRegistry:
         """Type names whose assets live in the recursive ``agentic-assets/<type>``
         hierarchy (repo types must declare a ``family`` to be placeable at all)."""
         return [info.type_name for info in cls.repo_family_to_info().values()]
+
+    @classmethod
+    def main_subdir_to_info(cls, family: str) -> "dict[str, TypeInfo]":
+        """Types declaring ``family``, keyed by their scope-relative install
+        subdir (``main_subdir``) — e.g. for the transcripts family:
+        ``{".claude/transcripts": …, ".agents/transcripts": …}``.
+
+        One family generally maps to several subdirs because each type's harness
+        contributes its own prefix, so a walker over "where this family installs"
+        needs the whole set. Generic on purpose: the registry knows how to index
+        its types, and the CALLER owns which family it cares about — keeping any
+        one domain's vocabulary out of the registry.
+        """
+        cls._ensure_loaded()
+        return {info.main_subdir: info for info in cls._types.values() if info.family == family and info.main_subdir}
 
     @classmethod
     def get_public_entity_types(cls) -> list[str]:
@@ -1050,7 +1057,6 @@ class SchemaRegistry:
     # Internal helpers
     # ---------------------------------------------------------------------------
 
-
     @classmethod
     async def clear_index(cls, types: list[str] | None = None) -> ClearResult:
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
@@ -1216,7 +1222,6 @@ class SchemaRegistry:
     # New name alias
     get_status = get_index_status
 
-
     @classmethod
     def get_errors(cls, type_name: "str | TypeId | None" = None) -> list:
         from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
@@ -1227,7 +1232,8 @@ class SchemaRegistry:
             if not isinstance(type_name, str):
                 type_name = type_name.type
             results = [
-                e for e in results
+                e
+                for e in results
                 if e.__dict__.get("source_record_type") == type_name or getattr(e, "type", None) == type_name
             ]
         return results
