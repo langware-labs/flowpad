@@ -131,21 +131,14 @@ export async function createVibeProcessForProject(opts: {
     },
     // Headless JSON-stream transport — the vibe chat is a side panel, not a
     // terminal; PTY transport would pre-fill (not run) the first prompt.
-    //
-    // `watchProcess: false` does NOT mean unwatched — it means the watch is not
-    // AWAITED here. createProcess otherwise blocks on a second round trip
-    // (measured at 2736ms on a loaded instance) before returning, and every
-    // millisecond before it returns is a millisecond the user stares at the hero
-    // with nothing happening. The subscription is established immediately below;
-    // it just no longer gates the navigation.
+    // `watchProcess: false` = don't AWAIT the watch inside createProcess (a
+    // second round trip that gated navigation); it is established below.
     { pty_mode: false, watchProcess: false },
   );
   void proc.watch().catch((e) => console.warn('[Vibe] watch failed; live updates degraded', e));
-  // Navigate the moment the process EXISTS — its id is all the URL needs, and
-  // the workspace can mount and show its pending state while setup finishes.
-  // Persona embedding is several more round trips; it only has to be done
-  // before the first PROMPT, and every caller that prompts awaits this function,
-  // so ordering is preserved without making the user watch the hero for it.
+  // The URL only needs the id, and the persona only has to be embedded before
+  // the first prompt — which every caller awaits — so neither belongs ahead of
+  // the navigation.
   if (open) navigation?.openShellProcess(proc.id, { viewMode: ViewMode.Vibe });
   await embedVibeAgent(proc);
   return proc;

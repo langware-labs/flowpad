@@ -101,6 +101,34 @@ describe('AgenticProcess canonical history replay', () => {
     expect(transcriptEntryOf(userRows[0])?.id).toBe('user-1');
   });
 
+  it('keeps an echo the replay does not carry — a message sent while the fetch was in flight', async () => {
+    // The retract pairs each echo with a history row by content. An echo minted
+    // AFTER the request went out has no counterpart in the payload, so it must
+    // survive: retiring every echo whenever history mentions any user message
+    // would erase the message the user just typed until the next reload.
+    const history = [
+      historyItem('user-1', FlowElementTypes.USER_MESSAGE, 'first', '2026-07-10T06:00:10.000Z', {
+        role: 'user',
+        subtype: 'user_message',
+      }),
+    ];
+    callActionSpy.mockResolvedValue({
+      history,
+      count: history.length,
+      session_id: 'session-inflight',
+      use_worker_history: true,
+    } as never);
+    const process = new AgenticProcess({ id: PROCESS_ID });
+    process.appendUserMessage('first'); // persisted — retired by the replay
+    process.appendUserMessage('second'); // typed mid-flight — nothing to pair with
+
+    await process.loadHistory();
+
+    const userRows = process.getOutputs().filter((item) => item.elementType === FlowElementTypes.USER_MESSAGE);
+    expect(userRows.map((item) => item.content)).toEqual(['first', 'second']);
+    expect(transcriptEntryOf(userRows[0])?.id).toBe('user-1');
+  });
+
   it('force reload preserves complete repeated turns, adjacent chats, objects, and typed identity', async () => {
     const history = [
       historyItem('user-1', FlowElementTypes.USER_MESSAGE, 'same prompt', '2026-07-10T06:00:00.100Z', {

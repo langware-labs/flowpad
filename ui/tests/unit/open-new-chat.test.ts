@@ -126,15 +126,13 @@ describe('openNewChat + NavigationActions', () => {
 
     expect(navigate).toHaveBeenCalledTimes(1);
   });
-});
 
-describe('pending-navigation marker vs a loader-rewritten URL', () => {
-  afterEach(() => {
-    NavigationActions.resetPendingNavigationForTests();
-    vi.restoreAllMocks();
-  });
-
-  it('keeps suppressing the dock after the committed URL differs from the stamped one', () => {
+  it('BUG: suppresses the dock after the committed URL differs from the stamped one', () => {
+    // Pins a KNOWN DEFECT, not desired behaviour — delete this test when it is
+    // fixed (comparing dock identity via DockPointer.fromUrl instead of raw URL
+    // strings would remove it). Measured NOT to be the vibe-hero slowness: the
+    // commit fires at +2502ms with no suppression event.
+    //
     // `commitBrowserNavigation` stamps the EXACT target URL as pending, and
     // `openDock` hard no-ops while `pendingDockNavigationUrl === fullUrl`
     // (NavigationActions.ts:351). The stamp is only released when the browser
