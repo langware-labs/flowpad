@@ -139,6 +139,39 @@ def _sentinel_body(text: str, marker: str, end: int) -> str:
     return "\n".join(lines).strip("\n")
 
 
+async def _with_attached_project_secrets(
+    project_id: str | None, extra_env: dict[str, str] | None
+) -> dict[str, str] | None:
+    """Merge the project's attached secrets under any explicit ``extra_env``.
+
+    Best-effort by design: a terminal must open even when a secret cannot be
+    resolved, so every failure here is swallowed and the PTY spawns without it.
+    """
+    if not project_id:
+        return extra_env
+    try:
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_resolver import (  # noqa: PLC0415
+            attached_env_vars_for,
+            resolve_project_secrets,
+        )
+
+        project = await Project.get_by_id(str(project_id))
+        if project is None:
+            return extra_env
+        only = await attached_env_vars_for(project)
+        resolved = await resolve_project_secrets(project, only=only)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[shell] could not resolve project secrets for the PTY: %s", e)
+        return extra_env
+
+    if not resolved:
+        return extra_env
+    merged = {name: value.get_secret_value() for name, value in resolved.items()}
+    merged.update(extra_env or {})  # explicit env wins
+    return merged
+
+
 class Shell(Entity):
     """Entity representing a shell tab (PTY session).
 
@@ -503,6 +536,11 @@ class Shell(Entity):
             elif self.status in ("running", "closed"):
                 await self._cleanup_stale_session()
 
+            # A terminal on this node sees the project's ATTACHED secrets, the
+            # same set a worker gets. Transient: it reaches the child process
+            # env and is never written to the node's filesystem. An explicitly
+            # passed value always wins.
+            extra_env = await _with_attached_project_secrets(self.project_id, extra_env)
             await cn.create_pty(
                 self.id,
                 rows=rows,

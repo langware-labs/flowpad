@@ -962,6 +962,17 @@ class Project(Entity):
         mcp_connector = await self.get_mcp_connector()
         if initialize_options.mcp_connector_init:
             process_env_list = await get_env_vars_context(get_current_request_info().user, self)
+            # Union in the node's attached project secrets. get_env_vars_context
+            # wins a name collision, mirroring the setdefault precedence the
+            # worker path has always used.
+            from flow_sdk.core.flow.models.execution.env_context import (  # noqa: PLC0415
+                resolve_node_secret_env,
+            )
+
+            taken = {e.name for e in process_env_list}
+            process_env_list = process_env_list + [
+                e for e in await resolve_node_secret_env(self) if e.name not in taken
+            ]
             async with mcp_connector.initialize(initialize_options, process_env_list):
                 pass
 
