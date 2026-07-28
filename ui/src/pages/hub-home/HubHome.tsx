@@ -1,4 +1,4 @@
-import { ExecutionEnvironmentStatus, PageId, ViewType, WorldViewProjection } from '@sdk';
+import { ExecutionEnvironmentStatus, MachineSubview, PageId, ViewType, WorldViewProjection } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -14,6 +14,7 @@ import {
   FolderGit2,
   Globe,
   Loader2,
+  KeyRound,
   Monitor,
   Plus,
   Trash2,
@@ -103,6 +104,16 @@ export function HubHome() {
   const { t } = useLingui();
   const { currentUser } = useAuth();
   const { navigation } = useDockNavigation();
+
+  /** Open the machine dock's Secrets tab.
+   *
+   *  Navigation and nothing else — no context writes, per the URL-first rule.
+   *  Deliberately does NOT attach anything inline: these cards drive a HUB
+   *  backend, which does not have the attach actions, so the panel shows its
+   *  own empty state there rather than this button pretending to work. */
+  const openDesktopSecrets = () => {
+    navigation.openDock(new DockPointer(ViewType.MACHINE, MachineSubview.SECRETS));
+  };
   // Current project is the same source the footer's StatusBar reads
   // (dataContext.project), so the highlighted card and the footer always agree.
   const { project: currentProject } = useContext();
@@ -306,6 +317,15 @@ export function HubHome() {
                     className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
                   >
                     <ExternalLink className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openDesktopSecrets()}
+                    aria-label={t`Machine secrets`}
+                    data-testid="desktop-secrets"
+                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                  >
+                    <KeyRound className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
