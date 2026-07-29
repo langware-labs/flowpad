@@ -2530,6 +2530,10 @@ msgstr "הענן מנותק"
 msgid "Cloud hub"
 msgstr "Hub בענן"
 
+#: src/components/environment-banner/EnvironmentBanner.tsx
+msgid "Cloud Sandbox"
+msgstr ""
+
 #: src/components/graph-view/GraphView.tsx
 #~ msgid "Cloud WorldView"
 #~ msgstr "תצוגת עולם בענן"
@@ -3914,6 +3918,7 @@ msgstr "תיאור, למשל: הכנת התקציר היומי שלי"
 msgid "Description:"
 msgstr "תיאור:"
 
+#: src/components/environment-banner/EnvironmentBanner.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/desktop/DesktopPage.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -4871,6 +4876,10 @@ msgstr "פורמט צפוי: /dock/show/<entity-vfs>?page=<page>&component=<comp
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Expert Assistance"
 msgstr "עזרה מומחה"
+
+#: src/components/environment-banner/EnvironmentBanner.tsx
+msgid "Explanation of Flowpad's runtime environments."
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Explore your organization and everything you can reach."
@@ -6290,6 +6299,7 @@ msgstr "https://github.com/owner/repo"
 msgid "https://github.com/owner/repo.git"
 msgstr "https://github.com/owner/repo.git"
 
+#: src/components/environment-banner/EnvironmentBanner.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"

@@ -2530,6 +2530,10 @@ msgstr "Cloud disconnected"
 msgid "Cloud hub"
 msgstr "Cloud hub"
 
+#: src/components/environment-banner/EnvironmentBanner.tsx
+msgid "Cloud Sandbox"
+msgstr "Cloud Sandbox"
+
 #: src/components/graph-view/GraphView.tsx
 #~ msgid "Cloud WorldView"
 #~ msgstr "Cloud WorldView"
@@ -3914,6 +3918,7 @@ msgstr "Description like prepare my daily brief"
 msgid "Description:"
 msgstr "Description:"
 
+#: src/components/environment-banner/EnvironmentBanner.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/desktop/DesktopPage.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -4871,6 +4876,10 @@ msgstr "Expected format: /dock/show/<entity-vfs>?page=<page>&component=<componen
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Expert Assistance"
 msgstr "Expert Assistance"
+
+#: src/components/environment-banner/EnvironmentBanner.tsx
+msgid "Explanation of Flowpad's runtime environments."
+msgstr "Explanation of Flowpad's runtime environments."
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Explore your organization and everything you can reach."
@@ -6290,6 +6299,7 @@ msgstr "https://github.com/owner/repo"
 msgid "https://github.com/owner/repo.git"
 msgstr "https://github.com/owner/repo.git"
 
+#: src/components/environment-banner/EnvironmentBanner.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
