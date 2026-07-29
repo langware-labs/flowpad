@@ -513,31 +513,22 @@ async def clear_all_data() -> ClearAllResult:
         invalidate_bootstrap_cache()
         await bootstrap()
 
-        # Re-seed the system projects (e.g. @flowpad_assistant). These are seeded
-        # only by the startup-index path — the bootstrap() route handler above
-        # rebuilds @local but NOT the system projects, so without this a factory
-        # reset silently loses them until the process restarts (same class of bug
-        # as the driver-keyed Capability._seeded_dbs guard). Their absence makes the FE
-        # assistant resolver log "Invalid entity type or ID" console errors on every
-        # page load. Non-fatal — mirror startup's best-effort handling.
+        # Rebuild the shipped system content through the same canonical pass as
+        # process startup. The bootstrap() route handler above only restores the
+        # @local graph; a factory reset also deletes the indexed system agents,
+        # skills, whiteboards, and docs. Restoring only the project/markdown rows
+        # leaves callers such as Vibe unable to resolve their bundled agent until
+        # the whole process restarts.
+        #
+        # Await this pass: once the destructive reset response says "complete",
+        # every shipped asset must already be queryable. The pass itself remains
+        # best-effort, matching startup.
         try:
-            from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
-                _ensure_system_projects,
-                _index_system_project_markdowns,
-                get_or_create_local_user,
-            )
+            from flow_sdk.server.routes.bootstrap import index_system_content  # noqa: PLC0415
 
-            _user = await get_or_create_local_user()
-            _system_projects = await _ensure_system_projects(desktop_user=_user)
-            # Mirror the startup-index path: seed THEN index the system markdown so
-            # the assistant docs are searchable/browsable after a reset, not just
-            # present as empty project rows.
-            try:
-                await _index_system_project_markdowns(_system_projects)
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"clear_all_data: failed to index system markdowns (non-fatal): {e}")
+            await index_system_content()
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"clear_all_data: failed to re-seed system projects (non-fatal): {e}")
+            logger.warning(f"clear_all_data: failed to re-seed system content (non-fatal): {e}")
 
     # The triggering HTTP request can be CANCELLED at any await (ASGI client
     # disconnect — e.g. the test runner being killed mid-clear). Without a
