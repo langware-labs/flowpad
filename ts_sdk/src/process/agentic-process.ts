@@ -3022,15 +3022,18 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         newValue: this.busy,
       });
     }
-    if (data.worker_status && data.worker_status !== this.workerStatus) {
-      const oldWorker = this.workerStatus;
-      this.workerStatus = data.worker_status as WorkerStatus;
-      workerStatusChanged = true;
-      this.emit('state_change', {
-        field: 'workerStatus',
-        oldValue: oldWorker,
-        newValue: this.workerStatus,
-      });
+    if ('worker_status' in data) {
+      const nextWorkerStatus = data.worker_status ?? undefined;
+      if (nextWorkerStatus !== this.workerStatus) {
+        const oldWorker = this.workerStatus;
+        this.workerStatus = nextWorkerStatus;
+        workerStatusChanged = true;
+        this.emit('state_change', {
+          field: 'workerStatus',
+          oldValue: oldWorker,
+          newValue: this.workerStatus,
+        });
+      }
     }
 
     // Apply every wire field before deciding settlement. A single entity-op can
