@@ -17,7 +17,7 @@ the prefix is joined on immediately before handing the string to the shell.
 from __future__ import annotations
 
 import sys
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable
 
 from flow_sdk.config import PLATFORM_WIN32
 
@@ -34,12 +34,14 @@ def _unwrap(value: Any) -> str:
     return "" if value is None else str(value)
 
 
-def _pairs(env: Iterable[Any] | Mapping[str, Any] | None) -> list[tuple[str, str]]:
-    """Accept either a ``list[FlowEnv]`` or a plain mapping."""
+def _pairs(env: Iterable[Any] | None) -> list[tuple[str, str]]:
+    """``list[FlowEnv]`` -> ``(name, value)`` pairs.
+
+    Deliberately does NOT accept a mapping: the dict shape was the bug this
+    module exists to remove, and every provider signature now says list.
+    """
     if not env:
         return []
-    if isinstance(env, Mapping):
-        return [(str(k), _unwrap(v)) for k, v in env.items()]
     out: list[tuple[str, str]] = []
     for item in env:
         name = getattr(item, "name", None)
@@ -49,7 +51,7 @@ def _pairs(env: Iterable[Any] | Mapping[str, Any] | None) -> list[tuple[str, str
     return out
 
 
-def build_env_prefix(env: Iterable[Any] | Mapping[str, Any] | None, *, windows: bool | None = None) -> str:
+def build_env_prefix(env: Iterable[Any] | None, *, windows: bool | None = None) -> str:
     """The prefix to prepend to a command, or ``""`` when there is nothing to set.
 
     POSIX: ``NAME='value' `` — single-quoted, with embedded single quotes

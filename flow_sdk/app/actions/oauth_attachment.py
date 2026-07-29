@@ -31,7 +31,7 @@ from pydantic import BaseModel, ConfigDict
 
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.api.oauth_api import OAuthErrorCode
-from flow_sdk.core.entity.entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
+from flow_sdk.core.entity.entity_env.env_types import EnvVar, EnvVarType
 from flow_sdk.core.entity.entity_env.env_utils import build_shared_var_name
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.core.oauth.provider_registry import user_credentials_name
@@ -62,30 +62,26 @@ class RequestValidation(BaseModel):
         return self.error is None
 
 
+def _failed(message: str, code: OAuthErrorCode) -> RequestValidation:
+    return RequestValidation(error=OAuthAttachmentResult(success=False, message=message, error=code))
+
+
 async def validate_request_context() -> RequestValidation:
     request_info = get_current_request_info()
     if not request_info:
-        return RequestValidation(
-            error=OAuthAttachmentResult(
-                success=False, message="No request context found", error=OAuthErrorCode.NO_REQUEST_CONTEXT
-            )
-        )
+        return _failed("No request context found", OAuthErrorCode.NO_REQUEST_CONTEXT)
     if not request_info.user:
-        return RequestValidation(
-            error=OAuthAttachmentResult(
-                success=False, message="Missing user in request context", error=OAuthErrorCode.USER_NOT_FOUND
-            )
-        )
+        return _failed("Missing user in request context", OAuthErrorCode.USER_NOT_FOUND)
     if not request_info.target_entity_typeid:
-        return RequestValidation(
-            error=OAuthAttachmentResult(
-                success=False,
-                message="No target entity found in request context",
-                error=OAuthErrorCode.NO_TARGET_ENTITY,
-            )
-        )
+        return _failed("No target entity found in request context", OAuthErrorCode.NO_TARGET_ENTITY)
     return RequestValidation(
         user=request_info.user, target_entity_typeid=request_info.target_entity_typeid
+    )
+
+
+def _unknown_provider(provider: str) -> OAuthAttachmentResult:
+    return OAuthAttachmentResult(
+        success=False, message=f"Unknown OAuth provider '{provider}'", error=OAuthErrorCode.NO_SOD_FOUND
     )
 
 
@@ -123,8 +119,6 @@ async def share_var_with(
         )
 
     # Side 1 — consent, recorded on the credential's owner.
-    if sharing_entity.env_vars is None:
-        sharing_entity.env_vars = EntityEnvVars[EnvVar]()
     shared_var.share_with(shared_with.typeid)
     await sharing_entity.update()
 
@@ -136,8 +130,6 @@ async def share_var_with(
         else build_shared_var_name(var_name, shared_with.type)
     )
     if shared_with.get_env_var(target_var_name) is None:
-        if shared_with.env_vars is None:
-            shared_with.env_vars = EntityEnvVars[EnvVar]()
         shared_with.set_env_var(
             EnvVar(
                 name=target_var_name,
@@ -206,13 +198,7 @@ async def disconnect_oauth_provider(user: Entity, provider: str) -> OAuthAttachm
     from your last project keeps the token."""
     cred_name = user_credentials_name(provider)
     if not cred_name:
-        return OAuthAttachmentResult(
-            success=False, message=f"Unknown OAuth provider '{provider}'", error=OAuthErrorCode.NO_SOD_FOUND
-        )
-    if user.env_vars is None or not user.env_vars.values:
-        return OAuthAttachmentResult(
-            success=False, message=f"No SOD found for provider '{provider}'", error=OAuthErrorCode.NO_SOD_FOUND
-        )
+        return _unknown_provider(provider)
 
     entity_var = user.get_env_var(provider) or user.get_env_var(cred_name)
     if entity_var is None:
@@ -220,14 +206,14 @@ async def disconnect_oauth_provider(user: Entity, provider: str) -> OAuthAttachm
             success=False, message=f"SOD for provider '{provider}' not found", error=OAuthErrorCode.SOD_NOT_FOUND
         )
 
+    from flow_sdk.app.actions.desktop_oauth import _drop_credential_row  # noqa: PLC0415
     from flow_sdk.app.actions.env_var import delete_env_var_value  # noqa: PLC0415
 
     try:
         await delete_env_var_value(entity_var, user)
     except Exception as e:  # noqa: BLE001
         logger.warning("[oauth] failed to delete credentials during disconnect: %s", e)
-    user.remove_env_var(entity_var.name)
-    await user.update()
+    await _drop_credential_row(user, entity_var.name)
 
     logger.info("[oauth] disconnected provider '%s' from %s", provider, user.typeid)
     return OAuthAttachmentResult(
@@ -244,9 +230,7 @@ async def attach_action(provider: str, shared_entity_var_name: Optional[str] = N
 
     cred_name = user_credentials_name(provider)
     if not cred_name:
-        return OAuthAttachmentResult(
-            success=False, message=f"Unknown OAuth provider '{provider}'", error=OAuthErrorCode.NO_SOD_FOUND
-        )
+        return _unknown_provider(provider)
     return await share_var_with(
         validation.user, cred_name, validation.target_entity_typeid, shared_entity_var_name
     )
@@ -259,9 +243,7 @@ async def detach_action(provider: str) -> OAuthAttachmentResult:
 
     cred_name = user_credentials_name(provider)
     if not cred_name:
-        return OAuthAttachmentResult(
-            success=False, message=f"Unknown OAuth provider '{provider}'", error=OAuthErrorCode.NO_SOD_FOUND
-        )
+        return _unknown_provider(provider)
     result = await revoke_var_from(validation.user, cred_name, validation.target_entity_typeid)
 
     if result.success and result.remaining_attachment_count == 0:

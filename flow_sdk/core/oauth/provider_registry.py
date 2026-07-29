@@ -36,10 +36,6 @@ class LocalOAuthProvider:
     display_name: str
     user_credentials_name: str
     icon: Optional[str] = None
-    #: SOD entry for app-level (not user-level) credentials, when a provider
-    #: needs one. Neither desktop flow does — github uses a device flow and
-    #: anthropic uses PKCE, both client-secret-free.
-    app_credentials_name: Optional[str] = None
 
 
 _PROVIDERS: dict[str, LocalOAuthProvider] = {

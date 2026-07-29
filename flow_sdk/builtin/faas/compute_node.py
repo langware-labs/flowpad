@@ -687,6 +687,18 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return list(attached)
         return [name for name in attached if name in declared]
 
+    def effective_attached(self, project_id: str, declared: list[str]) -> list[str]:
+        """The env vars this node may see, with "absent means all" already
+        collapsed.
+
+        The back-compat rule is the security-relevant one, so it is decoded HERE
+        and nowhere else — re-deriving `declared if attached is None else attached`
+        per call site is how one branch ends up letting a node see more (or less)
+        than the others.
+        """
+        attached = self.attached_env_vars(project_id, declared)
+        return list(declared) if attached is None else attached
+
     async def _set_attached(self, project_id: str, names: list[str]) -> None:
         current = dict(self.attached_secrets or {})
         current[str(project_id)] = sorted(set(names))
@@ -706,33 +718,30 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return []
         return [row.get("env_var") for row in project.secret_origins if row.get("env_var")]
 
-    @action.post(action_name="attach-secret")
-    async def attach_secret(self, project_id: str = "", env_var: str = "") -> "ApiResponse":
-        """Let this node see one of a project's declared secrets."""
+    async def _recurate(self, project_id: str, env_var: str, *, add: bool) -> "ApiResponse":
+        """Attach or detach one secret. Both verbs are the same operation over a
+        different final list, so they share the whole body."""
         project_id, env_var = str(project_id or "").strip(), str(env_var or "").strip()
         if not project_id or not env_var:
             return ApiFailResponse(message="project_id and env_var are required")
         declared = await self._project_env_vars(project_id)
-        if env_var not in declared:
+        if add and env_var not in declared:
             return ApiFailResponse(message=f"{env_var} is not declared on this project")
 
         # First curation of a project turns the implicit "all" into an explicit
         # list, so attaching one secret does not silently detach the rest.
-        current = self.attached_env_vars(project_id, declared)
-        base = declared if current is None else current
-        await self._set_attached(project_id, [*base, env_var])
-        return ApiSuccessResponse(data={"attached": self.attached_env_vars(project_id)})
+        base = self.effective_attached(project_id, declared)
+        await self._set_attached(project_id, [*base, env_var] if add else [n for n in base if n != env_var])
+        return ApiSuccessResponse(data={"attached": self.attached_env_vars(project_id, declared)})
+
+    @action.post(action_name="attach-secret")
+    async def attach_secret(self, project_id: str = "", env_var: str = "") -> "ApiResponse":
+        """Let this node see one of a project's declared secrets."""
+        return await self._recurate(project_id, env_var, add=True)
 
     @action.post(action_name="detach-secret")
     async def detach_secret(self, project_id: str = "", env_var: str = "") -> "ApiResponse":
-        project_id, env_var = str(project_id or "").strip(), str(env_var or "").strip()
-        if not project_id or not env_var:
-            return ApiFailResponse(message="project_id and env_var are required")
-        declared = await self._project_env_vars(project_id)
-        current = self.attached_env_vars(project_id, declared)
-        base = declared if current is None else current
-        await self._set_attached(project_id, [n for n in base if n != env_var])
-        return ApiSuccessResponse(data={"attached": self.attached_env_vars(project_id)})
+        return await self._recurate(project_id, env_var, add=False)
 
     @action.post(action_name="attach-all-secrets")
     async def attach_all_secrets(self, project_id: str = "") -> "ApiResponse":
@@ -747,7 +756,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return ApiFailResponse(message="project_id is required")
         declared = await self._project_env_vars(project_id)
         await self._set_attached(project_id, declared)
-        return ApiSuccessResponse(data={"attached": self.attached_env_vars(project_id)})
+        return ApiSuccessResponse(data={"attached": self.attached_env_vars(project_id, declared)})
 
     @action.post(action_name="list-attached-secrets")
     async def list_attached_secrets(self, project_id: str = "") -> "ApiResponse":
@@ -757,7 +766,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return ApiFailResponse(message="project_id is required")
         declared = await self._project_env_vars(project_id)
         attached = self.attached_env_vars(project_id, declared)
-        allowed = set(declared if attached is None else attached)
+        allowed = set(self.effective_attached(project_id, declared))
         return ApiSuccessResponse(
             data={
                 "project_id": project_id,

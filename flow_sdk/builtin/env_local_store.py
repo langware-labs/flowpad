@@ -65,6 +65,18 @@ _REASONS = {
 }
 
 
+def _status(code: str) -> dict[str, Any]:
+    """Every flag is a function of the code, so derive them rather than
+    restating them per branch — hand-built dicts drift."""
+    return {
+        "in_repo": code not in (GITIGNORE_NO_DIR, GITIGNORE_NOT_A_REPO),
+        "ignored": code in (GITIGNORE_NO_DIR, GITIGNORE_NOT_A_REPO, GITIGNORE_IGNORED),
+        "tracked": code == GITIGNORE_TRACKED,
+        "code": code,
+        "reason": _REASONS[code],
+    }
+
+
 class EnvLocalNotWritable(RuntimeError):
     """Raised when the project has no writable mount dir, or ``.env.local`` cannot
     be proven gitignored — writing a value would risk leaking it on git-share.
@@ -122,9 +134,8 @@ def list_env_local(project: "Project") -> list[dict[str, Any]]:
 
     effective: dict[str, int] = {}
     for lineno, raw in enumerate(text.splitlines(), start=1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
+        # The regex anchors on a leading identifier, so blanks and #-comments
+        # already fail to match — no pre-filter needed.
         match = _ASSIGNMENT_RE.match(raw)
         if match is None:
             continue
@@ -150,79 +161,36 @@ def gitignore_status(project: "Project") -> dict[str, Any]:
 
     d = _project_dir(project)
     if d is None:
-        return {
-            "in_repo": False,
-            "ignored": True,
-            "tracked": False,
-            "code": GITIGNORE_NO_DIR,
-            "reason": _REASONS[GITIGNORE_NO_DIR],
-        }
+        return _status(GITIGNORE_NO_DIR)
 
     cwd = str(d)
     try:
         inside = _run_git(["git", "rev-parse", "--is-inside-work-tree"], cwd, timeout=10)
         if inside.returncode != 0 or inside.stdout.strip() != "true":
-            return {
-                "in_repo": False,
-                "ignored": True,
-                "tracked": False,
-                "code": GITIGNORE_NOT_A_REPO,
-                "reason": _REASONS[GITIGNORE_NOT_A_REPO],
-            }
+            return _status(GITIGNORE_NOT_A_REPO)
         # check-ignore: 0 = ignored, 1 = not ignored, anything else = failure.
         probe = _run_git(["git", "check-ignore", "-q", "--", ENV_LOCAL_FILENAME], cwd, timeout=10)
         # Ignore rules do NOT apply to files git already tracks, so a tracked
         # .env.local keeps getting committed however the ignore file reads.
         # This is the case a gitignore-only check reports as safe when it isn't.
-        tracked_probe = _run_git(
+        tracked = _run_git(
             ["git", "ls-files", "--error-unmatch", "--", ENV_LOCAL_FILENAME], cwd, timeout=10
-        )
-        tracked = tracked_probe.returncode == 0
+        ).returncode == 0
     except Exception as e:  # noqa: BLE001
         logger.warning("[env-local] gitignore probe failed for %s: %s", cwd, e)
-        return {
-            "in_repo": True,
-            "ignored": False,
-            "tracked": False,
-            "code": GITIGNORE_GIT_FAILURE,
-            "reason": _REASONS[GITIGNORE_GIT_FAILURE],
-        }
+        return _status(GITIGNORE_GIT_FAILURE)
 
     if tracked:
-        return {
-            "in_repo": True,
-            "ignored": False,
-            "tracked": True,
-            "code": GITIGNORE_TRACKED,
-            "reason": _REASONS[GITIGNORE_TRACKED],
-        }
+        return _status(GITIGNORE_TRACKED)
     if probe.returncode == 0:
-        return {
-            "in_repo": True,
-            "ignored": True,
-            "tracked": False,
-            "code": GITIGNORE_IGNORED,
-            "reason": _REASONS[GITIGNORE_IGNORED],
-        }
+        return _status(GITIGNORE_IGNORED)
     if probe.returncode == 1:
-        return {
-            "in_repo": True,
-            "ignored": False,
-            "tracked": False,
-            "code": GITIGNORE_NOT_IGNORED,
-            "reason": _REASONS[GITIGNORE_NOT_IGNORED],
-        }
+        return _status(GITIGNORE_NOT_IGNORED)
     logger.warning("[env-local] check-ignore exited %s for %s", probe.returncode, cwd)
-    return {
-        "in_repo": True,
-        "ignored": False,
-        "tracked": False,
-        "code": GITIGNORE_GIT_FAILURE,
-        "reason": _REASONS[GITIGNORE_GIT_FAILURE],
-    }
+    return _status(GITIGNORE_GIT_FAILURE)
 
 
-def ensure_gitignored(project: "Project") -> bool:
+def ensure_gitignored(project: "Project") -> dict[str, Any]:
     """Make sure ``.env.local`` is excluded by the project's ``.gitignore``.
 
     Idempotent: appends the line only when absent, then **asks git whether the
@@ -232,12 +200,13 @@ def ensure_gitignored(project: "Project") -> bool:
     added. Appending and assuming is how a value would end up committable while
     we reported success.
 
-    Returns True when git confirms the exclusion (or the dir isn't a repo, in
-    which case there's nothing to leak *to*).
+    Returns the VERIFIED status dict, not a bool — the caller needs the code to
+    explain a refusal, and re-probing to get it would spawn three more git
+    processes for an answer we already have.
     """
     d = _project_dir(project)
     if d is None:
-        return False
+        return _status(GITIGNORE_NO_DIR)
 
     # Append even when this isn't a repo yet: `git init` later would otherwise
     # find an unprotected .env.local sitting there. Cheap insurance.
@@ -250,22 +219,19 @@ def ensure_gitignored(project: "Project") -> bool:
             gitignore.write_text(f"{existing}{sep}{_GITIGNORE_LINE}\n", encoding="utf-8")
     except OSError as e:  # noqa: BLE001
         logger.warning("[env-local] could not write .gitignore for %s: %s", d, e)
-        return False
+        return _status(GITIGNORE_GIT_FAILURE)
 
     # Verify, don't assume.
-    return bool(gitignore_status(project)["ignored"])
+    return gitignore_status(project)
 
 
-def env_local_block(project: "Project") -> Optional[dict[str, Any]]:
+def env_local_block(status: dict[str, Any]) -> Optional[dict[str, Any]]:
     """The reason a value must not be written here, or ``None`` if it may be.
 
-    Writing a secret into a committable file is the one failure this module
-    exists to prevent, so it is a hard block rather than a warning.
+    Takes an already-computed status rather than probing again: each
+    ``gitignore_status`` costs three git subprocesses, and callers always have
+    one in hand.
     """
-    d = _project_dir(project)
-    if d is None:
-        return {"code": GITIGNORE_NO_DIR, "reason": _REASONS[GITIGNORE_NO_DIR]}
-    status = gitignore_status(project)
     if status["ignored"]:
         return None
     return {"code": status["code"], "reason": status["reason"]}
@@ -282,8 +248,8 @@ def write_env_local(project: "Project", key: str, value: str) -> None:
         raise EnvLocalNotWritable(
             "project has no writable mount dir for .env.local", code=GITIGNORE_NO_DIR
         )
-    if not ensure_gitignored(project):
-        status = gitignore_status(project)
+    status = ensure_gitignored(project)
+    if not status["ignored"]:
         raise EnvLocalNotWritable(
             f".env.local is not excluded by git; refusing to write a value ({status['reason']})",
             code=status["code"],

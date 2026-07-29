@@ -46,11 +46,28 @@ def _coords(locator: SecretOriginLocator, project) -> tuple[str, str] | None:
     return project_id, name
 
 
+async def _hub_env_var(project_id: str, sub_path: Optional[str] = None) -> Any:
+    """GET the project's env-var surface on the hub, unwrapped. ``None`` on any
+    failure — a hub that is down must not take a worker spawn with it."""
+    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
+
+    try:
+        payload = await hub_get(
+            BuiltinEntityType.PROJECT, project_id, action="env-var", sub_path=sub_path
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[hub-secret] fetch failed (%s): %s", sub_path or "table", e)
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload.get("data", payload)
+
+
 class HubSecretDriver:
     """Fetches a hub-held value with the CALLER's own hub credentials."""
 
     kind = "flowpad-hub"
-    coord_fields = COORD_FIELDS
 
     async def resolve(self, locator: SecretOriginLocator, **context: Any) -> Optional[SecretStr]:
         coords = _coords(locator, context.get("project"))
@@ -58,19 +75,7 @@ class HubSecretDriver:
             return None
         project_id, name = coords
 
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
-        from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-
-        try:
-            payload = await hub_get(
-                BuiltinEntityType.PROJECT, project_id, action="env-var", sub_path=f"{name}/value"
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.debug("[hub-secret] fetch failed for %s: %s", name, e)
-            return None
-        if not isinstance(payload, dict):
-            return None
-        data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        data = await _hub_env_var(project_id, f"{name}/value")
         value = data.get("value") if isinstance(data, dict) else None
         return SecretStr(value) if value else None
 
@@ -81,16 +86,7 @@ class HubSecretDriver:
             return False
         project_id, name = coords
 
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
-        from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-
-        try:
-            payload = await hub_get(BuiltinEntityType.PROJECT, project_id, action="env-var")
-        except Exception:  # noqa: BLE001
-            return False
-        if not isinstance(payload, dict):
-            return False
-        rows = payload.get("data")
+        rows = await _hub_env_var(project_id)
         if not isinstance(rows, list):
             return False
         return any(isinstance(r, dict) and r.get("name") == name for r in rows)

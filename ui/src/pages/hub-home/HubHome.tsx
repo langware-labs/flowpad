@@ -320,7 +320,7 @@ export function HubHome() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => openDesktopSecrets()}
+                    onClick={openDesktopSecrets}
                     aria-label={t`Machine secrets`}
                     data-testid="desktop-secrets"
                     className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"

@@ -108,11 +108,6 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   private machineSessionCallback: MachineSessionCallback | null = null;
 
   /** Bound handler for WebSocket data ops (for cleanup) */
-  /** Which of a project's declared secrets this node may see: `{project_id: [ENV_VAR]}`.
-   *  Value-free — the token IS the env var name. An ABSENT project key means
-   *  ALL of that project's secrets (an uncurated node is unrestricted). */
-  attached_secrets: Record<string, string[]> = {};
-
   private boundDataOpHandler: ((toEntity: string, op: string, data: { active_pty_sessions?: string[] }) => void) | null =
     null;
 
@@ -793,6 +788,17 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
 
+  /** Which of a project's declared secrets this node may see: `{project_id: [ENV_VAR]}`.
+   *  Value-free — the token IS the env var name. An ABSENT project key means
+   *  ALL of that project's secrets (an uncurated node is unrestricted). */
+  attached_secrets: Record<string, string[]> = {};
+
+  private secretAction<T>(name: string, body: Record<string, unknown>): Promise<T | null> {
+    const action = new ActionInfo(name, ComputeNode.type, this.id, 'POST');
+    action.bodyParameters = body;
+    return dataManager.callAction<unknown, T>(action) as Promise<T | null>;
+  }
+
   /** Every declared secret on the project, flagged attached or not.
    *  `all_attached` is true when nothing has been curated yet, so the UI can
    *  show every row checked without pretending someone chose them. */
@@ -801,28 +807,20 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     all_attached: boolean;
     secrets: { env_var: string; attached: boolean }[];
   } | null> {
-    const action = new ActionInfo('list-attached-secrets', ComputeNode.type, this.id, 'POST');
-    action.bodyParameters = { project_id: projectId };
-    return (await dataManager.callAction(action)) ?? null;
+    return this.secretAction('list-attached-secrets', { project_id: projectId });
   }
 
   async attachSecret(projectId: string, envVar: string): Promise<void> {
-    const action = new ActionInfo('attach-secret', ComputeNode.type, this.id, 'POST');
-    action.bodyParameters = { project_id: projectId, env_var: envVar };
-    await dataManager.callAction(action);
+    await this.secretAction('attach-secret', { project_id: projectId, env_var: envVar });
   }
 
   async detachSecret(projectId: string, envVar: string): Promise<void> {
-    const action = new ActionInfo('detach-secret', ComputeNode.type, this.id, 'POST');
-    action.bodyParameters = { project_id: projectId, env_var: envVar };
-    await dataManager.callAction(action);
+    await this.secretAction('detach-secret', { project_id: projectId, env_var: envVar });
   }
 
   /** Attach everything the project declares RIGHT NOW — a snapshot, not a
    *  standing wildcard. */
   async attachAllSecrets(projectId: string): Promise<void> {
-    const action = new ActionInfo('attach-all-secrets', ComputeNode.type, this.id, 'POST');
-    action.bodyParameters = { project_id: projectId };
-    await dataManager.callAction(action);
+    await this.secretAction('attach-all-secrets', { project_id: projectId });
   }
 }
