@@ -1270,7 +1270,7 @@ async def _reap_protected_path_projects() -> None:
 
 async def _index_system_project_markdowns(projects: list[Project]) -> None:
     """Seed Markdown entities for every .md file under each system project's
-    ``docs/`` and ``.claude/docs/`` subtree.
+    ``docs/`` subtree.
 
     The async indexer is the canonical path, but it runs out-of-band — and
     several scenarios (welcome favorite seed, Flowpad Assistant docs panel,
@@ -1292,10 +1292,8 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
         if not mount:
             continue
         root = Path(mount)
-        for subdir in ("docs", ".claude/docs"):
-            base = root / subdir
-            if not base.is_dir():
-                continue
+        base = root / "docs"
+        if base.is_dir():
             for md_path in base.rglob("*.md"):
                 try:
                     # Resolve id READ-ONLY (frontmatter id, else stable

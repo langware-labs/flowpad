@@ -252,7 +252,7 @@ def _is_docs_markdown_path(path: "Path") -> bool:
         resolved = path.absolute()
 
     # Fast path for the common agent-created project docs layout:
-    # <project>/docs/foo.md or <project>/.claude/docs/foo.md.
+    # <project>/docs/foo.md.
     if "docs" in resolved.parts:
         return True
 

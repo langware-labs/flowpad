@@ -1,7 +1,7 @@
 """Indexer tests for the DECK_TEMPLATE type.
 
 Covers the slot functions end-to-end:
-- ``deck_template_fn`` walker emits one FSRef per ``assets/deck-templates/<slug>/``
+- ``repo_assets_fn`` emits one FSRef per ``agentic-assets/deck_template/<slug>/``
   folder carrying a ``template.json`` manifest.
 - ``extract_deck_template`` parses the manifest + ``layouts/`` into one FSRecord
   with denormalized layout data.
@@ -25,9 +25,9 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.functions.deck_template import (
     deck_template_asset_hash,
-    deck_template_fn,
     extract_deck_template,
 )
+from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
@@ -60,8 +60,8 @@ def _seed_template(
     common: dict[str, str] | None = None,
     media: dict[str, bytes] | None = None,
 ) -> Path:
-    """Seed a deck template folder under ``assets/deck-templates/<slug>/``."""
-    tpl = project / "assets" / "deck-templates" / slug
+    """Seed a deck template folder under ``agentic-assets/deck_template/<slug>/``."""
+    tpl = project / "agentic-assets" / "deck_template" / slug
     tpl.mkdir(parents=True)
     (tpl / "template.json").write_text(
         _doc(metadata=manifest, data=manifest_data), encoding="utf-8"
@@ -90,10 +90,10 @@ def test_walker_emits_one_ref_per_template(tmp_path: Path) -> None:
     _seed_template(tmp_path, "A", layouts=["cover-centered"])
     _seed_template(tmp_path, "B", layouts=["agenda-list"])
     # A folder without template.json must be skipped.
-    (tmp_path / "assets" / "deck-templates" / "no-manifest").mkdir(parents=True)
+    (tmp_path / "agentic-assets" / "deck_template" / "no-manifest").mkdir(parents=True)
 
     node = FSRef(tmp_path, record_type=RecordType.REAL_PROJECT_CWD)
-    refs = deck_template_fn([node], IndexerOptions(verbose=False))
+    refs = repo_assets_fn([node], IndexerOptions(verbose=False))
 
     assert len(refs) == 2
     assert all(r.record_type == RecordType.DECK_TEMPLATE for r in refs)
@@ -102,7 +102,7 @@ def test_walker_emits_one_ref_per_template(tmp_path: Path) -> None:
 
 def test_walker_no_templates_dir(tmp_path: Path) -> None:
     node = FSRef(tmp_path, record_type=RecordType.REAL_PROJECT_CWD)
-    assert deck_template_fn([node], IndexerOptions(verbose=False)) == []
+    assert repo_assets_fn([node], IndexerOptions(verbose=False)) == []
 
 
 # ── id minting ────────────────────────────────────────────────────────────────
@@ -182,7 +182,7 @@ def test_extract_layouts_ignore_non_html(tmp_path: Path) -> None:
 
 
 def test_extract_non_template_folder_returns_empty(tmp_path: Path) -> None:
-    plain = tmp_path / "assets" / "deck-templates" / "no-manifest"
+    plain = tmp_path / "agentic-assets" / "deck_template" / "no-manifest"
     plain.mkdir(parents=True)
     assert extract_deck_template(FSRef(plain), "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee") == []
 

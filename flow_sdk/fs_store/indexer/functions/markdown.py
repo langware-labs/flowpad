@@ -2,11 +2,13 @@
 
 Walkers:
   markdown_flat_fn
-      rglob <root>/.claude/docs/**/*.md.
-      Register on USER_HOME_FOLDER only — ``~/`` is a huge tree where
-      unrestricted ``docs/`` discovery would pick up unrelated dirs from
-      venvs, npm packages, etc. The narrow ``.claude/docs`` prefix keeps
-      home-dir scanning bounded.
+      rglob <root>/docs/**/*.md — the DOCS family mount.
+      Register on USER_HOME_FOLDER only, and note this walker is what makes
+      user-scope markdown discoverable AT ALL: ``markdown_in_folder_fn`` runs off
+      FOLDER refs, which ``project_folder_walker_fn`` emits for project roots
+      only — ``~/`` is deliberately never content-walked (a huge tree full of
+      venvs and npm packages). One bounded directory is the whole point; do not
+      widen this to a tree walk of home.
 
   markdown_in_folder_fn
       Per-FOLDER emitter. Receives FOLDER refs from
@@ -68,11 +70,19 @@ def markdown_flat_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
-    """<root>/.claude/docs/**/*.md — flat, no docs-subdir search."""
+    """``<root>/docs/**/*.md`` — the DOCS family mount, one bounded directory.
+
+    Was ``<root>/.claude/docs`` until markdown became ``AssetClass.DOCS``. That
+    directory was flowpad's own invention, not part of Claude Code's vocabulary,
+    and it split markdown across two homes: created docs went to ``docs/`` while
+    received ones went to ``.claude/docs/``.
+    """
+    from flow_sdk.fs_store.placement import DOCS_FAMILY  # noqa: PLC0415
+
     out: list[FSRef] = []
     seen: set[str] = set()
     for node in nodes:
-        _emit_md_rglob(Path(node.path) / ".claude" / "docs", node, out, seen)
+        _emit_md_rglob(Path(node.path) / DOCS_FAMILY, node, out, seen)
     return out
 
 

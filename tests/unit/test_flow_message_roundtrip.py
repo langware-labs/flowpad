@@ -784,11 +784,11 @@ class TestRawFileAttachmentStaging:
         assert ma.name == fname
         assert ma.user_scope_allowed is True
         assert ma.unpacked_path == f"unpacked/attachment/{entry_key}"
-        # Synthesized entry dir: .md files use the .claude/docs/ layout so
-        # install mirrors to <root>/.claude/docs/<name> (indexed as MARKDOWN on
+        # Synthesized entry dir: .md files use the docs/ layout so
+        # install mirrors to <root>/docs/<name> (indexed as MARKDOWN on
         # both project and user scopes).
         entry_dir = fm_data_ops.staged_entry_dir(fm_id, entry_key)
-        assert (entry_dir / ".claude" / "docs" / fname).is_file()
+        assert (entry_dir / "docs" / fname).is_file()
 
     @pytest.mark.asyncio
     async def test_unpack_does_not_stage_image_file_attachment(self, tmp_path):

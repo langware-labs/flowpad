@@ -34,7 +34,7 @@ export interface IMarkdown extends IEntity {
 }
 
 /**
- * Markdown (Docs) entity — wiki/markdown files under `.claude/docs/*.md`.
+ * Markdown (Docs) entity — wiki/markdown files under `docs/*.md` (AssetClass.DOCS).
  *
  * Creation goes through ``new Markdown().save(scope)`` only. The backend
  * Entity.save() resolves scope from request_context, calls

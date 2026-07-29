@@ -1,4 +1,4 @@
-"""Walker + extractor + id mint for DATASET records.
+"""Extractor + id mint for DATASET records.
 
 A dataset is a folder under ``agentic-assets/dataset/`` containing a ``dataset.json``
 manifest (which is also the walker's marker file). The manifest declares the
@@ -52,7 +52,6 @@ from flow_sdk.fs_store.identifier import adopt_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 MANIFEST = "dataset.json"
@@ -67,33 +66,6 @@ TEXT_EXTS = {".txt", ".md"}            # only these data files are decoded into 
 
 
 # ── walker ────────────────────────────────────────────────────────────────────
-
-def dataset_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    """Emit one DATASET FSRef per ``agentic-assets/dataset/<slug>/`` folder containing a
-    ``dataset.json`` manifest."""
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        root = Path(node.path) / "assets" / "datasets"
-        if not root.is_dir():
-            continue
-        for entry in sorted(root.iterdir()):
-            if not entry.is_dir():
-                continue
-            if not (entry / MANIFEST).is_file():
-                continue
-            key = str(entry.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(entry, record_type=RecordType.DATASET, parent=node))
-    return out
-
-
-# ── id helpers ────────────────────────────────────────────────────────────────
 
 def _load_json_dict(path: Path) -> dict[str, Any]:
     """Read a JSON object from ``path``; ``{}`` when absent, malformed, or non-dict."""

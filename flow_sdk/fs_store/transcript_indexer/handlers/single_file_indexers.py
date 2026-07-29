@@ -51,18 +51,27 @@ async def _index_single_plan(plan_md_path: Path) -> None:
 
 
 async def _index_single_markdown(md_path: Path) -> None:
-    """``<root>/.claude/docs/**/*.md`` → root = ``<root>`` (parents[2]).
+    """``<root>/docs/**/*.md`` → root = the parent of the ``docs`` segment.
 
-    v1.2 wires the ``.claude/docs/`` layout used by ``markdown_flat_fn``.
+    Wires the DOCS family mount used by ``markdown_flat_fn`` (was
+    ``.claude/docs`` before markdown became ``AssetClass.DOCS``). The root is
+    found by walking UP to the ``docs`` segment rather than a fixed
+    ``parents[N]``: ``markdown_flat_fn`` rglobs, so the file may be nested any
+    number of levels below ``docs/`` — a fixed index silently picks the wrong
+    root for ``docs/sub/a.md``.
+
     Project-scoped markdown (under a project's tree, picked up by
     ``markdown_in_folder_fn`` via the folder walker) needs a different
     walker setup and is not handled here — those rows are populated by
     the regular project walks.
     """
     from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn
-    await _index_single_file(
-        md_path.parents[2], markdown_flat_fn, RecordType.MARKDOWN,
-    )
+    from flow_sdk.fs_store.placement import DOCS_FAMILY
+
+    root = next((p.parent for p in md_path.parents if p.name == DOCS_FAMILY), None)
+    if root is None:
+        return
+    await _index_single_file(root, markdown_flat_fn, RecordType.MARKDOWN)
 
 
 async def _index_single_skill(skill_path: Path) -> None:

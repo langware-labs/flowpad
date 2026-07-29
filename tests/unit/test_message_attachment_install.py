@@ -254,8 +254,8 @@ async def _stage_raw_file(tmp_path: Path, fm_id: str, fname: str, body: str) -> 
 
 async def test_raw_file_install_project_then_user_then_uninstall(tmp_path, monkeypatch):
     """A raw markdown file rides the full staged→install→uninstall lifecycle:
-    project scope copies to <project>/.claude/docs/<name> and indexes it as a
-    MARKDOWN record; user scope copies to <home>/.claude/docs/<name>; uninstall
+    project scope copies to <project>/docs/<name> and indexes it as a
+    MARKDOWN record; user scope copies to <home>/docs/<name>; uninstall
     removes the file and reverts to staged. Regression for SAPAK-DEMO-SPEC.md."""
     import uuid
 
@@ -276,9 +276,9 @@ async def test_raw_file_install_project_then_user_then_uninstall(tmp_path, monke
 
     res = await handle_attachment_install(ma.id, "project", project.id)
     assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
-    installed = project_root / ".claude" / "docs" / fname
+    installed = project_root / "docs" / fname
     assert installed.exists() and "Staged raw-file body." in installed.read_text(encoding="utf-8")
-    # Markdown record materialized under the project (the .claude/docs walker
+    # Markdown record materialized under the project (the docs walker
     # emits it as a Docs/Markdown row stamped with the project).
     md_rows = await Markdown.get_all({"project_id": project.id})
     stem = fname.rsplit(".", 1)[0]
@@ -303,7 +303,7 @@ async def test_raw_file_install_project_then_user_then_uninstall(tmp_path, monke
     monkeypatch.setattr(ma_action, "_user_scope_root", lambda: user_root)
     res3 = await handle_attachment_install(ma.id, "user", None)
     assert isinstance(res3, ApiSuccessResponse), getattr(res3, "message", res3)
-    assert (user_root / ".claude" / "docs" / fname).exists()
+    assert (user_root / "docs" / fname).exists()
     again = await MessageAttachment.get_one({"id": ma.id})
     assert again.scope == "user" and again.installed_root == str(user_root)
 

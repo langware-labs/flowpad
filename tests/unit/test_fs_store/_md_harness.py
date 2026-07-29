@@ -37,7 +37,7 @@ def fm_id(p: Path):
 
 async def seed_one_md(tmp_path: Path) -> tuple[FSIndexer, Path, str]:
     """Index a single ``a.md`` and return (indexer, path, its stamped id)."""
-    docs = tmp_path / "proj" / ".claude" / "docs"
+    docs = tmp_path / "proj" / "docs"
     docs.mkdir(parents=True)
     await get_db_driver().delete_entities_by_type("markdown")
     a = docs / "a.md"

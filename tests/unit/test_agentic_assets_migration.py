@@ -44,9 +44,11 @@ def _load_migration():
 
 
 def _seed(root: Path, rel: str, name: str, body: str = "x") -> Path:
+    """Seed one legacy asset. A name WITH a suffix is a file (a doc, a transcript,
+    a blob); a bare name is a folder-backed asset carrying its marker file."""
     p = root / rel / name
     p.parent.mkdir(parents=True, exist_ok=True)
-    if name.endswith((".md", ".jsonl", ".json")):
+    if Path(name).suffix:
         p.write_text(body, encoding="utf-8")
     else:
         p.mkdir()
@@ -114,6 +116,39 @@ def test_user_scope_claude_plans_is_never_touched(tmp_path: Path):
     project_report = m._migrate_root(tmp_path, "project")
     assert (tmp_path / "agentic-assets/plan/my-plan.md").is_file()
     assert len(project_report.moved) == 1
+
+
+def test_untyped_dirs_move_to_docs_and_the_project_root(tmp_path: Path):
+    """``.claude/docs`` / ``.claude/files`` were flowpad inventions inside Claude
+    Code's namespace. Markdown becomes DOCS (``docs/``), untyped bytes become
+    PROJECT (the root itself) so the tree reflects git structure."""
+    m = _load_migration()
+    _seed(tmp_path, ".claude/docs", "notes.md", "note body")
+    _seed(tmp_path, ".claude/files", "spec.pdf", "%PDF-1.4")
+
+    report = m._migrate_root(tmp_path, "project")
+
+    assert (tmp_path / "docs/notes.md").read_text() == "note body"
+    assert (tmp_path / "spec.pdf").read_text() == "%PDF-1.4"
+    assert not (tmp_path / ".claude/docs").exists()
+    assert not (tmp_path / ".claude/files").exists()
+    assert len(report.moved) == 2
+
+
+def test_user_scope_moves_docs_but_not_loose_files(tmp_path: Path):
+    """``~/.claude/docs`` MUST move — ``markdown_flat_fn`` now scans ``~/docs``, so
+    leaving it silently de-indexes every user-scope document. ``~/.claude/files``
+    is deliberately left alone: PROJECT is project-scope only, and strewing loose
+    files across the user's home is never the right answer."""
+    m = _load_migration()
+    _seed(tmp_path, ".claude/docs", "kb.md", "knowledge")
+    _seed(tmp_path, ".claude/files", "blob.bin", "bytes")
+
+    m._migrate_root(tmp_path, "user")
+
+    assert (tmp_path / "docs/kb.md").read_text() == "knowledge"
+    assert (tmp_path / ".claude/files/blob.bin").read_text() == "bytes"
+    assert not (tmp_path / "blob.bin").exists()
 
 
 def test_every_legacy_family_targets_a_real_repo_type():

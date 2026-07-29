@@ -22,8 +22,9 @@ from flow_sdk.fs_store.placement import (
     Scope,
     family_subdir,
     resolve_destination,
-    resolve_raw_file_destination,
     root_for_scope,
+    untyped_fallback_class,
+    untyped_rel_subdir,
 )
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
@@ -32,7 +33,8 @@ ALL_HARNESSES = list(HarnessType)
 ALL_SCOPES = list(Scope)
 
 # The authoritative support table — the declared replacement for the old
-# ``main_subdir.startswith(".claude")`` hack. Only INTERNAL is home-blocked;
+# ``main_subdir.startswith(".claude")`` hack. INTERNAL and PROJECT are
+# home-blocked (flowpad state, and untyped bytes that belong in a project);
 # SYSTEM is never a placement input for anyone.
 EXPECTED_SUPPORT = {
     (AssetClass.INTERNAL, Scope.USER): False,
@@ -44,12 +46,15 @@ EXPECTED_SUPPORT = {
     (AssetClass.SHARED, Scope.USER): True,
     (AssetClass.SHARED, Scope.PROJECT): True,
     (AssetClass.SHARED, Scope.SYSTEM): False,
-    (AssetClass.NONE, Scope.USER): True,
-    (AssetClass.NONE, Scope.PROJECT): True,
-    (AssetClass.NONE, Scope.SYSTEM): False,
     (AssetClass.REPO, Scope.USER): True,
     (AssetClass.REPO, Scope.PROJECT): True,
     (AssetClass.REPO, Scope.SYSTEM): False,
+    (AssetClass.DOCS, Scope.USER): True,
+    (AssetClass.DOCS, Scope.PROJECT): True,
+    (AssetClass.DOCS, Scope.SYSTEM): False,
+    (AssetClass.PROJECT, Scope.USER): False,
+    (AssetClass.PROJECT, Scope.PROJECT): True,
+    (AssetClass.PROJECT, Scope.SYSTEM): False,
 }
 
 
@@ -58,10 +63,11 @@ EXPECTED_SUPPORT = {
 def test_mount_cross_product(asset_class, harness):
     layout = LAYOUT_REGISTRY[asset_class]
     got = layout.mount("skills", harness=harness)
-    if asset_class == AssetClass.INTERNAL:
-        assert got == "skills"  # INTERNAL is harness-less: bare family, no prefix
-    elif asset_class == AssetClass.REPO:
+    if asset_class == AssetClass.REPO:
         assert got == "agentic-assets/skills"  # fixed root_prefix, harness ignored
+    elif not layout.harness_scoped:
+        # INTERNAL / DOCS / PROJECT are harness-less: bare family, no prefix.
+        assert got == "skills"
     else:
         assert got == f"{WORKER_PREFIX[harness]}/skills"
 
@@ -119,23 +125,57 @@ def test_shared_asset_copies_under_the_default_worker(tmp_path, worker):
         assert not (tmp_path / prefix / "skills" / "SKILL.md").exists()
 
 
-def test_raw_file_docs_vs_blob_split(tmp_path):
-    md = resolve_raw_file_destination(
-        "notes.md", Scope.PROJECT, default_worker=HarnessType.CLAUDE, project_mount=tmp_path
-    )
-    blob = resolve_raw_file_destination(
-        "photo.png", Scope.PROJECT, default_worker=HarnessType.CLAUDE, project_mount=tmp_path
-    )
-    assert md == tmp_path / ".claude" / "docs"
-    assert blob == tmp_path / ".claude" / "files"
+def test_untyped_file_falls_back_to_docs_or_project_root():
+    """No origin → markdown is a document, everything else is just project bytes.
+
+    Neither destination may be a dot-dir: the retired NONE class mounted
+    ``.claude/docs`` / ``.claude/files``, which no harness has ever read.
+    """
+    assert untyped_fallback_class("notes.md") == AssetClass.DOCS
+    assert untyped_fallback_class("photo.png") == AssetClass.PROJECT
+    assert untyped_rel_subdir("notes.md") == "docs"
+    assert untyped_rel_subdir("photo.png") == ""
 
 
-def test_internal_type_is_project_only(tmp_path):
-    # INTERNAL (e.g. markdown → docs) installs to a project, never to home.
+class _Origin:
+    """Stand-in for an FSOrigin — only ``rel_path`` is read here."""
+
+    def __init__(self, rel_path):
+        self.rel_path = rel_path
+
+
+def test_untyped_file_follows_a_safe_origin_rel_path():
+    """The origin wins over the fallback: an untyped file returns to the position
+    it held in the sender's tree, which is the whole point of mirroring git."""
+    assert untyped_rel_subdir("notes.md", origin=_Origin("docs/guides/notes.md")) == "docs/guides"
+    assert untyped_rel_subdir("photo.png", origin=_Origin("assets/img/photo.png")) == "assets/img"
+    # A repo-ROOT file yields the root itself, not the fallback.
+    assert untyped_rel_subdir("photo.png", origin=_Origin("photo.png")) == ""
+
+
+def test_unsafe_origin_rel_path_falls_back_instead_of_escaping():
+    """``rel_path`` is sender-controlled and gets joined onto a local root, so a
+    traversal attempt must fall through to the class default — never escape."""
+    for evil in ("../../etc/passwd", "/etc/passwd", "C:/Windows/system32/x.md", ""):
+        assert untyped_rel_subdir("x.md", origin=_Origin(evil)) == "docs"
+
+
+def test_docs_type_reaches_both_scopes(tmp_path):
+    # markdown is DOCS: <root>/docs at project scope AND user scope (the latter
+    # is what migrated ~/.claude/docs content needs a home for).
     assert resolve_destination(
         "markdown", Scope.PROJECT, default_worker="claude", project_mount=tmp_path
     ) == tmp_path / "docs"
-    assert resolve_destination("markdown", Scope.USER, default_worker="claude") is None
+    assert resolve_destination("markdown", Scope.USER, default_worker="claude") is not None
+
+
+def test_internal_type_is_project_only(tmp_path):
+    # INTERNAL is now flowpad state only (secret_origin → assets/sodot), and
+    # state never installs into the user's home.
+    assert resolve_destination(
+        "secret_origin", Scope.PROJECT, default_worker="claude", project_mount=tmp_path
+    ) == tmp_path / "assets" / "sodot"
+    assert resolve_destination("secret_origin", Scope.USER, default_worker="claude") is None
 
 
 # ── Golden table: the permanent byte-identical guard ─────────────────────────
@@ -171,9 +211,10 @@ GOLDEN = {
     "claude_session": ("agentic-assets/claude_session", AssetClass.REPO),
     "codex_session": ("agentic-assets/codex_session", AssetClass.REPO),
     "copilot_session": ("agentic-assets/copilot_session", AssetClass.REPO),
-    # Free files at the repo root — no container, no harness prefix.
-    "markdown": ("docs", AssetClass.INTERNAL),
-    "markdown_index": ("docs", AssetClass.INTERNAL),
+    # Free documents at the scope root — no container, no harness prefix.
+    "markdown": ("docs", AssetClass.DOCS),
+    "markdown_index": ("docs", AssetClass.DOCS),
+    # Flowpad's own state. INTERNAL means state, not user content.
     "secret_origin": ("assets/sodot", AssetClass.INTERNAL),
 }
 
@@ -224,6 +265,35 @@ def test_no_squatting_in_harness_dot_dirs():
         f"these types write a harness dot-dir their harness never reads: {offenders}. "
         "Flowpad-native assets belong in agentic-assets/<type> (AssetClass.REPO)."
     )
+
+
+def test_only_harness_classes_mount_a_dot_dir():
+    """The CLASS-level half of the anti-squatting guard.
+
+    ``test_no_squatting_in_harness_dot_dirs`` iterates the type registry, so a
+    class with no TypeInfo is invisible to it — which is exactly how the retired
+    ``AssetClass.NONE`` got away with mounting ``.claude/docs`` and
+    ``.claude/files`` for untyped files. Assert the property on the LAYOUT table
+    itself, where a TypeInfo-less class cannot hide:
+
+      * only HARNESS and SHARED may be ``harness_scoped``;
+      * every other class's mount is free of a dot-dir segment, for every harness.
+    """
+    scoped = {c for c, layout in LAYOUT_REGISTRY.items() if layout.harness_scoped}
+    assert scoped == {AssetClass.HARNESS, AssetClass.SHARED}, (
+        f"{scoped - {AssetClass.HARNESS, AssetClass.SHARED}} mount inside a harness "
+        "dot-dir. Only assets a harness actually reads may live there."
+    )
+
+    for asset_class, layout in LAYOUT_REGISTRY.items():
+        if asset_class in scoped:
+            continue
+        for harness in ALL_HARNESSES:
+            mount = layout.mount("anything", harness=harness)
+            assert not any(seg.startswith(".") for seg in mount.split("/") if seg), (
+                f"{asset_class} mounts {mount!r} — a harness-less class must never "
+                "produce a dot-dir segment."
+            )
 
 
 @pytest.mark.parametrize("type_name,expected", list(GOLDEN.items()))

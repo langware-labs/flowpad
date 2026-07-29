@@ -2,7 +2,7 @@
 
 Covers both physical layouts (``CSV`` and ``IO_FOLDER``) end-to-end through the
 slot functions:
-- ``dataset_fn`` walker emits one FSRef per ``assets/datasets/<slug>/`` folder.
+- ``repo_assets_fn`` emits one FSRef per ``agentic-assets/dataset/<slug>/`` folder.
 - ``extract_dataset`` parses the manifest + rows into one FSRecord with counts.
 - ``iter_examples`` normalizes both layouts into the shared ``Example`` shape.
 - ``TypeInfo.mint_id`` adopts a valid manifest id else mints a capsule v4.
@@ -22,10 +22,10 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.functions.dataset import (
     dataset_asset_hash,
-    dataset_fn,
     extract_dataset,
     iter_examples,
 )
+from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
@@ -55,7 +55,7 @@ def _seed_csv_dataset(
     manifest: dict,
     csv_text: str,
 ) -> Path:
-    ds = project / "assets" / "datasets" / slug
+    ds = project / "agentic-assets" / "dataset" / slug
     ds.mkdir(parents=True)
     (ds / "dataset.json").write_text(_doc(metadata=manifest), encoding="utf-8")
     (ds / "data.csv").write_text(csv_text, encoding="utf-8")
@@ -79,7 +79,7 @@ def _seed_io_dataset(
       - ``files`` — ``{relpath: str | bytes}`` written verbatim (bytes → binary)
       - ``dirs`` — ``{dirname: {fname: str | bytes}}`` for folder artifacts
     """
-    ds = project / "assets" / "datasets" / slug
+    ds = project / "agentic-assets" / "dataset" / slug
     (ds / "examples").mkdir(parents=True)
     (ds / "dataset.json").write_text(
         _doc(metadata=manifest or {"data_layout": "io_folder"}, data=manifest_data),
@@ -201,14 +201,14 @@ def test_io_folder_missing_expected_is_none(tmp_path: Path) -> None:
 
 # ── walker ────────────────────────────────────────────────────────────────────
 
-def test_dataset_fn_emits_one_ref_per_folder(tmp_path: Path) -> None:
+def test_repo_walker_emits_one_ref_per_dataset(tmp_path: Path) -> None:
     _seed_csv_dataset(tmp_path, "A", manifest={"data_layout": "csv"}, csv_text="input\nx\n")
     _seed_csv_dataset(tmp_path, "B", manifest={"data_layout": "csv"}, csv_text="input\ny\n")
     # A folder without dataset.json must be skipped.
-    (tmp_path / "assets" / "datasets" / "no-manifest").mkdir(parents=True)
+    (tmp_path / "agentic-assets" / "dataset" / "no-manifest").mkdir(parents=True)
 
     node = FSRef(tmp_path, record_type=RecordType.REAL_PROJECT_CWD)
-    refs = dataset_fn([node], IndexerOptions(verbose=False))
+    refs = repo_assets_fn([node], IndexerOptions(verbose=False))
 
     assert len(refs) == 2
     assert all(r.record_type == RecordType.DATASET for r in refs)
@@ -216,9 +216,9 @@ def test_dataset_fn_emits_one_ref_per_folder(tmp_path: Path) -> None:
     assert names == ["A", "B"]
 
 
-def test_dataset_fn_no_datasets_dir(tmp_path: Path) -> None:
+def test_repo_walker_no_dataset_dir(tmp_path: Path) -> None:
     node = FSRef(tmp_path, record_type=RecordType.REAL_PROJECT_CWD)
-    assert dataset_fn([node], IndexerOptions(verbose=False)) == []
+    assert repo_assets_fn([node], IndexerOptions(verbose=False)) == []
 
 
 # ── id minting ────────────────────────────────────────────────────────────────
