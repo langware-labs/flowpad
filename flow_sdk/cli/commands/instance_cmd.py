@@ -188,11 +188,17 @@ def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
 # (exactly the stale-state degradation this command exists to prevent).
 #   sodot / .secrets_enabled (cloud creds), config.json (active user),
 #   preferences.json (view_mode), launcher.json + logs (relaunch bookkeeping),
+#   transcript_cursors.json (global transcript consumption checkpoint),
 #   schema / toplog.json / skill_rules (regenerated config, not degradation state).
+#
+# The transcript cursor is process bookkeeping, not entity/test data. Dropping
+# it on every category reset makes the fresh backend replay every historical
+# JSONL under ~/.claude and ~/.codex (11K+ on a developer machine), contending
+# with the first desktop-db/clear and re-emitting already-consumed deltas.
 _KEEP = {
     "sodot", ".secrets_enabled", "config.json", "preferences.json",
     "launcher.json", "launcher-backend.log", "launcher-frontend.log", "logs",
-    "schema", "toplog.json", "skill_rules",
+    "schema", "toplog.json", "skill_rules", "transcript_cursors.json",
 }
 
 
