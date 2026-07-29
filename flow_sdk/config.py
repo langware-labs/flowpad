@@ -27,7 +27,7 @@ from flow_sdk.utils.validation import UUID_PATTERN
 # URL constants
 # ---------------------------------------------------------------------------
 
-FLOWPAD_CLOUD_URL = "https://staging.flowpad.ai"
+FLOWPAD_CLOUD_URL = "https://app.flowpad.ai"
 API_PREFIX = "/api/v1"
 
 # ---------------------------------------------------------------------------

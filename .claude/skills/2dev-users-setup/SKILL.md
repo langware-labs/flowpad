@@ -30,7 +30,7 @@ Default target (`HUB=https://dev.flowpad.ai`):
 | User | `gadi@langware.ai` | `gadi+20@langware.ai` |
 | Window | left, x=0 | right, x=half-screen |
 
-Everything below works the same against `https://staging.flowpad.ai` — set
+Everything below works the same against `https://app.flowpad.ai` — set
 `--hub` accordingly. The hub only changes which user records exist, not the
 mechanics.
 
