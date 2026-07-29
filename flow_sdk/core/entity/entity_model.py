@@ -1855,17 +1855,17 @@ class Entity(DBEntity):
         return self
 
     def _local_fields(self) -> frozenset[str]:
-        """The sender-local field set for this entity = the base set (§
-        ``_BASE_LOCAL_FIELDS``) plus the per-type ``TypeInfo.local_fields``
-        additions. These fields never travel in ``to_common_json``."""
-        try:
-            from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        """The fields that never travel in ``to_common_json`` — every ``PRIVATE``
+        field, derived from the declarations (``Sharing``).
 
-            info = SchemaRegistry.get(self.get_type())
-            extra = getattr(info, "local_fields", None) if info is not None else None
-        except Exception:
-            extra = None
-        return self._BASE_LOCAL_FIELDS | (extra or frozenset())
+        Was the union of ``_BASE_LOCAL_FIELDS`` and ``TypeInfo.local_fields``.
+        Deriving it removes a live hazard as well as a list: the registry lookup
+        returned EMPTY when an entity module was imported before
+        ``register_all()``, so a type's own local fields silently travelled
+        (see ``tests/unit/test_assignee_owned_fields.py``). A field declaration
+        cannot have an import-order bug.
+        """
+        return self.__class__.fields_not_in_bundle()
 
     @computed_field(json_schema_extra={"sharing": str(Sharing.PRIVATE)})
     @property
@@ -1916,34 +1916,24 @@ class Entity(DBEntity):
 
     def _hub_body(self) -> dict:
         """The serialized body to POST to the hub — shared by ``share`` and
-        ``create_child``. Excludes local-only / hub-stamped fields (see the
-        rationale inline in ``share``). ``id`` is included so the hub honors
-        the same-id invariant; the hub derives the parent from the URL, so a
-        stray ``parent_type_id`` in the body is harmless (the hub sanitizes
-        unknown fields)."""
+        ``create_child``.
+
+        Excludes every field declared ``PRIVATE`` (never leaves this machine) or
+        ``HUB_READ`` (the hub owns it — the clocks). ``id`` is included so the hub
+        honors the same-id invariant; the hub derives the parent from the URL, so
+        a stray ``parent_type_id`` in the body is harmless (the hub sanitizes
+        unknown fields).
+
+        This was an 18-name literal that had drifted from the bundle seam's list
+        in both directions. Deriving both from the same declarations is what
+        stops local paths (``asset_ref``, ``cwd``, ``fs_storage_mount_path``, …)
+        reaching the hub — they were stripped from share bundles but pushed here,
+        which is why the receiver had to defend with ``sanitized.pop("asset_ref")``.
+        """
         return self.model_dump(
             mode="json",
             exclude_none=True,
-            exclude={
-                "private_context_entities_",
-                "private_context_entities",  # Pydantic computed field — backend computes it
-                "private_context_entity_data",
-                "shared_context_entity_data",
-                "created_by",
-                "updated_by",
-                "created_date",
-                "updated_date",
-                "remote",
-                "system",
-                "fetched_at",
-                "message_count",
-                "git_origin",  # local-only provenance; never a hub-synced field
-                "asset_occurrences",
-                "duplicate_count",
-                "tags",
-                "project_id",
-                "members",  # roster cache; the hub owns it and rebuilds from role edges
-            },
+            exclude=set(self.__class__.fields_not_sent_to_hub()),
         )
 
     async def create_child(self: EntityType, child: "Entity") -> "Entity":

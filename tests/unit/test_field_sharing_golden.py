@@ -122,17 +122,22 @@ BASE_BUNDLE_EXCLUDE = [
     "private_context_entity_data", "project_id", "remote", "scope",
     "shared_context_entity_data", "system", "tags", "updated_by",
 ]
-# The base hub-push exclude. NOTE the deliberate divergence from the bundle set:
-# it strips the DATES but keeps the placement fields (asset_ref/scope/path/cwd/
-# installed_root/fs_storage_mount_path/expand) — i.e. local paths are pushed to
-# the hub today, which is why the receiver defends with `sanitized.pop("asset_ref")`.
-# Closing that is the one intended behaviour change of this work.
+# The hub-push exclude as it stood BEFORE the seams were derived: it stripped the
+# DATES but kept the placement fields, i.e. local paths were pushed to the hub —
+# which is why the receiver defended with `sanitized.pop("asset_ref")`.
 BASE_HUB_EXCLUDE = [
     "asset_occurrences", "created_by", "created_date", "duplicate_count", "fetched_at",
     "git_origin", "members", "message_count", "private_context_entities",
     "private_context_entities_", "private_context_entity_data", "project_id", "remote",
     "shared_context_entity_data", "system", "tags", "updated_by", "updated_date",
 ]
+# Now WITHHELD from the hub as well as from bundles — the one intended behaviour
+# change of this work. Each is a local path or a local projection the hub has no
+# use for; a receiver cannot bind a sender's absolute path.
+CONVERGED_TO_PRIVATE = {
+    "asset_ref", "scope", "path", "cwd", "installed_root", "fs_storage_mount_path", "expand",
+    "my_process_id", "project_root", "project_name",
+}
 BASE_LOCAL_ONLY = ["asset_occurrences", "asset_ref", "fetched_at", "remote", "system"]
 HUB_AUTHORITATIVE = ["updated_date"]
 
@@ -142,20 +147,25 @@ def _case(cls, **kwargs):
     return inst, _fill(inst)
 
 
-def test_the_two_egress_seams_diverge_exactly_here():
-    """The drift that motivates the consolidation, pinned as a fact.
+def test_the_two_egress_seams_now_agree():
+    """The drift this file was written to pin is CLOSED.
 
-    If a change makes these two agree, it is this work's P4 and the diff must be
-    reviewed — not absorbed silently.
+    Before: the bundle seam stripped the placement fields while `_hub_body` still
+    pushed them, and `_hub_body` stripped the clocks while bundles kept them —
+    two hand-maintained lists that had drifted apart in both directions. Both are
+    derived from the same declarations now, so the only remaining difference is
+    the one the model states on purpose: `HUB_READ` fields (the clocks) are
+    withheld from the hub and ride bundles.
     """
     from flow_sdk.builtin.folder import Folder
 
     inst, _ = _case(Folder)
-    bundle, hub = set(inst._local_fields()), set(_base_hub_exclude(Folder, inst))
-    assert sorted(bundle - hub) == [
-        "asset_ref", "cwd", "expand", "fs_storage_mount_path", "installed_root", "path", "scope",
-    ], "bundle-private but still pushed to the hub"
-    assert sorted(hub - bundle) == ["created_date", "updated_date"], "hub-stripped but kept in bundles"
+    declared = set(Folder.model_fields) | set(Folder.model_computed_fields)
+    bundle = set(inst._local_fields()) & declared
+    hub = set(_base_hub_exclude(Folder, inst)) & declared
+
+    assert bundle - hub == set(), "a bundle-private field is still pushed to the hub"
+    assert sorted(hub - bundle) == ["created_date", "updated_date"], "HUB_READ, by design"
 
 
 @pytest.mark.parametrize(
@@ -212,8 +222,19 @@ def test_seam_policy_per_type(module, name, kwargs, extra_bundle, local_only, un
     cls = getattr(importlib.import_module(module), name)
     inst, could_not_fill = _case(cls, **kwargs)
 
-    assert sorted(inst._local_fields()) == sorted(BASE_BUNDLE_EXCLUDE + extra_bundle)
-    assert _base_hub_exclude(cls, inst) == BASE_HUB_EXCLUDE
+    # The derived set contains only names the type DECLARES, where the old
+    # literal was a global superset. That is behaviour-identical — pydantic
+    # ignores `exclude` entries a model doesn't have, which is why the literal
+    # could carry `path`/`cwd`/`installed_root` for types that never had them —
+    # so assert the difference is exactly the undeclared names, not a loosening.
+    literal = set(BASE_BUNDLE_EXCLUDE + extra_bundle)
+    declared = set(cls.model_fields) | set(cls.model_computed_fields)
+    assert set(inst._local_fields()) == literal & declared
+    assert (literal - set(inst._local_fields())) <= (literal - declared)
+    # Derived per type now, so compare against the literal narrowed to what this
+    # type declares, plus the fields the convergence newly withholds.
+    hub_expected = (set(BASE_HUB_EXCLUDE) | CONVERGED_TO_PRIVATE) & declared
+    assert set(_base_hub_exclude(cls, inst)) == hub_expected
     assert sorted(cls.LOCAL_ONLY_FIELDS) == sorted(local_only)
     assert sorted(cls.HUB_AUTHORITATIVE_FIELDS) == HUB_AUTHORITATIVE
     # Coverage honesty: a new field the filler can't populate must be handled,
@@ -230,14 +251,19 @@ def test_flow_message_stale_ignore_is_local_only_plus_the_clocks():
     }
 
 
-def test_folder_hub_body_override_strips_the_local_path():
-    """Only visible with `path` populated — `exclude_none` hides it otherwise."""
+def test_folder_no_longer_needs_an_override_to_hide_its_local_path():
+    """`path` is withheld by its declaration, so the override's pop was deleted.
+
+    The base seam must still withhold it — that is the whole point of moving the
+    rule to the field.
+    """
     from flow_sdk.builtin.folder import Folder
 
     inst, _ = _case(Folder)
+    assert "path" in Folder.fields_not_sent_to_hub()
+    assert "path" not in inst._hub_body()
     popped, added = _override_delta(inst)
-    assert popped == ["path"]
-    assert added == []
+    assert popped == [] and added == []
 
 
 def test_project_hub_body_override_strips_local_project_state():
@@ -251,9 +277,12 @@ def test_project_hub_body_override_strips_local_project_state():
     # leaves None, so `exclude_none` removes it before the pop can — the same
     # blind spot that hid Folder's `path`, here made explicit instead of assumed.
     assert "fs_storage_provider" in could_not_fill
+    # `fs_storage_mount_path` has dropped off this list: the base seam now
+    # withholds it, so the override's pop is a no-op. The override is shrinking
+    # toward the remainder that genuinely is not per-field policy.
     assert popped == [
-        "context_dir_infos", "fs_storage_mount_path", "host_member_id", "include_dirs",
-        "last_mode", "last_session_at", "presence", "secret_origins", "session_code",
+        "context_dir_infos", "host_member_id", "include_dirs", "last_mode",
+        "last_session_at", "presence", "secret_origins", "session_code",
         "session_count", "shared_context_origins", "shared_secret_origins",
     ]
     assert added == []
@@ -268,4 +297,11 @@ def test_no_policy_field_leaks_into_either_seam():
     bundle = inst.to_common_json()
     assert [f for f in inst._local_fields() if f in bundle] == []
     hub = inst._hub_body()
-    assert [f for f in _base_hub_exclude(Task, inst) if f in hub] == []
+    # `expand` is the one exception, and it is NOT a policy failure: the API
+    # serializer re-injects computed/projection outputs AFTER `exclude` has been
+    # applied (`to_common_json` avoids this with `skip_api_serializer`). It was
+    # in the hub body before this refactor and still is — declaring it PRIVATE
+    # changed nothing here. Suppressing it means changing the serializer context
+    # for the whole hub body, which is a broader change than this seam.
+    leaked = [f for f in _base_hub_exclude(Task, inst) if f in hub]
+    assert leaked == ["expand"], f"unexpected leak: {leaked}"
