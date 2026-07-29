@@ -34,7 +34,7 @@ from flow_sdk.api.oauth_api import OAuthErrorCode
 from flow_sdk.core.entity.entity_env.env_types import EnvVar, EnvVarType
 from flow_sdk.core.entity.entity_env.env_utils import build_shared_var_name
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.core.oauth.provider_registry import user_credentials_name
+from flow_sdk.core.oauth import resolve_user_credentials_name
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import get_current_request_info, get_current_request_user_fresh
 
@@ -197,7 +197,7 @@ async def revoke_var_from(
 async def disconnect_oauth_provider(user: Entity, provider: str) -> OAuthAttachmentResult:
     """Delete the user's credential outright. Distinct from detach: detaching
     from your last project keeps the token."""
-    cred_name = user_credentials_name(provider)
+    cred_name = await resolve_user_credentials_name(provider)
     if not cred_name:
         return _unknown_provider(provider)
 
@@ -229,7 +229,7 @@ async def attach_action(provider: str, shared_entity_var_name: Optional[str] = N
     if not validation.is_valid:
         return validation.error
 
-    cred_name = user_credentials_name(provider)
+    cred_name = await resolve_user_credentials_name(provider)
     if not cred_name:
         return _unknown_provider(provider)
     return await share_var_with(
@@ -242,7 +242,7 @@ async def detach_action(provider: str) -> OAuthAttachmentResult:
     if not validation.is_valid:
         return validation.error
 
-    cred_name = user_credentials_name(provider)
+    cred_name = await resolve_user_credentials_name(provider)
     if not cred_name:
         return _unknown_provider(provider)
     result = await revoke_var_from(validation.user, cred_name, validation.target_entity_typeid)

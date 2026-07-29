@@ -21,6 +21,9 @@ from flow_sdk.app.actions.desktop_oauth import (
     wait_for_desktop_oauth_callback,
 )
 from flow_sdk.app.actions.oauth_attachment import attach_action, detach_action, disconnect_action
+from flow_sdk.core.oauth import resolve_user_credentials_name
+from flow_sdk.core.oauth.provider_registry import get_local_provider
+from flow_sdk.core.oauth.hub_oauth import hub_start_auth, poll_hub_credential
 from flow_sdk.core import action
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -257,6 +260,23 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
     elif request_info and hasattr(request_info, "user") and request_info.user:
         user_id = request_info.user.id if hasattr(request_info.user, "id") else str(request_info.user)
 
+    # Locally-runnable providers run locally, ALWAYS — decided by the registry,
+    # not by whether an attempt happened to succeed. Falling back on failure
+    # would silently move a user onto a different flow whenever the desktop one
+    # hit a transient error, and they would never know which one they were in.
+    if get_local_provider(provider) is not None:
+        return await get_desktop_oauth_auth_url(provider, user_id)
+
+    # Everything else is hub-defined (Slack, Jira, Google...). The client secret
+    # and the registered redirect URI both live on the hub, so the hub runs the
+    # flow and we hand the browser its auth_url. Same response shape either way,
+    # so the client never branches on where the flow came from.
+    hub_payload = await hub_start_auth(provider)
+    if hub_payload:
+        logger.info("OAuth: delegating %s to the hub", provider)
+        return ApiSuccessResponse(data=hub_payload)
+
+    # Neither side can run it: let the desktop path phrase the refusal.
     return await get_desktop_oauth_auth_url(provider, user_id)
 
 
@@ -298,12 +318,57 @@ async def _handle_callback(provider: str, request_info) -> ApiResponse:
 
 
 async def _handle_wait_callback(provider: str, state: str) -> ApiResponse:
-    """Wait for desktop OAuth callback via long-polling.
+    """Wait for the OAuth flow to finish.
 
-    Desktop mode: waits for localhost callback server to receive the code,
-    then exchanges it for a token and saves credentials.
+    Desktop flows: the localhost callback server receives the code, exchanges it
+    and saves the credential.
+
+    Hub flows: the hub receives the callback, and its completion message goes out
+    on the hub's websocket — which this process is not on. So we poll the hub's
+    own env table until the credential appears, then mirror a local reference row
+    so the provider reads as connected here too.
     """
-    return await wait_for_desktop_oauth_callback(state)
+    if provider in _desktop_oauth_sessions or provider in ("github", "anthropic"):
+        return await wait_for_desktop_oauth_callback(state)
+
+    cred_name = await resolve_user_credentials_name(provider)
+    if not cred_name:
+        return await wait_for_desktop_oauth_callback(state)
+
+    if not await poll_hub_credential(cred_name):
+        # Not an error: the user may still be at the provider. The client keeps
+        # its popup open and the hub keeps the session.
+        return ApiSuccessResponse(data={"status": "polling"})
+
+    await _mirror_hub_credential(provider, cred_name)
+    return ApiSuccessResponse(data={"status": "success", "provider": provider})
+
+
+async def _mirror_hub_credential(provider: str, cred_name: str) -> ApiResponse | None:
+    """Record, on the LOCAL user, that the hub now holds this token.
+
+    A value-free row: the token itself stays on the hub and is read through the
+    hub value route when a worker actually needs it. What this buys is that the
+    provider resolves to AVAILABLE in the local env table and `attach` can grant
+    a project the use of it, exactly as for a desktop-held credential.
+    """
+    from flow_sdk.core.entity.entity_env.env_types import EnvVar, EnvVarType  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_user_fresh  # noqa: PLC0415
+
+    user = await get_current_request_user_fresh()
+    if user is None:
+        return None
+    if user.get_env_var(cred_name) is None:
+        user.set_env_var(
+            EnvVar(
+                name=cred_name,
+                description=f"OAuth token for {provider}, held by the hub",
+                var_type=EnvVarType.OAUTH_TOKEN,
+                ref_name=cred_name,
+            )
+        )
+        await user.update()
+    return None
 
 
 async def _get_github_token_for_current_user() -> tuple[str | None, str | None]:
