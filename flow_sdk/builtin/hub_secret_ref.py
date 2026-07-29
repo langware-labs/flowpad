@@ -6,10 +6,12 @@ fields rather than an opaque ``secret_id`` — the coordinates ARE the identity,
 and an opaque id would be a second name for the same thing, free to drift.
 
 ``secret_id`` survives as an accepted alias so a payload minted before the
-re-key still validates; nothing writes it.
+re-key still validates. Nothing writes it, but it is still read: it is the
+fallback name in ``HubSecretDriver._coords`` and is accepted by
+``membership_sync``.
 
-Runtime value resolution remains a no-op until the hub exposes a scoped,
-consent-gated value-fetch endpoint.
+Values resolve through ``HubSecretDriver`` against the hub's consent-gated,
+audited ``env-var/<NAME>/value`` route.
 """
 from __future__ import annotations
 
@@ -22,5 +24,6 @@ class HubSecretRef(SecretOriginLocator):
     kind: Literal["flowpad-hub"] = "flowpad-hub"
     project_id: str = ""
     name: str = ""
-    #: Legacy/opaque coordinate. Accepted so older payloads validate; never written.
+    #: Legacy/opaque coordinate. Accepted (and read as a name fallback) so older
+    #: payloads still resolve; never written.
     secret_id: str = ""

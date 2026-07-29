@@ -1250,6 +1250,7 @@ class Project(Entity):
         from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
 
         rows: list[dict[str, Any]] = []
+        env_local_names, sodot_names = self._local_store_names()
         # Drive off the value-free ``secret_origins`` summary — it reads the local
         # sidecar on the authoring machine and the mirrored ``shared_secret_origins``
         # on a receiver, so a shared pointer resolves on both sides.
@@ -1260,7 +1261,9 @@ class Project(Entity):
             except Exception:  # noqa: BLE001
                 continue
             env_var = entry.get("env_var") or ""
-            found_in = await self._where_is_secret_value(env_var, loc, driver)
+            found_in = await self._where_is_secret_value(
+                env_var, loc, driver, env_local_names, sodot_names
+            )
             hint = driver.setup_hint(loc)
             rows.append(
                 {
@@ -1280,7 +1283,30 @@ class Project(Entity):
             )
         return ApiSuccessResponse(data={"secrets": rows})
 
-    async def _where_is_secret_value(self, env_var: str, loc, driver) -> str | None:
+    def _local_store_names(self) -> tuple[set[str], set[str]]:
+        """``(env-local keys, sodot names)`` — both whole-store scans, done ONCE.
+
+        Each is a full read (a file parse and a sodot decrypt), so doing them per
+        secret turned one Secrets-card render into S file reads and S store
+        walks. Names only: neither call reads a value.
+        """
+        from flow_sdk.builtin.env_local_store import list_env_local  # noqa: PLC0415
+
+        try:
+            env_local = {row["key"] for row in list_env_local(self)}
+        except Exception:  # noqa: BLE001
+            env_local = set()
+        try:
+            from flow_sdk.cli.auth.secrets import get_secrets  # noqa: PLC0415
+
+            sodot = {entry.get("name") for entry in get_secrets()}
+        except Exception:  # noqa: BLE001
+            sodot = set()
+        return env_local, sodot
+
+    async def _where_is_secret_value(
+        self, env_var: str, loc, driver, env_local: set[str], sodot: set[str]
+    ) -> str | None:
         """Which store on THIS machine can satisfy this declaration, if any.
 
         Deliberately a UNION across both local stores and the declared provider,
@@ -1292,22 +1318,11 @@ class Project(Entity):
         Every probe is existence-only. No value is fetched here; that contract is
         what lets the Secrets card call this on every render.
         """
-        from flow_sdk.builtin.env_local_store import list_env_local  # noqa: PLC0415
-
         if env_var:
-            try:
-                if any(row["key"] == env_var for row in list_env_local(self)):
-                    return "env-local"
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                from flow_sdk.cli.auth.secrets import get_secrets  # noqa: PLC0415
-
-                # Names only — get_secrets never reads a value out of the store.
-                if any(entry.get("name") == env_var for entry in get_secrets()):
-                    return "sodot"
-            except Exception:  # noqa: BLE001
-                pass
+            if env_var in env_local:
+                return "env-local"
+            if env_var in sodot:
+                return "sodot"
         try:
             if await driver.can_resolve(loc, project=self):
                 return "provider"
@@ -1509,8 +1524,9 @@ class Project(Entity):
         )
 
         path = env_local_path(self)
+        # One probe, reused — gitignore_status costs three git subprocesses.
         gitignore = gitignore_status(self)
-        block = env_local_block(self)
+        block = env_local_block(gitignore)
         declared = {row.get("env_var") for row in self.secret_origins if row.get("env_var")}
         keys = [
             {"key": row["key"], "line": row["line"], "declared": row["key"] in declared}

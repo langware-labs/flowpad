@@ -57,7 +57,6 @@ export function useProjectEnvLocal(project: Project | null | undefined) {
   );
 
   return {
-    status,
     ready,
     keys: status?.keys ?? [],
     blocked: status?.blocked ?? false,

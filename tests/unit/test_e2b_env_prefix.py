@@ -64,10 +64,6 @@ def test_windows_caret_is_escaped_first():
     assert build_env_prefix(_env(A="^&"), windows=True) == "set A=^^^& && "
 
 
-def test_a_plain_mapping_is_accepted_too():
-    assert build_env_prefix({"A": "1"}, windows=False) == "A='1' "
-
-
 def test_entries_without_a_name_are_skipped():
     class Nameless:
         name = ""

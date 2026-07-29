@@ -29,6 +29,9 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _SALT_NAME = "__flowpad_digest_salt__"
+#: Process cache. Reading the salt decrypts the whole sodot, and a drift check
+#: over S secrets would otherwise pay that 2-4 times per secret.
+_SALT_MEMO: Optional[str] = None
 _DIGEST_PREFIX = "__flowpad_digest__"
 _DIGEST_LEN = 16
 
@@ -42,14 +45,20 @@ def _instance_salt() -> Optional[str]:
     """The per-instance digest salt, minted on first use. ``None`` when the
     encrypted store isn't available (secrets not enabled) — in which case drift
     simply isn't tracked, which is a fine degradation."""
+    global _SALT_MEMO
+    if _SALT_MEMO is not None:
+        return _SALT_MEMO
+
     from flow_sdk.cli.auth.secrets import read_secret, write_secret  # noqa: PLC0415
 
     try:
         existing = read_secret(_SALT_NAME)
         if existing:
+            _SALT_MEMO = existing
             return existing
         salt = _secrets.token_hex(16)
         write_secret(_SALT_NAME, salt, "Salt for value-change digests. Not a credential.")
+        _SALT_MEMO = salt
         return salt
     except Exception as e:  # noqa: BLE001
         logger.debug("[secret-digest] salt unavailable: %s", e)

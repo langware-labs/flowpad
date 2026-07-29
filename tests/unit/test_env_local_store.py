@@ -229,9 +229,10 @@ def test_env_local_filename_is_the_only_file_we_look_at(tmp_path, marker):
 def test_ensure_gitignored_appends_and_verifies(tmp_path):
     _init_repo(tmp_path)
 
-    assert ensure_gitignored(_project(tmp_path)) is True
+    # Returns the VERIFIED status, not a bool — callers need the code to explain
+    # a refusal without re-probing.
+    assert ensure_gitignored(_project(tmp_path))["ignored"] is True
     assert ".env.local" in (tmp_path / ".gitignore").read_text()
-    assert gitignore_status(_project(tmp_path))["ignored"] is True
 
 
 def test_ensure_gitignored_overrides_an_earlier_negation(tmp_path):
@@ -241,8 +242,7 @@ def test_ensure_gitignored_overrides_an_earlier_negation(tmp_path):
     _init_repo(tmp_path)
     (tmp_path / ".gitignore").write_text("*.local\n!.env.local\n", encoding="utf-8")
 
-    assert ensure_gitignored(_project(tmp_path)) is True
-    assert gitignore_status(_project(tmp_path))["ignored"] is True
+    assert ensure_gitignored(_project(tmp_path))["ignored"] is True
 
 
 def test_a_tracked_env_local_is_blocked_however_gitignore_reads(tmp_path):
@@ -298,13 +298,13 @@ def test_env_local_block_is_none_when_writable(tmp_path):
     _init_repo(tmp_path)
     (tmp_path / ".gitignore").write_text(".env.local\n", encoding="utf-8")
 
-    assert env_local_block(_project(tmp_path)) is None
+    assert env_local_block(gitignore_status(_project(tmp_path))) is None
 
 
 def test_env_local_block_reports_a_code(tmp_path):
     _init_repo(tmp_path)
 
-    block = env_local_block(_project(tmp_path))
+    block = env_local_block(gitignore_status(_project(tmp_path)))
 
     assert block is not None
     assert block["code"] == GITIGNORE_NOT_IGNORED

@@ -151,25 +151,16 @@ async def _with_attached_project_secrets(
         return extra_env
     try:
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
-        from flow_sdk.builtin.secret_origin_resolver import (  # noqa: PLC0415
-            attached_env_vars_for,
-            resolve_project_secrets,
-        )
+        from flow_sdk.builtin.secret_origin_resolver import secret_env_dict  # noqa: PLC0415
 
         project = await Project.get_by_id(str(project_id))
-        if project is None:
+        if project is None or not project.secret_origins:
+            # The common case. Return before the node lookup rather than after.
             return extra_env
-        only = await attached_env_vars_for(project)
-        resolved = await resolve_project_secrets(project, only=only)
+        return await secret_env_dict(project, extra_env)
     except Exception as e:  # noqa: BLE001
         logger.debug("[shell] could not resolve project secrets for the PTY: %s", e)
         return extra_env
-
-    if not resolved:
-        return extra_env
-    merged = {name: value.get_secret_value() for name, value in resolved.items()}
-    merged.update(extra_env or {})  # explicit env wins
-    return merged
 
 
 class Shell(Entity):

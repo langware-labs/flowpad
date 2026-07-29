@@ -31,8 +31,6 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 logger = logging.getLogger(__name__)
 
-#: Marks a row as hub-owned so the connect path knows which counterparty to use.
-HUB_ORIGIN_MARKER = "hub"
 
 
 def _cloud_user_id() -> str | None:
@@ -56,18 +54,15 @@ def _hub_reachable() -> bool:
 
 
 def _row_from_hub(item: dict[str, Any]) -> EnvVar | None:
+    """One hub row in the same shape the local ones use — same builder, so the
+    provider-row shape has one definition rather than two."""
+    from flow_sdk.core.oauth import provider_env_var  # noqa: PLC0415
+
     name = str(item.get("name") or "").strip()
     ref_name = str(item.get("ref_name") or "").strip()
     if not name or not ref_name:
         return None
-    return EnvVar(
-        name=name,
-        description=str(item.get("description") or f"OAuth integration for {name}"),
-        var_type=EnvVarType.OAUTH_PROVIDER_ID,
-        ref_type=BuiltinEntityType.USER,
-        ref_name=ref_name,
-        icon=item.get("icon"),
-    )
+    return provider_env_var(name, name, ref_name, item.get("icon"))
 
 
 async def hub_provider_rows() -> EntityEnvVars:
