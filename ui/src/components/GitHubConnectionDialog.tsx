@@ -56,7 +56,7 @@ export const GitHubConnectionDialog: React.FC<GitHubConnectionDialogProps> = ({
   const [branchError, setBranchError] = useState<string | null>(null);
 
   const { availableProviders, connectionStatuses, connect, connectingConnectionId } = useOAuthConnection({
-    currentProject: currentProject,
+    projectTypeId: currentProject,
     onConnectionConnect: () => {
       setIsConnecting(false);
     },
