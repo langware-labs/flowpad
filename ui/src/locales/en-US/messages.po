@@ -696,6 +696,7 @@ msgstr "Action:"
 #: src/components/account/system-diagnoses.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/connections-manager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -915,6 +916,10 @@ msgstr "Add to the running session"
 #: src/components/hooks-manager/index.tsx
 msgid "Add Trigger"
 msgstr "Add Trigger"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Add Variable"
+msgstr "Add Variable"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Added vibe agent"
@@ -1270,27 +1275,27 @@ msgstr "API access test passed (200 OK)"
 msgid "API Key"
 msgstr "API Key"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "API key copied successfully"
 msgstr "API key copied successfully"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API Key Deleted"
 msgstr "API Key Deleted"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API Key Deletion"
 msgstr "API Key Deletion"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API Key Generated"
 msgstr "API Key Generated"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API Key Generation"
 msgstr "API Key Generation"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API key has been removed successfully"
 msgstr "API key has been removed successfully"
 
@@ -1927,6 +1932,7 @@ msgstr "Can't update — showing last synced"
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -2968,7 +2974,7 @@ msgstr "Conversations"
 msgid "Copied"
 msgstr "Copied"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Copied to Clipboard"
 msgstr "Copied to Clipboard"
 
@@ -2984,7 +2990,7 @@ msgstr "Copilot"
 msgid "Copilot session"
 msgstr "Copilot session"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -3162,6 +3168,10 @@ msgstr "Could not freeze context"
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Could not generate a link"
 msgstr "Could not generate a link"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Could not load environment variables"
+msgstr "Could not load environment variables"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "Could not load source: {error}"
@@ -3683,7 +3693,7 @@ msgstr "Delete all"
 msgid "Delete all failed"
 msgstr "Delete all failed"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Delete API Key"
 msgstr "Delete API Key"
 
@@ -3896,6 +3906,8 @@ msgstr "Describe what you'd like Claude to do…"
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assistance-viewer/TaskDetail.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Description"
@@ -3909,7 +3921,11 @@ msgstr "Description (optional)"
 msgid "Description like prepare my daily brief"
 msgstr "Description like prepare my daily brief"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/EnvVarsManager.tsx
+msgid "Description of this environment variable"
+msgstr "Description of this environment variable"
+
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Description:"
 msgstr "Description:"
 
@@ -4585,6 +4601,10 @@ msgstr "Enter hook name"
 msgid "Enter the code here"
 msgstr "Enter the code here"
 
+#: src/components/EnvVarsManager.tsx
+msgid "Enter the variable value"
+msgstr "Enter the variable value"
+
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Enter trigger description"
 msgstr "Enter trigger description"
@@ -4641,6 +4661,22 @@ msgstr "Env var"
 msgid "ENV_VAR"
 msgstr "ENV_VAR"
 
+#: src/components/EnvVarsManager.tsx
+msgid "Environment variable created successfully"
+msgstr "Environment variable created successfully"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Environment variable deleted successfully"
+msgstr "Environment variable deleted successfully"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Environment variable updated successfully"
+msgstr "Environment variable updated successfully"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Environment Variables"
+msgstr "Environment Variables"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "error"
 msgstr "error"
@@ -4658,8 +4694,16 @@ msgstr "error"
 #: src/components/account/system-log.tsx
 #: src/components/account/system-log.tsx
 #: src/components/agent-layout/error-screen/error-screen.tsx
-#: src/components/api-keys-view/api-keys-view.tsx
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/machine-overview/node-secrets.tsx
 #: src/components/project-home/BindSecretDialog.tsx
@@ -5000,9 +5044,13 @@ msgstr "Failed to delete"
 msgid "Failed to Delete"
 msgstr "Failed to Delete"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Failed to delete API key"
 msgstr "Failed to delete API key"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Failed to delete environment variable"
+msgstr "Failed to delete environment variable"
 
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -5047,7 +5095,7 @@ msgstr "Failed to fetch logs"
 msgid "Failed to fetch metrics"
 msgstr "Failed to fetch metrics"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Failed to generate API key"
 msgstr "Failed to generate API key"
 
@@ -5547,7 +5595,7 @@ msgstr "Flow or compute node not available"
 msgid "Flowpad"
 msgstr "Flowpad"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "FlowPad API Key"
 msgstr "FlowPad API Key"
 
@@ -5763,11 +5811,11 @@ msgstr "Gateway"
 msgid "GB"
 msgstr "GB"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Generate an API key to authenticate API requests to FlowPad"
 msgstr "Generate an API key to authenticate API requests to FlowPad"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Generate FlowPad API Key"
 msgstr "Generate FlowPad API Key"
 
@@ -6370,7 +6418,7 @@ msgstr "Import Failed"
 msgid "Import mermaid → board"
 msgstr "Import mermaid → board"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Important:"
 msgstr "Important:"
 
@@ -6965,6 +7013,10 @@ msgstr "Leave"
 msgid "Leave conversation"
 msgstr "Leave conversation"
 
+#: src/components/EnvVarsManager.tsx
+msgid "Leave empty to keep current value"
+msgstr "Leave empty to keep current value"
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "Leave this conversation?"
 msgstr "Leave this conversation?"
@@ -7226,6 +7278,10 @@ msgstr "Loading diff…"
 msgid "Loading document..."
 msgstr "Loading document..."
 
+#: src/components/EnvVarsManager.tsx
+msgid "Loading environment variables..."
+msgstr "Loading environment variables..."
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Loading errors..."
 msgstr "Loading errors..."
@@ -7477,6 +7533,9 @@ msgstr "Login is required to search Flowpad database"
 msgid "Login required"
 msgstr "Login required"
 
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "Login Required"
 msgstr "Login Required"
@@ -7886,6 +7945,7 @@ msgstr "N/A"
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -7899,12 +7959,17 @@ msgstr "Name"
 msgid "name (e.g. coding)"
 msgstr "name (e.g. coding)"
 
+#: src/components/EnvVarsManager.tsx
+msgid "Name (uppercase letters, numbers, and underscores only)"
+msgstr "Name (uppercase letters, numbers, and underscores only)"
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Name *"
 msgstr "Name *"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/EnvVarsManager.tsx
 msgid "Name is required"
 msgstr "Name is required"
 
@@ -7917,7 +7982,7 @@ msgid "Name this entity"
 msgstr "Name this entity"
 
 #: src/components/account/user-info.tsx
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Name:"
 msgstr "Name:"
 
@@ -8131,6 +8196,10 @@ msgstr "New tab"
 #: src/tabs/useTerminalStripController.tsx
 msgid "New Terminal"
 msgstr "New Terminal"
+
+#: src/components/EnvVarsManager.tsx
+msgid "New Value (optional, max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
+msgstr "New Value (optional, max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #: src/components/workflows-view/WorkflowsNavigator.tsx
@@ -9118,6 +9187,10 @@ msgstr "not respected"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not runnable here"
 msgstr "Not runnable here"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Not set"
+msgstr "Not set"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not signed in — please re-authenticate"
@@ -10185,6 +10258,18 @@ msgstr "Please fix the issue in your repository and try again."
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "Please log in to view and manage environment variables."
 msgstr "Please log in to view and manage environment variables."
+
+#: src/components/EnvVarsManager.tsx
+msgid "Please login in order to add a new variable"
+msgstr "Please login in order to add a new variable"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Please login in order to edit environment variables"
+msgstr "Please login in order to edit environment variables"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Please login in order to save environment variables"
+msgstr "Please login in order to save environment variables"
 
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
 msgid "Please make sure the server is running."
@@ -11632,6 +11717,7 @@ msgstr "Sandbox Metrics"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/cron-view/CronForm.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -11673,7 +11759,7 @@ msgstr "Save failed"
 msgid "Save the current asset changes as a version before running improvement."
 msgstr "Save the current asset changes as a version before running improvement."
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Save this API key now. You won't be able to see it again!"
 msgstr "Save this API key now. You won't be able to see it again!"
 
@@ -12208,6 +12294,10 @@ msgstr "Select session"
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Select text to add a link"
 msgstr "Select text to add a link"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Select variable type"
+msgstr "Select variable type"
 
 #: src/components/webapp-viewer.tsx
 #~ msgid "Select webapp..."
@@ -13168,6 +13258,7 @@ msgstr "Stats"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/connections-manager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -13273,6 +13364,12 @@ msgstr "subgraph projection"
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Submit"
 msgstr "Submit"
+
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+msgid "Success"
+msgstr "Success"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Suggest a prompt for the other user to approve"
@@ -14170,6 +14267,8 @@ msgid "Two quick steps in your browser:"
 msgstr "Two quick steps in your browser:"
 
 #: src/components/account/db-stats.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/graph-view/ui/TopBar.tsx
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -14281,6 +14380,10 @@ msgstr "Unknown error"
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
 #~ msgid "Unknown error loading activation rule"
 #~ msgstr "Unknown error loading activation rule"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Unknown error occurred"
+msgstr "Unknown error occurred"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/account/user-info.tsx
@@ -14495,8 +14598,8 @@ msgstr "User"
 msgid "User ID:"
 msgstr "User ID:"
 
-#: src/components/api-keys-view/api-keys-view.tsx
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "User not found"
 msgstr "User not found"
 
@@ -14540,16 +14643,37 @@ msgstr "Validation error (422) - request format issue or entity not found"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/EnvVarsManager.tsx
 msgid "Value"
 msgstr "Value"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/EnvVarsManager.tsx
+msgid "Value (max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
+msgstr "Value (max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Value is required for new variables"
+msgstr "Value is required for new variables"
+
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Value:"
 msgstr "Value:"
+
+#: src/components/EnvVarsManager.tsx
+msgid "VAR_NAME"
+msgstr "VAR_NAME"
 
 #: src/components/skills-viewer/amd-editor/components/blocks/SetBlock.tsx
 #~ msgid "variable"
 #~ msgstr "variable"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Variable name must contain only uppercase letters, numbers, and underscores"
+msgstr "Variable name must contain only uppercase letters, numbers, and underscores"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Variable type is required"
+msgstr "Variable type is required"
 
 #: src/components/agentic-progress/shared/variables-inspector.tsx
 #~ msgid "Variables"
@@ -15033,6 +15157,10 @@ msgstr "You don’t belong to an organization yet. Organizations are set up in F
 msgid "You must be logged in"
 msgstr "You must be logged in"
 
+#: src/components/EnvVarsManager.tsx
+msgid "You must be logged in to delete environment variables"
+msgstr "You must be logged in to delete environment variables"
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "You own — delete for everyone"
@@ -15069,7 +15197,7 @@ msgstr "You're the only participant in this conversation — no one else will se
 msgid "You've been invited to a conversation"
 msgstr "You've been invited to a conversation"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Your API key for authenticating API requests to FlowPad"
 msgstr "Your API key for authenticating API requests to FlowPad"
 
@@ -15086,7 +15214,7 @@ msgstr "Your display name"
 msgid "Your markup on this image will be lost."
 msgstr "Your markup on this image will be lost."
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Your new API key has been created. Please save it securely."
 msgstr "Your new API key has been created. Please save it securely."
 

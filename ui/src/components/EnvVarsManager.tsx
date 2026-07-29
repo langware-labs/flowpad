@@ -14,6 +14,7 @@ import { useAuth, useEntityEnv, useEntityEnvMutations } from '@sdk/react/hooks';
 import { FlowPadApiKeyPanel, GeneratedApiKeyCallout } from './api-keys-view/FlowPadApiKeyPanel';
 import { useUserApiKeys } from './api-keys-view/use-user-api-keys';
 import { AlertCircle, CheckCircle, Edit, FileText, Key, Plus, Trash2, XCircle } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
 import React, { useState } from 'react';
 import { MAX_ENV_VAR_VALUE_LENGTH } from '../constants/validation';
 import { getEnvVarTypeLabel, isConfidential } from '../types/envVarTypes';
@@ -61,6 +62,7 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
   onEnvVarDeleted,
   onEnvVarUpdated,
 }) => {
+  const { t } = useLingui();
   const [editingEnvVar, setEditingEnvVar] = useState<EnvVar | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [newEnvVar, setNewEnvVar] = useState<Partial<EnvVar>>({});
@@ -131,7 +133,7 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
       if (row.var_type === EnvVarType.OAUTH_TOKEN) {
         return <span className="font-mono text-neutral-600">****</span>;
       }
-      return <span className="italic text-neutral-400">Not set</span>;
+      return <span className="italic text-neutral-400"><Trans>Not set</Trans></span>;
     }
     // Check if it's a masked value (starts with ****)
     if (row.visible_value.startsWith('****')) {
@@ -189,8 +191,8 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
   const handleEdit = (envVar: EnvVarApiInfoOut) => {
     if (!user?.id) {
       notify.info({
-        title: 'Login Required',
-        message: 'Please login in order to edit environment variables',
+        title: t`Login Required`,
+        message: t`Please login in order to edit environment variables`,
       });
       return;
     }
@@ -207,8 +209,8 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
   const handleDelete = async (envVarName: string) => {
     if (!user?.id) {
       notify.error({
-        title: 'Error',
-        message: 'You must be logged in to delete environment variables',
+        title: t`Error`,
+        message: t`You must be logged in to delete environment variables`,
       });
       return;
     }
@@ -216,11 +218,11 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
     try {
       await envMutations.remove(envVarName);
       onEnvVarDeleted?.(envVarName);
-      notify.success({ title: 'Success', message: 'Environment variable deleted successfully' });
+      notify.success({ title: t`Success`, message: t`Environment variable deleted successfully` });
     } catch (error: unknown) {
       notify.error({
-        title: 'Error',
-        message: errorMessage(error, 'Failed to delete environment variable'),
+        title: t`Error`,
+        message: errorMessage(error, t`Failed to delete environment variable`),
       });
     }
   };
@@ -237,39 +239,39 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
   const handleSave = async () => {
     if (!user?.id) {
       notify.info({
-        title: 'Login Required',
-        message: 'Please login in order to save environment variables',
+        title: t`Login Required`,
+        message: t`Please login in order to save environment variables`,
       });
       return;
     }
 
     if (!newEnvVar.name) {
       notify.error({
-        title: 'Error',
-        message: 'Name is required',
+        title: t`Error`,
+        message: t`Name is required`,
       });
       return;
     }
 
     if (!validateEnvVarName(newEnvVar.name)) {
       notify.error({
-        title: 'Error',
-        message: 'Variable name must contain only uppercase letters, numbers, and underscores',
+        title: t`Error`,
+        message: t`Variable name must contain only uppercase letters, numbers, and underscores`,
       });
       return;
     }
 
     if (!editingEnvVar && !newEnvVar.value) {
       notify.error({
-        title: 'Error',
-        message: 'Value is required for new variables',
+        title: t`Error`,
+        message: t`Value is required for new variables`,
       });
       return;
     }
 
     if (newEnvVar.value && !validateEnvVarValue(newEnvVar.value)) {
       notify.error({
-        title: 'Error',
+        title: t`Error`,
         message: `Variable value is too long (max ${MAX_ENV_VAR_VALUE_LENGTH.toLocaleString()} characters)`,
       });
       return;
@@ -277,8 +279,8 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
 
     if (!newEnvVar.var_type && !editingEnvVar) {
       notify.error({
-        title: 'Error',
-        message: 'Variable type is required',
+        title: t`Error`,
+        message: t`Variable type is required`,
       });
       return;
     }
@@ -321,8 +323,8 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
         });
 
         notify.success({
-          title: 'Success',
-          message: 'Environment variable updated successfully',
+          title: t`Success`,
+          message: t`Environment variable updated successfully`,
         });
       } else {
         // Create new env var
@@ -340,13 +342,13 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
         });
 
         notify.success({
-          title: 'Success',
-          message: 'Environment variable created successfully',
+          title: t`Success`,
+          message: t`Environment variable created successfully`,
         });
       }
       setShowEditDialog(false);
     } catch (error: unknown) {
-      notify.error({ title: 'Error', message: errorMessage(error, 'Unknown error occurred') });
+      notify.error({ title: t`Error`, message: errorMessage(error, t`Unknown error occurred`) });
     }
   };
 
@@ -356,13 +358,13 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
     // that assumes one double-pads in the other.
     <div className={cn('flex min-h-0 flex-col', className)} data-testid="env-vars-manager">
       <div className="mb-4 flex items-center justify-between">
-        {header && <h2 className="text-xl font-semibold">Environment Variables</h2>}
+        {header && <h2 className="text-xl font-semibold"><Trans>Environment Variables</Trans></h2>}
         <Button
           onClick={() => {
             if (!user?.id) {
               notify.info({
-                title: 'Login Required',
-                message: 'Please login in order to add a new variable',
+                title: t`Login Required`,
+                message: t`Please login in order to add a new variable`,
               });
             } else {
               setEditingEnvVar(null);
@@ -374,7 +376,7 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
           data-testid="env-var-add"
         >
           <Plus className="h-4 w-4" />
-          Add Variable
+          <Trans>Add Variable</Trans>
         </Button>
       </div>
 
@@ -383,23 +385,23 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
           className="mb-2 rounded border border-destructive/50 bg-destructive/10 px-2 py-1.5 text-xs text-destructive"
           data-testid="env-vars-error"
         >
-          {errorMessage(error, 'Could not load environment variables')}
+          {errorMessage(error, t`Could not load environment variables`)}
         </div>
       )}
 
       <div className="min-h-0 flex-1 overflow-auto">
         {isLoading ? (
-          <div className="p-4 text-center text-neutral-500">Loading environment variables...</div>
+          <div className="p-4 text-center text-neutral-500"><Trans>Loading environment variables...</Trans></div>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Value</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead><Trans>Name</Trans></TableHead>
+                <TableHead><Trans>Description</Trans></TableHead>
+                <TableHead><Trans>Type</Trans></TableHead>
+                <TableHead><Trans>Value</Trans></TableHead>
+                <TableHead><Trans>Status</Trans></TableHead>
+                <TableHead><Trans>Actions</Trans></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -471,11 +473,11 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <label className="text-sm font-medium">Name (uppercase letters, numbers, and underscores only)</label>
+                <label className="text-sm font-medium"><Trans>Name (uppercase letters, numbers, and underscores only)</Trans></label>
                 <Input
                   value={newEnvVar.name || ''}
                   onChange={(e) => setNewEnvVar({ ...newEnvVar, name: e.target.value.toUpperCase() })}
-                  placeholder="VAR_NAME"
+                  placeholder={t`VAR_NAME`}
                   className="font-mono"
                   disabled={!!editingEnvVar}
                   title="Only uppercase letters, numbers, and underscores are allowed"
@@ -484,13 +486,13 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
 
               {!editingEnvVar && (
                 <div>
-                  <label className="text-sm font-medium">Type</label>
+                  <label className="text-sm font-medium"><Trans>Type</Trans></label>
                   <Select
                     value={newEnvVar.var_type || EnvVarType.PLAIN}
                     onValueChange={(value) => setNewEnvVar({ ...newEnvVar, var_type: value as EnvVarType })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select variable type" />
+                      <SelectValue placeholder={t`Select variable type`} />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={EnvVarType.PLAIN}>{getEnvVarTypeLabel(EnvVarType.PLAIN)}</SelectItem>
@@ -506,11 +508,11 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
               )}
 
               <div>
-                <label className="text-sm font-medium">Description</label>
+                <label className="text-sm font-medium"><Trans>Description</Trans></label>
                 <Textarea
                   value={newEnvVar.description || ''}
                   onChange={(e) => setNewEnvVar({ ...newEnvVar, description: e.target.value })}
-                  placeholder="Description of this environment variable"
+                  placeholder={t`Description of this environment variable`}
                   rows={2}
                 />
               </div>
@@ -518,12 +520,12 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
               {!editingEnvVar && (
                 <div>
                   <label className="text-sm font-medium">
-                    Value (max {MAX_ENV_VAR_VALUE_LENGTH.toLocaleString()} characters)
+                    <Trans>Value (max {MAX_ENV_VAR_VALUE_LENGTH} characters)</Trans>
                   </label>
                   <Textarea
                     value={newEnvVar.value || ''}
                     onChange={(e) => setNewEnvVar({ ...newEnvVar, value: e.target.value })}
-                    placeholder="Enter the variable value"
+                    placeholder={t`Enter the variable value`}
                     rows={3}
                     title={`Value must be ${MAX_ENV_VAR_VALUE_LENGTH.toLocaleString()} characters or less`}
                   />
@@ -532,12 +534,12 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
               {editingEnvVar && (
                 <div>
                   <label className="text-sm font-medium">
-                    New Value (optional, max {MAX_ENV_VAR_VALUE_LENGTH.toLocaleString()} characters)
+                    <Trans>New Value (optional, max {MAX_ENV_VAR_VALUE_LENGTH} characters)</Trans>
                   </label>
                   <Textarea
                     value={newEnvVar.value || ''}
                     onChange={(e) => setNewEnvVar({ ...newEnvVar, value: e.target.value })}
-                    placeholder="Leave empty to keep current value"
+                    placeholder={t`Leave empty to keep current value`}
                     rows={3}
                     title={`Value must be ${MAX_ENV_VAR_VALUE_LENGTH.toLocaleString()} characters or less`}
                   />
@@ -546,14 +548,14 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowEditDialog(false)}>
-                Cancel
+                <Trans>Cancel</Trans>
               </Button>
               <Button
                 onClick={() => {
                   void handleSave();
                 }}
               >
-                Save
+                <Trans>Save</Trans>
               </Button>
             </DialogFooter>
           </DialogContent>
