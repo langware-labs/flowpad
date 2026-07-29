@@ -2,9 +2,9 @@ import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import { useViewMode, ViewMode } from '@src/components/view-mode';
+import { buildHubRailItems, type HubItem, type RailIcon as HubRailIcon } from './hub-rail';
 import {
   resolveRail,
-  type HubRailItemId,
   type RailGate,
   type RailItemId,
   type RailSpec,
@@ -23,7 +23,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
-import { PageId, Project, WorldViewProjection } from '@sdk';
+import { PageId, Project } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { WikiTip } from '@src/components/wiki-tip';
 import { useContext } from '@src/hooks/useContext';
@@ -55,9 +55,6 @@ import {
   ChevronDown,
   Compass,
   FolderOpen,
-  Globe,
-  Building2,
-  FileText,
   Home,
   Mail,
   MessageCircle,
@@ -74,7 +71,8 @@ import { useLocation, useNavigate } from 'react-router';
 // it arrives — it must never re-sort or filter it. The bespoke entries (project,
 // bookmarks, discover) are ordinary members of that list; only their renderers
 // live here, in `renderBespoke`.
-type RailIcon = React.ComponentType<{ className?: string }>;
+// RailIcon / HubItem live with the hub-rail builder so it can type its own return.
+type RailIcon = HubRailIcon;
 
 /** Title/icon/target for a DESK rail id. `viewType: null` = not a dock tab
  *  (Home, and the bespoke Discover route). */
@@ -82,16 +80,6 @@ type NavItem = {
   title: string;
   icon: RailIcon;
   viewType: ViewType | null;
-};
-
-/** One HUB rail entry. Always a real dock target, and `pointer` distinguishes
- *  same-viewType destinations (WorldView world vs organization, records/<type>). */
-type HubItem = {
-  id: HubRailItemId;
-  title: string;
-  icon: RailIcon;
-  viewType: ViewType;
-  pointer?: string;
 };
 
 /** The rail's count chip. Shared by every rail button that carries one so they
@@ -165,35 +153,7 @@ export function CollapsedSidebar() {
   const hubMode = currentDock?.page === PageId.HUB;
   // Built only in hub mode (desk is the common case — don't allocate/translate 7
   // unused entries every desk render).
-  const hubItems: readonly HubItem[] = hubMode
-    ? [
-        { id: 'home', title: t`Home`, icon: Home, viewType: ViewType.HOME },
-        {
-          id: 'conversations',
-          title: t`Conversations`,
-          icon: MessageCircle,
-          viewType: ViewType.HUB_RECORDS,
-          pointer: 'conversation',
-        },
-        { id: 'tasks', title: t`Tasks`, icon: CheckSquare, viewType: ViewType.HUB_RECORDS, pointer: 'task' },
-        { id: 'docs', title: t`Docs`, icon: FileText, viewType: ViewType.HUB_RECORDS, pointer: 'markdown' },
-        { id: 'flows', title: t`Flows`, icon: Workflow, viewType: ViewType.HUB_RECORDS, pointer: 'agentic_flow' },
-        {
-          id: 'world',
-          title: t`Your world`,
-          icon: Globe,
-          viewType: ViewType.WORLDVIEW,
-          pointer: WorldViewProjection.WORLD,
-        },
-        {
-          id: 'organization',
-          title: t`Organization`,
-          icon: Building2,
-          viewType: ViewType.WORLDVIEW,
-          pointer: WorldViewProjection.ORGANIZATION,
-        },
-      ]
-    : [];
+  const hubItems: readonly HubItem[] = hubMode ? buildHubRailItems(t) : [];
 
   // Content gates: an icon earns its slot only once the thing it opens exists.
   const gates: Record<RailGate, boolean> = {
