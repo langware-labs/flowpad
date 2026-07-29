@@ -20,17 +20,27 @@ function thinkingExpansionKey(entry: UnifiedEntry): string {
   return `flowpad:transcript-thinking:${entry.sessionId}:${entry.id}`;
 }
 
+/** sessionStorage is absent under SSR/jsdom-without-storage; read and write
+ * must agree on that, so both go through these two helpers. */
+function readThinkingExpanded(entry: UnifiedEntry): boolean {
+  if (typeof sessionStorage === 'undefined') return false;
+  return sessionStorage.getItem(thinkingExpansionKey(entry)) === '1';
+}
+
+function writeThinkingExpanded(entry: UnifiedEntry, expanded: boolean): void {
+  if (typeof sessionStorage === 'undefined') return;
+  if (expanded) sessionStorage.setItem(thinkingExpansionKey(entry), '1');
+  else sessionStorage.removeItem(thinkingExpansionKey(entry));
+}
+
 export function ChatEntryItem({ entry, isExpanded, onToggle, isAdvanced }: Props) {
-  const [showThinking, setShowThinking] = useState(
-    () => typeof sessionStorage !== 'undefined' && sessionStorage.getItem(thinkingExpansionKey(entry)) === '1',
-  );
+  const [showThinking, setShowThinking] = useState(() => readThinkingExpanded(entry));
   const timestamp = formatEntryTime(entry);
 
   const toggleThinking = () => {
     setShowThinking((current) => {
       const next = !current;
-      if (next) sessionStorage.setItem(thinkingExpansionKey(entry), '1');
-      else sessionStorage.removeItem(thinkingExpansionKey(entry));
+      writeThinkingExpanded(entry, next);
       return next;
     });
   };

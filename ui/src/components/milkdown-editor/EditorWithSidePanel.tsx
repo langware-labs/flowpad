@@ -75,7 +75,7 @@ export function EditorWithSidePanel({
   target,
   extraTabs,
 }: EditorWithSidePanelProps) {
-  const { windows, active, open, close, closeAll, select } = useSideWindows();
+  const { windows, active, open, close, closeAll, retain, select } = useSideWindows();
   const advanced = useIsAdvanced();
 
   // Registry of openable windows (Backlinks + caller extras), in display order.
@@ -101,15 +101,14 @@ export function EditorWithSidePanel({
 
   // Standard mode removes only windows that are unavailable there. Tabs that
   // explicitly opt into Standard (for example collision details) remain
-  // URL-owned and shareable. Close one unavailable id per committed URL render
-  // to avoid racing several navigations built from the same stale window list.
-  // The committed URL update reruns this effect until only allowed windows remain.
+  // URL-owned and shareable. `retain` prunes the whole set in ONE navigation —
+  // the written set is a filter of the set just read, so there is no stale-list
+  // race to avoid by closing ids one at a time.
+  const availableIds = useMemo(() => new Set(registry.map((tab) => tab.id)), [registry]);
   useEffect(() => {
     if (advanced) return;
-    const available = new Set(registry.map((tab) => tab.id));
-    const unavailable = windows.find((id) => !available.has(id));
-    if (unavailable) close(unavailable);
-  }, [advanced, windows, close, registry]);
+    retain(availableIds);
+  }, [advanced, retain, availableIds]);
 
   const panels = useMemo<Record<string, ReactNode>>(() => {
     const map: Record<string, ReactNode> = {

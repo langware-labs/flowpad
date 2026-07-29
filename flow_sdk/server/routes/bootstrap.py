@@ -1281,9 +1281,12 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
     from pathlib import Path  # noqa: PLC0415
 
     from flow_sdk.core.entity import Entity  # noqa: PLC0415
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown, markdown_id  # noqa: PLC0415
 
+    fts_entries: list[FtsEntry] = []
     for proj in projects:
         mount = proj.fs_storage_mount_path
         if not mount:
@@ -1321,14 +1324,30 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
                     # ``from_record`` deliberately suppresses the DB→disk store
                     # path, including its normal FTS upsert. System markdowns
                     # are read directly from their shipped files (not record
-                    # shadows), so index their already-parsed search content
-                    # here. This keeps startup/reset seeding immediately
-                    # searchable without writing anything back to the source.
+                    # shadows), so collect their already-parsed search content
+                    # and index the whole walk in ONE batch below — this runs on
+                    # startup and again on every clear, so per-file upserts would
+                    # be a session open/close cycle per shipped doc.
                     search_content = rec.search_content
                     if search_content is not None:
-                        await entity._fts_upsert(str(rec.type or rec._record_type), search_content)
+                        fts_entries.append(
+                            FtsEntry(
+                                entity_id=entity.id,
+                                entity_type=str(rec.type or rec._record_type),
+                                name=getattr(entity, "name", None) or None,
+                                content=search_content,
+                            )
+                        )
                 except Exception as e:
                     logging.debug(f"[bootstrap] failed to index system markdown {md_path}: {e}")
+
+    if fts_entries:
+        try:
+            driver = get_db_driver()
+            if hasattr(driver, "fts_upsert"):
+                await driver.fts_upsert(fts_entries)
+        except Exception as e:
+            logging.debug(f"[bootstrap] failed to index system markdown search content: {e}")
 
 
 async def index_system_content() -> None:
