@@ -8,7 +8,6 @@ from flow_sdk.fs_store.indexer.functions.codex_sessions import (
     codex_session_stable_key,
     extract_codex_session,
 )
-from flow_sdk.fs_store.placement import TRANSCRIPTS_FAMILY
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
 
@@ -27,7 +26,7 @@ CODEX_SESSION = TypeMetadata(
     # unrecognized string silently falls back to ``.claude/``.
     asset_class="harness",
     harness="agents",
-    family=TRANSCRIPTS_FAMILY,
+    family="transcripts",
     main_layout="file",
     main_ext=".jsonl",
     receive_row_overrides={"remote": False, "received": True},

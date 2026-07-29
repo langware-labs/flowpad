@@ -169,11 +169,6 @@ class LayoutClass:
         return False  # SYSTEM (or anything else) is never a placement input
 
 
-# The family every worker-session type declares. A received transcript installs
-# to ``<scope root>/<harness prefix>/transcripts/<id>.jsonl``; the indexer walks
-# exactly those subdirs via ``installed_transcripts.transcript_subdir_to_info``.
-TRANSCRIPTS_FAMILY = "transcripts"
-
 # The recursive repo-asset container. A REPO asset lives at
 # ``<container>/agentic-assets/<type>/<name>``; its children nest under the
 # asset's own ``agentic-assets/`` subfolder — the same segment, recursively.
