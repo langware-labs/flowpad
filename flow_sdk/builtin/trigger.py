@@ -22,9 +22,10 @@ from flow_sdk.builtin.hook_models import (
     get_action_handler,
 )
 from flow_sdk.core import action as core_action
+from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.drivers.query import QueryFilter
-from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -121,9 +122,9 @@ async def activate_flows_for_trigger(trigger_id: str, trigger_name: str,
     node references this Trigger entity. ``envelope`` (tag fires only)
     preserves the triggering FlowEvent's id/actor onto the run entry."""
     try:
-        from flow_sdk.flow_manager import get_flow_manager
+        from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
-        await get_flow_manager().on_trigger_fired(trigger_id, envelope=envelope)
+        await get_graph_workflow_manager().on_trigger_fired(trigger_id, envelope=envelope)
     except Exception:
         logger.exception("Trigger %s: flow activation failed", trigger_name)
 
@@ -158,8 +159,7 @@ async def _fire_schedule_job(trigger_id: str) -> None:
     AgenticProcess with the prompt).
     """
     try:
-        from flow_sdk.builtin.hook_models import get_action_handler
-        from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry, discover as _discover_trigger_log
+        from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry
 
         entity = await Trigger.get_by_id(trigger_id)
         if not (entity and entity.enabled):
@@ -256,7 +256,7 @@ class Trigger(Entity):
 
     # TAG trigger fields — a unified-bus subscription (tag_ prefix avoids
     # colliding with the entity's own scope field).
-    tag_pattern: Optional[str] = APIField(None, description="Bus tag pattern, segment-glob (TAG triggers only), e.g. 'entity.created' or 'flow.*'. Bare '*' is rejected.")
+    tag_pattern: Optional[str] = APIField(None, description="Bus tag pattern, segment-glob (TAG triggers only), e.g. 'entity.created' or 'graph_workflow.*'. Bare '*' is rejected.")
     tag_target: Optional[str] = APIField(None, description="Optional target filter in colon form: 'usage_report:*' or an exact 'type:id' (TAG only)")
     tag_scope: list[str] = APIField(default_factory=list, description="Optional scope filter — colon-form targets the event's ctx.scope must intersect (TAG only)")
     max_fires_per_minute: int = APIField(default=30, description="Storm guard for TAG triggers: fires beyond this per-minute cap are dropped (one storm_suppressed log entry per window)")
@@ -417,9 +417,9 @@ class Trigger(Entity):
         # Flow activation for hook fires.
         if self.id:
             try:
-                from flow_sdk.flow_manager import get_flow_manager
+                from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
-                await get_flow_manager().on_trigger_fired(self.id)
+                await get_graph_workflow_manager().on_trigger_fired(self.id)
             except Exception:
                 logger.exception("Hook trigger %s: flow activation failed", self.name)
         return await self.execute_action()
@@ -727,6 +727,7 @@ class Trigger(Entity):
             if not self.watch_path:
                 return ApiFailResponse(message="Trigger has no watch_path configured.")
             from pathlib import Path as _Path
+
             from flow_sdk.builtin.change_event import ChangeEvent
             from flow_sdk.server.fsop_watcher import _fire as _fsop_fire
             test_event = ChangeEvent(path=_Path(self.watch_path), change_type="test")
@@ -738,6 +739,7 @@ class Trigger(Entity):
         if not self.path:
             return ApiFailResponse(message="Trigger has no filesystem path")
         from pathlib import Path
+
         from flow_sdk.rules.activation_rule import ActivationRule
         record_file = Path(self.path) / "record.json"
         if not record_file.exists():
@@ -751,7 +753,7 @@ class Trigger(Entity):
         }
         result = rule.run(mock_data, [])
         try:
-            from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry, discover as _discover_trigger_log
+            from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry
             _append_trigger_log_entry(rule.name, {
                 "hook_event": "UserPromptSubmit",
                 "trigger": result.trigger,
@@ -801,7 +803,7 @@ class Trigger(Entity):
         params = request_info.request_parameters if request_info else {}
         limit = int(params.get("limit", 500))
         triggered_only = str(params.get("triggered_only", "false")).lower() == "true"
-        from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry, discover as _discover_trigger_log
+        from flow_sdk.fs_store.operations.trigger_log import discover as _discover_trigger_log
         entries = _discover_trigger_log(self.name, limit=limit)
         if triggered_only:
             entries = [e for e in entries if e.get("trigger")]
@@ -823,6 +825,7 @@ class Trigger(Entity):
         await self.update()
         if self.path:
             from pathlib import Path
+
             from flow_sdk.rules.activation_rule import ActivationRule
             record_file = Path(self.path) / "record.json"
             if record_file.exists():

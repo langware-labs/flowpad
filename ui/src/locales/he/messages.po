@@ -963,8 +963,8 @@ msgid "Agent not found"
 msgstr "סוכן לא נמצא"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-msgid "Agentic Flows"
-msgstr "זרימות אג'נטיות"
+#~ msgid "Agentic Flows"
+#~ msgstr "זרימות אג'נטיות"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "agents"
@@ -5993,6 +5993,10 @@ msgstr "אופן הצגת הגרף"
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Graph view"
 msgstr "תצוגת גרף"
+
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+msgid "Graph Workflows"
+msgstr "זרימות עבודה גרפיות"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Group Events"

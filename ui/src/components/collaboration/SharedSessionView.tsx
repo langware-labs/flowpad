@@ -13,7 +13,7 @@ interface Props {
 
 /**
  * A shared session's detail: the guest drives work on the host's machine, and
- * both sides watch the prompt/PromptResult turn exchange as a chat. The HOST
+ * both sides watch the prompt/PromptCompletion turn exchange as a chat. The HOST
  * (the machine being driven) sees a banner + Disconnect; the GUEST sees the
  * same chat + a "running on <host>'s machine" note.
  */

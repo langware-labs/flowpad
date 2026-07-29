@@ -158,7 +158,7 @@ GOLDEN = {
     "deck_template": ("agentic-assets/deck_template", AssetClass.REPO),
     "whiteboard": ("agentic-assets/whiteboard", AssetClass.REPO),
     "journey": ("agentic-assets/journey", AssetClass.REPO),
-    "agentic_flow": ("agentic-assets/agentic_flow", AssetClass.REPO),
+    "graph_workflow": ("agentic-assets/graph_workflow", AssetClass.REPO),
     "agent_trace": ("agentic-assets/agent_trace", AssetClass.REPO),
     "usage_report": ("agentic-assets/usage_report", AssetClass.REPO),
     "asset_cleanup_report": ("agentic-assets/asset_cleanup_report", AssetClass.REPO),

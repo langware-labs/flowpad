@@ -57,7 +57,7 @@ Backend:
 secret. `model_dump` therefore structurally cannot emit a value. The value is
 read **only** inside `SecretOriginDriver.resolve(...)` at spawn time, wrapped in
 `pydantic.SecretStr`, and unwrapped **only** into the transient worker-process
-environment dict — never into persisted `WorkerCLIOptions.env_vars`, the rendered
+environment dict — never into persisted `AgentOptions.env_vars`, the rendered
 command, `FLOWPAD_EXECUTION_SCOPE`, or any log line.
 
 ## Value objects — the locator

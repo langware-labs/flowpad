@@ -20,7 +20,7 @@ module only, and ``AgenticProcess`` imports the driver factory plus the
 Public exports:
 - ``AgenticContext`` — per-turn execution context passed to workers.
 - ``AgenticWorker`` — minimal ABC for execute()/inject()/close_session().
-- ``WorkerCLIOptions`` — base CLI command builder (cd + env + worker_args).
+- ``AgentOptions`` — base CLI command builder (cd + env + worker_args).
 - ``WorkerExecutionInfo`` — Pydantic model returned by Shell.launch().
 - ``WorkerDriver`` — Protocol vendors implement; ``AgenticProcess`` calls it.
 - ``factory(cli_json, worker_type)`` — legacy CLI-options factory.
@@ -483,7 +483,7 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
     """Resolve project SecretOrigin pointers into this transient worker env.
 
     This must only be called on spawn-time env dicts. It must not mutate
-    WorkerCLIOptions.env_vars because those are persisted and rendered.
+    AgentOptions.env_vars because those are persisted and rendered.
     """
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.builtin.secret_origin_resolver import (  # noqa: PLC0415
@@ -600,7 +600,7 @@ class AgenticContext(BaseModel):
     # Extra `-c key=val` config overrides for API-key auth (currently codex's
     # OpenRouter provider block). Derived per-spawn from the harness Capability,
     # so — like fork/resume — excluded from the restart hash. Same name as
-    # CodexCliOptions.extra_config_overrides so apply_api_model_to_options can
+    # CodexAgentOptions.extra_config_overrides so apply_api_model_to_options can
     # stamp either object.
     extra_config_overrides: list[tuple[str, str]] = Field(default_factory=list)
 
@@ -677,11 +677,11 @@ class AgenticWorker(ABC):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# WorkerCLIOptions — cross-platform shell command builder
+# AgentOptions — cross-platform shell command builder
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class WorkerCLIOptions:
+class AgentOptions:
     """Base class for worker CLI commands.
 
     Converts a structured configuration into a shell command string suitable
@@ -820,14 +820,14 @@ class WorkerCLIOptions:
         }
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "WorkerCLIOptions":
+    def from_json(cls, data: dict[str, Any]) -> "AgentOptions":
         return cls(
             workdir=data.get("workdir"),
             env_vars=data.get("env_vars") or {},
         )
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, WorkerCLIOptions):
+        if not isinstance(other, AgentOptions):
             return NotImplemented
         return self.to_json() == other.to_json()
 
@@ -872,7 +872,7 @@ class WorkerCLIOptions:
         return f"{cd_part}; {env_part}{cmd_part}"
 
 
-def restart_payload_from_cli_options(options: WorkerCLIOptions) -> dict[str, Any]:
+def restart_payload_from_cli_options(options: AgentOptions) -> dict[str, Any]:
     """Return the worker CLI payload relevant for restart detection.
 
     Runtime-only env vars are injected after the process identity is known but
@@ -1066,25 +1066,25 @@ async def latch_spawn_failure(process: "AgenticProcess", error: WorkerSpawnError
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def factory(cli_json: dict, worker_type: str) -> WorkerCLIOptions:
-    """Return the correct WorkerCLIOptions subclass for the given worker_type.
+def factory(cli_json: dict, worker_type: str) -> AgentOptions:
+    """Return the correct AgentOptions subclass for the given worker_type.
 
     String keys (``"claude"``, ``"codex"``, ``"copilot"``) are the wire form used by
     serialised ``AgenticProcess.cli_config`` — kept stable across enum
     renames. Local imports break the cli_drivers/<vendor> → base cycle.
     """
     if worker_type == "claude":
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 
-        return ClaudeCliOptions.from_json(cli_json)
+        return ClaudeAgentOptions.from_json(cli_json)
     if worker_type == "codex":
-        from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexAgentOptions
 
-        return CodexCliOptions.from_json(cli_json)
+        return CodexAgentOptions.from_json(cli_json)
     if worker_type == "copilot":
-        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
 
-        return CopilotCliOptions.from_json(cli_json)
+        return CopilotAgentOptions.from_json(cli_json)
     raise ValueError(f"Unknown worker_type: {worker_type!r}")
 
 
@@ -1199,7 +1199,7 @@ class WorkerDriver(Protocol):
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
-    def cli_options(self, process: "AgenticProcess") -> WorkerCLIOptions:
+    def cli_options(self, process: "AgenticProcess") -> AgentOptions:
         """Return a fully-configured options object (model, session_id,
         workdir, add_dirs, agents/skills) for this process — used by
         ``AgenticProcess.cmd_line`` and the spawn paths."""
@@ -1208,7 +1208,7 @@ class WorkerDriver(Protocol):
     def restart_snapshot(
         self,
         process: "AgenticProcess",
-        options: WorkerCLIOptions,
+        options: AgentOptions,
     ) -> dict[str, Any]:
         """Return this worker's canonical launch payload for restart hashing."""
         ...
@@ -1392,7 +1392,7 @@ __all__ = [
     "AgenticContext",
     "AgenticProcessContextKey",
     "AgenticWorker",
-    "WorkerCLIOptions",
+    "AgentOptions",
     "WorkerExecutionInfo",
     "WorkerDriver",
     "WorkerSpawnError",

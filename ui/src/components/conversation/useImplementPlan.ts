@@ -6,7 +6,7 @@ import {
   Task,
   TypeId,
 } from '@sdk';
-import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
+import { ClaudeAgentOptions } from '@sdk/cli_workers/claude-cli';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessagePointer } from '@sdk/entities/conversation';
@@ -93,7 +93,7 @@ export function useImplementPlan({
             task.sender_name ?? undefined,
           );
           const fmTypeIdString = new TypeId(FlowMessage.type, messageId).toString();
-          const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
+          const cliConfig = new ClaudeAgentOptions({ permission_mode: 'bypassPermissions' });
           const proc = await new AgenticProcess({
             cli_config: cliConfig.toJson(),
             context_data: { project_id: task.project_id ?? undefined },

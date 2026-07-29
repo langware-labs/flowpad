@@ -161,7 +161,7 @@ export interface IFlowMessage extends IEntity {
    *  Receivers gate downloads on READY. */
   body_status?: BodyStatus;
   /** Live-session grouping key. Stamped at send time by the guest (who mints
-   *  the session id) and on PromptResult replies by the host; receivers
+   *  the session id) and on PromptCompletion replies by the host; receivers
    *  re-derive it from the `remote_worker_session-<id>` TYPE_ID attachment
    *  when the hub stripped the header field. */
   remote_worker_session_id?: string | null;

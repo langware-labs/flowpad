@@ -41,7 +41,7 @@ function pointerItems(messages: FlowMessage[]) {
 }
 
 const promptAtt = { attachment_type: 'prompt', data: 'run it' };
-const resultAtt = { attachment_type: 'type_id', data: 'prompt_result-r1' };
+const resultAtt = { attachment_type: 'type_id', data: 'prompt_completion-r1' };
 
 describe('groupConversationItems', () => {
   it('collapses a consecutive same-session run into one group with counts', () => {

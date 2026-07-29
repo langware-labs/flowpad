@@ -44,7 +44,7 @@ Notes on what is NOT exercised here:
 
 KNOWN REGRESSION SHIELDS:
 - If a future refactor forgets to pop `target_typeid_str` from context_data before
-  passing to ClaudeCliOptions, createProcess will raise (extra kwarg) — so this
+  passing to ClaudeAgentOptions, createProcess will raise (extra kwarg) — so this
   scenario fails fast at step 2.
 - If the `/prompt` admission gate gets moved/removed, step 4 flips from 409 to 200
   and a print-mode worker would race the PTY on the same session_id.

@@ -40,7 +40,7 @@ export function buildHubRailItems(t: (s: TemplateStringsArray) => string): reado
     },
     { id: 'tasks', title: t`Tasks`, icon: CheckSquare, viewType: ViewType.HUB_RECORDS, pointer: 'task' },
     { id: 'docs', title: t`Docs`, icon: FileText, viewType: ViewType.HUB_RECORDS, pointer: 'markdown' },
-    { id: 'flows', title: t`Flows`, icon: Workflow, viewType: ViewType.HUB_RECORDS, pointer: 'agentic_flow' },
+    { id: 'flows', title: t`Flows`, icon: Workflow, viewType: ViewType.HUB_RECORDS, pointer: 'graph_workflow' },
     {
       id: 'world',
       title: t`Your world`,

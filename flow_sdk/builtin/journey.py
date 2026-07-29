@@ -1,7 +1,7 @@
-"""Journey — a folder-backed guided-onboarding document (a FlowDoc dialect).
+"""Journey — a folder-backed guided-onboarding document (a GraphWorkflowDoc dialect).
 
-A Journey is the same folder/graph shape as an AgenticFlow (so it runs on the
-same FlowManager engine, unchanged), but typed separately so it stays out of
+A Journey is the same folder/graph shape as an GraphWorkflow (so it runs on the
+same GraphWorkflowManager engine, unchanged), but typed separately so it stays out of
 the user's Flows list. Its graph is a mostly-linear sequence of ``guided_step``
 nodes: each PRESENTS a place in the app (a standard dock pointer + optional
 wiki-word highlight) and PARKS the run until the frontend orchestrator observes
@@ -28,7 +28,7 @@ from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.journey_journal import JourneyJournal
-    from flow_sdk.flow_manager.flow_doc import FlowDoc, FlowNodeDef
+    from flow_sdk.graph_workflow_manager.graph_workflow_doc import GraphWorkflowDoc, GraphWorkflowNodeDef
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +42,11 @@ def journeys_home_dir() -> Path:
 
 # ── graph helpers — the linear projection over guided_step nodes ──────────────
 
-def guided_nodes(doc: "FlowDoc") -> list["FlowNodeDef"]:
+def guided_nodes(doc: "GraphWorkflowDoc") -> list["GraphWorkflowNodeDef"]:
     return [n for n in doc.nodes if n.node_type == GUIDED_STEP]
 
 
-def entry_node(doc: "FlowDoc") -> str:
+def entry_node(doc: "GraphWorkflowDoc") -> str:
     """The first guided_step — the one no edge targets (the journey start)."""
     guided = guided_nodes(doc)
     targeted = {e.to_node for e in doc.edges}
@@ -56,7 +56,7 @@ def entry_node(doc: "FlowDoc") -> str:
     return guided[0].id if guided else ""
 
 
-def next_guided(doc: "FlowDoc", node_id: str, event: str) -> Optional[str]:
+def next_guided(doc: "GraphWorkflowDoc", node_id: str, event: str) -> Optional[str]:
     """The next guided_step reached from ``node_id`` on ``event`` (skip falls back
     to the ``done`` edge when the author didn't wire a dedicated skip edge)."""
     for target in doc.targets_for(node_id, event):
@@ -75,9 +75,9 @@ async def park_run(journey_id: str, node_id: str) -> str:
     if not node_id:
         return ""
     try:
-        from flow_sdk.flow_manager import get_flow_manager
+        from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
-        fe = await get_flow_manager().inject(journey_id, "start", target_node=node_id)
+        fe = await get_graph_workflow_manager().inject(journey_id, "start", target_node=node_id)
         return fe.execution_id if fe else ""
     except Exception:
         logger.debug("Journey: park run failed", exc_info=True)
@@ -88,9 +88,9 @@ async def _run_is_live(run_id: str) -> bool:
     if not run_id:
         return False
     try:
-        from flow_sdk.flow_manager import get_flow_manager
+        from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
-        return run_id in get_flow_manager().live_run_ids()
+        return run_id in get_graph_workflow_manager().live_run_ids()
     except Exception:
         return False
 
@@ -186,14 +186,14 @@ class Journey(Entity):
             return await journey.launch(user_id)
         return None
 
-    def doc(self) -> Optional["FlowDoc"]:
+    def doc(self) -> Optional["GraphWorkflowDoc"]:
         """This journey's parsed graph.json (disk is truth)."""
-        from flow_sdk.flow_manager.flow_doc import parse_flow_doc
+        from flow_sdk.graph_workflow_manager.graph_workflow_doc import parse_graph_workflow_doc
 
         if not self.asset_ref:
             return None
         try:
-            return parse_flow_doc((Path(self.asset_ref) / "graph.json").read_text(encoding="utf-8"))
+            return parse_graph_workflow_doc((Path(self.asset_ref) / "graph.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
 
@@ -271,9 +271,9 @@ class Journey(Entity):
         # Advance the live run so its one-liner tracks (best effort).
         if await _run_is_live(journal.run_id):
             try:
-                from flow_sdk.flow_manager import get_flow_manager
+                from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
-                await get_flow_manager().inject(
+                await get_graph_workflow_manager().inject(
                     self.id, event, execution_id=journal.run_id, source_node=node_id)
             except Exception:
                 logger.debug("Journey: advance inject failed", exc_info=True)
@@ -322,23 +322,23 @@ class Journey(Entity):
 
     def materialize_folder(self) -> Path:
         """Create the folder + stub files for a fresh journey (idempotent)."""
-        from flow_sdk.builtin.flow_folder import scaffold_flow_folder
+        from flow_sdk.builtin.graph_workflow_folder import scaffold_graph_workflow_folder
 
-        return scaffold_flow_folder(self, journeys_home_dir(), "journey")
+        return scaffold_graph_workflow_folder(self, journeys_home_dir(), "journey")
 
     async def save(self, *args, **kwargs):  # type: ignore[override]
         result = await super().save(*args, **kwargs)
-        from flow_sdk.builtin.flow_folder import rescaffold_after_save
+        from flow_sdk.builtin.graph_workflow_folder import rescaffold_after_save
 
         await rescaffold_after_save(self, "Journey")
         return result
 
 
-# Journeys run on the shared FlowManager engine — register as a flow-doc-backed
+# Journeys run on the shared GraphWorkflowManager engine — register as a flow-doc-backed
 # entity type so the engine resolves them without a journey special case.
 def _register_with_flow_engine() -> None:
     try:
-        from flow_sdk.flow_manager.manager import register_flow_entity_loader
+        from flow_sdk.graph_workflow_manager.manager import register_flow_entity_loader
 
         register_flow_entity_loader(Journey.get_by_id)
     except Exception:  # pragma: no cover — engine optional in slim contexts

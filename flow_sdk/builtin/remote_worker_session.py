@@ -1,10 +1,10 @@
 """RemoteWorkerSession — a host/guest remote-execution session.
 
 Lives **inside** a CollaborationRoom (alongside the room's files and assets): a
-guest sends Prompts and the host's worker runs them and returns PromptResults. The
+guest sends Prompts and the host's worker runs them and returns PromptCompletions. The
 session is asymmetric — the **host** runs the actual worker (its local reused
 headless AgenticProcess), the **guest** requests and watches. Both sides open the
-same shared session id inside the room; the Prompt/PromptResult exchange rides the
+same shared session id inside the room; the Prompt/PromptCompletion exchange rides the
 bound conversation's FlowMessages as attachments (see execute_prompt.py).
 
 Host-only fields (``host_process_id``, ``project_id``) are meaningful only on the
@@ -109,7 +109,7 @@ class RemoteWorkerSession(Entity):
     type: str = APIField(default="remote_worker_session")
 
     conversation_id: Optional[str] = APIField(
-        default=None, description="Conversation whose messages carry the Prompt/PromptResult exchange."
+        default=None, description="Conversation whose messages carry the Prompt/PromptCompletion exchange."
     )
     collaboration_room_id: Optional[str] = APIField(
         default=None, description="CollaborationRoom this session lives inside."
