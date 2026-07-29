@@ -2,7 +2,7 @@
 
 Folder layout::
 
-    ~/.claude/agentic-flows/<name>/
+    ~/agentic-assets/agentic_flow/<name>/
         graph.json      # the flow document (nodes + edges) — semantic truth
         display.json    # canvas layout only (positions/colors/sizes)
         scripts/        # function node scripts
@@ -18,7 +18,7 @@ keeping only — never for routing or layout.
 from pathlib import Path
 from typing import ClassVar, Optional
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
 
@@ -31,7 +31,7 @@ class AgenticFlow(Entity):
     type: str = APIField(default=EntityType.AGENTIC_FLOW.value)
     name: str = APIField(default="")
     description: str = APIField(default="")
-    asset_ref: str = APIField(default="")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
     enabled: bool = APIField(default=True, description="The flow's active switch.")
 
     _api_visible: ClassVar[bool] = True

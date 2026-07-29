@@ -21,7 +21,7 @@ from pydantic import (
 from pydantic.alias_generators import to_camel
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
-from flow_sdk.api.api_types.api_field import APIField, Persist
+from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
@@ -118,11 +118,12 @@ class Project(Entity):
         "Applied on project load so the mode is remembered per project.",
     )
     fs_storage_provider: StorageProvider | None = StorageProvider.SANDBOX
-    fs_storage_mount_path: str | None = APIField(default=None, description="Full path to the project folder")
+    fs_storage_mount_path: str | None = APIField(default=None, description="Full path to the project folder", sharing=Sharing.PRIVATE)
     # Portable repository identity for a project shared through the hub. This
     # is never the sender's local worktree path; the recipient uses it to
     # clone/materialize its own checkout.
     git_origin: GitOrigin | None = APIField(
+        sharing=Sharing.PRIVATE,
         default=None,
         description="Portable Git repository origin used to materialize a shared project.",
     )

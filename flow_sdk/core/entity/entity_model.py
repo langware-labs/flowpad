@@ -50,7 +50,7 @@ from pydantic import (
 )
 
 import flow_sdk.service_log as service_log
-from flow_sdk.api.api_types.api_field import APIField, Persist
+from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sharing
 from flow_sdk.config import StorageProvider
 from flow_sdk.db import DBEntity
 from flow_sdk.db.db_entity import EntityExpansion
@@ -206,9 +206,10 @@ class Entity(DBEntity):
     env_vars: SerializeAsAny[EntityEnvVars[EnvVar] | None] = Field(default=None)
     visitor_role: str | None = Field(default=None)
     labels: List[str] | None = APIField(default=None)
-    tags: List[str] = APIField(default_factory=list)
-    system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
+    tags: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
+    system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project", sharing=Sharing.PRIVATE)
     remote: bool = APIField(
+        sharing=Sharing.PRIVATE,
         default=False,
         description="True when this entity has a hub counterpart at the same id; refreshable from the hub",
     )
@@ -221,6 +222,7 @@ class Entity(DBEntity):
     # Renamed from the per-type ``participants`` field; the conversation WIRE key
     # stays ``participants`` (hub contract) and is adapted to ``members`` at ingest.
     members: List[dict] = APIField(
+        sharing=Sharing.PRIVATE,
         default_factory=list,
         description="Hub role roster cache: [{user_id, email, name, role, status}]. Hub-authoritative; local is a read cache.",
     )
@@ -234,11 +236,13 @@ class Entity(DBEntity):
     # metadata.json (survives reindex), NOT the asset's user-facing file. Excluded
     # from ``share()`` (local provenance, never a hub-synced field).
     git_origin: dict | None = APIField(
+        sharing=Sharing.PRIVATE,
         default=None,
         persist=Persist.TRUE,
         description="Git provenance/placement of a received shared asset (local-only; see GitOrigin).",
     )
     asset_occurrences: list[dict] = APIField(
+        sharing=Sharing.PRIVATE,
         default_factory=list,
         persist=Persist.FALSE,
         description=(
@@ -255,6 +259,7 @@ class Entity(DBEntity):
         ),
     )
     fetched_at: datetime | None = APIField(
+        sharing=Sharing.PRIVATE,
         default=None,
         description=(
             "When THIS device last refreshed the entity from the hub (stamped "
@@ -419,6 +424,7 @@ class Entity(DBEntity):
         ),
     )
     private_context_entities_: list[TypeId] = APIField(
+        sharing=Sharing.PRIVATE,
         default_factory=list,
         description=(
             "Local-only context references. Excluded from share()/hub push. "
@@ -442,6 +448,7 @@ class Entity(DBEntity):
     # a future cross-link wants to carry a hub-portable hint (URL, content
     # hash, anchor), add a separate field with a translatable schema.
     shared_context_entity_data: dict[str, dict] = APIField(
+        sharing=Sharing.PRIVATE,
         default_factory=dict,
         description=(
             "Per-entry sidecar for shared_context_entities. Keyed by str(typeid). "
@@ -449,6 +456,7 @@ class Entity(DBEntity):
         ),
     )
     private_context_entity_data: dict[str, dict] = APIField(
+        sharing=Sharing.PRIVATE,
         default_factory=dict,
         description=(
             "Per-entry sidecar for private_context_entities_. Same shape as "
@@ -479,16 +487,18 @@ class Entity(DBEntity):
     # Optional per-instance FS storage configuration
     # If not set, falls back to class default via get_default_fs_storage_provider()
     fs_storage_provider: StorageProvider | None = Field(default=None)
-    fs_storage_mount_path: str | None = Field(default=None)
+    fs_storage_mount_path: str | None = EntityField(default=None, sharing=Sharing.PRIVATE)
 
     # VFS path relative to a root entity (e.g., compute node)
     root_vfs_path: str | None = APIField(default=None, description="VFS path relative to a root entity")
 
     scope: str | None = APIField(
+        sharing=Sharing.PRIVATE,
         default=None,
         description="Discovery scope: 'user' | 'project' | 'system'. Stamped from the asset path at the save chokepoints (from_record / _prepare_for_storage) and by the FSRef walk at index time.",
     )
     project_id: str | None = APIField(
+        sharing=Sharing.PRIVATE,
         default=None, description="Owning project id, when applicable. Stamped at index time from the FSRef walk."
     )
 
@@ -1857,7 +1867,7 @@ class Entity(DBEntity):
             extra = None
         return self._BASE_LOCAL_FIELDS | (extra or frozenset())
 
-    @computed_field
+    @computed_field(json_schema_extra={"sharing": str(Sharing.PRIVATE)})
     @property
     def duplicate_count(self) -> int:
         """Number of live filesystem occurrences excluding the primary path."""
@@ -2751,7 +2761,7 @@ class Entity(DBEntity):
             logging.getLogger(__name__).debug("project_id_of: failed for %s/%s", entity_type, entity_id, exc_info=True)
             return None
 
-    @computed_field
+    @computed_field(json_schema_extra={"sharing": str(Sharing.PRIVATE)})
     @property
     def private_context_entities(self) -> List[TypeId]:
         """Computed view: implicit projections + explicit raw storage,

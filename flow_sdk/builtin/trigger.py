@@ -8,7 +8,7 @@ from starlette.requests import Request
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.messages import HttpMethod
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.hook_models import (
@@ -233,7 +233,7 @@ class Trigger(Entity):
     counter: int = APIField(default=0, description="Counter incremented when trigger action is executed")
     hook_events: list[str] = APIField(default_factory=list)
     log_mode: str = APIField(default="activations")
-    path: Optional[str] = APIField(None)
+    path: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
 
     # Schedule trigger fields
     expr: Optional[str] = APIField(None, description="Cron/interval/date expression (schedule triggers only)")

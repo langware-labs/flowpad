@@ -12,7 +12,7 @@ ProgressCallback = Callable[[int, int], Awaitable[None]]
 
 from pydantic import BaseModel, SerializerFunctionWrapHandler, model_serializer
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -381,8 +381,8 @@ class FlowMessage(Entity):
     remote_worker_session_id: Optional[str] = APIField(
         None, description="Live session this message belongs to (grouping key)"
     )
-    is_read: bool = APIField(default=False)
-    is_archived: bool = APIField(default=False)
+    is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
+    is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     # Receipt state — mirrors the hub-side schema. Monotonic:
     # created → sent → delivered → received.
     #   created  — local only; the hub has NOT accepted it (no add_message ACK).
@@ -393,11 +393,11 @@ class FlowMessage(Entity):
     # guarded so a lower-ranked status can never downgrade a higher one.
     delivery_status: str = APIField(default=DeliveryStatus.CREATED.value)
     delivered_at: Optional[datetime] = APIField(default=None)
-    received_at: Optional[datetime] = APIField(default=None)
+    received_at: Optional[datetime] = APIField(default=None, sharing=Sharing.HUB_WRITE)
     # NOTE: ``context`` (list[TypeId]) was renamed and consolidated into the
     # unified ``context_entities`` on the base ``Entity``. Read via
     # ``msg.context_entities`` / ``msg.first_context_of_type('task')``.
-    is_draft: bool = APIField(default=False)
+    is_draft: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     # Discriminator for special message kinds. "user" is a normal message
     # (the default for everything the user or hub produces). "invitation"
     # marks a local-only placeholder FlowMessage that represents a pending
@@ -410,10 +410,10 @@ class FlowMessage(Entity):
     # stamped at hub-side add_message time when the incoming FM's attachments
     # require a packed body; the sender flips it to READY after the body is
     # uploaded. Receivers gate on this before issuing a download.
-    body_status: BodyStatus = APIField(default=BodyStatus.NA)
+    body_status: BodyStatus = APIField(default=BodyStatus.NA, sharing=Sharing.HUB_WRITE)
     # Local-only: set once the receiver has auto-run this message's prompt (see
     # process_inbound_message). Sync-proof idempotency guard.
-    prompt_auto_handled: bool = APIField(default=False)
+    prompt_auto_handled: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     _api_visible: ClassVar[bool] = True
 
     @classmethod
