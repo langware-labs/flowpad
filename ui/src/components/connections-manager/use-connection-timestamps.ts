@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 const STORAGE_KEY = 'oauth-connection-timestamps';
 
@@ -24,25 +24,32 @@ export function useConnectionTimestamps() {
     }
   });
 
-  useEffect(() => {
+  /** Persist where the map actually changes. An effect on `timestamps` would
+   *  also fire on mount, writing back the map it had just read — a synchronous
+   *  storage write on every mount, for nothing. */
+  const persist = useCallback((next: Record<string, Date>) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(timestamps));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
       /* a full or unavailable quota costs only the label */
     }
-  }, [timestamps]);
-
-  const record = useCallback((connectionId: string) => {
-    setTimestamps((prev) => ({ ...prev, [connectionId]: new Date() }));
+    return next;
   }, []);
 
-  const forget = useCallback((connectionId: string) => {
-    setTimestamps((prev) => {
-      const next = { ...prev };
-      delete next[connectionId];
-      return next;
-    });
-  }, []);
+  const record = useCallback(
+    (connectionId: string) => setTimestamps((prev) => persist({ ...prev, [connectionId]: new Date() })),
+    [persist],
+  );
+
+  const forget = useCallback(
+    (connectionId: string) =>
+      setTimestamps((prev) => {
+        const next = { ...prev };
+        delete next[connectionId];
+        return persist(next);
+      }),
+    [persist],
+  );
 
   return { timestamps, record, forget } as const;
 }

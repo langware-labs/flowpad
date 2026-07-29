@@ -2,7 +2,7 @@ import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import { useViewMode, ViewMode } from '@src/components/view-mode';
-import { buildHubRailItems, type HubItem, type RailIcon as HubRailIcon } from './hub-rail';
+import { buildHubRailItems, type HubItem, type RailIcon } from './hub-rail';
 import {
   resolveRail,
   type RailGate,
@@ -63,7 +63,7 @@ import {
   Webhook,
   Zap,
 } from 'lucide-react';
-import React, { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 // Membership AND order both come from RAIL_ITEMS (rail-visibility.ts). This file
@@ -72,7 +72,10 @@ import { useLocation, useNavigate } from 'react-router';
 // bookmarks, discover) are ordinary members of that list; only their renderers
 // live here, in `renderBespoke`.
 // RailIcon / HubItem live with the hub-rail builder so it can type its own return.
-type RailIcon = HubRailIcon;
+
+/** Stable empty rail for desk renders, so the memo below doesn't hand React a
+ *  fresh array every time. */
+const NO_HUB_ITEMS: readonly HubItem[] = [];
 
 /** Title/icon/target for a DESK rail id. `viewType: null` = not a dock tab
  *  (Home, and the bespoke Discover route). */
@@ -153,7 +156,7 @@ export function CollapsedSidebar() {
   const hubMode = currentDock?.page === PageId.HUB;
   // Built only in hub mode (desk is the common case — don't allocate/translate 7
   // unused entries every desk render).
-  const hubItems: readonly HubItem[] = hubMode ? buildHubRailItems(t) : [];
+  const hubItems = useMemo(() => (hubMode ? buildHubRailItems(t) : NO_HUB_ITEMS), [hubMode, t]);
 
   // Content gates: an icon earns its slot only once the thing it opens exists.
   const gates: Record<RailGate, boolean> = {
@@ -381,6 +384,7 @@ export function CollapsedSidebar() {
           tooltip={item.title}
           isActive={hubActive(item)}
           onClick={() => handleClick(item.viewType, item.pointer)}
+          data-rail-item={item.id}
           className="relative w-full justify-center px-2"
         >
           <Icon className="h-5 w-5" />
