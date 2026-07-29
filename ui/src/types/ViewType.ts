@@ -288,6 +288,16 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     // tag folds into one tab chip (PREFERENCES precedent).
     foldsPointer: true,
   },
+  [ViewType.CREDENTIALS]: {
+    title: 'Credentials',
+    iconName: 'KeyRound',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    // The pointer is internal tab + project selection, so every combination
+    // folds into one chip rather than spawning a tab per tab (PREFERENCES
+    // precedent).
+    foldsPointer: true,
+  },
   [ViewType.SUBGRAPH]: {
     title: 'Subgraph',
     iconName: 'Workflow',

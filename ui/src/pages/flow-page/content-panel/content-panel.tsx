@@ -33,6 +33,7 @@ import { AssetsPage } from '@src/components/assets/AssetsPage';
 import { HubAssetsPage } from '@src/components/assets/HubAssetsPage';
 import { CollaborationPage, LiveSessionView } from '@src/components/collaboration';
 import { ConnectionsManager } from '@src/components/connections-manager';
+import { CredentialsView } from '@src/components/credentials-view/CredentialsView';
 import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
@@ -243,6 +244,8 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return <ConversationRoute />;
       case ViewType.ASSETS:
         return <HubAssetsPage />;
+      case ViewType.CREDENTIALS:
+        return <CredentialsView />;
       case ViewType.HOME:
       default:
         return <HubHome />;
@@ -346,6 +349,8 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return (
           <ConnectionsManager className="h-full p-4" projectTypeId={contextProject?.typeId} />
         );
+      case ViewType.CREDENTIALS:
+        return <CredentialsView />;
       case ViewType.API_KEYS:
         return (
           <div className="h-full overflow-auto p-4">
