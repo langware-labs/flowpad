@@ -5,6 +5,7 @@ import { ApiKeysView } from '@src/components/api-keys-view/api-keys-view';
 import { ConnectionsManager } from '@src/components/connections-manager';
 import { EnvVarsManager } from '@src/components/EnvVarsManager';
 import { ProjectSelector } from '@src/components/project-selector';
+import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
@@ -39,17 +40,7 @@ export const CredentialsView: React.FC = () => {
 
   const { tab, projectId } = parseCredentialsPointer(currentDock?.pointer);
 
-  const items = useMemo(
-    () =>
-      (projects ?? []).map((p) => ({
-        id: p.id,
-        name: p.name || p.id,
-        path: p.fs_storage_mount_path ?? '',
-        modifiedAt: null,
-        recencyMs: 0,
-      })),
-    [projects],
-  );
+  const items = useMemo(() => projectEntitiesToSelectorItems(projects), [projects]);
 
   // The URL wins; then the current project, so the header agrees with the
   // footer's StatusBar rather than quietly showing a different one; then the

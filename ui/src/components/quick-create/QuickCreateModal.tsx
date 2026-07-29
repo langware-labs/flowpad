@@ -6,7 +6,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useProjects } from '@src/hooks/use-projects';
 import { FolderOpen } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
-import { projectRecencyMs } from '@src/lib/project-recency';
 import { QuickCreatePanel, type PanelHandlers } from './QuickCreatePanel';
 
 interface QuickCreateModalProps {
@@ -30,17 +29,7 @@ export function QuickCreateModal({ open, onOpenChange, panelProps }: QuickCreate
   const { projects, isLoading: isLoadingProjects } = useProjects();
   const [projectModalOpen, setProjectModalOpen] = useState(false);
 
-  const projectItems = useMemo(
-    () =>
-      (projects ?? []).map((p) => ({
-        id: p.id,
-        name: p.displayName,
-        path: p.fs_storage_mount_path ?? '',
-        modifiedAt: p.updated_date ?? null,
-        recencyMs: projectRecencyMs({ last_active_at: p.last_active_at, modified_at: p.updated_date }),
-      })),
-    [projects],
-  );
+  const projectItems = useMemo(() => projectEntitiesToSelectorItems(projects), [projects]);
 
   const handleProjectSelect = useCallback(
     async (id: string) => {
