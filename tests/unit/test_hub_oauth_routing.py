@@ -150,3 +150,75 @@ async def test_a_provider_neither_side_knows_keeps_the_desktop_refusal(monkeypat
     result = await oauth_action._handle_auth("madeup", None)
 
     assert "not supported" in result.message
+
+
+@pytest.mark.asyncio
+async def test_a_dead_callback_host_falls_back_instead_of_refusing(monkeypatch):
+    """A hub flow whose redirect goes nowhere is "hub unavailable", not "no".
+
+    The provider's consent screen would work perfectly and then return the user
+    to a host that is not serving, so no token is ever stored and the row just
+    stays Not connected with nothing said. A device code beats that.
+    """
+    from flow_sdk.app.actions import oauth_action
+    from flow_sdk.responses.response import ApiSuccessResponse
+
+    calls = []
+
+    async def desktop(provider, user_id):
+        calls.append(("desktop", provider))
+        return ApiSuccessResponse(data={"kind": "device"})
+
+    async def hub(provider):
+        calls.append(("hub", provider))
+        return {"auth_url": "https://github.com/login/oauth/authorize?redirect_uri=https%3A%2F%2Fgone.test%2Fcb"}
+
+    async def dead(auth_url):
+        return "nothing is serving https://gone.test"
+
+    monkeypatch.setattr(oauth_action, "get_desktop_oauth_auth_url", desktop)
+    monkeypatch.setattr(oauth_action, "hub_start_auth", hub)
+    monkeypatch.setattr(oauth_action, "redirect_unreachable_reason", dead)
+
+    await oauth_action._handle_auth("github", None)
+
+    assert calls == [("hub", "github"), ("desktop", "github")], calls
+
+
+@pytest.mark.asyncio
+async def test_a_dead_callback_host_with_no_local_grant_says_why(monkeypatch):
+    """Slack has no local grant, so there is nothing to fall back to — and the
+    refusal must name the dead redirect rather than "not supported", which would
+    send someone looking in the wrong place entirely."""
+    from flow_sdk.app.actions import oauth_action
+    from flow_sdk.responses.response import ApiFailResponse
+
+    async def desktop(provider, user_id):
+        return ApiFailResponse(message=f"Desktop OAuth not supported for provider: {provider}")
+
+    async def hub(provider):
+        return {"auth_url": "https://slack.com/oauth/v2/authorize?redirect_uri=https%3A%2F%2Fgone.test%2Fcb"}
+
+    async def dead(auth_url):
+        return "nothing is serving https://gone.test (ERR_NGROK_3200)"
+
+    monkeypatch.setattr(oauth_action, "get_desktop_oauth_auth_url", desktop)
+    monkeypatch.setattr(oauth_action, "hub_start_auth", hub)
+    monkeypatch.setattr(oauth_action, "redirect_unreachable_reason", dead)
+
+    result = await oauth_action._handle_auth("slack", None)
+
+    assert "ERR_NGROK_3200" in result.message
+    assert "not supported" not in result.message
+
+
+def test_a_loopback_redirect_is_never_preflighted():
+    """It is this machine's own callback server, which the flow starter has just
+    bound — probing it proves nothing and can race the bind."""
+    from flow_sdk.core.oauth.hub_oauth import redirect_host_from, urlparse_is_loopback
+
+    origin = redirect_host_from("https://claude.ai/x?redirect_uri=http%3A%2F%2Flocalhost%3A51703%2Fcallback")
+
+    assert origin == "http://localhost:51703"
+    assert urlparse_is_loopback(origin) is True
+    assert urlparse_is_loopback("https://enabled-alive-colt.ngrok-free.app") is False

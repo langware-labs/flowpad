@@ -177,3 +177,101 @@ def hub_credentials_name_for(provider: str) -> str:
     and the poll has to watch the hub's name while the local row keeps ours.
     """
     return f"{(provider or '').strip().upper()}_OAUTH_USER_TOKEN"
+
+
+#: Ceiling on the redirect-reachability preflight. Not a retry or backoff budget:
+#: one request, and an unreachable host is the ANSWER rather than something to
+#: wait longer for.
+REDIRECT_PREFLIGHT_SECONDS = 6
+
+
+def redirect_host_from(auth_url: str) -> Optional[str]:
+    """The ``redirect_uri`` the provider will send the user back to, as an origin."""
+    from urllib.parse import parse_qs, urlparse  # noqa: PLC0415
+
+    try:
+        redirect = parse_qs(urlparse(auth_url).query).get("redirect_uri", [None])[0]
+        if not redirect:
+            return None
+        parts = urlparse(redirect)
+        return f"{parts.scheme}://{parts.netloc}" if parts.netloc else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+async def redirect_unreachable_reason(auth_url: str) -> Optional[str]:
+    """``None`` when the flow's callback host answers; else why it will not.
+
+    The failure this prevents is the worst kind: the provider's consent screen
+    works perfectly, the user signs in, and the redirect lands on a host that no
+    longer exists — so no token is ever stored and the row simply stays "Not
+    connected" with nothing said. That is a dead end no amount of retrying
+    resolves, and the user cannot see it from the outside.
+
+    Common cause here: the hub builds the redirect from ``OAUTH_LOCAL_PROXY``,
+    and a tunnel URL that has since changed leaves it pointing at nothing.
+
+    "Answers HTTP" is NOT sufficient, and assuming it was is what let this slip
+    through the first time: a tunnel whose agent has gone away still serves a
+    404 from the tunnel provider's edge. So a 404 is accepted (we are asking
+    whether something is listening at this origin, not whether the route
+    exists), but a gateway that says it has nothing behind it is not — see
+    ``_nothing_behind_the_proxy``.
+    """
+    origin = redirect_host_from(auth_url)
+    if not origin:
+        return None
+    # A loopback redirect is this machine's own callback server; the flow starter
+    # just opened it, so probing it proves nothing and can race the bind.
+    if urlparse_is_loopback(origin):
+        return None
+
+    import httpx  # noqa: PLC0415
+
+    try:
+        async with httpx.AsyncClient(timeout=REDIRECT_PREFLIGHT_SECONDS, follow_redirects=False) as client:
+            response = await client.get(origin)
+        empty = _nothing_behind_the_proxy(response)
+        if empty:
+            logger.warning("[oauth] redirect host %s answers but has nothing behind it: %s", origin, empty)
+            return (
+                f"This provider would send you back to {origin}, but nothing is "
+                f"serving that address ({empty}). The flow would complete at the "
+                "provider and then have nowhere to return, so no connection would "
+                "be stored. Check the hub's OAUTH_LOCAL_PROXY and that the "
+                "provider app registers this exact redirect URI."
+            )
+        return None
+    except Exception as e:  # noqa: BLE001
+        reason = str(e) or type(e).__name__
+        logger.warning("[oauth] redirect host %s is unreachable: %s", origin, reason)
+        return (
+            f"This provider would send you back to {origin}, which is not reachable. "
+            "The flow would complete at the provider and then have nowhere to return, "
+            "so no connection would be stored. Check the hub's OAUTH_LOCAL_PROXY and "
+            "that the provider app registers this exact redirect URI."
+        )
+    return None
+
+
+def _nothing_behind_the_proxy(response: Any) -> Optional[str]:
+    """A short reason when a reachable host is only an edge with no origin behind it.
+
+    A dead ngrok tunnel and a live one BOTH answer 404 at ``/``; the difference is
+    the ``ngrok-error-code`` header the edge adds when it has no agent to forward
+    to. The 5xx gateway codes are the same situation for any other reverse proxy.
+    """
+    headers = getattr(response, "headers", {}) or {}
+    tunnel_error = headers.get("ngrok-error-code")
+    if tunnel_error:
+        return str(tunnel_error)
+    if getattr(response, "status_code", 0) in (502, 503, 504):
+        return f"HTTP {response.status_code}"
+    return None
+
+
+def urlparse_is_loopback(origin: str) -> bool:
+    from urllib.parse import urlparse  # noqa: PLC0415
+
+    host = (urlparse(origin).hostname or "").lower()
+    return host in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
