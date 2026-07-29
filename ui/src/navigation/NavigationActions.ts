@@ -39,7 +39,12 @@ function toStringRecord(obj?: Record<string, unknown>): Record<string, string> {
   return result;
 }
 
-let pendingDockNavigationUrl: string | null = null;
+interface PendingDockNavigation {
+  targetUrl: string;
+  sourceUrl: string;
+}
+
+let pendingDockNavigation: PendingDockNavigation | null = null;
 
 // View types whose dock adopts the current project's scope when opened without an
 // explicit one (see openDock). These are the project-aware browser surfaces: the
@@ -92,16 +97,27 @@ export class NavigationActions {
   }
 
   private static clearCommittedPendingNavigation(): void {
-    if (pendingDockNavigationUrl && pendingDockNavigationUrl === NavigationActions.getCurrentBrowserUrl()) {
-      pendingDockNavigationUrl = null;
+    if (!pendingDockNavigation) return;
+    const currentUrl = NavigationActions.getCurrentBrowserUrl();
+    // A loader may redirect the requested URL to a canonical destination (for
+    // example bare /dock/shell → a concrete, project-scoped shell). Either an
+    // exact target commit or any departure from the stamped source proves the
+    // transition finished; retaining the raw requested URL after a redirect
+    // suppresses the next legitimate click until the fallback timer fires.
+    if (currentUrl === pendingDockNavigation.targetUrl || currentUrl !== pendingDockNavigation.sourceUrl) {
+      pendingDockNavigation = null;
     }
   }
 
   private markPendingNavigation(targetUrl: string): void {
-    pendingDockNavigationUrl = targetUrl;
+    const pending = {
+      targetUrl,
+      sourceUrl: NavigationActions.getCurrentBrowserUrl(),
+    };
+    pendingDockNavigation = pending;
     window.setTimeout(() => {
-      if (pendingDockNavigationUrl === targetUrl && NavigationActions.getCurrentBrowserUrl() !== targetUrl) {
-        pendingDockNavigationUrl = null;
+      if (pendingDockNavigation === pending && NavigationActions.getCurrentBrowserUrl() !== targetUrl) {
+        pendingDockNavigation = null;
       }
     }, 1000);
   }
@@ -133,7 +149,7 @@ export class NavigationActions {
   }
 
   static resetPendingNavigationForTests(): void {
-    pendingDockNavigationUrl = null;
+    pendingDockNavigation = null;
   }
 
   /**
@@ -348,11 +364,11 @@ export class NavigationActions {
       layout === dock.layout ? dock : new DockPointer(dock.viewType, dock.pointer, dock.options, layout, dock.page);
     const fullUrl = targetDock.toUrl(currentPath);
 
-    if (currentUrl === fullUrl || pendingDockNavigationUrl === fullUrl) {
+    if (currentUrl === fullUrl || pendingDockNavigation?.targetUrl === fullUrl) {
       toplog.log('navigation', 'openDock no-op (URL already current/pending)', {
         currentUrl,
         fullUrl,
-        pending: pendingDockNavigationUrl,
+        pending: pendingDockNavigation?.targetUrl ?? null,
       });
       return;
     }
@@ -379,11 +395,11 @@ export class NavigationActions {
 
   private navigateToBaseUrl(baseUrl: string): void {
     const currentUrl = NavigationActions.getCurrentBrowserUrl();
-    if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) {
+    if (currentUrl === baseUrl || pendingDockNavigation?.targetUrl === baseUrl) {
       toplog.log('navigation', 'navigateToBaseUrl no-op (already there/pending)', {
         currentUrl,
         baseUrl,
-        pending: pendingDockNavigationUrl,
+        pending: pendingDockNavigation?.targetUrl ?? null,
       });
       return;
     }
