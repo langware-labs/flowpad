@@ -329,7 +329,11 @@ export class Tab extends APIEntity<Tab> implements ITab {
     } else {
       const cwd = target?.cwd ?? target?.workdir ?? null;
       const byPath = cwd ? await Project.getProjectByPath(cwd) : null;
-      projectId = byPath?.id ?? scopeProjectId ?? null;
+      // An existing target that resolves to no project is GLOBAL. Never let an
+      // ambient project scope in the URL adopt it while the target loader is
+      // concurrently clearing context to Global. Scope is a valid ownership
+      // hint only for target-less surfaces (assets/project home).
+      projectId = byPath?.id ?? (target ? null : scopeProjectId) ?? null;
     }
 
     return { targetTypeId, target, projectId };
@@ -397,6 +401,19 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  target teardown). Returns the updated list. */
   static async closeById(id: string): Promise<Tab[]> {
     const info = new ActionInfo('close', Tab.type, id, 'POST');
+    const res = await dataManager.callAction<unknown, { tabs: ITab[] }>(info);
+    return Tab.fromResponse(res?.tabs ?? []);
+  }
+
+  /** POST /graph/tab/close_many — durably hide all requested tabs in one
+   * acknowledgement. Used by close-all so a reload cannot abort a fan-out of
+   * independent requests after the chips have disappeared. */
+  static async closeManyByIds(ids: string[], projectId: string | null = null): Promise<Tab[]> {
+    const info = new ActionInfo('close_many', Tab.type, null, 'POST');
+    info.bodyParameters = {
+      tab_ids: ids,
+      project: projectId ?? '',
+    };
     const res = await dataManager.callAction<unknown, { tabs: ITab[] }>(info);
     return Tab.fromResponse(res?.tabs ?? []);
   }

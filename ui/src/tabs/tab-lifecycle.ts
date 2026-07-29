@@ -347,9 +347,15 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
   }
 }
 
-export async function cleanupTab(dock: DockPointer, tab: Tab): Promise<void> {
+export async function cleanupTab(
+  dock: DockPointer,
+  tab: Tab,
+  options: { markClosing?: boolean } = {},
+): Promise<void> {
   const key = tabKey(tab);
-  setEntry(key, TabLifecycleState.Closing, { tabId: tab.id });
+  if (options.markClosing !== false) {
+    setEntry(key, TabLifecycleState.Closing, { tabId: tab.id });
+  }
   try {
     await (adapters.get(dock.viewType ?? '') ?? defaultAdapter).cleanupTab(dock, tab);
   } catch (error) {
@@ -377,6 +383,47 @@ export async function closeTabWithLifecycle(tab: Tab): Promise<Tab[]> {
     return await Tab.closeById(tab.id);
   } catch (error) {
     setEntry(key, TabLifecycleState.CloseFailed, { tabId: tab.id, error });
+    return [];
+  }
+}
+
+/**
+ * Batch close waits for the one durable backend acknowledgement before hiding
+ * the chips. This deliberately differs from the optimistic single-close path:
+ * close-all completion is commonly followed immediately by reload/navigation,
+ * which used to abort the fan-out requests and resurrect every tab.
+ */
+export async function closeTabsWithLifecycle(
+  tabs: Tab[],
+  projectId: string | null = null,
+): Promise<Tab[]> {
+  const unique = [...new Map(tabs.map((tab) => [tab.id, tab])).values()];
+  const ready = (
+    await Promise.all(
+      unique.map(async (tab) => {
+        const dockData = tab.dockPointer;
+        const dock = dockData ? new DockPointer(dockData) : null;
+        try {
+          if (dock) await cleanupTab(dock, tab, { markClosing: false });
+          return tab;
+        } catch {
+          return null;
+        }
+      }),
+    )
+  ).filter((tab): tab is Tab => tab !== null);
+
+  if (ready.length === 0) return [];
+  try {
+    const result = await Tab.closeManyByIds(ready.map((tab) => tab.id), projectId);
+    for (const tab of ready) {
+      setEntry(tabKey(tab), TabLifecycleState.Closing, { tabId: tab.id });
+    }
+    return result;
+  } catch (error) {
+    for (const tab of ready) {
+      setEntry(tabKey(tab), TabLifecycleState.CloseFailed, { tabId: tab.id, error });
+    }
     return [];
   }
 }

@@ -124,14 +124,19 @@ def _pointer_is_adoptable_child(pointer: str | None) -> bool:
             return False
         vt = str(data.get('viewType') or '')
         sub = str(data.get('pointer') or '')
+        workspace_content = data.get('workspaceContent') is True
     else:
         vt, _, sub = pointer.partition('|')
+        workspace_content = False
     if vt == 'editor':
         # The generic source viewer is a first-class content surface too. Empty
         # pointers are the editor landing shell, not an addressable child.
         return bool(sub.strip())
     if vt == 'assets':
-        return sub.startswith('editor/')
+        # Scope-keyed Assets tabs deliberately fold their sub-pointer to ''.
+        # DockPointer preserves this one URL-owned bit so an editor/wiki opened
+        # inside Vibe remains a child without changing one-tab-per-scope identity.
+        return workspace_content or sub.startswith('editor/')
     if vt == 'project':
         # Project-rebased asset dock: ``<project-id>/<assetSubPointer>``.
         _, _, asset_sub = sub.partition('/')
@@ -813,8 +818,18 @@ async def ensure_tab(
         if stray.id != tid and stray.visible:
             stray.visible = False
             await stray.save()
+    # Scope-keyed docks can change only their presentation metadata while
+    # retaining the same canonical tabHash/id (for example Assets content
+    # carries ``workspaceContent`` while its browser root does not). Reconcile
+    # that variant through the canonical id instead of attempting to insert a
+    # second row with the same identity.
+    if existing is None:
+        existing = await Tab.get_one({"id": tid})
     if existing is not None:
         dirty = False
+        if existing.pointer != pointer and _pointer_to_hash(existing.pointer) == _pointer_to_hash(pointer):
+            existing.pointer = pointer
+            dirty = True
         # Heal legacy "viewType|sub" pointers on access — migrate to JSON format
         if existing.pointer and not existing.pointer.startswith('{'):
             parts = existing.pointer.split('|', 1)
@@ -1377,8 +1392,14 @@ async def _http_close(self: Tab):
     await self._soft_hide()
     await broadcast_tabs_changed()
     response = await _list_response(self.project_id)
-    tab_id = self.id
-    task = asyncio.create_task(self._dispatch_teardown(), name=f"tab-teardown:{tab_id}")
+    _schedule_teardown(self)
+    return response
+
+
+def _schedule_teardown(tab: Tab) -> None:
+    """Run a hidden tab's target teardown without delaying the close response."""
+    tab_id = tab.id
+    task = asyncio.create_task(tab._dispatch_teardown(), name=f"tab-teardown:{tab_id}")
     _PENDING_TEARDOWNS[tab_id] = task
 
     def _done(t: asyncio.Task) -> None:
@@ -1387,13 +1408,60 @@ async def _http_close(self: Tab):
             logger.warning("tab teardown failed for %s", tab_id, exc_info=t.exception())
 
     task.add_done_callback(_done)
-    return response
 
 
 _action_registry.register(
     action_name="close",
     function_name="close",
     handler=_http_close,
+    methods="post",
+    types=["tab"],
+)
+
+
+async def _http_close_many(
+    cls,
+    tab_ids: list[str],
+    project: str | None = None,
+):
+    """POST /graph/tab/close_many — durably hide a set of tabs in one request.
+
+    The close-all UI must not issue independent requests that a reload can
+    abort after the optimistic chips disappear. Resolve every requested row,
+    persist all membership flips, broadcast once, and only then acknowledge.
+    Target teardown remains background work, matching the single-close seam.
+    """
+    from flow_sdk.db.drivers.query import (  # noqa: PLC0415
+        ExpressionNode,
+        QueryFilter,
+        QueryOp,
+    )
+
+    ids = list(dict.fromkeys(str(tab_id) for tab_id in tab_ids if tab_id))
+    if not ids:
+        return await _list_response(project)
+
+    rows = await Tab.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids]))
+    )
+    by_id = {tab.id: tab for tab in rows}
+    closing = [by_id[tab_id] for tab_id in ids if tab_id in by_id and by_id[tab_id].visible]
+
+    for tab in closing:
+        await tab._soft_hide()
+
+    if closing:
+        await broadcast_tabs_changed()
+    response = await _list_response(project)
+    for tab in closing:
+        _schedule_teardown(tab)
+    return response
+
+
+_action_registry.register(
+    action_name="close_many",
+    function_name="close_many",
+    handler=_http_close_many,
     methods="post",
     types=["tab"],
 )
