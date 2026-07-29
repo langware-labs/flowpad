@@ -322,36 +322,12 @@ class Attachment(BaseModel):
 
 
 class FlowMessage(Entity):
-    # Beyond the base local flags, a FlowMessage owns its body/download and
-    # read state locally. A hub metadata refresh must not reset these:
-    #   * body_status  — download/delivery lifecycle on THIS machine; reset
-    #     would re-trigger an already-completed body download.
-    #   * is_read / is_archived — local inbox state, not the hub's to dictate.
-    #   * received_at  — when THIS device received it.
-    #   * is_draft     — a local draft has no hub twin; never let a refresh flip it.
-    #   * prompt_auto_handled — the receiver's "I already auto-ran this prompt"
-    #     marker. A LOCAL decision the hub never learns of, so it must survive
-    #     every hub refresh; it's the auto-run idempotency guard (a re-delivered
-    #     op finds it True and skips) and is sync-proof, unlike the attachment's
-    #     ``approved_by`` which a refresh can revert.
-    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = Entity.LOCAL_ONLY_FIELDS | frozenset(
-        {
-            "body_status",
-            "is_read",
-            "is_archived",
-            "received_at",
-            "is_draft",
-            "prompt_auto_handled",
-        }
-    )
-    # Fields ignored when deciding real-change-vs-touch in ``is_stale``: the
-    # local-only state plus the clocks themselves.
-    _STALE_IGNORE_FIELDS: ClassVar[frozenset[str]] = LOCAL_ONLY_FIELDS | frozenset(
-        {
-            "updated_date",
-            "updated_by",
-        }
-    )
+    # A FlowMessage owns its body/download and read state locally — see the
+    # ``Sharing.HUB_WRITE`` declarations on those fields below (`body_status`,
+    # `is_read`, `is_archived`, `received_at`, `is_draft`, `prompt_auto_handled`):
+    # they travel outward, but a hub metadata refresh must never reset them.
+    # This used to be a ``LOCAL_ONLY_FIELDS`` union of the base set, which a
+    # subclass could silently drop by forgetting to union.
 
     type: str = APIField(default="flow_message")
     text: str = APIField(...)
@@ -469,8 +445,12 @@ class FlowMessage(Entity):
         except Exception:  # noqa: BLE001
             return True  # can't prove it's a touch → fail safe to "stale"
         ctx = {"skip_api_serializer": True}
-        before = local.model_dump(mode="json", exclude=cls._STALE_IGNORE_FIELDS, context=ctx)
-        after = candidate.model_dump(mode="json", exclude=cls._STALE_IGNORE_FIELDS, context=ctx)
+        # Ignore the fields the hub may not dictate, plus the clocks themselves
+        # (a touch is not a change). Derived, so a new HUB_WRITE/PRIVATE field is
+        # covered without editing a second list.
+        stale_ignore = cls.fields_not_accepted_from_hub() | {"updated_date", "updated_by"}
+        before = local.model_dump(mode="json", exclude=stale_ignore, context=ctx)
+        after = candidate.model_dump(mode="json", exclude=stale_ignore, context=ctx)
         return before != after
 
     @model_serializer(mode="wrap")
