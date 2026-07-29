@@ -12398,6 +12398,7 @@ msgstr "Sessions ({0})"
 msgid "Set conversation project"
 msgstr "Set conversation project"
 
+#: src/components/context-process/ContextProcessButton.tsx
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Set project"
