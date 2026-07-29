@@ -163,6 +163,7 @@ async def list_entities_by_path(
             "name": getattr(e, "name", "") or getattr(e, "uname", "") or "",
             "asset_ref": getattr(e, "asset_ref", "") or "",
             "scope": getattr(e, "scope", "") or "",
+            "remote": bool(getattr(e, "remote", False)),
             "modified_at": str(getattr(e, "updated_date", "") or ""),
         } for e in entities],
         "limit": limit,

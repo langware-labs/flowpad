@@ -1,9 +1,12 @@
-import { Tab } from '@sdk';
-import { useMemo } from 'react';
+import { AgenticProcess, Tab, TypeId } from '@sdk';
+import { useEffect, useMemo } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useAllTabs } from '@src/tabs/all-tabs-store';
 import { ViewType } from '@src/types/ViewType';
+import { useEntity } from '@src/hooks/entity-hooks';
+import { setActiveTabParent } from '@src/tabs/tab-parent-context';
+import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 
 /**
  * Resolved vibe-workspace session for the current URL.
@@ -64,7 +67,16 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
     // Case 1 — the process URL itself: a SHELL dock with an agentic_process
     // pointer (the single URL family; legacy /dock/display forms redirect here
     // in the main loader's canonicalProcessDockPath).
-    if (currentDock.viewType === ViewType.SHELL) {
+    //
+    // The pointer check is load-bearing: a PLAIN shell dock (a terminal) is
+    // also viewType SHELL, but it is workspace CONTENT, not the anchor — it
+    // must fall through to the child lookup so a terminal opened inside the
+    // workspace keeps rendering in its display pane instead of taking over the
+    // whole surface.
+    if (
+      currentDock.viewType === ViewType.SHELL &&
+      DockPointer.isAgenticProcessPointer(currentDock.pointer)
+    ) {
       return build(tabByHash(currentDock.tabHash), currentDock, true);
     }
 
@@ -77,4 +89,36 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
 
     return null;
   }, [currentDock, allTabs]);
+}
+
+/**
+ * Own the process/session side effects shared by both workspace presentations.
+ * The process is resolved by the parent session id, never from the child route's
+ * active entity.
+ */
+export function useVibeWorkspaceSessionHost(
+  session: VibeWorkspaceSession | null,
+  active = true,
+): AgenticProcess | null {
+  const processTypeId = useMemo(
+    () => (session?.processId ? new TypeId(AgenticProcess.type, session.processId) : null),
+    [session?.processId],
+  );
+  const { data: process } = useEntity<AgenticProcess>(processTypeId, {
+    watch: true,
+    enabled: !!processTypeId,
+  });
+
+  useEffect(() => {
+    if (!active || !session) return;
+    setActiveTabParent(session.processTab?.id ?? null);
+    return () => setActiveTabParent(null);
+  }, [active, session, session?.processTab?.id]);
+
+  useEffect(() => {
+    if (!active || !session || session.processTab) return;
+    void setupTabAndAdopt(session.processDock);
+  }, [active, session, session?.processTab, session?.processDock]);
+
+  return process ?? null;
 }

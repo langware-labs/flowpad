@@ -1,7 +1,10 @@
 import { type TypeId } from '@sdk';
 import apiClient from '@sdk/client';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import {
+  EntityIcon,
+  useEntityLocationLabel,
+} from '@src/components/graph-view/ui/EntityIcon';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
@@ -33,13 +36,62 @@ interface SimpleDirTreeProps {
   onSelectFile?: (absPath: string) => void;
 }
 
-interface PathAsset {
+export interface PathAsset {
   id: string;
   type: string;
   name: string;
   asset_ref: string;
+  remote?: boolean;
   scope?: string;
   modified_at?: string;
+}
+
+export function DirTreeItemIconButton({
+  item,
+  asset,
+  childPath,
+  onClick,
+}: {
+  item: { name: string; is_dir?: boolean };
+  asset?: PathAsset;
+  childPath: string;
+  onClick: () => void;
+}) {
+  const locationText = useEntityLocationLabel(asset?.remote);
+  const baseTitle = asset
+    ? `Open ${asset.type}: ${asset.name || item.name}\n${childPath}`
+    : childPath;
+  const iconTitle = locationText ? `${baseTitle}\n${locationText}` : baseTitle;
+  const iconAriaLabel = asset
+    ? [
+        `Open ${asset.type}: ${asset.name || item.name}`,
+        childPath,
+        locationText,
+      ].filter(Boolean).join(', ')
+    : childPath;
+  const FileGlyph = defaultIconForItem(item);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
+      aria-label={iconAriaLabel}
+      title={iconTitle}
+    >
+      {asset ? (
+        <EntityIcon
+          type={asset.type}
+          remote={asset.remote}
+          showLocationTooltip={false}
+          density="compact"
+          className="h-4 w-4 shrink-0 text-primary"
+        />
+      ) : (
+        <FileGlyph className="h-4 w-4 shrink-0 text-muted-foreground" />
+      )}
+    </button>
+  );
 }
 
 const ASSET_RECORD_TYPES = [
@@ -285,14 +337,6 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
     [handleEnter, handleOpenAsset],
   );
 
-  const renderItemIcon = useCallback(
-    (item: { name: string; is_dir?: boolean }, asset?: PathAsset) => {
-      const Icon = asset ? iconForType(asset.type) : defaultIconForItem(item);
-      return <Icon className={`h-4 w-4 shrink-0 ${asset ? 'text-primary' : 'text-muted-foreground'}`} />;
-    },
-    [],
-  );
-
   const sortedItems = useMemo(() => {
     const q = filterQuery.trim().toLowerCase();
     const base = q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items;
@@ -354,7 +398,6 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
           {sortedItems.map((item) => {
             const childPath = joinPath(currentPath, item.name);
             const asset = assetByPath.get(normalize(childPath));
-            const iconTitle = asset ? `Open ${asset.type}: ${asset.name || item.name}\n${childPath}` : childPath;
 
             return (
               <div
@@ -362,15 +405,12 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
                 className="group flex items-center rounded-md text-sm hover:bg-muted"
                 title={childPath}
               >
-                <button
-                  type="button"
+                <DirTreeItemIconButton
+                  item={item}
+                  asset={asset}
+                  childPath={childPath}
                   onClick={() => handleIconClick(item, asset)}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md"
-                  aria-label={iconTitle}
-                  title={iconTitle}
-                >
-                  {renderItemIcon(item, asset)}
-                </button>
+                />
                 <button
                   type="button"
                   onClick={() => handleEnter(item, asset)}

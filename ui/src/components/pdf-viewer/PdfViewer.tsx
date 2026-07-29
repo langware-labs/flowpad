@@ -8,7 +8,7 @@ import { useDownloadUrl } from '@src/hooks/use-download-url';
  * project fallback) is shared with MediaViewer via useDownloadUrl.
  */
 export function PdfViewer({ path }: { path: string }) {
-  const { url } = useDownloadUrl(path);
+  const { url, revision } = useDownloadUrl(path);
 
   if (!url) {
     return (
@@ -19,7 +19,7 @@ export function PdfViewer({ path }: { path: string }) {
     );
   }
   return (
-    <iframe src={url} title="PDF" className="h-full w-full border-0 bg-background" data-testid="pdf-viewer" />
+    <iframe key={revision} src={url} title="PDF" className="h-full w-full border-0 bg-background" data-testid="pdf-viewer" />
   );
 }
 

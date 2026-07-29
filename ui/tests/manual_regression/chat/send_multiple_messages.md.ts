@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoShell, sendCommand, waitForOutput } from '../terminal/helpers';
+import { withViewMode } from '../_shared/view-mode';
 
 test.describe('Send Multiple Messages', () => {
   test.beforeEach(async ({ page }) => {
@@ -41,8 +42,7 @@ test.describe('Send Multiple Messages', () => {
     test.setTimeout(30_000);
 
     // Navigate directly to the shell without creating a new session (avoids stacking)
-    await page.goto('/dock/shell');
-    await page.waitForTimeout(3_000);
+    await page.goto(withViewMode('/dock/shell', 'advanced'));
 
     // Terminal panels should be visible
     await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible({ timeout: 10_000 });

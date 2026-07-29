@@ -19,6 +19,7 @@ import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { formatTimeAgo, useLastStatusChange } from '@src/store/pending-actions-store';
+import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
 import { SquareTerminal } from 'lucide-react';
 import React, { useMemo } from 'react';
 
@@ -150,14 +151,21 @@ export function humanizeType(s: string): string {
  * have no live process, so the kind dot is a static accent (not a liveness
  * indicator) and the fields come straight off the `Tab` row — no entity fetch.
  */
-export const ContentTabTooltip: React.FC<{ tab: Tab; typeLabel: string; statusReason?: string }> = ({
+export const ContentTabTooltip: React.FC<{
+  tab: Tab;
+  typeLabel: string;
+  statusReason?: string;
+  location?: boolean;
+}> = ({
   tab,
   typeLabel,
   statusReason,
+  location,
 }) => {
   const dock = tab.dockPointer;
   const address = dock?.pointer || (tab.target_type && tab.target_id ? `${tab.target_type}/${tab.target_id}` : '');
   const lastActive = tab.last_active_at;
+  const locationLabel = useEntityLocationLabel(location);
 
   return (
     <div className="min-w-[220px] space-y-1.5">
@@ -165,6 +173,11 @@ export const ContentTabTooltip: React.FC<{ tab: Tab; typeLabel: string; statusRe
         {tab.name || typeLabel}
       </p>
       {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
+      {location !== undefined && (
+        <p className="text-[11px] text-muted-foreground" data-testid="tab-tooltip-location">
+          {locationLabel}
+        </p>
+      )}
       <div className="flex items-center gap-2">
         <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
         <span className="text-[11px] font-semibold text-foreground">{typeLabel}</span>

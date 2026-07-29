@@ -29,6 +29,7 @@ export const FlowElementTypes = {
 
   // System types
   ERROR: 'error',
+  WORKER_UNAVAILABLE: 'worker-unavailable',
   DEBUG: 'debug',
   TRACE: 'trace',
   SOURCE: 'source',

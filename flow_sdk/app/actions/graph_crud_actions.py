@@ -3,16 +3,16 @@ from json import JSONDecodeError
 from fastapi import HTTPException, Request
 from pydantic import ValidationError
 
-from flow_sdk.flowpad_types.enums.auth_enums import AuthRole
 from flow_sdk import service_log
+from flow_sdk.actions import action
 from flow_sdk.builtin.user import User
 from flow_sdk.builtin.visitor import Visitor
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.query import QueryFilter
-from flow_sdk.actions import action
+from flow_sdk.flowpad_types.enums.auth_enums import AuthRole
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
-from flow_sdk.responses.response import ApiSuccessResponse, ApiFailResponse
+from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.server.routes.graph import get_by_id, get_entity_model_from_registry
 
 
@@ -235,10 +235,11 @@ async def handle_record_action():
     if rec is None:
         return ApiFailResponse(message="Record not found", status_code=404)
 
-    type_id_str = str(request_info.target_entity_typeid)
-
-    record_folder_ref_dict = rec.record_folder_ref.to_dict(type_id_str) if rec.record_folder_ref is not None else None
-    main_ref_dict = rec.main_ref.to_dict(type_id_str) if rec.main_ref is not None else None
+    # Local record refs remain owned by their filesystem provider (normally
+    # compute_node-@local). Hub record refs target the asset entity instead.
+    # Never overwrite the ref's own transport identity here.
+    record_folder_ref_dict = rec.record_folder_ref.to_dict() if rec.record_folder_ref is not None else None
+    main_ref_dict = rec.main_ref.to_dict() if rec.main_ref is not None else None
 
     return ApiSuccessResponse(data={"record_folder_ref": record_folder_ref_dict, "main_ref": main_ref_dict})
 

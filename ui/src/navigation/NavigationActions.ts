@@ -20,6 +20,9 @@ import { dockPointerForFile } from './local-file-pointer';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
+import { isContentAssetDock } from './content-asset-dock';
+import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
+import { vfsLocatorForComputeNode } from './vfs-locator';
 
 // Always returns a record (possibly empty) so consumers can read keys without
 // optional-chaining. An earlier version returned `undefined` for empty input,
@@ -36,7 +39,12 @@ function toStringRecord(obj?: Record<string, unknown>): Record<string, string> {
   return result;
 }
 
-let pendingDockNavigationUrl: string | null = null;
+interface PendingDockNavigation {
+  targetUrl: string;
+  sourceUrl: string;
+}
+
+let pendingDockNavigation: PendingDockNavigation | null = null;
 
 // View types whose dock adopts the current project's scope when opened without an
 // explicit one (see openDock). These are the project-aware browser surfaces: the
@@ -88,21 +96,28 @@ export class NavigationActions {
     }
   }
 
-  private static needsRouterFallback(): boolean {
-    return typeof navigator !== 'undefined' && /\bjsdom\b/i.test(navigator.userAgent);
-  }
-
   private static clearCommittedPendingNavigation(): void {
-    if (pendingDockNavigationUrl && pendingDockNavigationUrl === NavigationActions.getCurrentBrowserUrl()) {
-      pendingDockNavigationUrl = null;
+    if (!pendingDockNavigation) return;
+    const currentUrl = NavigationActions.getCurrentBrowserUrl();
+    // A loader may redirect the requested URL to a canonical destination (for
+    // example bare /dock/shell → a concrete, project-scoped shell). Either an
+    // exact target commit or any departure from the stamped source proves the
+    // transition finished; retaining the raw requested URL after a redirect
+    // suppresses the next legitimate click until the fallback timer fires.
+    if (currentUrl === pendingDockNavigation.targetUrl || currentUrl !== pendingDockNavigation.sourceUrl) {
+      pendingDockNavigation = null;
     }
   }
 
   private markPendingNavigation(targetUrl: string): void {
-    pendingDockNavigationUrl = targetUrl;
+    const pending = {
+      targetUrl,
+      sourceUrl: NavigationActions.getCurrentBrowserUrl(),
+    };
+    pendingDockNavigation = pending;
     window.setTimeout(() => {
-      if (pendingDockNavigationUrl === targetUrl && NavigationActions.getCurrentBrowserUrl() !== targetUrl) {
-        pendingDockNavigationUrl = null;
+      if (pendingDockNavigation === pending && NavigationActions.getCurrentBrowserUrl() !== targetUrl) {
+        pendingDockNavigation = null;
       }
     }, 1000);
   }
@@ -116,30 +131,25 @@ export class NavigationActions {
     this.markPendingNavigation(fullUrl);
 
     const from = NavigationActions.getCurrentBrowserUrl();
-    const willPush = from !== fullUrl;
+    const willNavigate = from !== fullUrl;
     toplog.log('navigation', 'commitBrowserNavigation', {
       from,
       to: fullUrl,
       routerUrl,
-      willPushState: willPush,
-      routerFallback: NavigationActions.needsRouterFallback(),
+      willNavigate,
       historyLen: window.history.length,
     });
-    if (willPush) {
-      window.history.pushState(null, '', fullUrl);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }
-
-    // createMemoryRouter in RTL/jsdom is not wired to window.history/popstate.
-    // BrowserRouter is wired to popstate, so calling navigate there would run
-    // the route loaders twice.
-    if (NavigationActions.needsRouterFallback()) {
+    if (willNavigate) {
+      // React Router owns browser history and, critically, loader execution.
+      // A hand-written pushState/popstate updates useLocation but can bypass
+      // data-router revalidation, leaving the new URL rendered against stale
+      // context. Every dock transition therefore enters through navigate().
       void this.navigate(routerUrl);
     }
   }
 
   static resetPendingNavigationForTests(): void {
-    pendingDockNavigationUrl = null;
+    pendingDockNavigation = null;
   }
 
   /**
@@ -180,6 +190,7 @@ export class NavigationActions {
   applyHighlightInPlace(wikiword: string): void {
     this.updateLiveUrlParams((params) => params.set(HIGHLIGHT_PARAM, wikiword));
   }
+
 
   /**
    * Navigate to the app home root `/`, optionally with `?highlight=`, CARRYING
@@ -320,7 +331,12 @@ export class NavigationActions {
     // respected untouched. This is what makes the left-rail Triggers / Files
     // icons open a project tab when a project is active and a global one
     // otherwise — exactly like the Assets icon.
-    if (dock.viewType && SCOPE_SEEDED_VIEWS.has(dock.viewType) && dock.scopeFilter === null) {
+    if (
+      dock.viewType &&
+      SCOPE_SEEDED_VIEWS.has(dock.viewType) &&
+      dock.scopeFilter === null &&
+      !isContentAssetDock(dock)
+    ) {
       const projectId = dataContext.project?.id ?? null;
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
     }
@@ -348,11 +364,11 @@ export class NavigationActions {
       layout === dock.layout ? dock : new DockPointer(dock.viewType, dock.pointer, dock.options, layout, dock.page);
     const fullUrl = targetDock.toUrl(currentPath);
 
-    if (currentUrl === fullUrl || pendingDockNavigationUrl === fullUrl) {
+    if (currentUrl === fullUrl || pendingDockNavigation?.targetUrl === fullUrl) {
       toplog.log('navigation', 'openDock no-op (URL already current/pending)', {
         currentUrl,
         fullUrl,
-        pending: pendingDockNavigationUrl,
+        pending: pendingDockNavigation?.targetUrl ?? null,
       });
       return;
     }
@@ -379,11 +395,11 @@ export class NavigationActions {
 
   private navigateToBaseUrl(baseUrl: string): void {
     const currentUrl = NavigationActions.getCurrentBrowserUrl();
-    if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) {
+    if (currentUrl === baseUrl || pendingDockNavigation?.targetUrl === baseUrl) {
       toplog.log('navigation', 'navigateToBaseUrl no-op (already there/pending)', {
         currentUrl,
         baseUrl,
-        pending: pendingDockNavigationUrl,
+        pending: pendingDockNavigation?.targetUrl ?? null,
       });
       return;
     }
@@ -395,10 +411,6 @@ export class NavigationActions {
     });
     this.markPendingNavigation(baseUrl);
     if (NavigationActions.getCurrentBrowserUrl() !== baseUrl) {
-      window.history.pushState(null, '', baseUrl);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }
-    if (NavigationActions.needsRouterFallback()) {
       void this.navigate(baseUrl);
     }
   }
@@ -554,16 +566,19 @@ export class NavigationActions {
    * the `fs/` pointer expects (handles POSIX `/…` and Windows `C:\…`).
    */
   openFolder(machinePath: string): void {
-    let rel = machinePath;
-    const cn = dataContext.computeNodeTypeId;
-    if (cn) {
-      try {
-        rel = VFSPath.fromMachinePath(machinePath, cn).entitySubPath;
-      } catch {
-        // Not an absolute machine path — forAssetFsFolder normalizes it as-is.
-      }
+    const parsed = VFSPath.parse(machinePath);
+    if (parsed.isAbsolute) {
+      this.openDock(DockPointer.forAssetFs(parsed));
+      return;
     }
-    this.openDock(DockPointer.forAssetFsFolder(rel));
+
+    const liveTypeId = dataContext.computeNodeTypeId ?? LOCAL_COMPUTE_NODE;
+    const locatorTypeId = vfsLocatorForComputeNode(dataContext.computeNode) ?? liveTypeId;
+    const vfsPath =
+      machinePath.startsWith('/') || /^[A-Za-z]:[/\\]/.test(machinePath)
+        ? VFSPath.fromMachinePath(machinePath, locatorTypeId)
+        : VFSPath.fromTypeId(locatorTypeId, machinePath);
+    this.openDock(DockPointer.forAssetFs(vfsPath));
   }
 
   /** Navigate to the default shell view (no specific session) */
@@ -573,7 +588,7 @@ export class NavigationActions {
 
   async openShell(
     shellId: string,
-    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean },
+    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean; viewMode?: string },
   ): Promise<Shell | null> {
     const extraOptions = toStringRecord(options);
     const shell = Shell.getByIdFromCache(shellId) ?? (await Shell.getById(shellId));
@@ -657,42 +672,14 @@ export class NavigationActions {
     }
   }
 
-  async openNewClaudeProcess(options?: {
-    cwd?: string;
-    projectId?: string;
-    workerType?: 'claude_code' | 'codex' | 'copilot';
-  }): Promise<{ processId: string; shellId: string | null; dockPointer: IDockPointer } | null> {
-    try {
-      const computeNode = dataContext.computeNode;
-      if (!computeNode) {
-        console.error('[NavigationActions] No compute node');
-        return null;
-      }
-      const agenticProcess = await computeNode.createProcess(
-        {
-          workdir: options?.cwd || dataContext.project?.fs_storage_mount_path,
-          projectId: options?.projectId ?? dataContext.project?.id,
-          ...(options?.workerType ? { workerType: options.workerType } : {}),
-        },
-        { watchProcess: false, visible: true },
-      );
-      return {
-        processId: agenticProcess.id,
-        shellId: agenticProcess.shell_id ?? null,
-        dockPointer: agenticProcess.dockPointer,
-      };
-    } catch (error) {
-      console.error('[NavigationActions] Error creating AgenticProcess:', error);
-      return null;
-    }
-  }
-
   async openNewShell(options?: {
     cwd?: string;
     startCommand?: string;
     computeNode?: ComputeNode;
     skipNavigate?: boolean;
     projectId?: string;
+    /** Open the terminal in this view mode (`vibe` keeps a journey in its skin). */
+    viewMode?: string;
   }): Promise<{ shellId: string } | null> {
     try {
       const cn = options?.computeNode ?? dataContext.computeNode;

@@ -44,6 +44,8 @@ export interface AssetDescriptor {
    *  process-local (embedded/inline/workdir) assets. Lets scope-aware UIs
    *  filter by specific project ids without re-fetching. */
   project_id?: string | null;
+  /** Whether the backing entity has a cloud counterpart. Omitted by older servers. */
+  remote?: boolean;
   /** Lightweight usage evidence owned by the backend. */
   usage?: AssetUsage[];
 }

@@ -96,9 +96,9 @@ export interface AgenticContext {
    * streams per-event FlowData over HTTP. */
   outputFormat?: string;
 
-  /** Backend worker (`'claude_code'` | `'codex'` | `'copilot'`). Default: backend's
-   * `FLOWPAD_DEFAULT_WORKER` (typically claude). Surfaced so the UI can
-   * launch alternate CLI tabs from the same opener flow. */
+  /** Backend worker (`'claude_code'` | `'codex'` | `'copilot'`). When omitted,
+   * the backend resolves the persisted default `harness` capability reference.
+   * Surfaced so an explicit UI selection can override that default. */
   workerType?: 'claude_code' | 'codex' | 'copilot';
 
   /** Discriminates how this process is being used (chat vs execution). */

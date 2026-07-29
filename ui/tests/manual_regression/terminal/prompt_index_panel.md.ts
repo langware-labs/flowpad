@@ -26,6 +26,9 @@
  */
 import { test, expect } from '@playwright/test';
 import { activePanel, dismissSetupModal, ensureAdvancedView, ensureSideTabClosed, ensureSideTabOpen, getSideWindow, skipIfPtyExhausted, startClaudeSession } from './helpers';
+import { apiBase } from '../_shared/api';
+
+const API_URL = apiBase();
 
 /**
  * Cache the agentic process URL after the first successful navigation.
@@ -212,24 +215,32 @@ test.describe('Prompt Index Panel', () => {
   test('prompt icon is absent in plain shell terminal (no agentic process)', async ({ page }) => {
     test.setTimeout(60_000);
 
-    await page.goto('/dock/shell/new_terminal');
-    const skip = page.getByRole('button', { name: 'Skip' });
-    if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
+    const bootstrap = await page.request.get(`${API_URL}/api/v1/graph/bootstrap`);
+    expect(bootstrap.status()).toBe(200);
+    const projectId = (await bootstrap.json())?.data?.default_project?.id as string | undefined;
+    expect(projectId, 'plain-shell fixture requires the default project').toBeTruthy();
 
-    await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
+    const created = await page.request.post(`${API_URL}/api/v1/graph/shell`, {
+      data: { project_id: projectId },
+    });
+    expect(created.status()).toBe(200);
+    const shellId = (await created.json())?.data?.id as string | undefined;
+    expect(shellId, 'plain-shell fixture creation failed').toBeTruthy();
 
-    if (page.url().includes('agentic_process-')) {
-      test.skip(true, 'App redirected to existing agentic process; plain shell not available in this environment');
-      return;
+    try {
+      await page.goto(`/dock/shell/shell-${shellId}?viewMode=advanced`);
+      await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
+      await page.waitForTimeout(2_000);
+
+      // On plain shell: ribbon (.border-t .ml-auto) must not be visible.
+      const panel = activePanel(page);
+      const mlAuto = panel.locator('.border-t .ml-auto');
+      await expect(mlAuto).not.toBeVisible({ timeout: 3_000 });
+      await expect(page).toHaveURL(new RegExp(`/dock/shell/shell-${shellId}`));
+    } finally {
+      await page.goto('/');
+      await page.request.post(`${API_URL}/api/v1/graph/shell/${shellId}/close`);
     }
-
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
-    await page.waitForTimeout(2_000);
-
-    // On plain shell: ribbon (.border-t .ml-auto) must not be visible
-    const panel = activePanel(page);
-    const mlAuto = panel.locator('.border-t .ml-auto');
-    await expect(mlAuto).not.toBeVisible({ timeout: 3_000 });
   });
 
   // ---------------------------------------------------------------------------

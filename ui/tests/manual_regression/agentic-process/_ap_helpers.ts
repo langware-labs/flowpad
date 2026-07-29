@@ -7,39 +7,26 @@
  * which is the point at which the ProcessToolbar mounts in the Claude pane.
  */
 import { type Page, test, expect } from '@playwright/test';
+import { selectViewMode, withViewMode } from '../_shared/view-mode';
 export { apiBase } from '../_shared/api';
 
 export async function dismissSetupModal(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    // Every scenario in this category drives the full ProcessToolbar
-    // (Restart, Open Terminal, Fork, Worktree, Session Info, Transcript).
-    // Those controls only exist in the Advanced view header — the default
-    // Standard view renders the simple-chat header without them.
-    localStorage.setItem('viewMode', 'advanced');
   });
 }
 
 /**
- * Force the app into Advanced view AFTER bootstrap. View mode is now a
- * backend-owned preference (`preferences.ui.view_mode`); the legacy
- * `localStorage.viewMode` seed in dismissSetupModal is only adopted when the
- * backend file has no value, so an explicit backend Standard/Vibe wins the
- * moment bootstrap reconciles it. `window.setView` (exposed by
- * view-mode-context) is the live setter that wins post-bootstrap — the whole
- * ProcessToolbar (Restart / Open Terminal / Fork / Worktree / Session Info /
- * Transcript) only exists in Advanced view, so every scenario here needs this.
+ * Force Advanced through the URL-backed footer control so a dock override and
+ * the backend preference cannot disagree.
  */
 export async function forceAdvancedView(page: Page) {
-  await page.evaluate(() => {
-    (window as unknown as { setView?: (v: string) => void }).setView?.('advanced');
-  });
-  await page.locator('html[data-view="advanced"]').waitFor({ timeout: 10_000 });
+  await selectViewMode(page, 'advanced');
 }
 
 /** Navigate to a fresh interactive shell and wait until xterm is attached. */
 export async function gotoNewShell(page: Page) {
-  await page.goto('/dock/shell/new_terminal');
+  await page.goto(withViewMode('/dock/shell/new_terminal', 'advanced'));
   const skip = page.getByRole('button', { name: 'Skip' });
   if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
   await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });

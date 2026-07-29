@@ -9,11 +9,9 @@ import {
   FlowDataSource,
   fsStore,
   isProcessRunning,
-  isReadyForInput,
   PrefKey,
   Shell,
   toplog,
-  WorkerMode,
   type AgenticProcess,
   type MarkdownDoc,
 } from '@sdk';
@@ -21,7 +19,6 @@ import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
 import { useContext } from '@src/hooks/useContext';
-import { useEntity } from '@src/hooks/entity-hooks';
 import { useInputDir } from '@src/hooks/use-input-dir';
 import { useInstancePreferences } from '@src/hooks/use-instance-preferences';
 import { usePreference } from '@src/hooks/use-preference';
@@ -45,9 +42,10 @@ import { ProcessToolbar } from './ProcessToolbar';
 import { ChatComposerBar } from './ChatComposerBar';
 import { ChatPlanModeProvider } from './chat-plan-mode-context';
 import { SimpleChatPane } from './SimpleChatPane';
-import { notify } from '@src/notifications/notify';
-import { setChatUiOverride, useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
+import { useProcessSurface } from './use-process-surface';
+
 import { useIsAdvanced } from '@src/components/view-mode';
+import { useSessionSurface } from '@src/contexts/view-mode-context';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
 import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
 import {
@@ -168,23 +166,30 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const process = propProcess ?? contextProcess ?? undefined;
   const { navigation } = useDockNavigation();
   const { resolvedTheme } = useTheme();
-  // Skin layer: by default Standard users get the friendly SimpleChatPane (chat
-  // instead of the raw xterm) and Advanced/Dev keep the terminal. The bottom-
-  // ribbon toggle overrides that per the user's saved choice (chatUiOverride):
-  // once set it takes priority over View mode. The xterm stays mounted underneath
-  // the chat overlay (same session, same PTY — see SimpleChatPane), so toggling
-  // is instant and never resets the terminal. Embedded terminals (chat side
-  // panel) and shell-only tabs (no AgenticProcess) always keep the xterm.
+  // Skin layer: the view mode's SURFACE decides which pane shows (the footer
+  // ViewToggle is the selector). The xterm stays mounted underneath the chat
+  // overlay (same session, same PTY — see SimpleChatPane), so switching is
+  // instant and never resets the terminal. Embedded terminals (chat side panel)
+  // and shell-only tabs (no AgenticProcess) always keep the xterm.
   const isAdvanced = useIsAdvanced();
-  const chatOverride = useChatUiOverride();
-  const wantChat = chatOverride != null ? chatOverride === 'chat' : !isAdvanced;
+  // Only the `chat` surface forces the pane. `vibe` renders VibeWorkspace, not
+  // this component, so reaching here in vibe means the surfaces disagree (a
+  // popped-out window, a mode-less process URL) — fall through to the process's
+  // own transport via `isHeadless` below rather than pinning the pane, which
+  // would put a chat over the live PTY of any task-runner process.
+  const surface = useSessionSurface();
+  const wantChat = surface === 'chat';
   // Headless (`pty_mode === false`): there is no PTY/xterm to skin — the chat
-  // pane is the ONLY view. Force it on regardless of the chat/terminal skin
-  // override, and (in the render) skip mounting the xterm container entirely so
-  // no PtySync attach is attempted for a process that has no shell.
+  // pane is the ONLY view. Force it on regardless of the surface, and (in the
+  // render) skip mounting the xterm container entirely so no PtySync attach is
+  // attempted for a process that has no shell.
   const isHeadless = !embedded && !!process && process.isHeadless;
   const showSimpleChat = isHeadless || (wantChat && !embedded && !!process);
-  const canToggleView = !embedded && !!process;
+  // `null` = the mode is not known yet (first load in this browser profile, no
+  // boot seed). Neither surface is the right guess, so cover the pane until it
+  // resolves — a headless process needs no wait (its transport decides), and the
+  // xterm keeps mounting and attaching underneath, so this costs no open latency.
+  const surfacePending = surface === null && !isHeadless && !embedded && !!process;
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
 
@@ -226,15 +231,19 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // already mounted (first death, or a failed Retry), the only signal is the
   // entity update flipping `start_failure`. The loader-context `process` is
   // not reactive, so subscribe via useEntity and surface the banner here.
-  const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
+  // ── Session surface ───────────────────────────────────────────────────────
+  // The footer ViewToggle is the mode selector; this keeps the worker's
+  // TRANSPORT aligned with whatever mode it picks. All this mount contributes is
+  // the live xterm size for the →terminal direction.
+  const getTerminalDims = useCallback(
+    () => (terminalRef.current ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows } : undefined),
+    [],
+  );
+  const liveProcess = useProcessSurface({ process, getDims: getTerminalDims });
+
+  // The reactive entity comes from the mode-switch hook, which already
+  // subscribes to it — one subscription per process, not two.
   const liveStartFailure = liveProcess?.start_failure ?? null;
-  // The chat⇄terminal toggle is enabled while the process is ready for input:
-  // RUNNING, fresh headless, or headless-idle, with no turn in flight. A mode
-  // switch mid-turn is 409'd by the backend on the SAME `is_turn_busy` predicate
-  // that sets the wire `busy` boolean, so `isReadyForInput` keeps the toggle in
-  // lock-step with the AP and cannot land on a 409 hole. `liveProcess` is the
-  // reactive entity; the loader `process` is the first-render fallback.
-  const awaitingUserInput = isReadyForInput(liveProcess ?? process ?? {});
   useEffect(() => {
     if (!liveStartFailure || !process) return;
     dataContext.setTerminalRuntimeError({
@@ -1507,55 +1516,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     [inputDirInfo, openSideTab],
   );
 
-  // ── Chat ⇄ Terminal mode switch (mutually-exclusive execution modes) ───────
-  // Chat = headless print-mode (no PTY); Terminal = interactive PTY. The toggle
-  // is a real lifecycle action now, not just a view flip — one standardized
-  // `switchMode(WorkerMode.Interactive|CLI)`: →terminal spawns + resumes the PTY;
-  // →chat kills the PTY worker, keeping the session, and reverts to headless
-  // routing. Both reconcile the transcript (clear + force-reload) so the
-  // destination view shows turns the other mode produced. The backend 409s a
-  // mid-turn switch; `switching` guards against double-trigger + drives the spinner.
-  const [switching, setSwitching] = useState(false);
-  const handleToggleView = useCallback(async () => {
-    // Mirror the ribbon's disabled gate: never attempt a switch mid-turn (the
-    // backend 409s it). The button is disabled in that state; this is the
-    // belt-and-suspenders guard for any non-click caller.
-    if (!process || switching || !awaitingUserInput) return;
-    const toChat = !showSimpleChat; // currently terminal → go chat
-    setSwitching(true);
-    try {
-      if (toChat) {
-        await process.switchMode(WorkerMode.CLI);
-        setChatUiOverride('chat');
-      } else {
-        const dims = terminalRef.current
-          ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows }
-          : undefined;
-        await process.switchMode(WorkerMode.Interactive, dims);
-        setChatUiOverride('terminal');
-      }
-    } catch (err) {
-      console.error('[InteractiveTerminal] mode switch failed', err);
-      notify.error({
-        title: toChat ? 'Could not switch to chat' : 'Could not switch to terminal',
-        message: err instanceof Error ? err.message : String(err),
-      });
-      setSwitching(false);
-      return;
-    }
-    // The TRANSPORT switch is done — re-enable the toggle now. The transcript
-    // reconcile (pull in turns the other mode produced) is a VIEW concern and is
-    // slow on a large session (the backend transcript parse), so DON'T hold the
-    // toggle disabled behind it — that wedged rapid switching. Reconcile in the
-    // background; the chat pane fills in when it resolves (and the live WS stream
-    // keeps it current meanwhile). `loadHistory({ force: true })` REPLACES the
-    // stream with the transcript (clears internally) — no separate clear needed.
-    setSwitching(false);
-    void process
-      .loadHistory({ force: true })
-      .catch((err) => console.debug('[InteractiveTerminal] post-switch reconcile deferred:', err));
-  }, [process, switching, showSimpleChat, awaitingUserInput]);
-
   // Compute synthetic shell-pane active state for the ribbon
   const ribbonOpenTabs = sidecarShellId ? [...sideWindowTabs, SideTabId.Shell] : sideWindowTabs;
   const ribbonActiveSideTab = activePane === 'shell' && sidecarShellId ? SideTabId.Shell : activeSideTab;
@@ -1791,6 +1751,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     <SimpleChatPane process={process} />
                   </div>
                 )}
+                {/* Mode not resolved yet — hold the pane blank rather than paint
+                  a surface the stored preference is about to contradict. */}
+                {surfacePending && <div className="absolute inset-0 z-[70] bg-background" />}
               </div>
 
               {/* Side window (non-Shell tabs) */}
@@ -1819,7 +1782,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           </div>
         </PtySyncProvider>
 
-        {process && (
+        {process && !surfacePending && (
           <TerminalBottomRibbon
             fileCount={fileCount}
             isActive={processIsActive}
@@ -1844,10 +1807,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                 <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} />
               ) : undefined
             }
-            chatActive={showSimpleChat}
-            switching={switching}
-            toggleEnabled={awaitingUserInput}
-            onToggleView={canToggleView ? () => void handleToggleView() : undefined}
           />
         )}
       </div>

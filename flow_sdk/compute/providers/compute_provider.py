@@ -333,8 +333,8 @@ class ComputeProvider(ABC):
         provider_node_id: str,
         command: str,
         session_id: Optional[str] = None,
-        background: bool = False,
-        env: Optional[dict[str, str]] = None,
+        background: bool = True,
+        env: Optional[list] = None,
     ) -> CLICommand:
         """Execute a command on the compute node.
 

@@ -1,8 +1,10 @@
 """FSIndexer — minimal unified walker under fs_store/."""
 
+from flow_sdk.fs_store.indexer.auto_index import ScanMode
 from flow_sdk.fs_store.indexer.builtin import (
     INDEXABLE_TYPES,
     build_default_indexer,
+    get_auto_scan_indexer,
     get_shared_indexer,
     reset_shared_indexer,
 )
@@ -34,7 +36,9 @@ __all__ = [
     "ProgressCallback",
     "TypeProgressRow",
     "INDEXABLE_TYPES",
+    "ScanMode",
     "build_default_indexer",
+    "get_auto_scan_indexer",
     "get_shared_indexer",
     "reset_shared_indexer",
     "default_roots",

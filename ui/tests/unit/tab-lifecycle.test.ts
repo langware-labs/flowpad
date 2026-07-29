@@ -1,7 +1,9 @@
 import { Tab } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import {
   closeTabWithLifecycle,
+  closeTabsWithLifecycle,
   excludeClosingTabs,
   getTabLifecycle,
   registerTabContentAdapter,
@@ -123,6 +125,38 @@ describe('tab lifecycle registry', () => {
     expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.Opened);
   });
 
+  it('reuses an opened content-asset tab while rerunning loader-owned context setup', async () => {
+    const d = new DockPointer(
+      ViewType.ASSETS,
+      'editor/markdown/typeid/markdown-30c05e11-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    );
+    const tab = new Tab({
+      id: nextTabId(),
+      pointer: d.toJSON() ?? '',
+      target_type: 'markdown',
+      target_id: '30c05e11-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      project_id: '40c05e11-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      visible: true,
+    });
+    vi.spyOn(Tab, 'listAll').mockResolvedValueOnce([]).mockResolvedValue([tab]);
+    vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([tab]);
+    vi.spyOn(Tab, 'activateById').mockResolvedValue([]);
+
+    await setupTab(d);
+
+    const list = vi.spyOn(Tab, 'listAll');
+    const mint = vi.spyOn(Tab, 'getFromDockPointer');
+    list.mockClear();
+    mint.mockClear();
+    const setupContent = vi.fn().mockResolvedValue(undefined);
+    await setupTab(d.withViewMode(ViewMode.Vibe), { setupContent });
+
+    expect(setupContent).toHaveBeenCalledTimes(1);
+    expect(list).not.toHaveBeenCalled();
+    expect(mint).not.toHaveBeenCalled();
+    expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.Opened);
+  });
+
   it('reuses a visible normalized legacy row before creating a canonical duplicate', async () => {
     const shellId = '8fc3bec4-0f33-4333-8b2b-c95a8f0ae194';
     const d = dock(shellId);
@@ -186,6 +220,36 @@ describe('tab lifecycle registry', () => {
 
     expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.CloseFailed);
     expect(getTabLifecycle(d.tabHash)?.error).toBe('close failed');
+  });
+
+  it('batch close hides tabs only after the durable action acknowledges', async () => {
+    const firstDock = dock('5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaa11');
+    const secondDock = dock('5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaa12');
+    const tabs = [tabFor(firstDock), tabFor(secondDock)];
+    let acknowledge: (rows: Tab[]) => void = () => {};
+    const closeResult = new Promise<Tab[]>((resolve) => {
+      acknowledge = resolve;
+    });
+    let markBatchStarted: () => void = () => {};
+    const batchStarted = new Promise<void>((resolve) => {
+      markBatchStarted = resolve;
+    });
+    const closeMany = vi.spyOn(Tab, 'closeManyByIds').mockImplementation(() => {
+      markBatchStarted();
+      return closeResult;
+    });
+
+    const closing = closeTabsWithLifecycle(tabs, null);
+    await batchStarted;
+
+    expect(closeMany).toHaveBeenCalledWith(tabs.map((tab) => tab.id), null);
+    expect(getTabLifecycle(firstDock.tabHash)).toBeNull();
+    expect(getTabLifecycle(secondDock.tabHash)).toBeNull();
+
+    acknowledge([]);
+    await closing;
+    expect(getTabLifecycle(firstDock.tabHash)?.state).toBe(TabLifecycleState.Closing);
+    expect(getTabLifecycle(secondDock.tabHash)?.state).toBe(TabLifecycleState.Closing);
   });
 
   it('clears lifecycle entries when tabs_changed removes the tab', async () => {
@@ -265,8 +329,15 @@ describe('workspace child adoption guard', () => {
   function processDock(): DockPointer {
     return new DockPointer(ViewType.SHELL, `agentic_process-${MD}`);
   }
+  /** A plain terminal — same viewType as the process dock, different pointer. */
+  function shellDock(): DockPointer {
+    return new DockPointer(ViewType.SHELL, `shell-${MD}`);
+  }
   function projectDock(): DockPointer {
     return new DockPointer(ViewType.PROJECT, MD);
+  }
+  function rawFileDock(): DockPointer {
+    return DockPointer.forFile('/project/src/main.ts');
   }
 
   afterEach(() => setActiveTabParent(null));
@@ -284,6 +355,26 @@ describe('workspace child adoption guard', () => {
 
   it('adopts a content-asset dock into the registered workspace', async () => {
     expect(await materializedParent(assetDock())).toBe(PARENT);
+  });
+
+  it('adopts a PLAIN shell dock — a terminal opened inside the workspace', async () => {
+    // Without this the terminal takes over the whole surface instead of
+    // rendering in the workspace's display pane.
+    expect(await materializedParent(shellDock())).toBe(PARENT);
+  });
+
+  it('never materializes (so never adopts) the new-terminal launcher landing', async () => {
+    // It redirects into a real shell first; `shouldMaterializeDock` keeps it
+    // away from the chokepoint entirely, so there is no tab to adopt.
+    setActiveTabParent(PARENT);
+    mockNoExistingTabs();
+    const spy = vi.spyOn(Tab, 'getFromDockPointer');
+    await setupTab(new DockPointer(ViewType.SHELL, 'new_terminal'));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('adopts a raw file editor dock into the registered workspace', async () => {
+    expect(await materializedParent(rawFileDock())).toBe(PARENT);
   });
 
   it('never adopts a process dock', async () => {
@@ -337,6 +428,47 @@ describe('workspace child adoption guard', () => {
     expect((mint.mock.calls[0][1] as { parentTabId?: string | null } | undefined)?.parentTabId).toBeNull();
   });
 
+  it('keeps a shell child its parent edge when no workspace is mounted', async () => {
+    // The inverse of the stale-edge stripper: a terminal adopted by a workspace
+    // must stay a child when it is re-navigated to from outside one, or the
+    // edge would be shed the first time the user clicks its chip. Verbatim
+    // reuse — no re-mint — proves `staleParentEdge` stayed false.
+    const d = shellDock();
+    const existing = new Tab({
+      id: nextTabId(),
+      pointer: d.toJSON() ?? '',
+      target_type: 'shell',
+      target_id: MD,
+      project_id: 'p1',
+      visible: true,
+      parent_tab_id: PARENT,
+    });
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([existing]);
+    const mint = vi.spyOn(Tab, 'getFromDockPointer');
+    await setupTab(d);
+    expect(mint).not.toHaveBeenCalled();
+  });
+
+  it('reuses a PROJECT-LESS global terminal verbatim', async () => {
+    // The project self-heal is asset-scoped: a shell's project_id is pinned at
+    // creation and null means "global", so chasing it would re-mint on every
+    // navigation to a global terminal.
+    const d = shellDock();
+    const existing = new Tab({
+      id: nextTabId(),
+      pointer: d.toJSON() ?? '',
+      target_type: 'shell',
+      target_id: MD,
+      project_id: null,
+      visible: true,
+      parent_tab_id: null,
+    });
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([existing]);
+    const mint = vi.spyOn(Tab, 'getFromDockPointer');
+    await setupTab(d);
+    expect(mint).not.toHaveBeenCalled();
+  });
+
   it('still re-parents an existing asset tab into the active workspace', async () => {
     setActiveTabParent(PARENT);
     const d = assetDock();
@@ -350,9 +482,14 @@ describe('workspace child adoption guard', () => {
       parent_tab_id: null,
     });
     vi.spyOn(Tab, 'listAll').mockResolvedValue([existing]);
-    const spy = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([existing]);
+    const spy = vi.spyOn(Tab, 'newTab').mockResolvedValue([
+      new Tab({ ...existing, parent_tab_id: PARENT }),
+    ]);
     await setupTab(d);
     expect(spy).toHaveBeenCalledTimes(1);
-    expect((spy.mock.calls[0][1] as { parentTabId?: string | null } | undefined)?.parentTabId).toBe(PARENT);
+    expect(
+      (spy.mock.calls[0][1] as { parentTabId?: string | null } | undefined)
+        ?.parentTabId,
+    ).toBe(PARENT);
   });
 });

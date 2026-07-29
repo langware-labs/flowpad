@@ -10,6 +10,7 @@ import {
 } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { LAUNCHABLE_WORKERS, type WorkerType } from '@src/components/workers/worker-types';
 import { useLastWorkerType } from '@src/components/terminal/openers/useLastWorkerType';
+import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 
 export type WorkerToolbarMode = 'lastOpened' | 'all';
 export type WorkerToolbarVariant = 'icon-row' | 'menu-list';
@@ -86,6 +87,7 @@ export function WorkerToolbar({
   const { t } = useLingui();
   const isDev = useIsDev();
   const { lastWorker, rememberWorker } = useLastWorkerType();
+  const defaultWorker = useDefaultWorkerType();
   const [expanded, setExpanded] = useState(false);
 
   const effectiveMode: WorkerToolbarMode = mode ?? (isDev ? 'all' : 'lastOpened');
@@ -110,9 +112,10 @@ export function WorkerToolbar({
     );
   }
 
-  // In lastOpened mode, lead with the last worker (fallback to the first vendor)
-  // and keep the rest behind the chevron. In all mode, show everything.
-  const primary: WorkerType = lastWorker ?? LAUNCHABLE_WORKERS[0];
+  // In lastOpened mode, lead with the last worker (falling back to the
+  // capability-selected default) and keep the rest behind the chevron. In all
+  // mode, show everything.
+  const primary: WorkerType = lastWorker ?? defaultWorker;
   const rest = LAUNCHABLE_WORKERS.filter((w) => w !== primary);
   const visibleWorkers: WorkerType[] =
     effectiveMode === 'all' || expanded ? [primary, ...rest] : [primary];

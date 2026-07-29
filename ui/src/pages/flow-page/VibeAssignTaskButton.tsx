@@ -1,15 +1,16 @@
 import { useState } from 'react';
-import { UserPlus } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import type { TypeId } from '@sdk';
+import { PersonRaisedHandIcon } from '@src/components/icons/PersonRaisedHandIcon';
 import { VibeAssignTaskDialog } from './VibeAssignTaskDialog';
 import { workspaceToolbarButton } from './workspace-toolbar-button';
 
 /**
- * "Hand this to someone" — the vibe workspace's assign affordance, next to
- * Collaborate. Collaborate opens a conversation; this creates a TASK and
- * assigns it, so the work lands on the other person's board rather than in a
- * thread.
+ * "Count me in" — the vibe workspace's SINGLE get-help affordance, marked by
+ * the raised-hand figure (the collaborate glyph this replaces; there is no
+ * second button beside it). One click, one simple dialog: it creates a TASK,
+ * assigns it (so the work lands on the other person's board), and sends them a
+ * message carrying the issue plus the task chips and the session transcript.
  */
 export function VibeAssignTaskButton({
   projectId,
@@ -31,7 +32,7 @@ export function VibeAssignTaskButton({
         className={workspaceToolbarButton}
         data-testid="vibe-assign-task"
       >
-        <UserPlus className="h-3.5 w-3.5" />
+        <PersonRaisedHandIcon className="h-3.5 w-3.5" />
       </button>
 
       {open && (

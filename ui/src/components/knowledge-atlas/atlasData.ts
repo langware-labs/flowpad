@@ -6,6 +6,8 @@
 // every file is a doc card. Cross-links ([[wiki]], kind "context_shared") bow
 // out to the right of the deeper endpoint, exactly like the prototype.
 
+import apiClient from '@sdk/client';
+
 export type NodeStatus = 'fresh' | 'modified' | 'added' | 'removed' | 'stale' | 'unindexed' | 'manual';
 
 export type GraphNodeIn = {
@@ -58,38 +60,34 @@ const HALF_W = { root: 112, doc: 104 };
 const keyOf = (r: { type: string; id: string }) => `${r.type}-${r.id}`;
 
 export async function fetchDocsGraph(root: string): Promise<{ nodes: GraphNodeIn[]; edges: GraphEdgeIn[] }> {
-  const res = await fetch(`/api/v1/docs-graph?root=${encodeURIComponent(root)}`);
-  if (!res.ok) throw new Error(`docs-graph fetch failed: ${res.status}`);
-  const env = (await res.json()) as { data?: { nodes?: GraphNodeIn[]; edges?: GraphEdgeIn[] } } | null;
+  const data = await apiClient.get<{ nodes?: GraphNodeIn[]; edges?: GraphEdgeIn[] }>(
+    `/api/v1/docs-graph?root=${encodeURIComponent(root)}`,
+  );
   return {
-    nodes: Array.isArray(env?.data?.nodes) ? env!.data!.nodes! : [],
-    edges: Array.isArray(env?.data?.edges) ? env!.data!.edges! : [],
+    nodes: Array.isArray(data?.nodes) ? data.nodes : [],
+    edges: Array.isArray(data?.edges) ? data.edges : [],
   };
 }
 
 export async function fetchDoc(root: string, rel: string): Promise<{ title: string; content: string }> {
-  const res = await fetch(
+  const data = await apiClient.get<{ title?: string; content?: string }>(
     `/api/v1/docs-graph/doc?root=${encodeURIComponent(root)}&rel=${encodeURIComponent(rel)}`,
   );
-  if (!res.ok) throw new Error(`doc fetch failed: ${res.status}`);
-  const env = (await res.json()) as { data?: { title?: string; content?: string } } | null;
-  return { title: env?.data?.title ?? rel, content: env?.data?.content ?? '' };
+  return { title: data?.title ?? rel, content: data?.content ?? '' };
 }
 
 export async function postStamp(root: string): Promise<{ folders_stamped: number; blobs_written: number }> {
-  const res = await fetch(`/api/v1/docs-graph/stamp?root=${encodeURIComponent(root)}`, { method: 'POST' });
-  if (!res.ok) throw new Error(`stamp failed: ${res.status}`);
-  const env = (await res.json()) as { data?: { folders_stamped?: number; blobs_written?: number } } | null;
-  return { folders_stamped: env?.data?.folders_stamped ?? 0, blobs_written: env?.data?.blobs_written ?? 0 };
+  const data = await apiClient.post<{ folders_stamped?: number; blobs_written?: number }>(
+    `/api/v1/docs-graph/stamp?root=${encodeURIComponent(root)}`,
+  );
+  return { folders_stamped: data?.folders_stamped ?? 0, blobs_written: data?.blobs_written ?? 0 };
 }
 
 export async function fetchDiff(root: string, rel: string): Promise<{ diff: string; skipped: string | null }> {
-  const res = await fetch(
+  const data = await apiClient.get<{ diff?: string; skipped?: string | null }>(
     `/api/v1/docs-graph/diff?root=${encodeURIComponent(root)}&rel=${encodeURIComponent(rel)}`,
   );
-  if (!res.ok) throw new Error(`diff fetch failed: ${res.status}`);
-  const env = (await res.json()) as { data?: { diff?: string; skipped?: string | null } } | null;
-  return { diff: env?.data?.diff ?? '', skipped: env?.data?.skipped ?? null };
+  return { diff: data?.diff ?? '', skipped: data?.skipped ?? null };
 }
 
 export function buildAtlasLayout(nodesIn: GraphNodeIn[], edgesIn: GraphEdgeIn[]): AtlasLayout {

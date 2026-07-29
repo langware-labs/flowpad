@@ -1,18 +1,19 @@
 /**
- * Two-instance e2e for receive_policy='auto' — a shared ClaudeTranscript rides
- * the ONE staged→install pipeline with the review gate waived (feat b1e88c7a).
+ * Two-instance e2e for the normal staged → review → project-install contract
+ * used by shared Claude transcripts.
  *
  * Sender (INST_1) shares a real on-disk claude session into a conversation via
  * the production send path (`add_message` + `asset_references`, then
  * `upload_body`). Receiver (INST_2) accepts the invitation, downloads the
- * bundle, and the assertions below pin the auto-install contract.
+ * bundle, and the assertions below pin the explicit project-install contract.
  *
  * Requires the local hub (8093) + two instances launched via instance_ctl and
  * named through SHARE_INST_1/SHARE_INST_2 (+ ALICE/BOB creds). Skips otherwise.
  */
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { readdirSync, statSync } from 'node:fs';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { buildDockPointer } from '@src/components/conversation/EntityChip';
 import { hubAvailable } from './_hub';
@@ -32,6 +33,8 @@ import {
 let skipReason: string | null = null;
 let snd: ResolvedInstance;
 let rcv: ResolvedInstance;
+const receiverProjects: Array<{ id: string; dir: string }> = [];
+const receiverSessionIds = new Set<string>();
 
 beforeAll(async () => {
   const hub = await hubAvailable();
@@ -49,6 +52,20 @@ beforeAll(async () => {
 
 beforeEach((context: any) => {
   if (skipReason) context.skip();
+});
+
+afterAll(async () => {
+  if (rcv) {
+    for (const id of receiverSessionIds) {
+      await fetch(`${rcv.apiUrl}/api/v1/graph/claude_session/${id}`, { method: 'DELETE' }).catch(() => null);
+    }
+    for (const project of receiverProjects) {
+      await fetch(`${rcv.apiUrl}/api/v1/graph/project/${project.id}`, { method: 'DELETE' }).catch(() => null);
+    }
+  }
+  for (const project of receiverProjects) {
+    rmSync(project.dir, { recursive: true, force: true });
+  }
 });
 
 /** A real session id from this machine's ~/.claude/projects (any non-empty
@@ -71,10 +88,17 @@ function pickLocalSessionId(): string | null {
   return null;
 }
 
-describe('transcript share — auto-install pipeline across two instances', () => {
-  it('receiver auto-installs the staged claude_session row (no review gate, no project)', async () => {
+async function receiverSession(id: string): Promise<any | null> {
+  const response = await fetch(`${rcv.apiUrl}/api/v1/graph/claude_session/${id}`);
+  const body = await response.json().catch(() => null);
+  return response.ok && body?.status === 'SUCCESS' ? body.data : null;
+}
+
+describe('transcript share — staged project-install pipeline across two instances', () => {
+  it('receiver stages, reviews, and installs the claude_session into a project', async () => {
     const sessionId = pickLocalSessionId();
     expect(sessionId, 'a real ~/.claude session transcript is required').toBeTruthy();
+    receiverSessionIds.add(sessionId!);
 
     // ── Sender: share a conversation carrying the transcript ref. ──
     const conv = trackForCleanup(new snd.sdk.Conversation({ title: testEntityName('transcript-conv') }));
@@ -108,37 +132,57 @@ describe('transcript share — auto-install pipeline across two instances', () =
     );
     await postApi(rcv.apiUrl, `/graph/flow_message/${receivedFm.id}/download_body`, {});
 
-    // Both observations follow the same download/install event — poll them
-    // concurrently so wall time is the slower poll, not the sum.
-    const [ma, sess] = await Promise.all([
-      pollUntil(
-        async () => {
-          const rows = await queryMessageAttachments(rcv, fmId);
-          return rows.find((r) => r.asset_type === 'claude_session' && r.asset_id === sessionId) ?? null;
-        },
-        10_000,
-        'auto-installed MessageAttachment on receiver',
-      ),
-      pollUntil(
-        async () =>
-          (await rcv.sdk.dataManager
-            .getByTypeId(new rcv.sdk.TypeId('claude_session', sessionId!))
-            .catch(() => null)) as any,
-        10_000,
-        'claude_session row on receiver',
-      ),
-    ]);
-
-    // 'auto' waives review, not the pipeline: the MA is already installed at
-    // user scope with NO project (scope inherits live via the parent-chain
-    // fallback), and the row materialized with the receive overrides (the
-    // chip-flip/live-announce surface itself is covered by
-    // asset_share_index_matrix + the chip unit tests).
-    expect(ma.scope).toBe('user');
+    // Download only stages the attachment. Claude sessions have no
+    // receive_policy='auto', so the review gate must choose a project before
+    // the entity is materialized.
+    const ma = await pollUntil(
+      async () => {
+        const rows = await queryMessageAttachments(rcv, fmId);
+        return rows.find((r) => r.asset_type === 'claude_session' && r.asset_id === sessionId) ?? null;
+      },
+      10_000,
+      'staged MessageAttachment on receiver',
+    );
+    expect(ma.scope || null).toBeNull();
     expect(ma.project_id || null).toBeNull();
+    expect(ma.installed_at || null).toBeNull();
+    expect(await receiverSession(sessionId!)).toBeNull();
+
+    const projectDir = mkdtempSync(path.join(tmpdir(), 'flowpad-e2e-transcript-'));
+    const project = new rcv.sdk.Project({
+      name: testEntityName('transcript-project'),
+      fs_storage_mount_path: projectDir,
+    } as any);
+    await project.save();
+    receiverProjects.push({ id: project.id!, dir: projectDir });
+
+    const install = await postApi(rcv.apiUrl, `/graph/message_attachment/${ma.id}/install`, {
+      scope: 'project',
+      project_id: project.id,
+    });
+    expect(install.status).toBe('SUCCESS');
+
+    const sess = await pollUntil(
+      () => receiverSession(sessionId!),
+      10_000,
+      'claude_session row on receiver after explicit install',
+    );
+    const installedMa = await pollUntil(
+      async () => {
+        const rows = await queryMessageAttachments(rcv, fmId);
+        const row = rows.find((r) => r.id === ma.id);
+        return row?.scope === 'project' ? row : null;
+      },
+      10_000,
+      'installed MessageAttachment on receiver',
+    );
+
+    expect(installedMa.project_id).toBe(project.id);
+    expect(installedMa.installed_at).toBeTruthy();
     expect(sess.received).toBe(true);
     expect(sess.remote).toBe(false);
-    expect(sess.project_id || null).toBeNull();
+    expect(sess.project_id).toBe(project.id);
+    expect(existsSync(path.join(projectDir, '.claude', 'transcripts', `${sessionId}.jsonl`))).toBe(true);
   });
 
   it('the receiver opens the transcript by ITS OWN file, never by session id', async () => {

@@ -77,6 +77,16 @@ class TypeMetadata:
     # claude_session's ``worker_session_id`` or a task's ``project_root``. The
     # base set covers the fields common to every type; declare only the extras.
     local_fields: frozenset = field(default_factory=frozenset)
+    # Fields the ASSIGNEE of a shared entity of this type owns. A hub-reflected
+    # update written by the assignee carries ONLY these; everything else belongs
+    # to whoever handed the work over. Empty ⇒ no scoping. See
+    # ``_hub_reflect.scope_body_to_assignee_fields`` for why one shared row needs
+    # it: whole-row LWW plus a client that PUTs its whole snapshot means a status
+    # click would otherwise revert the owner's title and body.
+    assignee_owned_fields: tuple = field(default_factory=tuple)
+    # Files inside a folder-backed asset that never ride a share bundle (the
+    # packer copies the folder verbatim). E.g. a task's inner ``spec.md``.
+    pack_exclude: tuple = field(default_factory=tuple)
     parent_type: str | None = None
     # True ⇒ sharing an entity of this type automatically includes its parent
     # (``parent_type_id``) in the outgoing ``shared_context_entities``, and the
@@ -152,6 +162,8 @@ class TypeMetadata:
             main_file_is_asset_ref=self.main_file_is_asset_ref,
             main_ext=self.main_ext,
             local_fields=frozenset(self.local_fields),
+            assignee_owned_fields=tuple(self.assignee_owned_fields),
+            pack_exclude=tuple(self.pack_exclude),
             parent_type=self.parent_type,
             parent_share_on_default=self.parent_share_on_default,
             shared_child=self.shared_child,

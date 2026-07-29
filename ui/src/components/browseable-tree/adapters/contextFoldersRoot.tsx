@@ -21,6 +21,8 @@ import { fsFolderNode } from './fsFolderRoot';
 export interface ContextFoldersRootDeps {
   /** Live compute_node TypeId whose VFS we browse. */
   typeId: TypeId;
+  /** Stable URL locator for the compute node. */
+  locatorTypeId?: TypeId;
   /** Active scope — stamped onto each child pointer so clicks keep the filter. */
   scope: ScopeFilter;
   /** Absolute canonical posix paths of the project's context folders. */
@@ -29,6 +31,7 @@ export interface ContextFoldersRootDeps {
 
 export function contextFoldersRoot(deps: ContextFoldersRootDeps): BrowseableRoot {
   const { typeId, scope, dirs } = deps;
+  const locatorTypeId = deps.locatorTypeId ?? typeId;
   const root: BrowseableRoot = {
     id: `context-folders-root:${typeId.toString()}`,
     kind: 'root',
@@ -38,7 +41,7 @@ export function contextFoldersRoot(deps: ContextFoldersRootDeps): BrowseableRoot
     pointer: null,
     // fsFolderNode defaults its label to the folder basename.
     listChildren: (): Promise<Browseable[]> =>
-      Promise.resolve(dirs.map((d) => fsFolderNode(typeId, scope, d))),
+      Promise.resolve(dirs.map((d) => fsFolderNode(typeId, scope, d, undefined, locatorTypeId))),
     ownsPointer: () => false,
     pathFor: () => Promise.resolve([root]),
   };

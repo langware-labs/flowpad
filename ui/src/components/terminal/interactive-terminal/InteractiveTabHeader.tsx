@@ -55,11 +55,12 @@ export function AdvancedInteractiveTabHeader({ debug, restart, title, actions, d
   );
 }
 
-/** Minimal toolbar: centered title with only Share + Bookmark aligned right. */
+/** Minimal toolbar: centered title with Share + Bookmark aligned right. */
 export function StandardInteractiveTabHeader({ title, actions }: Pick<HeaderSlots, 'title' | 'actions'>) {
   return (
-    <div data-testid="process-toolbar" className={`${ROW} relative justify-end`}>
+    <div data-testid="process-toolbar" className={`${ROW} relative`}>
       <CenteredTitle title={title} />
+      <div className="flex-1" />
       {actions}
     </div>
   );

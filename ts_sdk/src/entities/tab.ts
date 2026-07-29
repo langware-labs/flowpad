@@ -17,7 +17,8 @@ interface TerminalTargetFields {
 
 /** Provider/display kind for a terminal chip (vendor→glyph) denormalized onto
  *  `Tab.icon_key`. Shells use `'shell'`; an AgenticProcess maps its
- *  `worker_type`; unset/unknown → `'claude'` (the spawn default). */
+ *  `worker_type`; unset/unknown uses the generic process presentation. Runtime
+ *  defaults are resolved by the backend `harness` capability at creation. */
 function providerKindForWorkerType(workerType: string | null | undefined): string {
   const wt = (workerType ?? '').toLowerCase();
   if (wt === 'codex') return 'codex';
@@ -156,6 +157,7 @@ export interface ITab extends IEntity {
   /** Runtime-computed fields: backing entity status and close-in-progress flag. Never persisted. */
   status?: string | null;
   is_disabled?: boolean;
+  target_remote?: boolean;
   /** name / project_id / tab_order / last_active_at come from IEntity. */
 }
 
@@ -190,6 +192,7 @@ export interface TabRow extends ITab {
   last_active_at: number | string | null;
   status: string | null;
   is_disabled: boolean;
+  target_remote?: boolean;
 }
 
 @registerEntity
@@ -209,6 +212,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
   last_active_at: number | string | null = null;
   status: string | null = null;
   is_disabled: boolean = false;
+  target_remote?: boolean;
 
   /** Computed DockPointer from the stored pointer. Parsed directly (SDK layer, no UI dependency). */
   get dockPointer(): IDockPointer | null {
@@ -325,7 +329,11 @@ export class Tab extends APIEntity<Tab> implements ITab {
     } else {
       const cwd = target?.cwd ?? target?.workdir ?? null;
       const byPath = cwd ? await Project.getProjectByPath(cwd) : null;
-      projectId = byPath?.id ?? scopeProjectId ?? null;
+      // An existing target that resolves to no project is GLOBAL. Never let an
+      // ambient project scope in the URL adopt it while the target loader is
+      // concurrently clearing context to Global. Scope is a valid ownership
+      // hint only for target-less surfaces (assets/project home).
+      projectId = byPath?.id ?? (target ? null : scopeProjectId) ?? null;
     }
 
     return { targetTypeId, target, projectId };
@@ -397,6 +405,19 @@ export class Tab extends APIEntity<Tab> implements ITab {
     return Tab.fromResponse(res?.tabs ?? []);
   }
 
+  /** POST /graph/tab/close_many — durably hide all requested tabs in one
+   * acknowledgement. Used by close-all so a reload cannot abort a fan-out of
+   * independent requests after the chips have disappeared. */
+  static async closeManyByIds(ids: string[], projectId: string | null = null): Promise<Tab[]> {
+    const info = new ActionInfo('close_many', Tab.type, null, 'POST');
+    info.bodyParameters = {
+      tab_ids: ids,
+      project: projectId ?? '',
+    };
+    const res = await dataManager.callAction<unknown, { tabs: ITab[] }>(info);
+    return Tab.fromResponse(res?.tabs ?? []);
+  }
+
   /** POST /graph/tab/<id>/rename {name} — the backend reflects onto the backing
    *  entity via generic `Entity.rename`. Returns the updated list. */
   static async renameById(id: string, name: string): Promise<Tab[]> {
@@ -443,12 +464,13 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  to reuse instances by id, preventing duplicate-registration warnings. */
   static fromResponse(data: ITab[]): Tab[] {
     return data.map((t) => {
+      const targetRemote =
+        typeof t.target_remote === 'boolean' ? t.target_remote : undefined;
       const cached = Tab.getByIdFromCache<Tab>(t.id ?? '');
-      if (cached) {
-        Object.assign(cached, t);
-        return cached;
-      }
-      return new Tab(t);
+      const tab = cached ?? new Tab(t);
+      Object.assign(tab, t);
+      tab.target_remote = targetRemote;
+      return tab;
     });
   }
 

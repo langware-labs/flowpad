@@ -183,6 +183,25 @@ async def test_dirty(tmp_path, monkeypatch):
     res = await _preflight(monkeypatch, str(asset))
     assert res["available"] is False
     assert res["code"] == "dirty"
+    # A repo that can't be shared YET is still a repo. The origin is derived
+    # before the blocking check anyway, and callers that only want to NAME it
+    # (the project header's git chip) must not be told there isn't one —
+    # otherwise "dirty" is indistinguishable from "no remote".
+    assert res["git_origin"] is not None
+    assert res["git_origin"]["name"] == "Widgets"
+
+
+@pytest.mark.asyncio
+async def test_no_remote_names_nothing(tmp_path, monkeypatch):
+    """The other side of that: with no remote there is genuinely nothing to
+    name, so the origin stays null and a caller can offer to add one."""
+    repo = tmp_path / "repo"
+    _init(repo, remote=None)
+    asset = _skill(repo)
+    _commit(repo)
+    res = await _preflight(monkeypatch, str(asset))
+    assert res["code"] == "missing-remote"
+    assert res["git_origin"] is None
 
 
 @pytest.mark.asyncio
@@ -201,6 +220,83 @@ async def test_not_file_backed(tmp_path, monkeypatch):
     # No asset_ref → not file-backed → no origin to share.
     res = await _preflight(monkeypatch, "")
     assert res["available"] is False
+    assert res["code"] == "not-file-backed"
+
+
+# --------------------------------------------------------------------------- #
+# PROJECT preflight — a project is not file-backed, but it IS a directory. Its
+# mount is the tree to ask about. Without that, every project answered
+# "isn't file-backed, so it has no Git origin to share" — an asset-share
+# sentence that tells a project owner nothing and hides the real state.
+# --------------------------------------------------------------------------- #
+
+PROJECT_ID = "3c9e5d21-77aa-4b0e-9d18-2f4a6b8c0d13"
+
+
+def _stub_project(monkeypatch, mount: str | None):
+    """A real Project entity (never saved) returned by the id lookup — same
+    shape as ``_stub_folder``, so a rename or a type change on
+    ``fs_storage_mount_path`` breaks these tests loudly instead of leaving them
+    passing against a shim that no longer resembles a Project."""
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    ent = Project(id=PROJECT_ID, name="proj", **({"fs_storage_mount_path": mount} if mount else {}))
+
+    async def _get_one(query):  # noqa: ARG001
+        return ent
+
+    monkeypatch.setattr(Project, "get_one", staticmethod(_get_one))
+
+
+async def _project_preflight(monkeypatch, mount: str | None) -> dict:
+    _stub_project(monkeypatch, mount)
+    return await git_share_preflight(EntityType.PROJECT.value, PROJECT_ID)
+
+
+@pytest.mark.asyncio
+async def test_project_reports_its_repo_not_a_file_backed_excuse(tmp_path, monkeypatch):
+    """The regression this exists for: a project in a real repo used to answer
+    `not-file-backed`. It must answer about the repo."""
+    repo = tmp_path / "repo"
+    _init_pushed(repo)
+    res = await _project_preflight(monkeypatch, str(repo))
+    assert res["code"] != "not-file-backed"
+    assert res["available"] is True
+    assert res["git_origin"]["name"] == "origin"
+
+
+@pytest.mark.asyncio
+async def test_project_without_a_repo_says_so(tmp_path, monkeypatch):
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    res = await _project_preflight(monkeypatch, str(plain))
+    assert res["code"] == "not-in-repo"
+
+
+@pytest.mark.asyncio
+async def test_project_without_a_remote_says_so(tmp_path, monkeypatch):
+    repo = tmp_path / "no-remote"
+    _init(repo, remote=None)
+    _skill(repo)
+    _commit(repo)
+    res = await _project_preflight(monkeypatch, str(repo))
+    assert res["code"] == "missing-remote"
+
+
+@pytest.mark.asyncio
+async def test_unknown_project_is_still_not_file_backed(monkeypatch):
+    """Nothing to probe — the old answer is the right one there.
+
+    The lookup missing is the reachable form of "no mount": a constructed
+    ``Project`` always HAS one, because ``set_fs_storage_mount_path`` derives it
+    from the name when the caller omits it."""
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    async def _get_one(query):  # noqa: ARG001
+        return None
+
+    monkeypatch.setattr(Project, "get_one", staticmethod(_get_one))
+    res = await git_share_preflight(EntityType.PROJECT.value, PROJECT_ID)
     assert res["code"] == "not-file-backed"
 
 

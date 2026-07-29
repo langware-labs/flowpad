@@ -144,6 +144,10 @@ msgstr "(unnamed)"
 #~ msgstr "(unsaved changes)"
 
 #: src/components/assets/editor/WikiResolveView.tsx
+msgid "[[{name}]] is ambiguous"
+msgstr "[[{name}]] is ambiguous"
+
+#: src/components/assets/editor/WikiResolveView.tsx
 msgid "[[{name}]] not found"
 msgstr "[[{name}]] not found"
 
@@ -213,6 +217,11 @@ msgstr "{0} has been added successfully."
 #: src/components/connections-manager.tsx
 msgid "{0} icon"
 msgstr "{0} icon"
+
+#. placeholder {0}: workerLabel(unavailableWorker)
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+msgid "{0} is unavailable"
+msgstr "{0} is unavailable"
 
 #. placeholder {0}: frame.issue_count
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -848,6 +857,12 @@ msgstr "Add context folder"
 msgid "Add entity link"
 msgstr "Add entity link"
 
+#: src/components/project-home/ProjectGitChip.tsx
+#: src/components/project-home/ProjectGitChip.tsx
+#: src/components/project-home/ProjectGitChip.tsx
+msgid "Add Git"
+msgstr "Add Git"
+
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Add Git folder"
 msgstr "Add Git folder"
@@ -1292,6 +1307,10 @@ msgstr "API Keys"
 msgid "App page"
 msgstr "App page"
 
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "App runtime"
+msgstr "App runtime"
+
 #: src/components/account/secrets-section.tsx
 msgid "App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store third-party API keys and other secrets used by your flows."
 msgstr "App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store third-party API keys and other secrets used by your flows."
@@ -1503,6 +1522,10 @@ msgstr "Attach"
 msgid "Attach a plan or skill"
 msgstr "Attach a plan or skill"
 
+#: src/components/machine-overview/node-secrets.tsx
+msgid "Attach all"
+msgstr "Attach all"
+
 #: src/components/conversation/MessageComposer.tsx
 msgid "Attach an asset (skill, agent, doc, spec)"
 msgstr "Attach an asset (skill, agent, doc, spec)"
@@ -1552,8 +1575,8 @@ msgid "Authorization failed or was denied. Click Retry to try again."
 msgstr "Authorization failed or was denied. Click Retry to try again."
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "auto"
-msgstr "auto"
+#~ msgid "auto"
+#~ msgstr "auto"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
 #~ msgid "Auto-archive after..."
@@ -1597,9 +1620,13 @@ msgstr "Available"
 msgid "Available assets"
 msgstr "Available assets"
 
-#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
-msgid "Available when the agent is waiting for your input"
-msgstr "Available when the agent is waiting for your input"
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "Available on cloud"
+msgstr "Available on cloud"
+
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
+#~ msgid "Available when the agent is waiting for your input"
+#~ msgstr "Available when the agent is waiting for your input"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
@@ -1780,7 +1807,7 @@ msgstr "buffer row"
 #~ msgid "Buffer terminal sync updates (prevents scroll jumps)"
 #~ msgstr "Buffer terminal sync updates (prevents scroll jumps)"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Build history"
 msgstr "Build history"
 
@@ -1942,6 +1969,7 @@ msgstr "Can't update — showing last synced"
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/entry/LaunchLanding.tsx
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/hub-home/NewDesktopDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -2032,17 +2060,21 @@ msgstr "Changes ({0})"
 #~ msgid "Changes saved successfully"
 #~ msgstr "Changes saved successfully"
 
-#: src/pages/flow-page/vibe-workspace.tsx
-msgid "Changing worker requires a new chat. The current chat stays in history."
-msgstr "Changing worker requires a new chat. The current chat stays in history."
+#: src/pages/flow-page/vibe-chat-pane.tsx
+#~ msgid "Changing worker requires a new chat. The current chat stays in history."
+#~ msgstr "Changing worker requires a new chat. The current chat stays in history."
+
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
+#~ msgid "Chat"
+#~ msgstr "Chat"
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
 msgstr "Chat history"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Chat mode"
-msgstr "Chat mode"
+#~ msgid "Chat mode"
+#~ msgstr "Chat mode"
 
 #: src/components/ui/settings-pane.tsx
 msgid "Chat Settings"
@@ -2129,6 +2161,10 @@ msgstr "Choose a document from the sidebar to view its contents"
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Choose a task from the sidebar to view details"
 msgstr "Choose a task from the sidebar to view details"
+
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+msgid "Choose another worker"
+msgstr "Choose another worker"
 
 #: src/components/quick-create/ScopeSelection.tsx
 msgid "Choose folder…"
@@ -2416,6 +2452,7 @@ msgstr "Cloning…"
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 #: src/components/login-required-dialog.tsx
+#: src/components/project-home/ProjectGitChecksDialog.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/tabs/TabStrip.tsx
@@ -2558,16 +2595,16 @@ msgid "Codex session"
 msgstr "Codex session"
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Collaborate"
-msgstr "Collaborate"
+#~ msgid "Collaborate"
+#~ msgstr "Collaborate"
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Collaborate on this session"
-msgstr "Collaborate on this session"
+#~ msgid "Collaborate on this session"
+#~ msgstr "Collaborate on this session"
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Collaboration"
-msgstr "Collaboration"
+#~ msgid "Collaboration"
+#~ msgstr "Collaboration"
 
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
@@ -2808,8 +2845,8 @@ msgid "Connecting..."
 msgstr "Connecting..."
 
 #: src/components/assets/editor/WikiResolveView.tsx
-msgid "Connecting…"
-msgstr "Connecting…"
+#~ msgid "Connecting…"
+#~ msgstr "Connecting…"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -2880,9 +2917,17 @@ msgstr "context tokens"
 msgid "Continue"
 msgstr "Continue"
 
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
+#~ msgid "Continue in vibe mode"
+#~ msgstr "Continue in vibe mode"
+
 #: src/journey/JourneyViewer.tsx
 msgid "Continue journey"
 msgstr "Continue journey"
+
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
+msgid "Continue this conversation"
+msgstr "Continue this conversation"
 
 #: src/components/login-required-dialog.tsx
 msgid "Continue with Email"
@@ -3021,7 +3066,8 @@ msgstr "Copy link"
 #~ msgid "Copy Log"
 #~ msgstr "Copy Log"
 
-#: src/components/assets/editor/markdown/MarkdownEditor.tsx
+#: src/components/assets/AssetsPage.tsx
+#: src/components/assets/AssetsPage.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Copy path"
 msgstr "Copy path"
@@ -3084,6 +3130,10 @@ msgstr "Could not check sign-in"
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Could not copy the code"
 msgstr "Could not copy the code"
+
+#: src/components/project-home/EnvLocalCard.tsx
+msgid "Could not declare that key"
+msgstr "Could not declare that key"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not delete"
@@ -3149,9 +3199,9 @@ msgstr "Could not resolve this folder"
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not start"
 msgstr "Could not start"
 
@@ -3183,6 +3233,10 @@ msgstr "Could not stop"
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not update"
 msgstr "Could not update"
+
+#: src/components/machine-overview/node-secrets.tsx
+msgid "Could not update attached secrets"
+msgstr "Could not update attached secrets"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
@@ -3363,8 +3417,12 @@ msgid "Creates a link anyone can use to join as a member."
 msgstr "Creates a link anyone can use to join as a member."
 
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
-msgid "Creates a task in this project and assigns it — it shows up on their board."
-msgstr "Creates a task in this project and assigns it — it shows up on their board."
+#~ msgid "Creates a task in this project and assigns it — it shows up on their board."
+#~ msgstr "Creates a task in this project and assigns it — it shows up on their board."
+
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Creates a task, assigns it to them, and sends them a message with the details."
+msgstr "Creates a task, assigns it to them, and sends them a message with the details."
 
 #. placeholder {0}: classificationInfo.category
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
@@ -3500,6 +3558,14 @@ msgstr "Debug level includes hook invocations."
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Debug logging"
 msgstr "Debug logging"
+
+#: src/components/project-home/EnvLocalCard.tsx
+msgid "Declare"
+msgstr "Declare"
+
+#: src/components/project-home/EnvLocalCard.tsx
+msgid "Declared"
+msgstr "Declared"
 
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -3876,6 +3942,14 @@ msgstr "Detach"
 msgid "Details"
 msgstr "Details"
 
+#: src/components/project-home/EnvLocalCard.tsx
+msgid "Detected in .env.local"
+msgstr "Detected in .env.local"
+
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "Dev"
+msgstr "Dev"
+
 #: src/components/account/settings-section.tsx
 msgid "Dev mode"
 msgstr "Dev mode"
@@ -4045,12 +4119,20 @@ msgstr "Discovering {typeLabel}…"
 msgid "Discovering…"
 msgstr "Discovering…"
 
+#: src/components/assets/editor/AssetDiscussButton.tsx
+msgid "Discuss"
+msgstr "Discuss"
+
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
+
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx
+msgid "Dismiss all"
+msgstr "Dismiss all"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Dismiss all notifications"
@@ -4579,8 +4661,10 @@ msgstr "error"
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/machine-overview/node-secrets.tsx
 #: src/components/project-home/BindSecretDialog.tsx
 #: src/components/project-home/BindSecretDialog.tsx
+#: src/components/project-home/EnvLocalCard.tsx
 #: src/components/project-home/SecretsCard.tsx
 #: src/components/project-home/SecretsCard.tsx
 msgid "Error"
@@ -5172,9 +5256,9 @@ msgid "Failed to start session"
 msgstr "Failed to start session"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Failed to start the build session."
 msgstr "Failed to start the build session."
 
@@ -5387,6 +5471,10 @@ msgstr "Filter…"
 msgid "Filters"
 msgstr "Filters"
 
+#: src/components/assets/editor/AssetDiscussButton.tsx
+msgid "Finishing asset load…"
+msgstr "Finishing asset load…"
+
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Fire (synthetic test)"
 msgstr "Fire (synthetic test)"
@@ -5570,8 +5658,8 @@ msgstr "Footprint"
 #~ msgstr "for"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Force chat UI"
-msgstr "Force chat UI"
+#~ msgid "Force chat UI"
+#~ msgstr "Force chat UI"
 
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Fork Session"
@@ -5740,6 +5828,10 @@ msgstr "Git is required to share files"
 msgid "git push"
 msgstr "git push"
 
+#: src/components/project-home/ProjectGitChecksDialog.tsx
+msgid "Git readiness"
+msgstr "Git readiness"
+
 #: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Git repo (optional)"
 msgstr "Git repo (optional)"
@@ -5747,6 +5839,10 @@ msgstr "Git repo (optional)"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Git repository"
 msgstr "Git repository"
+
+#: src/components/project-home/ProjectGitChip.tsx
+msgid "Git tooling installed"
+msgstr "Git tooling installed"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "GitHub connected"
@@ -6169,6 +6265,10 @@ msgstr "Hooks:"
 msgid "How does improving an asset work?"
 msgstr "How does improving an asset work?"
 
+#: src/components/privacy-mode/privacy-mode-popover.tsx
+msgid "How privacy modes work"
+msgstr "How privacy modes work"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "How to install"
 #~ msgstr "How to install"
@@ -6318,6 +6418,14 @@ msgstr "Improving…"
 #~ msgid "In browser mode, projects must be in the workspace folder. Enter the full path manually."
 #~ msgstr "In browser mode, projects must be in the workspace folder. Enter the full path manually."
 
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "In git ({gitLabel}), click to open."
+msgstr "In git ({gitLabel}), click to open."
+
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "In git, click to open."
+msgstr "In git, click to open."
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "In Index"
 msgstr "In Index"
@@ -6453,6 +6561,10 @@ msgstr "Install failed"
 #: src/components/version-popover/version-popover.tsx
 msgid "Install failed."
 msgstr "Install failed."
+
+#: src/components/project-home/ProjectGitChecksDialog.tsx
+msgid "Install gh"
+msgstr "Install gh"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -6841,6 +6953,7 @@ msgid "Learn about your data"
 msgstr "Learn about your data"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
+#: src/components/wiki-tip/WikiTip.tsx
 msgid "Learn more"
 msgstr "Learn more"
 
@@ -6892,7 +7005,9 @@ msgstr "Line"
 
 #. placeholder {0}: el.absRow
 #. placeholder {0}: link.line
+#. placeholder {0}: row.line
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
+#: src/components/project-home/EnvLocalCard.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "line {0}"
 msgstr "line {0}"
@@ -7017,6 +7132,10 @@ msgstr "Loading"
 #: src/components/agent-layout/loading-screen/loading-screen.tsx
 msgid "Loading . . ."
 msgstr "Loading . . ."
+
+#: src/components/assets/editor/WikiResolveView.tsx
+msgid "Loading [[{name}]]…"
+msgstr "Loading [[{name}]]…"
 
 #. placeholder {0}: params.uname
 #: src/components/app-host/AppHost.tsx
@@ -7295,9 +7414,17 @@ msgstr "Loading…"
 msgid "Local"
 msgstr "Local"
 
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "Local file, click to reveal."
+msgstr "Local file, click to reveal."
+
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Local graph:"
 msgstr "Local graph:"
+
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "Local only"
+msgstr "Local only"
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -7386,6 +7513,10 @@ msgstr "Looking up project…"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Machine ID"
 msgstr "Machine ID"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Machine secrets"
+msgstr "Machine secrets"
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "Manage API keys"
@@ -7528,7 +7659,6 @@ msgstr "members"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
-#: src/components/project-home/ProjectHome.tsx
 msgid "Members"
 msgstr "Members"
 
@@ -7691,6 +7821,10 @@ msgstr "More actions"
 msgid "More pages"
 msgstr "More pages"
 
+#: src/components/assets/editor/WikiResolveView.tsx
+msgid "More than one readable asset matches this word. Bind it to a specific asset."
+msgstr "More than one readable asset matches this word. Bind it to a specific asset."
+
 #: src/components/workers/WorkerToolbar.tsx
 msgid "More…"
 msgstr "More…"
@@ -7828,7 +7962,7 @@ msgstr "new"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/quick-create/DesktopSurface.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "New"
 msgstr "New"
@@ -7862,8 +7996,8 @@ msgstr "New asset"
 msgid "New bookmark folder"
 msgstr "New bookmark folder"
 
-#: src/pages/flow-page/vibe-workspace.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "New build"
 msgstr "New build"
 
@@ -8086,6 +8220,10 @@ msgstr "No archived conversations"
 #: src/components/artifacts/artifacts-list.tsx
 msgid "No artifacts yet"
 msgstr "No artifacts yet"
+
+#: src/components/assets/editor/WikiResolveView.tsx
+msgid "No asset editor is registered for this Wiki target."
+msgstr "No asset editor is registered for this Wiki target."
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "No assets match those filters."
@@ -8378,6 +8516,10 @@ msgstr "No invocations yet"
 msgid "No items"
 msgstr "No items"
 
+#: src/components/project-home/EnvLocalCard.tsx
+msgid "No keys found in this project's .env.local."
+msgstr "No keys found in this project's .env.local."
+
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "No known fix yet — use \"Fix It\" to start a session."
 msgstr "No known fix yet — use \"Fix It\" to start a session."
@@ -8513,7 +8655,7 @@ msgstr "No orphans right now. Click to re-scan and confirm."
 msgid "No page exists with this name yet."
 msgstr "No page exists with this name yet."
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "No past builds"
 msgstr "No past builds"
 
@@ -8993,6 +9135,10 @@ msgstr "Note (optional)"
 msgid "Note: File is missing"
 msgstr "Note: File is missing"
 
+#: src/components/machine-overview/node-secrets.tsx
+msgid "Nothing has been narrowed yet, so this machine sees every secret below."
+msgstr "Nothing has been narrowed yet, so this machine sees every secret below."
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Nothing here yet — use the + below to add one."
 msgstr "Nothing here yet — use the + below to add one."
@@ -9116,6 +9262,10 @@ msgstr "on"
 msgid "On Disk"
 msgstr "On Disk"
 
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "On the cloud, click to open."
+msgstr "On the cloud, click to open."
+
 #: src/components/account/settings-section.tsx
 msgid "Onboarding"
 msgstr "Onboarding"
@@ -9160,10 +9310,18 @@ msgstr "Only on this machine — never shared"
 msgid "Open"
 msgstr "Open"
 
+#: src/components/project-home/EnvLocalCard.tsx
+msgid "Open .env.local at this line"
+msgstr "Open .env.local at this line"
+
 #. placeholder {0}: workerLabel(worker)
 #: src/components/terminal/ProjectsCounterChip.tsx
 msgid "Open {0} on…"
 msgstr "Open {0} on…"
+
+#: src/components/graph-view/ui/EntityIcon.tsx
+#~ msgid "Open {gitLabel}"
+#~ msgstr "Open {gitLabel}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetPickerPopover.tsx
@@ -9186,6 +9344,10 @@ msgstr "Open a new isolated git worktree session on a separate branch"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Open a project before starting a collaboration."
 msgstr "Open a project before starting a collaboration."
+
+#: src/components/machine-overview/node-secrets.tsx
+msgid "Open a project to choose which of its secrets this machine can see."
+msgstr "Open a project to choose which of its secrets this machine can see."
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Open a project to see its assets."
@@ -9216,8 +9378,8 @@ msgid "Open Backup Folder"
 msgstr "Open Backup Folder"
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Open collaboration"
-msgstr "Open collaboration"
+#~ msgid "Open collaboration"
+#~ msgstr "Open collaboration"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Open command in external terminal"
@@ -9369,6 +9531,10 @@ msgstr "Open in external terminal"
 msgid "Open in new tab"
 msgstr "Open in new tab"
 
+#: src/components/graph-view/ui/EntityIcon.tsx
+#~ msgid "Open in repository"
+#~ msgstr "Open in repository"
+
 #: src/components/project-activity-strip/LearningCard.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
 msgid "Open in Skills tab"
@@ -9426,6 +9592,10 @@ msgstr "Open message"
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 msgid "Open new tab menu"
 msgstr "Open new tab menu"
+
+#: src/components/graph-view/ui/EntityIcon.tsx
+#~ msgid "Open on the cloud"
+#~ msgstr "Open on the cloud"
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
@@ -9515,6 +9685,10 @@ msgstr "Open terminal in {workdir}"
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
 #~ msgid "Open terminal session"
 #~ msgstr "Open terminal session"
+
+#: src/components/privacy-mode/privacy-mode-popover.tsx
+msgid "Open the {PRIVACY_WIKI_PAGE} page"
+msgstr "Open the {PRIVACY_WIKI_PAGE} page"
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Open the latest doc"
@@ -9608,8 +9782,8 @@ msgid "Opened existing project"
 msgstr "Opened existing project"
 
 #: src/components/assets/editor/WikiResolveView.tsx
-msgid "Opening [[{name}]]…"
-msgstr "Opening [[{name}]]…"
+#~ msgid "Opening [[{name}]]…"
+#~ msgstr "Opening [[{name}]]…"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Opening task…"
@@ -9755,7 +9929,7 @@ msgstr "Past analyses"
 #~ msgid "Past attempts"
 #~ msgstr "Past attempts"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Past builds"
 msgstr "Past builds"
 
@@ -10264,6 +10438,10 @@ msgstr "Project renamed"
 msgid "Project Required"
 msgstr "Project Required"
 
+#: src/components/machine-overview/node-secrets.tsx
+msgid "Project secrets on this machine"
+msgstr "Project secrets on this machine"
+
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "projected"
 msgstr "projected"
@@ -10618,7 +10796,7 @@ msgid "Recency Factor (k)"
 msgstr "Recency Factor (k)"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Recent"
 msgstr "Recent"
 
@@ -10984,6 +11162,10 @@ msgstr "Reporting needs an internet connection"
 msgid "Repos"
 msgstr "Repos"
 
+#: src/components/project-home/ProjectGitChip.tsx
+msgid "Repository and remote configured"
+msgstr "Repository and remote configured"
+
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Repository name"
 msgstr "Repository name"
@@ -11182,6 +11364,10 @@ msgstr "Reveal in Finder/Explorer: {childPath}"
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Reveal in folder"
 msgstr "Reveal in folder"
+
+#: src/components/graph-view/ui/EntityIcon.tsx
+#~ msgid "Reveal in the file browser"
+#~ msgstr "Reveal in the file browser"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #~ msgid "Reveal the message that produced this transcript"
@@ -11841,6 +12027,7 @@ msgstr "Secret deleted"
 msgid "Secret saved"
 msgstr "Secret saved"
 
+#: src/components/machine-overview/machine-overview.tsx
 #: src/components/project-home/ProjectHome.tsx
 #: src/components/project-home/SecretsCard.tsx
 msgid "Secrets"
@@ -11863,6 +12050,10 @@ msgstr "Seems like you are trying to clone a private git repo. You should connec
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Select {0}"
 msgstr "Select {0}"
+
+#: src/components/asset-manager/AssetPickerPopover.tsx
+msgid "Select {label}"
+msgstr "Select {label}"
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Select a branch"
@@ -11892,6 +12083,10 @@ msgstr "Select a project"
 #: src/components/open-project-component/open-project-component.tsx
 #~ msgid "Select a project or open a new folder."
 #~ msgstr "Select a project or open a new folder."
+
+#: src/components/assets/editor/AssetDiscussButton.tsx
+msgid "Select a project to discuss this file"
+msgstr "Select a project to discuss this file"
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -12068,8 +12263,8 @@ msgid "Send failed."
 msgstr "Send failed."
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "Send invite"
-msgstr "Send invite"
+#~ msgid "Send invite"
+#~ msgstr "Send invite"
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Send message"
@@ -12086,6 +12281,10 @@ msgstr "Sending…"
 #: src/components/conversation/MessageBubble.tsx
 msgid "Sent"
 msgstr "Sent"
+
+#: src/components/display-toolbar/WebappDisplayToolbar.tsx
+msgid "Served"
+msgstr "Served"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Server did not come back. Restart Flowpad manually."
@@ -12156,6 +12355,10 @@ msgstr "Session ID"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Session is not running"
 msgstr "Session is not running"
+
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
+#~ msgid "Session mode"
+#~ msgstr "Session mode"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -12240,9 +12443,17 @@ msgstr "Set up an existing git repository as the context folder"
 msgid "Set up as this name"
 msgstr "Set up as this name"
 
+#: src/components/project-home/ProjectGitChecksDialog.tsx
+msgid "Set up Git"
+msgstr "Set up Git"
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Set up GitHub"
 msgstr "Set up GitHub"
+
+#: src/components/project-home/ProjectGitChecksDialog.tsx
+#~ msgid "Set up GitHub access first — the rest needs it."
+#~ msgstr "Set up GitHub access first — the rest needs it."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up project"
@@ -12304,7 +12515,6 @@ msgstr "Share this plan with someone"
 #~ msgstr "Share this repo to a conversation"
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 msgid "Share to a conversation"
 msgstr "Share to a conversation"
 
@@ -12533,6 +12743,7 @@ msgstr "sidechain"
 msgid "Sigma graph view"
 msgstr "Sigma graph view"
 
+#: src/components/project-home/ProjectGitChecksDialog.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Sign in"
 msgstr "Sign in"
@@ -12568,6 +12779,10 @@ msgstr "Sign in with your {account} to let {name} write and run code for you. A 
 #: src/components/account/user-info.tsx
 msgid "Signed in"
 msgstr "Signed in"
+
+#: src/components/project-home/ProjectGitChip.tsx
+msgid "Signed in to the remote"
+msgstr "Signed in to the remote"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Simple actions — click to show all git operations"
@@ -12873,19 +13088,21 @@ msgstr "Start journey"
 msgid "Start live session"
 msgstr "Start live session"
 
-#. placeholder {0}: workerLabel(pendingWorkerSwitch.workerType)
-#: src/pages/flow-page/vibe-workspace.tsx
-msgid "Start new {0} chat?"
-msgstr "Start new {0} chat?"
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
+msgid "Start new"
+msgstr "Start new"
+
+#: src/pages/flow-page/vibe-chat-pane.tsx
+#~ msgid "Start new {0} chat?"
+#~ msgstr "Start new {0} chat?"
 
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
-#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Start new chat"
 msgstr "Start new chat"
 
-#: src/pages/flow-page/vibe-workspace.tsx
-msgid "Start new chat?"
-msgstr "Start new chat?"
+#: src/pages/flow-page/vibe-chat-pane.tsx
+#~ msgid "Start new chat?"
+#~ msgstr "Start new chat?"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
@@ -12911,6 +13128,10 @@ msgstr "Start room"
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Start services"
 #~ msgstr "Start services"
+
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
+msgid "Start with an empty chat or carry this conversation into the new worker. The current chat stays in Recent."
+msgstr "Start with an empty chat or carry this conversation into the new worker. The current chat stays in Recent."
 
 #: src/components/collaboration/RoomHeader.tsx
 msgid "started"
@@ -13119,9 +13340,14 @@ msgstr "Switch project"
 msgid "Switch Project"
 msgstr "Switch Project"
 
+#. placeholder {0}: workerLabel(workerType)
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
+msgid "Switch to {0}?"
+msgstr "Switch to {0}?"
+
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
-msgid "Switch to chat view"
-msgstr "Switch to chat view"
+#~ msgid "Switch to chat view"
+#~ msgstr "Switch to chat view"
 
 #: src/components/theme-toggle/theme-toggle.tsx
 msgid "Switch to dark mode"
@@ -13140,12 +13366,12 @@ msgstr "Switch to light mode"
 #~ msgstr "Switch to ontology tree"
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
-msgid "Switch to terminal view"
-msgstr "Switch to terminal view"
+#~ msgid "Switch to terminal view"
+#~ msgstr "Switch to terminal view"
 
-#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
-msgid "Switching…"
-msgstr "Switching…"
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
+#~ msgid "Switching…"
+#~ msgstr "Switching…"
 
 #: src/components/graph-view/GraphView.tsx
 #~ msgid "Sync"
@@ -13443,6 +13669,7 @@ msgstr "The value is stored in your operating system keychain and never readable
 
 #: src/components/webapp-viewer.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-workspace.tsx
 msgid "The web app is not working, please try to fix it."
 msgstr "The web app is not working, please try to fix it."
 
@@ -13581,6 +13808,18 @@ msgstr "This process has no transcript session yet."
 msgid "This project has no assets yet."
 msgstr "This project has no assets yet."
 
+#: src/components/machine-overview/node-secrets.tsx
+msgid "This project has no secrets declared yet."
+msgstr "This project has no secrets declared yet."
+
+#: src/components/project-home/ProjectGitChecksDialog.tsx
+#~ msgid "This project is ready to publish and share over Git."
+#~ msgstr "This project is ready to publish and share over Git."
+
+#: src/components/project-home/ProjectGitChecksDialog.tsx
+#~ msgid "This project's folder needs a repository and a remote."
+#~ msgstr "This project's folder needs a repository and a remote."
+
 #: src/components/version-popover/diagnose-modal.tsx
 #~ msgid "This runs in the background — feel free to close this and keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 #~ msgstr "This runs in the background — feel free to close this and keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
@@ -13623,9 +13862,17 @@ msgstr "This transcript could not be read."
 msgid "This transcript has no messages."
 msgstr "This transcript has no messages."
 
+#: src/components/assets/editor/WikiResolveView.tsx
+msgid "This Wiki target has no readable content."
+msgstr "This Wiki target has no readable content."
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 msgstr "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
+
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+msgid "This worker cannot continue the chat right now."
+msgstr "This worker cannot continue the chat right now."
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -14074,6 +14321,11 @@ msgstr "Unreachable"
 msgid "Unread"
 msgstr "Unread"
 
+#: src/components/assets/editor/AssetEditorHeader.tsx
+#: src/components/assets/editor/markdown/MarkdownEditor.tsx
+msgid "Unsaved changes"
+msgstr "Unsaved changes"
+
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "Unstar"
 msgstr "Unstar"
@@ -14335,6 +14587,10 @@ msgstr "Version-bump + commit the asset"
 msgid "Version:"
 msgstr "Version:"
 
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
+#~ msgid "Vibe"
+#~ msgstr "Vibe"
+
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Vibe agents"
 msgstr "Vibe agents"
@@ -14547,12 +14803,16 @@ msgid "What do you need help with?"
 msgstr "What do you need help with?"
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
-msgid "What do you want to collaborate on?"
-msgstr "What do you want to collaborate on?"
+#~ msgid "What do you want to collaborate on?"
+#~ msgstr "What do you want to collaborate on?"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "What do you want to work on"
 msgstr "What do you want to work on"
+
+#: src/components/project-home/ProjectGitChecksDialog.tsx
+msgid "What Flowpad found when it checked this project's Git setup."
+msgstr "What Flowpad found when it checked this project's Git setup."
 
 #. placeholder {0}: tile.label
 #: src/components/quick-create/QuickCreatePanel.tsx
@@ -14653,8 +14913,8 @@ msgid "Work on the other participant's machine"
 msgstr "Work on the other participant's machine"
 
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
-#: src/pages/flow-page/vibe-worker-select.tsx
-#: src/pages/flow-page/vibe-worker-select.tsx
+#: src/components/workers/WorkerTypeSelect.tsx
+#: src/components/workers/WorkerTypeSelect.tsx
 msgid "Worker"
 msgstr "Worker"
 
@@ -14702,6 +14962,11 @@ msgstr "Working Dir"
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Working directory"
 msgstr "Working directory"
+
+#. placeholder {0}: promptContext.label
+#: src/pages/flow-page/vibe-chat-pane.tsx
+msgid "Working on {0}"
+msgstr "Working on {0}"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Working on {hostName}'s machine…"

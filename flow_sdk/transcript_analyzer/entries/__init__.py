@@ -21,6 +21,7 @@ from .unknown import UnknownEntry
 from .usage import CodexUsageEntry, UsageEntry
 from .user_message import UserMessageEntry
 from .web_fetch import WebFetchEntry
+from .worker_unavailable import WorkerUnavailableEntry, WorkerUnavailableReason
 
 __all__ = [
     "AgentSpawnEntry",
@@ -46,4 +47,6 @@ __all__ = [
     "UnknownEntry",
     "UserMessageEntry",
     "WebFetchEntry",
+    "WorkerUnavailableEntry",
+    "WorkerUnavailableReason",
 ]

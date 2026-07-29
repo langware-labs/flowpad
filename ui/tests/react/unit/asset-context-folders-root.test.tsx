@@ -7,7 +7,7 @@ import {
   assetContextFoldersRoot,
 } from '@src/components/browseable-tree/adapters/assetContextFoldersRoot';
 import type { FsDragItem } from '@src/components/browseable-tree/adapters/fsFolderRoot';
-import type { ProjectContextDirInfo } from '@sdk';
+import { VFSPath, TypeId, type ProjectContextDirInfo } from '@sdk';
 
 const DIRS: ProjectContextDirInfo[] = [
   { path: '/Users/alice/notes', origin_kind: 'local' },
@@ -19,11 +19,12 @@ function fsDrag(relPath: string, isDir = false): FsDragItem {
 }
 
 describe('DockPointer fs pointer grammar', () => {
-  it('forAssetFsFolder normalizes and parseAssetFsPointer round-trips', () => {
-    const p = DockPointer.forAssetFsFolder('/Users/alice/notes/');
+  it('forAssetFs emits canonical VFS identity and parseAssetFsPointer round-trips', () => {
+    const vfs = VFSPath.fromTypeId(new TypeId('compute_node', '@local'), '/Users/alice/notes');
+    const p = DockPointer.forAssetFs(vfs);
     expect(p.viewType).toBe(ViewType.ASSETS);
-    expect(p.pointer).toBe('fs/Users/alice/notes');
-    expect(DockPointer.parseAssetFsPointer(p.pointer)).toBe('Users/alice/notes');
+    expect(p.pointer).toBe('fs/vfs/compute_node-@local/Users/alice/notes');
+    expect(DockPointer.parseAssetFsPointer(p.pointer)?.equals(vfs)).toBe(true);
   });
 
   it('parseAssetFsPointer rejects non-fs pointers', () => {
@@ -37,7 +38,10 @@ describe('assetContextFoldersRoot', () => {
     const root = assetContextFoldersRoot({ dirs: DIRS, onAdd: vi.fn(), onRemove: vi.fn() });
     const rows = await root.listChildren!();
     expect(rows.map((r) => r.label)).toEqual(['notes', 'design-docs']);
-    expect(rows.map((r) => r.pointer?.pointer)).toEqual(['fs/Users/alice/notes', 'fs/Users/alice/shared/design-docs']);
+    expect(rows.map((r) => r.pointer?.pointer)).toEqual([
+      'fs/vfs/compute_node-@local/Users/alice/notes',
+      'fs/vfs/compute_node-@local/Users/alice/shared/design-docs',
+    ]);
     expect(rows.every((r) => r.pointer?.viewType === ViewType.ASSETS)).toBe(true);
   });
 
@@ -52,11 +56,11 @@ describe('assetContextFoldersRoot', () => {
     expect(onRemove).toHaveBeenCalledWith('/Users/alice/shared/design-docs');
   });
 
-  it('owns only assets fs/ pointers', () => {
+  it('owns the same VFS resource across route types', () => {
     const root = assetContextFoldersRoot({ dirs: DIRS, onAdd: vi.fn(), onRemove: vi.fn() });
     expect(root.ownsPointer(DockPointer.forAssetFsFolder('/Users/alice/notes'))).toBe(true);
     expect(root.ownsPointer(DockPointer.forAssetList('skill'))).toBe(false);
-    expect(root.ownsPointer(DockPointer.forExplorer('compute_node-@local/Users/alice/notes'))).toBe(false);
+    expect(root.ownsPointer(DockPointer.forExplorer('compute_node-@local/Users/alice/notes'))).toBe(true);
   });
 
   it('rows accept an fs-item drop and forward it to onDropItem', async () => {

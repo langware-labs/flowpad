@@ -17,7 +17,7 @@ from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
 from flow_sdk.request_context.methods import get_current_request_info
-from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
+from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +66,12 @@ async def find_project_for_task() -> ApiResponse:
         git_origin = _task_git_origin(task, body)
         clone_url = git_origin.clone_url() if git_origin else ""
 
+        from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
         from flow_sdk.utils.git import (
             find_local_repo_for_url,
-            git_repo_full_name,
             git_remote_url,
+            git_repo_full_name,
         )
-        from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 
         # Build the list of all known local projects
         known_projects: list[dict] = []
@@ -158,7 +158,7 @@ async def pull_for_task() -> ApiResponse:
         # Await scan of this specific task so the entity exists before the UI navigates.
         # Then fire the full scan in the background for any other tasks in the repo.
         try:
-            from flow_sdk.app.actions.notification_scanner import scan_task_in_repo, scan_incoming_notifications
+            from flow_sdk.app.actions.notification_scanner import scan_incoming_notifications, scan_task_in_repo
             local_user = await User.get_one({"uname": "local"})
             if local_user:
                 await scan_task_in_repo(local_user.id, local_path, task_id)
@@ -239,7 +239,7 @@ async def clone_for_task() -> ApiResponse:
         # Then fire the full scan in the background for any other tasks in the repo.
         if clone_ok:
             try:
-                from flow_sdk.app.actions.notification_scanner import scan_task_in_repo, scan_incoming_notifications
+                from flow_sdk.app.actions.notification_scanner import scan_incoming_notifications, scan_task_in_repo
                 local_user = await User.get_one({"uname": "local"})
                 if local_user:
                     await scan_task_in_repo(local_user.id, clone_path, task_id)

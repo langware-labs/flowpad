@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import { cn } from '@src/lib/utils';
 
 export type IconComp = ComponentType<{ className?: string }>;
 
@@ -11,6 +12,8 @@ interface IconWithBadgeProps {
   className?: string;
   /** Extra classes for the badge (e.g. a vendor color). */
   badgeClassName?: string;
+  /** Extra classes for the base only (e.g. instance-state color). */
+  baseClassName?: string;
   'aria-label'?: string;
 }
 
@@ -26,13 +29,23 @@ interface IconWithBadgeProps {
  * Stable module-level component — pass already-resolved icon COMPONENTS, never
  * inline closures, so consumers keep their memoization.
  */
-export function IconWithBadge({ Base, Badge, className, badgeClassName, ...rest }: IconWithBadgeProps) {
-  if (!Badge) return <Base className={className} />;
+export function IconWithBadge({
+  Base,
+  Badge,
+  className,
+  badgeClassName,
+  baseClassName,
+  ...rest
+}: IconWithBadgeProps) {
+  if (!Badge) return <Base className={cn(className, baseClassName)} />;
   return (
-    <span className={`relative inline-flex ${className ?? ''}`} {...rest}>
-      <Base className="h-full w-full" />
+    <span className={cn('relative inline-flex', className)} {...rest}>
+      <Base className={cn('h-full w-full', baseClassName)} />
       <Badge
-        className={`absolute -bottom-0.5 -right-0.5 h-[55%] w-[55%] rounded-full bg-background p-px ${badgeClassName ?? ''}`}
+        className={cn(
+          'absolute -bottom-0.5 -right-0.5 h-[55%] w-[55%] rounded-full bg-background p-px',
+          badgeClassName,
+        )}
       />
     </span>
   );

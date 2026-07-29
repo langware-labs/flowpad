@@ -48,6 +48,20 @@ export async function probeLocalBackendLoggedIn(apiBase: string): Promise<{
   }
 }
 
+/** Materialize only the pending invitation for this protocol's conversation.
+ * `apiBase` is the SDK-configured `/api/v1` base for the current process. */
+export async function syncPendingInvitation(apiBase: string, convId: string): Promise<void> {
+  const response = await fetch(`${apiBase}/graph/invitation-sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversation_id: convId }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || body?.status !== 'SUCCESS') {
+    throw new Error(`invitation sync failed: HTTP ${response.status} ${JSON.stringify(body)}`);
+  }
+}
+
 // Generic poll: call ``fn`` every 100ms until it returns a truthy value or we
 // hit ``timeoutMs``. Returns the truthy value. Used for cross-process waits
 // (waiting on a message to arrive, a file to appear, a status to flip).
@@ -65,19 +79,24 @@ export async function pollUntil<T>(
   throw new Error(`pollUntil(${label}) timed out after ${timeoutMs}ms`);
 }
 
+interface PendingInvitationCandidate {
+  accepted?: boolean;
+  conversation?: { id?: string };
+  conversation_id?: string;
+  target_url_path?: string;
+}
 
 /** Pick the pending invitation that targets `convId` from an invitation list.
  *  Matches the EMBEDDED conversation id (the hub stamps `target_url_path`
  *  null but embeds `conversation`) or a persisted `target_url_path`. NO
  *  newest-unaccepted fallback — on a shared hub, stale/concurrent invitations
  *  to the same recipient make recency pick the wrong conversation. */
-export function pickPendingInvitation(all: any[], convId: string): any | null {
+export function pickPendingInvitation<T extends PendingInvitationCandidate>(all: T[], convId: string): T | null {
   return (
     all.find(
       (inv) =>
         !inv.accepted &&
-        ((inv.conversation?.id ?? inv.conversation_id) === convId ||
-          (inv.target_url_path || '').includes(convId)),
+        ((inv.conversation?.id ?? inv.conversation_id) === convId || (inv.target_url_path || '').includes(convId)),
     ) ?? null
   );
 }
@@ -116,12 +135,7 @@ export async function writeRendezvous(convId: string): Promise<void> {
 // Poll a /tmp marker file until it contains ``value`` — the cross-process "done"
 // handshake used alongside the rendezvous file (e.g. "bob joined", "http rename
 // landed"). Written with plain ``fsp.writeFile(path, value)``.
-export async function waitMarker(
-  path: string,
-  value: string,
-  label: string,
-  timeoutMs = 25_000,
-): Promise<void> {
+export async function waitMarker(path: string, value: string, label: string, timeoutMs = 25_000): Promise<void> {
   await pollUntil(
     async () => {
       try {

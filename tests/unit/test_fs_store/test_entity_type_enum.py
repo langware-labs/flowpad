@@ -177,6 +177,8 @@ EXPECTED = {
     # Tag vocabulary consolidation: blessed taxonomy tags are a first-class
     # entity type. Flow-graph v2 added the run model.
     "TAG": "tag",
+    "WIKI": "wiki",
+    "WIKI_ENTRY": "wiki_entry",
     "AGENTIC_FLOW": "agentic_flow", "FLOW_NODE": "flow_node",
     "AGENTIC_FLOW_RUN": "agentic_flow_run",
     # Journeys (0.2.105): folder-backed guided-onboarding doc + per-user

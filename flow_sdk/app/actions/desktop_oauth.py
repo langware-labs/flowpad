@@ -475,6 +475,36 @@ async def _resolve_auth_session_user(user_id: str):
     return None
 
 
+
+async def _mirror_credential_row(user, credentials_name: str) -> None:
+    """Make the stored credential VISIBLE to the env table.
+
+    Writing the token into SOD is not enough: merge_env_tables joins a provider
+    row to a user EnvVar by name, so without this row a genuinely-connected
+    provider reads as MISSING. The row is value-free — the token stays in SOD;
+    this only records that it exists.
+    """
+    from flow_sdk.app.actions.env_var import add_env_var_to_entity  # noqa: PLC0415
+    from flow_sdk.core.entity.entity_env.env_types import EnvVarType  # noqa: PLC0415
+
+    try:
+        await add_env_var_to_entity(
+            user, credentials_name, EnvVarType.OAUTH_TOKEN, skip_if_exists=True
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("could not mirror credential row %s: %s", credentials_name, e)
+
+
+async def _drop_credential_row(user, credentials_name: str) -> None:
+    """Remove the visibility row when the credential goes away."""
+    try:
+        if user.get_env_var(credentials_name) is not None:
+            user.remove_env_var(credentials_name)
+            await user.update()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("could not drop credential row %s: %s", credentials_name, e)
+
+
 async def _save_github_token_to_sod(user_id: str, access_token: str) -> bool:
     """Persist the token under ``github_credentials`` for the original session user."""
     try:
@@ -485,6 +515,7 @@ async def _save_github_token_to_sod(user_id: str, access_token: str) -> bool:
             logger.warning(f"_save_github_token_to_sod: no user found for id={user_id!r}")
             return False
         await set_user_credentials(user, "github_credentials", access_token, user.id)
+        await _mirror_credential_row(user, "github_credentials")
         return True
     except Exception as e:
         logger.error(f"_save_github_token_to_sod failed: {e}")
@@ -548,6 +579,7 @@ async def _save_anthropic_token_to_sod(user_id: str, token_response: dict) -> bo
             return False
 
         await set_user_credentials(user, ANTHROPIC_CREDENTIALS_NAME, credentials, user.id)
+        await _mirror_credential_row(user, ANTHROPIC_CREDENTIALS_NAME)
         return True
     except Exception as e:
         logger.error(f"_save_anthropic_token_to_sod failed: {e}")
@@ -589,6 +621,7 @@ async def delete_anthropic_token_for_current_user() -> ApiResponse:
         if not user:
             return ApiFailResponse(message="User not found")
         await delete_user_credentials(user, ANTHROPIC_CREDENTIALS_NAME, user.id)
+        await _drop_credential_row(user, ANTHROPIC_CREDENTIALS_NAME)
         return ApiSuccessResponse(
             message="Anthropic disconnected",
             data={"remaining_attachment_count": 0},

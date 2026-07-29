@@ -1,3 +1,4 @@
+import { useLingui } from '@lingui/react/macro';
 import type { ReactNode } from 'react';
 import {
   HoverCard,
@@ -15,6 +16,14 @@ interface WikiTipProps {
   label?: ReactNode;
   /** Accessible label / hover title for the W-button. Defaults to the wiki word. */
   buttonLabel?: string;
+  /** Heading slug to deep-link into a section of the page. */
+  fragment?: string;
+  /**
+   * Render the wiki affordance as a "Learn more" text link rather than the
+   * W-square — for tips whose `label` is a sentence, where a bare glyph reads as
+   * decoration. The wording lives here so no caller has to translate it.
+   */
+  learnMore?: boolean;
   /** Hover dwell before the tip opens. Raise it on dense surfaces (a grid of
    *  tipped tiles pops a card under every tile the pointer crosses). */
   openDelay?: number;
@@ -32,7 +41,8 @@ interface WikiTipProps {
  * `children` must forward its ref and spread props onto a DOM node — the
  * trigger is `asChild`, so a component that swallows them leaves the tip inert.
  */
-export function WikiTip({ wikiword, children, label, buttonLabel, openDelay = 200, side = 'top' }: WikiTipProps) {
+export function WikiTip({ wikiword, children, label, buttonLabel, fragment, learnMore, openDelay = 200, side = 'top' }: WikiTipProps) {
+  const { t } = useLingui();
   return (
     <HoverCard openDelay={openDelay} closeDelay={100}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
@@ -47,7 +57,12 @@ export function WikiTip({ wikiword, children, label, buttonLabel, openDelay = 20
         {label != null && (
           <span className="truncate text-xs text-muted-foreground">{label}</span>
         )}
-        <WikiButton wikiword={wikiword} label={buttonLabel} />
+        <WikiButton
+          wikiword={wikiword}
+          label={buttonLabel}
+          fragment={fragment}
+          linkText={learnMore ? t`Learn more` : undefined}
+        />
       </HoverCardContent>
     </HoverCard>
   );

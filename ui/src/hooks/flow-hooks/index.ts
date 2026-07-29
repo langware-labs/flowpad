@@ -9,4 +9,6 @@ export { useCurrentDeployments } from './useCurrentDeployments';
 export { useViewerStore } from './useViewerStore';
 export { useProcessCheckpoints } from './useProcessCheckpoints';
 export { useProcessWebApp } from './useProcessWebApp';
+export { useAppDisplay } from './useAppDisplay';
+export type { AppDisplay, AppRuntime } from './useAppDisplay';
 export { useArtifactActions, type UseArtifactActionsReturn } from './useArtifactActions';

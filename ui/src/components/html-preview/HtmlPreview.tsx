@@ -2,6 +2,7 @@ import { FSRef } from '@sdk';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
+import { useFS } from '@src/hooks/useFS';
 
 /**
  * Render a local self-contained HTML file (a chart, a diagram, a one-file
@@ -16,6 +17,8 @@ export function HtmlPreview({ path }: { path: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const nodeKey = computeNode?.typeId?.toString() ?? null;
+  const fs = useFS(computeNode?.typeId);
+  const revision = fs?.revision(path) ?? 0;
   useEffect(() => {
     if (!nodeKey || !computeNode?.typeId) return;
     let cancelled = false;
@@ -33,7 +36,7 @@ export function HtmlPreview({ path }: { path: string }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, nodeKey]);
+  }, [path, nodeKey, revision]);
 
   if (error) {
     return (

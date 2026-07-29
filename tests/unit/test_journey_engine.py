@@ -88,3 +88,24 @@ async def test_guided_step_parks_and_advances(tmp_path):
     await _until(lambda: not fm.live_run_ids(), "run finalized")
     row = await AgenticFlowRun.get_by_id(run_id)
     assert row is not None and row.status == RunStatus.COMPLETE.value
+
+
+def test_shipped_journeys_are_valid():
+    """Every journey we ship must pass `validate_graph`.
+
+    A journey whose steps fail validation still indexes and still auto-launches
+    — it simply can never advance, because the frontend subscribes to the
+    `await` the graph declares. That is a silent, total failure of the tour, so
+    it has to be a red build instead. (The `await.topic` → `await.tag` rename
+    left one journey behind exactly this way.)
+    """
+    import glob
+    from pathlib import Path
+
+    graphs = sorted(glob.glob("flow_sdk/system_projects/*/.claude/journeys/*/graph.json"))
+    assert graphs, "no shipped journeys found — did the path change?"
+    problems = {
+        Path(g).parent.name: parse_flow_doc(Path(g).read_text(encoding="utf-8")).validate_graph()
+        for g in graphs
+    }
+    assert not any(problems.values()), problems

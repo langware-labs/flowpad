@@ -21,8 +21,8 @@ from flow_sdk.builtin.spec import Spec
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
 from flow_sdk.discovery.notify import send_resource_sync
-from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 from flow_sdk.fs_store import SyncOperation
+from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 
 logger = logging.getLogger(__name__)
 
@@ -251,8 +251,8 @@ async def _create_conversation_from_disk(
     themselves are saved.
     """
     from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity
-    from flow_sdk.fs_store.operations.conversation import default_jsonl_path, from_jsonl
     from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+    from flow_sdk.fs_store.operations.conversation import default_jsonl_path, from_jsonl
     from flow_sdk.fs_store.type_id import TypeId
 
     parent_typeid = TypeId(type=BuiltinEntityType.TASK.value, id=task_id) if task_id else None
@@ -296,6 +296,7 @@ async def _sync_conversation(task: Task, task_dir: Path) -> None:
 
     try:
         import asyncio as _asyncio
+
         from flow_sdk.app.actions.flow_message_action import handle_inbox_fetch
         local_user = await User.get_one({"uname": "local"})
         owner_typeid = local_user.typeid if local_user else None

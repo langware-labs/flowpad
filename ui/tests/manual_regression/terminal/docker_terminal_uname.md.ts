@@ -3,16 +3,17 @@
  *
  * Drives the docker terminal via the UI the way a user would:
  *   1. Open the Shell view.
- *   2. Click a [data-testid^="open-docker-tab-button-"] toolbar button.
+ *   2. Choose Docker from the terminal opener.
  *   3. Wait for the new docker tab to become active.
  *   4. Type `uname -s` into xterm.js.
  *   5. Expect `Linux` to appear (container kernel, not host macOS).
  *
- * Auto-skips when the backend has no registered docker workers (run
- * `flow compute connect <container> --start` on the host to enable).
+ * A live disposable Docker worker is a Phase 11 prerequisite. Provision one
+ * with `flow compute connect <container> --start`; absence is a hard preflight
+ * failure.
  */
 import { expect, test } from '@playwright/test';
-import { dismissSetupModal, gotoShell } from './helpers';
+import { dismissSetupModal, gotoShell, openTabViaMenu, terminalTabChips } from './helpers';
 
 test.describe('Docker terminal — uname -s', () => {
   test.beforeEach(async ({ page }) => {
@@ -20,23 +21,17 @@ test.describe('Docker terminal — uname -s', () => {
   });
 
   test('user clicks docker button and sees Linux in the xterm', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
 
     await gotoShell(page);
 
-    // Find any per-container docker button. Skip if none.
-    const dockerButton = page.locator('[data-testid^="open-docker-tab-button-"]').first();
-    if (!(await dockerButton.isVisible({ timeout: 2_000 }).catch(() => false))) {
-      test.skip(true, 'No registered docker workers. Run `flow compute connect <container> --start` first.');
-    }
-
     // Click to open a fresh docker tab.
-    const tabCountBefore = await page.locator('[data-testid^="tab-shell-"]').count();
-    await dockerButton.click();
+    const tabCountBefore = await terminalTabChips(page).count();
+    await openTabViaMenu(page, 'docker');
 
     // A new shell tab must appear.
     await expect
-      .poll(async () => page.locator('[data-testid^="tab-shell-"]').count(), { timeout: 15_000 })
+      .poll(async () => terminalTabChips(page).count(), { timeout: 15_000 })
       .toBeGreaterThan(tabCountBefore);
 
     // The newly-active panel corresponds to the just-opened shell. We grab its

@@ -2,7 +2,7 @@ import { ConversationParticipant, Task, TaskKind } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
-import { useTaskAssignmentMessage } from '@src/hooks/use-task-assignment-message';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { guardCloudAction } from '@src/services/privacy-guard';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
@@ -12,30 +12,32 @@ import { GroupTaskDialog } from './GroupTaskDialog';
 
 interface OwnerButtonProps {
   task: Task;
-  save: (patch: Partial<Task>) => Promise<void>;
 }
 
 /**
  * The "Owner" pill in the task editor's meta row. Two paths:
- *  - Individual: a single-select ContactPicker writing the existing
- *    `assignee` field, an optional message, and Assign — which sends the
- *    message with the task chip (push-notify channel) to the person.
+ *  - Individual: a single-select ContactPicker + an optional message, committed
+ *    through `Task.assign` — the ONE assign path, which shares the task and
+ *    grants the assignee `editor` so it lands on their machine.
  *  - Group: opens the GroupTaskDialog (explainer + contacts-group pick +
  *    `create-group-task` + the same optional message to every member).
  * Hidden for member tasks (`parent_id` set) — their assignee is fixed.
  */
-export function OwnerButton({ task, save }: OwnerButtonProps) {
+export function OwnerButton({ task }: OwnerButtonProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [mode, setMode] = useState<'menu' | 'individual'>('menu');
   const [picked, setPicked] = useState<ConversationParticipant[]>([]);
   const [message, setMessage] = useState('');
-  const { sendAssignment, sending } = useTaskAssignmentMessage(task);
+  const ensureCloudLogin = useCloudLoginGate();
+  const [sending, setSending] = useState(false);
 
   if (task.parent_id) return null;
 
   const isGroup = task.kind === TaskKind.GROUP;
-  const assigned = isGroup ? task.group_name : task.assignee;
+  // `group_name` is only ever set by the contacts-group fan-out; a task handed
+  // to one person carries the person on `assignee`.
+  const assigned = (isGroup && task.group_name) || task.assignee;
   const label = assigned ? `Owner: ${assigned}` : 'Owner';
   const Icon = isGroup ? Users : UserIcon;
 
@@ -48,21 +50,25 @@ export function OwnerButton({ task, save }: OwnerButtonProps) {
   const assignIndividual = async () => {
     const person = picked[0];
     if (!person) return;
-    await save({ assignee: person.email || person.name || undefined });
-    // The notification rides the push-notify channel — cloud-gated.
-    if (person.email && guardCloudAction('share')) {
-      const convId = await sendAssignment([person], message);
-      if (convId) {
-        notify.success({
-          title: 'Task assigned',
-          message: `${person.name || person.email} was notified.`,
-        });
-      } else {
-        notify.warning({
-          title: 'Assigned, but the message failed',
-          message: 'The owner was set; sending the notification message did not go through.',
-        });
-      }
+    // ONE assign path: `Task.assign` shares the task and grants the assignee
+    // `editor`, so it actually lands on their machine. This used to write
+    // `assignee` locally and send a chip message — a notification about a task
+    // the recipient never received, because nothing granted them a role.
+    if (!guardCloudAction('share')) return;
+    setSending(true);
+    try {
+      await task.assign(person, { message, ensureCloudLogin });
+      notify.success({
+        title: 'Task assigned',
+        message: `${person.name || person.email} now has "${task.title}".`,
+      });
+    } catch (e: unknown) {
+      notify.error({
+        title: 'Could not assign',
+        message: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setSending(false);
     }
     setPickerOpen(false);
     setMode('menu');

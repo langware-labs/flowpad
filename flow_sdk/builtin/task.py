@@ -47,13 +47,18 @@ class Task(Entity):
     reporter: Optional[str] = APIField(None)
     workspace_id: Optional[str] = APIField(None)  # Should be a reference to organisation entity
     task_type: str = APIField(TaskType.TASK)
-    # Group tasks: ``group`` = the overview task that owns one child ("member
-    # task") per contacts-group member; children stay ``standard``.
+    # GROUP-ONLY (``create_group_task`` is the sole writer of both): ``group`` =
+    # the overview task that owns one child ("member task") per contacts-group
+    # member; children stay ``standard``. Handing a task to ONE person does NOT
+    # touch these — that is a plain share (``task_assign_action``), one row, no
+    # flip. Anything reading them is rendering the group surface.
     kind: str = APIField(TaskKind.STANDARD)
-    # Name of the contacts group a ``group`` task was assigned to — shown as
+    # Name of the contacts group a ``group`` task was fanned out to — shown as
     # "Owner: <group_name>" on the overview task. Stamped by create-group-task.
     group_name: Optional[str] = APIField(None)
-    # Group-task parent pointer; "" = top-level. Children own only their
+    # Generic sub-task pointer; "" = top-level. NOT group vocabulary: the asset
+    # tree nests any task under any task with it, and ``search.py`` exports it for
+    # that. A group's member task is one USE of it, and such a child owns only its
     # status — every display field resolves from the parent at render time.
     parent_id: str = APIField("")
     # The member's deliverable (repo / PR / doc / app URL) is NOT a field — a

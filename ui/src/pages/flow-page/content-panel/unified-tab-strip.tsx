@@ -25,7 +25,12 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
 import { resolveNextTab } from '@src/tabs/tab-candidates';
 import { applyPredictedOrder, refreshAllTabs, useAllTabs } from '@src/tabs/all-tabs-store';
-import { closeTabWithLifecycle, excludeClosingTabs, useTabLifecycles } from '@src/tabs/tab-lifecycle';
+import {
+  closeTabsWithLifecycle,
+  closeTabWithLifecycle,
+  excludeClosingTabs,
+  useTabLifecycles,
+} from '@src/tabs/tab-lifecycle';
 import { uniqueTabsByDockKey, useCurrentTabs, useSyncContentTabNames } from '@src/tabs/useTabs';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import React, { useCallback, useEffect, useMemo } from 'react';
@@ -176,9 +181,9 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     (keys: string[]) => {
       const closing = keys.map((k) => tabByKey.get(k)).filter((t): t is Tab => t != null);
       if (keys.some((k) => isCurrentTab(k))) navigateAfterClose(closing);
-      void Promise.allSettled(closing.map((t) => closeTabWithLifecycle(t))).finally(() => void refreshAllTabs());
+      void closeTabsWithLifecycle(closing, projectId).finally(() => void refreshAllTabs());
     },
-    [tabByKey, isCurrentTab, navigateAfterClose],
+    [tabByKey, isCurrentTab, navigateAfterClose, projectId],
   );
 
   const handleRename = useCallback(

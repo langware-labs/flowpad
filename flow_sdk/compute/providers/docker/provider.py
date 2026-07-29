@@ -19,7 +19,7 @@ from flow_sdk.compute.providers.compute_provider import ComputeProvider, ListDir
 from flow_sdk.flowpad_types import CLICommand, SendFileEntry
 
 from . import docker_registry
-from .docker_registry import ACTION_TIMEOUT_FAST, ACTION_TIMEOUT_NORMAL
+from .docker_registry import ACTION_TIMEOUT_FAST
 
 if TYPE_CHECKING:
     from flow_sdk.flowpad_types.runtime_environment import RuntimeEnvironment
@@ -212,7 +212,7 @@ class DockerComputeProvider(ComputeProvider):
         provider_node_id: str,
         command: str,
         session_id: Optional[str] = None,
-        background: bool = False,
-        env: Optional[dict[str, str]] = None,
+        background: bool = True,
+        env: Optional[list] = None,
     ) -> CLICommand:
         raise NotImplementedError("DockerComputeProvider.run_command")

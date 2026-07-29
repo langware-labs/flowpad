@@ -52,6 +52,9 @@ async def test_capabilities_summary_groups_by_intent(bootstrapped_client):
     claude = next(c for c in summary["capabilities"] if c["kind"] == CapabilityKind.CLAUDE_CLI.value)
     assert claude["intent"] == CapabilityKind.HARNESS.value
     assert "runnable" in claude and "installable" in claude
+    assert claude["worker_type"] == "claude_code"
+    default_harness = next(c for c in summary["capabilities"] if c["kind"] == CapabilityKind.HARNESS.value)
+    assert default_harness["worker_type"] == "claude_code"
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { NodeSecrets } from '@src/components/machine-overview/node-secrets';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
@@ -28,6 +29,7 @@ import {
   Copy,
   FileText,
   Key,
+  KeyRound,
   Network,
   Pause,
   Play,
@@ -88,7 +90,7 @@ interface ConfigStatus {
 type TestResult = 'idle' | 'loading' | 'success' | 'error';
 
 export const MachineOverview: React.FC = () => {
-  const { flow, computeNode } = useAgentContext();
+  const { flow, computeNode, project } = useAgentContext();
   const { navigation, currentDock } = useDockNavigation();
   const { t } = useLingui();
   const [machineStatus, setMachineStatus] = useState<MachineStatus | null>(null);
@@ -867,6 +869,10 @@ export const MachineOverview: React.FC = () => {
                   <Settings className="mr-1.5 h-3.5 w-3.5" />
                   <Trans>Gateway</Trans>
                 </TabsTrigger>
+                <TabsTrigger value={MachineSubview.SECRETS} className="h-7 text-xs">
+                  <KeyRound className="mr-1.5 h-3.5 w-3.5" />
+                  <Trans>Secrets</Trans>
+                </TabsTrigger>
                 {computeNode?.node_provider_type === ComputeProviderType.E2B && (
                   <>
                     <TabsTrigger value={MachineSubview.METRICS} className="h-7 text-xs">
@@ -1046,6 +1052,10 @@ export const MachineOverview: React.FC = () => {
                   ))}
                 </tbody>
               </table>
+            </TabsContent>
+
+            <TabsContent value={MachineSubview.SECRETS} className="mt-0 h-[calc(100%-40px)] overflow-auto">
+              <NodeSecrets computeNode={computeNode} project={project} />
             </TabsContent>
 
             <TabsContent value={MachineSubview.GATEWAY} className="mt-0 h-[calc(100%-40px)] overflow-auto p-4">

@@ -5,6 +5,8 @@ import type { TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { usePreference } from '@src/hooks/use-preference';
 import ExecutionMessage from './execution-message/execution-message';
 import { MetaMessageChip } from './MetaMessageChip';
+import { WorkerUnavailableNotice } from './WorkerUnavailableNotice';
+import type { WorkerType } from '@src/components/workers/worker-types';
 
 /**
  * Subtle book-style separator between turns: a short, centered hairline that
@@ -25,13 +27,22 @@ function TurnDivider() {
  * Assistant (via EntityExecutionPanel's dense layout) and the interactive
  * tab's Standard-mode SimpleChatPane so both render identical chat turns.
  */
-export function TurnGroupsList({ groups, worker }: { groups: TurnGroup[]; worker?: string }) {
+export function TurnGroupsList({
+  groups,
+  worker,
+  onWorkerChange,
+}: {
+  groups: TurnGroup[];
+  worker?: string;
+  onWorkerChange?: (worker: WorkerType) => void | Promise<void>;
+}) {
   // "Show tool calls" (default off) gates the dense tool/reasoning/status chips.
   // When off, dense (non-message) groups are dropped so the transcript shows only
   // user/assistant text turns. Toggled from the composer's Tools menu or Preferences → Chat.
   const [showTools] = usePreference<boolean>(PrefKey.CHAT_SHOW_TOOLS);
   const visibleGroups = groups.filter((g) => {
-    if (g.kind !== 'message') return showTools;
+    if (g.kind === 'worker-unavailable') return true;
+    if (g.kind === 'dense') return showTools;
     if (g.flowData.attributes?.['is-meta'] !== 'true') return true;
     const content = g.flowData.content ?? '';
     return !isFlowpadPromptEnvelope(String(content));
@@ -47,11 +58,13 @@ export function TurnGroupsList({ groups, worker }: { groups: TurnGroup[]; worker
         const key =
           g.kind === 'message'
             ? `msg-${i}-${g.flowData.id ?? g.flowData.timestamp ?? ''}`
-            : `dense-${i}`;
+            : g.kind === 'worker-unavailable'
+              ? `worker-unavailable-${i}-${g.flowData.timestamp ?? ''}`
+              : `dense-${i}`;
         return (
           <Fragment key={key}>
             {i > 0 && <TurnDivider />}
-            <TurnGroupRow group={g} worker={worker} />
+            <TurnGroupRow group={g} worker={worker} onWorkerChange={onWorkerChange} />
           </Fragment>
         );
       })}
@@ -68,16 +81,19 @@ export function TurnGroupsList({ groups, worker }: { groups: TurnGroup[]; worker
 const TurnGroupRow = memo(function TurnGroupRow({
   group,
   worker,
+  onWorkerChange,
 }: {
   group: TurnGroup;
   worker?: string;
+  onWorkerChange?: (worker: WorkerType) => void | Promise<void>;
 }) {
   const isUser =
     group.kind === 'message' &&
-    (group.flowData.elementType === FlowElementTypes.USER_MESSAGE ||
-      group.flowData.attributes?.role === 'user');
+    (group.flowData.elementType === FlowElementTypes.USER_MESSAGE || group.flowData.attributes?.role === 'user');
   const node =
-    group.kind === 'message' ? (
+    group.kind === 'worker-unavailable' ? (
+      <WorkerUnavailableNotice flowData={group.flowData} worker={worker} onWorkerChange={onWorkerChange} />
+    ) : group.kind === 'message' ? (
       group.flowData.attributes?.['is-meta'] === 'true' ? (
         <MetaMessageChip flowData={group.flowData} skillName={group.skillName} />
       ) : (
