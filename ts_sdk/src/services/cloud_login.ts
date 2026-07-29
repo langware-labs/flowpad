@@ -288,27 +288,19 @@ class CloudManager extends EventEmitter {
    */
   async logout(returnTo?: string): Promise<void> {
     if (isHubOnly()) {
-      // Hub server: CALL the logout API (XHR clears the session cookie
-      // server-side) instead of navigating the page through the provider's
-      // redirect chain, then land the SPA ourselves. Caveat: an IdP top-level
-      // logout redirect (Auth0 /v2/logout) can't ride an XHR — custom-JWT
-      // hubs don't need one.
-      try {
-        await apiClient.get('/logout', {
-          // Redirect endpoint — no {status,data} envelope; wrap the raw body
-          // so the client interceptor's unwrap stays harmless.
-          transformResponse: (raw: string) => ({ data: raw }),
-        });
-      } catch {
-        // A failed call means the session is already unusable; still finish
-        // with the local redirect below.
-      }
+      // Hub server: logout MUST be a top-level navigation through the hub's
+      // redirect chain, not an XHR. The chain is hub /logout (clears the hub
+      // cookies) → Auth0 /v2/logout (ends the IdP SSO session) → returnTo.
+      // An XHR can't ride the cross-origin Auth0 hop — the browser won't
+      // send Auth0's cookies on it — so the SSO session survived and the
+      // very next /login silently re-authenticated the same account: logout
+      // appeared to do nothing (landed back on home, no login form), and the
+      // wrong-account re-auth flow could never switch users. Custom-JWT hubs
+      // ride the same chain, just without the IdP hop. `returnTo` goes to
+      // the hub as a query param — the server owns its validation/wrapping.
       await this._setLoggedOut();
-      // Land on the provider login rather than the SPA root: the hub surface
-      // has no signed-out mode (a root load would just bounce back to login
-      // via the bootstrap redirect — this skips the dead hop). `returnTo`
-      // still wins so the invitee re-auth flow keeps its accept callback.
-      window.location.assign(returnTo ?? `${API_PREFIX}/login`);
+      const qs = returnTo ? `?${new URLSearchParams({ returnTo })}` : '';
+      window.location.assign(`${API_PREFIX}/logout${qs}`);
       return;
     }
 
