@@ -8627,6 +8627,10 @@ msgstr "No members yet — invite someone below."
 msgid "No members yet."
 msgstr "No members yet."
 
+#: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
+msgid "No messages yet"
+msgstr "No messages yet"
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "No messages yet — context will appear here as they arrive."
 msgstr "No messages yet — context will appear here as they arrive."
@@ -13842,6 +13846,10 @@ msgstr "This sends a cloud action per conversation:"
 #: src/components/collaboration/SharedSessionView.tsx
 msgid "This session has no bound conversation."
 msgstr "This session has no bound conversation."
+
+#: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
+msgid "This session has not recorded any messages — its transcript is written on the first reply."
+msgstr "This session has not recorded any messages — its transcript is written on the first reply."
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "This session hasn't been reviewed yet, so there's nothing to report."

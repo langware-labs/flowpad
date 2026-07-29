@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { sdkConfig } from '@sdk/config/index';
-import {
-  parseTranscriptResponse,
-  type ParsedTranscript,
-} from '@sdk/utils/agent-transcript';
+import { parseTranscriptResponse, type ParsedTranscript } from '@sdk/utils/agent-transcript';
 
 /**
  * Worker types the generic transcript viewer supports. Mirrors the server
@@ -24,6 +21,24 @@ interface UseTranscriptReturn {
   isLoading: boolean;
   error: Error | null;
   refetch: () => void;
+}
+
+/**
+ * A transcript fetch that failed, carrying the server's structured
+ * ``error_code`` alongside the human message.
+ *
+ * Callers need to tell "there is no transcript" (``NOT_FOUND`` — a session that
+ * never took a turn writes no JSONL) apart from a real failure, and sniffing
+ * the message string for a prefix is too brittle to base a UI branch on.
+ */
+export class TranscriptFetchError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+  ) {
+    super(message);
+    this.name = 'TranscriptFetchError';
+  }
 }
 
 /**
@@ -63,9 +78,9 @@ export function useTranscript({ workerType, path, sessionId }: UseTranscriptArgs
       .then(async (r) => {
         const json = await r.json();
         if (!r.ok || json?.ok === false) {
-          const code = json?.error_code ?? r.status;
+          const code = String(json?.error_code ?? r.status);
           const msg = json?.error ?? r.statusText;
-          throw new Error(`${code}: ${msg}`);
+          throw new TranscriptFetchError(`${code}: ${msg}`, code);
         }
         return parseTranscriptResponse(json);
       })

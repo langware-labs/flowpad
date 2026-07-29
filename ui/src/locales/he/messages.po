@@ -8627,6 +8627,10 @@ msgstr "עדיין אין חברים — הזמן מישהו למטה."
 msgid "No members yet."
 msgstr "עדיין אין חברים."
 
+#: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
+msgid "No messages yet"
+msgstr ""
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "No messages yet — context will appear here as they arrive."
 msgstr "אין הודעות עדיין — ההקשר יופיע כאן כשהם יגיעו."
@@ -13842,6 +13846,10 @@ msgstr "זה שולח פעולת ענן לכל שיחה:"
 #: src/components/collaboration/SharedSessionView.tsx
 msgid "This session has no bound conversation."
 msgstr "לסשן זה אין שיחה משויכת."
+
+#: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
+msgid "This session has not recorded any messages — its transcript is written on the first reply."
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "This session hasn't been reviewed yet, so there's nothing to report."
