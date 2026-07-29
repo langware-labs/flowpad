@@ -30,6 +30,8 @@ export const EntityTypes = {
   User: 'user',
   Visitor: 'visitor',
   WebDomain: 'web_domain',
+  Wiki: 'wiki',
+  WikiEntry: 'wiki_entry',
   Workflow: 'workflow',
   Workspace: 'workspace',
 } as const;

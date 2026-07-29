@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from flow_sdk.core.entity.entity_model import DEFAULT_BROWSE_LIMIT
@@ -33,7 +34,7 @@ class FsRecordsActionsMixin:
             return str(display_name)
         return getattr(ent, "name", None) or getattr(ent, "title", "") or ""
 
-    async def _resolve_scoped_roots(self, sf, *, foreground: bool = False):
+    async def _resolve_scoped_roots(self, sf, *, foreground: bool):
         """Translate a ``ScopeFilter`` into a narrowed indexer ``roots`` tuple
         (or ``None`` to use the indexer's default roots).
 
@@ -42,6 +43,12 @@ class FsRecordsActionsMixin:
         is then walked (one expected OS prompt). Background/all-projects fanouts
         pass ``foreground=False`` so protected-folder projects are gated by the
         per-folder consent state instead of silently tripping a TCC popup.
+
+        ``foreground`` is REQUIRED — deliberately no default. Auto-index (fired
+        by merely selecting a project) must never pass True: the protected-folder
+        design assumes the OS consent dialog only appears after the user clicked
+        "Index". A default would let a future caller inherit the wrong intent
+        silently, which is exactly how an unprompted TCC popup would ship.
 
         Mapping:
           - sf is None                         → None (default_roots())
@@ -1108,6 +1115,218 @@ class FsRecordsActionsMixin:
             }
         )
 
+    @asynccontextmanager
+    async def _index_activity(self, job_name: str = "index", timeout_seconds: int = 600):
+        """Hold the single-flight activity and yield ``(activity, emit)``.
+
+        The acquire + progress-broadcast closure + ``finally: _complete_activity``
+        scaffolding, in one place — it was verbatim-identical at three call sites.
+        Raises ``RuntimeError`` when the job is already running; each caller decides
+        what that means (409 for HTTP, silent skip for background passes).
+        """
+        from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
+
+        activity = self._start_activity(job_name, timeout_seconds=timeout_seconds)
+
+        async def emit(table) -> None:
+            activity.latest_table = table
+            await broadcast_progress(
+                to_entity=str(self.typeid),
+                flow_data=activity.make_flow_data(),
+            )
+
+        try:
+            yield activity, emit
+        finally:
+            self._complete_activity(job_name)
+
+    async def _run_index_activity(
+        self,
+        *,
+        roots,
+        types,
+        scope_filter,
+        project_id: str | None,
+        force: bool,
+        trigger: str,
+        limit_per_type: int | None = None,
+        orphan_action,
+        include_temp: bool = False,
+        type_name: str | None = None,
+        indexer=None,
+        project_record=None,
+        on_started=None,
+    ):
+        """Run one index under the single-flight activity guard.
+
+        The shared tail of every index entry point: acquire the ``index``
+        activity, stream progress to the footer, run ``FSIndexer.index()``,
+        append the run to the index log, reconcile MCP capabilities, and stamp
+        the project's own ``.hash`` sentinel. Returns ``(result, types_out)``.
+
+        **Raises ``RuntimeError`` when an index is already running** rather than
+        deciding what that means — the HTTP handler turns it into a 409, the auto
+        path skips silently. This is why the guard lives here and the policy does
+        not.
+
+        The project sentinel stamp is inside this helper on purpose: it is what
+        makes the project page's "last indexed / changes pending" correct, and
+        an auto run must update it exactly like a manual one.
+        """
+        from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
+            IndexerOptions,
+            get_shared_indexer,
+        )
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        async with self._index_activity() as (_activity, emit):
+            # Only now is the run definitely going ahead. Callers that must record
+            # "this ran" (the auto-index marker) hook here rather than up front, so
+            # a run skipped for contention leaves their bookkeeping untouched.
+            if on_started is not None:
+                on_started()
+            result = await (indexer or get_shared_indexer()).index(IndexerOptions(
+                types=types,
+                limit_per_type=limit_per_type,
+                on_progress=emit,
+                verbose=False,
+                roots=roots,
+                force=force,
+                include_temp=include_temp,
+                project_id=project_id,
+                orphan_action=orphan_action,
+                scope_filter=scope_filter,
+            ))
+
+        types_out = [
+            {
+                "type": str(rt),
+                "indexed": pt.indexed + pt.skipped,
+                "new": pt.indexed,
+                "skipped": pt.skipped,
+                "errors": pt.errors,
+                "duration_ms": pt.duration_ms,
+                "orphans_found": pt.orphans_found,
+                "orphans_db_removed": pt.orphans_db_removed,
+                "orphans_disk_removed": pt.orphans_disk_removed,
+            }
+            for rt, pt in result.per_type.items()
+        ]
+
+        SchemaRegistry.append_index(
+            trigger=trigger,
+            duration_ms=result.duration_ms,
+            total_indexed=result.total_indexed,
+            types=types_out if not type_name else [],
+            type_name=type_name,
+        )
+
+        # Indexing refreshes the MCP-server capability list: an MCP added/removed
+        # in any agent's config becomes a <service>.mcp.<worker_type> capability
+        # (or is pruned). Fire-and-forget — never block the index response.
+        if not type_name or type_name == "mcp_server":
+            try:
+                from flow_sdk.core.capabilities.mcp import reconcile_mcp_capabilities  # noqa: PLC0415
+                asyncio.create_task(reconcile_mcp_capabilities())
+            except Exception as e:
+                logging.debug(f"[fs-records] mcp capability reconcile skipped: {e}")
+
+        # Stamp the project's own index sentinel after a project-scoped run, so
+        # the project page reads "last indexed" / "changes pending" off the
+        # project record itself (the project IS a record). Single chokepoint —
+        # covers Fast and Full from the project page, manual and auto alike.
+        if project_id:
+            try:
+                from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+                _prec = project_record or FSRecord.load_or_none("project", project_id)
+                if _prec is not None:
+                    _prec.ensure_asset_ref().write_hash()
+            except Exception as e:
+                logging.debug(f"[fs-records] project index sentinel write skipped: {e}")
+
+        return result, types_out
+
+    async def _auto_index_project(
+        self,
+        project_id: str,
+        *,
+        force: bool,
+        trigger: str,
+        scan_mode=None,
+        project_record=None,
+        on_started=None,
+    ) -> bool:
+        """Index one project because it was selected/created, not clicked.
+
+        Returns True when a run actually happened, False when it was skipped.
+        Never raises — the caller is a detached task hanging off an activation
+        response.
+
+        Three properties this path must keep:
+
+        * **Never a 409.** A user-initiated index holding the activity means we
+          skip silently (same as the startup system-assets pass). The user never
+          caused this run and must never see it fail.
+        * **Never sweeps.** ``orphan_action`` stays INDEX (count-only). An
+          automatic run must not delete records — that caps the blast radius if
+          the walk ever returns a short candidate list.
+        * **Never foreground.** Protected-folder projects are gated, so a plain
+          project switch cannot trip a macOS consent dialog.
+
+        ``scan_mode`` applies ``preferences.auto_index.index_function`` to THIS run
+        only — a manual index keeps the in-process walk, because that preference
+        lives in the auto-index section and is hidden behind its enable toggle.
+
+        ``on_started`` is forwarded to ``_run_index_activity``, which invokes it
+        only after the activity is held — so a run skipped for contention does not
+        burn a project's one First-Selection chance.
+        """
+        from flow_sdk.fs_store.indexer import OrphanAction, get_auto_scan_indexer  # noqa: PLC0415
+        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
+
+        try:
+            scope_filter = await resolve_project_scope(
+                ScopeFilter(user=False, projects=(str(project_id),)), create_missing=False
+            )
+            roots = await self._resolve_scoped_roots(scope_filter, foreground=False)
+            if isinstance(roots, ApiFailResponse) or not roots:
+                logging.debug(
+                    "[auto-index] project %s resolved no walkable roots (gated or unknown)",
+                    project_id,
+                )
+                return False
+
+            result, _ = await self._run_index_activity(
+                roots=roots,
+                types=None,
+                scope_filter=scope_filter,
+                project_id=str(project_id),
+                force=force,
+                trigger=trigger,
+                # Count-only: an automatic run must never delete records.
+                orphan_action=OrphanAction.INDEX,
+                indexer=get_auto_scan_indexer() if scan_mode is not None else None,
+                project_record=project_record,
+                on_started=on_started,
+            )
+            logging.info(
+                "[auto-index] project %s (%s): %d new, %d errors in %.0fms",
+                project_id,
+                trigger,
+                result.total_indexed,
+                result.total_errors,
+                result.duration_ms,
+            )
+            return True
+        except RuntimeError as e:
+            # An index already holds the activity — a user-initiated run, or the
+            # startup pass. Skip silently; the user never asked for this one.
+            logging.debug("[auto-index] project %s skipped: %s", project_id, e)
+            return False
+        except Exception:
+            logging.debug("[auto-index] project %s failed (non-fatal)", project_id, exc_info=True)
+            return False
+
     async def _handle_fs_records_index(self, request_info) -> ApiResponse:
         """Index fs_records into the Entity DB via Record.sync_to_db().
 
@@ -1123,14 +1342,10 @@ class FsRecordsActionsMixin:
         events per type via the shared indexer's ``on_progress`` callback.
         """
         import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
-        from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
             INDEXABLE_TYPES,
-            IndexerOptions,
-            IndexProgressTable,
             OrphanAction,
-            get_shared_indexer,
         )
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
@@ -1300,7 +1515,9 @@ class FsRecordsActionsMixin:
                 if orphan_action != OrphanAction.INDEX
                 else scope_filter
             )
-            custom_roots = await self._resolve_scoped_roots(roots_scope)
+            # foreground=False even for an explicit ?projects=, unlike the scan
+            # handler — see _resolve_scoped_roots on why an index never prompts.
+            custom_roots = await self._resolve_scoped_roots(roots_scope, foreground=False)
             if isinstance(custom_roots, ApiFailResponse):
                 return custom_roots
 
@@ -1322,55 +1539,30 @@ class FsRecordsActionsMixin:
                 # already cleared matching FTS rows via delete_entities_by_type
                 await driver.fts_clear()
 
-        try:
-            activity = self._start_activity("index", timeout_seconds=600)
-        except RuntimeError as e:
-            return ApiFailResponse(message=str(e), status_code=409)
-
-        async def emit(table: IndexProgressTable) -> None:
-            activity.latest_table = table
-            await broadcast_progress(
-                to_entity=str(self.typeid),
-                flow_data=activity.make_flow_data(),
-            )
-
         # Single-project shortcut: when narrowed to exactly one project,
         # also pass project_id so the indexer can short-circuit non-project
         # work paths. Derived from the ScopeFilter above.
         effective_project_id = project_id
 
         try:
-            result = await get_shared_indexer().index(IndexerOptions(
-                types=types_filter,
-                limit_per_type=limit_per_type,
-                on_progress=emit,
-                verbose=False,
+            result, types_out = await self._run_index_activity(
                 roots=custom_roots,
+                types=types_filter,
+                scope_filter=scope_filter,
+                project_id=effective_project_id,
                 force=force,
+                trigger=trigger,
+                limit_per_type=limit_per_type,
+                orphan_action=orphan_action,
                 # An explicit path is explicit intent — index it even under a
                 # temp root (/tmp, /var/folders), which the default walk skips.
                 include_temp=bool(index_path),
-                project_id=effective_project_id,
-                orphan_action=orphan_action,
-                scope_filter=scope_filter,
-            ))
-        finally:
-            self._complete_activity("index")
-
-        types_out = [
-            {
-                "type": str(rt),
-                "indexed": pt.indexed + pt.skipped,
-                "new": pt.indexed,
-                "skipped": pt.skipped,
-                "errors": pt.errors,
-                "duration_ms": pt.duration_ms,
-                "orphans_found": pt.orphans_found,
-                "orphans_db_removed": pt.orphans_db_removed,
-                "orphans_disk_removed": pt.orphans_disk_removed,
-            }
-            for rt, pt in result.per_type.items()
-        ]
+                type_name=filter_type or None,
+            )
+        except RuntimeError as e:
+            # An index is already running. HTTP surfaces the conflict; the auto
+            # path silently skips instead (see _auto_index_project).
+            return ApiFailResponse(message=str(e), status_code=409)
 
         # For a path-scoped run, resolve the TypeId(s) for the named file so the
         # caller (CLI / agent) can navigate straight to it — the whole point of
@@ -1389,37 +1581,6 @@ class FsRecordsActionsMixin:
                 if _id:
                     indexed_typeids.append(type_id_str(str(_rt), _id))
             indexed_typeid = indexed_typeids[0] if indexed_typeids else None
-
-        SchemaRegistry.append_index(
-            trigger=trigger,
-            duration_ms=result.duration_ms,
-            total_indexed=result.total_indexed,
-            types=types_out if not filter_type else [],
-            type_name=filter_type or None,
-        )
-
-        # Indexing refreshes the MCP-server capability list: an MCP added/removed
-        # in any agent's config becomes a <service>.mcp.<worker_type> capability
-        # (or is pruned). Fire-and-forget — never block the index response.
-        if not filter_type or filter_type == "mcp_server":
-            try:
-                from flow_sdk.core.capabilities.mcp import reconcile_mcp_capabilities  # noqa: PLC0415
-                asyncio.create_task(reconcile_mcp_capabilities())
-            except Exception as e:
-                logging.debug(f"[fs-records] mcp capability reconcile skipped: {e}")
-
-        # Stamp the project's own index sentinel after a project-scoped run, so
-        # the project page reads "last indexed" / "changes pending" off the
-        # project record itself (the project IS a record). Single chokepoint —
-        # covers Fast and Full from the project page.
-        if effective_project_id:
-            try:
-                from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
-                _prec = FSRecord.load_or_none("project", effective_project_id)
-                if _prec is not None:
-                    _prec.ensure_asset_ref().write_hash()
-            except Exception as e:
-                logging.debug(f"[fs-records] project index sentinel write skipped: {e}")
 
         if filter_type:
             if not types_out:
@@ -1752,7 +1913,8 @@ class FsRecordsActionsMixin:
                 rt = _RT(record_type)
                 indexer = get_shared_indexer()
                 discover_sf = await get_all_scope_filter()
-                discover_roots = await self._resolve_scoped_roots(discover_sf)
+                # Background self-heal fanout — gate protected folders.
+                discover_roots = await self._resolve_scoped_roots(discover_sf, foreground=False)
                 if isinstance(discover_roots, ApiFailResponse):
                     discover_roots = None  # fall back to default_roots()
                 await indexer.index(

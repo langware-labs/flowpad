@@ -14,23 +14,21 @@ test.describe('Creating content in skills view + nav home does not crash (FLOWPA
 
     await page.goto('/dock/assets/list/skill');
     await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-    // Skills view exposes a "New Skill" affordance in the browseable toolbar.
-    const newSkill = page.locator('[data-testid="browseable-toolbar-new:skill"]');
+    // The list-level New action remains available even when the scoped Skill
+    // tree root is hidden because its count is zero.
+    const newSkill = page.locator('[data-testid="content-panel"] button[title="New"]');
     await expect(newSkill).toBeVisible({ timeout: 15_000 });
 
-    // Trigger the create affordance — the regression was a crash with a missing
-    // agent_id. This is a crash-guard test (the assertion is "home still loads
-    // below"), so force the click with a short cap: the New Skill toolbar button
-    // can be geometrically overlapped by a tree row in the headless viewport, and
-    // a plain click would otherwise burn the whole test budget on actionability.
-    await newSkill.click({ force: true, timeout: 10_000 }).catch(() => {});
-    await page.waitForTimeout(2_000);
+    // Trigger the real create affordance — the regression was a crash while
+    // opening this flow with a missing agent_id.
+    await newSkill.click();
+    await expect(page.getByRole('dialog').getByText('New skill', { exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
 
     // Navigate to home — the app must still be mounted (no white-screen crash).
     await page.goto('/dock/home');
     await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
     await expect(page.locator('[data-testid="content-panel"]')).toBeVisible({ timeout: 15_000 });
-    await page.waitForTimeout(2_000);
 
     // The home page is still mounted and interactive after the round-trip — no
     // white-screen crash. (This is the actual FLOWPAD-1623 regression gate.)

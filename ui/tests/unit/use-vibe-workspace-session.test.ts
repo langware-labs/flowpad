@@ -89,10 +89,28 @@ describe('useVibeWorkspaceSession', () => {
     expect(result.current?.processTab).toBeNull();
   });
 
-  it('a plain shell (non-process) dock is not a workspace surface', () => {
+  it('a plain shell (non-process) dock with no parent is not a workspace surface', () => {
     currentDock = new DockPointer(ViewType.SHELL, 'shell-abc123');
     const { result } = renderHook(() => useVibeWorkspaceSession());
     expect(result.current).toBeNull();
+  });
+
+  it('Case 2: a plain shell CHILD resolves its parent process session', () => {
+    // A terminal opened inside the workspace. It shares `ViewType.SHELL` with
+    // the process dock, so Case 1 must not claim it — otherwise `build` returns
+    // null on the non-process pointer and the terminal takes over the surface
+    // instead of rendering in the workspace's display pane.
+    currentDock = new DockPointer(ViewType.SHELL, 'shell-abc123');
+    applyAllTabs([
+      row(PROCESS_TAB_ID),
+      { ...childRowFor(currentDock), target_type: 'shell', target_id: 'abc123' },
+    ]);
+
+    const { result } = renderHook(() => useVibeWorkspaceSession());
+    expect(result.current).not.toBeNull();
+    expect(result.current?.onProcessUrl).toBe(false);
+    expect(result.current?.processId).toBe(AP);
+    expect(result.current?.processTab?.id).toBe(PROCESS_TAB_ID);
   });
 
   it('Case 2: a child tab URL resolves its parent process session', () => {

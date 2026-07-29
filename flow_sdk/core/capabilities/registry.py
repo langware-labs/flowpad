@@ -552,6 +552,26 @@ async def resolve_default_harness_kind() -> str:
     return reference
 
 
+async def resolve_default_worker_type() -> str:
+    """Resolve the persisted default-harness reference to a process worker type.
+
+    Unlike ``resolve_default_harness_kind`` this is a selection lookup, not an
+    availability probe: process creation must honor the user's selected
+    harness, while the worker launch path reports installation/auth failures.
+    """
+    registry = get_capability_registry()
+    runner = registry.get(CapabilityKind.HARNESS.value)
+    if not isinstance(runner, CapabilityReferenceRunner):
+        raise RuntimeError("Default harness capability is not a reference")
+    harness_kind = await runner.resolve_reference_kind()
+    if not harness_kind:
+        raise RuntimeError("Default harness does not reference a concrete capability")
+    worker_type = registry.worker_type_for_kind(harness_kind)
+    if not worker_type:
+        raise RuntimeError(f"Default harness {harness_kind!r} has no process worker type")
+    return worker_type
+
+
 def build_install_worker_config(harness_kind: str) -> tuple[str, dict[str, Any]]:
     """Return AgenticProcess worker_type + cli_config for a harness leaf kind."""
     if harness_kind == CapabilityKind.CLAUDE_CLI.value:
@@ -939,7 +959,7 @@ def _build_default_registry() -> CapabilityRegistry:
         CliCapabilityRunner(
             spec=specs[CapabilityKind.CLAUDE_CLI.value],
             executable="claude",
-            worker_type="claude",
+            worker_type="claude_code",
         )
     )
     registry.register(

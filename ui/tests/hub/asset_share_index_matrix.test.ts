@@ -46,6 +46,8 @@ let bob: ResolvedInstance;
 // Projects this test creates on Bob — torn down in afterAll so they don't
 // pollute the project picker for other hub tests (share_matrix.ui picks first()).
 const createdProjects: Array<{ id: string; dir: string }> = [];
+const createdConversations: Array<{ apiUrl: string; id: string }> = [];
+const createdAssets: Array<{ apiUrl: string; type: string; id: string }> = [];
 
 beforeAll(async () => {
   const hub = await hubAvailable();
@@ -61,33 +63,34 @@ beforeEach((context: any) => {
   if (skipReason) context.skip();
 });
 
-// This test legitimately materializes conversations on BOTH instances (Alice
-// creates + shares; Bob receives a remote copy). The global single-realm leak
-// sweep can't reach the receiver's copy, so purge our test conversations on
-// both backends directly — by title prefix, covering both sides + any retries.
 afterAll(async () => {
   if (skipReason || !alice || !bob) return;
-  // This test materializes entities on BOTH instances (Alice creates + shares;
-  // Bob receives a copy into his project). The global single-realm leak sweep
-  // can't reach Bob's copies, so purge our e2etest-* rows on both backends
-  // directly — conversations + every asset type the leak sweep checks.
-  const SWEEP_TYPES = ['conversation', 'skill', 'agent', 'workflow', 'whiteboard', 'markdown', 'spec', 'prompt'];
-  for (const inst of [alice, bob]) {
-    for (const type of SWEEP_TYPES) {
-      const list = await fetch(`${inst.apiUrl}/api/v1/graph/${type}`).then((r) => r.json()).catch(() => null);
-      for (const r of (list?.data ?? []) as any[]) {
-        const label = String(r?.title ?? r?.name ?? '');
-        if (label.startsWith('e2etest-') && r?.id) {
-          await fetch(`${inst.apiUrl}/api/v1/graph/${type}/${r.id}`, { method: 'DELETE' }).catch(() => undefined);
-        }
-      }
+  for (const conversation of createdConversations) {
+    await fetch(`${conversation.apiUrl}/api/v1/graph/conversation/${conversation.id}`, {
+      method: 'DELETE',
+    }).catch(() => undefined);
+  }
+  // Full-purge the exact file-backed assets this file created on each realm.
+  for (const asset of createdAssets) {
+    const purged = await fetch(
+      `${asset.apiUrl}/api/v1/graph/compute_node/@local/fs-records/${asset.type}/${asset.id}`,
+      { method: 'DELETE' },
+    ).catch(() => null);
+    if (!purged?.ok) {
+      await fetch(`${asset.apiUrl}/api/v1/graph/${asset.type}/${asset.id}`, {
+        method: 'DELETE',
+      }).catch(() => undefined);
     }
   }
   // Tear down the projects we created (rows + tmp dirs) so they don't pollute
   // the "Set project" picker that other hub tests rely on.
   for (const p of createdProjects) {
     await fetch(`${bob.apiUrl}/api/v1/graph/project/${p.id}`, { method: 'DELETE' }).catch(() => undefined);
-    try { rmSync(p.dir, { recursive: true, force: true }); } catch { /* best effort */ }
+    try {
+      rmSync(p.dir, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
   }
 });
 
@@ -136,28 +139,67 @@ interface AssetSpec {
 }
 
 const ASSETS: AssetSpec[] = [
-  { type: 'skill', mainSubdir: '.claude/skills',
-    create: async (sdk) => { const s = trackForCleanup(await sdk.Skill.create(testEntityName('skill'))); return { id: s.id!, name: s.name ?? s.title }; } },
-  { type: 'agent', mainSubdir: '.claude/agents',
-    create: async (sdk) => { const a = trackForCleanup(await sdk.Agent.createInProject(null, testEntityName('agent'))); return { id: a.id!, name: a.name ?? a.title }; } },
-  { type: 'dynamic_workflow', mainSubdir: '.claude/workflows',
-    create: async (sdk) => { const w = trackForCleanup(await sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow'))); return { id: w.id!, name: w.name ?? w.title }; } },
-  { type: 'markdown', mainSubdir: 'docs',
-    create: async (sdk) => { const m = trackForCleanup(await sdk.Markdown.createInProject(null, testEntityName('markdown'))); return { id: m.id!, name: m.name ?? m.title }; } },
+  {
+    type: 'skill',
+    mainSubdir: '.claude/skills',
+    create: async (sdk) => {
+      const s = trackForCleanup(await sdk.Skill.create(testEntityName('skill')));
+      return { id: s.id!, name: s.name ?? s.title };
+    },
+  },
+  {
+    type: 'agent',
+    mainSubdir: '.claude/agents',
+    create: async (sdk) => {
+      const a = trackForCleanup(await sdk.Agent.createInProject(null, testEntityName('agent')));
+      return { id: a.id!, name: a.name ?? a.title };
+    },
+  },
+  {
+    type: 'dynamic_workflow',
+    mainSubdir: '.claude/workflows',
+    create: async (sdk) => {
+      const w = trackForCleanup(await sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow')));
+      return { id: w.id!, name: w.name ?? w.title };
+    },
+  },
+  {
+    type: 'markdown',
+    mainSubdir: 'docs',
+    create: async (sdk) => {
+      const m = trackForCleanup(await sdk.Markdown.createInProject(null, testEntityName('markdown')));
+      return { id: m.id!, name: m.name ?? m.title };
+    },
+  },
   // spec is a REPO-class asset (asset_class="repo"): it lands in the recursive
   // agentic-assets/ container as agentic-assets/spec/<name>/spec.md, NOT the
   // old repo-root specs/ dir. See commit 65ae24d3 (repo assets) — main_subdir
   // is DERIVED from the placement axis (family_subdir → root_prefix/family).
-  { type: 'spec', mainSubdir: 'agentic-assets/spec',
-    create: async (sdk) => { const s = trackForCleanup(new sdk.Spec({ title: testEntityName('spec'), content: '# Spec body\n' })); await s.save(); return { id: s.id!, name: s.title ?? s.name }; } },
-  { type: 'prompt', mainSubdir: 'prompts',
-    create: async (sdk) => { const p = trackForCleanup(await sdk.Prompt.create({ name: testEntityName('prompt'), text: 'do the thing' })); return { id: p.id!, name: p.name ?? p.title }; } },
+  {
+    type: 'spec',
+    mainSubdir: 'agentic-assets/spec',
+    create: async (sdk) => {
+      const s = trackForCleanup(new sdk.Spec({ title: testEntityName('spec'), content: '# Spec body\n' }));
+      await s.save();
+      return { id: s.id!, name: s.title ?? s.name };
+    },
+  },
+  {
+    type: 'prompt',
+    mainSubdir: 'prompts',
+    create: async (sdk) => {
+      const p = trackForCleanup(await sdk.Prompt.create({ name: testEntityName('prompt'), text: 'do the thing' }));
+      return { id: p.id!, name: p.name ?? p.title };
+    },
+  },
   // whiteboard: a folder-layout asset whose board.json + WHITE_BOARD.md
   // materialize lazily on editor mount, NOT on create() — so a bare SDK create
   // ships nothing. Seed the two files the editor's first save would write (the
   // instances run on this host, so asset_ref is a real local path), then it
   // rides the identical file-backed family path as every other type.
-  { type: 'whiteboard', mainSubdir: '.claude/whiteboards',
+  {
+    type: 'whiteboard',
+    mainSubdir: '.claude/whiteboards',
     create: async (sdk) => {
       const name = testEntityName('whiteboard');
       const wb = trackForCleanup(await sdk.Whiteboard.create(name));
@@ -172,7 +214,8 @@ const ASSETS: AssetSpec[] = [
         await nodeFs.writeFile(`${assetRef}/WHITE_BOARD.md`, `# ${name}\n`);
       }
       return { id: wb.id!, name: wb.name ?? wb.title };
-    } },
+    },
+  },
 ];
 
 // NOTE on coverage: these 7 types' on-disk asset_ref exercises the full family
@@ -190,9 +233,11 @@ const ASSETS: AssetSpec[] = [
 async function shareAsset(spec: AssetSpec): Promise<{ convId: string; created: { id: string; name: string } }> {
   const created = await spec.create(alice.sdk);
   expect(created.id, `${spec.type} created`).toBeTruthy();
+  createdAssets.push({ apiUrl: alice.apiUrl, type: spec.type, id: created.id });
 
   const conv = trackForCleanup(new alice.sdk.Conversation({ title: testEntityName(`conv-${spec.type}`) }));
   await conv.save();
+  createdConversations.push({ apiUrl: alice.apiUrl, id: conv.id! });
   await conv.share([bob.email]);
   expect(conv.remote).toBe(true);
 
@@ -211,16 +256,28 @@ async function shareAsset(spec: AssetSpec): Promise<{ convId: string; created: {
 async function acceptAndFindMessage(convId: string): Promise<{ fmId: string }> {
   const invitation = await pollUntil(() => findPendingInvitation(bob, convId), 20_000, 'pending invitation');
   await bob.sdk.acceptInvitation({ invitation_id: invitation.id! });
+  // Pull only this newly accepted conversation's messages. A global
+  // fetchConversations() foreground-reconciles every conversation and bundle
+  // accessible to the staff account, making this exact-id flow scale with
+  // unrelated hub history.
+  const sync = await post(bob.apiUrl, '/graph/conversation-message-sync', {
+    conversation_id: convId,
+  });
+  expect(sync.status, `target conversation sync ok (got ${JSON.stringify(sync.body?.message)})`).toBeLessThan(400);
 
-  const received = await pollUntil(async () => {
-    await bob.sdk.fetchConversations();
-    const c = await bob.sdk.Conversation.getById(convId).catch(() => null);
-    const ptrs = c?.conversationMessageIds ?? [];
-    return ptrs.some((p: any) => p.type === 'flow_message') ? c : null;
-  }, 20_000, 'message pointer on receiver');
+  const received = await pollUntil(
+    async () => {
+      const c = await bob.sdk.Conversation.getById(convId).catch(() => null);
+      const ptrs = c?.conversationMessageIds ?? [];
+      return ptrs.some((p: any) => p.type === 'flow_message') ? c : null;
+    },
+    20_000,
+    'message pointer on receiver',
+  );
   // Register Bob's materialized conversation copy so the global leak sweep
   // purges it (it's created backend-side on receive, not via trackForCleanup).
   trackForCleanup(received);
+  createdConversations.push({ apiUrl: bob.apiUrl, id: received.id! });
 
   // The conversation strip carries TWO flow_message pointers: the shared ASSET
   // message (rides a body bundle → body_status flips to READY) AND a
@@ -228,20 +285,23 @@ async function acceptAndFindMessage(convId: string): Promise<{ fmId: string }> {
   // body_status=na). Both are typed 'flow_message', and the invitation
   // placeholder is materialized synchronously on accept — so it wins the race
   // against the slower catch-up asset message. Don't pin to the FIRST pointer;
-  // poll ALL of them (re-fetching, since the asset message lands via background
-  // catch-up shortly after accept) and select the one that actually carries the
-  // uploaded bundle (body_status READY). The placeholder never becomes READY.
-  const fm = await pollUntil(async () => {
-    await bob.sdk.fetchConversations();
-    const c = await bob.sdk.Conversation.getById(convId).catch(() => null);
-    const ptrs = c?.conversationMessageIds ?? [];
-    for (const p of ptrs as any[]) {
-      if (p.type !== 'flow_message') continue;
-      const full = await bob.sdk.FlowMessage.getById(p.id).catch(() => null);
-      if (full && full.body_status === 'ready') return full;
-    }
-    return null;
-  }, 20_000, 'shared message READY');
+  // poll ALL locally materialized pointers and select the one that actually
+  // carries the uploaded bundle (body_status READY). The targeted sync above
+  // owns catch-up; the placeholder never becomes READY.
+  const fm = await pollUntil(
+    async () => {
+      const c = await bob.sdk.Conversation.getById(convId).catch(() => null);
+      const ptrs = c?.conversationMessageIds ?? [];
+      for (const p of ptrs as any[]) {
+        if (p.type !== 'flow_message') continue;
+        const full = await bob.sdk.FlowMessage.getById(p.id).catch(() => null);
+        if (full && full.body_status === 'ready') return full;
+      }
+      return null;
+    },
+    20_000,
+    'shared message READY',
+  );
   return { fmId: fm.id };
 }
 
@@ -270,7 +330,8 @@ describe('asset share → staged → install-to-project → index matrix (Alice 
       // asset entity does NOT — nothing entered Bob's work areas yet.
       const staged = await pollUntil(
         () => findStagedAttachment(fmId, created.id),
-        10_000, `${spec.type} staged MessageAttachment on Bob`,
+        10_000,
+        `${spec.type} staged MessageAttachment on Bob`,
       );
       expect(staged.asset_type, `${spec.type} staged row type`).toBe(spec.type);
       expect(staged.scope, `${spec.type} staged (uninstalled) scope`).toBeFalsy();
@@ -281,12 +342,16 @@ describe('asset share → staged → install-to-project → index matrix (Alice 
         scope: 'project',
         project_id: project.id,
       });
-      expect(install.status, `${spec.type} install ok (got ${JSON.stringify(install.body?.message)})`).toBeLessThan(400);
+      expect(install.status, `${spec.type} install ok (got ${JSON.stringify(install.body?.message)})`).toBeLessThan(
+        400,
+      );
+      createdAssets.push({ apiUrl: bob.apiUrl, type: spec.type, id: created.id });
 
       // (a) resolvable in Bob's DB by the SENDER's id (id-pin round-trips).
       const resolved = await pollUntil(
         async () => (await bobBackendHas(spec.type, created.id)) || null,
-        10_000, `${spec.type} resolvable in Bob's DB`,
+        10_000,
+        `${spec.type} resolvable in Bob's DB`,
       ).catch(() => false);
       expect(resolved, `${spec.type} resolvable on Bob by sender id`).toBe(true);
 
@@ -296,8 +361,9 @@ describe('asset share → staged → install-to-project → index matrix (Alice 
       // dataManager.getByTypeId starts returning it. This is the exact path the
       // conversation chip uses (useEntity) to flip dashed→solid — no reload.
       const live = await pollUntil(
-        async () => (await (bob.sdk.dataManager as any).getByTypeId(tid).catch(() => null)),
-        10_000, `${spec.type} resolves on Bob's live data layer (CREATE data_op)`,
+        async () => await (bob.sdk.dataManager as any).getByTypeId(tid).catch(() => null),
+        10_000,
+        `${spec.type} resolves on Bob's live data layer (CREATE data_op)`,
       ).catch(() => null);
       expect(live?.id, `${spec.type} live-resolvable on Bob without refetch (CREATE data_op fired)`).toBe(created.id);
 
@@ -323,7 +389,8 @@ describe('asset share → staged → install-to-project → index matrix (Alice 
     // Staged, not installed: MessageAttachment exists, the asset entity does not.
     const staged = await pollUntil(
       () => findStagedAttachment(fmId, created.id),
-      10_000, 'staged MessageAttachment (no project)',
+      10_000,
+      'staged MessageAttachment (no project)',
     );
     expect(staged.scope, 'staged scope').toBeFalsy();
     expect(await bobBackendHas(spec.type, created.id), 'no entity without install').toBe(false);

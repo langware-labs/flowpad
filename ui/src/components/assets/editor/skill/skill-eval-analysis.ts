@@ -9,8 +9,6 @@ import {
 } from '@sdk';
 import { notify } from '@src/notifications';
 import { basename } from '@src/components/asset-manager/asset-row-helpers';
-import { launchWorkerWithAsset } from '@src/components/workers/launchWorkerWithAsset';
-import type { WorkerType } from '@src/components/workers/worker-types';
 import type { AgentTraceDoc, TraceFinding } from '../agent-trace/trace-types';
 
 const SKILLIT_NAME = 'skillit';
@@ -96,38 +94,6 @@ const assetProcessOpts = (
   outputFormat: 'stream-json',
   permissionMode: 'bypassPermissions',
 });
-
-/**
- * Spin up an **interactive** worker so the author can test the skill by hand —
- * the "quick start testing" toolbar next to the eval flag.
- *
- * Unlike {@link launchSkillEval} (which auto-prompts `skillit` in a stream-json
- * execution process), this opens a real interactive terminal tab via the shared
- * {@link launchWorkerWithAsset} helper in **staged** mode: the worker boots idle
- * and a starter prompt sits on the queue (draining disabled) for the author to
- * send. The skill is referenced by name so the harness discovers the installed
- * skill on boot (see the helper's note on why `embeddedAssets.attach` can't run
- * pre-boot for an interactive tab).
- */
-export async function launchSkillTest(
-  targetSkill: Skill,
-  workerType: WorkerType,
-): Promise<AgenticProcess | null> {
-  try {
-    return await launchWorkerWithAsset({
-      workerType,
-      seedPrompt: `Let's test the "${targetSkill.name}" skill. `,
-      stage: true,
-      enqueueSource: 'skill-test',
-    });
-  } catch (err) {
-    notify.error({
-      title: 'Could not start test worker',
-      message: err instanceof Error ? err.message : 'Failed to launch worker.',
-    });
-    return null;
-  }
-}
 
 export interface LaunchSkillEvalArgs {
   /** The skill being evaluated — the analysis process is keyed to its TypeId. */

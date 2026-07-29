@@ -16,6 +16,9 @@ const BACKEND = headlessSource('_backend.ts');
 const HARNESS = headlessSource('_harness.ts');
 const CONFIG = headlessSource('vitest.config.ts');
 const DOCS = headlessSource('CLAUDE.md');
+const PACKAGE = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf8')) as {
+  scripts: Record<string, string>;
+};
 const FULL_ANALYSIS = headlessSource('full-analysis-flow.test.tsx');
 const TEST_SOURCES = [
   headlessSource('full-analysis-flow.test.tsx'),
@@ -66,6 +69,16 @@ describe('headless launched-instance isolation source policy', () => {
     expect(CONFIG).toContain('__REACT_BACKEND_PORT__: JSON.stringify(port)');
     expect(CONFIG).not.toContain("loadEnv('test'");
     expect(CONFIG).not.toContain("|| '9007'");
+  });
+
+  it('serializes full-app files at the root CLI boundary while retaining fork isolation', () => {
+    expect(PACKAGE.scripts['test:vitest:headless']).toContain('--no-file-parallelism');
+    expect(CONFIG).toContain("pool: 'forks'");
+    expect(CONFIG).toContain('isolate: true');
+    expect(CONFIG).not.toContain('fileParallelism: false');
+    expect(CONFIG).not.toContain('minForks');
+    expect(CONFIG).not.toContain('maxForks');
+    expect(CONFIG).not.toContain('singleFork: true');
   });
 
   it('uses a collision-proof, optionally isolated transcript fixture', () => {

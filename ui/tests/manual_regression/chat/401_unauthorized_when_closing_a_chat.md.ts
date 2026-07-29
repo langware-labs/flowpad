@@ -22,12 +22,14 @@ test('home prompt → close chat emits no 401', async ({ page }) => {
   });
 
   await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
-  await gotoLanding(page);
+  // Home submissions enter the Vibe workspace. Closing that workspace is the
+  // current user-facing close path for its process tab.
+  await gotoLanding(page, 'advanced');
   await submitFromLanding(page, 'hi');
   const chatUrl = page.url();
   expect(chatUrl).toContain('/dock/shell/agentic_process-');
 
-  const close = page.getByRole('button', { name: 'Close tab' }).last();
+  const close = page.getByTestId('close-vibe-workspace');
   await expect(close).toBeVisible();
   await close.click();
   await expect(page).not.toHaveURL(chatUrl);

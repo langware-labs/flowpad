@@ -1,5 +1,6 @@
 import { Share2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import { compactEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { IconWithBadge, type IconComp } from '@src/components/graph-view/icons/IconWithBadge';
 import { cn } from '@src/lib/utils';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -49,7 +50,7 @@ export function ShareButton({
             'transition-colors disabled:cursor-not-allowed disabled:opacity-50',
             variant === 'prominent'
               ? 'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium bg-primary/10 text-primary hover:bg-primary/15'
-              : 'inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent',
+              : compactEntityActionClassName,
           )}
           data-testid={testId}
           aria-label={t`Share`}

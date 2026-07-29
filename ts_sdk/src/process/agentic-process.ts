@@ -16,7 +16,7 @@ import { ClaudeCliOptions, factory as cliOptionsFactory } from '../cli_workers';
 import { dataContext } from '../FlowSync/context';
 import { FlowDataFactory } from '../flow_processing/flow-data-factory';
 import { Shell, ShellStatus } from '../entities/shell';
-import { FlowData, FlowDataSource } from '../flow_processing';
+import { FlowData, FlowDataAttribute, FlowDataSource } from '../flow_processing';
 import { FlowElementTypes } from '../flow_processing/flow-element-types';
 import { ActionInfo } from '../models/ActionInfo';
 import { toplog } from '../services/toplog';
@@ -62,7 +62,8 @@ import type {
  * (flow_sdk/core/display_target.py). Discriminated by `kind`.
  */
 export interface ShowTarget {
-  kind?: 'entity' | 'vfs' | 'webapp' | string;
+  /** Mirrors python `DisplayTargetKind` (flow_sdk/core/display_target.py). */
+  kind?: 'entity' | 'vfs' | 'webapp' | 'app' | 'shell' | string;
   /** entity: canonical `<type>-<id>` string. */
   typeid?: string;
   type?: string;
@@ -256,7 +257,8 @@ export interface IAgenticProcess extends IEntity {
   readonly status?: ProcessStatus;
   /** Turn-in-flight boolean (``is_turn_busy``) — orthogonal to ``status``. */
   readonly busy?: boolean;
-  readonly worker_status?: WorkerStatus;
+  /** Null on the wire when the backend has no transcript to derive one from. */
+  readonly worker_status?: WorkerStatus | null;
   session_id?: string | null;
   /**
    * USD cost of this process's session transcript so far. Computed
@@ -477,7 +479,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @returns The launched AgenticProcess (terminal dock already opened).
    */
   static async launch(opts: {
-    workerType: 'claude_code' | 'codex' | 'copilot';
+    workerType?: 'claude_code' | 'codex' | 'copilot';
     workdir: string;
     projectId?: string | null;
     /** First prompt — placed on the queue, popped as the launch instruction. */
@@ -504,7 +506,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       {
         workdir: opts.workdir,
         ...(opts.projectId ? { projectId: opts.projectId } : {}),
-        workerType: opts.workerType,
+        ...(opts.workerType ? { workerType: opts.workerType } : {}),
         ...(opts.enableAssistant ? { loadFlowpadAssistant: true } : {}),
         ...(opts.sharedContextEntities?.length ? { sharedContextEntities: opts.sharedContextEntities } : {}),
         ...(opts.processType ? { processType: opts.processType } : {}),
@@ -545,41 +547,31 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * ```
    */
   static async spawn(options: IAgenticProcessOptions, workerOptions?: ISpawnWorkerOptions): Promise<SpawnResult> {
-    const cliConfig = new ClaudeCliOptions({
-      model: options.model,
-      permission_mode: options.permissionMode ?? 'bypassPermissions',
-      chrome: options.chrome,
-      debug: options.debug,
-      worktree: options.worktree,
-      agents_json: options.agentsJson,
-      env_vars: options.envVars,
-      ...(options.resumeSessionId
-        ? options.forkSession
-          ? { resume: true, fork_session_id: options.resumeSessionId }
-          : { resume: true, session_id: options.resumeSessionId }
-        : {}),
-    });
+    const { ComputeNode } = await import('../entities/compute-node/compute-node');
+    const computeNode = await ComputeNode.getLocal();
+    if (!computeNode) throw new Error('[AgenticProcess.spawn] No local compute node');
 
-    const process = await new AgenticProcess({
-      cli_config: cliConfig.toJson(),
-      // When resuming, seed session_id on the entity so Python's start() keeps it
-      // instead of generating a new UUID (which would break transcript lookup).
-      ...(options.resumeSessionId && !options.forkSession ? { session_id: options.resumeSessionId } : {}),
-      context_data: {
-        instructions: options.instructions,
-        project_id: options.projectId,
-        max_thinking_tokens: options.maxThinkingTokens ?? 1024,
-        ...(options.resumeSessionId && !options.forkSession ? { resume_session_id: options.resumeSessionId } : {}),
+    // `createProcess` is the one backend-owned construction seam. It resolves a
+    // missing worker from the persisted harness capability and builds the
+    // vendor-specific CLI config; an explicit `options.workerType` remains an
+    // override. Keep creation non-visible so PTY activation still happens once,
+    // below, after optional ancestry/shell-mode fields are saved.
+    const process = await computeNode.createProcess(
+      {
+        ...options,
+        // Preserve spawn()'s historical no-debug default. The generic
+        // createProcess action defaults debug on for interactive openers.
+        debug: options.debug ?? false,
       },
-      workdir: options.workdir,
-      visible: workerOptions?.visible,
-      // Transport intent (the routing axis): headless → no PTY (one subprocess
-      // per turn); otherwise a long-lived PTY worker. Independent of ``visible``
-      // so a headless spawn stays headless even if a tab later shows it.
-      pty_mode: !workerOptions?.headless,
-      shell_mode: options.shellMode,
-      ...(options.targetVfsPath ? { target_typeid_str: options.targetVfsPath } : {}),
-    }).save(options.scope ?? []);
+      {
+        visible: false,
+        pty_mode: !workerOptions?.headless,
+        watchProcess: false,
+        ...(workerOptions?.result ? { result: workerOptions.result } : {}),
+      },
+    );
+    process.shell_mode = options.shellMode;
+    await process.save(options.scope ?? []);
 
     if (workerOptions?.headless) {
       await process.watch();
@@ -594,6 +586,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
     await process.start({
       instruction: workerOptions?.instruction,
+      visible: workerOptions?.visible,
       ptyTimeout: workerOptions?.ptyTimeout,
     });
     return { process, shell: await process.shell(), workerSessionId: process.session_id };
@@ -813,8 +806,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const restored = this.wasRestoredFromSession;
     if (wt === 'codex') return restored ? 'codex-restore' : 'codex';
     if (wt === 'copilot') return restored ? 'copilot-restore' : 'copilot';
-    // Default to claude — that's what AgenticProcess.spawn produces unless a
-    // worker override is provided, so an unset worker_type means claude.
+    // Legacy rows may have no worker_type; keep their historical Claude icon.
+    // New processes are stamped with the capability-resolved worker by the
+    // backend createProcess action.
     if (wt === '' || wt === 'claude' || wt.startsWith('claude_') || wt.startsWith('claude-')) {
       return restored ? 'claude-restore' : 'claude';
     }
@@ -853,8 +847,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Backend-derived turn-in-flight boolean (``is_turn_busy``), orthogonal to status. */
   private _busy: boolean = false;
 
-  /** Granular transcript-derived worker status. */
-  private _workerStatus: WorkerStatus = WorkerStatus.INITIALIZING;
+  /**
+   * Granular transcript-derived worker status, `undefined` when the backend has
+   * nothing to report — a worker spawned and idle at the prompt writes no
+   * transcript until its first turn, so `worker_status` is null on the wire.
+   * Never substitute a status here: INITIALIZING is the backend's to assert
+   * (lifecycle STARTING), and inventing it strands a ready worker behind a
+   * spinner nothing can clear.
+   */
+  private _workerStatus: WorkerStatus | undefined = undefined;
 
   /** Backend-owned lifecycle status. Read-only outside this class. */
   get status(): ProcessStatus {
@@ -874,12 +875,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this._busy = value;
   }
 
-  /** Transcript-derived worker status. Read-only outside this class. */
-  get workerStatus(): WorkerStatus {
+  /** Transcript-derived worker status, or undefined when the backend reports none. */
+  get workerStatus(): WorkerStatus | undefined {
     return this._workerStatus;
   }
 
-  private set workerStatus(value: WorkerStatus) {
+  private set workerStatus(value: WorkerStatus | undefined) {
     this._workerStatus = value;
   }
 
@@ -1272,6 +1273,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return out;
   }
 
+  /** Fetch deterministic extractive context for continuing with another worker. */
+  async continuationPrompt(): Promise<string> {
+    const actionInfo = new ActionInfo('continuation-prompt', AgenticProcess.type, this.id, 'GET');
+    const response = await dataManager.callAction<unknown, { prompt: string }>(actionInfo);
+    return response.prompt;
+  }
+
   /**
    * Fetch the parsed worker transcript from the process-specific transcript source.
    */
@@ -1422,7 +1430,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.favorite_index = entity.favorite_index;
     this.status = (entity.status as ProcessStatus) ?? ProcessStatus.NEW;
     this.busy = entity.busy ?? false;
-    this.workerStatus = (entity.worker_status as WorkerStatus) ?? WorkerStatus.INITIALIZING;
+    this.workerStatus = entity.worker_status ?? undefined;
     this.session_id = entity.session_id;
     this.use_worker_history = entity.use_worker_history;
     this.shell_mode = entity.shell_mode;
@@ -1751,15 +1759,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       return;
     }
 
-    const existing = [...this.flowDataStream.items]
-      .reverse()
-      .find(
-        (item) =>
-          item.elementType === FlowElementTypes.USER_MESSAGE &&
-          (item.attributes.role ?? '') === 'user' &&
-          item.content === trimmed,
-      );
-    if (existing) {
+    // Guard against double-submitting the SAME text — but only against a live
+    // placeholder, never against a persisted row: matching history too would
+    // silently swallow a message the user deliberately sends twice ("hi", then
+    // "hi" again), leaving nothing on screen until the next replay.
+    if (this.flowDataStream.ownItems.some((item) => item.isOptimisticEcho && item.content === trimmed)) {
       return;
     }
 
@@ -1770,6 +1774,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       {
         role: 'user',
         t: timestamp,
+        // A placeholder, not an observation — see `FlowData.isOptimisticEcho`.
+        [FlowDataAttribute.OPTIMISTIC_ECHO]: 'true',
       },
       true,
     );
@@ -1872,6 +1878,18 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         // callers only force-reload when no turn is in flight (post-switchMode
         // reconcile behind the isReadyForInput toggle gate; the chat pane's
         // useTurnCompletionReconcile on the busy→ready edge).
+        // History is AUTHORITATIVE for user messages, so retire the echo of a
+        // message it now carries rather than trying to reconcile it (the echo
+        // is stamped at submit with a client clock and no transcript id, so it
+        // matches neither tier). Paired by content: an echo minted WHILE this
+        // fetch was in flight has no counterpart in the payload and must
+        // survive, or the message the user just sent vanishes from the pane.
+        const persistedUserMessages = new Set(
+          historyItems.filter((item) => item.elementType === FlowElementTypes.USER_MESSAGE).map((item) => item.content),
+        );
+        if (persistedUserMessages.size > 0) {
+          this.flowDataStream.retract((item) => item.isOptimisticEcho && persistedUserMessages.has(item.content));
+        }
         const newItems = force ? historyItems : reconcileHistoryOverlap(historyItems, this.flowDataStream.items);
         if (newItems.length > 0) this.flowDataStream.append(newItems);
         // Close any open groups after loading history
@@ -3004,15 +3022,18 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         newValue: this.busy,
       });
     }
-    if (data.worker_status && data.worker_status !== this.workerStatus) {
-      const oldWorker = this.workerStatus;
-      this.workerStatus = data.worker_status as WorkerStatus;
-      workerStatusChanged = true;
-      this.emit('state_change', {
-        field: 'workerStatus',
-        oldValue: oldWorker,
-        newValue: this.workerStatus,
-      });
+    if ('worker_status' in data) {
+      const nextWorkerStatus = data.worker_status ?? undefined;
+      if (nextWorkerStatus !== this.workerStatus) {
+        const oldWorker = this.workerStatus;
+        this.workerStatus = nextWorkerStatus;
+        workerStatusChanged = true;
+        this.emit('state_change', {
+          field: 'workerStatus',
+          oldValue: oldWorker,
+          newValue: this.workerStatus,
+        });
+      }
     }
 
     // Apply every wire field before deciding settlement. A single entity-op can

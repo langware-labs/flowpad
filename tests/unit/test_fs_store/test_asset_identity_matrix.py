@@ -283,8 +283,22 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
     if type_name == "project":
         return FSRef(path), f"project-fsref:{path}", uuid.NAMESPACE_DNS
     if type_name == "secret_origin":
-        path.write_text(json.dumps({"data": {"locator": {"kind": "local", "sod_name": "demo"}}}))
-        return FSRef(path), "secret-origin:local:demo", namespace
+        # Identity is (project_id, env_var) — NOT the locator. The declaration
+        # must keep its id when its provider changes, which is what lets a value
+        # move between stores.
+        project_id = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+        path.write_text(
+            json.dumps(
+                {
+                    "data": {
+                        "project_id": project_id,
+                        "env_var": "DEMO_TOKEN",
+                        "locator": {"kind": "local", "sod_name": "demo"},
+                    }
+                }
+            )
+        )
+        return FSRef(path), f"secret-origin:{project_id}:DEMO_TOKEN", namespace
     if type_name == "spreadsheet":
         return FSRef(path), str(path.resolve()), namespace
     if type_name == "todo_file":

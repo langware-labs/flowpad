@@ -15,6 +15,8 @@ interface EntityResolutionGateProps<T extends APIEntity<T>> {
   typeLabel: string;
   /** Render the editor when the entity resolves. */
   render: (entity: T) => ReactNode;
+  /** Entity already resolved by a TypeId route; skips path discovery. */
+  resolvedEntity?: T;
 }
 
 /**
@@ -36,11 +38,21 @@ export function EntityResolutionGate<T extends APIEntity<T>>({
   fsRef,
   typeLabel,
   render,
+  resolvedEntity,
 }: EntityResolutionGateProps<T>) {
   const { t } = useLingui();
-  const { entity, state, error, retry } = useEntityByPath<T>(type, fsRef);
+  const {
+    entity: pathEntity,
+    state,
+    error,
+    retry,
+  } = useEntityByPath<T>(
+    resolvedEntity ? null : type,
+    resolvedEntity ? null : fsRef,
+  );
+  const entity = resolvedEntity ?? pathEntity;
 
-  if (state === 'resolved' && entity) return <>{render(entity)}</>;
+  if (entity && (resolvedEntity || state === 'resolved')) return <>{render(entity)}</>;
 
   if (state === 'querying' || state === 'discovering') {
     const label = state === 'discovering' ? t`Discovering ${typeLabel}…` : t`Loading ${typeLabel}…`;

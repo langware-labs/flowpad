@@ -88,7 +88,7 @@ The asymmetry is deliberate: `visible=True ⟹ pty_mode=True` is enforced (you c
 | `additional_dirs`                                              | `list[str]`            | Extra directories exposed to the worker, passed as `--add-dir` where supported. The generated process assets dir is appended here when needed.                                                                                                                                |
 | `embedded_agent_ids`                                           | `list[str]`            | Names of embedded agents materialized into the process assets folder.                                                                                                                                                                                                         |
 | `embedded_asset_refs`                                          | `list[TypeId]`         | Agent/skill refs materialized under the process assets folder.                                                                                                                                                                                                                |
-| `worker_type`                                                  | `WorkerType \| None`   | Optional worker selector. `None` resolves via `FLOWPAD_DEFAULT_WORKER`, defaulting to `claude`.                                                                                                                                                                               |
+| `worker_type`                                                  | `WorkerType \| None`   | Optional worker selector. The `createProcess` action resolves `None` through the persisted `harness` capability reference; an explicit value overrides that selection. Raw backend-only constructors still require an explicit worker when they must not use the driver fallback. |
 
 ### Related Shell Fields
 
@@ -718,7 +718,7 @@ Convenience getters:
 | `flow_data`    | New `FlowData` arrived.               |
 | `complete`     | Client-side stream marked complete.   |
 | `error`        | Client-side stream marked failed.     |
-| `state_change` | Delta for `status` or `workerStatus`. |
+| `state_change` | Delta for `status`, `busy`, or `workerStatus`. |
 | `restarted`    | Emitted after frontend `restart()`.   |
 
 ***

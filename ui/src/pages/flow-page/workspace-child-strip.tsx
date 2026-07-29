@@ -35,7 +35,11 @@ interface WorkspaceChildStripProps {
  * (`parent_tab_id`) is minted by the opener context at the tab chokepoint, and
  * vibe-mode continuity by the navigation layer — so this component stays dumb.
  */
-export function WorkspaceChildStrip({ processTab, processDock, projectId }: WorkspaceChildStripProps) {
+export function WorkspaceChildStrip({
+  processTab,
+  processDock,
+  projectId,
+}: WorkspaceChildStripProps) {
   const { t } = useLingui();
   const { currentDock, navigation } = useDockNavigation();
   const allTabs = useAllTabs();

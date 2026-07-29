@@ -73,6 +73,11 @@ async def test_stream_json_create_request_yields_headless_drainable_process(monk
 
     proc = saved["proc"]
     assert proc.status == ProcessStatus.NEW.value
+    assert resp.data["id"] == proc.id
+    assert resp.data["type"] == proc.type
+    assert resp.data["pty_mode"] is False
+    assert resp.data["visible"] is False
+    assert "pty_pid" in resp.data
 
     # The documented contract: a stream-json process is headless (no PTY), so its
     # first queued prompt can cold-start/drain. Without the guard, pty_mode

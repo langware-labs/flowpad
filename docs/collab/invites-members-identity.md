@@ -232,7 +232,7 @@ guards the rest.
 
 **Mirrored** (create path `:2613-2644`, update path `:2664-2688`): `title`,
 `participants` (run through `_normalize_participants`), `remote_project_id` /
-`remote_project_name`, `message_status_visible`, and `shared_context_entities`.
+`remote_project_name`, and `shared_context_entities`.
 
 **Invariants — the load-bearing rules:**
 

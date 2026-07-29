@@ -1,6 +1,7 @@
 import { dataContext, TypeId } from '@sdk';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ScopeFilter } from '@src/lib/scope-filter';
+import { vfsLocatorForComputeNode } from '@src/navigation/vfs-locator';
 
 function normalizeRel(path: string | null | undefined): string {
   if (!path) return '';
@@ -11,6 +12,9 @@ export interface ExplorerComputeNode {
   /** Resolved compute_node TypeId for VFS listing (preferred), else the project
    *  fs TypeId, else null when nothing is resolvable yet. */
   typeId: TypeId | null;
+  /** Stable locator identity used in URLs. A local provider is always
+   *  `compute_node-@local`; remote providers retain their UUID. */
+  locatorTypeId: TypeId | null;
   /** Entity-relative anchor path (no leading slash) for a given Explorer scope:
    *  All → '' (root), User → home, Project → the project mount. */
   anchorForScope: (scope: ScopeFilter) => string;
@@ -44,6 +48,7 @@ export function useExplorerComputeNode(): ExplorerComputeNode {
   const homePath = paths?.home;
 
   const [resolvedComputeNodeTypeId, setResolvedComputeNodeTypeId] = useState<TypeId | null>(null);
+  const [resolvedLocatorTypeId, setResolvedLocatorTypeId] = useState<TypeId | null>(null);
   const bootstrapComputeNodeTypeId = useMemo(() => {
     if (!bootstrapComputeNode?.id || !bootstrapComputeNode.type) return null;
     return new TypeId(bootstrapComputeNode.type, bootstrapComputeNode.id);
@@ -54,14 +59,17 @@ export function useExplorerComputeNode(): ExplorerComputeNode {
 
     if (computeNode?.id && computeNode.type) {
       setResolvedComputeNodeTypeId(new TypeId(computeNode.type, computeNode.id));
+      setResolvedLocatorTypeId(vfsLocatorForComputeNode(computeNode));
       return;
     }
     if (bootstrapComputeNodeTypeId) {
       setResolvedComputeNodeTypeId(bootstrapComputeNodeTypeId);
+      setResolvedLocatorTypeId(vfsLocatorForComputeNode(bootstrapComputeNode));
       return;
     }
     if (!project) {
       setResolvedComputeNodeTypeId(null);
+      setResolvedLocatorTypeId(null);
       return;
     }
 
@@ -71,16 +79,20 @@ export function useExplorerComputeNode(): ExplorerComputeNode {
         if (cancelled) return;
         if (node?.id && node.type) {
           setResolvedComputeNodeTypeId(new TypeId(node.type, node.id));
+          setResolvedLocatorTypeId(vfsLocatorForComputeNode(node));
         }
       })
       .catch(() => {
-        if (!cancelled) setResolvedComputeNodeTypeId(null);
+        if (!cancelled) {
+          setResolvedComputeNodeTypeId(null);
+          setResolvedLocatorTypeId(null);
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [computeNode?.id, computeNode?.type, bootstrapComputeNodeTypeId, project]);
+  }, [computeNode, bootstrapComputeNode, bootstrapComputeNodeTypeId, project]);
 
   const projectFsTypeId = useMemo(() => {
     if (!project?.id || !project.type) return null;
@@ -91,6 +103,7 @@ export function useExplorerComputeNode(): ExplorerComputeNode {
     () => resolvedComputeNodeTypeId ?? projectFsTypeId ?? null,
     [resolvedComputeNodeTypeId, projectFsTypeId],
   );
+  const locatorTypeId = resolvedLocatorTypeId ?? projectFsTypeId;
 
   const projectRootPath = useMemo(() => {
     if (!project) return null;
@@ -132,6 +145,7 @@ export function useExplorerComputeNode(): ExplorerComputeNode {
 
   return {
     typeId,
+    locatorTypeId,
     anchorForScope,
     projectRootPath,
     projectAvailable,

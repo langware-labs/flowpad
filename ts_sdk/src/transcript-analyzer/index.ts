@@ -19,6 +19,7 @@ import {
   UnknownEntry,
   UsageEntry,
   UserMessageEntry,
+  WorkerUnavailableEntry,
 } from './entries';
 import { EntryKind, TranscriptEntry } from './entry';
 
@@ -35,6 +36,7 @@ export {
   UnknownEntry,
   UsageEntry,
   UserMessageEntry,
+  WorkerUnavailableEntry,
   type AgentSpawnEntryData,
   type AssistantMessageEntryData,
   type CodexUsageEntryData,
@@ -46,6 +48,8 @@ export {
   type UnknownEntryData,
   type UsageEntryData,
   type UserMessageEntryData,
+  type WorkerUnavailableEntryData,
+  type WorkerUnavailableReason,
 } from './entries';
 export { EntryKind, TranscriptEntry, type TranscriptEntryBase } from './entry';
 export { parseClaudeTranscriptUsage } from './parse-claude-usage';
@@ -85,6 +89,8 @@ export function fromJson(raw: Record<string, unknown>): TranscriptEntry {
       return new SystemEntry(raw as never);
     case EntryKind.SUMMARY:
       return new SummaryEntry(raw as never);
+    case EntryKind.WORKER_UNAVAILABLE:
+      return new WorkerUnavailableEntry(raw as never);
     default:
       return new UnknownEntry(raw as never);
   }

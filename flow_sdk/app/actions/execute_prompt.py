@@ -50,7 +50,7 @@ def _resolve_local_path(fm_id: str, vfs_subpath: str) -> Optional[str]:
 def _context_entity_lines(typeids) -> list[str]:
     """`- <Type>: <type>/<id>, read: <record-folder>` lines for shared context —
     Python port of ``buildContextEntityLines``."""
-    from flow_sdk.fs_store.record_paths import get_default_records_root, record_stem
+    from flow_sdk.fs_store.record_paths import get_default_records_root
     root = get_default_records_root()
     out: list[str] = []
     for tid in typeids or []:
@@ -228,6 +228,7 @@ async def emit_session_event(
     survives the hub's unknown-field drop). No-op when the session has no
     bound conversation yet (guest DRAFT)."""
     import json as _json  # noqa: PLC0415
+
     from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import (  # noqa: PLC0415
         LIVE_SESSION_EVENT_MARKER_KEY,
@@ -805,11 +806,11 @@ async def process_inbound_message(fm_id: str, conversation_id: str) -> None:
     granted ``execute_prompt`` to, auto-run it (and auto-send the reply when
     ``auto_reply`` is also granted). Failure-isolated — logs and dies."""
     try:
+        from flow_sdk.app.actions.notification_action import _is_prompt_attachment
         from flow_sdk.builtin.contact_permission import ContactPermission, PermissionAction
         from flow_sdk.builtin.conversation import Conversation
         from flow_sdk.builtin.flow_message import FlowMessage
         from flow_sdk.builtin.user import User
-        from flow_sdk.app.actions.notification_action import _is_prompt_attachment
 
         fm = await FlowMessage.get_one({"id": fm_id})
         if not fm or fm.is_draft:

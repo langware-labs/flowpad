@@ -50,6 +50,7 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
             "workdir": "/tmp/proj",
             "permission_mode": "bypassPermissions",
             "model": "md",
+            "worker_type": "claude_code",
         },
         "visible": True,
     })
@@ -59,6 +60,7 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
     class FakeProc:
         def __init__(self, **kwargs):
             captured.update(kwargs)
+            self._data = kwargs
             self.id = "fresh-1"
             self.type = "agentic_process"
             self.shell_id = None
@@ -69,6 +71,9 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
         async def start_pty(self, visible=False, **kwargs):
             captured["__started_visible"] = visible
             return ApiSuccessResponse(data={"id": self.id})
+
+        def model_dump(self, mode=None):
+            return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
 
     with patch(_PATCH_REQ_SCAN, return_value=info), \
          patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
@@ -99,7 +104,7 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
     ``/prompt`` land on a stale session and emit no assistant turn."""
     node = _make_compute_node()
     info = _make_request_info({
-        "context": {"workdir": "/tmp/proj"},
+        "context": {"workdir": "/tmp/proj", "worker_type": "claude_code"},
         "visible": False,
     })
 
@@ -108,6 +113,7 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
     class FakeProc:
         def __init__(self, **kwargs):
             captured.update(kwargs)
+            self._data = kwargs
             self.id = "headless-1"
             self.type = "agentic_process"
             self.shell_id = None
@@ -119,6 +125,9 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
             captured["__started_visible"] = visible
             return ApiSuccessResponse(data={"id": self.id})
 
+        def model_dump(self, mode=None):
+            return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
+
     with patch(_PATCH_REQ_SCAN, return_value=info), \
          patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
         resp = await node._scan_create_process()
@@ -128,6 +137,50 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
     assert captured["visible"] is False
     # Critical: start_pty() must NOT be called for headless processes.
     assert "__started_visible" not in captured
+
+
+@pytest.mark.asyncio
+async def test_scan_create_process_uses_capability_default_without_overriding_explicit_worker():
+    node = _make_compute_node()
+    captured: list[dict] = []
+
+    class FakeProc:
+        def __init__(self, **kwargs):
+            captured.append(kwargs)
+            self._data = kwargs
+            self.id = f"proc-{len(captured)}"
+            self.type = "agentic_process"
+            self.shell_id = None
+
+        async def save(self, owner=None):
+            return None
+
+        def model_dump(self, mode=None):
+            return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
+
+    default_info = _make_request_info({
+        "context": {"workdir": "/tmp/proj", "env_vars": {"FLOWPAD_TEST_MARKER": "1"}},
+        "visible": False,
+    })
+    explicit_info = _make_request_info({
+        "context": {"workdir": "/tmp/proj", "worker_type": "claude_code"},
+        "visible": False,
+    })
+
+    with patch(
+        "flow_sdk.core.capabilities.registry.resolve_default_worker_type",
+        AsyncMock(return_value="codex"),
+    ), patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+        with patch(_PATCH_REQ_SCAN, return_value=default_info):
+            assert (await node._scan_create_process()).status == "SUCCESS"
+        with patch(_PATCH_REQ_SCAN, return_value=explicit_info):
+            assert (await node._scan_create_process()).status == "SUCCESS"
+
+    assert captured[0]["worker_type"] == "codex"
+    assert captured[0]["cli_config"]["worker_type"] == "codex"
+    assert captured[0]["cli_config"]["env_vars"]["FLOWPAD_TEST_MARKER"] == "1"
+    assert captured[1]["worker_type"] == "claude_code"
+    assert captured[1]["cli_config"]["worker_type"] == "claude"
 
 
 # ─── upsertSessionProcess resume path ────────────────────────────────────────

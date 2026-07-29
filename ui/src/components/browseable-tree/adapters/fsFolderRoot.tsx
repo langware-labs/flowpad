@@ -3,9 +3,9 @@ import { File, Folder } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { DockPointer, normalizeRel } from '@src/navigation/DockPointer';
 import { dockPointerForFile } from '@src/navigation/local-file-pointer';
-import { ViewType } from '@src/types/ViewType';
 import type { ScopeFilter } from '@src/lib/scope-filter';
 import type { Browseable, BrowseableDragData, BrowseableRoot } from '@src/components/browseable-tree/types';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 
 /**
  * fsFolderRoot — a real-filesystem browseable root.
@@ -15,10 +15,9 @@ import type { Browseable, BrowseableDragData, BrowseableRoot } from '@src/compon
  * SimpleFileManager path (`fsStore.listDirectory`). One root anchors the tree at
  * a single VFS folder. By default every node addresses the Explorer by a
  * vfs-path `DockPointer.forExplorer(...)` carrying the active scope (the
- * Explorer left menu); a host can swap the pointer grammar via `pointerForRel`
- * (+ `ownsPointer`/`relForPointer` for deep-link expansion) — the Assets
- * navigator's "Files" root does this to address the Assets body's `fs/` file
- * manager instead.
+ * Explorer left menu); a host can swap only the destination route via
+ * `pointerForVfs`. Resource ownership and deep-link resolution always use the
+ * canonical VFS identity carried by the DockPointer.
  */
 export interface FsFolderRootDeps {
   /** Live compute_node TypeId whose VFS we browse (never the stale URL id). */
@@ -34,19 +33,14 @@ export interface FsFolderRootDeps {
   /** Project mount (entity-relative) — only used to remap a `project`-typed
    *  deep-link pointer back onto the compute-node VFS in `pathFor`. */
   projectRootPath?: string | null;
-  /** Pointer grammar override: build the pointer a row navigates to from its
-   *  entity-relative path. Default: `DockPointer.forExplorer` + scope. */
-  pointerForRel?: (rel: string) => DockPointer;
-  /** Deep-link ownership override, paired with `pointerForRel`. Default: any
-   *  Explorer pointer. */
-  ownsPointer?: (p: DockPointer) => boolean;
-  /** Deep-link path resolution override, paired with `pointerForRel`: pointer →
-   *  entity-relative path (null = not addressable here). Default: the Explorer
-   *  vfs parse (with project remap via `projectRootPath`). */
-  relForPointer?: (p: DockPointer) => string | null;
-  /** Pointer grammar override for FILE rows only — see `FsNodeCtx.filePointerFor`.
-   *  Default: the same `pointerForRel` folder grammar. */
-  filePointerForRel?: (rel: string) => DockPointer;
+  /** Stable locator placed in URLs. Local files use `compute_node-@local`
+   *  even when I/O uses a live UUID; remote nodes keep their UUID. */
+  locatorTypeId?: TypeId;
+  /** Route-specific destination builder. It receives the complete canonical
+   *  VFS identity, never a competing relative-path serialization. */
+  pointerForVfs?: (path: VFSPath) => DockPointer;
+  /** Destination override for FILE rows only — see `FsNodeCtx.filePointerFor`. */
+  filePointerForVfs?: (path: VFSPath) => DockPointer;
   /** When true, file/folder rows carry an `FsDragItem` drag payload so drop
    *  targets (e.g. the Assets context-folder rows) can accept them. */
   draggable?: boolean;
@@ -121,12 +115,6 @@ export function fsFolderNodeId(typeId: TypeId, absRel: string): string {
   return `fs-folder:${typeId.toString()}:${normalizeRel(absRel) || '/'}`;
 }
 
-function explorerPointerFor(typeId: TypeId, scope: ScopeFilter, rel: string): DockPointer {
-  const r = normalizeRel(rel);
-  const path = r ? `${typeId.toString()}/${r}` : `${typeId.toString()}/`;
-  return DockPointer.forExplorer(path).withScopeFilter(scope);
-}
-
 /** Drop capabilities a folder node can expose, resolved per rel path. */
 export type FsFolderDrop = Pick<Browseable, 'canDrop' | 'onDrop' | 'onExternalFilesDrop'>;
 
@@ -134,15 +122,18 @@ export type FsFolderDrop = Pick<Browseable, 'canDrop' | 'onDrop' | 'onExternalFi
  *  (pointer grammar), and whether they can be dragged. One ctx per root keeps
  *  the recursive node builders free of per-variant branching. */
 interface FsNodeCtx {
+  /** Live identity used only for fs I/O and cache keys. */
   typeId: TypeId;
-  pointerFor: (rel: string) => DockPointer;
+  /** Stable identity used in locators and equality. */
+  locatorTypeId: TypeId;
+  pointerFor: (path: VFSPath) => DockPointer;
   /** Pointer a FILE row navigates to, when it differs from the folder grammar.
    *  The Explorer leaves this unset: its body trims a file path down to the
    *  containing directory, so a file leaf just lands the table on that folder.
    *  The Assets `fs/` body has no such trim (a file path lists as an EMPTY
-   *  folder), so its roots pass `fsFileViewerPointer` here and a file leaf opens
+   *  folder), so its roots pass `fsFileViewerPointerForVfs` here and a file leaf opens
    *  the file in its viewer instead. */
-  filePointerFor?: (rel: string) => DockPointer;
+  filePointerFor?: (path: VFSPath) => DockPointer;
   draggable: boolean;
   /** When present, EVERY folder node in the subtree becomes a drop target —
    *  the factory binds the handlers to that folder's rel path (e.g. copy
@@ -150,16 +141,25 @@ interface FsNodeCtx {
   folderDrop?: (rel: string) => FsFolderDrop;
 }
 
-/** The canonical "open this file" pointer for an fs row: the row's VFS path put
+/** The "open this file" pointer for an fs row: the row's VFS identity put
  *  through `dockPointerForFile` — the same extension dispatch (markdown → the
  *  markdown editor, everything else → the code editor) the file manager's
  *  double-click uses, so the tree and the table open a file identically. */
-export function fsFileViewerPointer(typeId: TypeId, rel: string): DockPointer {
-  return dockPointerForFile(VFSPath.fromTypeId(typeId, normalizeRel(rel)).rawPath);
+export function fsFileViewerPointerForVfs(path: VFSPath): DockPointer {
+  return dockPointerForFile(path.absVfsPath);
 }
 
-function explorerCtx(typeId: TypeId, scope: ScopeFilter): FsNodeCtx {
-  return { typeId, pointerFor: (rel) => explorerPointerFor(typeId, scope, rel), draggable: false };
+function explorerCtx(typeId: TypeId, scope: ScopeFilter, locatorTypeId: TypeId = typeId): FsNodeCtx {
+  return {
+    typeId,
+    locatorTypeId,
+    pointerFor: (path) => DockPointer.forExplorer(path.absVfsPath).withScopeFilter(scope),
+    draggable: false,
+  };
+}
+
+function vfsForRel(ctx: FsNodeCtx, rel: string): VFSPath {
+  return VFSPath.fromTypeId(ctx.locatorTypeId, normalizeRel(rel));
 }
 
 function dragDataFor(ctx: FsNodeCtx, id: string, rel: string, label: string, isDir: boolean): FsDragItem | undefined {
@@ -175,10 +175,7 @@ function fileNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
     label,
     icon: <File className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />,
     hasChildren: false,
-    // Roots whose body can't render a file path (Assets `fs/`) route the leaf to
-    // the file's viewer; the Explorer keeps the folder grammar and lands its
-    // table on the containing directory. See FsNodeCtx.filePointerFor.
-    pointer: (ctx.filePointerFor ?? ctx.pointerFor)(rel),
+    pointer: (ctx.filePointerFor ?? ctx.pointerFor)(vfsForRel(ctx, rel)),
     dragData: dragDataFor(ctx, id, rel, label, false),
   };
 }
@@ -191,7 +188,7 @@ function folderNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
     label,
     icon: <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />,
     hasChildren: true,
-    pointer: ctx.pointerFor(rel),
+    pointer: ctx.pointerFor(vfsForRel(ctx, rel)),
     listChildren: (opts) => listChildrenAt(ctx, rel, opts),
     dragData: dragDataFor(ctx, id, rel, label, true),
     ...(ctx.folderDrop ? ctx.folderDrop(rel) : {}),
@@ -202,9 +199,15 @@ function folderNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
  *  path (leading slash stripped to the entity-relative form the VFS uses). Used
  *  by the Explorer's `context_folders` grouping root, which lists project
  *  `include_dirs` that may live anywhere on the compute node's VFS. */
-export function fsFolderNode(typeId: TypeId, scope: ScopeFilter, absRel: string, label?: string): Browseable {
+export function fsFolderNode(
+  typeId: TypeId,
+  scope: ScopeFilter,
+  absRel: string,
+  label?: string,
+  locatorTypeId: TypeId = typeId,
+): Browseable {
   const rel = normalizeRel(absRel);
-  return folderNode(explorerCtx(typeId, scope), rel, label ?? (basename(rel) || rel));
+  return folderNode(explorerCtx(typeId, scope, locatorTypeId), rel, label ?? (basename(rel) || rel));
 }
 
 /** Assets-body variant of `fsFolderNode`: rows address the Assets fs/ file
@@ -217,12 +220,14 @@ export function assetsFsFolderNode(
   absRel: string,
   label?: string,
   folderDrop?: (rel: string) => FsFolderDrop,
+  locatorTypeId: TypeId = LOCAL_COMPUTE_NODE,
 ): Browseable {
   const rel = normalizeRel(absRel);
   const ctx: FsNodeCtx = {
     typeId,
-    pointerFor: (r) => DockPointer.forAssetFsFolder(r),
-    filePointerFor: (r) => fsFileViewerPointer(typeId, r),
+    locatorTypeId,
+    pointerFor: (path) => DockPointer.forAssetFs(path),
+    filePointerFor: fsFileViewerPointerForVfs,
     draggable: true,
     folderDrop,
   };
@@ -255,25 +260,28 @@ async function listChildrenAt(ctx: FsNodeCtx, dirRel: string, opts?: { refresh?:
   return [...dirs, ...files];
 }
 
-/** Default (Explorer) pointer → entity-relative path resolution. A stale
- *  compute_node id is ignored (we only take the subpath + use the live typeId);
- *  a project-typed pointer is remapped under the known project mount. */
-function explorerRelForPointer(projectRootPath: string | null | undefined, p: DockPointer): string {
-  const vfs = VFSPath.parse(p.pointer);
-  if (vfs.typeId?.type === 'project' && projectRootPath) {
-    return joinRel(projectRootPath, vfs.entitySubPath);
+/** Resolve a route pointer to this root's canonical VFS identity. Project VFS
+ *  pointers are projected into the compute-node mount; every other pointer
+ *  must already name the same locator TypeId as the root. */
+function resourceForPointer(
+  ctx: FsNodeCtx,
+  projectRootPath: string | null | undefined,
+  pointer: DockPointer,
+): VFSPath | null {
+  const resource = pointer.resourceVfsPath;
+  if (!resource?.typeId) return null;
+  if (resource.typeId.type === 'project' && projectRootPath) {
+    return VFSPath.fromTypeId(ctx.locatorTypeId, joinRel(projectRootPath, resource.entitySubPath));
   }
-  return normalizeRel(vfs.entitySubPath);
+  return resource.typeId.equals(ctx.locatorTypeId) ? resource : null;
 }
 
 /** Resolve the root→target ancestor chain for a deep-link pointer (sync; the
  *  whole chain is derivable from the path without listing). */
 function resolveChain(root: BrowseableRoot, ctx: FsNodeCtx, anchor: string, relRaw: string | null): Browseable[] {
   if (relRaw === null) return [root];
-  // Trim a file leaf to its parent dir (the tree expands the folder; the file
-  // shows as a child row).
   const segs = normalizeRel(relRaw) ? normalizeRel(relRaw).split('/') : [];
-  if (segs.length && looksLikeFile(segs[segs.length - 1])) segs.pop();
+  const fileLabel = segs.length && looksLikeFile(segs[segs.length - 1]) ? segs.pop() : null;
   const rel = segs.join('/');
 
   const underAnchor = anchor === '' || rel === anchor || rel.startsWith(`${anchor}/`);
@@ -287,19 +295,24 @@ function resolveChain(root: BrowseableRoot, ctx: FsNodeCtx, anchor: string, relR
     cur = cur ? `${cur}/${seg}` : seg;
     chain.push(folderNode(ctx, cur, seg));
   }
+  if (fileLabel) {
+    const fileRel = cur ? `${cur}/${fileLabel}` : fileLabel;
+    chain.push(fileNode(ctx, fileRel, fileLabel));
+  }
   return chain;
 }
 
 export function fsFolderRoot(deps: FsFolderRootDeps): BrowseableRoot {
   const { typeId, scope, label, rootIcon, projectRootPath } = deps;
   const anchor = normalizeRel(deps.anchorRelPath);
+  const locatorTypeId = deps.locatorTypeId ?? typeId;
   const ctx: FsNodeCtx = {
     typeId,
-    pointerFor: deps.pointerForRel ?? ((rel) => explorerPointerFor(typeId, scope, rel)),
-    filePointerFor: deps.filePointerForRel,
+    locatorTypeId,
+    pointerFor: deps.pointerForVfs ?? ((path) => DockPointer.forExplorer(path.absVfsPath).withScopeFilter(scope)),
+    filePointerFor: deps.filePointerForVfs,
     draggable: deps.draggable ?? false,
   };
-  const relForPointer = deps.relForPointer ?? ((p: DockPointer) => explorerRelForPointer(projectRootPath, p));
 
   const root: BrowseableRoot = {
     id: fsRootNodeId(typeId, anchor),
@@ -307,12 +320,20 @@ export function fsFolderRoot(deps: FsFolderRootDeps): BrowseableRoot {
     label,
     icon: rootIcon ?? <Folder className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
     hasChildren: true,
-    pointer: ctx.pointerFor(anchor),
+    pointer: ctx.pointerFor(vfsForRel(ctx, anchor)),
     listChildren: (opts) => listChildrenAt(ctx, anchor, opts),
-    ownsPointer: deps.ownsPointer ?? ((p) => p.viewType === ViewType.EXPLORER),
+    ownsPointer: (pointer) => {
+      const resource = resourceForPointer(ctx, projectRootPath, pointer);
+      if (!resource) return false;
+      const rel = normalizeRel(resource.entitySubPath);
+      return anchor === '' || rel === anchor || rel.startsWith(`${anchor}/`);
+    },
     // Resolution is synchronous (no per-folder fetch needed to build the chain),
     // but the protocol types `pathFor` as async.
-    pathFor: (p) => Promise.resolve(resolveChain(root, ctx, anchor, relForPointer(p))),
+    pathFor: (pointer) => {
+      const resource = resourceForPointer(ctx, projectRootPath, pointer);
+      return Promise.resolve(resolveChain(root, ctx, anchor, resource?.entitySubPath ?? null));
+    },
   };
   return root;
 }

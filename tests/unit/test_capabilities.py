@@ -54,6 +54,20 @@ def test_harness_capability_specs_include_install_homepages():
 
 
 @pytest.mark.asyncio
+async def test_default_worker_type_follows_persisted_harness_reference(monkeypatch):
+    import flow_sdk.core.capabilities.registry as registry_mod
+
+    runner = get_capability_registry().get(CapabilityKind.HARNESS.value)
+
+    async def selected_codex():
+        return CapabilityKind.CODEX_CLI.value
+
+    monkeypatch.setattr(runner, "resolve_reference_kind", selected_codex)
+
+    assert await registry_mod.resolve_default_worker_type() == "codex"
+
+
+@pytest.mark.asyncio
 async def test_cli_capability_test_uses_discovered_value(monkeypatch):
     import flow_sdk.core.capabilities.registry as registry_mod
 

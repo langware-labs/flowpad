@@ -7,7 +7,7 @@ from pydantic import SecretStr
 
 from flow_sdk.builtin.env_local_secret_ref import EnvLocalSecretRef
 from flow_sdk.builtin.env_local_store import read_env_local, write_env_local
-from flow_sdk.builtin.secret_origin_driver import make_setup_hint, origin_key
+from flow_sdk.builtin.secret_origin_driver import make_setup_hint
 from flow_sdk.builtin.secret_origin_locator import SecretOriginLocator
 
 
@@ -16,8 +16,6 @@ class EnvLocalSecretDriver:
 
     kind = "env-local"
 
-    def key(self, locator: SecretOriginLocator) -> str:
-        return origin_key(self.kind, getattr(locator, "env_key", ""))
 
     def _read(self, locator: SecretOriginLocator, context: dict[str, Any]) -> Optional[str]:
         project = context.get("project")
@@ -35,6 +33,7 @@ class EnvLocalSecretDriver:
     def setup_hint(self, locator: SecretOriginLocator) -> dict[str, Any]:
         return make_setup_hint(
             self.kind, sod_store="env-local", provider_label="Project .env.local",
+            coord_fields=("env_key",),
             prompt="Enter the value — stored in this project's .env.local (git-ignored).",
         )
 

@@ -161,16 +161,26 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     });
     step('alice opened conversation');
     const download = page.getByTestId('download-attachments-button');
-    // Accept deliberately materializes only the message header; the user-owned
-    // Download action is what pulls + stages the bundle. Locator.isVisible's
-    // timeout option is ignored by Playwright, so probing it here races the
-    // first conversation render and can incorrectly skip this required step.
-    // A locator click uses Playwright's existing actionability wait.
-    await download.click({ force: true });
-    step('clicked download');
+    const runIcon = page.getByTestId('skill-run-icon').first();
+    // Depending on the invitation-accept materialization path, the first
+    // browser render legitimately starts in either state:
+    //   • remote body → Download button; the user click stages the bundle;
+    //   • body already staged by accept → the Run chip is present directly.
+    // Race those two production surfaces inside the click's existing
+    // actionability window. An instantaneous isVisible probe would race the
+    // conversation render and misclassify the required branch.
+    const firstSurface = await Promise.race([
+      download.waitFor({ state: 'visible' }).then(() => 'download' as const),
+      runIcon.waitFor({ state: 'visible' }).then(() => 'staged' as const),
+    ]);
+    if (firstSurface === 'download') {
+      await download.click({ force: true });
+      step('clicked download');
+    } else {
+      step('accept already staged the bundle');
+    }
 
     // 3. The run icon appears on the staged skill chip → click it.
-    const runIcon = page.getByTestId('skill-run-icon').first();
     await runIcon.waitFor({ state: 'visible', timeout: 30_000 });
     step('run icon visible');
     await runIcon.click({ force: true });

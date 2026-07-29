@@ -15,6 +15,7 @@ export default tseslint.config(
       '**/*.{zip,tsbuildinfo}',
       'tailwind.config.ts',
       'vite.config.ts',
+      'vite.sdk.config.ts',
     ],
   },
   {

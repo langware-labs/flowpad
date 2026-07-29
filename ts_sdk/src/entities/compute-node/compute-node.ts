@@ -787,4 +787,40 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     return new GitWorkdir(workDir, this.id);
   }
 
+
+  /** Which of a project's declared secrets this node may see: `{project_id: [ENV_VAR]}`.
+   *  Value-free — the token IS the env var name. An ABSENT project key means
+   *  ALL of that project's secrets (an uncurated node is unrestricted). */
+  attached_secrets: Record<string, string[]> = {};
+
+  private secretAction<T>(name: string, body: Record<string, unknown>): Promise<T | null> {
+    const action = new ActionInfo(name, ComputeNode.type, this.id, 'POST');
+    action.bodyParameters = body;
+    return dataManager.callAction<unknown, T>(action) as Promise<T | null>;
+  }
+
+  /** Every declared secret on the project, flagged attached or not.
+   *  `all_attached` is true when nothing has been curated yet, so the UI can
+   *  show every row checked without pretending someone chose them. */
+  async listAttachedSecrets(projectId: string): Promise<{
+    project_id: string;
+    all_attached: boolean;
+    secrets: { env_var: string; attached: boolean }[];
+  } | null> {
+    return this.secretAction('list-attached-secrets', { project_id: projectId });
+  }
+
+  async attachSecret(projectId: string, envVar: string): Promise<void> {
+    await this.secretAction('attach-secret', { project_id: projectId, env_var: envVar });
+  }
+
+  async detachSecret(projectId: string, envVar: string): Promise<void> {
+    await this.secretAction('detach-secret', { project_id: projectId, env_var: envVar });
+  }
+
+  /** Attach everything the project declares RIGHT NOW — a snapshot, not a
+   *  standing wildcard. */
+  async attachAllSecrets(projectId: string): Promise<void> {
+    await this.secretAction('attach-all-secrets', { project_id: projectId });
+  }
 }

@@ -26,6 +26,7 @@ export type TurnGroup =
        */
       skillName?: string;
     }
+  | { kind: 'worker-unavailable'; flowData: FlowData; index: number }
   | { kind: 'dense'; events: FlowData[]; index: number };
 
 const MESSAGE_TYPES = new Set<string>([
@@ -117,17 +118,23 @@ export function createTurnGrouper(): TurnGrouper {
     pendingSkillName = null;
   };
 
+  const flushTail = () => {
+    if (tail.length === 0) return;
+    committed.push({ kind: 'dense', events: tail, index: committed.length });
+    tail = [];
+  };
+
   const consume = (item: FlowData) => {
     const t: string = item.elementType;
     if (MESSAGE_TYPES.has(t)) {
-      if (tail.length > 0) {
-        committed.push({ kind: 'dense', events: tail, index: committed.length });
-        tail = [];
-      }
+      flushTail();
       const isMeta = item.attributes['is-meta'] === 'true';
       const skillName = isMeta && pendingSkillName ? pendingSkillName : undefined;
       if (isMeta) pendingSkillName = null;
       committed.push({ kind: 'message', flowData: item, index: committed.length, skillName });
+    } else if (t === FlowElementTypes.WORKER_UNAVAILABLE) {
+      flushTail();
+      committed.push({ kind: 'worker-unavailable', flowData: item, index: committed.length });
     } else if (DENSE_TYPES.has(t)) {
       // A `Skill` tool use is already represented in the chat by the skill's
       // meta-injection chip (MetaMessageChip, "Using skill: <name>") — the

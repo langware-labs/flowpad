@@ -27,17 +27,38 @@ async def resolve_link(link: WikiLink, *, src_type: str, src_id: str) -> WikiLin
     if not name:
         return dataclasses.replace(link, src_type=src_type, src_id=src_id)
 
-    candidates = await _query_candidates(name)
-    if not candidates:
-        return dataclasses.replace(link, src_type=src_type, src_id=src_id)
+    scoped = await _resolve_scoped(link, name, src_type, src_id)
+    if scoped is not None:
+        from flow_sdk.api.type_id import TypeId
 
-    chosen = _pick_candidate(candidates, src_type)
+        target_raw = scoped.get("target_typeid") if scoped.get("kind") == "resolved" else None
+        target = TypeId(target_raw) if target_raw else None
+        return dataclasses.replace(
+            link,
+            src_type=src_type,
+            src_id=src_id,
+            target_type=target.type if target else None,
+            target_id=target.id if target else None,
+        )
+
+    # Compatibility for unscoped legacy rows/tests: retain unique global
+    # resolution, but never use the old same-type/alphabetical ambiguity rule.
+    from .service import resolve_legacy_unscoped
+
+    legacy = await resolve_legacy_unscoped(name)
+    target_raw = legacy.get("target_typeid") if legacy.get("kind") == "resolved" else None
+    if target_raw is None:
+        return dataclasses.replace(link, src_type=src_type, src_id=src_id)
+    from flow_sdk.api.type_id import TypeId
+
+    target = TypeId(target_raw)
+
     return dataclasses.replace(
         link,
         src_type=src_type,
         src_id=src_id,
-        target_type=chosen[0],
-        target_id=chosen[1],
+        target_type=target.type,
+        target_id=target.id,
     )
 
 
@@ -48,11 +69,48 @@ def _record_name_from_raw(raw: str) -> str:
     and `./` / `..` segments. Returns the first remaining path segment —
     the record-name candidate.
     """
-    s = raw.split("|", 1)[0].split("#", 1)[0].split("^", 1)[0]
-    if s.endswith(".md"):
-        s = s[:-3]
-    parts = [p for p in s.split("/") if p and p not in (".", "..")]
-    return parts[0] if parts else s.strip()
+    from .parser import canonicalize_word
+
+    try:
+        return canonicalize_word(raw)
+    except ValueError:
+        return ""
+
+
+async def _resolve_scoped(
+    link: WikiLink,
+    name: str,
+    src_type: str,
+    src_id: str,
+) -> dict | None:
+    """Resolve through an explicit Wiki or the source Project's default Wiki.
+
+    None means the source lacks project context, so the legacy unique-only
+    compatibility lookup may run.
+    """
+    from flow_sdk.api.type_id import TypeId
+    from flow_sdk.builtin.wiki import Wiki
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    from .service import ensure_default_wiki, resolve
+
+    wiki = None
+    if link.wiki_ref and link.wiki_ref != "@local":
+        wiki = await Wiki.get_by_typeid(TypeId(f"wiki-{link.wiki_ref}"))
+    else:
+        source_model = SchemaRegistry.get_entity_cls(src_type)
+        source = await source_model.get_one({"id": src_id}) if source_model else None
+        project_id = getattr(source, "project_id", None) if source is not None else None
+        if project_id:
+            from flow_sdk.builtin.project import Project
+
+            project = await Project.get_by_id(str(project_id))
+            if project is not None:
+                wiki = await ensure_default_wiki(project)
+        elif link.wiki_ref == "@local":
+            return {"kind": "missing"}
+
+    return await resolve(wiki, name) if wiki is not None else None
 
 
 async def _query_candidates(name: str) -> list[tuple[str, str]]:
@@ -62,18 +120,3 @@ async def _query_candidates(name: str) -> list[tuple[str, str]]:
     `data.name` field. Both queries run on the shared SQLAlchemy engine.
     """
     return await get_async_default_store().find_entities_by_uname_or_name(name)
-
-
-def _pick_candidate(
-    candidates: list[tuple[str, str]], src_type: str | None
-) -> tuple[str, str]:
-    """Deterministic precedence:
-    1. ``src_type`` matches first (when supplied).
-    2. Then alphabetical by (type, id).
-    """
-    candidates_sorted = sorted(candidates)
-    if src_type:
-        for type_, id_ in candidates_sorted:
-            if type_ == src_type:
-                return (type_, id_)
-    return candidates_sorted[0]

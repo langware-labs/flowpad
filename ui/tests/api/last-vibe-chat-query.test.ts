@@ -20,8 +20,13 @@
  */
 import { AgenticProcess, Project, ProcessKind } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { TestContext } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
-import { lastVibeChatQuery, pickLastVibeChat } from '@src/pages/flow-page/use-last-vibe-chat';
+import {
+  lastVibeChatQuery,
+  pickLastVibeChat,
+  targetVibeChatQuery,
+} from '@src/pages/flow-page/vibe-process-resolver';
 
 /** Fixed and far apart, so ordering can't hinge on clock skew. */
 const OLD = 1_700_000_000_000;
@@ -32,7 +37,7 @@ describe('last-vibe-chat selection', () => {
   const signupInfo = getTestSignupInfo();
   let project: Project;
 
-  beforeEach(async (context: any) => {
+  beforeEach(async (context: TestContext) => {
     await apiTestSetup(signupInfo, context.task.name);
     project = await new Project({ name: `/tmp/flow_test_last_vibe_${Date.now()}` }).save([]);
   });
@@ -46,11 +51,17 @@ describe('last-vibe-chat selection', () => {
    * descendant of its project the way an asset is. Fixtures saved WITH a scope
    * hid that — they made the broken query pass. Do not add a scope here.
    */
-  const makeProcess = (name: string, processType: string, lastActiveAt?: number) =>
+  const makeProcess = (
+    name: string,
+    processType: string,
+    lastActiveAt?: number,
+    target?: string,
+  ) =>
     new AgenticProcess({
       name,
       project_id: project.id,
       process_type: processType,
+      ...(target ? { target_typeid_str: target } : {}),
       ...(lastActiveAt === undefined ? {} : { last_active_at: lastActiveAt }),
     }).save([]);
 
@@ -120,5 +131,29 @@ describe('last-vibe-chat selection', () => {
     expect(new Set(candidates.map((p) => p.id))).toEqual(new Set([a.id, b.id, c.id]));
     expect(pickLastVibeChat(candidates)?.id).toBe(b.id);
     expect(pickLastVibeChat([...candidates].reverse())?.id).toBe(b.id);
+  });
+
+  it('selects only Chats bound to the exact asset target and project', async () => {
+    const target = 'compute_node-@local/project/src/main.ts';
+    const expected = await makeProcess('target chat', ProcessKind.Chat, MID, target);
+    await makeProcess('other target', ProcessKind.Chat, NEW, `${target}.other`);
+    await makeProcess('target execution', ProcessKind.Execution, NEW, target);
+
+    const candidates = await AgenticProcess.query<AgenticProcess>(
+      targetVibeChatQuery(project.id, target),
+      true,
+    );
+    expect(candidates.map((p) => p.id)).toEqual([expected.id]);
+  });
+
+  it('includes a headless target Chat before its process dock was opened', async () => {
+    const target = `markdown-30c05e11-aaaa-4aaa-8aaa-aaaaaaaaaaaa`;
+    const expected = await makeProcess('cold host', ProcessKind.Chat, undefined, target);
+
+    const candidates = await AgenticProcess.query<AgenticProcess>(
+      targetVibeChatQuery(project.id, target),
+      true,
+    );
+    expect(pickLastVibeChat(candidates)?.id).toBe(expected.id);
   });
 });
