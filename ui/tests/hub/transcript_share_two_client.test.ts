@@ -15,6 +15,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { homedir } from 'node:os';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { buildDockPointer } from '@src/components/conversation/EntityChip';
 import { hubAvailable } from './_hub';
 import { pollUntil } from './_matrix';
 import { testEntityName, trackForCleanup } from '../_cleanup';
@@ -182,5 +183,95 @@ describe('transcript share — staged project-install pipeline across two instan
     expect(sess.remote).toBe(false);
     expect(sess.project_id).toBe(project.id);
     expect(existsSync(path.join(projectDir, '.claude', 'transcripts', `${sessionId}.jsonl`))).toBe(true);
+  });
+
+  it('the receiver opens the transcript by ITS OWN file, never by session id', async () => {
+    // The cross-machine failure, end to end. A received transcript is the one
+    // asset type addressed by LOCATION rather than TypeId — it has no
+    // `EDITOR_TYPES` entry and opens through the lens, which takes a worker plus
+    // a file. Address it by session id instead and the receiver runs
+    // `resolve_session_jsonl`, which searches only ITS OWN CLI dir, so a session
+    // it never ran yields:
+    //
+    //     NOT_FOUND: No claude transcript JSONL found for session_id=<id>
+    //
+    // On one machine that failure hides: both instances share ~/.claude/, so an
+    // id lookup finds the SENDER's copy and everything looks fine. This asserts
+    // the receiver addresses the copy IT installed, which is what makes the open
+    // survive a second machine or a container.
+    const sessionId = pickLocalSessionId();
+    expect(sessionId, 'a real ~/.claude session transcript is required').toBeTruthy();
+
+    const conv = trackForCleanup(new snd.sdk.Conversation({ title: testEntityName('transcript-open-conv') }));
+    await conv.save();
+    await conv.share([rcv.email]);
+
+    const fmId = (
+      await postApi(snd.apiUrl, `/graph/conversation/${conv.id}/add_message`, {
+        message: 'open this transcript',
+        asset_references: [`claude_session-${sessionId}`],
+      })
+    ).data.flow_message_id as string;
+    await postApi(snd.apiUrl, `/graph/flow_message/${fmId}/upload_body`, {});
+
+    const invitation = await pollUntil(
+      () => findPendingInvitation(rcv, conv.id),
+      20_000,
+      'pending invitation on receiver',
+    );
+    await rcv.sdk.acceptInvitation({ invitation_id: invitation.id! });
+    const receivedFm = await pollUntil(
+      async () => {
+        const fm = (await rcv.sdk.FlowMessage.getById(fmId).catch(() => null)) as any;
+        return fm && fm.body_status === 'ready' ? fm : null;
+      },
+      20_000,
+      'shared message READY on receiver',
+    );
+    await postApi(rcv.apiUrl, `/graph/flow_message/${receivedFm.id}/download_body`, {});
+
+    // Install explicitly — `claude_session` declares no `receive_policy`, so a
+    // transcript stages and waits for the review → install gate like any other
+    // attachment. This is the click under test: the copy it makes is the file
+    // the receiver must then open.
+    const staged = await pollUntil(
+      async () => {
+        const rows = await queryMessageAttachments(rcv, fmId);
+        return rows.find((r) => r.asset_type === 'claude_session' && r.asset_id === sessionId) ?? null;
+      },
+      15_000,
+      'staged MessageAttachment on receiver',
+    );
+    if (!staged.scope) {
+      await postApi(rcv.apiUrl, `/graph/message_attachment/${staged.id}/install`, { scope: 'user' });
+    }
+
+    const sess = (await pollUntil(
+      async () =>
+        (await rcv.sdk.dataManager
+          .getByTypeId(new rcv.sdk.TypeId('claude_session', sessionId!))
+          .catch(() => null)) as any,
+      15_000,
+      'claude_session row on receiver',
+    )) as { id: string; asset_ref?: string | null; received?: boolean; type: string };
+
+    // The installed copy exists and is addressed — this is what the install-
+    // location indexer produces. Without it there is no path at all and the open
+    // has nothing but the id to fall back to.
+    expect(sess.asset_ref, 'installed transcript must carry the path it landed at').toBeTruthy();
+    expect(sess.asset_ref!.endsWith(`${sessionId}.jsonl`)).toBe(true);
+
+    // The pointer the UI actually builds. `null` would mean the chip correctly
+    // refused to guess; a non-null pointer must address the FILE.
+    const pointer = buildDockPointer(sess, undefined);
+    expect(pointer, 'a resolved transcript must produce a pointer').not.toBeNull();
+    const url = pointer!.toString();
+    expect(url).toContain(encodeURIComponent(sess.asset_ref!));
+
+    // The regression this pins: the id form is `…/transcript/<sessionId>` with
+    // nothing else in the segment. Asserting on the whole segment rather than
+    // "does not contain the id" on purpose — the filename IS `<id>.jsonl`, so a
+    // correct path-form URL contains the id too.
+    expect(url.endsWith(`/transcript/${sessionId}`)).toBe(false);
   });
 });

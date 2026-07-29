@@ -15,6 +15,7 @@ from flow_sdk.schema.types import EntityType
 CODEX_SESSION = TypeMetadata(
     type=EntityType.CODEX_SESSION,
     indexed_by_default=True,
+    api_visible=True,  # see CLAUDE_SESSION
     icon="Codex",  # see CLAUDE_SESSION
     from_disk_fn=extract_codex_session,
     identity_backend=derived_identity(codex_session_id_from_file),

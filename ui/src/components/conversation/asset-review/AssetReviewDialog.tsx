@@ -1,4 +1,4 @@
-import { MessageAttachment, Project, TypeId } from '@sdk';
+import { dataManager, MessageAttachment, Project, TypeId } from '@sdk';
 import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
 import { useEntity } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -312,10 +312,17 @@ export function AssetReviewDialog({
   // Advanced-mode affordance: once an asset is installed its entity exists, so
   // the modal offers a jump to the SELECTED entity's real view (e.g. the task
   // view). Staged/not-yet-installed → nothing to open, so it's hidden.
-  const openSelected = () => {
+  const openSelected = async () => {
     const tid = selected.targetTypeId;
     if (!tid?.id) return;
-    const pointer = buildDockPointer({ type: tid.type, id: tid.id }, undefined);
+    // Resolve the entity rather than hand `buildDockPointer` a {type, id} stub.
+    // Most types need nothing more — they open by TypeId and the loader resolves
+    // them — but a transcript is addressed by its FILE, so a stub silently
+    // dropped its `asset_ref` and every install-then-Open fell through to the
+    // session-id form, which cannot resolve on a machine that never ran the
+    // session. Fetching here costs one request on an explicit click.
+    const entity = await dataManager.getByTypeId<{ type: string; id: string }>(tid).catch(() => null);
+    const pointer = buildDockPointer(entity ?? { type: tid.type, id: tid.id }, undefined);
     if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, attachmentProjectId));
     onClose();
   };
@@ -421,7 +428,7 @@ export function AssetReviewDialog({
             </>
           )}
           {selectedInstalled && (
-            <Button size="sm" variant="secondary" onClick={openSelected} data-testid="asset-open-entity">
+            <Button size="sm" variant="secondary" onClick={() => void openSelected()} data-testid="asset-open-entity">
               <ExternalLink className="h-3.5 w-3.5" />
               <Trans>Open</Trans>
             </Button>

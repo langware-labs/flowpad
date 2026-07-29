@@ -238,11 +238,23 @@ export function buildDockPointer(
     case 'codex_session':
     case 'copilot_session': {
       const worker = workerFromSessionType(resolved.type) as 'claude' | 'codex' | 'copilot';
-      // A received transcript is an installed asset addressed by its path; a
-      // locally-run one has no asset_ref here and resolves by session id
-      // server-side. Same rule for every worker.
-      const ref = (resolved as { asset_ref?: string | null }).asset_ref?.trim();
-      return DockPointer.forLensTranscript(worker, ref || resolved.id);
+      // Transcripts are the ONLY type addressed by location rather than by
+      // TypeId (they have no asset-editor entry — they open through the lens,
+      // which takes a worker + a file). So unlike every other case here, a bare
+      // {type, id} is NOT enough to build a working pointer, and the caller must
+      // pass the resolved entity.
+      const session = resolved as { asset_ref?: string | null; received?: boolean };
+      const ref = session.asset_ref?.trim();
+      if (ref) return DockPointer.forLensTranscript(worker, ref);
+      // No path in hand. The session-id form is answered by
+      // ``resolve_session_jsonl``, which searches THIS machine's CLI dir — right
+      // for a locally-run session, and guaranteed to 404 for a received one
+      // ("NOT_FOUND: ~/.claude/projects/ ... cannot resolve session <id>"). So
+      // only take it on an entity that explicitly says it ran here. `undefined`
+      // means the caller handed us a stub and we simply don't know — returning
+      // null lets them fall back instead of opening a broken tab.
+      if (session.received === false) return DockPointer.forLensTranscript(worker, resolved.id);
+      return null;
     }
     default: {
       // Asset-editor types (markdown family, agent, skill, workflow, whiteboard)
