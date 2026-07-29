@@ -22,6 +22,12 @@ export interface SideWindowsController {
   close: (id: string) => void;
   /** Close every open window (collapse the drawer). */
   closeAll: () => void;
+  /**
+   * Keep only the ids in `allowed`, in one URL write. Race-free by
+   * construction — the written set is a filter of the set just read — so a
+   * surface pruning windows it cannot render never issues a navigation per id.
+   */
+  retain: (allowed: ReadonlySet<string>) => void;
   /** Make an already-open `id` active (no-op if not open). */
   select: (id: string) => void;
   /** Active+open → close; otherwise open+activate. */
@@ -73,6 +79,16 @@ export function useSideWindows(): SideWindowsController {
     push({ windows: [], active: null });
   }, [windows, push]);
 
+  const retain = useCallback(
+    (allowed: ReadonlySet<string>) => {
+      const next = windows.filter((w) => allowed.has(w));
+      if (next.length === windows.length) return;
+      const nextActive = active && allowed.has(active) ? active : (next[next.length - 1] ?? null);
+      push({ windows: next, active: nextActive });
+    },
+    [windows, active, push],
+  );
+
   const select = useCallback(
     (id: string) => {
       if (!windows.includes(id)) return;
@@ -94,5 +110,5 @@ export function useSideWindows(): SideWindowsController {
     [windows, active, push],
   );
 
-  return { windows, active, open, close, closeAll, select, toggle };
+  return { windows, active, open, close, closeAll, retain, select, toggle };
 }

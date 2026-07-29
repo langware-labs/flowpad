@@ -15,6 +15,7 @@ const sideWindows = vi.hoisted(() => ({
   open: vi.fn(),
   close: vi.fn(),
   closeAll: vi.fn(),
+  retain: vi.fn(),
   select: vi.fn(),
 }));
 
@@ -91,7 +92,12 @@ describe('markdown side-panel visibility', () => {
     rerender(<Subject />);
     expect(screen.getByText('revisions')).toBeTruthy();
     expect(screen.queryByText('runs')).toBeNull();
-    expect(sideWindows.close).toHaveBeenCalledWith('runs');
+    // Pruned in ONE URL write: the retained set keeps the Standard-allowed tab
+    // and drops the unavailable one — never a close() per id, never closeAll().
+    const retained = sideWindows.retain.mock.calls.at(-1)?.[0] as Set<string>;
+    expect(retained.has('revisions')).toBe(true);
+    expect(retained.has('runs')).toBe(false);
+    expect(sideWindows.close).not.toHaveBeenCalled();
     expect(sideWindows.closeAll).not.toHaveBeenCalled();
   });
 
@@ -123,6 +129,9 @@ describe('markdown side-panel visibility', () => {
     );
 
     expect(screen.getByText('duplicate paths')).toBeTruthy();
+    // The opted-in tab stays in the retained set, so nothing is pruned.
+    const retained = sideWindows.retain.mock.calls.at(-1)?.[0] as Set<string>;
+    expect(retained.has(collisionTab.id)).toBe(true);
     expect(sideWindows.close).not.toHaveBeenCalled();
     expect(sideWindows.closeAll).not.toHaveBeenCalled();
   });
