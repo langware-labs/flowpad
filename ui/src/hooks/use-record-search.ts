@@ -106,11 +106,10 @@ export function useRecordSearch(
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelledRef = useRef(false);
-
   const { col_weights, recency_boost, recency_factor, overfetch, type_scores } = calibration;
 
   useEffect(() => {
+    let cancelled = false;
     if (timerRef.current) clearTimeout(timerRef.current);
 
     // `filters.scope` is intentionally excluded — it no longer drives the
@@ -124,7 +123,6 @@ export function useRecordSearch(
       return;
     }
 
-    cancelledRef.current = false;
     timerRef.current = setTimeout(() => {
       const params = new URLSearchParams({ q: query, limit: String(DEFAULT_SEARCH_LIMIT) });
       if (filters.record_type) params.set('record_type', filters.record_type);
@@ -148,7 +146,7 @@ export function useRecordSearch(
       apiClient
         .get(`${SEARCH_PATH}?${params.toString()}`)
         .then((data: unknown) => {
-          if (cancelledRef.current) return;
+          if (cancelled) return;
           const d = data as { results?: SearchResult[]; indexer_ready?: boolean } | null;
           const raw = d?.results ?? [];
           setResults(applyTimeFilter(raw, filters));
@@ -157,14 +155,14 @@ export function useRecordSearch(
           setIsLoading(false);
         })
         .catch((err: unknown) => {
-          if (cancelledRef.current) return;
+          if (cancelled) return;
           setError(err instanceof Error ? err.message : 'Search failed');
           setIsLoading(false);
         });
     }, debounceMs);
 
     return () => {
-      cancelledRef.current = true;
+      cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [query, filters.record_type, filters.status, filters.time_preset, filters.time_start, filters.time_end, filters.include_system, scopeFilter ? scopeFilterKey(scopeFilter) : null, col_weights, recency_boost, recency_factor, overfetch, type_scores, debounceMs]);
