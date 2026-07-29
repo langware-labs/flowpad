@@ -66,9 +66,12 @@ All dock routes pass through `loadAgentApp()`. For any valid dock whose
 await setupTab(dock, { setupContent });
 ```
 
-The lifecycle wrapper first resolves/materializes the backend `Tab` row through
-`Tab.getFromDockPointer(dock)`, then runs the route-specific content setup. For
-terminal docks that setup is the existing shell/process FSM:
+On a cold landing the lifecycle wrapper first resolves/materializes the backend
+`Tab` row through `Tab.getFromDockPointer(dock)`, then runs the route-specific
+content setup. An already-open content-asset dock with the same tab identity skips
+the list/new-tab round trip, reruns only content setup, and returns no new
+`TabSetupResult.tab`; its existing backend row and lifecycle `tabId` remain
+authoritative. For terminal docks setup is the existing shell/process FSM:
 
 ```text
 loadShellRoute

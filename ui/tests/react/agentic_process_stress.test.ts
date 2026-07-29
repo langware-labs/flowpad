@@ -15,7 +15,7 @@
  *   resolvedStatus ghost-running correction works.
  */
 
-import { AgenticProcess, ConnectionManager, dataManager, ProcessStatus, Shell, TypeId } from '@sdk';
+import { AgenticProcess, ConnectionManager, dataManager, ProcessStatus, Shell, TypeId, WorkerStatus } from '@sdk';
 import { v4 as uuidv4 } from 'uuid';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiTestSetup, createAgenticProcess, getTestSignupInfo } from '../utils/test-utils';
@@ -323,7 +323,7 @@ describe('AgenticProcess WS entity updates — integration', () => {
     const process = new AgenticProcess({ id: uuidv4(), is_active: true });
     registerProcess(process);
 
-    const statuses: Array<{ status: ProcessStatus; workerStatus: string }> = [];
+    const statuses: Array<{ status: ProcessStatus; workerStatus: WorkerStatus | undefined }> = [];
     process.on('state_change', () => statuses.push({ status: process.status, workerStatus: process.workerStatus }));
 
     (process as any).onEntityUpdate({ status: ProcessStatus.STARTING });
@@ -332,7 +332,7 @@ describe('AgenticProcess WS entity updates — integration', () => {
     (process as any).onEntityUpdate({ worker_status: 'idle' });
 
     expect(statuses).toEqual([
-      { status: ProcessStatus.STARTING, workerStatus: 'initializing' },
+      { status: ProcessStatus.STARTING, workerStatus: undefined },
       { status: ProcessStatus.STARTING, workerStatus: 'running' },
       { status: ProcessStatus.RUNNING, workerStatus: 'running' },
       { status: ProcessStatus.RUNNING, workerStatus: 'idle' },

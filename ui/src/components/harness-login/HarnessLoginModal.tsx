@@ -1,6 +1,7 @@
 import {
   Capability,
   capabilityManager,
+  CapabilityKinds,
   copyToClipboard,
   HARNESS_CAPABILITY_KINDS,
   LMApiProvider,
@@ -734,16 +735,16 @@ function useHarnessLoginGate() {
  *  reference_kind (same mechanism as CapabilitiesView). */
 function DefaultHarnessSelect({ onChanged }: { onChanged: () => void }) {
   const [value, setValue] = useState<string>(
-    () => capabilityManager.getSnapshot('harness').resolvedKind ?? HARNESS_CAPABILITY_KINDS[0],
+    () => capabilityManager.getSnapshot(CapabilityKinds.Harness).resolvedKind ?? HARNESS_CAPABILITY_KINDS[0],
   );
   const onChange = async (kind: string) => {
     setValue(kind);
     try {
-      await capabilityManager.setReferenceKind('harness', kind);
+      await capabilityManager.setReferenceKind(CapabilityKinds.Harness, kind);
       onChanged();
     } catch {
       /* revert on failure by re-reading the snapshot */
-      setValue(capabilityManager.getSnapshot('harness').resolvedKind ?? kind);
+      setValue(capabilityManager.getSnapshot(CapabilityKinds.Harness).resolvedKind ?? kind);
     }
   };
   return (

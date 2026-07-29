@@ -115,8 +115,8 @@ async def _create(hub_client, compute_node_id: str, workdir: str, worker_type: s
     )
     assert r.status_code == 200, f"createProcess {r.status_code}: {r.text[:400]}"
     pid = (r.json().get("data") or r.json())["id"]
-    # createProcess returns a minimal row (id/type/shell_id/pty_pid); GET the
-    # entity to read the persisted fields (pty_mode, visible, session_id).
+    # createProcess returns the full authoritative entity. GET it independently
+    # to confirm the transport fields persisted before exercising the live worker.
     g = await hub_client.get(f"/api/v1/graph/agentic_process/{pid}")
     assert g.status_code == 200, f"get process {g.status_code}: {g.text[:300]}"
     return g.json().get("data") or g.json()

@@ -50,12 +50,17 @@ export function terminalTabsForScope(
 }
 
 /** THE strip-partition rule: a tab with a `parent_tab_id` is a workspace CHILD
- *  (a content tab a vibe workspace opened) and renders ONLY in its workspace's
- *  child strip — never as a top-level chip. Every top-level tab-list consumer
- *  must apply (or consciously decline) this predicate; `terminalTabsForScope`
- *  and `useTabProjectBuckets` decline — children are content tabs by the
- *  backend invariant, so they never appear in the terminal rails, and they DO
- *  count as a project's open tabs. */
+ *  (content a vibe workspace opened) and renders ONLY in its workspace's child
+ *  strip — never as a top-level chip. Every top-level tab-list consumer must
+ *  apply (or consciously decline) this predicate.
+ *
+ *  `terminalTabsForScope` and `useTabProjectBuckets` decline, deliberately. A
+ *  child is no longer always a content tab: a terminal opened INSIDE the
+ *  workspace is adopted too (see `isAdoptableChildDock`), so children do reach
+ *  the terminal rails — and must, because `TabbedTerminal` resolves the tab it
+ *  renders from that same list; filtering them out would leave the workspace's
+ *  own display pane unable to find its terminal. They also DO count as a
+ *  project's open tabs. */
 export function isWorkspaceChild(tab: Tab | ITab): boolean {
   return tab.parent_tab_id != null;
 }
@@ -197,11 +202,19 @@ export function useSyncContentTabNames(): void {
       if (type && TERMINAL_TARGET_TYPES.has(type)) return;
       const id = data?.id;
       const name = (data as { name?: string | null } | null)?.name;
-      if (!id || !name) return;
-      const tab = getAllTabsSnapshot().find((t) => t.target_id === id);
-      if (tab && tab.name !== name) {
-        void Tab.setNameById(tab.id, name).then(() => void refreshAllTabs());
-      }
+      const remote = (data as { remote?: unknown } | null)?.remote;
+      if (!type || !id) return;
+      const tab = getAllTabsSnapshot().find(
+        (candidate) => candidate.target_type === type && candidate.target_id === id,
+      );
+      if (!tab) return;
+      const nameChanged = typeof name === 'string' && name.length > 0 && tab.name !== name;
+      const remoteChanged = typeof remote === 'boolean' && tab.target_remote !== remote;
+      if (!nameChanged && !remoteChanged) return;
+      void (async () => {
+        if (nameChanged) await Tab.setNameById(tab.id, name);
+        await refreshAllTabs();
+      })();
     };
     cm.on('on_data_op', handler);
     return () => {

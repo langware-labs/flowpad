@@ -280,8 +280,17 @@ class FSRecord(Generic[M]):
 
     @property
     def main_ref(self) -> FSRef | None:
-        """Alias — the 'main' file is the asset_ref."""
-        return self.asset_ref
+        """Primary content ref, including an inner file for folder assets."""
+        asset_ref = self.asset_ref
+        if asset_ref is None:
+            return None
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+        info = SchemaRegistry.get(self.type) if self.type else None
+        if info is None:
+            return asset_ref
+        body_path = info.body_path_for(asset_ref._path)
+        return asset_ref if body_path == asset_ref._path else FSRef(body_path, parent=asset_ref)
 
     def ensure_asset_ref(self) -> "FSRecord":
         """Bind ``asset_ref`` from the record's own mount metadata

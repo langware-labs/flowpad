@@ -7,7 +7,7 @@ import { uploadFilesToProcessInputDir } from '@src/utils/upload-to-input-dir';
 import { useLingui } from '@lingui/react/macro';
 import { useCallback } from 'react';
 import { VIBE_MODEL_DEFAULT, type VibeModelTier } from './vibe-model-select';
-import { DEFAULT_WORKER_TYPE, type WorkerType } from '@src/components/workers/worker-types';
+import type { WorkerType } from '@src/components/workers/worker-types';
 
 // The vibe agent's asset_ref is stable for the app's lifetime — resolve once,
 // reuse across builds. Raw graph route (not useEntitiesQuery) because system
@@ -25,6 +25,18 @@ async function resolveVibeAgentRef(): Promise<string | null> {
 
 /** Minimal navigation surface the launcher needs (from useDockNavigation). */
 type OpenShell = { openShellProcess: (procId: string, opts?: { viewMode?: ViewMode }) => void };
+
+/**
+ * The `target_typeid_str` every project-scoped vibe chat session is keyed to.
+ *
+ * The project's id-based TypeId — NOT `project.typeId`, which is the uname form
+ * `project-@local`. Every producer AND consumer of a vibe chat target must go
+ * through here: the string has to match exactly, or two surfaces that mean the
+ * same session key it differently and each sees an empty history.
+ */
+export function vibeChatTargetForProject(projectId: string): string {
+  return new TypeId(Project.type, projectId).toString();
+}
 
 /**
  * Ride the SDK-shipped `vibe` persona on a process so the driver's directive
@@ -85,17 +97,24 @@ async function embedVibeKindAgents(proc: AgenticProcess): Promise<void> {
 export async function createVibeProcessForProject(opts: {
   projectId: string;
   workdir?: string;
+  /** Stable entity TypeId or compute-node VFS path used for process reuse. */
+  targetVfsPath?: string;
   navigation?: OpenShell;
   /** Open the process's workspace after creating it (default true). */
   open?: boolean;
   model?: VibeModelTier;
   workerType?: WorkerType;
 }): Promise<AgenticProcess> {
-  const { projectId, workdir, navigation, open = true, model = VIBE_MODEL_DEFAULT, workerType = DEFAULT_WORKER_TYPE } = opts;
-  // Key the session to the project's id-based TypeId (NOT project.typeId, the
-  // uname form `project-@local`) — VibeWorkspace's chat target must match this
-  // exact string to attach to the same process.
-  const target = new TypeId(Project.type, projectId).toString();
+  const {
+    projectId,
+    workdir,
+    targetVfsPath,
+    navigation,
+    open = true,
+    model = VIBE_MODEL_DEFAULT,
+    workerType,
+  } = opts;
+  const target = targetVfsPath ?? vibeChatTargetForProject(projectId);
 
   const computeNode = await ComputeNode.getById('@local');
   if (!computeNode) throw new Error('No local compute node');
@@ -108,14 +127,20 @@ export async function createVibeProcessForProject(opts: {
       loadFlowpadAssistant: true,
       outputFormat: 'stream-json',
       model,
-      workerType,
+      ...(workerType ? { workerType } : {}),
     },
     // Headless JSON-stream transport — the vibe chat is a side panel, not a
     // terminal; PTY transport would pre-fill (not run) the first prompt.
-    { pty_mode: false },
+    // `watchProcess: false` = don't AWAIT the watch inside createProcess (a
+    // second round trip that gated navigation); it is established below.
+    { pty_mode: false, watchProcess: false },
   );
-  await embedVibeAgent(proc);
+  void proc.watch().catch((e) => console.warn('[Vibe] watch failed; live updates degraded', e));
+  // The URL only needs the id, and the persona only has to be embedded before
+  // the first prompt — which every caller awaits — so neither belongs ahead of
+  // the navigation.
   if (open) navigation?.openShellProcess(proc.id, { viewMode: ViewMode.Vibe });
+  await embedVibeAgent(proc);
   return proc;
 }
 
@@ -138,6 +163,7 @@ export async function createVibeProcessForProject(opts: {
 export async function launchVibeSessionForProject(opts: {
   projectId: string;
   workdir?: string;
+  targetVfsPath?: string;
   message: string;
   files?: File[];
   navigation: OpenShell;
@@ -146,8 +172,15 @@ export async function launchVibeSessionForProject(opts: {
   /** Called when attachment upload fails (session still opens, text-only). */
   onAttachmentError?: () => void;
 }): Promise<string> {
-  const { projectId, workdir, message, files, navigation, model, workerType, onAttachmentError } = opts;
-  const proc = await createVibeProcessForProject({ projectId, workdir, navigation, model, workerType });
+  const { projectId, workdir, targetVfsPath, message, files, navigation, model, workerType, onAttachmentError } = opts;
+  const proc = await createVibeProcessForProject({
+    projectId,
+    workdir,
+    targetVfsPath,
+    navigation,
+    model,
+    workerType,
+  });
   // Attachments (if any) must land in the process input dir BEFORE the first
   // turn starts — the agent reads the referenced paths immediately. Upload
   // failure degrades to a text-only prompt rather than losing the message.
@@ -163,6 +196,43 @@ export async function launchVibeSessionForProject(opts: {
   const fullMessage = refLines.length ? `${message}\n${refLines.join('\n')}` : message;
   proc.prompt(fullMessage).catch((e) => console.error('[Vibe] prompt failed', e));
   return proc.id;
+}
+
+/**
+ * Continue a Vibe conversation with an explicitly selected worker.
+ *
+ * Transcript extraction and prompt composition belong to AgenticProcess; this
+ * application service only forwards that durable handoff prompt through the
+ * existing create/embed/open/first-prompt path.
+ */
+export async function continueVibeSessionForProject(opts: {
+  sourceProcess: AgenticProcess;
+  projectId: string;
+  workdir?: string;
+  targetVfsPath?: string;
+  navigation: OpenShell;
+  model: VibeModelTier;
+  workerType: WorkerType;
+}): Promise<string> {
+  const {
+    sourceProcess,
+    projectId,
+    workdir,
+    targetVfsPath,
+    navigation,
+    model,
+    workerType,
+  } = opts;
+  const message = await sourceProcess.continuationPrompt();
+  return launchVibeSessionForProject({
+    projectId,
+    workdir,
+    targetVfsPath,
+    navigation,
+    model,
+    workerType,
+    message,
+  });
 }
 
 /**

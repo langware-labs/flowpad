@@ -29,7 +29,7 @@ import logging
 import uuid
 
 from flow_sdk.actions.action_registry import action as _action_registry
-from flow_sdk.api.api_types.api_field import APIField, Persist
+from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist
 from flow_sdk.builtin.tab_order import (
     compute_insert_new,
     compute_reorder,
@@ -87,26 +87,28 @@ def _pointer_view_type(pointer: str | None) -> str | None:
 
 
 # Target types that can never be workspace CHILDREN. A vibe workspace groups the
-# content assets it opens under its process tab (``parent_tab_id``); a live
-# session anchor (process/shell) or a whole project is never "inside" another
-# workspace — adopting one was how nested-display / shell-under-display
-# corruption arose. Mirrors the FE allow-list (``dockAddressesAsset``): the FE
-# adopts only content-asset docks, this deny-list is the backend belt.
-# ``ensure_tab`` drops the hint silently (an old client may still send it) and
+# content it opens under its process tab (``parent_tab_id``): assets/files, and a
+# plain terminal — a shell opened from inside the workspace is content in its
+# display, the same as a file. What is never a child is a workspace ANCHOR: the
+# agentic process whose tab the workspace is mounted over, or a whole project.
+# Adopting one of those was how nested-display / shell-under-display corruption
+# arose, so they stay denied. Mirrors the FE allow-list
+# (``isAdoptableChildDock``); this deny-list is the backend belt. ``ensure_tab``
+# drops a forbidden hint silently (an old client may still send it) and
 # null-heals legacy corrupt rows on touch.
 _PARENT_FORBIDDEN_TARGET_TYPES = frozenset({
-    EntityType.SHELL.value,
     EntityType.AGENTIC_PROCESS.value,
     EntityType.PROJECT.value,
 })
 
 
 def _pointer_is_adoptable_child(pointer: str | None) -> bool:
-    """Only a content-asset dock may be a workspace CHILD — the pointer-shape
-    mirror of the FE allow-list (``dockAddressesAsset``): an assets
+    """Only workspace CONTENT may be a workspace CHILD — the pointer-shape
+    mirror of the FE allow-list (``isAdoptableChildDock``): an assets
     ``editor/...`` pointer (typeid- or vfs-addressed), plain or project-rebased
-    (``<project-id>/editor/...``). Navigation surfaces (assets lists /
-    project-home, explorer, shell, project, inbox, …) are never children.
+    (``<project-id>/editor/...``), a raw ``editor`` file pointer, or a PLAIN
+    shell (a terminal). Navigation surfaces (assets lists / project-home,
+    explorer, project, inbox, …) and workspace anchors are never children.
 
     Complements ``_PARENT_FORBIDDEN_TARGET_TYPES``, which keys on the declared
     ``target_type`` — NULL for list surfaces, so only a pointer-shape check can
@@ -122,14 +124,30 @@ def _pointer_is_adoptable_child(pointer: str | None) -> bool:
             return False
         vt = str(data.get('viewType') or '')
         sub = str(data.get('pointer') or '')
+        workspace_content = data.get('workspaceContent') is True
     else:
         vt, _, sub = pointer.partition('|')
+        workspace_content = False
+    if vt == 'editor':
+        # The generic source viewer is a first-class content surface too. Empty
+        # pointers are the editor landing shell, not an addressable child.
+        return bool(sub.strip())
     if vt == 'assets':
-        return sub.startswith('editor/')
+        # Scope-keyed Assets tabs deliberately fold their sub-pointer to ''.
+        # DockPointer preserves this one URL-owned bit so an editor/wiki opened
+        # inside Vibe remains a child without changing one-tab-per-scope identity.
+        return workspace_content or sub.startswith('editor/')
     if vt == 'project':
         # Project-rebased asset dock: ``<project-id>/<assetSubPointer>``.
         _, _, asset_sub = sub.partition('/')
         return asset_sub.startswith('editor/')
+    if vt == 'shell':
+        # A PLAIN terminal is workspace content. The process's own dock is the
+        # workspace ANCHOR — same viewType, ``agentic_process-<id>`` pointer —
+        # and adopting it would nest a workspace inside itself. ``new_terminal``
+        # is the launcher landing, never a materialized session.
+        s = sub.strip()
+        return bool(s) and s != 'new_terminal' and not s.startswith('agentic_process-')
     return False
 
 
@@ -192,6 +210,7 @@ class Tab(Entity):
     # Never persisted — re-resolved on every list/close/rename action.
     status: str | None = APIField(default=None, persist=Persist.FALSE)
     is_disabled: bool = APIField(default=False, persist=Persist.FALSE)
+    target_remote: bool = NoDBAPIField(default=False)
 
     # ``name`` and ``project_id`` are inherited from the base Entity. ``name`` is
     # the generic source of truth for the tab label; ``rename`` reflects it onto
@@ -799,8 +818,18 @@ async def ensure_tab(
         if stray.id != tid and stray.visible:
             stray.visible = False
             await stray.save()
+    # Scope-keyed docks can change only their presentation metadata while
+    # retaining the same canonical tabHash/id (for example Assets content
+    # carries ``workspaceContent`` while its browser root does not). Reconcile
+    # that variant through the canonical id instead of attempting to insert a
+    # second row with the same identity.
+    if existing is None:
+        existing = await Tab.get_one({"id": tid})
     if existing is not None:
         dirty = False
+        if existing.pointer != pointer and _pointer_to_hash(existing.pointer) == _pointer_to_hash(pointer):
+            existing.pointer = pointer
+            dirty = True
         # Heal legacy "viewType|sub" pointers on access — migrate to JSON format
         if existing.pointer and not existing.pointer.startswith('{'):
             parts = existing.pointer.split('|', 1)
@@ -1034,6 +1063,69 @@ async def _populate_tab_statuses(
         tab.is_disabled = tab.status == "closing"
 
 
+async def _load_remote_targets(
+    tabs: list[Tab],
+    seed: "dict[tuple[str, str], object] | None" = None,
+) -> "dict[tuple[str, str], object]":
+    """Batch-load content targets needed by the tab cloud-state projection."""
+    from flow_sdk.db.drivers.query import (  # noqa: PLC0415
+        ExpressionNode,
+        QueryFilter,
+        QueryOp,
+    )
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    by_type_id = dict(seed or {})
+    ids_by_type: dict[str, set[str]] = {}
+    for tab in tabs:
+        if (
+            not tab.target_type
+            or not tab.target_id
+            or tab.target_type in _DB_BACKED_TARGET_TYPES
+            or (tab.target_type, str(tab.target_id)) in by_type_id
+        ):
+            continue
+        ids_by_type.setdefault(tab.target_type, set()).add(str(tab.target_id))
+
+    for target_type, ids in ids_by_type.items():
+        target_cls = SchemaRegistry.get_entity_cls(target_type)
+        if target_cls is None:
+            continue
+        try:
+            rows = await target_cls.get_all(
+                QueryFilter(
+                    match=ExpressionNode(
+                        op=QueryOp.IN,
+                        operands=["id", sorted(ids)],
+                    )
+                )
+            )
+        except Exception:
+            logger.debug(
+                "tab remote-target batch load failed for %s",
+                target_type,
+                exc_info=True,
+            )
+            continue
+        for row in rows:
+            by_type_id[(target_type, str(row.id))] = row
+    return by_type_id
+
+
+def _populate_tab_target_remote(
+    tabs: list[Tab],
+    target_map: "dict[tuple[str, str], object]",
+) -> None:
+    """Populate API-only target cloud state without persisting Tab rows."""
+    for tab in tabs:
+        target = (
+            target_map.get((tab.target_type, str(tab.target_id)))
+            if tab.target_type and tab.target_id
+            else None
+        )
+        tab.target_remote = bool(getattr(target, "remote", False))
+
+
 async def _project_from_pointer(pointer: str | None) -> str | None:
     """The owning project NAMED by a project-scoped dock pointer
     (``viewType:"project"`` → ``<project_id>/...``). A tab opened under
@@ -1099,6 +1191,8 @@ async def _build_tab_list(project: str | None) -> list[Tab]:
     by_id = {t.id: t for t in tabs}
     result = [by_id[tab_id] for tab_id in filtered]
     await _populate_tab_statuses(result, target_map)
+    remote_target_map = await _load_remote_targets(result, target_map)
+    _populate_tab_target_remote(result, remote_target_map)
     return result
 
 
@@ -1120,6 +1214,7 @@ def _serialize_row(tab: Tab) -> dict:
         "visible": tab.visible,
         "status": tab.status,
         "is_disabled": tab.is_disabled,
+        "target_remote": bool(tab.target_remote),
     }
 
 
@@ -1227,6 +1322,8 @@ async def _http_list_all(cls):
     tabs, target_map = await _visible_tabs_sorted_with_targets()
     await _backfill_tab_projects(tabs)
     await _populate_tab_statuses(tabs, target_map)
+    remote_target_map = await _load_remote_targets(tabs, target_map)
+    _populate_tab_target_remote(tabs, remote_target_map)
     return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
 
 
@@ -1295,8 +1392,14 @@ async def _http_close(self: Tab):
     await self._soft_hide()
     await broadcast_tabs_changed()
     response = await _list_response(self.project_id)
-    tab_id = self.id
-    task = asyncio.create_task(self._dispatch_teardown(), name=f"tab-teardown:{tab_id}")
+    _schedule_teardown(self)
+    return response
+
+
+def _schedule_teardown(tab: Tab) -> None:
+    """Run a hidden tab's target teardown without delaying the close response."""
+    tab_id = tab.id
+    task = asyncio.create_task(tab._dispatch_teardown(), name=f"tab-teardown:{tab_id}")
     _PENDING_TEARDOWNS[tab_id] = task
 
     def _done(t: asyncio.Task) -> None:
@@ -1305,13 +1408,60 @@ async def _http_close(self: Tab):
             logger.warning("tab teardown failed for %s", tab_id, exc_info=t.exception())
 
     task.add_done_callback(_done)
-    return response
 
 
 _action_registry.register(
     action_name="close",
     function_name="close",
     handler=_http_close,
+    methods="post",
+    types=["tab"],
+)
+
+
+async def _http_close_many(
+    cls,
+    tab_ids: list[str],
+    project: str | None = None,
+):
+    """POST /graph/tab/close_many — durably hide a set of tabs in one request.
+
+    The close-all UI must not issue independent requests that a reload can
+    abort after the optimistic chips disappear. Resolve every requested row,
+    persist all membership flips, broadcast once, and only then acknowledge.
+    Target teardown remains background work, matching the single-close seam.
+    """
+    from flow_sdk.db.drivers.query import (  # noqa: PLC0415
+        ExpressionNode,
+        QueryFilter,
+        QueryOp,
+    )
+
+    ids = list(dict.fromkeys(str(tab_id) for tab_id in tab_ids if tab_id))
+    if not ids:
+        return await _list_response(project)
+
+    rows = await Tab.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids]))
+    )
+    by_id = {tab.id: tab for tab in rows}
+    closing = [by_id[tab_id] for tab_id in ids if tab_id in by_id and by_id[tab_id].visible]
+
+    for tab in closing:
+        await tab._soft_hide()
+
+    if closing:
+        await broadcast_tabs_changed()
+    response = await _list_response(project)
+    for tab in closing:
+        _schedule_teardown(tab)
+    return response
+
+
+_action_registry.register(
+    action_name="close_many",
+    function_name="close_many",
+    handler=_http_close_many,
     methods="post",
     types=["tab"],
 )

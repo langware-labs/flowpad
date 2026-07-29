@@ -14,6 +14,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DirectoryTree, ItemHandler } from '../directory-tree';
 import DiffViewer from './DiffViewer';
 import { EditorPane } from './EditorPane';
+import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 
 interface EditorFile {
   path: string;
@@ -459,6 +460,14 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     <div className="flex h-full flex-col">
       {openTabs.length > 0 || diffTab ? (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
+          {activeTab !== 'diff' && activeTab && (
+            <AssetEditorHeader
+              fileName={activeTab.split('/').pop() || activeTab}
+              dirPath={activeTab.includes('/') ? activeTab.slice(0, activeTab.lastIndexOf('/')) : ''}
+              sourcePath={activeTab}
+              dirty={openTabs.find((tab) => tab.path === activeTab)?.isDirty}
+            />
+          )}
           <div className="flex items-center border-b bg-muted/20">
             <ScrollArea className="w-full flex-1 whitespace-nowrap">
               <TabsList className="h-auto w-max justify-start rounded-none bg-transparent p-0">

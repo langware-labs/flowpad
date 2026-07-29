@@ -3,6 +3,31 @@ import { useCallback, useRef, useSyncExternalStore } from 'react';
 import { useEntityOptions, UseEntityResult } from './types';
 import { useWatch } from './useWatch';
 
+type EntityQueryState<T> = {
+  data: T | null | undefined;
+  isLoading: boolean;
+  isFetching: boolean;
+  error: ApiError | null;
+  isError: boolean;
+  isSuccess: boolean;
+  notFound: boolean;
+};
+
+function initialState<T>(
+  typeId: TypeId | null,
+  enabled: boolean,
+): EntityQueryState<T> {
+  return {
+    data: typeId && enabled ? undefined : null,
+    isLoading: !!(typeId && enabled),
+    isFetching: false,
+    error: null,
+    isError: false,
+    isSuccess: false,
+    notFound: false,
+  };
+}
+
 export function useEntity<T extends APIEntity<T>>(
   typeId: TypeId | null,
   options?: useEntityOptions<T>,
@@ -11,26 +36,22 @@ export function useEntity<T extends APIEntity<T>>(
   const queryJsonStringified = JSON.stringify(query);
 
   // State refs to track query state
-  const stateRef = useRef<{
-    data: T | null | undefined;
-    isLoading: boolean;
-    isFetching: boolean;
-    error: ApiError | null;
-    isError: boolean;
-    isSuccess: boolean;
-    notFound: boolean;
-  }>({
-    data: typeId && enabled ? undefined : null,
-    isLoading: !!(typeId && enabled),
-    isFetching: false,
-    error: null,
-    isError: false,
-    isSuccess: false,
-    notFound: false,
-  });
+  const stateRef = useRef<EntityQueryState<T>>(initialState(typeId, enabled));
 
   // Cache the snapshot to prevent unnecessary re-renders
   const snapshotRef = useRef(stateRef.current);
+
+  // A TypeId/query switch must never expose the previous entity for even one
+  // render. Consumers commonly key dependent queries from the new TypeId; a
+  // stale entity here can otherwise populate that new cache key with bytes from
+  // the old target (for example, rapid Wiki word navigation).
+  const inputKey = `${enabled}:${typeId?.type ?? ''}:${typeId?.id ?? ''}:${queryJsonStringified}`;
+  const inputKeyRef = useRef(inputKey);
+  if (inputKeyRef.current !== inputKey) {
+    inputKeyRef.current = inputKey;
+    stateRef.current = initialState(typeId, enabled);
+    snapshotRef.current = stateRef.current;
+  }
 
   // Ref to the useSyncExternalStore notify callback so refetch() can trigger re-renders
   const notifyRef = useRef<(() => void) | null>(null);
@@ -67,6 +88,7 @@ export function useEntity<T extends APIEntity<T>>(
       callback(); // Trigger re-render immediately with loading state
 
       let unsubscribe: (() => void) | undefined;
+      let cancelled = false;
 
       // Async initialization
       const initialize = async () => {
@@ -74,6 +96,7 @@ export function useEntity<T extends APIEntity<T>>(
           // Check cache first to avoid unnecessary API calls
           const cachedEntity = dataManager.getByTypeIdFromCache<T>(typeId);
           if (cachedEntity) {
+            if (cancelled) return;
             stateRef.current = {
               data: cachedEntity,
               isLoading: false,
@@ -87,6 +110,7 @@ export function useEntity<T extends APIEntity<T>>(
           } else {
             // Only fetch from API if not in cache
             const entity = await dataManager.getByTypeId<T>(typeId, query);
+            if (cancelled) return;
             // A null result with the ref flagged not-found is a terminal 404 —
             // the entity has no local row. Surface it as ``notFound`` (not an
             // error) so consumers can render an "unavailable" state, and so the
@@ -106,6 +130,7 @@ export function useEntity<T extends APIEntity<T>>(
 
           // Subscribe to updates from data manager
           unsubscribe = dataManager.subscribe<T>(typeId, (updatedEntity) => {
+            if (cancelled) return;
             stateRef.current = {
               data: updatedEntity,
               isLoading: false,
@@ -120,6 +145,7 @@ export function useEntity<T extends APIEntity<T>>(
             callback(); // Trigger re-render with updated data
           });
         } catch (err) {
+          if (cancelled) return;
           console.error('useEntity.ts: Error fetching entity by type ID:', typeId, err);
           stateRef.current = {
             data: null,
@@ -137,6 +163,7 @@ export function useEntity<T extends APIEntity<T>>(
       void initialize();
 
       return () => {
+        cancelled = true;
         if (unsubscribe) {
           unsubscribe();
         }

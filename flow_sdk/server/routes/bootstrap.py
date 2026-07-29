@@ -59,6 +59,16 @@ from flow_sdk.core.schema import build_all_type_payloads
 from flow_sdk.db.database import init_db
 from flow_sdk.external_apis.llm.llm_drivers.definitions import LLMProvider
 from flow_sdk.flowpad_types.runtime_environment import OSType, RuntimeEnvironment
+from flow_sdk.fs_store.indexer.auto_index import (
+    DEFAULT_AUTO_INDEX_ENABLED,
+    DEFAULT_AUTO_INDEX_FUNCTION,
+    DEFAULT_AUTO_INDEX_TRIGGER,
+    DEFAULT_AUTO_INDEX_TYPE,
+    PREF_AUTO_INDEX_ENABLED,
+    PREF_AUTO_INDEX_FUNCTION,
+    PREF_AUTO_INDEX_TRIGGER,
+    PREF_AUTO_INDEX_TYPE,
+)
 from flow_sdk.models import AppPaths, BootstrapInfo, EnvInfo, LmInfo
 from flow_sdk.models.responses import ApiSuccessResponse
 from flow_sdk.preferences import DEFAULT_SHARE_MESSAGE_STATUS, PREF_SHARE_MESSAGE_STATUS
@@ -1271,9 +1281,12 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
     from pathlib import Path  # noqa: PLC0415
 
     from flow_sdk.core.entity import Entity  # noqa: PLC0415
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown, markdown_id  # noqa: PLC0415
 
+    fts_entries: list[FtsEntry] = []
     for proj in projects:
         mount = proj.fs_storage_mount_path
         if not mount:
@@ -1295,15 +1308,46 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
                     if not records:
                         continue
                     rec = records[0]
-                    if proj.id and getattr(rec, "project_id", None) is None:
+                    # System-project ownership is authoritative at seed time.
+                    # A desktop clear recreates the project with a fresh id,
+                    # while the shipped record metadata may still carry the
+                    # previous id. Never preserve that stale foreign key:
+                    # search scope and every project-derived view must point at
+                    # the project row created by this bootstrap.
+                    if proj.id:
                         object.__setattr__(rec, "project_id", proj.id)
                     # Stamp `system` on the record so from_record persists it in
                     # the single upsert — avoids a redundant second save() per
                     # file just to flip the flag (include_system filters rely on it).
                     object.__setattr__(rec, "system", True)
-                    await Entity.from_record(rec, notify=False)
+                    entity = await Entity.from_record(rec, notify=False)
+                    # ``from_record`` deliberately suppresses the DB→disk store
+                    # path, including its normal FTS upsert. System markdowns
+                    # are read directly from their shipped files (not record
+                    # shadows), so collect their already-parsed search content
+                    # and index the whole walk in ONE batch below — this runs on
+                    # startup and again on every clear, so per-file upserts would
+                    # be a session open/close cycle per shipped doc.
+                    search_content = rec.search_content
+                    if search_content is not None:
+                        fts_entries.append(
+                            FtsEntry(
+                                entity_id=entity.id,
+                                entity_type=str(rec.type or rec._record_type),
+                                name=getattr(entity, "name", None) or None,
+                                content=search_content,
+                            )
+                        )
                 except Exception as e:
                     logging.debug(f"[bootstrap] failed to index system markdown {md_path}: {e}")
+
+    if fts_entries:
+        try:
+            driver = get_db_driver()
+            if hasattr(driver, "fts_upsert"):
+                await driver.fts_upsert(fts_entries)
+        except Exception as e:
+            logging.debug(f"[bootstrap] failed to index system markdown search content: {e}")
 
 
 async def index_system_content() -> None:
@@ -1387,11 +1431,25 @@ def _read_pref(key: str, default: Any) -> Any:
 
 def _write_pref(key: str, value: Any) -> None:
     """Merge a single key into preferences.json (read-modify-write), preserving
-    every other key the frontend owns. Thin wrapper over the shared writer."""
+    every other key the frontend owns. Thin wrapper over the shared writer.
+
+    Writing ``index_function`` also drops the cached shared indexer, because
+    ``build_default_indexer`` picks the scan mode once and ``get_shared_indexer``
+    caches the instance for the process lifetime — without this the new mode would
+    only apply after a restart (the papercut ``indexer_backend`` still has).
+    """
     from flow_sdk.preferences import write_instance_pref  # noqa: PLC0415
 
     if not write_instance_pref(key, value):
         logging.warning(f"[onboarding] failed to write {key} to preferences.json")
+        return
+    if key == PREF_AUTO_INDEX_FUNCTION:
+        try:
+            from flow_sdk.fs_store.indexer import reset_shared_indexer  # noqa: PLC0415
+
+            reset_shared_indexer()
+        except Exception:
+            logging.debug("[preferences] shared-indexer reset skipped", exc_info=True)
 
 
 def _resolve_supported_pages() -> list[str]:
@@ -1591,6 +1649,14 @@ def setup_desktop_filesystem() -> None:
         "preferences.indexing.folders.documents": "ask",
         "preferences.indexing.folders.desktop": "ask",
         "preferences.indexing.folders.downloads": "ask",
+        # Auto-index a project on selection. Constants come from auto_index.py so
+        # this stub and the backend read sites cannot disagree. NOTE this dict is
+        # only written for a MISSING or stub preferences.json — existing installs
+        # never gain these keys, so read sites must always pass the same default.
+        PREF_AUTO_INDEX_ENABLED: DEFAULT_AUTO_INDEX_ENABLED,
+        PREF_AUTO_INDEX_TYPE: DEFAULT_AUTO_INDEX_TYPE,
+        PREF_AUTO_INDEX_TRIGGER: DEFAULT_AUTO_INDEX_TRIGGER,
+        PREF_AUTO_INDEX_FUNCTION: DEFAULT_AUTO_INDEX_FUNCTION,
         # Onboarding gate: true (or missing) → seed onboarding assets on start, then
         # the seeder flips it to false. Flip back on to re-seed on the next start.
         _ONBOARDING_WELCOME_KEY: _ONBOARDING_WELCOME_DEFAULT,

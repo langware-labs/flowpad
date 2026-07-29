@@ -3,7 +3,7 @@ import apiClient from '../client';
 import { QueryRequest } from '../FlowSync/query';
 import { ActionInfo, TypeId, gitOriginFromUrl, type GitOrigin } from '../models';
 import { DockPointerData } from '../models/DockPointer';
-import type { AssetDescriptor } from '../process/asset-descriptor';
+import type { AssetDescriptor, AssetSource } from '../process/asset-descriptor';
 import { isHubOnly } from '../utils/hub-runtime';
 import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
@@ -12,6 +12,7 @@ import { type ConversationParticipant } from './conversation';
 import { ComputeNode } from './compute_node';
 import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
+import { Wiki } from './wiki';
 
 export interface ProjectMember {
   member_id: string;
@@ -72,10 +73,17 @@ export type SodStore = 'sodot' | 'env-local';
 export interface ProjectSecretOriginSummary {
   typeid: string;
   name: string;
+  /** Half of the identity — `(project_id, env_var)` is what names a secret. */
+  project_id?: string;
   env_var: string;
+  /** Where to FETCH from. Declaration detail, not identity: it may change
+   *  without the secret becoming a different secret. */
   kind: SecretOriginLocator['kind'] | string;
   locator: Partial<SecretOriginLocator>;
   scope: SecretPointerScope | string;
+  /** Which local store the wizard caches a provided value into. The backend has
+   *  always emitted this; the type omitted it. */
+  sod_store?: SodStore | string;
 }
 
 /** One row of the value-free resolve-status the Secrets card / wizard reads. */
@@ -87,13 +95,45 @@ export interface SecretResolveStatus {
   scope: string;
   sod_store: SodStore | string;
   status: 'available' | 'missing';
+  /** Which store on THIS machine can satisfy the declaration, if any. */
+  found_in?: 'env-local' | 'sodot' | 'provider' | null;
+  /** `missing-value` when nothing here can satisfy it — what a receiver of a
+   *  shared project sees for every secret they have not provided. */
+  warning?: 'missing-value' | null;
   setup_hint: {
     kind: string;
     sod_store: SodStore | string;
     provider_label: string;
     prompt: string;
     coming_soon?: boolean;
+    coord_fields?: string[];
   };
+}
+
+/** One `.env.local` key. Names and line numbers only — never a value. */
+export interface EnvLocalKey {
+  key: string;
+  /** 1-indexed line of the effective (last) definition, for the editor jump. */
+  line: number;
+  declared: boolean;
+}
+
+export interface EnvLocalStatus {
+  path: string | null;
+  exists: boolean;
+  gitignore: { in_repo: boolean; ignored: boolean; tracked?: boolean; code: string; reason: string };
+  /** A hard block: the file is committable, so no value may be written to it. */
+  blocked: boolean;
+  block_code: string | null;
+  block_reason: string | null;
+  keys: EnvLocalKey[];
+}
+
+/** One row of the opt-in drift check. */
+export interface SecretDriftStatus {
+  typeid: string;
+  env_var: string;
+  warning: 'value-changed' | null;
 }
 
 export interface ProjectContextFolderResolveResult {
@@ -122,6 +162,73 @@ export interface ProjectCustomization {
   home_title?: string | null;
   /** True when `.flow/customization/home.png` exists → render it as background. */
   has_home_background?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Asset menu — 1:1 mirror of `flow_sdk/builtin/asset_menu.py`. Snake_case is the
+// wire's and is kept verbatim: new fields land on the backend model first, this
+// file only reflects them.
+//
+// The menu is STRUCTURE + COUNTS, never leaves. Type rows still load their
+// entities lazily from `/search` on expand, and the filesystem subtree under a
+// folder row stays lazy DFS browsing — nothing that is lazy today becomes eager
+// because of this payload.
+// ---------------------------------------------------------------------------
+
+/** One per-type row of a node's menu. Counts only — icon, label, and view-mode
+ *  tier are looked up from the bootstrap type registry the client already
+ *  holds, never re-sent per response. */
+export interface ProjectMenuGroup {
+  type_name: string;
+  /** Assets under THIS node's own directory. */
+  own_count: number;
+  /** Accumulated: own plus every descendant's, so a collapsed row tells the
+   *  truth about what is under it. */
+  count: number;
+}
+
+/** One directory in the menu: the project's own mount, or a context folder.
+ *  Recursive by construction — a context folder that is itself a Project
+ *  carries that Project's own context folders, 3+ levels deep. */
+export interface ProjectMenuNode {
+  /** Canonical POSIX path — the node's identity. */
+  path: string;
+  name: string;
+  /** 'project_dir' for the root, 'context_dir' for every descendant. */
+  source: AssetSource;
+  /** Distance from the root project (root = 0). */
+  depth: number;
+  /** Null when this folder is not a Project (then `children` is always empty —
+   *  only a Project has context folders of its own). */
+  project_id: string | null;
+  is_project: boolean;
+  /** The linked Folder entity, from `context_dir_infos`. */
+  folder_typeid: string | null;
+  /** "git" | "local" — git-backed folders render distinctly. */
+  origin_kind: string | null;
+  /** Null for non-project nodes. True when the project has no index sentinel,
+   *  so its zero counts mean "never scanned", not "empty". */
+  never_indexed: boolean | null;
+  groups: ProjectMenuGroup[];
+  children: ProjectMenuNode[];
+}
+
+export interface ProjectAssetMenu {
+  root: ProjectMenuNode;
+  truncated: boolean;
+}
+
+export interface ProjectAssetMenuOptions {
+  /** Narrow to these record types. Default: every browseable scannable type. */
+  types?: string[];
+  /** Recurse into context folders that are themselves Projects. Default true. */
+  recursive?: boolean;
+  /** Hard cap on DFS depth (root = 0). Backend clamps to 1..16. */
+  maxDepth?: number;
+}
+
+interface ProjectAssetMenuResponse {
+  menu?: ProjectAssetMenu;
 }
 
 interface ProjectContextFolderResolveResponse {
@@ -252,6 +359,16 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
+   * Return this Project's stable default Wiki, lazily creating it server-side
+   * for Projects that predate the Wiki invariant.
+   */
+  async getDefaultWiki(): Promise<Wiki> {
+    const action = new ActionInfo('default-wiki', Project.type, this.id, 'GET');
+    const result = await dataManager.callAction<void, IEntity>(action);
+    return dataManager.updateEntityFromJson<Wiki>(result);
+  }
+
+  /**
    * Discoverable assets for this project, pre-process (staging picker).
    * Backend `project/{id}/get-assets` — same descriptor shape as
    * `AgenticProcess.getAssets()`, computed server-side (path-scan over
@@ -275,6 +392,45 @@ export class Project extends APIEntity<Project> {
     actionInfo.queryParameters = queryParameters;
     const response = await dataManager.callAction<void, { assets?: AssetDescriptor[] }>(actionInfo);
     return response?.assets ?? [];
+  }
+
+  /**
+   * The Assets menu for this project: per-type groups with counts, and the same
+   * nested under each context folder — recursively, because a context folder
+   * that is itself a Project has its own context folders. Counts accumulate, so
+   * a collapsed row already reports its whole subtree.
+   *
+   * Same action as {@link getAssets} (`project/{id}/get-assets`), menu mode —
+   * a sibling method rather than an option, because `getAssets`' flat
+   * `AssetDescriptor[]` return is consumed directly by the asset-manager
+   * surfaces and must not become a union.
+   *
+   * READ-ONLY: mints nothing, indexes nothing. A folder whose assets were never
+   * indexed counts zero (and its node flags `never_indexed`). Carries no leaves —
+   * type rows still load their entities from `/search` on expand.
+   *
+   * Returns null on a backend that predates menu mode, so callers can fall back.
+   */
+  async getAssetMenu(options?: ProjectAssetMenuOptions): Promise<ProjectAssetMenu | null> {
+    return Project.getAssetMenuById(this.typeId.id, options);
+  }
+
+  /** Static form for callers without a Project instance (mirrors `getAssetsById`). */
+  static async getAssetMenuById(
+    projectId: string,
+    options?: ProjectAssetMenuOptions,
+  ): Promise<ProjectAssetMenu | null> {
+    const actionInfo = new ActionInfo('get-assets', Project.type, projectId, 'GET');
+    // Backend kwarg names on the wire (`max_depth`); the SDK option stays
+    // camelCase. Arrays are pre-joined — query values are stringified one by one.
+    // `assets=false` skips the flat descriptor scan this caller would discard.
+    const queryParameters: Record<string, string | number> = { menu: 'true', assets: 'false' };
+    if (options?.types?.length) queryParameters.types = options.types.join(',');
+    if (options?.recursive === false) queryParameters.recursive = 'false';
+    if (options?.maxDepth != null) queryParameters.max_depth = options.maxDepth;
+    actionInfo.queryParameters = queryParameters;
+    const response = await dataManager.callAction<void, ProjectAssetMenuResponse>(actionInfo);
+    return response?.menu ?? null;
   }
 
   /**
@@ -386,6 +542,40 @@ export class Project extends APIEntity<Project> {
     const actionInfo = new ActionInfo('secret-resolve-status', Project.type, this.typeId.id, 'POST');
     const res = await dataManager.callAction<undefined, { secrets?: SecretResolveStatus[] }>(actionInfo);
     return Array.isArray(res?.secrets) ? res!.secrets : [];
+  }
+
+  /** What is in the project's `.env.local`, and may we write to it?
+   *  Names and line numbers only — a value cannot cross this boundary. */
+  async envLocalStatus(): Promise<EnvLocalStatus | null> {
+    const actionInfo = new ActionInfo('env-local-status', Project.type, this.typeId.id, 'POST');
+    return (await dataManager.callAction<undefined, EnvLocalStatus>(actionInfo)) ?? null;
+  }
+
+  /** Which declared secrets hold a different value than when last provided.
+   *  Separate from resolveStatus because answering it requires fetching values,
+   *  so it runs only when someone is looking at the Secrets tab. */
+  async secretDriftStatus(): Promise<SecretDriftStatus[]> {
+    const actionInfo = new ActionInfo('secret-drift-status', Project.type, this.typeId.id, 'POST');
+    const res = await dataManager.callAction<undefined, { secrets?: SecretDriftStatus[] }>(actionInfo);
+    return Array.isArray(res?.secrets) ? res!.secrets : [];
+  }
+
+  /** Store a secret on the hub, which is the system of record.
+   *
+   *  Fails with `project_not_published` when the project has no hub row yet —
+   *  the caller offers to publish rather than parsing the message. */
+  async pushSecretToCloud(envVar: string, value: string): Promise<void> {
+    const actionInfo = new ActionInfo('push-secret-to-cloud', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { env_var: envVar, value };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /** Delete a secret from the hub — CLOUD ONLY. The local declaration, the
+   *  sodot entry and `.env.local` are all deliberately left alone. */
+  async deleteSecretFromCloud(envVar: string): Promise<void> {
+    const actionInfo = new ActionInfo('delete-secret-from-cloud', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { env_var: envVar };
+    await dataManager.callAction(actionInfo);
   }
 
   /** Setup wizard: store a user-provided value in the secret's designated SOD

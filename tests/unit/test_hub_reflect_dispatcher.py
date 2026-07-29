@@ -321,7 +321,7 @@ def test_merge_hub_entity_skips_roster_and_unchanged_scalars(monkeypatch):
         e,
         {
             "title": "new",  # scalar, changed → applied
-            "message_status_visible": True,  # scalar, unchanged → skipped
+            "git_sharing_enabled": False,  # scalar, unchanged → skipped
             "members": [{"user_id": "hub"}],  # denylisted roster → skipped
             "not_a_field_xyz": "z",  # not an api field → skipped
         },

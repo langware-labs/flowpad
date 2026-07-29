@@ -37,6 +37,7 @@ from ..entries import (
     UsageEntry,
     UserMessageEntry,
     WebFetchEntry,
+    WorkerUnavailableEntry,
 )
 from ..entry import TranscriptEntry
 
@@ -71,6 +72,14 @@ _META_TYPES = frozenset({
 })
 
 _ATTACHMENT_TYPE_PLAN_MODE_EXIT = "plan_mode_exit"
+_QUOTA_EXHAUSTED_MARKERS = (
+    "weekly limit",
+    "usage limit",
+    "credit limit",
+    "credits limit",
+    "out of credits",
+    "credits exhausted",
+)
 
 
 def _is_flowpad_prompt_envelope(text: str) -> bool:
@@ -98,6 +107,50 @@ def _resolve_id(raw: dict) -> str:
     if fallback_path:
         return str(raw.get(fallback_path) or "")
     return ""
+
+
+def parse_worker_unavailable_event(
+    raw: dict,
+    base: dict[str, Any],
+) -> WorkerUnavailableEntry | None:
+    """Normalize a Claude API rate-limit assistant event.
+
+    Claude emits quota exhaustion as an ``assistant`` row and may keep the CLI
+    process alive, so neither a terminal result nor a non-zero exit is a
+    reliable signal. Both transcript replay and the live stream converter call
+    this helper to keep classification and payload shape identical.
+    """
+    provider_error = str(raw.get("error") or "")
+    status_raw = raw.get("apiErrorStatus")
+    try:
+        status_code = int(status_raw) if status_raw is not None else None
+    except (TypeError, ValueError):
+        status_code = None
+    is_rate_limit = provider_error == "rate_limit" or (
+        bool(raw.get("isApiErrorMessage")) and status_code == 429
+    )
+    if not is_rate_limit:
+        return None
+
+    message_data = raw.get("message")
+    message_obj = message_data if isinstance(message_data, dict) else {}
+    message = extract_text(message_obj.get("content") or [])
+    if not message and isinstance(message_data, str):
+        message = message_data
+    reason = (
+        "quota_exhausted"
+        if any(marker in message.casefold() for marker in _QUOTA_EXHAUSTED_MARKERS)
+        else "rate_limited"
+    )
+    return WorkerUnavailableEntry(
+        reason=reason,
+        worker_type="claude_code",
+        provider_error=provider_error or "rate_limit",
+        status_code=status_code,
+        message=message,
+        recoverable_with_alternative=True,
+        **base,
+    )
 
 
 class ClaudeParser:
@@ -147,6 +200,9 @@ class ClaudeParser:
             )]
 
         if rtype == "assistant":
+            worker_unavailable = parse_worker_unavailable_event(raw, base)
+            if worker_unavailable is not None:
+                return [worker_unavailable]
             return self._parse_assistant(raw, base)
         if rtype == "user":
             return [self._parse_user(raw, base)]

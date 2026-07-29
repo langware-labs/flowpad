@@ -53,8 +53,31 @@ The current code routes on `pty_mode`:
   `:1315`). Body: `{"mode": "interactive" | "cli"[, cols, rows]}`.
 - **Frontend:** `AgenticProcess.switchMode(mode, opts?)`
   (`ts_sdk/src/process/agentic-process.ts:2360`).
-- **UI caller:** the bottom-ribbon chat⇄terminal toggle,
-  `InteractiveTerminal.handleToggleView` (`InteractiveTerminal.tsx:1486`).
+- **UI caller:** `useProcessSurface`
+  (`interactive-terminal/use-process-surface.ts`), driven by the **View mode** —
+  the one mode preference, selected in the one control: the footer `ViewToggle`.
+  Mount it wherever a session is on screen (`InteractiveTerminal`, and both vibe
+  workspaces, which have no terminal) and the transport follows the mode however
+  it changed. The "mode this process was last reconciled to" is keyed by process
+  id at module scope, not per mount: vibe⇄terminal swaps which component renders,
+  so a per-mount ref would lose the previous mode on exactly that transition.
+
+**Every pick is URL-first.** Selecting a mode only navigates (`?viewMode=`); the
+mounted URL is the single writer, adopting it via `useDockViewModeOverrideSync`.
+So the mode is shareable, back-safe, and survives the URL. `viewMode` is threaded
+through the shell loader's scope-align redirect (`ProcessRouteCarry`), which
+otherwise rebuilds the URL and drops query options.
+
+The one thing navigation cannot express is the TRANSPORT — the terminal surface is
+an interactive PTY, vibe and chat are headless. That reconcile lives in an
+**effect**, not the click handler, so it happens however the mode changed (either
+control, or `window.setView()`). It fires on a mode CHANGE only, never on mount:
+merely opening a session must not kill or spawn a worker.
+
+(Historically this was a 2-state toggle in the bottom ribbon, then a separate
+3-valued "chat mode" preference. The latter could drift out of sync with View
+mode — both carried a `vibe`, and each control wrote only its own — so it was
+folded into View mode.)
 
 ### → CLI (chat / headless)
 
@@ -93,14 +116,22 @@ Frontend `switchMode(Interactive)` (`agentic-process.ts:2361`):
 
 ### UI-side reconcile (both directions)
 
-`handleToggleView` (`InteractiveTerminal.tsx:1486`):
-- Guards: `if (!process || switching || !awaitingUserInput) return;` — the toggle
-  is disabled unless the worker is awaiting input (see gate below).
-- After the transport switch resolves, sets `chatUiOverride` and re-enables the
-  toggle **immediately**, then fires `process.loadHistory({ force: true })` in the
-  **background** to pull in turns the *other* mode produced. History reconcile is
-  deliberately not awaited (a large-session transcript parse is slow and would
-  wedge rapid switching); the live WS stream keeps the pane current meanwhile.
+`useProcessSurface` (`use-process-surface.ts`), after the navigation described
+above:
+- Skips the lifecycle call entirely when the transport already matches the mode — the URL already
+  said everything there was to say. This is the common case, not an edge one:
+  Standard view paints the chat pane over a perfectly live PTY, so picking
+  `terminal` there means "show me the xterm", not "spawn a PTY". The test keys on
+  the **transport** (`pty_mode`, held stable by the SDK desired-value latch), NOT
+  on the chat skin — the skin preference lags under rapid switching, so a
+  skin-keyed test could short-circuit a direction that has not actually landed.
+- Otherwise guards `if (!process || switching || !awaitingUserInput) return;`,
+  mirroring the control's own disabled gate (see below).
+- Re-enables the control **immediately** once the transport switch resolves, then
+  fires `process.loadHistory({ force: true })` in the **background** to pull in
+  turns the *other* mode produced. History reconcile is deliberately not awaited
+  (a large-session transcript parse is slow and would wedge rapid switching); the
+  live WS stream keeps the pane current meanwhile.
 
 ---
 
@@ -112,10 +143,13 @@ A switch is only legal while the worker is **awaiting user input**
 (`IDLE`/`COMPLETE`/`INTERRUPTED`/`PENDING_USER` — `isAwaitingUserInput`). Enforced
 in three layers:
 1. Backend `_enter_cli_mode` 409s on the prompt lock (`:1280`).
-2. The ribbon toggle is disabled unless `awaitingUserInput`
-   (`InteractiveTerminal.tsx:218`, gate reads the reactive `liveProcess.workerStatus`).
-3. `handleToggleView` re-checks `awaitingUserInput` as a belt-and-suspenders guard
-   for non-click callers (`:1490`).
+2. The switch's chat/terminal segments are disabled unless `awaitingUserInput`
+   (the hook derives it from the reactive entity via `isReadyForInput`). Gating
+   is per segment: a pick that needs no transport work — the segment already
+   matching `pty_mode`, and the **vibe** segment, which only navigates — is never
+   gated.
+3. `select` re-checks `awaitingUserInput` as a belt-and-suspenders guard for
+   non-click callers.
 
 Note: the backend mid-turn guard only covers the **→CLI** direction (it lives in
 `_enter_cli_mode`). The →Interactive branch goes straight to `_perform_open` with

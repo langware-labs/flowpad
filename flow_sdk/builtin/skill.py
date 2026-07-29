@@ -30,3 +30,7 @@ class Skill(Entity):
     metadata: dict | None = APIField(default=None)
 
     context_data_schema: ClassVar[Type] = SkillContextData
+    # A Skill's asset is the whole folder. Hub transport preserves every
+    # relative file while its primary content remains canonically /SKILL.md.
+    _hub_asset_layout: ClassVar[str] = "folder"
+    _hub_main_file: ClassVar[str] = "SKILL.md"

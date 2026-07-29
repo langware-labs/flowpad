@@ -284,7 +284,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
             size={Math.max((title || 'Untitled task').length, 1)}
             className="h-auto w-auto min-w-0 max-w-full border-0 bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
           />
-          <OwnerButton task={task} save={save} />
+          <OwnerButton task={task} />
           <AssetCollisionBadge />
         </div>
 

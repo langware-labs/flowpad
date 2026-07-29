@@ -49,11 +49,12 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
+import { updateMessage, bulkUpdateMessages } from './inbox-api';
 import {
-  updateMessage,
-  bulkUpdateMessages,
-} from './inbox-api';
-import { conversationFacets, actionsFor, compareConversationsByRecency } from '@src/components/conversation/conversation-category';
+  conversationFacets,
+  actionsFor,
+  compareConversationsByRecency,
+} from '@src/components/conversation/conversation-category';
 import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { MembershipInvitations } from './MembershipInvitations';
 import { RowActions } from '@src/components/conversation/RowActions';
@@ -131,7 +132,22 @@ interface ConversationListRowProps {
   refSetter: (el: HTMLDivElement | null) => void;
 }
 
-export function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchive, onUnarchive, onToggleRead, selected, onToggleSelect, selectMode, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
+export function ConversationListRow({
+  conv,
+  isFocused,
+  viewMode,
+  searchActive,
+  onArchive,
+  onUnarchive,
+  onToggleRead,
+  selected,
+  onToggleSelect,
+  selectMode,
+  onRequestDelete,
+  cloudUserId,
+  onVisibilityChange,
+  refSetter,
+}: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
 
   // For invitation rows the first message IS the only message; for regular
@@ -437,7 +453,7 @@ export function InboxView() {
   const { data: conversations = [], refetch, isLoading, isSuccess } = useEntitiesQuery<Conversation>(request);
 
   // Only the FIRST load gets the full-screen "Loading…" state. Every
-  // ``refetch()`` (mount hub-pull, mark-read, archive, …) flips ``isLoading``
+  // ``refetch()`` (manual hub-pull, mark-read, archive, …) flips ``isLoading``
   // back to true while KEEPING the previous ``data`` — so gating the row list
   // on raw ``isLoading`` blanks the whole list to the spinner and back on every
   // refetch, which is the on-open flicker. Once we've loaded successfully once,
@@ -479,9 +495,7 @@ export function InboxView() {
   }, [matchedMessages]);
 
   const sorted = useMemo(() => {
-    const list = searchActive
-      ? conversations.filter((c) => c.id && matchIds.has(c.id))
-      : [...conversations];
+    const list = searchActive ? conversations.filter((c) => c.id && matchIds.has(c.id)) : [...conversations];
     list.sort(compareConversationsByRecency);
     return list;
   }, [conversations, searchActive, matchIds]);
@@ -501,18 +515,6 @@ export function InboxView() {
 
   // Unread pip/badge: backend-owned (InboxManager.unread, reflected live via
   // the entity channel) — no client-side recount here anymore.
-
-  // On inbox mount: pull any pending bundles from the hub so conversations
-  // whose pointer-list references not-yet-materialised FlowMessages don't
-  // 404 in the rendered rows. Fire-and-forget — the entity-update channel
-  // will refresh rows once the FMs land locally.
-  useEffect(() => {
-    void fetchConversations()
-      .then(() => refetch())
-      .catch(() => {});
-    // Run once per mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const handleRefresh = useCallback(async () => {
     setFetching(true);
@@ -1198,10 +1200,7 @@ export function InboxView() {
         )}
 
         {!inCommunityView && !inArchivedView && !initialLoading && (
-          <MembershipInvitations
-            recipientEmail={cloudUser?.email ?? null}
-            onPendingCount={setMembershipPendingCount}
-          />
+          <MembershipInvitations recipientEmail={cloudUser?.email ?? null} onPendingCount={setMembershipPendingCount} />
         )}
 
         {!inCommunityView &&

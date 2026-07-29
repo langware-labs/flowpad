@@ -58,15 +58,18 @@ compute_node-@local/                  (entity root, no sub-path)
   entitySubPath:  "Users/alice/file.md"
 ```
 
-### Bare absolute path fallback (Python only)
+### Bare absolute paths
 
-When the Python backend receives a bare absolute path (starts with `/`, no TypeId prefix), it auto-resolves the owning entity:
+Both Python and TypeScript parse a bare absolute machine path without choosing
+an owner: `type` and `id` remain `null`, and the normalized path is stored in
+`entitySubPath`. A parser is a pure value-object boundary; it never consults
+request context or desktop settings.
 
-1. If a request context exists, uses the authenticated user's TypeId.
-2. In desktop mode, defaults to `compute_node-@local`.
-3. Otherwise raises `ValueError`.
-
-The TypeScript `VFSPath` does **not** auto-resolve — it sets `type` and `id` to `null`.
+Code that knows the owner must qualify the path explicitly with
+`VFSPath.from_entity_path(...)` (Python) or `VFSPath.fromTypeId(...)` /
+`VFSPath.fromMachinePath(...)` (TypeScript). For HTTP filesystem requests,
+`EntityFSReqInfo.from_request_info()` is the single adapter that combines the
+URL's target TypeId with its request subpath.
 
 ## Path Normalization
 
@@ -111,6 +114,23 @@ HTTP Request
   → Dispatches to specific handler (browse, download, upload, ...)
 ```
 
+## UI route mapping
+
+VFS identity is independent of the surface presenting it. `DockPointer` exposes
+that identity as `resourceVfsPath`, so an editor row, the Assets Files tree, and
+Explorer can compare `VFSPath` values instead of comparing route strings.
+
+The canonical Assets filesystem route is:
+
+```
+/dock/assets/fs/vfs/{type}-{id}/{entity_sub_path}
+```
+
+Local locators use `compute_node-@local`; a remote compute node retains its UUID.
+The live local compute-node UUID is used for I/O only. Legacy
+`/dock/assets/fs/{relative_path}` URLs are replaced by the loader with the
+canonical local route before tab setup.
+
 ## Supported FS Actions
 
 | Action            | Method | Description                          |
@@ -135,8 +155,9 @@ HTTP Request
 
 | Language   | File                           | Class                        |
 | ---------- | ------------------------------ | ---------------------------- |
-| Python     | `flow_sdk/api/fs/fs_api.py`    | `VFSPath`, `EntityFSReqInfo` |
-| TypeScript | `ts_sdk/src/utils/vfs-path.ts` | `VFSPath`                    |
+| Python     | `flow_sdk/api/api_types/vfs_path.py` | `VFSPath`              |
+| Python     | `flow_sdk/api/fs/fs_api.py`          | `EntityFSReqInfo`       |
+| TypeScript | `ts_sdk/src/utils/vfs-path.ts`       | `VFSPath`               |
 
 Supporting files:
 
@@ -153,4 +174,3 @@ Supporting files:
 * TS FS store: `ts_sdk/src/stores/fsStore.ts`
 
 * Unit tests: `ui/tests/unit/vfs-path.test.ts`, `tests/api/test_unit_fs.py`
-

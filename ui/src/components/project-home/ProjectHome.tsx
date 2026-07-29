@@ -1,10 +1,13 @@
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
+import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitChecksDialog';
+import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
 import { GitShareGateDialog } from '@src/components/share-to-conversation/GitShareGateDialog';
 import type { GitShareGate } from '@src/hooks/use-git-share-gate';
 import apiClient from '@sdk/client';
 import { launchWizard, CapabilityKinds } from '@sdk';
 import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
 import type { PanelHandlers } from '@src/components/quick-create';
+import { EnvLocalCard } from './EnvLocalCard';
 import { SecretsCard } from './SecretsCard';
 import { HomeCustomizationCard } from './HomeCustomizationCard';
 import { VIBE_AGENTS_TAG, VibeAgentsCard } from './VibeAgentsCard';
@@ -116,6 +119,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   // Customize/Secrets cards are project-entity bound — only when the resolved
   // project is the active one (they read/write live Project state).
   const project = dataCtx.project?.id === projectId ? dataCtx.project : null;
+  const [gitChecks, setGitChecks] = useState<GitCheck[] | null>(null);
   const [gitGateOpen, setGitGateOpen] = useState(false);
   const [gitGateState, setGitGateState] = useState<'setup' | 'blocked'>('setup');
   const [gitGateReason, setGitGateReason] = useState<string | null>(null);
@@ -166,17 +170,32 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
 
   return (
     <div className="flex h-full flex-col">
-      {/* Members — project-level roster + invite (role-gated inside the stack). */}
+      {/* Project header: git state on the left, roster + invite on the right.
+          The roster names itself (avatars / "No members" / Invite), so a
+          separate "Members" caption was one label too many. */}
       {projectTypeId && (
         <div
           className="flex items-center justify-between border-b border-border/50 px-4 py-2"
           data-testid="project-home-members"
         >
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            <Trans>Members</Trans>
-          </span>
-          <MembersAvatarStack typeId={projectTypeId} allowInviteLink showInviteButton beforeInvite={beforeProjectInvite} />
+          <div className="flex min-w-0 items-center gap-3">
+            <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
+          </div>
+          <MembersAvatarStack
+            typeId={projectTypeId}
+            allowInviteLink
+            showInviteButton
+            beforeInvite={beforeProjectInvite}
+          />
         </div>
+      )}
+      {gitChecks && (
+        <ProjectGitChecksDialog
+          open
+          onOpenChange={(next) => !next && setGitChecks(null)}
+          checks={gitChecks}
+          onSetupRepo={gitGate.runSetup}
+        />
       )}
       {gitGateState === 'blocked' && gitGateReason && (
         <div className="border-b border-red-300 bg-red-50 px-4 py-2 text-xs text-red-800" data-testid="project-git-access-warning">
@@ -213,7 +232,16 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
                 )}
               </TabsContent>
 
-              <TabsContent value="secrets">{project && <SecretsCard project={project} />}</TabsContent>
+              <TabsContent value="secrets">
+                {project && (
+                  <div className="flex flex-col gap-3">
+                    {/* Declarations first, then what was merely detected on
+                        disk — the model, in the order it reads. */}
+                    <SecretsCard project={project} />
+                    <EnvLocalCard project={project} />
+                  </div>
+                )}
+              </TabsContent>
             </Tabs>
           )}
         </div>

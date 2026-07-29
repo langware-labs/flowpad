@@ -59,8 +59,12 @@ export function preserveWindowLayout(currentPath: string, layout: Layout): Layou
  * full-app chrome (Part 3 §7). Used by the shell route loader's fallback /
  * ownership redirects.
  */
-export function buildShellRedirectUrl(currentPath: string, pointer?: string): string {
-  return buildDockUrl(currentPath, ViewType.SHELL, pointer, undefined, detectLayout(currentPath));
+export function buildShellRedirectUrl(
+  currentPath: string,
+  pointer?: string,
+  options?: Record<string, string>,
+): string {
+  return buildDockUrl(currentPath, ViewType.SHELL, pointer, options, detectLayout(currentPath));
 }
 
 /**

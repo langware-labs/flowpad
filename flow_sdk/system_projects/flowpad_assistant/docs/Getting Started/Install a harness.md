@@ -5,7 +5,7 @@ title: Install a harness
 
 # Install a harness
 
-A **harness** is the coding-agent CLI that Flowpad drives to run agents, skills and conversations. Flowpad supports three: **Claude Code** (the default), **Codex CLI** and **Copilot CLI**. At least one must be installed on this machine — pick one below, run the install command in a terminal, and you're set.
+A **harness** is the coding-agent CLI that Flowpad drives to run agents, skills and conversations. Flowpad supports three: **Claude Code**, **Codex CLI** and **Copilot CLI**. Choose the default in Harness settings; every new process without an explicit worker uses that persisted selection. At least one must be installed on this machine — pick one below, run the install command in a terminal, and you're set.
 
 ## Claude Code (recommended)
 

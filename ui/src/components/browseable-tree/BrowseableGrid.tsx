@@ -203,8 +203,9 @@ function GridTile({
     !!(
       node.pointer &&
       activePointer &&
-      node.pointer.viewType === activePointer.viewType &&
-      node.pointer.pointer === activePointer.pointer
+      ((node.pointer.viewType === activePointer.viewType &&
+        node.pointer.pointer === activePointer.pointer) ||
+        node.pointer.resourceVfsPath?.equals(activePointer.resourceVfsPath))
     );
 
   const actionable = !!(node.pointer || node.activate || isContainer);

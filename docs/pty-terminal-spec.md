@@ -926,7 +926,7 @@ content written at width A and reflowed to B equals content written at B.
 An interactive agent tab (`InteractiveTerminal.tsx`) can present the *same*
 agentic session two ways. This section is the consolidated reference for the two
 renderers, their transports, and how each derives its content. **Mode switching
-UX (the toggle control, View mode) is owned by `docs/viewmodes.md`; the
+UX (the switch control, View mode) is owned by `docs/viewmodes.md`; the
 headless/PTY session concept is owned by the headless⇄PTY mode docs — this
 section only covers what each renderer draws and from where.**
 
@@ -938,38 +938,64 @@ section only covers what each renderer draws and from where.**
 | Data source | **PTY byte stream** (`pty_output_msg` over WS + attach replay, §1/§13) | **`AgenticProcess.flowDataStream`** — transcript-derived `FlowData` items |
 | Transport that feeds it | PTY only | Transport-independent (see §14.3) |
 | Availability | **PTY mode only** — needs a live PTY/shell | **Both** PTY-mode and headless processes |
-| DOM | `xtermContainerRef` div, always mounted in PTY mode | absolute `z-[60]` overlay *above* the xterm (`InteractiveTerminal.tsx:1760`) |
+| DOM | `xtermContainerRef` div, always mounted in PTY mode | absolute `z-[60]` overlay *above* the xterm (`InteractiveTerminal.tsx:1753`) |
 
 The chat UI is an **opaque overlay** painted over the xterm, not a replacement:
 in PTY mode the xterm stays mounted and fitted underneath (comment at
-`InteractiveTerminal.tsx:1756-1759`), so toggling chat⇄terminal is instant and
+`InteractiveTerminal.tsx:1749-1752`), so toggling chat⇄terminal is instant and
 never resets the PTY.
 
 ### 14.2 Which renderer shows — selection logic
 
-All in `InteractiveTerminal.tsx:159-168`:
+All in `InteractiveTerminal.tsx` (the `showSimpleChat` derivation):
 
 ```
-isAdvanced   = useIsAdvanced()                    // View mode (Standard ⊂ Advanced ⊂ Dev)
-chatOverride = useChatUiOverride()                // 'chat' | 'terminal' | null (bottom-ribbon toggle)
-wantChat     = chatOverride != null ? chatOverride === 'chat' : !isAdvanced
+surface      = useSessionSurface()                // 'vibe'|'chat'|'terminal', or null = not known yet
+wantChat     = surface === 'chat'
 isHeadless   = !embedded && process.pty_mode === false
 showSimpleChat = isHeadless || (wantChat && !embedded && process)
 canToggleView  = !embedded && process
 ```
 
-- **Default skin** (no override): Standard ⇒ chat UI, Advanced/Dev ⇒ xterm.
-- **Override** (`preferences.ui.chat_ui_mode`, a boot pref; `chat-ui-mode-context.tsx`)
-  takes priority over View mode until cleared. Console/global helpers
-  `window.setChatUi('chat'|'terminal'|null)` / `getChatUi()`.
+- **One mode.** The surface is derived from the View mode alone
+  (`surfaceForViewMode`): Vibe ⇒ the vibe workspace, Standard ⇒ chat pane,
+  Advanced/Dev ⇒ xterm. There is no second "chat mode" preference — it existed
+  briefly and could drift out of sync with View mode (both carried a `vibe`, and
+  each control wrote only its own), so it was folded into this one.
+- **`null` = not known yet.** `InstancePreferences.get()` cannot distinguish
+  "nothing stored" from "nothing read in yet" — both return the registry default
+  — so `useSessionSurface` gates on `usePreferenceResolved(PrefKey.VIEW_MODE)`
+  and reports `null` until the value is known. This matters only on the first
+  load in a browser profile: boot keys are seeded synchronously from
+  localStorage, so every later load resolves before first paint, but without the
+  seed the default would paint the wrong surface for ~1s until
+  `preferences.json` lands. `InteractiveTerminal` covers the pane
+  (`surfacePending`, `InteractiveTerminal.tsx:192`) and withholds the mode switch
+  and bottom ribbon until it resolves; the xterm still mounts and attaches
+  underneath, so the hold costs no open latency. See
+  `tests/unit/session-surface-first-paint.test.tsx`.
+- Console/global helpers: `window.setView('vibe'|'standard'|'advanced'|'dev')` /
+  `getView()`.
 - **Embedded** terminals (chat side panel) and **shell-only** tabs (no
   `AgenticProcess`) always keep the xterm — `showSimpleChat` requires `process`
   and `!embedded`.
 - **Headless** (`pty_mode === false`): the chat pane is forced on **and the xterm
-  container is not rendered at all** (`InteractiveTerminal.tsx:1685`, `!isHeadless
+  container is not rendered at all** (`InteractiveTerminal.tsx:1675`, `!isHeadless
   && <div ref={xtermContainerRef}>`). The mount effect early-returns on the
   missing ref, so no `PtySync` attach is attempted for a process that has no
   shell.
+
+**The control** is the footer `ViewToggle` — the single mode selector, showing
+the CURRENT mode as the selected segment. (An in-context twin briefly lived in the
+terminal header; it was removed because two controls picking the same thing is
+exactly the overlap this design set out to end.)
+
+Every pick is URL-first: the click only navigates (`?viewMode=`), and the mounted
+URL adopts the mode as the preference, so the arrangement is shareable and
+back-safe. Picking a mode whose surface implies a different TRANSPORT also moves
+the worker — that reconcile lives in an effect (`useProcessSurface`), not in the
+click handler, so it happens however the mode changed: the toggle, a `?viewMode=`
+URL, or `window.setView()`. See `docs/agent-management/mode-switching.md`.
 
 ### 14.3 Where the chat UI's content comes from (NOT the PTY)
 
@@ -1002,7 +1028,7 @@ happens to sit over the xterm.
 **Confirmed**, with one clarification on *how*:
 
 - ✅ **xterm is PTY-only.** Headless processes render no xterm
-  (`InteractiveTerminal.tsx:1685`); the xterm's only data source is the PTY byte
+  (`InteractiveTerminal.tsx:1675`); the xterm's only data source is the PTY byte
   stream.
 - ✅ **Chat UI works over both.** In headless mode it is the sole view; in PTY mode
   it overlays the live xterm.
@@ -1021,3 +1047,43 @@ so the composer is identical whether the chat overlay or the xterm is on top;
 `SimpleChatPane` deliberately does not carry its own composer (comment at
 `SimpleChatPane.tsx:20-33`).
 
+
+---
+
+## 15. Startup Budget — how long a session takes to accept input
+
+Measured on one macOS dev host (`claude` 2.1.220, local backend, warm), 5 runs
+per layer. All four use the **same readiness criterion** — the driver's
+`pty_composer_ready_pattern` (`cli_drivers/claude/driver.py:70`,
+`❯ Try "` / `❯ ───`), i.e. the composer is painted and will accept a keystroke —
+so the layers are directly comparable.
+
+| Layer | What is timed | ready (median) | range |
+|---|---|---|---|
+| Bare CLI | `claude` in a raw PTY, no Flowpad | **953 ms** | 872–1796 |
+| Python / HTTP | `createProcess` → `open`, polling the framed stream | **1816 ms** | 1623–2231 |
+| ts_sdk | `ComputeNode.createProcess` → `open` → `attachPty` | **1638 ms** | 1499–1991 |
+| Browser | click *Start Claude* → composer in the xterm | **2100 ms** | 1659–2182 |
+
+Reading it:
+
+- **Flowpad's overhead over the bare CLI is ~700–1150 ms**, and ~850 ms of that
+  lands before the PTY exists: `createProcess` (entity mint + save) then `open`
+  (shell materialize + spawn). Claude's own ~950 ms boot then overlaps the tail.
+- **Python vs ts_sdk is not a real gap.** Both drive the identical two actions;
+  the difference is measurement — the HTTP harness polls
+  `GET /shell/{id}/pty-stream` on an interval, the SDK reads the live WS chunk
+  store. Treat both as ~1.6–1.8 s.
+- **The browser adds ~300–450 ms** over the SDK path: route navigation, terminal
+  mount, and replay-through-headless-xterm (§13) before the live attach.
+- **The first click in a freshly loaded page cost 7547 ms** — capability probe
+  (`capabilityManager.ensureChecked`) plus first terminal mount. Every subsequent
+  tab in the same page was ~1.7–2.2 s. That cold path, not the steady-state
+  number, is where the remaining headroom is.
+
+The nearest standing guard is `ui/tests/long_tests/open_tab_timing.test.ts`
+(execute < 4500 ms, prompt visible in the scrollback < 7000 ms) — budgets loose
+enough that a regression of the size this table would show slips under them;
+`create_process_claude_timing.test.ts` logs its number without asserting one.
+Absolute numbers are host-bound, so the decomposition (which layer owns which
+slice) is the durable part, not the millisecond values.

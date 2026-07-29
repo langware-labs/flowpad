@@ -17,6 +17,7 @@ from flow_sdk.transcript_analyzer import (
     UnknownEntry,
     UserMessageEntry,
 )
+from flow_sdk.transcript_analyzer.entries import WorkerUnavailableEntry
 from flow_sdk.transcript_analyzer.parsers.claude import ClaudeParser
 
 
@@ -166,6 +167,66 @@ def test_flowpad_embedded_agent_prompt_envelope_is_meta():
     assert len(entries) == 1
     assert isinstance(entries[0], UserMessageEntry)
     assert entries[0].is_meta is True
+
+
+def test_weekly_limit_assistant_becomes_worker_unavailable():
+    entries = ClaudeParser().feed(
+        {
+            "type": "assistant",
+            "error": "rate_limit",
+            "isApiErrorMessage": True,
+            "apiErrorStatus": 429,
+            "uuid": "quota-event",
+            "sessionId": "quota-session",
+            "message": {
+                "model": "<synthetic>",
+                "stop_reason": "stop_sequence",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "You've hit your weekly limit · resets 3pm "
+                            "(Asia/Jerusalem)"
+                        ),
+                    }
+                ],
+            },
+        },
+        0,
+    )
+
+    assert len(entries) == 1
+    entry = entries[0]
+    assert isinstance(entry, WorkerUnavailableEntry)
+    assert entry.reason == "quota_exhausted"
+    assert entry.worker == "claude"
+    assert entry.worker_type == "claude_code"
+    assert entry.provider_error == "rate_limit"
+    assert entry.status_code == 429
+    assert entry.recoverable_with_alternative is True
+
+
+@pytest.mark.parametrize(
+    "error_fields",
+    [
+        {"error": "rate_limit"},
+        {"isApiErrorMessage": True, "apiErrorStatus": "429"},
+    ],
+)
+def test_each_rate_limit_signal_is_sufficient(error_fields):
+    entries = ClaudeParser().feed(
+        {
+            "type": "assistant",
+            **error_fields,
+            "message": {
+                "content": [{"type": "text", "text": "Please try again later."}],
+            },
+        },
+        0,
+    )
+
+    assert isinstance(entries[0], WorkerUnavailableEntry)
+    assert entries[0].reason == "rate_limited"
 
 
 def test_meta_kind_propagation(claude_jsonl):

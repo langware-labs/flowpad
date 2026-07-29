@@ -7,17 +7,18 @@ negative ``types × search_dirs`` combinations.
 
 from __future__ import annotations
 
+import json
 import uuid
 from pathlib import Path
 
 import pytest
 
 from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.skill import Skill
 from flow_sdk.builtin.claude_memory_entities import Docs
+from flow_sdk.builtin.skill import Skill
 from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions
 from flow_sdk.fs_store.path_utils import canonical_posix_path
-
+from flow_sdk.server.routes.assets import list_entities_by_path
 
 # ---------- Fixture ----------------------------------------------------------
 
@@ -104,6 +105,25 @@ async def test_all_types_under_root(asset_tree: dict) -> None:
     ))
     expected = {asset_tree[k].id for k in ("skill_a", "skill_b", "agent_x", "doc_y", "doc_z")}
     assert expected.issubset(_ids(res))
+
+
+@pytest.mark.asyncio
+async def test_path_rows_emit_remote_booleans(asset_tree: dict) -> None:
+    asset_tree["skill_a"].remote = True
+    await asset_tree["skill_a"].save()
+
+    response = await list_entities_by_path(
+        folder=[str(asset_tree["skills_dir"])],
+        record_type=["skill"],
+        include_system=False,
+        limit=100,
+        offset=0,
+    )
+    rows = json.loads(response.body)["data"]["entities"]
+    by_id = {row["id"]: row for row in rows}
+
+    assert by_id[asset_tree["skill_a"].id]["remote"] is True
+    assert by_id[asset_tree["skill_b"].id]["remote"] is False
 
 
 @pytest.mark.asyncio

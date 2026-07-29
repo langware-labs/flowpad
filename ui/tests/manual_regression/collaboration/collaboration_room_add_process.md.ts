@@ -46,7 +46,9 @@ test('collaboration_room add_process end-to-end HTTP contract', async () => {
     data: { member_id: 'qa-member-002', name: 'QA Joiner' },
   })).json();
   expect(join.status).toBe('SUCCESS');
-  const memberIds = (join.data?.members ?? []).map((m: { member_id: string }) => m.member_id);
+  // Local collaboration membership is the presence overlay. `members` is
+  // reserved for the hub-backed role roster on the Entity base.
+  const memberIds = (join.data?.presence ?? []).map((m: { member_id: string }) => m.member_id);
   expect(memberIds).toContain('qa-member-001');
   expect(memberIds).toContain('qa-member-002');
 
@@ -64,7 +66,7 @@ test('collaboration_room add_process end-to-end HTTP contract', async () => {
     data: { member_id: 'qa-member-002', name: 'QA Joiner' },
   })).json();
   expect(joinRoom.status).toBe('SUCCESS');
-  expect((joinRoom.data?.members ?? []).some((m: { member_id: string }) => m.member_id === 'qa-member-002')).toBe(true);
+  expect((joinRoom.data?.presence ?? []).some((m: { member_id: string }) => m.member_id === 'qa-member-002')).toBe(true);
 
   // 5. create a minimal AgenticProcess on the compute node
   const proc = await (await rq.post(`${API}/api/v1/graph/compute_node/${nodeId}/createProcess`, {
@@ -92,7 +94,7 @@ test('collaboration_room add_process end-to-end HTTP contract', async () => {
   // 7. GET room — process list populated
   const got = (await (await rq.get(`${API}/api/v1/graph/collaboration_room/${rid}`)).json()).data;
   expect(got.agentic_process_ids).toContain(pid);
-  expect((got.members ?? []).some((m: { member_id: string }) => m.member_id === 'qa-member-002')).toBe(true);
+  expect((got.presence ?? []).some((m: { member_id: string }) => m.member_id === 'qa-member-002')).toBe(true);
 
   // 8. Negative: missing agentic_process_id → FAIL mentioning agentic_process_id
   const missingRes = await rq.post(`${API}/api/v1/graph/collaboration_room/${rid}/add_process`, { data: {} });

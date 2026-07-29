@@ -2,10 +2,10 @@ import { Tab, toplog } from '@sdk';
 import { useSyncExternalStore } from 'react';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { editorForType } from '@src/navigation/asset-doc-types';
+import { isContentAssetDock } from '@src/navigation/content-asset-dock';
+import { isAdoptableChildDock } from '@src/navigation/adoptable-child-dock';
 import { ViewType } from '@src/types/ViewType';
 import { getActiveTabParent } from './tab-parent-context';
-import { resolveColdOpenParent } from './vibe-parent';
 
 export enum TabLifecycleState {
   Opening = 'opening',
@@ -38,6 +38,8 @@ interface SetupTabOptions {
   setupContent?: () => Promise<void>;
   adapter?: TabContentAdapter;
   onMaterialized?: (tabs: Tab[]) => void;
+  /** Explicit workspace parent for a mounted-view adoption pass. */
+  parentTabId?: string | null;
 }
 
 const entries = new Map<string, TabLifecycleEntry>();
@@ -123,21 +125,10 @@ function shouldMaterializeDock(dock: DockPointer): boolean {
   return !(dock.viewType === ViewType.SHELL && dock.pointer === 'new_terminal');
 }
 
-/**
- * Does this dock address a first-class CONTENT asset (markdown/skill/whiteboard/
- * …) — i.e. an entity whose `project_id` the tab must mirror? True for a vfs
- * asset dock and for a typeid dock whose type maps to an asset editor; false for
- * shells, agentic processes, bare projects, inbox/triggers (those resolve their
- * project differently — or legitimately have none — and must keep the fast
- * reuse path).
- */
-function dockAddressesAsset(dock: DockPointer): boolean {
-  if (dock.vfsPath) return true;
-  const tid = dock.targetTypeId;
-  return !!(tid && editorForType(tid.type));
-}
-
-async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tabs: Tab[] }> {
+async function materializeTab(
+  dock: DockPointer,
+  options: SetupTabOptions,
+): Promise<{ tab: Tab | null; tabs: Tab[] }> {
   const t0 = performance.now();
   const existing = await Tab.listAll();
   toplog.log(
@@ -146,25 +137,47 @@ async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tab
   );
   const existingTab = findTabForDock(existing, dock);
   // A workspace surface (the vibe workspace) may have registered its process
-  // tab as the parent for tabs materialized right now. Only a CONTENT-ASSET
-  // dock is adoptable — a process/project/assets-list dock is a navigation
-  // *away* from the workspace (its loader runs before the workspace unmounts
-  // and clears the slot), and adopting those was how nested-workspace /
-  // process-under-process corruption arose. This is the ONLY grouping seam;
-  // no navigation call site knows about children, and the backend enforces the
-  // same invariant (`_PARENT_FORBIDDEN_TARGET_TYPES`) as the second belt.
-  // A content-asset tab adopts a parent: the workspace's registered parent while
-  // it's mounted, else a COLD-open resolver (direct link / reload with nothing
-  // mounted) — today that's the vibe invariant "an asset opened in vibe renders
-  // inside a vibe workspace", resolved mode-agnostically in `resolveColdOpenParent`.
-  const addressesAsset = dockAddressesAsset(dock);
-  const parentTabId = addressesAsset
-    ? (getActiveTabParent() ?? (await resolveColdOpenParent(dock, existingTab?.project_id ?? null)))
+  // tab as the parent for tabs materialized right now. Only workspace CONTENT
+  // is adoptable — content assets/files and a plain terminal (a shell opened
+  // from inside the workspace belongs in its display, like a file). A
+  // process/project/assets-list dock is a navigation *away* from the workspace
+  // (its loader runs before the workspace unmounts and clears the slot), and
+  // adopting those was how nested-workspace / process-under-process corruption
+  // arose. This is the ONLY grouping seam; no navigation call site knows about
+  // children, and the backend enforces the same invariant
+  // (`_PARENT_FORBIDDEN_TARGET_TYPES` + `_pointer_is_adoptable_child`) as the
+  // second belt. An adoptable tab takes a parent registered by a mounted
+  // workspace or supplied by its mounted-view adoption pass. Process
+  // lookup/creation is not awaited here: route loaders must stay fast, so
+  // AssetVibeWorkspace resolves that side effect after the URL-owned asset
+  // view mounts.
+  const addressesAdoptable = isAdoptableChildDock(dock);
+  const parentTabId = addressesAdoptable
+    ? (options.parentTabId ?? getActiveTabParent())
     : null;
   // Mirror the backend's self-parent guard: a tab can never adopt itself, and
   // would otherwise re-resolve on every return navigation forever.
   const needsReparent =
     !!parentTabId && !!existingTab && existingTab.id !== parentTabId && existingTab.parent_tab_id !== parentTabId;
+  // Re-parenting an already-resolved asset must not resolve/download that same
+  // entity a second time. On a live editor the entity ref can be FETCHING for
+  // viewer work, which made `getFromDockPointer` queue behind it and left the
+  // Vibe transition half-open. The existing Tab already carries the exact
+  // denormalized target/project metadata; send it through the same backend
+  // `new_tab` ensure seam with only the new parent edge.
+  if (needsReparent && existingTab?.pointer) {
+    await Tab.newTab(existingTab.pointer, {
+      targetType: existingTab.target_type,
+      targetId: existingTab.target_id,
+      projectId: existingTab.project_id,
+      name: existingTab.name,
+      iconKey: existingTab.icon_key,
+      worktree: existingTab.worktree,
+      parentTabId,
+    });
+    const all = await Tab.listAll();
+    return { tab: findTabForDock(all, dock) ?? existingTab, tabs: all };
+  }
   // Inverse of the adopt guard: a NON-adoptable dock must never CARRY a parent
   // either. A stale edge persisted onto e.g. an assets-list row (written under
   // the retired display-tab model, before the adoptable allow-list) resurrects
@@ -172,7 +185,7 @@ async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tab
   // project button re-opened the last process (RCA 2026-07-16). Falls through
   // to the mint below, where the backend (`ensure_tab`'s adoptable-pointer
   // guard) null-heals the row — same self-heal seam as its stale siblings.
-  const staleParentEdge = !!existingTab?.parent_tab_id && !addressesAsset;
+  const staleParentEdge = !!existingTab?.parent_tab_id && !addressesAdoptable;
   // A lens dock can't trust the row's denormalized project_id: the loader
   // activates the TARGET entity's project on every load, and the indexer may
   // re-stamp that target through the disk→DB path (`sync_to_db`), which skips
@@ -193,10 +206,16 @@ async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tab
   // edge. All four fall through to `getFromDockPointer`, which re-derives
   // project_id from the asset and adopts (or sheds) the parent, self-healing
   // the row.
+  //
+  // The project self-heal is ASSET-scoped, not adoptable-scoped: a shell's
+  // project_id is pinned at creation from the active project, never derived
+  // from a target, and a project-less shell is a legitimate GLOBAL terminal.
+  // Widening this to every adoptable dock would re-mint those on every single
+  // navigation chasing a project_id that is correctly null.
   if (
     existingTab &&
     !lensProjectStale &&
-    (existingTab.project_id || !addressesAsset) &&
+    (existingTab.project_id || !isContentAssetDock(dock)) &&
     !needsReparent &&
     !staleParentEdge
   ) {
@@ -248,6 +267,44 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
     return adapter.setupTab(dock);
   }
 
+  // A content asset that is already open can change presentation options
+  // (notably Standard → Vibe) without re-listing/re-minting the same Tab.
+  // The route loader still runs its content adapter — and therefore remains
+  // the context writer — while the durable tab identity and recency stamp are
+  // reused locally. Explicit parent adoption must pass through materializeTab.
+  //
+  // Deliberately the ASSET predicate, not the adoptable one: this skip exists
+  // for the presentation morph on a live editor, where re-minting would queue
+  // behind a FETCHING entity ref. A shell dock has no such morph, and routing
+  // it through materializeTab on every navigation is exactly what re-asserts
+  // its workspace adoption when it is reopened from inside the workspace.
+  const opened = entries.get(key);
+  if (
+    isContentAssetDock(dock) &&
+    opened?.state === TabLifecycleState.Opened &&
+    opened.tabId &&
+    options.parentTabId === undefined
+  ) {
+    setEntry(key, TabLifecycleState.Opening, { tabId: opened.tabId });
+    void Tab.activateById(opened.tabId).catch(() => {});
+    try {
+      await adapter.setupTab(dock);
+      setEntry(key, TabLifecycleState.Opened, { tabId: opened.tabId });
+      return { tab: null };
+    } catch (error) {
+      setEntry(key, TabLifecycleState.OpenFailed, {
+        tabId: opened.tabId,
+        error,
+      });
+      return { tab: null, error };
+    }
+  }
+
+  // Materialization is keyed by tab identity, not presentation options. A
+  // rapid Standard → Vibe transition can arrive while the initial asset tab is
+  // still opening; sharing that work avoids two concurrent writes to the same
+  // scoped tab. Vibe's process attachment/reparent is a mounted-view effect and
+  // therefore does not depend on a second loader materialization.
   const inFlight = setupInFlight.get(key);
   if (inFlight) return inFlight;
 
@@ -256,7 +313,7 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
     let tab: Tab | null = null;
     let tabs: Tab[] = [];
     try {
-      const materialized = await materializeTab(dock);
+      const materialized = await materializeTab(dock, options);
       tab = materialized.tab;
       tabs = materialized.tabs;
       if (!tab) {
@@ -290,9 +347,15 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
   }
 }
 
-export async function cleanupTab(dock: DockPointer, tab: Tab): Promise<void> {
+export async function cleanupTab(
+  dock: DockPointer,
+  tab: Tab,
+  options: { markClosing?: boolean } = {},
+): Promise<void> {
   const key = tabKey(tab);
-  setEntry(key, TabLifecycleState.Closing, { tabId: tab.id });
+  if (options.markClosing !== false) {
+    setEntry(key, TabLifecycleState.Closing, { tabId: tab.id });
+  }
   try {
     await (adapters.get(dock.viewType ?? '') ?? defaultAdapter).cleanupTab(dock, tab);
   } catch (error) {
@@ -320,6 +383,47 @@ export async function closeTabWithLifecycle(tab: Tab): Promise<Tab[]> {
     return await Tab.closeById(tab.id);
   } catch (error) {
     setEntry(key, TabLifecycleState.CloseFailed, { tabId: tab.id, error });
+    return [];
+  }
+}
+
+/**
+ * Batch close waits for the one durable backend acknowledgement before hiding
+ * the chips. This deliberately differs from the optimistic single-close path:
+ * close-all completion is commonly followed immediately by reload/navigation,
+ * which used to abort the fan-out requests and resurrect every tab.
+ */
+export async function closeTabsWithLifecycle(
+  tabs: Tab[],
+  projectId: string | null = null,
+): Promise<Tab[]> {
+  const unique = [...new Map(tabs.map((tab) => [tab.id, tab])).values()];
+  const ready = (
+    await Promise.all(
+      unique.map(async (tab) => {
+        const dockData = tab.dockPointer;
+        const dock = dockData ? new DockPointer(dockData) : null;
+        try {
+          if (dock) await cleanupTab(dock, tab, { markClosing: false });
+          return tab;
+        } catch {
+          return null;
+        }
+      }),
+    )
+  ).filter((tab): tab is Tab => tab !== null);
+
+  if (ready.length === 0) return [];
+  try {
+    const result = await Tab.closeManyByIds(ready.map((tab) => tab.id), projectId);
+    for (const tab of ready) {
+      setEntry(tabKey(tab), TabLifecycleState.Closing, { tabId: tab.id });
+    }
+    return result;
+  } catch (error) {
+    for (const tab of ready) {
+      setEntry(tabKey(tab), TabLifecycleState.CloseFailed, { tabId: tab.id, error });
+    }
     return [];
   }
 }

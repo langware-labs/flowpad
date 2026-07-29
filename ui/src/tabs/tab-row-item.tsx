@@ -9,7 +9,7 @@
  * `status`/`is_disabled`).
  */
 import { AgentTrace, AgenticProcess, dataManager, editorForType, Shell, Tab, TypeId } from '@sdk';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { type TabStripItem } from '@src/components/tabs/TabStrip';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { lucideByName } from '@src/lib/lucide-by-name';
@@ -92,18 +92,33 @@ export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): T
   // has a target entity (CLAUDE.md icon rule), else the viewType registry glyph.
   const meta = VIEWER_REGISTRY[viewType as ViewType];
   if (tab.target_type && tab.target_id) {
-    const Icon = iconForType(tab.target_type);
     const typeLabel = meta?.title || humanizeType(tab.target_type);
     return {
       key,
       title: label || meta?.title || viewType,
       titleClassName,
-      icon: <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={`${tab.target_type} tab`} />,
+      icon: (
+        <EntityIcon
+          type={tab.target_type}
+          remote={tab.target_remote}
+          density="compact"
+          showLocationTooltip={false}
+          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+          aria-label={`${tab.target_type} tab`}
+        />
+      ),
       renameable: true,
       isDisabled,
       hasError: lifecycleOverlay.hasError,
       statusReason,
-      tooltip: <ContentTabTooltip tab={tab} typeLabel={typeLabel} statusReason={statusReason || undefined} />,
+      tooltip: (
+        <ContentTabTooltip
+          tab={tab}
+          typeLabel={typeLabel}
+          statusReason={statusReason || undefined}
+          location={tab.target_remote}
+        />
+      ),
       testId: `tab-content-${key}`,
       dataAttributes: { 'data-tab-kind': tab.target_type },
     };
@@ -141,7 +156,10 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
   const focusType = focusTypeId?.type;
   const focusEditable = !!(focusType && editorForType(focusType));
   const focusEntity = focusTypeId
-    ? (dataManager.getByTypeIdFromCache(focusTypeId) as { displayName?: string | null } | null)
+    ? (dataManager.getByTypeIdFromCache(focusTypeId) as {
+        displayName?: string | null;
+        remote?: boolean;
+      } | null)
     : null;
   // An agent_trace's chip shows the ORIGINAL analyzed-process name (e.g.
   // "deferred-save-background-sweeper") — the Route icon already reads as
@@ -173,14 +191,31 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
         }
         // `focusType` is only set on an assets dock, so it implies viewType==='assets'.
         if (key === currentDock?.tabHash && focusType && focusEditable) {
-          const Icon = iconForType(focusType);
+          const effectiveRemote = focusEntity?.remote ?? t.target_remote;
           item.icon = (
-            <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={`${focusType} tab`} />
+            <EntityIcon
+              type={focusType}
+              remote={effectiveRemote}
+              density="compact"
+              showLocationTooltip={false}
+              className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+              aria-label={`${focusType} tab`}
+            />
+          );
+          const typeLabel =
+            VIEWER_REGISTRY[ViewType.ASSETS]?.title || humanizeType(focusType);
+          item.tooltip = (
+            <ContentTabTooltip
+              tab={t}
+              typeLabel={typeLabel}
+              statusReason={item.statusReason || undefined}
+              location={effectiveRemote}
+            />
           );
         }
         return item;
       }),
-    [tabs, lifecycles, currentDock, focusType, focusEditable, activeAssetTitle],
+    [tabs, lifecycles, currentDock, focusType, focusEditable, focusEntity, activeAssetTitle],
   );
 }
 

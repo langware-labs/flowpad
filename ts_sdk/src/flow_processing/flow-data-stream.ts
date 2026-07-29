@@ -460,6 +460,30 @@ export class FlowDataStream extends EventEmitter {
     this._openGroups.clear();
   }
 
+  /**
+   * Drop the own-items matching `predicate`.
+   *
+   * For retiring placeholders an authoritative source has since replaced — see
+   * `FlowData.isOptimisticEcho`. Substreams are left alone: this stream doesn't
+   * own them.
+   *
+   * NOTE it does not rewind `_openGroups`/`_currentGroupId`, so retracting a row
+   * that heads an open group would leave the group pointing at a removed item
+   * and the next chunk would consolidate into a detached object. Safe for
+   * non-streamable element types (a user message is never a group head); give
+   * this a group-aware path before retracting CHAT or other streamable rows.
+   */
+  retract(predicate: (fd: FlowData) => boolean): void {
+    const kept = this._ownItems.filter((item) => !predicate(item));
+    if (kept.length === this._ownItems.length) return;
+    this._ownItems = kept;
+    // Membership changed. `emit` is the single invalidation chokepoint, so the
+    // items cache is dropped there. The payload is the conventional "items just
+    // added" — empty here, because this only removes; subscribers re-read
+    // `.items`.
+    this.emit('data', [], this);
+  }
+
   clear(): void {
     this._invalidateItems();
     this._ownItems = [];

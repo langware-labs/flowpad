@@ -8,10 +8,11 @@
  * A via `shell.sendInput`, and confirms output flows back. Uses the SDK
  * sendInput path (not xterm keyboard events) to avoid focus noise.
  *
- * Auto-skips when no docker workers are registered.
+ * A live disposable Docker worker is a Phase 11 prerequisite; absence is a
+ * hard preflight failure.
  */
 import { expect, test } from '@playwright/test';
-import { dismissSetupModal, gotoShell } from './helpers';
+import { dismissSetupModal, gotoShell, openTabViaMenu, terminalTabChips } from './helpers';
 
 test.describe('Docker — two tabs roundtrip', () => {
   test.beforeEach(async ({ page }) => {
@@ -19,20 +20,15 @@ test.describe('Docker — two tabs roundtrip', () => {
   });
 
   test('after opening tab B, tab A still routes sendInput → output', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
 
     await gotoShell(page);
 
-    const dockerButton = page.locator('[data-testid^="open-docker-tab-button-"]').first();
-    if (!(await dockerButton.isVisible({ timeout: 2_000 }).catch(() => false))) {
-      test.skip(true, 'No docker worker registered — run `flow compute connect <container> --start`');
-    }
-
     // Open tab A.
-    const initialTabs = await page.locator('[data-testid^="tab-shell-"]').count();
-    await dockerButton.click();
+    const initialTabs = await terminalTabChips(page).count();
+    await openTabViaMenu(page, 'docker');
     await expect
-      .poll(() => page.locator('[data-testid^="tab-shell-"]').count(), { timeout: 15_000 })
+      .poll(() => terminalTabChips(page).count(), { timeout: 15_000 })
       .toBeGreaterThan(initialTabs);
 
     await page.waitForTimeout(3_000); // let bash prompt land
@@ -43,9 +39,9 @@ test.describe('Docker — two tabs roundtrip', () => {
     expect(tabAId).toBeTruthy();
 
     // Open tab B.
-    await dockerButton.click();
+    await openTabViaMenu(page, 'docker');
     await expect
-      .poll(() => page.locator('[data-testid^="tab-shell-"]').count(), { timeout: 15_000 })
+      .poll(() => terminalTabChips(page).count(), { timeout: 15_000 })
       .toBeGreaterThan(initialTabs + 1);
     await page.waitForTimeout(3_000);
     const tabBId = await page.evaluate(() => {

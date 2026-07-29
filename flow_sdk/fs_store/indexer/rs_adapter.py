@@ -50,7 +50,11 @@ from flow_sdk.fs_store.indexer.index_function import (
     PerTypeIndexResult,
     _normalize_output_types,
 )
-from flow_sdk.fs_store.indexer.progress_table import IndexProgressTable, TypeProgressRow
+from flow_sdk.fs_store.indexer.ndjson_stream import (
+    candidate_from_fsref,
+    fsrefs_from_candidates,
+    stream_ndjson,
+)
 from flow_sdk.fs_store.record_types import RecordType
 
 logger = logging.getLogger(__name__)
@@ -87,28 +91,6 @@ def rs_backend_selected() -> bool:
     from flow_sdk.preferences import read_instance_pref  # noqa: PLC0415
 
     return str(read_instance_pref(PREF_INDEXER_BACKEND, "python")).lower() == "rust"
-
-
-def _table_from_json(d: dict) -> IndexProgressTable:
-    rows = tuple(
-        TypeProgressRow(
-            type_name=str(r.get("type_name", "")),
-            done=int(r.get("done", 0)),
-            total=int(r.get("total", 0)),
-            errors=int(r.get("errors", 0)),
-            skipped=int(r.get("skipped", 0)),
-        )
-        for r in d.get("rows", [])
-    )
-    return IndexProgressTable(
-        job_name=str(d.get("job_name", "index")),
-        rows=rows,
-        current=d.get("current"),
-        done=int(d.get("done", 0)),
-        total=int(d.get("total", 0)),
-        text=d.get("text"),
-        ts=str(d.get("ts", "")),
-    )
 
 
 def _result_from_json(d: dict) -> IndexResult:
@@ -183,15 +165,7 @@ class RSIndexerAdapter:
             args += ["--no-gitignore"]
         roots = opts.roots if opts.roots is not None else (tuple(self._roots) or None)
         if roots is not None:
-            roots_payload = [
-                {
-                    "path": str(r._path),
-                    "record_type": str(r.record_type) if r.record_type is not None else None,
-                    "scope": r.scope,
-                    "project_id": r.project_id,
-                }
-                for r in roots
-            ]
+            roots_payload = [candidate_from_fsref(r) for r in roots]
             roots_file = Path(tmpdir) / "roots.json"
             roots_file.write_text(json.dumps(roots_payload), encoding="utf-8")
             args += ["--roots-file", str(roots_file)]
@@ -199,41 +173,22 @@ class RSIndexerAdapter:
 
     async def _stream(self, argv: list[str], on_progress, collect_candidates: bool):
         """Run the binary, translating stdout JSON lines. Returns (result_json,
-        candidates) — whichever applies to the subcommand."""
+        candidates) — whichever applies to the subcommand.
+
+        The line protocol lives in ``ndjson_stream`` so the Python scan child
+        speaks the identical dialect; this stays a thin spawn + delegate.
+        """
         proc = await asyncio.create_subprocess_exec(
             *argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        result_json: dict | None = None
-        candidates: list[dict] = []
-        assert proc.stdout is not None and proc.stderr is not None
-        # Drain stderr concurrently so a chatty binary can't fill the pipe and
-        # deadlock against our stdout reads; we keep the tail for error text.
-        stderr_task = asyncio.create_task(proc.stderr.read())
-        async for raw in proc.stdout:
-            line = raw.decode("utf-8", errors="replace").strip()
-            if not line:
-                continue
-            try:
-                d = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(d, dict):
-                continue
-            if "result" in d:
-                result_json = d["result"]
-            elif collect_candidates and "path" in d and "record_type" in d:
-                candidates.append(d)
-            elif "job_name" in d and on_progress is not None:
-                await on_progress(_table_from_json(d))
-        stderr = await stderr_task
-        rc = await proc.wait()
-        if rc not in (0, 2):  # 2 = completed with per-record errors
-            raise RuntimeError(
-                f"fsindexer-rs failed (rc={rc}): {stderr.decode('utf-8', errors='replace')[-2000:]}"
-            )
-        return result_json, candidates
+        return await stream_ndjson(
+            proc,
+            on_progress,
+            collect_candidates=collect_candidates,
+            label="fsindexer-rs",
+        )
 
     # ── FSIndexer surface ─────────────────────────────────────────────────
     async def scan(self, opts: IndexerOptions | None = None) -> list[FSRef]:
@@ -244,22 +199,7 @@ class RSIndexerAdapter:
                 argv.append("--json-progress")
             argv += self._common_args(opts, tmpdir)
             _, candidates = await self._stream(argv, opts.on_progress, collect_candidates=True)
-        refs: list[FSRef] = []
-        for c in candidates:
-            try:
-                rt = RecordType(c["record_type"]) if c.get("record_type") else None
-            except ValueError:
-                rt = None
-            refs.append(
-                FSRef(
-                    Path(c["path"]),
-                    record_type=rt,
-                    scope=c.get("scope") or None,
-                    project_id=c.get("project_id") or None,
-                    json_path=c.get("json_path") or None,
-                )
-            )
-        return refs
+        return fsrefs_from_candidates(candidates)
 
     async def index(self, opts: IndexerOptions | None = None) -> IndexResult:
         opts = opts if opts is not None else IndexerOptions()

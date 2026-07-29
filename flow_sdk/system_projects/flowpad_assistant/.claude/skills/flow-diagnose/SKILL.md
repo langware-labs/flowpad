@@ -1,7 +1,14 @@
 ---
 id: "a3f7c821-4b2e-5d19-8e6f-1c9a0b3e7d52"
 name: "flow-diagnose"
-description: ">"
+description: >-
+  Diagnose and repair Flowpad itself. Use when the app is broken, misbehaving, or
+  will not start — install and runtime problems, a backend that won't come up, a
+  blank or erroring UI, failed updates, worker/agent sessions that won't launch,
+  or "something is wrong with Flowpad". Runs autonomously and headless, performs
+  the repairs that are safe on the user's machine, explains build/CI-side causes
+  it cannot fix, and always ends with a plain-language "To Summarize:" line. Use
+  it for problems with FLOWPAD; debugging the user's own code is not this skill.
 recommended_scope: "project"
 ---
 

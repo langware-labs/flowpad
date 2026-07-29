@@ -14,8 +14,8 @@ test.describe('Terminal output persists after tab switching', () => {
     // Capture session ID from URL. The tab data-testid embeds the dock tabHash
     // (`<viewType>|<pointer>`); a shell/agentic session under the SHELL view chips
     // as `tab-shell|<sessionId>`.
-    const shellUrl = page.url();
-    const sessionId = shellUrl.split('/dock/shell/').pop() || '';
+    const shellPath = new URL(page.url()).pathname;
+    const sessionId = shellPath.split('/dock/shell/').pop() || '';
 
     // Add a second terminal tab (simulates switching away while first terminal is active)
     await addTerminalTab(page);

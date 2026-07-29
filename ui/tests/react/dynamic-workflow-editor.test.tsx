@@ -11,15 +11,6 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 vi.mock('@src/components/assets/editor/AssetEditorHeader', () => ({
   AssetEditorHeader: ({ actions }: { actions?: React.ReactNode }) => <div>{actions}</div>,
 }));
-vi.mock('@src/components/entity-actions/ShareButton', () => ({
-  ShareButton: ({ testId, onClick }: { testId?: string; onClick?: () => void }) => (
-    <button data-testid={testId} onClick={onClick}>share</button>
-  ),
-}));
-vi.mock('@src/components/share-to-conversation/ShareToConversationDialog', () => ({
-  ShareToConversationDialog: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="share-to-conversation-dialog" /> : null,
-}));
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 // The "runs of this entity" panel is the shared surface (Agent/Skill reuse it) —
 // mock it to record the props this editor mounts it with.
@@ -62,9 +53,6 @@ describe('DynamicWorkflowAssetEditor', () => {
 
     fireEvent.click(screen.getByTestId('dw-run-headless'));
     await waitFor(() => expect(run).toHaveBeenCalledWith(undefined, { ptyMode: false }));
-
-    fireEvent.click(screen.getByTestId('dynamic-workflow-editor-share'));
-    expect(screen.getByTestId('share-to-conversation-dialog')).toBeTruthy();
   });
 
   it('mounts the shared runs panel keyed by the workflow typeId (Execution)', async () => {

@@ -43,13 +43,16 @@ import { additionalDirScope, assetScope, AssetScopeChip, type AssetScope } from 
 import { FusionSpinner } from '@src/components/icons/FusionSpinner';
 import { WikiTip } from '@src/components/wiki-tip';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
+import {
+  EntityIcon,
+  useEntityLocationLabel,
+} from '@src/components/graph-view/ui/EntityIcon';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 import {
   basename as _basename,
   displayLabelForTypeid as _displayLabelForTypeid,
   improvableMainFile,
   isOpenableTypeid as _isOpenableTypeid,
-  makeIconForType,
   normalizePath,
   parseTypeid as _parseTypeid,
 } from './asset-row-helpers';
@@ -65,7 +68,7 @@ import {
   launchAssetCorrect,
   waitForAssetAnalysisResult,
 } from '@src/components/assets/editor/skill/skill-eval-analysis';
-import { ArrowLeft, ArrowDownAZ, Boxes, Folder, FolderOpen, FolderPlus, GitCommitHorizontal, Loader2, Lock, Plus, Search, Sparkles, WandSparkles, X, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, ArrowDownAZ, Boxes, Folder, FolderOpen, FolderPlus, GitCommitHorizontal, Loader2, Lock, Plus, Search, Sparkles, WandSparkles, X } from 'lucide-react';
 
 /** The wiki page behind the improve wand's tip. */
 const ASSET_IMPROVEMENT_WIKI = 'Asset improvement';
@@ -361,8 +364,6 @@ export function AssetManagerPopover({
     });
     return () => { cancelled = true; };
   }, [descriptors]);
-
-  const iconForType = useMemo(() => makeIconForType(assetTypes), [assetTypes]);
 
   const attachedSet = useMemo(() => new Set(attachedRefs), [attachedRefs]);
   const assetTypeByName = useMemo(() => {
@@ -832,7 +833,6 @@ export function AssetManagerPopover({
                           descriptor={row.d}
                           scope={row.scope}
                           label={row.label}
-                          iconForType={iconForType}
                           attached={attachedSet.has(row.d.typeid)}
                           used={row.used}
                           improvable={!!improvableMainFile(row.d, assetTypeByName)}
@@ -872,7 +872,6 @@ export function AssetManagerPopover({
                 <AddModeRow
                   key={`${d.typeid}|${d.source}|${idx}`}
                   descriptor={d}
-                  iconForType={iconForType}
                   checked={attachedSet.has(d.typeid)}
                   onToggle={toggleRow}
                 />
@@ -1029,14 +1028,12 @@ function ProjectPickRow({
 
 interface RowSharedProps {
   descriptor: AssetDescriptor;
-  iconForType: (type: string) => LucideIcon;
 }
 
-function AssetRow({
+export function AssetRow({
   descriptor,
   scope,
   label,
-  iconForType,
   attached,
   used,
   improvable,
@@ -1057,7 +1054,6 @@ function AssetRow({
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { type, id } = _parseTypeid(descriptor.typeid);
-  const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
   // Only offer the wand when improvement can actually run — a used asset whose
   // main file resolves (see improvableMainFile). Gating on `used && posix_path`
@@ -1065,6 +1061,19 @@ function AssetRow({
   // (e.g. a deck_template missing its main_file), which then errored on click.
   const canImprove = used && improvable;
   const openable = _isOpenableTypeid(descriptor.typeid);
+  const locationText = useEntityLocationLabel(descriptor.remote);
+  const openActionLabel =
+    !openable
+      ? t`Inline persona — no backing entity`
+      : readOnly
+        ? t`View ${label} (read-only)`
+        : t`Open ${label}`;
+  const openActionTitle = locationText
+    ? `${openActionLabel}\n${locationText}`
+    : openActionLabel;
+  const openActionAria = locationText
+    ? `${openActionLabel}, ${locationText}`
+    : openActionLabel;
 
   const onChipClick = useCallback(() => {
     if (!openable || !id) return;
@@ -1105,15 +1114,16 @@ function AssetRow({
             ? 'bg-muted/30 text-foreground hover:bg-muted'
             : 'cursor-default border-dashed bg-muted/20 text-muted-foreground',
         )}
-        title={
-          !openable
-            ? t`Inline persona — no backing entity`
-            : readOnly
-              ? t`View ${label} (read-only)`
-              : t`Open ${label}`
-        }
+        title={openActionTitle}
+        aria-label={openActionAria}
       >
-        <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+        <EntityIcon
+          type={type}
+          remote={descriptor.remote}
+          showLocationTooltip={false}
+          density="compact"
+          className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground"
+        />
         <span className="min-w-0 truncate">{label}</span>
       </button>
       <AssetScopeChip scope={scope} testidSuffix={`${descriptor.typeid}-${descriptor.source}`} />
@@ -1154,9 +1164,8 @@ function AssetRow({
   );
 }
 
-function AddModeRow({
+export function AddModeRow({
   descriptor,
-  iconForType,
   checked,
   onToggle,
 }: RowSharedProps & {
@@ -1165,13 +1174,13 @@ function AddModeRow({
 }) {
   const { t } = useLingui();
   const { type } = _parseTypeid(descriptor.typeid);
-  const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
   // Add mode keeps its lock + source pill; only the manage list moved to scope
   // chips. Take the tooltip from the scope model anyway, so the read-only copy
   // lives in exactly one place.
   const lockTooltip = assetScope(descriptor).tooltip;
   const label = _displayLabelForTypeid(descriptor.typeid);
+  const locationText = useEntityLocationLabel(descriptor.remote);
   return (
     <label
       className="flex cursor-pointer items-center gap-2 border-b px-3 py-1.5 text-xs last:border-b-0 hover:bg-muted/50"
@@ -1184,8 +1193,16 @@ function AddModeRow({
         checked={checked}
         onChange={() => onToggle(descriptor.typeid)}
       />
-      <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+      <EntityIcon
+        type={type}
+        remote={descriptor.remote}
+        showLocationTooltip={false}
+        density="compact"
+        aria-hidden
+        className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground"
+      />
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {locationText && <span className="sr-only">{locationText}</span>}
       {readOnly && (
         <Lock
           className="h-3 w-3 flex-shrink-0 text-muted-foreground"
