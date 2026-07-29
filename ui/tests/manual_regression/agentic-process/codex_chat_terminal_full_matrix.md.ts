@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { withViewMode } from '../_shared/view-mode';
 
 const SESSION = 'matrix-session';
 
@@ -116,15 +117,24 @@ function matrixTranscript() {
   };
 }
 
+function semanticTraceRowCount(): number {
+  return matrixTranscript().entries.filter(
+    (entry) =>
+      entry.kind !== 'token_usage' &&
+      !(entry.kind === 'meta' && entry.meta_kind === 'session_meta'),
+  ).length;
+}
+
 async function openMatrix(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('viewMode', 'advanced');
   });
   await page.route(`**/api/v1/workers/codex/${SESSION}/transcript`, async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(matrixTranscript()) });
   });
-  await page.goto(`/dock/lens/codex/transcript/${SESSION}?transcriptMode=chat`);
+  await page.goto(
+    withViewMode(`/dock/lens/codex/transcript/${SESSION}?transcriptMode=chat`, 'advanced'),
+  );
 }
 
 test.describe('Codex durable transcript projection', () => {
@@ -136,11 +146,15 @@ test.describe('Codex durable transcript projection', () => {
     await expect(page.getByText('Inspecting the durable projection before answering.', { exact: true })).toBeVisible();
 
     await page.getByTestId('transcript-mode-chip-trace').click();
-    await expect(page.locator('[data-entry-uuid]')).toHaveCount(matrixTranscript().entries.length - 1);
+    // session_meta renders in the transcript header and token_usage annotates
+    // its preceding semantic row; neither is a standalone trace row.
+    await expect(page.locator('[data-entry-uuid]')).toHaveCount(semanticTraceRowCount());
     await expect(page.getByText('printf ok', { exact: true })).toBeVisible();
     await expect(page.getByText('false', { exact: true })).toBeVisible();
-    await expect(page.getByText('src/a.ts', { exact: true })).toBeVisible();
-    await expect(page.getByText('src/b.ts', { exact: true })).toBeVisible();
+    // OperationRow intentionally renders compact basenames while the full path
+    // remains part of the durable entry payload.
+    await expect(page.getByText('a.ts', { exact: true })).toBeVisible();
+    await expect(page.getByText('b.ts', { exact: true })).toBeVisible();
     await expect(page.getByText('matrix-skill', { exact: true })).toBeVisible();
 
     await page.getByTestId('transcript-mode-chip-chat').click();
@@ -164,10 +178,13 @@ test.describe('Codex durable transcript projection', () => {
       join(repo, 'ui/src/components/terminal/TabbedTerminal.tsx'),
       'utf8',
     );
-    const ribbon = readFileSync(
-      join(repo, 'ui/src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx'),
+    // One mode selector (the footer ViewToggle); the transport reconcile that
+    // follows a mode change lives in the useProcessSurface effect.
+    const modeSwitchHook = readFileSync(
+      join(repo, 'ui/src/components/terminal/interactive-terminal/use-process-surface.ts'),
       'utf8',
     );
+    const modeSwitch = readFileSync(join(repo, 'ui/src/components/view-toggle/view-toggle.tsx'), 'utf8');
     const toolbar = readFileSync(
       join(repo, 'ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx'),
       'utf8',
@@ -179,9 +196,12 @@ test.describe('Codex durable transcript projection', () => {
     expect(backend).toContain('@action.post(action_name="switch-mode")');
     expect(backend).toContain('restart_required');
     expect(backend).toContain('ensure_embedded_assets');
-    expect(terminal).toContain('process.switchMode');
+    expect(terminal).toContain('useProcessSurface');
+    expect(modeSwitchHook).toContain('.switchMode(');
+    expect(modeSwitchHook).toContain('loadHistory({ force: true })');
     expect(terminalPanel).toContain('data-pty-mode');
-    expect(ribbon).toContain('terminal-chat-toggle');
+    expect(modeSwitch).toContain('view-toggle-${m}');
+    expect(modeSwitch).toContain('ViewMode.Vibe');
     expect(toolbar).toContain("if (wt === 'codex') return 'Codex'");
     expect(toolbar).toContain('permission_mode');
   });

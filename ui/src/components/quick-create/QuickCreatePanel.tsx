@@ -19,6 +19,7 @@ import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { openNewChat } from '@src/navigation/open-new-chat';
 import { KeyRound, MessageSquarePlus } from 'lucide-react';
 import {
   Fragment,
@@ -290,12 +291,9 @@ export function QuickCreatePanel({
   // a useCallback here could never hit, and no consumer is memo'd anyway.
   const handleStartSession = async (workerType: 'claude_code' | 'codex' | 'copilot') => {
     onDone?.();
-    const result = await navigation.openNewClaudeProcess({ workerType });
-    if (!result) {
-      notify.error({ title: t`Failed to start session` });
-      return;
-    }
-    await navigation.openShellProcess(result.processId);
+    // openNewChat creates AND navigates (carrying the chat mode) — no second nav.
+    const process = await openNewChat(navigation, { workerType });
+    if (!process) notify.error({ title: t`Failed to start session` });
   };
 
   // Intersection of the UI registry and the server-reported `creatable` types,

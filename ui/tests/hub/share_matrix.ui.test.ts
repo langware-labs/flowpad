@@ -31,7 +31,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Browser } from 'playwright';
-import { testEntityName, trackForCleanup, trackTypeId } from '../_cleanup';
+import { testEntityName } from '../_cleanup';
 import { hubAvailable } from './_hub';
 import {
   HUB_INST_1 as INST_1,
@@ -62,6 +62,16 @@ let p1: InstancePage; // sender's window
 let p2: InstancePage; // receiver's window
 
 const ts = Date.now();
+const ownedEntityNames = new Set<string>();
+const ownedConversationTitles = new Set<string>();
+
+/** Mint a unique label and retain this file's exact cleanup ownership. */
+function ownedTestEntityName(kind: string): string {
+  const name = testEntityName(kind);
+  ownedEntityNames.add(name);
+  if (kind === 'conv') ownedConversationTitles.add(name);
+  return name;
+}
 
 beforeAll(async () => {
   const hub = await hubAvailable();
@@ -78,11 +88,16 @@ beforeAll(async () => {
   // Warm the editor routes once: the Vite dev server cold-transforms the
   // Milkdown/Monaco/Excalidraw bundles on first hit, which would otherwise
   // eat A1/B1's 30s budget. This is fixture warming, not a timeout bump.
-  const warm = trackForCleanup(await dev1.sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow')));
-  await p1.page.goto(`${p1.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${warm.id}?viewMode=advanced`, {
-    waitUntil: 'domcontentloaded',
-  });
-  const warmShare = p1.page.getByTestId('dynamic-workflow-editor-share');
+  // These fixtures live across several `it` blocks. Do not register them with
+  // the generic afterEach cleanup; this file's two-realm afterAll owns them.
+  const warm = await dev1.sdk.DynamicWorkflow.createInProject(null, ownedTestEntityName('workflow'));
+  await p1.page.goto(
+    `${p1.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${warm.id}?viewMode=advanced`,
+    {
+      waitUntil: 'domcontentloaded',
+    },
+  );
+  const warmShare = p1.page.getByTestId('entity-actions-share');
   await warmShare.waitFor({ timeout: 60_000 }).catch(() => undefined);
   // Open + close the share dialog once too: its chunk, the contact picker,
   // and the conversations-for-contacts query all cold-load on first open.
@@ -99,12 +114,18 @@ beforeAll(async () => {
   // Warm the RECEIVER's (p2) editor bundles too — p2 is a SEPARATE Vite dev
   // server, so the first editor open (A3) would otherwise cold-transform the
   // Milkdown/Excalidraw bundles. Route to each editor once to trigger it.
-  const warmWf2 = trackForCleanup(await dev2.sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow')));
-  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${warmWf2.id}?viewMode=advanced`, {
-    waitUntil: 'domcontentloaded',
-  });
-  await p2.page.locator('[data-testid="dynamic-workflow-editor"]').waitFor({ timeout: 60_000 }).catch(() => undefined);
-  const warmWb2 = trackForCleanup(await dev2.sdk.Whiteboard.create(testEntityName('whiteboard')));
+  const warmWf2 = await dev2.sdk.DynamicWorkflow.createInProject(null, ownedTestEntityName('workflow'));
+  await p2.page.goto(
+    `${p2.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${warmWf2.id}?viewMode=advanced`,
+    {
+      waitUntil: 'domcontentloaded',
+    },
+  );
+  await p2.page
+    .locator('[data-testid="dynamic-workflow-editor"]')
+    .waitFor({ timeout: 60_000 })
+    .catch(() => undefined);
+  const warmWb2 = await dev2.sdk.Whiteboard.create(ownedTestEntityName('whiteboard'));
   const warmWbRef = (warmWb2 as { asset_ref?: string }).asset_ref;
   if (warmWbRef) {
     const { promises: nodeFs } = await import('node:fs');
@@ -118,7 +139,10 @@ beforeAll(async () => {
   await p2.page.goto(`${p2.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${warmWb2.id}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
-  await p2.page.locator('[data-testid="whiteboard-editor"]').waitFor({ timeout: 60_000 }).catch(() => undefined);
+  await p2.page
+    .locator('[data-testid="whiteboard-editor"]')
+    .waitFor({ timeout: 60_000 })
+    .catch(() => undefined);
 }, 120_000);
 
 afterAll(async () => {
@@ -135,27 +159,20 @@ afterAll(async () => {
     // pending forever, so every later sync rebuilt and broadcast all prior
     // e2etest rows. Match through the canonical invitation target path and
     // touch only conversations carrying this harness's test prefix.
-    const receiverConversations = await fetch(
-      `${dev2.apiUrl}/api/v1/graph/conversation`,
-    ).then((r) => r.json()).catch(() => null);
-    const receiverInvitations = await fetch(
-      `${dev2.apiUrl}/api/v1/graph/invitation`,
-    ).then((r) => r.json()).catch(() => null);
+    const receiverConversations = await fetch(`${dev2.apiUrl}/api/v1/graph/conversation`)
+      .then((r) => r.json())
+      .catch(() => null);
+    const receiverInvitations = await fetch(`${dev2.apiUrl}/api/v1/graph/invitation`)
+      .then((r) => r.json())
+      .catch(() => null);
     const testConversationIds = new Set(
       ((receiverConversations?.data ?? []) as any[])
-        .filter((row) => String(row?.title ?? '').startsWith('e2etest-'))
+        .filter((row) => ownedConversationTitles.has(String(row?.title ?? '')))
         .map((row) => String(row.id)),
     );
     for (const invitation of (receiverInvitations?.data ?? []) as any[]) {
-      const match = String(invitation?.target_url_path ?? '').match(
-        /^\/conversation\/([0-9a-f-]+)$/,
-      );
-      if (
-        !invitation?.accepted
-        && invitation?.id
-        && match
-        && testConversationIds.has(match[1])
-      ) {
+      const match = String(invitation?.target_url_path ?? '').match(/^\/conversation\/([0-9a-f-]+)$/);
+      if (!invitation?.accepted && invitation?.id && match && testConversationIds.has(match[1])) {
         await fetch(`${dev2.apiUrl}/api/v1/graph/invitation-decline`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -171,17 +188,14 @@ afterAll(async () => {
     // The forward scenario can create a Bob-owned conversation that is also
     // mirrored on Alice. Both mirrors omit created_by in the local hub
     // projection, so let the hub's owner check identify which side may delete.
+    // Read local mirrors only: a teardown-time conversation-list action would
+    // broad-sync unrelated historical hub conversations.
     for (const inst of instances) {
-      await fetch(`${inst.apiUrl}/api/v1/graph/conversation-list`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      }).catch(() => undefined);
       const listed = await fetch(`${inst.apiUrl}/api/v1/graph/conversation`)
         .then((r) => r.json())
         .catch(() => null);
       const rows = ((listed?.data ?? []) as any[]).filter(
-        (row) => row?.id && String(row?.title ?? '').startsWith('e2etest-'),
+        (row) => row?.id && ownedConversationTitles.has(String(row?.title ?? '')),
       );
       testConversations.set(inst, rows);
     }
@@ -197,18 +211,18 @@ afterAll(async () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversation_id: id, mode }),
-        }).then((r) => r.json()).catch(() => null);
-        if (
-          conversation.remote
-          && result?.status !== 'SUCCESS'
-          && Number(result?.data?.hub_status) === 403
-        ) {
+        })
+          .then((r) => r.json())
+          .catch(() => null);
+        if (conversation.remote && result?.status !== 'SUCCESS' && Number(result?.data?.hub_status) === 403) {
           mode = 'leave';
           result = await fetch(`${inst.apiUrl}/api/v1/graph/conversation-delete`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ conversation_id: id, mode }),
-          }).then((r) => r.json()).catch(() => null);
+          })
+            .then((r) => r.json())
+            .catch(() => null);
         }
         if (result?.status !== 'SUCCESS' && !String(result?.message ?? '').includes('Conversation not found')) {
           cleanupFailures.push(`${inst.name} conversation ${id} (${mode}): ${JSON.stringify(result)}`);
@@ -216,14 +230,31 @@ afterAll(async () => {
       }
     }
 
-    const SWEEP = ['skill', 'agent', 'workflow', 'whiteboard', 'markdown', 'spec', 'prompt'];
+    const SWEEP = ['skill', 'agent', 'workflow', 'dynamic_workflow', 'whiteboard', 'markdown', 'spec', 'prompt'];
     for (const inst of [dev1, dev2]) {
       for (const type of SWEEP) {
-        const list = await fetch(`${inst.apiUrl}/api/v1/graph/${type}`).then((r) => r.json()).catch(() => null);
+        const list = await fetch(`${inst.apiUrl}/api/v1/graph/${type}`)
+          .then((r) => r.json())
+          .catch(() => null);
         for (const r of (list?.data ?? []) as any[]) {
           const label = String(r?.title ?? r?.name ?? '');
-          if (label.startsWith('e2etest-') && r?.id) {
-            await fetch(`${inst.apiUrl}/api/v1/graph/${type}/${r.id}`, { method: 'DELETE' }).catch(() => undefined);
+          if (ownedEntityNames.has(label) && r?.id) {
+            // Folder/file-backed assets need the fs-records lifecycle so the
+            // entity row, search index, and record directory disappear
+            // together. Graph DELETE is retained only as a fallback for
+            // entity-only types that do not have a registered record class.
+            const recordDelete = await fetch(
+              `${inst.apiUrl}/api/v1/graph/compute_node/@local/fs-records/${type}/${r.id}`,
+              { method: 'DELETE' },
+            ).catch(() => null);
+            if (!recordDelete?.ok) {
+              const graphDelete = await fetch(`${inst.apiUrl}/api/v1/graph/${type}/${r.id}`, {
+                method: 'DELETE',
+              }).catch(() => null);
+              if (!graphDelete?.ok) {
+                cleanupFailures.push(`${inst.name} ${type} ${r.id}: full purge and graph fallback failed`);
+              }
+            }
           }
         }
       }
@@ -261,9 +292,7 @@ async function conversationIdByTitle(inst: ResolvedInstance, title: string): Pro
       // message to have crossed the hub boundary (created → sent or later).
       const pointers = ((hit as any).conversationMessageIds ?? []) as Array<{ id?: string }>;
       const latestId = pointers[pointers.length - 1]?.id;
-      const latest = latestId
-        ? await inst.sdk.FlowMessage.getById(latestId).catch(() => null)
-        : null;
+      const latest = latestId ? await inst.sdk.FlowMessage.getById(latestId).catch(() => null) : null;
       if (latest && latest.delivery_status !== 'created') return hit.id;
     }
     if (Date.now() > deadline) throw new Error(`no conversation titled "${title}" on ${inst.name}`);
@@ -290,10 +319,29 @@ async function downloadAndOpenAssetClean(
   // _notify_received_assets fix; without it the chip stays disabled forever.
   const deadline = Date.now() + 22_000;
   for (;;) {
-    if (await inst.page.getByTestId(chipTestId).first().isVisible().catch(() => false)) break;
-    const visible = await download.first().isVisible().catch(() => false);
-    if (visible && (await download.first().isEnabled().catch(() => false))) {
-      await download.first().click().catch(() => undefined);
+    if (
+      await inst.page
+        .getByTestId(chipTestId)
+        .first()
+        .isVisible()
+        .catch(() => false)
+    )
+      break;
+    const visible = await download
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (
+      visible &&
+      (await download
+        .first()
+        .isEnabled()
+        .catch(() => false))
+    ) {
+      await download
+        .first()
+        .click()
+        .catch(() => undefined);
     }
     if (Date.now() > deadline) throw new Error(`chip ${chipTestId} never appeared on ${inst.name}`);
     await inst.page.waitForTimeout(400);
@@ -302,24 +350,25 @@ async function downloadAndOpenAssetClean(
   // STAGED RECEPTION (f1276cd5): download STAGES the asset (MessageAttachment,
   // scope=null) — the chip renders dashed and opens the review/install modal,
   // never the editor (consent boundary). Install explicitly into the mapped
-  // project via the modal's backend action, then open the editor at its dock
-  // URL — the same target the context panel's Open resolves. (The chip→modal
-  // UX has its own coverage; this test's assertion target stays "the shared
-  // asset opens cleanly in the receiver's editor".)
+  // project via the backend action, then use the real Advanced-mode chip →
+  // review → Open path. AssetReviewDialog owns the URL-first openDock action;
+  // a hard page.goto here would tear down the live socket/watch graph, rerun
+  // bootstrap, and make unrelated project indexing contend with the open.
   const chipMatch = /^entity-chip-([a-z_]+)-(.+)$/.exec(chipTestId);
   if (!chipMatch) throw new Error(`unexpected chip testid ${chipTestId}`);
   const [, assetType, assetId] = chipMatch;
   const convRow = await fetch(`${inst.apiUrl}/api/v1/graph/conversation/${conversationId}`)
-    .then((r) => r.json()).catch(() => null);
+    .then((r) => r.json())
+    .catch(() => null);
   const projectId = convRow?.data?.project_id as string;
   let staged: any = null;
   const stagedDeadline = Date.now() + 10_000;
   while (!staged && Date.now() < stagedDeadline) {
     const rows = await fetch(`${inst.apiUrl}/api/v1/graph/message_attachment`)
-      .then((r) => r.json()).catch(() => null);
-    staged = ((rows?.data ?? []) as any[]).find(
-      (m) => m.conversation_id === conversationId && m.asset_id === assetId,
-    ) ?? null;
+      .then((r) => r.json())
+      .catch(() => null);
+    staged =
+      ((rows?.data ?? []) as any[]).find((m) => m.conversation_id === conversationId && m.asset_id === assetId) ?? null;
     if (!staged) await inst.page.waitForTimeout(400);
   }
   if (!staged) throw new Error(`staged MessageAttachment for ${assetType}-${assetId} never appeared on ${inst.name}`);
@@ -333,10 +382,9 @@ async function downloadAndOpenAssetClean(
   }
 
   resetConsoleErrors(inst);
-  await inst.page.goto(
-    `${inst.feUrl}/dock/assets/editor/${assetType}/typeid/${assetType}-${assetId}?viewMode=advanced`,
-    { waitUntil: 'domcontentloaded' },
-  );
+  await inst.page.getByTestId(chipTestId).first().click();
+  await inst.page.getByTestId('asset-review-dialog').waitFor({ state: 'attached' });
+  await inst.page.getByTestId('asset-open-entity').click();
   // Assert the editor CONTAINER attaches (it mounts when the asset resolves) +
   // a clean console — NOT a late toolbar button or strict dock-tab visibility,
   // which lag the actual open by tens of seconds in the dock split view.
@@ -357,22 +405,24 @@ describe('A. asset-page share: workflow', () => {
   let convId: string;
   const replyText = `wf-reply-${ts}`;
 
-  const convTitle = testEntityName('conv');
+  const convTitle = ownedTestEntityName('conv');
 
   it('A1 share — dev-1 shares from the workflow editor UI', async () => {
-    const wf = trackForCleanup(await dev1.sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow')));
+    const wf = await dev1.sdk.DynamicWorkflow.createInProject(null, ownedTestEntityName('workflow'));
     workflowId = wf.id!;
-    await p1.page.goto(`${p1.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${workflowId}?viewMode=advanced`, {
-      waitUntil: 'domcontentloaded',
-    });
-    await p1.page.getByTestId('dynamic-workflow-editor-share').click({ timeout: 20_000 });
+    await p1.page.goto(
+      `${p1.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${workflowId}?viewMode=advanced`,
+      {
+        waitUntil: 'domcontentloaded',
+      },
+    );
+    await p1.page.getByTestId('entity-actions-share').click({ timeout: 20_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       note: `here is a workflow ${ts}`,
       title: convTitle,
     });
     convId = await conversationIdByTitle(dev1, convTitle);
-    trackTypeId('conversation', convId);
     expect(convId).toBeTruthy();
   });
 
@@ -409,11 +459,11 @@ describe('B. asset-page share: whiteboard', () => {
   let wbId: string;
   let convId: string;
   const replyText = `wb-reply-${ts}`;
-  const wbName = testEntityName('whiteboard');
-  const convTitle = testEntityName('conv');
+  const wbName = ownedTestEntityName('whiteboard');
+  const convTitle = ownedTestEntityName('conv');
 
   it('B1 share — dev-1 shares from the whiteboard editor UI', async () => {
-    const wb = trackForCleanup(await dev1.sdk.Whiteboard.create(wbName));
+    const wb = await dev1.sdk.Whiteboard.create(wbName);
     wbId = wb.id!;
     // Whiteboard files materialize lazily on first editor persist; a fresh
     // entity has an empty folder and the board.json read never settles. Seed
@@ -436,14 +486,13 @@ describe('B. asset-page share: whiteboard', () => {
     // the share click — clicking mid-mount is what intermittently dropped the
     // share dispatch.
     await p1.page.getByTestId('whiteboard-editor').waitFor({ timeout: 25_000 });
-    await p1.page.getByTestId('whiteboard-editor-share').click({ timeout: 25_000 });
+    await p1.page.getByTestId('entity-actions-share').click({ timeout: 25_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       note: `here is a whiteboard ${ts}`,
       title: convTitle,
     });
     convId = await conversationIdByTitle(dev1, convTitle);
-    trackTypeId('conversation', convId);
     expect(convId).toBeTruthy();
   });
 
@@ -454,12 +503,7 @@ describe('B. asset-page share: whiteboard', () => {
   // Receiver materializes the shared whiteboard under the same id (see A3) —
   // its folder rides the bundle and the id is injected into WHITE_BOARD.md.
   it('B3 open — dev-2 opens the shared whiteboard with a clean console', async () => {
-    await downloadAndOpenAssetClean(
-      p2,
-      convId,
-      `entity-chip-whiteboard-${wbId}`,
-      '[data-testid="whiteboard-editor"]',
-    );
+    await downloadAndOpenAssetClean(p2, convId, `entity-chip-whiteboard-${wbId}`, '[data-testid="whiteboard-editor"]');
   });
 
   it('B4 reply — dev-2 replies; dev-1 sees it arrive', async () => {
@@ -476,14 +520,16 @@ describe('B. asset-page share: whiteboard', () => {
 describe('C. forward a message', () => {
   let srcConvId: string;
   let fwdConvId: string;
-  const fwdDstTitle = testEntityName('conv');
+  const fwdDstTitle = ownedTestEntityName('conv');
 
   it('C1 seed — dev-1 has a conversation with a sent message', async () => {
-    // Seed a source conversation with a text message via the SDK (the entry
-    // point under test is the FORWARD UI, not this send).
-    const conv = trackForCleanup(new dev1.sdk.Conversation({ title: testEntityName('conv') }));
+    // Seed a LOCAL source conversation with a text message via the SDK (the
+    // entry point under test is the FORWARD UI, not this send). Only the
+    // dialog-created destination belongs to this scenario's cloud contract;
+    // sharing both sides creates an unrelated invitation/watch/sync lifecycle
+    // that competes with the forward write.
+    const conv = new dev1.sdk.Conversation({ title: ownedTestEntityName('conv') });
     await conv.save();
-    await conv.share([dev2.email]);
     const r = await fetch(`${dev1.apiUrl}/api/v1/graph/conversation/${conv.id}/add_message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -502,7 +548,6 @@ describe('C. forward a message', () => {
       title: fwdDstTitle,
     });
     fwdConvId = await conversationIdByTitle(dev1, fwdDstTitle);
-    trackTypeId('conversation', fwdConvId);
     expect(fwdConvId).not.toBe(srcConvId);
   });
 

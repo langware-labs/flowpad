@@ -4,10 +4,11 @@
  * Parallel guard for the `Shell.list cached-instance` fix: same bug class as
  * docker_two_tabs_roundtrip but on the @sandbox compute node. Not a known
  * failure today but the TS-side code path is shared with docker, so a
- * regression would hit both.
+ * regression would hit both. E2B_KEY is a Phase 11 prerequisite; its absence
+ * is a hard preflight failure.
  */
 import { expect, test } from '@playwright/test';
-import { dismissSetupModal, gotoShell } from './helpers';
+import { dismissSetupModal, gotoShell, openTabViaMenu, terminalTabChips } from './helpers';
 
 test.describe('Sandbox — two tabs roundtrip', () => {
   test.beforeEach(async ({ page }) => {
@@ -15,19 +16,14 @@ test.describe('Sandbox — two tabs roundtrip', () => {
   });
 
   test('after opening a second sandbox tab, the first still routes output', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
 
     await gotoShell(page);
 
-    const sandboxButton = page.locator('[data-testid="open-sandbox-tab-button"]').first();
-    if (!(await sandboxButton.isVisible({ timeout: 2_000 }).catch(() => false))) {
-      test.skip(true, 'No @sandbox compute node — E2B_KEY not set');
-    }
-
-    const initialTabs = await page.locator('[data-testid^="tab-shell-"]').count();
-    await sandboxButton.click();
+    const initialTabs = await terminalTabChips(page).count();
+    await openTabViaMenu(page, 'sandbox');
     await expect
-      .poll(() => page.locator('[data-testid^="tab-shell-"]').count(), { timeout: 15_000 })
+      .poll(() => terminalTabChips(page).count(), { timeout: 15_000 })
       .toBeGreaterThan(initialTabs);
     await page.waitForTimeout(5_000); // e2b cold-boot
 
@@ -37,9 +33,9 @@ test.describe('Sandbox — two tabs roundtrip', () => {
     });
     expect(tabAId).toBeTruthy();
 
-    await sandboxButton.click();
+    await openTabViaMenu(page, 'sandbox');
     await expect
-      .poll(() => page.locator('[data-testid^="tab-shell-"]').count(), { timeout: 15_000 })
+      .poll(() => terminalTabChips(page).count(), { timeout: 15_000 })
       .toBeGreaterThan(initialTabs + 1);
     await page.waitForTimeout(5_000);
 

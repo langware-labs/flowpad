@@ -8,7 +8,7 @@ import { gotoLanding, submitFromLanding } from './helpers';
 
 test('home prompt starts a usable headless chat session', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
-  await gotoLanding(page);
+  await gotoLanding(page, 'vibe');
 
   await submitFromLanding(page, 'hi');
   const processId = page.url().match(/agentic_process-([0-9a-f-]{36})/)?.[1];
@@ -21,5 +21,5 @@ test('home prompt starts a usable headless chat session', async ({ page }) => {
   expect(process.id).toBe(processId);
   expect(process.process_type).toBe('chat');
   expect(process.pty_mode).toBe(false);
-  expect(process.visible).toBe(true);
+  expect(process.visible).toBe(false);
 });

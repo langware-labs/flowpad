@@ -238,8 +238,8 @@ async def _get_github_token(request_info: RequestInfo) -> Optional[str]:
     Returns None if no token is available (public repos still work).
     """
     try:
-        from flow_sdk.request_context.methods import get_user_credentials
         from flow_sdk.builtin.user import User
+        from flow_sdk.request_context.methods import get_user_credentials
 
         user = await User.get_by_typeid(request_info.user)
         if not user:

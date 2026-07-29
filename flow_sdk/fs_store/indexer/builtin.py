@@ -7,9 +7,15 @@ from here via ``get_shared_indexer()``.
 
 from __future__ import annotations
 
+import os
+from typing import TYPE_CHECKING
+
 from flow_sdk.fs_store.indexer.index_function import FSIndexer
 from flow_sdk.fs_store.indexer.roots import default_roots
 from flow_sdk.fs_store.record_types import RecordType
+
+if TYPE_CHECKING:
+    from flow_sdk.fs_store.indexer.auto_index import ScanMode
 
 # Terminal record types the indexer writes via Record.from_fsref.
 # Used by rebuild mode in the index handler to know what to clear.
@@ -44,20 +50,32 @@ INDEXABLE_TYPES: list[RecordType] = [
 ]
 
 
-def build_default_indexer() -> FSIndexer:
+def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
     """Construct the canonical indexer: root set + all functions registered.
 
     Honors the ``indexer_backend`` toggle (env ``FLOWPAD_INDEXER_BACKEND`` >
     pref ``preferences.advanced.indexer_backend``): ``rust`` returns the
     RSIndexerAdapter behind the same surface (fail-open to FSIndexer when the
     binary doesn't resolve). Default is the Python FSIndexer.
+
+    ``scan_mode`` selects where the Python backend's *discovery* phase runs
+    (``preferences.auto_index.index_function``). Pass it explicitly to pin the
+    mode — ``scan_child`` MUST do so, since defaulting there would re-read the
+    preference, resolve SUBPROCESS again, and fork-bomb.
     """
     rs = _maybe_rs_indexer()
     if rs is not None:
         # TypeInfo registry must still be complete — scan-projection callers
         # run from_disk_fn Python-side on the adapter's FSRefs.
         import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
-
+        # `scan_mode` is a no-op here: RSIndexerAdapter is not an FSIndexer
+        # subclass and its scan already runs out-of-process in the Rust binary.
+        if scan_mode is not None:
+            import logging  # noqa: PLC0415
+            logging.info(
+                "indexer_backend=rust is active; index_function=%s is a no-op "
+                "(the Rust binary already scans out-of-process)", scan_mode.value,
+            )
         return rs
     # Ensure all TypeInfo metadata (slot fns, post_sync_fn, presentation) is
     # registered before any indexing/sync runs. Type metadata now lives in
@@ -120,7 +138,10 @@ def build_default_indexer() -> FSIndexer:
 
     # Transcript handlers are opt-in (full-JSONL parse is expensive — see
     # flow_sdk/fs_store/transcript_indexer/).
-    idx = FSIndexer(
+    # Default is the in-process walk. The auto-index preference is applied only
+    # by get_auto_scan_indexer(), so a manual index is never silently displaced.
+    cls = FSIndexer if scan_mode is None else _indexer_class_for(scan_mode)
+    idx = cls(
         roots=default_roots(),
     )
 
@@ -267,6 +288,75 @@ def build_default_indexer() -> FSIndexer:
     return idx
 
 
+ENV_INDEX_SCAN_MODE = "FLOWPAD_INDEX_SCAN_MODE"
+
+
+def selected_scan_mode() -> "ScanMode":
+    """Resolve ``preferences.auto_index.index_function``: env > pref > default.
+
+    The env override exists so tests and harnesses can pin a mode without writing
+    preferences. Anything unrecognized degrades to the default rather than raising
+    into indexer construction — ``coerce_enum`` owns that policy, shared with the
+    other two auto-index enums.
+    """
+    from flow_sdk.fs_store.indexer.auto_index import (  # noqa: PLC0415
+        DEFAULT_AUTO_INDEX_FUNCTION,
+        PREF_AUTO_INDEX_FUNCTION,
+        ScanMode,
+        coerce_enum,
+    )
+    from flow_sdk.preferences import read_instance_pref  # noqa: PLC0415
+
+    raw = os.environ.get(ENV_INDEX_SCAN_MODE, "").strip() or read_instance_pref(
+        PREF_AUTO_INDEX_FUNCTION, DEFAULT_AUTO_INDEX_FUNCTION
+    )
+    return coerce_enum(ScanMode, raw, DEFAULT_AUTO_INDEX_FUNCTION)
+
+
+def _indexer_class_for(mode: "ScanMode") -> type[FSIndexer]:
+    """The FSIndexer class implementing ``mode``.
+
+    Imported lazily so ``subprocess_scan`` (and through it the NDJSON protocol)
+    stays off the import path when the thread mode is selected.
+    """
+    from flow_sdk.fs_store.indexer.auto_index import ScanMode  # noqa: PLC0415
+
+    if mode is ScanMode.SUBPROCESS:
+        from flow_sdk.fs_store.indexer.subprocess_scan import (  # noqa: PLC0415
+            SubprocessScanIndexer,
+        )
+
+        return SubprocessScanIndexer
+    return FSIndexer
+
+
+_auto_scan_shared: FSIndexer | None = None
+
+
+def get_auto_scan_indexer() -> FSIndexer:
+    """The indexer the AUTO-index path uses, honoring ``index_function``.
+
+    Kept separate from ``get_shared_indexer`` on purpose. ``index_function`` is an
+    auto-index preference — sitting in the ``auto_index`` category and hidden
+    behind its ``enabled`` toggle — so it must not silently change how a *manual*
+    "Index" click walks the disk. Every other caller keeps the default in-process
+    walk regardless of this setting.
+
+    Returns the shared singleton unchanged for the thread mode, so the common case
+    builds no second indexer.
+    """
+    global _auto_scan_shared
+    from flow_sdk.fs_store.indexer.auto_index import ScanMode  # noqa: PLC0415
+
+    if selected_scan_mode() is not ScanMode.SUBPROCESS:
+        return get_shared_indexer()
+    if _auto_scan_shared is None or not isinstance(
+        _auto_scan_shared, _indexer_class_for(ScanMode.SUBPROCESS)
+    ):
+        _auto_scan_shared = build_default_indexer(scan_mode=ScanMode.SUBPROCESS)
+    return _auto_scan_shared
+
+
 def _maybe_rs_indexer():
     """Return an RSIndexerAdapter when the instance selects the Rust backend
     AND the external binary resolves; else None (Python FSIndexer).
@@ -318,6 +408,20 @@ def get_shared_indexer() -> FSIndexer:
 
 
 def reset_shared_indexer() -> None:
-    """Clear the cached instance — for tests that need a fresh indexer."""
-    global _shared
+    """Clear the cached instances — for tests, and after a backend pref change.
+
+    Also drops the auto-scan indexer and re-arms child probing, so flipping
+    ``index_function`` takes effect without a restart even if a previous child
+    spawn had latched as unavailable.
+    """
+    global _shared, _auto_scan_shared
     _shared = None
+    _auto_scan_shared = None
+    try:
+        from flow_sdk.fs_store.indexer.subprocess_scan import (  # noqa: PLC0415
+            reset_child_availability,
+        )
+
+        reset_child_availability()
+    except Exception:  # noqa: BLE001 — module may not be importable in a child
+        pass

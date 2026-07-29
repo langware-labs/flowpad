@@ -182,6 +182,12 @@ silently substituted), `model`, `permission_mode` (default `bypassPermissions`),
 `false` → headless JSON-stream. `launch_prompt` is enqueued **pre-start** so the worker
 boots with it as its launch arg (deterministic — avoids the post-start stdin race).
 
+The success payload is the full authoritative serialized `AgenticProcess`, not
+an identity-only row. This is required by the TS return type and preserves
+explicit false values (`pty_mode:false`, `visible:false`) when the SDK hydrates
+the returned entity. Correctness must not depend on the save broadcast reaching
+the DataManager cache before the HTTP response.
+
 **`upsertSessionProcess`** (`_scan_upsert_session_process`) — resume/attach counterpart: same
 context lift, but reattaches to an existing session instead of a clean spawn.
 
@@ -192,7 +198,7 @@ Class `ComputeNode extends APIEntity<ComputeNode>` (`static type = 'compute_node
 | Member | Signature | Description |
 | --- | --- | --- |
 | `getLocal()` | `static async → ComputeNode \| null` | Frontend counterpart to backend `get_local()`. Read-only resolution: context node (if `LOCAL_MACHINE`) → bootstrap `default_compute_node` → fetch by `@local` alias typeid. Never mints (client can't create entities; backend self-heals). |
-| `createProcess(context?, options?)` | `async → AgenticProcess` | Main factory. `context: AgenticContext` (serialized via `serializeAgenticContext`); `options`: `result`, `watchProcess`, `visible`, `pty_mode`, `launchPrompt`. Calls the `createProcess` action, then `process.watch()` unless `watchProcess === false`. |
+| `createProcess(context?, options?)` | `async → AgenticProcess` | Main factory. `context: AgenticContext` (serialized via `serializeAgenticContext`); `options`: `result`, `watchProcess`, `visible`, `pty_mode`, `launchPrompt`. Hydrates the action's full authoritative entity response, then calls `process.watch()` unless `watchProcess === false`. |
 | `findSession(sessionId, workerType?)` | `async → FindSessionResult \| null` | Read-only session lookup; `null` on 404. Never creates a process. |
 | `appendSession` / `addSession` / `createSession` / `getSession` / `hasSession` / `removeSession` / `rekeySession` / `getAllSessions` / `clearLocalSessions` / `sessionCount` | mixed | **Frontend-only session cache** (`Map<id, Shell>`) — the local view of PTY sessions. Reset on node switch; does **not** touch backend PTYs. |
 | `startWatchingMachineSessions(cb?)` / `stopWatchingMachineSessions()` / `isWatchingMachineSessions` | mixed | Subscribe to `on_data_op` and materialize a `Shell` for each new id in `active_pty_sessions`. |

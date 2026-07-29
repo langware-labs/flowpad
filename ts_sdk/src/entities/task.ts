@@ -29,8 +29,6 @@ export interface TaskAssignOptions {
 }
 
 export interface TaskAssignResult {
-  /** Serialized typeid of the assignee's member task; null when self-assigned. */
-  childTypeid: string | null;
   /** Notification conversation id; null when not sent. */
   conversationId: string | null;
   /** True when the assignee is the caller — a local stamp, nothing delivered. */
@@ -299,13 +297,17 @@ export class Task extends APIEntity<Task> implements ITask {
   /**
    * Give this task to someone — the whole assignment in one call.
    *
-   * The backend `assign-task` action creates the assignee's member task on the
-   * hub (so their status changes sync back) and sends the invitation carrying
-   * `message`; for a teammate who already shares a container the hub grants the
-   * roles at once, so the task simply appears on their machine. Then, unless
-   * `notify: false`, a notification conversation goes out carrying the member
-   * task + parent chips and any `files` (pass `transcriptSessionId` to include
-   * the session transcript chip).
+   * Assignment is a SHARE: the backend `assign-task` action puts THIS task on the
+   * hub and grants the assignee `editor` on it, so it simply appears on their
+   * machine (the hub grants an internal invite's roles at invite time — no accept
+   * step). There is no second "member task": that shape belongs to the
+   * contacts-group fan-out, where every member needs their own status. Their
+   * status changes reflect back automatically, scoped to the fields an assignee
+   * owns (`TypeInfo.assignee_owned_fields`), so they can move the work along
+   * without rewriting the ask.
+   *
+   * Then, unless `notify: false`, a notification conversation goes out carrying
+   * the task chip and any `files` (pass `transcript` to include the session).
    *
    * `person` may be a bare email or a picker participant (member / contact /
    * free-form email). Assigning to yourself only stamps `assignee` locally.
@@ -325,18 +327,16 @@ export class Task extends APIEntity<Task> implements ITask {
       ...(participant.name ? { name: participant.name } : {}),
       ...(opts.message?.trim() ? { message: opts.message.trim() } : {}),
     };
-    const { child: childTypeid, self } = await dataManager.callAction<
+    const { self } = await dataManager.callAction<
       Record<string, unknown>,
-      { child: string | null; self: boolean; created: boolean; assignee: string }
+      { self: boolean; assignee: string }
     >(info);
 
     this.assignee = email;
-    if (self || opts.notify === false) return { childTypeid, conversationId: null, self };
+    if (self || opts.notify === false) return { conversationId: null, self };
 
-    // The recipient's OWN member task is the featured chip; the parent overview
-    // rides as its own chip (it carries the body and attachments).
+    // One ask, one task chip (plus the transcript when the caller attached one).
     const chips = [
-      childTypeid,
       this.typeId.toString(),
       opts.transcript?.sessionId && `claude_session-${opts.transcript.sessionId}`,
     ].filter(Boolean) as string[];
@@ -354,7 +354,7 @@ export class Task extends APIEntity<Task> implements ITask {
       },
       opts.ensureCloudLogin ? { ensureCloudLogin: opts.ensureCloudLogin } : undefined,
     );
-    return { childTypeid, conversationId: sent.conversation_id, self };
+    return { conversationId: sent.conversation_id, self };
   }
 
   /**

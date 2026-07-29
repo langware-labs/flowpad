@@ -40,24 +40,17 @@ describe('ViewToggle progressive reveal', () => {
     resetRevealedModes();
   });
 
-  it('normally offers only Standard and Vibe', () => {
+  it('always offers the three surfaces — Terminal is not hidden', () => {
+    // Each mode is a surface the user picks (vibe workspace / chat pane / xterm),
+    // so all three render; only Dev is a power-user tier behind the reveal.
     renderToggle();
-    expect(buttons()).toEqual(['standard', 'vibe']);
-  });
-
-  it('double-click on the selected Standard reveals Advanced without selecting it', () => {
-    renderToggle();
-    fireEvent.doubleClick(screen.getByTestId('view-toggle-standard'));
-
     expect(buttons()).toEqual(['advanced', 'standard', 'vibe']);
-    expect(screen.getByTestId('effective-mode').textContent).toBe('standard');
-    expect(screen.getByTestId('view-toggle-advanced').getAttribute('aria-checked')).toBe('false');
   });
 
   it('double-click on a NON-selected button reveals nothing', () => {
     renderToggle();
     fireEvent.doubleClick(screen.getByTestId('view-toggle-vibe'));
-    expect(buttons()).toEqual(['standard', 'vibe']);
+    expect(buttons()).toEqual(['advanced', 'standard', 'vibe']);
   });
 
   it('double-click on the selected Advanced reveals Dev without selecting it', () => {

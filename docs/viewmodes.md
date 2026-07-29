@@ -66,9 +66,21 @@ Also available as globals:
 - `window.setDev(val?)` — set Dev mode (no arg = toggle between Dev and Advanced)
 - `window.getDev()` — read Dev mode boolean
 
-The flag is persisted to `localStorage.viewMode` and reflected as a
+The mode is persisted as the prefMan preference `preferences.ui.view_mode` (a
+**boot key**: seeded synchronously from `localStorage.viewMode` at startup and
+mirrored back on every write, so first paint doesn't flash the default while
+`preferences.json` loads). It is reflected as a
 `data-view="standard|advanced|dev"` attribute on `<html>` (set on first paint and on
 every change) so CSS can react app-wide.
+
+The boot seed only exists once the app has run in that browser profile. A
+consumer that paints a user-visible arrangement off the mode — rather than
+skinning one already on screen — must therefore distinguish "nothing stored" from
+"nothing read in yet", which `get()` alone cannot: use
+`usePreferenceResolved(PrefKey.VIEW_MODE)` (or `useSessionSurface()`, which
+returns `null` until it resolves) and hold the decision instead of rendering the
+default and repainting. `AdvancedOnly` / `DevOnly` / `ViewSwap` need none of this
+— they gate chrome around content that is already correct.
 
 ## Decision tree — how to gate a surface
 

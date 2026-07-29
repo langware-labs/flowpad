@@ -9,12 +9,12 @@ the orchestrator wiring streams exactly those numbers.
 """
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.flowpad_types.enums import WorkerType
@@ -28,7 +28,7 @@ _RESOURCES = Path(__file__).resolve().parent.parent / "resources" / "transcripts
 
 def _make_ap() -> AgenticProcess:
     return AgenticProcess(
-        id=str(uuid.uuid4()),
+        id=mint_uuid(),
         session_id="00000000-0000-0000-0000-000000000010",
         worker_type=WorkerType.CLAUDE_CODE,
         status="running",
@@ -38,12 +38,9 @@ def _make_ap() -> AgenticProcess:
 @pytest.mark.asyncio
 async def test_emit_status_report_streams_exact_counters(initialize_test_db, monkeypatch) -> None:
     ap = _make_ap()
+    await ap.save()
     t = AgentTranscriptFile("claude", _RESOURCES / "claude_multi_block_message.jsonl")
     monkeypatch.setattr(type(ap), "_load_transcript", lambda self, d=None: t, raising=False)
-
-    async def _noop_save(self, *a, **k):
-        return self
-    monkeypatch.setattr(type(ap), "save", _noop_save, raising=False)
 
     pushed: list[dict] = []
 
@@ -78,15 +75,18 @@ async def test_emit_status_report_streams_exact_counters(initialize_test_db, mon
 async def test_emit_status_report_is_change_gated(initialize_test_db, monkeypatch) -> None:
     """An unchanged report neither re-saves nor re-pushes."""
     ap = _make_ap()
+    await ap.save()
     t = AgentTranscriptFile("claude", _RESOURCES / "claude_multi_block_message.jsonl")
     monkeypatch.setattr(type(ap), "_load_transcript", lambda self, d=None: t, raising=False)
 
-    saves = {"n": 0}
+    writes = {"n": 0}
+    update_existing = ap._db.update_existing_data_field
 
-    async def _count_save(self, *a, **k):
-        saves["n"] += 1
-        return self
-    monkeypatch.setattr(type(ap), "save", _count_save, raising=False)
+    async def _count_update(*args, **kwargs):
+        writes["n"] += 1
+        return await update_existing(*args, **kwargs)
+
+    monkeypatch.setattr(ap._db, "update_existing_data_field", _count_update)
 
     pushed: list[dict] = []
 
@@ -97,8 +97,30 @@ async def test_emit_status_report_is_change_gated(initialize_test_db, monkeypatc
     await ap._emit_status_report(WorkerStatus.THINKING, True)
     await ap._emit_status_report(WorkerStatus.THINKING, True)  # identical → no-op
 
-    assert saves["n"] == 1
+    assert writes["n"] == 1
     assert len(pushed) == 1
+
+
+@pytest.mark.asyncio
+async def test_delayed_status_report_does_not_resurrect_deleted_process(initialize_test_db, monkeypatch) -> None:
+    ap = _make_ap()
+    await ap.save()
+    stale = await AgenticProcess.get_by_id(str(ap.id))
+    assert stale is not None
+    await ap.delete()
+
+    t = AgentTranscriptFile("claude", _RESOURCES / "claude_multi_block_message.jsonl")
+    monkeypatch.setattr(type(stale), "_load_transcript", lambda self, d=None: t, raising=False)
+    pushed: list[dict] = []
+
+    async def _capture_flow(self, flow_data):
+        pushed.append(flow_data)
+
+    monkeypatch.setattr(type(stale), "emit_flow_data", _capture_flow, raising=False)
+    await stale._emit_status_report(WorkerStatus.TOOL_CALL, True)
+
+    assert pushed == []
+    assert await AgenticProcess.get_by_id(str(ap.id)) is None
 
 
 def _entry(path: str, eid: str) -> FileWriteEntry:

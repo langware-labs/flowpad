@@ -85,18 +85,29 @@ class RequestTransactionMiddleware:
                             req_info.request, req_info
                         )
                     if target_entity is None:
-                        # TODO - this is a patch, remove it
-                        # ``open`` deep-link actions can land on entities the
-                        # local DB hasn't synced yet — a fresh invitee clicking
-                        # the email link is the typical case. The handler
-                        # (e.g. ``handle_open_flow_message``) fetches from the
-                        # hub itself, so let it through with target_entity=None.
-                        if req_info.action == "open":
+                        # A small set of actions owns missing-target recovery
+                        # (for example, wiki/reindex can index a supplied body
+                        # before its entity row exists). This is declarative
+                        # action metadata rather than an expanding middleware
+                        # list. Keep the legacy `open` allowance until its
+                        # per-type handlers are all annotated.
+                        from flow_sdk.actions import action  # noqa: PLC0415
+
+                        registered_action = action.get_by_name(
+                            req_info.action or "",
+                            req_info.target_entity_typeid.type,
+                        )
+                        allow_missing_target = bool(
+                            registered_action
+                            and registered_action.allow_missing_target
+                        )
+                        if req_info.action == "open" or allow_missing_target:
                             logging.debug(
-                                "[Middleware] open action on missing local entity "
+                                "[Middleware] missing-target-capable action "
+                                f"{req_info.action!r} on "
                                 f"{req_info.target_entity_typeid.type}/"
                                 f"{req_info.target_entity_typeid.id} — letting handler "
-                                "fetch from hub"
+                                "own recovery"
                             )
                         else:
                             message = (

@@ -171,6 +171,10 @@ describe('group task attachments — file + git folder across two instances', ()
       members: [{ email: bob.email }],
     });
     expect(created.status, JSON.stringify(created)).toBe('SUCCESS');
+    const memberTaskIds = ((created?.data?.children ?? []) as string[])
+      .map((typeid) => typeid.replace(/^task-/, ''))
+      .filter(Boolean);
+    expect(memberTaskIds.length, JSON.stringify(created?.data)).toBeGreaterThan(0);
 
     // ── Bob: observe an auto-accepted assignment, or accept it explicitly ──
     // Current hubs auto-accept task-only assignments between same-org users.
@@ -184,10 +188,16 @@ describe('group task attachments — file + git folder across two instances', ()
         ).catch(() => [])) as any[];
         if (rows[0]) return rows[0];
 
-        await bob.sdk.fetchConversations();
+        const synced = await post(bob.apiUrl, '/graph/invitation-sync', {});
+        expect(synced.status, JSON.stringify(synced)).toBe('SUCCESS');
         const all: any[] = await (bob.sdk.Invitation as any).query({ query: {} }, true).catch(() => []);
         const invitation = all.find(
-          (inv) => !inv.accepted && (inv.target_url_path || '').includes(task.id),
+          (inv) =>
+            !inv.accepted &&
+            [task.id, ...memberTaskIds].some(
+              (targetId) =>
+                inv.target_id === targetId || (inv.target_url_path || '').includes(targetId),
+            ),
         );
         if (invitation && acceptedInvitation !== invitation.id) {
           acceptedInvitation = invitation.id!;

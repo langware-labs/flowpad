@@ -45,7 +45,15 @@ if [ -z "$WHEEL" ]; then
     exit 1
 fi
 
-"$VENV_DIR/bin/pip" install --quiet --no-cache-dir "$WHEEL" 2>&1 | tail -3
+PIP_INSTALL_ARGS=(--quiet --no-cache-dir)
+if "$VENV_DIR/bin/pip" show flowpad >/dev/null 2>&1; then
+    # `flow compute connect` deliberately reprovisions an existing container.
+    # Development wheels commonly keep the same package version, so a normal
+    # pip install would retain stale worker code even after copying a new wheel.
+    # Dependencies are already present in this branch; replace only Flowpad.
+    PIP_INSTALL_ARGS+=(--force-reinstall --no-deps)
+fi
+"$VENV_DIR/bin/pip" install "${PIP_INSTALL_ARGS[@]}" "$WHEEL" 2>&1 | tail -3
 echo "  Installed $(basename "$WHEEL")"
 
 # Also install websockets (required by the worker for dialling out)

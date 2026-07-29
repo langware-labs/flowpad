@@ -12,7 +12,6 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
 import { VIBE_MODEL_DEFAULT, type VibeModelTier } from './vibe-model-select';
 import { VibeRecentSessions } from './vibe-recent-sessions';
-import { DEFAULT_WORKER_TYPE, type WorkerType } from '@src/components/workers/worker-types';
 
 /** Shared ghost-button style for the two under-input project actions. */
 const PROJECT_ACTION_BUTTON_CLASS =
@@ -32,7 +31,6 @@ export function VibeNewChat() {
   const startVibe = useStartVibeSession();
   const [draft, setDraft] = useState('');
   const model: VibeModelTier = VIBE_MODEL_DEFAULT;
-  const workerType: WorkerType = DEFAULT_WORKER_TYPE;
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isGitProjectOpen, setIsGitProjectOpen] = useState(false);
@@ -94,7 +92,7 @@ export function VibeNewChat() {
             value={draft}
             onChange={setDraft}
             allowAttachments
-            onSubmit={(msg, files) => startVibe(msg, files, model, workerType)}
+            onSubmit={(msg, files) => startVibe(msg, files, model)}
           />
         </div>
         <div className="flex w-full flex-wrap items-center gap-1.5 self-start">

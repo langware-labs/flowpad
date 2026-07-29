@@ -6,7 +6,7 @@ export * from './CapabilityManager';
  * when querying `useCapability` / `capabilityManager`.
  */
 export const CapabilityKinds = {
-  /** CapabilityReference row — resolves to the default harness (claude or codex). */
+  /** CapabilityReference row — resolves to the selected default harness. */
   Harness: 'harness',
   ClaudeCode: 'harness.claude.cli',
   Codex: 'harness.codex.cli',

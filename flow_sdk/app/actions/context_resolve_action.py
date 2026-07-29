@@ -27,19 +27,17 @@ open watchers drop the chips live without a reload.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from flow_sdk.actions import action
-from flow_sdk.cloud_client.transport.hub_http import hub_resolve_by_typeid
-from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.request_context.methods import get_current_request_info
-from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 
 # Reuse the target-loader so the holder is bound to the active storage scope
 # (required by the save path) — identical to the share/unshare actions.
 from flow_sdk.app.actions.context_share_action import _resolve_target_entity
+from flow_sdk.cloud_client.transport.hub_http import hub_resolve_by_typeid
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.request_context.methods import get_current_request_info
+from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
 

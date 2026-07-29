@@ -32,6 +32,7 @@ from ..compute_provider import (
     ListDirItem,
     get_remote_paths_and_data_for_files,
 )
+from ..env_prefix import build_env_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -552,37 +553,13 @@ class LocalComputeProvider(ComputeProvider):
         cmd = CLICommand(command, message_id=message_id)
         self.running_commands[message_id] = cmd
 
-        env_prefix = ""
-        if env:
-            env_assignments = []
-            for flow_env in env:
-                # Extract the actual value from SecretStr
-                env_value = (
-                    flow_env.value.get_secret_value()
-                    if hasattr(flow_env.value, "get_secret_value")
-                    else str(flow_env.value)
-                )
-
-                if sys.platform == PLATFORM_WIN32:
-                    escaped_value = (
-                        env_value.replace("&", "^&")
-                        .replace("|", "^|")
-                        .replace("<", "^<")
-                        .replace(">", "^>")
-                        .replace("^", "^^")
-                    )
-                    env_assignments.append(f"set {flow_env.name}={escaped_value}")
-                else:
-                    escaped_value = env_value.replace("'", "'\\''")
-                    env_assignments.append(f"{flow_env.name}='{escaped_value}'")
-
-            if sys.platform == PLATFORM_WIN32:
-                env_prefix = " && ".join(env_assignments) + " && "
-            else:
-                env_prefix = " ".join(env_assignments) + " "
+        # Shared with the E2B provider so the two can't drift again — and so
+        # the escaping has exactly one place to be tested. The values join the
+        # string here, after the log line above.
+        env_prefix = build_env_prefix(env)
 
         try:
-            full_command = env_prefix + command if env_prefix else command
+            full_command = env_prefix + command
             process = await asyncio.create_subprocess_shell(
                 full_command,
                 stdout=asyncio.subprocess.PIPE,

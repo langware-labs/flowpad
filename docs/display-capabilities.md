@@ -95,7 +95,8 @@ Three registries decide how an entity opens, kept in agreement **manually**:
 
 Addressing grammar: `editor/<AssetEditor>/<vfs|typeid>/<value>`
 (`AssetDocPointer`), plus browser-only pointers `list/<type>`,
-`folder/<type>/<typeid>/<relPath>`, `fs/<relPath>`, `wiki/<space>/<name>`,
+`folder/<type>/<typeid>/<relPath>`, `fs/vfs/<absVfsPath>`,
+`wiki/<space>/<name>`,
 `project-home` (`AssetsPage.tsx:82-124`). Read/write channel: entity
 `asset_ref` → `FSRef` (+`useEntityByPath`), never raw fsManager calls.
 

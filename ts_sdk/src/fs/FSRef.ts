@@ -29,19 +29,30 @@ export class FSRef {
     this.readOnly = readOnly;
   }
 
+  /**
+   * The local compute node that can service OS- and Git-specific file actions.
+   *
+   * Hub-backed refs deliberately return null: they still support the ordinary
+   * FSRef read/write/download contract, but their TypeId identifies the asset
+   * rather than a machine whose filesystem can be opened or queried with git.
+   */
+  get localComputeNodeId(): string | null {
+    return this.typeId.type === 'compute_node' ? this.typeId.id : null;
+  }
+
   static fromJson(json: FSRefJson): FSRef {
     return new FSRef(json.path, new TypeId(json.type_id), json.ref_type, json.read_only);
   }
 
   child(name: string): FSRef {
     const sep = this.path.endsWith('/') ? '' : '/';
-    return new FSRef(`${this.path}${sep}${name}`, this.typeId);
+    return new FSRef(`${this.path}${sep}${name}`, this.typeId, 'file', this.readOnly);
   }
 
   get parent(): FSRef {
     const idx = this.path.lastIndexOf('/');
     const parentPath = idx > 0 ? this.path.slice(0, idx) : '/';
-    return new FSRef(parentPath, this.typeId);
+    return new FSRef(parentPath, this.typeId, 'folder', this.readOnly);
   }
 
   async read(): Promise<string> {
@@ -51,6 +62,7 @@ export class FSRef {
   }
 
   async write(content: string): Promise<void> {
+    if (this.readOnly) throw new Error(`Cannot write read-only FSRef: ${this.path}`);
     const { fsManager } = await import('../services/fsService');
     await fsManager.writeFile(this.typeId, this.path, content);
   }
@@ -78,6 +90,7 @@ export class FSRef {
    * file never produces a hard 404 in the editor.
    */
   async create(content: string = ''): Promise<void> {
+    if (this.readOnly) throw new Error(`Cannot create read-only FSRef: ${this.path}`);
     const { fsManager } = await import('../services/fsService');
     await fsManager.writeFile(this.typeId, this.path, content);
   }
@@ -94,11 +107,12 @@ export class FSRef {
     const result = await fsManager.listDirectory(this.typeId, this.path).catch(() => ({ items: [] as Array<{name: string; relativePath?: string}> }));
     return (result.items ?? []).map((item: {name: string; relativePath?: string}) => {
       const itemPath = item.relativePath ?? (this.path.endsWith('/') ? `${this.path}${item.name}` : `${this.path}/${item.name}`);
-      return new FSRef(itemPath, this.typeId);
+      return new FSRef(itemPath, this.typeId, 'file', this.readOnly);
     });
   }
 
   async delete(): Promise<void> {
+    if (this.readOnly) throw new Error(`Cannot delete read-only FSRef: ${this.path}`);
     const { fsManager } = await import('../services/fsService');
     await fsManager.delete(this.typeId, this.path).catch(() => {});
   }

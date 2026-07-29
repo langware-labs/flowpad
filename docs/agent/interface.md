@@ -308,7 +308,7 @@ source:
 ## Backend action surface
 
 Every action uses `/api/v1/graph/agentic_process/{id}/{action}`. These five cards
-contain all **42 actions defined directly on `AgenticProcess`**.
+contain all **42 actions defined directly on** **`AgenticProcess`**.
 
 ### Lifecycle — 9 actions
 
@@ -770,12 +770,21 @@ source:
 
 ## Reading the cards
 
-- **Interface** shows the rendered contract.
-- **Code** shows the exact YAML stored in this Markdown file.
-- Moving the caret into a fence forces Code mode so edits never happen invisibly.
-- In editable mode, values can be edited inline and are committed back through a
-  normal ProseMirror transaction.
-- The source chip is read-only navigation: it remains available even when this
+* **Interface** shows the rendered contract.
+
+* **Code** is the fully editable YAML stored in this Markdown file when the
+  document is in Editor mode; View mode keeps it read-only.
+
+* YAML is parsed and schema-validated as it changes. An error stays visible
+  below the active pane while the last good Interface render is preserved.
+
+* Moving the caret into a fence forces Code mode so edits never happen invisibly.
+
+* In editable mode, names, types, signatures, optional flags, and existing
+  descriptions can be edited inline and are committed back through a normal
+  ProseMirror transaction. Structural changes belong in Code.
+
+* The source chip is read-only navigation: it remains available even when this
   document itself is in view mode.
 
 The architectural narrative remains in
@@ -785,5 +794,5 @@ is intentionally the visual, source-grounded demo.
 <!-- flowpad:capsule identity
 version: 1
 data:
-  id: 17b8d472-a962-490e-8766-36946071ee75
+  id: 6f04c78e-637e-4d6a-9c2a-a546bd32cea2
 flowpad:endcapsule identity -->

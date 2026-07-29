@@ -17,6 +17,7 @@ import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { CountChip } from '@src/components/browseable-tree/CountChip';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
+import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { skillCreateActions, skillFolderListChildren } from './skillFolder';
 import { tagListChildren } from './tagRoot';
 import { config } from '@sdk';
@@ -119,9 +120,8 @@ function assetNodeId(typeName: string, path: string): string {
 /**
  * Build a child Browseable from a SearchResult.
  */
-function assetChild(
+export function buildAssetChild(
   typeName: string,
-  iconName: string | null,
   result: SearchResult,
   folderBacked: boolean,
   rootId: string,
@@ -156,7 +156,14 @@ function assetChild(
     id: assetNodeId(typeName, result.asset_ref),
     kind: 'asset',
     label,
-    icon: resolveAssetIcon(iconName, 'h-3.5 w-3.5 flex-shrink-0'),
+    icon: (
+      <EntityIcon
+        type={typeName}
+        remote={result.remote}
+        density="compact"
+        className="h-3.5 w-3.5 flex-shrink-0"
+      />
+    ),
     hasChildren: false,
     pointer,
     // Stable typeid (`<type>-<uuid>`) so a typeid-form active pointer selects this
@@ -242,7 +249,7 @@ function buildTaskTree(
   // on-disk task must collapse to a single row (shared across the whole tree).
   const seen = new Set<string>();
   const buildNode = (r: SearchResult, ancestry: Set<string>): Browseable | null => {
-    const node = assetChild(type.type_name, type.icon, r, !!type.folder_backed, rootId, onAfterDelete);
+    const node = buildAssetChild(type.type_name, r, !!type.folder_backed, rootId, onAfterDelete);
     if (seen.has(node.id)) return null;
     seen.add(node.id);
     const selfBare = resultTypeId(r)?.id ?? '';
@@ -361,7 +368,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
     const seen = new Set<string>();
     const children: Browseable[] = [];
     for (const r of results) {
-      const child = assetChild(type.type_name, type.icon, r, !!type.folder_backed, rootId, onAfterDelete);
+      const child = buildAssetChild(type.type_name, r, !!type.folder_backed, rootId, onAfterDelete);
       if (seen.has(child.id)) continue;
       seen.add(child.id);
       children.push(child);
@@ -404,7 +411,13 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
         id: assetNodeId(type.type_name, parsed.vfsPath),
         kind: 'asset',
         label: basename(parsed.vfsPath),
-        icon: resolveAssetIcon(type.icon, 'h-3.5 w-3.5 flex-shrink-0'),
+        icon: (
+          <EntityIcon
+            type={type.type_name}
+            density="compact"
+            className="h-3.5 w-3.5 flex-shrink-0"
+          />
+        ),
         hasChildren: false,
         pointer: DockPointer.forAssetEditor(type.type_name, parsed.vfsPath),
       };

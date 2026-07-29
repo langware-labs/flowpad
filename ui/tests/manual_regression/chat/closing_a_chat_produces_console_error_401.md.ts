@@ -22,8 +22,13 @@ test.describe('closing a chat — no 401', () => {
     // Close the active tab via its X (aria-label="Close tab").
     const closeBtn = page.getByRole('button', { name: 'Close tab' }).first();
     await expect(closeBtn).toBeVisible({ timeout: 10_000 });
+    const closeResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        /\/api\/v1\/graph\/tab\/[^/]+\/close$/.test(new URL(response.url()).pathname),
+    );
     await closeBtn.click();
-    await page.waitForTimeout(2_000);
+    expect((await closeResponse).status()).not.toBe(401);
 
     // No 401 unauthorized errors in the console.
     const unauthorized = consoleErrors.filter((e) => /\b401\b|unauthorized/i.test(e));

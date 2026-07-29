@@ -13,7 +13,8 @@ Validate the live Claude-backed Vibe Workspace as an interactive creator surface
 - `Create skill` writes a valid project skill and opens it in the active Display.
 - `Run skill` executes the skill just created and presents its declared output.
 
-This is a browser/manual matrix. It has no `.md.ts` cache. Run it serially through DebugMCP.
+The deterministic product-owned paths have a sibling `.md.ts` Chromium suite;
+the natural-language quality rows remain a serial live-agent matrix.
 
 Codex chat/terminal rendering is outside this matrix, including the reported absence of Claude's compact elapsed-time/tool summary line on Codex turns.
 
@@ -50,6 +51,10 @@ Do not reuse process, project, browser-tab, or display state between scenarios.
 | VW-12 | Queue/stress | Create a skill without running it, then queue `open its SKILL.md`, `run it`, and `open the generated report` as ordered follow-ups | Each request executes once and in order; final Display is the report | No dropped/duplicated user turns, no duplicate skill/report, Display history order is coherent, reload restores the final report |
 | VW-13 | Open/Image | `Search for a dog image and show it` | Claude downloads an image file into the project and shows it; Display renders a visible image (`media-viewer-image`), not source bytes | `<img>` src is an fs `download` URL and loads (naturalWidth > 0); hard reload restores the image target |
 | VW-14 | Generate/HTML | `generate crm.html` | Claude writes a single standalone `crm.html` and shows the FILE; Display renders the sandboxed live preview (`html-preview`) | No `http.server`/port is started; not raw source in a code editor; hard reload restores the same HTML target |
+| VW-17 | Asset entry | Open Markdown, Skill, raw source, CSV/XLSX, Whiteboard, Deck, HTML, image, and PDF in Standard; click the MessageSquare action | Every single-content viewer exposes `Discuss`; the same asset URL gains only `viewMode=vibe`, chat expands beside the still-mounted viewer, and the asset tab adopts one target-specific Chat parent | No button on lists/folders/projects/graph/lens; narrow width is icon-only with an accessible name; reduced motion removes the morph; reload restores the split |
+| VW-18 | Update current | From an asset-origin workspace ask `Update/refactor this asset` with an exact marker | The original TypeId/path is included once as prompt context; persisted writes refresh the clean open viewer while the turn is still running | Same content tab/process; no `flow show` required for the same target; an unsaved local buffer is not overwritten |
+| VW-19 | Create another | Ask `Create another <asset type> based on this one and open it` | The new asset is created, `flow show` focuses it as another child, and the same chat remains mounted | Original remains in the child strip; no duplicate process or target-history key; reload restores the new child |
+| VW-20 | Open related | Ask `Open the related <known asset>` | The existing related asset opens URL-first through its normal loader as a child of the launching process | Correct viewer/type icon, one tab per target, chat and ordered child history stay live |
 
 ## Full Scenario Steps
 
@@ -161,6 +166,40 @@ Fixture: Markdown, HTML, source, and an existing static app with `VW07_*` marker
 2. Wait for the turn to complete; the agent should write one standalone `crm.html` in the project and run `flow show file <abs>/crm.html` (no server, no port).
 3. Verify the Display contains the sandboxed `[data-testid="html-preview"]` iframe rendering the page — NOT the code editor source view and NOT a webapp port iframe.
 4. Hard reload; verify the same HTML target restores.
+
+### VW-17 - Standard asset transition matrix
+
+For each supported viewer fixture (Markdown, Skill, raw source, CSV/XLSX,
+Whiteboard, Deck, HTML, image, PDF):
+
+1. Open the fixture in Standard and verify its native viewer.
+2. Verify the MessageSquare `Discuss` control and accessible name.
+3. Click it; assert the dock path/pointer is unchanged and only
+   `viewMode=vibe` is added.
+4. Verify the viewer did not lose selection/dirty state, chat is visible, and
+   the process target is the exact TypeId or compute-node VFS path.
+5. Hard reload and verify the same asset/chat split. Repeat at a narrow viewport
+   and with reduced-motion emulation.
+
+### VW-18 - Update/refactor the current asset live
+
+1. Enter Vibe from a clean asset fixture and send
+   `Update/refactor this asset and add the exact marker VW18_LIVE_UPDATE.`
+2. Verify the prompt context names the fixture's exact TypeId/path once.
+3. While the turn is still active, verify the persisted marker appears in the
+   clean viewer without navigation, remount, or a second `flow show`.
+4. Repeat with an unsaved local edit; verify the dirty buffer is preserved.
+
+### VW-19/VW-20 - Create another and open related
+
+1. From the VW-18 session ask
+   `Create another document based on this one, add VW19_CREATED, and open it.`
+2. Verify the created asset becomes the active child and the original remains
+   in the child strip.
+3. Ask `Open the related fixture named VW20_RELATED without changing it.`
+4. Verify the existing related asset opens in its native viewer as one child,
+   with the same chat/process and ordered child strip.
+5. Hard reload and verify the related child and chat restore.
 
 ## Bug Gate
 

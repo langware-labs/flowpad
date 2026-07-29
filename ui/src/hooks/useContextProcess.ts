@@ -6,8 +6,6 @@ import { resolveWorkdir } from '@src/components/conversation/apply-project-choic
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { mostRecentProcess } from '@src/utils/process-recency';
 
-const DEFAULT_WORKER = 'claude_code' as const;
-
 /**
  * Generic "context process" launch-or-resume — the §4 grid action.
  *
@@ -65,7 +63,7 @@ export function useContextProcess(opts: {
 
         // Headless so set-graph-context binds before the worker's session exists.
         const proc = await AgenticProcess.launch({
-          workerType: opts.workerType ?? DEFAULT_WORKER,
+          ...(opts.workerType ? { workerType: opts.workerType } : {}),
           workdir,
           projectId: opts.projectId ?? undefined,
           target: opts.target!,

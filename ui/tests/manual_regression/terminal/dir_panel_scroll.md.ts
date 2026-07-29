@@ -76,7 +76,9 @@ test.describe('Dir side window scrolling', () => {
   });
 
   test('dir panel scrolls (not clipped) when the directory overflows the viewport', async ({ page }) => {
-    test.setTimeout(90_000);
+    // A deliberately short viewport makes overflow deterministic even for a
+    // sparse project root. This is layout input, not a timing allowance.
+    await page.setViewportSize({ width: 1280, height: 320 });
 
     await gotoAgenticProcess(page);
 
@@ -96,17 +98,20 @@ test.describe('Dir side window scrolling', () => {
     await dirButton.click();
 
     // Wait for the dir tree to mount and load its rows.
-    const filter = activePanel(page).locator('[data-testid="dir-tree-filter"]');
+    // The tab list can reconcile while the side-window URL commits. Locate the
+    // user-visible Dir panel itself instead of repeatedly re-resolving whichever
+    // terminal panel happens to carry data-active during that reconciliation.
+    const filter = page.locator('[data-testid="dir-tree-filter"]:visible');
     await expect(filter).toBeVisible({ timeout: 15_000 });
     await page.waitForTimeout(2_000); // let the directory listing populate
 
-    // Measure the REAL layout of the scroll chain inside the active panel.
-    const metrics = await activePanel(page).evaluate((panel) => {
-      const f = panel.querySelector('[data-testid="dir-tree-filter"]');
-      if (!f) return null;
-      const dirRoot = f.parentElement!.parentElement!; // SimpleDirTree root
+    // Measure the REAL layout from the visible filter's own panel.
+    const metrics = await filter.evaluate((f) => {
+      const filterRow = f.parentElement;
+      const dirRoot = filterRow?.parentElement; // SimpleDirTree root
+      if (!dirRoot) return null;
       const scroll = [...dirRoot.children].find(
-        (c) => getComputedStyle(c as Element).overflowY === 'auto',
+        (c) => getComputedStyle(c).overflowY === 'auto',
       ) as HTMLElement | undefined;
       const wrapper = dirRoot.parentElement as HTMLElement; // TabbedSideDrawer content wrapper
       if (!scroll || !wrapper) return null;
@@ -128,15 +133,12 @@ test.describe('Dir side window scrolling', () => {
     expect(metrics, 'dir tree scroll chain not found in active panel').not.toBeNull();
     const m = metrics!;
 
-    // Precondition: the directory must actually overflow the viewport, otherwise
-    // there is nothing to scroll and the bug cannot manifest. Gate on the inner
-    // list's natural content height (scrollScrollH) vs the bounded wrapper —
-    // dirRootScrollH can't be used here because the FIX bounds it to the wrapper,
-    // which would mask "has overflow" once fixed.
-    if (m.scrollScrollH <= m.wrapperClientH + 1) {
-      test.skip(true, `Directory fits without overflow (list ${m.scrollScrollH}px ≤ wrapper ${m.wrapperClientH}px) — not enough entries to exercise scrolling`);
-      return;
-    }
+    // The short viewport above guarantees this precondition; a failure is a
+    // real fixture/layout regression, never a silent inventory skip.
+    expect(
+      m.scrollScrollH,
+      `directory fixture must overflow its wrapper (${m.scrollScrollH}px ≤ ${m.wrapperClientH}px)`,
+    ).toBeGreaterThan(m.wrapperClientH + 1);
 
     // 1. The panel must NOT be clipped: its content height must be bounded by the
     //    wrapper (the broken block wrapper lets it grow past and clips it).

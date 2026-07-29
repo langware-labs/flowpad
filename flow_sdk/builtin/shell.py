@@ -15,8 +15,9 @@ import collections
 import logging
 import os
 import re
+import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import psutil
 
@@ -103,6 +104,63 @@ def close_shell_record(record: FSRecord) -> None:
         except (OSError, ValueError):
             pass
     record.save_metadata_field("status", ShellStatus.CLOSED.value)
+
+
+# PTY output is a paint stream, not a text file. To report a command's output
+# we drop the escape sequences but KEEP the line structure — unlike
+# ``strip_pty_controls`` (cli_worker_base_driver), which flattens everything
+# because it only ever searches for single-line markers.
+_PTY_OSC_RE = re.compile(rb"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+_PTY_CSI_RE = re.compile(rb"\x1b\[[0-9;:?<>=!]*[ -/]*[@-~]")
+_PTY_ESC_RE = re.compile(rb"\x1b[@-_=>]?")
+_PTY_CTRL_RE = re.compile(rb"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")  # keeps \t \n \r
+
+
+def _strip_pty_keep_lines(data: bytes) -> str:
+    """Printable text of a PTY chunk, newlines intact."""
+    for pattern in (_PTY_OSC_RE, _PTY_CSI_RE, _PTY_ESC_RE, _PTY_CTRL_RE):
+        data = pattern.sub(b"", data)
+    return data.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _sentinel_body(text: str, marker: str, end: int) -> str:
+    """The command's own output: everything between the ECHOED command line and
+    the sentinel at ``end``.
+
+    The terminal echoes what was typed, and what was typed ends in the sentinel
+    ``echo`` — so the first marker-bearing line is the echo, never output. Drop
+    it, or every result would be prefixed by the command that produced it.
+    """
+    lines = text[:end].split("\n")
+    for i, line in enumerate(lines):
+        if marker in line:
+            lines = lines[i + 1 :]
+            break
+    return "\n".join(lines).strip("\n")
+
+
+async def _with_attached_project_secrets(
+    project_id: str | None, extra_env: dict[str, str] | None
+) -> dict[str, str] | None:
+    """Merge the project's attached secrets under any explicit ``extra_env``.
+
+    Best-effort by design: a terminal must open even when a secret cannot be
+    resolved, so every failure here is swallowed and the PTY spawns without it.
+    """
+    if not project_id:
+        return extra_env
+    try:
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_resolver import secret_env_dict  # noqa: PLC0415
+
+        project = await Project.get_by_id(str(project_id))
+        if project is None or not project.secret_origins:
+            # The common case. Return before the node lookup rather than after.
+            return extra_env
+        return await secret_env_dict(project, extra_env)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[shell] could not resolve project secrets for the PTY: %s", e)
+        return extra_env
 
 
 class Shell(Entity):
@@ -469,6 +527,11 @@ class Shell(Entity):
             elif self.status in ("running", "closed"):
                 await self._cleanup_stale_session()
 
+            # A terminal on this node sees the project's ATTACHED secrets, the
+            # same set a worker gets. Transient: it reaches the child process
+            # env and is never written to the node's filesystem. An explicitly
+            # passed value always wins.
+            extra_env = await _with_attached_project_secrets(self.project_id, extra_env)
             await cn.create_pty(
                 self.id,
                 rows=rows,
@@ -627,6 +690,71 @@ class Shell(Entity):
                 return  # output has stopped — shell is at prompt
             last_seq = current_seq
             await asyncio.sleep(idle_ms / 1000)
+
+    #: Sentinel grammar for "run this and tell me how it went". MIRRORED in TS —
+    #: ``ui/src/terminal/run-in-terminal.ts`` builds the identical string, and a
+    #: test on each side pins this literal shape so the two cannot drift. The
+    #: appended ``echo`` is the only moment we know the command FINISHED, since
+    #: writing to a PTY proves delivery and nothing else.
+    SENTINEL_PREFIX: ClassVar[str] = "__flow_"
+
+    @classmethod
+    def sentinel_command(cls, command: str, marker: str) -> str:
+        """``<command>; echo "<marker>_$?"`` — the shared assertion grammar."""
+        return f'{command}; echo "{marker}_$?"'
+
+    async def run_and_capture(
+        self,
+        command: str,
+        *,
+        timeout: float = 120.0,
+        poll_interval: float = 0.15,
+    ) -> dict:
+        """Type ``command`` into the PTY and return WHAT IT PRINTED.
+
+        ``write`` alone is fire-and-forget: the user sees the command run, but
+        the caller learns nothing — an agent that types ``ls`` and cannot read
+        the listing is worse than useless, because it has to guess. This runs
+        the command in the visible terminal AND hands back its output and exit
+        code, so one call serves the user and the caller at once.
+
+        The sentinel is what makes "finished" knowable: the appended
+        ``echo "<marker>_$?"`` only prints once the command returns, and it
+        carries the exit code with it. Output is everything the PTY emitted
+        between the echoed command line and that sentinel.
+
+        ``timeout`` bounds the WAIT, not the command: on expiry the command
+        keeps running in the user's terminal and this returns what it printed
+        so far with ``completed: False``. It never kills anything and never
+        reports success it did not observe — a long-running command is a fact
+        to report, not an error to hide.
+        """
+        marker = f"{self.SENTINEL_PREFIX}{uuid.uuid4().hex[:8]}"
+        sentinel = re.compile(rf"{re.escape(marker)}_(\d+)")
+        # Only read what THIS command adds; the stream file holds the whole
+        # session, and a previous `ls` in scrollback must not be reported here.
+        baseline = len(await self.read())
+
+        await self.write(self.sentinel_command(command, marker))
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while True:
+            tail = _strip_pty_keep_lines((await self.read())[baseline:])
+            match = sentinel.search(tail)
+            if match:
+                return {
+                    "output": _sentinel_body(tail, marker, match.start()),
+                    "exit_code": int(match.group(1)),
+                    "completed": True,
+                }
+            if loop.time() >= deadline:
+                return {
+                    "output": _sentinel_body(tail, marker, len(tail)),
+                    "exit_code": None,
+                    "completed": False,
+                }
+            await asyncio.sleep(poll_interval)
 
     async def write(self, text: str) -> None:
         """Wait for the shell to be ready then inject text as if typed by the user.

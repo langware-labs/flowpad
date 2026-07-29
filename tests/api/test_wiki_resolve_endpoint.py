@@ -102,10 +102,10 @@ async def test_resolve_markdown_hit(bootstrapped_client, tmp_path: Path) -> None
     resp = await bootstrapped_client.get("/api/v1/wiki/resolve?name=alpha-md")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body is not None
-    assert body["type"] == "markdown"
-    assert body["id"]
-    assert body["asset_ref"].endswith("alpha-md.md")
+    assert body["status"] == "SUCCESS"
+    assert body["data"]["kind"] == "resolved"
+    assert body["data"]["target_typeid"].startswith("markdown-")
+    assert "asset_ref" not in body["data"]
 
 
 async def test_resolve_whiteboard_hit(bootstrapped_client, tmp_path: Path) -> None:
@@ -116,34 +116,30 @@ async def test_resolve_whiteboard_hit(bootstrapped_client, tmp_path: Path) -> No
     resp = await bootstrapped_client.get("/api/v1/wiki/resolve?name=beta-wb")
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body is not None, "expected hit, got null"
-    assert body["type"] == "whiteboard"
-    assert body["id"]
-    assert body["asset_ref"].endswith("beta-wb")
+    assert body["data"]["kind"] == "resolved"
+    assert body["data"]["target_typeid"].startswith("whiteboard-")
 
 
-async def test_resolve_prefer_type_wins(bootstrapped_client, tmp_path: Path) -> None:
-    """Same name in two types — `prefer_type` selects the matching one."""
+async def test_resolve_collision_is_ambiguous(bootstrapped_client, tmp_path: Path) -> None:
+    """Same name in two types is never resolved by preference or ordering."""
     same = "gamma-shared"
     _write_markdown(tmp_path, same)
     _write_whiteboard(tmp_path, same)
     await _index_and_sync(tmp_path)
 
-    # No preference → alphabetical by (type, id). 'markdown' < 'whiteboard'.
     resp_default = await bootstrapped_client.get(f"/api/v1/wiki/resolve?name={same}")
     assert resp_default.status_code == 200, resp_default.text
-    assert resp_default.json()["type"] == "markdown"
+    assert resp_default.json()["data"] == {"kind": "ambiguous"}
 
-    # prefer_type=whiteboard → whiteboard wins.
     resp_pref = await bootstrapped_client.get(
         f"/api/v1/wiki/resolve?name={same}&prefer_type=whiteboard"
     )
     assert resp_pref.status_code == 200, resp_pref.text
-    assert resp_pref.json()["type"] == "whiteboard"
+    assert resp_pref.json()["data"] == {"kind": "ambiguous"}
 
 
-async def test_resolve_miss_returns_null(bootstrapped_client) -> None:
-    """A name with no candidates returns JSON null (200, not 404)."""
+async def test_resolve_miss_returns_missing_result(bootstrapped_client) -> None:
+    """A name with no candidates returns semantic missing (200, not 404)."""
     resp = await bootstrapped_client.get("/api/v1/wiki/resolve?name=nonexistent-xyz-9999")
     assert resp.status_code == 200, resp.text
-    assert resp.json() is None
+    assert resp.json()["data"] == {"kind": "missing"}

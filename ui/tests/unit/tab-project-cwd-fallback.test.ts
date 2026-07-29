@@ -9,6 +9,7 @@
  */
 import { dataManager, Project, Tab } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { projectScope } from '@src/lib/scope-filter';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const SID = '11111111-1111-4111-8111-111111111111';
@@ -74,5 +75,21 @@ describe('Tab.getFromDockPointer cwd → project fallback', () => {
 
     expect(byPath).not.toHaveBeenCalled();
     expect(cap.value()).toBe(PID);
+  });
+
+  it('keeps an unmatched target global instead of adopting ambient URL scope', async () => {
+    vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue({
+      typeId: { type: 'claude_session', id: SID },
+      project_id: null,
+      cwd: '/tmp/outside-every-project',
+    } as any);
+    vi.spyOn(Project, 'getProjectByPath').mockResolvedValue(null);
+    const cap = captureNewTabProjectId();
+
+    await Tab.getFromDockPointer(
+      DockPointer.forLensTranscript('claude', SID).withScopeFilter(projectScope(PID)),
+    );
+
+    expect(cap.value()).toBeNull();
   });
 });

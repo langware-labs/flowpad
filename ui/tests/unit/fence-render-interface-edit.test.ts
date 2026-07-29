@@ -145,12 +145,31 @@ describe('applyInterfaceEdit param edits', () => {
       description: 'The title.',
     });
   });
+
+  it('edits an existing param description without changing its object shape', () => {
+    const source = `name: f
+params:
+  title:
+    type: string
+    description: The title. # public docs
+`;
+    const next = applyInterfaceEdit(source, {
+      kind: 'param-description',
+      param: 'title',
+      value: 'Display title.',
+    });
+
+    expect(next).toContain('description: Display title. # public docs');
+    expect(parseInterfaceBlock(next).params[0].description).toBe('Display title.');
+  });
 });
 
 describe('applyInterfaceEdit class member edits', () => {
   const CLASS_SOURCE = `name: Agent
 properties:
-  status: ProcessStatus? # reflected
+  status:
+    type: ProcessStatus?
+    description: Current status. # reflected
 methods:
   start:
     signature: "async (prompt?: string) -> ApiResponse"
@@ -184,8 +203,8 @@ methods:
       optional: false,
     });
     expect(parseInterfaceBlock(next).properties[0]).toMatchObject({ optional: false });
-    expect(next).toContain('status: ProcessStatus');
-    expect(next).not.toContain('status: ProcessStatus?');
+    expect(next).toContain('type: ProcessStatus');
+    expect(next).not.toContain('type: ProcessStatus?');
   });
 
   it('edits a described method signature without flattening its object', () => {
@@ -201,6 +220,23 @@ methods:
       description: 'Start the worker.',
     });
   });
+
+  it('edits property and method descriptions in place', () => {
+    const property = applyInterfaceEdit(CLASS_SOURCE, {
+      kind: 'property-description',
+      property: 'status',
+      value: 'Latest lifecycle state.',
+    });
+    const next = applyInterfaceEdit(property, {
+      kind: 'method-description',
+      method: 'start',
+      value: 'Start or resume the worker.',
+    });
+
+    expect(next).toContain('description: Latest lifecycle state. # reflected');
+    expect(parseInterfaceBlock(next).properties[0].description).toBe('Latest lifecycle state.');
+    expect(parseInterfaceBlock(next).methods[0].description).toBe('Start or resume the worker.');
+  });
 });
 
 describe('applyInterfaceEdit safety', () => {
@@ -209,10 +245,8 @@ describe('applyInterfaceEdit safety', () => {
    * corrupting the block.
    */
   it('returns the source unchanged for a param that no longer exists', () => {
-    expect(applyInterfaceEdit(AUTHORED, { kind: 'param-name', param: 'ghost', value: 'x' }))
-      .toBe(AUTHORED);
-    expect(applyInterfaceEdit(AUTHORED, { kind: 'param-type', param: 'ghost', value: 'x' }))
-      .toBe(AUTHORED);
+    expect(applyInterfaceEdit(AUTHORED, { kind: 'param-name', param: 'ghost', value: 'x' })).toBe(AUTHORED);
+    expect(applyInterfaceEdit(AUTHORED, { kind: 'param-type', param: 'ghost', value: 'x' })).toBe(AUTHORED);
   });
 
   it('returns the source unchanged for an out-of-range error index', () => {
@@ -223,6 +257,14 @@ describe('applyInterfaceEdit safety', () => {
     const source = 'name: ping\n';
     expect(applyInterfaceEdit(source, { kind: 'description', value: 'hi' })).toBe(source);
     expect(applyInterfaceEdit(source, { kind: 'returns', value: 'Pong' })).toBe(source);
+    const compact = 'name: f\nparams:\n  title: string\n';
+    expect(
+      applyInterfaceEdit(compact, {
+        kind: 'param-description',
+        param: 'title',
+        value: 'Title.',
+      }),
+    ).toBe(compact);
   });
 
   it('returns the source unchanged when the YAML does not parse', () => {

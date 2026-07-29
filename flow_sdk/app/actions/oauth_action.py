@@ -20,6 +20,7 @@ from flow_sdk.app.actions.desktop_oauth import (
     handle_desktop_oauth_callback,
     wait_for_desktop_oauth_callback,
 )
+from flow_sdk.app.actions.oauth_attachment import attach_action, detach_action, disconnect_action
 from flow_sdk.core import action
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -44,6 +45,17 @@ def _parse_oauth_info(request_info):
     provider = parts[0]
     oauth_action = parts[1]
     return provider, oauth_action
+
+
+def _attachment_response(result) -> ApiResponse:
+    """One shape for every attach/detach/disconnect outcome, carrying the error
+    code so the client can branch on it rather than on prose."""
+    if not result.success:
+        return ApiFailResponse(message=result.message, data={"error": result.error})
+    return ApiSuccessResponse(
+        message=result.message,
+        data={"remaining_attachment_count": result.remaining_attachment_count},
+    )
 
 
 @action.all(action_name="oauth")
@@ -101,16 +113,22 @@ async def oauth_main() -> ApiResponse:
             cancelled = cancel_github_device_flow(state) if provider == "github" else False
             return ApiSuccessResponse(data={"cancelled": cancelled})
 
-        # Attach
+        # Attach — grants the target entity use of the user's credential and
+        # mints the reference row on the target. Two-sided; see oauth_attachment.
         if oauth_action_str == OAuthAction.Attach:
-            return ApiSuccessResponse(message=f"OAuth {provider} attached (desktop stub)")
-
-        # Detach
-        if oauth_action_str == OAuthAction.Detach:
-            return ApiSuccessResponse(
-                message=f"OAuth {provider} detached (desktop stub)",
-                data={"remaining_attachment_count": 0},
+            shared_var = (
+                request_info.request_parameters.get("shared_entity_var_name")
+                if request_info.request_parameters
+                else None
             )
+            result = await attach_action(provider, shared_var)
+            return _attachment_response(result)
+
+        # Detach — cleans both sides and reports the REAL remaining count. The
+        # stub always said 0, which made the client chain into disconnect and
+        # destroy the user's token on every project detach.
+        if oauth_action_str == OAuthAction.Detach:
+            return _attachment_response(await detach_action(provider))
 
         # Disconnect
         if oauth_action_str == OAuthAction.Disconnect:
@@ -120,10 +138,7 @@ async def oauth_main() -> ApiResponse:
                 return await _handle_github_disconnect()
             if provider == "anthropic":
                 return await delete_anthropic_token_for_current_user()
-            return ApiSuccessResponse(
-                message=f"OAuth {provider} disconnected (desktop stub)",
-                data={"remaining_attachment_count": 0},
-            )
+            return _attachment_response(await disconnect_action(provider))
 
         return ApiFailResponse(message=f"OAuth action not supported: {oauth_action_str}")
 
@@ -332,6 +347,10 @@ async def _handle_github_disconnect() -> ApiResponse:
         if not user:
             return ApiFailResponse(message="User not found")
         await delete_user_credentials(user, "github_credentials", user.id)
+        # Drop the visibility row too, or the provider keeps reading CONNECTED.
+        from flow_sdk.app.actions.desktop_oauth import _drop_credential_row  # noqa: PLC0415
+
+        await _drop_credential_row(user, "github_credentials")
         from flow_sdk.builtin.capability import restamp_capability_state
         from flow_sdk.core.capabilities import CapabilityKind
 

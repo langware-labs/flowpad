@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TypeId } from '@sdk';
+import { PageId, TypeId } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import {
   AssetEditor,
@@ -55,6 +55,22 @@ describe('AssetDocPointer', () => {
       const back = AssetDocPointer.parse('wiki/workspace-123/Some Note');
       expect(back.space).toBe('workspace-123');
       expect(back.wikiName).toBe('Some Note');
+    });
+
+    it('keeps a legacy wiki/<word> deep link in the local Wiki', () => {
+      const back = AssetDocPointer.parse('wiki/Legacy Note');
+      expect(back.space).toBe('@local');
+      expect(back.wikiName).toBe('Legacy Note');
+      expect(back.toPointer()).toBe('wiki/@local/Legacy Note');
+    });
+
+    it('builds the canonical Hub Wiki URL without changing the asset grammar', () => {
+      const url = AssetDocPointer
+        .forWiki('Quick start', V4)
+        .toDockPointer()
+        .withPage(PageId.HUB)
+        .toUrl();
+      expect(url).toBe(`/dock/hub/assets/wiki/${V4}/Quick%20start`);
     });
   });
 

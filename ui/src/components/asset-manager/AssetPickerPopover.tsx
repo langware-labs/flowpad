@@ -11,7 +11,6 @@ import { useProcessAssets } from './useProcessAssets';
 import {
   displayLabelForTypeid,
   isOpenableTypeid,
-  makeIconForType,
   parseTypeid,
 } from './asset-row-helpers';
 import { EntityTypeBar, type EntityTypeFilter } from './EntityTypeBar';
@@ -24,8 +23,13 @@ import {
   scopeProjectIds as scopeProjectIdList,
 } from '@src/lib/scope-filter';
 import { useAllProjects } from '@src/hooks/use-all-projects';
-import { Boxes, Lock, Search, type LucideIcon } from 'lucide-react';
+import { Boxes, Lock, Search } from 'lucide-react';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import {
+  EntityIcon,
+  useEntityLocationLabel,
+} from '@src/components/graph-view/ui/EntityIcon';
 
 interface AssetPickerPopoverProps {
   /** Popover trigger (typically a Run button); passed to PopoverTrigger asChild. */
@@ -113,7 +117,6 @@ export function AssetPickerPopover({
   // pulled from the global entity queries. No process needs to exist yet.
   const { descriptors, isLoading, refresh } = useProcessAssets(null, { enabled: open });
   const { types: assetTypes } = useAssetTypes();
-  const iconForType = useMemo(() => makeIconForType(assetTypes), [assetTypes]);
 
   // On open: refresh the list and start from "All" so every agent/skill is
   // visible by default (the project-scoped default would hide user assets).
@@ -271,7 +274,6 @@ export function AssetPickerPopover({
             <PickRow
               key={`${d.typeid}|${d.source}|${idx}`}
               descriptor={d}
-              iconForType={iconForType}
               onPick={handlePick}
               onPreview={handlePreview}
             />
@@ -312,23 +314,28 @@ export function AssetPickerPopover({
   );
 }
 
-function PickRow({
+export function PickRow({
   descriptor,
-  iconForType,
   onPick,
   onPreview,
 }: {
   descriptor: AssetDescriptor;
-  iconForType: (type: string) => LucideIcon;
   onPick: (d: AssetDescriptor) => void;
   onPreview: (d: AssetDescriptor) => void;
 }) {
   const { t } = useLingui();
   const { type } = parseTypeid(descriptor.typeid);
-  const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
   const label = displayLabelForTypeid(descriptor.typeid);
   const openable = isOpenableTypeid(descriptor.typeid);
+  const locationText = useEntityLocationLabel(descriptor.remote);
+  const pickLabel = t`Select ${label}`;
+  const pickActionTitle = locationText
+    ? `${pickLabel}\n${locationText}`
+    : pickLabel;
+  const pickActionAria = locationText
+    ? `${pickLabel}, ${locationText}`
+    : pickLabel;
 
   const revealInFinder = () =>
     void openExternalFromComputeNode('@local', descriptor.posix_path!, { select: true });
@@ -339,8 +346,16 @@ function PickRow({
       className="flex w-full items-center gap-2 border-b px-3 py-1.5 text-left text-xs last:border-b-0 hover:bg-muted/50"
       onClick={() => onPick(descriptor)}
       data-testid={`asset-picker-row-${descriptor.typeid}`}
+      title={pickActionTitle}
+      aria-label={pickActionAria}
     >
-      <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+      <EntityIcon
+        type={type}
+        remote={descriptor.remote}
+        showLocationTooltip={false}
+        density="compact"
+        className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground"
+      />
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {readOnly &&
         (descriptor.posix_path ? (

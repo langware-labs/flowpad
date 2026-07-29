@@ -25,7 +25,6 @@ from urllib.parse import unquote
 
 from .types import WikiLink
 
-
 # Wikilinks: `[[...]]` or `![[...]]`. Capture group is the inner text.
 # We then post-filter out occurrences inside code regions.
 _WIKILINK_RE = re.compile(r"!?\[\[([^\[\]\n]+)\]\]")
@@ -36,11 +35,12 @@ _MD_LINK_RE = re.compile(
     r"\[(?:[^\[\]\n]+)\]\((?P<path>(?!https?://)[^)\s]+\.md(?:#[^)\s]*)?)\)"
 )
 
-# Wiki dock-route links: `[text](/dock/assets/wiki/<name>[#fragment])`.
-# Emitted by the editor's "Add entity link" toolbar. Captures the name
-# segment so it lands in `target_raw` exactly like a `[[name]]` wikilink.
+# Wiki dock-route links:
+#   legacy local: [text](/dock/assets/wiki/<word>)
+#   canonical:    [text](/dock/assets/wiki/<wiki-ref>/<word>)
+#   Hub:          [text](/dock/hub/assets/wiki/<wiki-ref>/<word>)
 _WIKI_URL_RE = re.compile(
-    r"\[(?:[^\[\]\n]+)\]\(/dock/assets/wiki/(?P<name>[^)\s#]+)(?:#[^)\s]*)?\)"
+    r"\[(?:[^\[\]\n]+)\]\(/dock/(?P<hub>hub/)?assets/wiki/(?P<path>[^)\s#]+)(?:#[^)\s]*)?\)"
 )
 
 # Fenced code blocks (``` or ~~~). DOTALL so the match spans newlines.
@@ -67,6 +67,24 @@ def _line_of(body: str, offset: int) -> int:
     return body.count("\n", 0, offset) + 1
 
 
+def canonicalize_word(raw: str) -> str:
+    """Return the existing record-name form used by Wiki resolution.
+
+    This deliberately preserves case and Unicode. It strips only the link
+    decorations already supported by the parser/resolver.
+    """
+    if not isinstance(raw, str):
+        raise ValueError("Wiki word must be a string")
+    value = raw.strip().split("|", 1)[0].split("#", 1)[0].split("^", 1)[0]
+    if value.endswith(".md"):
+        value = value[:-3]
+    parts = [part for part in value.split("/") if part and part not in (".", "..")]
+    canonical = parts[0] if parts else value.strip()
+    if not canonical:
+        raise ValueError("Wiki word must not be empty")
+    return canonical
+
+
 def parse_links(body: str) -> list[WikiLink]:
     """Extract all wiki/embed/internal-md-link occurrences from `body`.
 
@@ -84,7 +102,22 @@ def parse_links(body: str) -> list[WikiLink]:
         out.append(WikiLink(raw=m.group(1), line=_line_of(body, m.start())))
 
     for m in _WIKI_URL_RE.finditer(masked):
-        out.append(WikiLink(raw=unquote(m.group("name")), line=_line_of(body, m.start())))
+        encoded_path = m.group("path")
+        segments = encoded_path.split("/", 1)
+        is_canonical = bool(m.group("hub")) or len(segments) == 2
+        if is_canonical:
+            wiki_ref = unquote(segments[0])
+            raw = unquote(segments[1]) if len(segments) == 2 else ""
+        else:
+            wiki_ref = None
+            raw = unquote(encoded_path)
+        out.append(
+            WikiLink(
+                raw=raw,
+                line=_line_of(body, m.start()),
+                wiki_ref=wiki_ref,
+            )
+        )
 
     for m in _MD_LINK_RE.finditer(masked):
         # Skip if this match was already captured as a wiki URL above —

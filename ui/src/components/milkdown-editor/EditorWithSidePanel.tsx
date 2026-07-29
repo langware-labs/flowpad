@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Link2, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
@@ -75,23 +75,8 @@ export function EditorWithSidePanel({
   target,
   extraTabs,
 }: EditorWithSidePanelProps) {
-  const { windows, active, open, close, closeAll, select } = useSideWindows();
+  const { windows, active, open, close, closeAll, retain, select } = useSideWindows();
   const advanced = useIsAdvanced();
-
-  // Standard mode: the side window is closed by default — collapse any
-  // persisted/shared-open windows once on entry (and again whenever the user
-  // drops from Advanced back to Standard) so a Standard user lands on the rail.
-  // The rail stays, so they can still open a window for the session.
-  const didStandardCollapse = useRef(false);
-  useEffect(() => {
-    if (advanced) {
-      didStandardCollapse.current = false;
-      return;
-    }
-    if (didStandardCollapse.current) return;
-    didStandardCollapse.current = true;
-    if (windows.length > 0) closeAll();
-  }, [advanced, windows, closeAll]);
 
   // Registry of openable windows (Backlinks + caller extras), in display order.
   // Filtering here covers both the open drawer tabs and the collapsed rail, so
@@ -113,6 +98,17 @@ export function EditorWithSidePanel({
       (tab) => NON_ADVANCED_SIDE_TAB_IDS.has(tab.id) || nonAdvancedExtraIds.has(tab.id),
     );
   }, [advanced, extraTabs]);
+
+  // Standard mode removes only windows that are unavailable there. Tabs that
+  // explicitly opt into Standard (for example collision details) remain
+  // URL-owned and shareable. `retain` prunes the whole set in ONE navigation —
+  // the written set is a filter of the set just read, so there is no stale-list
+  // race to avoid by closing ids one at a time.
+  const availableIds = useMemo(() => new Set(registry.map((tab) => tab.id)), [registry]);
+  useEffect(() => {
+    if (advanced) return;
+    retain(availableIds);
+  }, [advanced, retain, availableIds]);
 
   const panels = useMemo<Record<string, ReactNode>>(() => {
     const map: Record<string, ReactNode> = {

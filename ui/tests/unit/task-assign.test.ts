@@ -14,7 +14,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataManager, Task } from '@sdk';
 
-const CHILD_TYPEID = 'task-9a2e5d31-7777-4888-8999-aaaabbbbcccc';
 // Fresh id per task: the SDK entity registry warns when the same id is
 // re-registered with a different instance across tests.
 let TASK_ID = '';
@@ -22,9 +21,7 @@ let TASK_ID = '';
 let callAction: ReturnType<typeof vi.spyOn>;
 
 const assignResult = (over: Record<string, unknown> = {}) => ({
-  child: CHILD_TYPEID,
   self: false,
-  created: true,
   assignee: 'bob@x.com',
   ...over,
 });
@@ -55,7 +52,7 @@ describe('Task.assign', () => {
       name: 'Bob',
       message: 'please take a look',
     });
-    expect(out).toEqual({ childTypeid: CHILD_TYPEID, conversationId: null, self: false });
+    expect(out).toEqual({ conversationId: null, self: false });
   });
 
   it('accepts a bare email string', async () => {
@@ -79,7 +76,7 @@ describe('Task.assign', () => {
 
     // No notification conversation: a self-assignment has nobody to notify.
     expect(callAction).toHaveBeenCalledTimes(1);
-    expect(out).toEqual({ childTypeid: null, conversationId: null, self: true });
+    expect(out).toEqual({ conversationId: null, self: true });
   });
 
   it('requires a recipient email', async () => {

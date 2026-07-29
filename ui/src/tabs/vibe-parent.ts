@@ -1,6 +1,8 @@
-import { AgenticProcess, dataContext, dataManager, QueryRequest, Tab } from '@sdk';
+import { AgenticProcess, dataContext, Tab } from '@sdk';
 import { getViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { contentAssetTargetForDock } from '@src/navigation/content-asset-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { resolveTargetVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
 import { createVibeProcessForProject } from '@src/pages/flow-page/use-start-vibe-session';
 
 /**
@@ -10,14 +12,11 @@ import { createVibeProcessForProject } from '@src/pages/flow-page/use-start-vibe
  * process tab (`parent_tab_id`). So opening an asset in vibe needs a process to
  * parent under.
  *
- * While the workspace is already mounted it registers the parent itself
- * (`tab-parent-context`); this module owns the COLD path — a direct link /
- * reload where no workspace is mounted. `resolveColdOpenParent` is the single
- * entry the tab chokepoint (`materializeTab`) calls; it keeps the chokepoint
- * mode-agnostic — it returns null unless the dock is a vibe asset open, in
- * which case it resolves the asset's project → the project's most-recently-
- * active process (creating an empty headless vibe process if none) → and
- * returns THAT process's tab id to use as the asset tab's `parent_tab_id`.
+ * The stable asset workspace calls `resolveColdOpenParent` after the route
+ * loader has resolved the asset. It resolves the asset's project → the newest
+ * process keyed to that exact asset (creating an empty headless vibe process if
+ * none) → and returns THAT process's tab id so the asset tab can adopt it as
+ * `parent_tab_id`.
  */
 
 /** Effective view mode for a dock: its `?viewMode` override, else the persisted
@@ -26,61 +25,82 @@ function isVibeDock(dock: DockPointer): boolean {
   return (dock.viewMode ?? getViewMode()) === ViewMode.Vibe;
 }
 
-/** Project id the asset dock's tab will belong to — resolved from the target
- *  entity exactly as Tab minting does, falling back to the active project. */
-async function projectIdForAssetDock(dock: DockPointer): Promise<string | null> {
-  const tid = dock.targetTypeId;
-  if (tid) {
-    const ent = await dataManager.getByTypeId<{ project_id?: string | null }>(tid).catch(() => null);
-    if (ent?.project_id) return ent.project_id;
-  }
-  if (dock.vfsPath) {
-    const ent = await dataManager
-      .getEntityByPath<{ project_id?: string | null }>(dock.vfsPath.machinePath)
-      .catch(() => null);
-    if (ent?.project_id) return ent.project_id;
-  }
-  return dataContext.project?.id ?? null;
-}
-
 /** The process's own tab id (minting it if the row doesn't exist yet). */
-async function processTabId(proc: AgenticProcess): Promise<string | null> {
+async function processTab(proc: AgenticProcess): Promise<Tab | null> {
   const dock = new DockPointer(proc.terminalDockPointer);
-  const tabs = await Tab.getFromDockPointer(dock).catch(() => [] as Tab[]);
+  const pointer = dock.toJSON();
+  if (!pointer) return null;
+  // The process entity is already resolved. Calling getFromDockPointer here
+  // would resolve the same target a second time before it can mint/reopen its
+  // tab, serializing a mode-only transition behind unrelated entity work.
+  const tabs = await Tab.newTab(pointer, {
+    targetType: AgenticProcess.type,
+    targetId: proc.id,
+    projectId: proc.project_id ?? null,
+    name: proc.hasSyntheticDisplayName ? null : proc.displayName,
+    iconKey: proc.icon,
+    worktree: Boolean(proc.cliOptions.worktree),
+  }).catch(() => [] as Tab[]);
   const hash = dock.tabHash;
-  return tabs.find((t) => t.dockPointer?.tabHash === hash)?.id ?? null;
+  // The backend's one-tab-per-process identity is the target pair. Prefer it
+  // over a client-side pointer hash comparison: canonical pointer healing may
+  // add/remove presentation options while retaining the same process row.
+  return (
+    tabs.find(
+      (tab) =>
+        tab.target_type === AgenticProcess.type && tab.target_id === proc.id,
+    ) ??
+    tabs.find((tab) => tab.dockPointer?.tabHash === hash) ??
+    null
+  );
 }
 
-/** Resolve the project's most-recently-active process; else create an empty
- *  headless vibe process (no navigate) purely to host the tab. */
-async function resolveOrCreateVibeParentTabId(projectId: string): Promise<string | null> {
-  const procs = await AgenticProcess.query<AgenticProcess>(
-    new QueryRequest({ type: AgenticProcess.type, scope: [] }),
-  ).catch(() => [] as AgenticProcess[]);
-  const pick = procs
-    .filter((p) => p.project_id === projectId)
-    .sort((a, b) => (Number(b.last_active_at) || 0) - (Number(a.last_active_at) || 0))[0];
-  if (pick) return processTabId(pick);
+export interface ResolvedAssetVibeHost {
+  process: AgenticProcess;
+  projectId: string;
+  targetVfsPath: string;
+}
 
-  const workdir =
-    dataContext.project?.id === projectId ? dataContext.project?.fs_storage_mount_path : undefined;
-  const proc = await createVibeProcessForProject({ projectId, workdir, open: false });
-  return processTabId(proc);
+/** Resolve the target-keyed process without waiting for tab materialization. */
+export async function resolveAssetVibeHost(
+  dock: DockPointer,
+): Promise<ResolvedAssetVibeHost | null> {
+  if (!isVibeDock(dock)) return null;
+  const target = contentAssetTargetForDock(dock, dock.targetTypeId);
+  if (!target) return null;
+  const projectId =
+    dock.scopeProjectId ?? (await Tab.resolveDockTarget(dock)).projectId;
+  if (!projectId) return null;
+
+  const targetVfsPath = target.targetVfsPath;
+  const pick = await resolveTargetVibeChat(projectId, targetVfsPath).catch(() => null);
+  const process =
+    pick ??
+    (await createVibeProcessForProject({
+      projectId,
+      workdir:
+        dataContext.project?.id === projectId
+          ? dataContext.project?.fs_storage_mount_path
+          : undefined,
+      targetVfsPath,
+      open: false,
+    }));
+  return { process, projectId, targetVfsPath };
+}
+
+/** Ensure the already-resolved host process has its canonical process tab. */
+export function ensureAssetVibeParentTab(
+  host: ResolvedAssetVibeHost,
+): Promise<Tab | null> {
+  return processTab(host.process);
 }
 
 /**
- * Cold-open parent for the tab chokepoint. Returns the parent tab id when `dock`
- * is an asset opened in vibe mode (resolving-or-creating the project's process),
- * else null — so `materializeTab` can call it unconditionally without knowing
- * about vibe. `knownProjectId` short-circuits the target lookup when the tab
- * already carries its project.
+ * Resolve the process-tab parent for an asset opened in Vibe. Project and
+ * entity identity use the same canonical dock resolver as tab minting.
  */
-export async function resolveColdOpenParent(
-  dock: DockPointer,
-  knownProjectId: string | null,
-): Promise<string | null> {
-  if (!isVibeDock(dock)) return null;
-  const projectId = knownProjectId ?? (await projectIdForAssetDock(dock));
-  if (!projectId) return null;
-  return resolveOrCreateVibeParentTabId(projectId);
+export async function resolveColdOpenParent(dock: DockPointer): Promise<string | null> {
+  const host = await resolveAssetVibeHost(dock);
+  const tab = host ? await ensureAssetVibeParentTab(host) : null;
+  return tab?.id ?? null;
 }

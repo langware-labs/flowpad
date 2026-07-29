@@ -29,11 +29,13 @@ from .entries import (
     UsageEntry,
     UserMessageEntry,
     WebFetchEntry,
+    WorkerUnavailableEntry,
+    WorkerUnavailableReason,
 )
 from .entry import EntryKind, TranscriptEntry
 from .formats import TranscriptDescriptor, TranscriptFormat, TranscriptSource
 from .process_entry import ObservationKind, ProcessEntry
-from .summary import worker_summary_log
+from .summary import worker_continuation_prompt, worker_summary_log
 from .transcript import AgentTranscriptFile
 
 __all__ = [
@@ -66,5 +68,8 @@ __all__ = [
     "UsageEntry",
     "UserMessageEntry",
     "WebFetchEntry",
+    "WorkerUnavailableEntry",
+    "WorkerUnavailableReason",
+    "worker_continuation_prompt",
     "worker_summary_log",
 ]

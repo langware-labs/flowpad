@@ -33,9 +33,9 @@ export default defineConfig({
       },
       {
         // Headless tests: boot the REAL full app in jsdom + RTL against a LIVE
-        // backend (no mocks) — the in-process E2E tier. Skip themselves when no
-        // backend is reachable, so they're kept out of the default `test` chain
-        // and run on demand / in the e2e-qa cycle.
+        // backend (no mocks) — the in-process E2E tier. They fail closed unless
+        // an explicitly selected disposable backend is live, so they stay out
+        // of the default `test` chain and run on demand / in the e2e-qa cycle.
         extends: './tests/headless/vitest.config.ts',
         test: {
           name: 'headless',
