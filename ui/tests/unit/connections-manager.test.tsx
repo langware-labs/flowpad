@@ -98,7 +98,7 @@ describe('ConnectionsManager', () => {
     h.providers = [];
     render(<ConnectionsManager projectTypeId={PROJECT} />);
 
-    expect(screen.getByText(/No OAuth connections found/i)).toBeTruthy();
+    expect(screen.getByText(/No OAuth providers available/i)).toBeTruthy();
     h.providers = [{ name: 'github', display_name: 'GitHub', icon: undefined }];
   });
 

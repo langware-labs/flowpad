@@ -11,6 +11,7 @@ import {
   type EnvVarStatus,
   type OAuthDetachResult,
   type OAuthProvider,
+  type OAuthTestResult,
 } from '@sdk';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -34,6 +35,9 @@ interface UseOAuthConnectionReturn {
   connect: (connectionId: string, provider: string, sharedEntityVarName?: string) => Promise<void>;
   attach: (connectionId: string, provider: string, sharedEntityVarName?: string) => Promise<void>;
   detach: (connectionId: string, provider: string) => Promise<void>;
+  /** Call the provider with the stored token — the only way to tell a live
+   *  connection from one revoked at the provider. */
+  testConnection: (provider: string) => Promise<OAuthTestResult>;
   disconnect: (connectionId: string, provider: string) => Promise<void>;
   delete: (connectionId: string, provider: string) => Promise<void>;
   getConnectionStatus: (provider: string) => Promise<ConnectionStatus>;
@@ -293,6 +297,11 @@ export const useOAuthConnection = ({
     [projectTypeId, getProviderName],
   );
 
+  const testConnection = useCallback(
+    async (provider: string) => oauthService.test(getProviderName(provider), projectTypeId),
+    [projectTypeId, getProviderName],
+  );
+
   const attach = useCallback(
     async (connectionId: string, provider: string, sharedEntityVarName?: string) => {
       try {
@@ -470,6 +479,7 @@ export const useOAuthConnection = ({
     connect,
     attach,
     detach,
+    testConnection,
     disconnect,
     delete: deleteConnection,
     getConnectionStatus,
