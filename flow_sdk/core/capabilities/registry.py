@@ -575,20 +575,20 @@ async def resolve_default_worker_type() -> str:
 def build_install_worker_config(harness_kind: str) -> tuple[str, dict[str, Any]]:
     """Return AgenticProcess worker_type + cli_config for a harness leaf kind."""
     if harness_kind == CapabilityKind.CLAUDE_CLI.value:
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
         from flow_sdk.flowpad_types.enums import WorkerType
 
-        return WorkerType.CLAUDE_CODE.value, ClaudeCliOptions(permission_mode="bypassPermissions").to_json()
+        return WorkerType.CLAUDE_CODE.value, ClaudeAgentOptions(permission_mode="bypassPermissions").to_json()
     if harness_kind == CapabilityKind.CODEX_CLI.value:
-        from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexAgentOptions
         from flow_sdk.flowpad_types.enums import WorkerType
 
-        return WorkerType.CODEX.value, CodexCliOptions(permission_mode="bypassPermissions").to_json()
+        return WorkerType.CODEX.value, CodexAgentOptions(permission_mode="bypassPermissions").to_json()
     if harness_kind == CapabilityKind.COPILOT_CLI.value:
-        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
         from flow_sdk.flowpad_types.enums import WorkerType
 
-        return WorkerType.COPILOT.value, CopilotCliOptions(permission_mode="bypassPermissions").to_json()
+        return WorkerType.COPILOT.value, CopilotAgentOptions(permission_mode="bypassPermissions").to_json()
     raise RuntimeError(f"Unsupported install harness kind: {harness_kind}")
 
 
@@ -737,7 +737,7 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
     from pathlib import Path
 
     from flow_sdk.builtin.agentic_process import AgenticProcess
-    from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
     from flow_sdk.builtin.capability import capability_id_for_kind
     from flow_sdk.instance_settings import get_instance_settings
 
@@ -752,7 +752,7 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
         encoding="utf-8",
     )
 
-    cli_options = ClaudeCliOptions(
+    cli_options = ClaudeAgentOptions(
         chrome=True,
         permission_mode="bypassPermissions",
     )

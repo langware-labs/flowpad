@@ -1,4 +1,4 @@
-"""Phase B equivalence harness for the WorkerCLIOptions consolidation.
+"""Phase B equivalence harness for the AgentOptions consolidation.
 
 Characterization test: a frozen golden snapshot of every vendor option builder's
 output across a matrix of configs, captured from the PRE-refactor code. The
@@ -23,13 +23,13 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
-from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
-from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexAgentOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
 
 GOLDEN = Path(__file__).parent / "fixtures" / "cli_options_golden.json"
 
-_VENDORS = {"claude": ClaudeCliOptions, "codex": CodexCliOptions, "copilot": CopilotCliOptions}
+_VENDORS = {"claude": ClaudeAgentOptions, "codex": CodexAgentOptions, "copilot": CopilotAgentOptions}
 
 # (config-id, kwargs) per vendor — representative of every flag/branch.
 MATRIX: dict[str, list[tuple[str, dict]]] = {

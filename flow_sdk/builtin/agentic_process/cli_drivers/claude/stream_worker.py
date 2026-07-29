@@ -44,7 +44,7 @@ import logging
 import os
 from typing import AsyncIterator
 
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.event_to_flowdata import (
     convert_event,
     final_end_frame,
@@ -374,7 +374,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         prompt: str,
         context: AgenticContext,
     ) -> tuple[list[str], dict[str, str], str]:
-        """Build (argv, env, stdin payload) via ``ClaudeCliOptions``.
+        """Build (argv, env, stdin payload) via ``ClaudeAgentOptions``.
 
         The prompt rides stdin as a stream-json user message
         (``--input-format stream-json``) so the open pipe doubles as the
@@ -390,7 +390,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         # discovery doesn't race the first ``system:init`` event.
         #
         # Fork (``--resume <source> --fork-session --session-id <new>``):
-        # ``ClaudeCliOptions`` wants ``session_id=<new>`` and
+        # ``ClaudeAgentOptions`` wants ``session_id=<new>`` and
         # ``fork_session_id=<source>``. Mapping from ``AgenticContext`` puts
         # the source on ``resume_session_id`` and the new id on ``session_id``.
         resume_sid = context.resume_session_id
@@ -410,7 +410,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         # embedded-agent/persona content. Codex's equivalent forces
         # ``ephemeral=False`` so resume works. Do not "unify" these two
         # construction points — you'd regress model latency and resume behavior.
-        opts = ClaudeCliOptions(
+        opts = ClaudeAgentOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
             model=context.model,
@@ -422,7 +422,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             print_mode=True,
             effort=context.effort,
             add_dirs=list(context.add_dirs),
-            # verbose=True is auto-enabled by ClaudeCliOptions when
+            # verbose=True is auto-enabled by ClaudeAgentOptions when
             # output_format == "stream-json".
         )
         opts.system_prompt_file = context.system_prompt_file

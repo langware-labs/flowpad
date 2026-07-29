@@ -1,5 +1,5 @@
 /**
- * ClaudeCliOptions — builds Claude Code CLI shell command strings.
+ * ClaudeAgentOptions — builds Claude Code CLI shell command strings.
  *
  * Mirrors Python flow_sdk/builtin/cli_workers/claude_cli.py exactly.
  * All fields map 1-to-1 to CLI flags. Snake_case field names match
@@ -9,7 +9,7 @@
 import { WorkerCliOptions, shellQuote } from './base'
 import { CLAUDE_MODEL_TIERS, resolveModelTier } from './model-tiers'
 
-export interface ClaudeCliOptionsOptions {
+export interface ClaudeAgentOptionsOptions {
   session_id?: string | null
   resume?: boolean
   fork_session_id?: string | null
@@ -29,7 +29,7 @@ export interface ClaudeCliOptionsOptions {
   verbose?: boolean
 }
 
-export class ClaudeCliOptions extends WorkerCliOptions {
+export class ClaudeAgentOptions extends WorkerCliOptions {
   session_id?: string | null
   resume: boolean
   fork_session_id?: string | null
@@ -44,7 +44,7 @@ export class ClaudeCliOptions extends WorkerCliOptions {
   output_format?: string | null
   verbose: boolean
 
-  constructor(opts: ClaudeCliOptionsOptions = {}) {
+  constructor(opts: ClaudeAgentOptionsOptions = {}) {
     super(opts.workdir ?? undefined, opts.env_vars)
     this.session_id = opts.session_id ?? undefined
     this.resume = opts.resume ?? false
@@ -122,8 +122,8 @@ export class ClaudeCliOptions extends WorkerCliOptions {
     }
   }
 
-  static fromJson(data: Record<string, any>): ClaudeCliOptions {
-    return new ClaudeCliOptions({
+  static fromJson(data: Record<string, any>): ClaudeAgentOptions {
+    return new ClaudeAgentOptions({
       session_id: data['session_id'] ?? undefined,
       resume: Boolean(data['resume'] ?? false),
       fork_session_id: data['fork_session_id'] ?? undefined,

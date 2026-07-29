@@ -34,7 +34,7 @@ from flow_sdk.utils.serialization import now_epoch_ms
 if TYPE_CHECKING:
     from flow_sdk.api.api_types.type_id import TypeId
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-        WorkerCLIOptions,
+        AgentOptions,
         WorkerExecutionInfo,
     )
     from flow_sdk.builtin.faas.compute_node import ComputeNode
@@ -206,7 +206,7 @@ class Shell(Entity):
         ),
     )
     last_launch_cmd: dict | None = APIField(
-        default=None, description="Serialized WorkerCLIOptions from the last launch() call"
+        default=None, description="Serialized AgentOptions from the last launch() call"
     )
 
     def get_implicit_private_context_entities(self) -> list["TypeId"]:
@@ -893,7 +893,7 @@ class Shell(Entity):
 
     async def launch(
         self,
-        cmd: "WorkerCLIOptions",
+        cmd: "AgentOptions",
         instruction: str | None = None,
     ) -> "WorkerExecutionInfo":
         """Inject cmd into the PTY, poll for worker PID, persist on entity.
@@ -938,7 +938,7 @@ class Shell(Entity):
             started_at=datetime.now(timezone.utc).isoformat(),
         )
 
-    async def set_worker_pid_direct(self, cmd: "WorkerCLIOptions") -> "WorkerExecutionInfo":
+    async def set_worker_pid_direct(self, cmd: "AgentOptions") -> "WorkerExecutionInfo":
         """Record worker_pid when Claude IS the PTY process (direct spawn, no polling).
 
         Used by AgenticProcess when shell_mode=False. The PTY PID is Claude's PID directly,

@@ -25,7 +25,7 @@ from contextlib import asynccontextmanager
 import psutil
 import pytest
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.shell import Shell
 from flow_sdk.compute.providers.desktop.pty_session_manager import PtyState, pty_registry
 
@@ -58,10 +58,10 @@ async def _seed_ready(shell: Shell, seq: int = 5):
     return key, True
 
 
-class _FakeCLIOptions(WorkerCLIOptions):
+class _FakeCLIOptions(AgentOptions):
     """Concrete cheap-argv options — spawns/labels ``sleep`` instead of a real
     worker CLI. The fake-argv pattern the plan endorses for shell-mode unit
-    coverage; it is a real ``WorkerCLIOptions`` subclass, not a mock of Shell."""
+    coverage; it is a real ``AgentOptions`` subclass, not a mock of Shell."""
 
     EXECUTABLE = "sleep"
 
