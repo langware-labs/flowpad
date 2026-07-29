@@ -151,12 +151,30 @@ def test_user_scope_moves_docs_but_not_loose_files(tmp_path: Path):
     assert not (tmp_path / "blob.bin").exists()
 
 
-def test_every_legacy_family_targets_a_real_repo_type():
-    """The destination of each row must be a registered REPO type — otherwise the
-    migration would move assets into a folder no walker ever reads."""
+def test_every_repo_destination_is_a_real_repo_family():
+    """Every ``agentic-assets/<x>`` destination must name a registered REPO family
+    — otherwise the migration moves assets into a folder no walker ever reads.
+
+    This is the check that keeps the destinations honest now that they are spelled
+    out literally in one table rather than derived from a type name.
+    """
+    from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     m = _load_migration()
     repo_families = set(SchemaRegistry.repo_family_to_type())
-    targets = {type_name for _, type_name, _ in m.LEGACY_FAMILIES}
-    assert targets <= repo_families, f"not repo types: {targets - repo_families}"
+    targets = {
+        dest.split("/", 1)[1]
+        for _, dest, _ in m.LEGACY_DIRS
+        if dest.startswith(f"{AGENTIC_ASSETS_DIR}/")
+    }
+    assert targets, "no repo destinations found — did the table shape change?"
+    assert targets <= repo_families, f"not repo families: {targets - repo_families}"
+
+
+def test_untyped_destinations_are_never_a_dot_dir():
+    """The whole point of the move: no destination may put a file back inside a
+    harness namespace."""
+    m = _load_migration()
+    for _, dest, _ in m.LEGACY_DIRS:
+        assert not any(seg.startswith(".") for seg in dest.split("/") if seg), dest

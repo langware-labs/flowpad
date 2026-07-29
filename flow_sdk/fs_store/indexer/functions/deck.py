@@ -15,7 +15,7 @@ filesystem identity (read-only) — so a deck carries a ``template_ref`` edge to
 its template once an identity exists (else ``None``).
 
 Type metadata lives in ``flow_sdk/schema/type_info/deck_type_info.py``; this
-module provides the walker + slot functions only. Modeled on
+module provides the slot functions only. Modeled on
 ``functions/deck_template.py``.
 """
 from __future__ import annotations
@@ -36,7 +36,7 @@ from flow_sdk.fs_store.record_types import RecordType
 MANIFEST = "deck.json"
 
 
-# ── walker ────────────────────────────────────────────────────────────────────
+# ── manifest + id helpers ──────────────────────────────────────────────────────
 
 def _load_manifest(deck_dir: Path) -> dict[str, Any]:
     """Read deck.json as a flat dict; ``{}`` when absent, malformed, or non-dict.
@@ -131,16 +131,23 @@ def _resolve_template_dir(deck_dir: Path, rel: str) -> Path | None:
     except OSError:
         pass
 
-    from flow_sdk.fs_store.placement import AssetClass, family_subdir  # noqa: PLC0415
+    from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     leaf = PurePosixPath(rel.replace("\\", "/")).name
     if not leaf or leaf in (".", ".."):
         return None
-    subdir = family_subdir(AssetClass.REPO, None, str(RecordType.DECK_TEMPLATE), default_worker="claude")
-    if subdir is None:
+    # The template's mount comes from ITS OWN registered layout, so a change to
+    # deck_template's asset_class/family is picked up here instead of drifting.
+    tpl_info = SchemaRegistry.get(str(RecordType.DECK_TEMPLATE))
+    subdir = getattr(tpl_info, "main_subdir", None) if tpl_info else None
+    if not subdir:
         return None
-    # deck_dir is ``<root>/agentic-assets/deck/<slug>`` → root is 3 levels up.
-    root = deck_dir.parents[2] if len(deck_dir.parents) >= 3 else None
+    # Find the scope root by walking UP to the agentic-assets container rather
+    # than indexing a fixed number of parents: ``parents[2]`` silently encodes
+    # "<root>/agentic-assets/deck/<slug>" and breaks the moment nesting changes
+    # (repo assets nest recursively — see repo_assets_fn).
+    root = next((p.parent for p in deck_dir.parents if p.name == AGENTIC_ASSETS_DIR), None)
     if root is None:
         return None
     candidate = root / subdir / leaf

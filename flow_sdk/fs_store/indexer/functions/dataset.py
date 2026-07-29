@@ -27,7 +27,7 @@ Back-compat: ``input.txt``/``expected.txt`` still populate ``Example.input`` /
 into the shared ``Example`` shape. Modeled on ``functions/whiteboard.py``.
 
 Type metadata lives in ``flow_sdk/schema/type_info/dataset_type_info.py``; this
-module provides the walker + slot functions only.
+module provides the slot functions only.
 """
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ EXPECTED_LEGACY = "expected"           # legacy expected.txt → folded onto gro
 TEXT_EXTS = {".txt", ".md"}            # only these data files are decoded into .text
 
 
-# ── walker ────────────────────────────────────────────────────────────────────
+# ── manifest + id helpers ──────────────────────────────────────────────────────
 
 def _load_json_dict(path: Path) -> dict[str, Any]:
     """Read a JSON object from ``path``; ``{}`` when absent, malformed, or non-dict."""

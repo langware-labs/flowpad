@@ -92,7 +92,7 @@ TASK_FRONTMATTER_FIELDS = (
 
 
 # ---------------------------------------------------------------------------
-# Walker — one TASK FSRef per tasks/<name>/ folder
+# Legacy manifest helpers — tolerated until a save materializes task.md
 # ---------------------------------------------------------------------------
 
 

@@ -3,7 +3,7 @@
 A deck template is a folder under ``agentic-assets/deck_template/`` containing a
 ``template.json`` manifest (which is also the walker's marker file):
 
-    assets/deck-templates/<slug>/
+    agentic-assets/deck_template/<slug>/
       template.json                # {"metadata": {id?, title, description, page_types, …}, "data": {…}}
       layouts/<layout name>.html   # one isolated <section> component per layout
       common/…                     # tokens.css / theme.css / deck.js shared by all layouts
@@ -15,7 +15,7 @@ A deck template is a folder under ``agentic-assets/deck_template/`` containing a
 fields; ``data`` is a free, use-case-owned object.
 
 Type metadata lives in ``flow_sdk/schema/type_info/deck_template_type_info.py``;
-this module provides the walker + slot functions only. Modeled on
+this module provides the slot functions only. Modeled on
 ``functions/dataset.py``.
 """
 from __future__ import annotations
@@ -39,7 +39,7 @@ COMMON_DIR = "common"
 MEDIA_DIR = "media"
 
 
-# ── walker ────────────────────────────────────────────────────────────────────
+# ── manifest + id helpers ──────────────────────────────────────────────────────
 
 def _load_manifest(template_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     """Read template.json as ``(metadata, data)``; both ``{}`` when absent,
