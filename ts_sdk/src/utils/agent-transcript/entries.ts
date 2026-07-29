@@ -324,7 +324,8 @@ export const isOperation = (e: GenericEntry): boolean =>
   e.kind === 'file_write' || e.kind === 'file_edit' || e.kind === 'file_read' ||
   e.kind === 'shell_command' || e.kind === 'flow_command' ||
   e.kind === 'search' || e.kind === 'web_fetch' ||
-  e.kind === 'todo_update' || e.kind === 'agent_spawn' || e.kind === 'tool_use';
+  e.kind === 'todo_update' || e.kind === 'agent_spawn' ||
+  e.kind === 'skill_call' || e.kind === 'tool_use';
 
 // ── Header / response shape ─────────────────────────────────────────────────
 

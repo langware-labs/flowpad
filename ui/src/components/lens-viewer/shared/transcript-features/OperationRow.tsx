@@ -19,6 +19,7 @@ import {
   ListChecks,
   Pencil,
   Search,
+  Sparkles,
   Terminal,
 } from 'lucide-react';
 import type { ComponentType } from 'react';
@@ -130,6 +131,14 @@ function kindMeta(op: GenericEntry, t: any): KindMeta | null {
         label: op.agent_type || t`Agent`,
         primary: op.description || firstLine(op.prompt ?? ''),
         chips: [],
+      };
+    case 'skill_call':
+      return {
+        Icon: Sparkles,
+        iconClassName: 'text-purple-500',
+        label: t`Skill`,
+        primary: op.skill_name,
+        chips: op.invocation_kind ? [op.invocation_kind.replaceAll('_', ' ')] : [],
       };
     case 'tool_use':
       return { Icon: Terminal, iconClassName: 'text-orange-400', label: op.tool_name || t`tool`, primary: '', chips: [] };
