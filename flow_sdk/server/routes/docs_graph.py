@@ -22,7 +22,11 @@ from fastapi import APIRouter, HTTPException, Query
 from flow_sdk.builtin.faas.in_process_activity import InProcessActivity
 from flow_sdk.core.network.resource_tracker import broadcast_progress
 from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable, TypeProgressRow
-from flow_sdk.fs_store.operations.markdown_index import entity_data_dir, file_summaries_dir
+from flow_sdk.fs_store.operations.markdown_index import (
+    entity_data_dir,
+    entity_id_for_root,
+    file_summaries_dir,
+)
 from flow_sdk.llm_index import LLMIndexer, typeid_for
 from flow_sdk.llm_index.diff import MAX_DIFF_BYTES, git_unified_diff, is_binary_bytes
 from flow_sdk.llm_index.indexer import ScanTick
@@ -34,8 +38,6 @@ router = APIRouter()
 # progress_report by job_name). A docs scan is a scan; reuse that activity.
 _JOB = "scan"
 
-_TYPE_PREFIX = "markdown_index-"
-
 # Stamp is an explicit user action; serialize concurrent stamps per root.
 _stamp_locks: dict[str, asyncio.Lock] = {}
 
@@ -44,9 +46,9 @@ def _indexer(root_path: Path) -> LLMIndexer:
     """LLMIndexer wired to this vault's per-entity data dir (baseline + blobs).
 
     Same entity id the rest of the system uses for the vault: uuid5 of the
-    resolved root path (``typeid_for``), data dir via ``entity_data_dir``.
+    resolved root path, via the shared ``entity_id_for_root`` derivation.
     """
-    entity_uuid = typeid_for(root_path).removeprefix(_TYPE_PREFIX)
+    entity_uuid = entity_id_for_root(root_path)
     base = entity_data_dir(entity_uuid)
     return LLMIndexer(
         # Shared with the LLM rebuild flow — its per-file summaries (content-

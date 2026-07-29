@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-7c234c43-b48e-5e33-99b2-84e907274387",
+  "parent_ref": "",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs/tabs",
+  "folder_rel_path": "",
+  "folder_name": "tabs",
+  "inputs_hash": "a4a3c54c5ca5ad4fdac971df6a8477b82e7e85a37214ad2ef1d4018b23276021",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "Tab-system documentation. Currently one guide: the vibe-mode Display pane \u2014 the display_stack on the process entity, the on_show single writer and its stale-save guard, the live-event plus entity-update transport pair, dock routing and mode-canonical URLs, and the VibeWorkspace layout with its display-precedence order.",
+  "files": [
+    {
+      "name": "display.md",
+      "rel_path": "display.md",
+      "title": "Vibe Display surface",
+      "summary": "The vibe-mode Display pane: its display_stack data model, on_show writer, two transport channels, dock routing, and VibeWorkspace layout.",
+      "content_hash": "a97f7f51aec2e2bf78bcaf34c29a2d1e994bd3ef50c23ab77ca7744a42f0241d",
+      "size_bytes": 11612
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-07-30T00:00:00+00:00",
+  "latest_process_ref": ""
+}

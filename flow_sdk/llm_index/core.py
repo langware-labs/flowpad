@@ -16,6 +16,15 @@ A folder's summarisable "doc" leaves exclude the generated ``index.md`` and the
 folder note (``<dir>/<dir>.md``) — the latter represents the folder, not content
 inside it.
 
+Two ``index.md`` frontmatter flags opt a folder out of generation, and they mean
+different things — ``FolderNode.protected`` is the union of them:
+
+  * ``manual: true`` — "I maintain this index by hand." The file IS an index;
+    the human just owns it.
+  * ``ground_truth: true`` — "this is human-authored authoritative content, not
+    a generated index at all." Set it on a hand-written ``index.md`` that would
+    otherwise look stale (no ``inputs_hash`` ⇒ ``is_stale``) and get overwritten.
+
 Walking is delegated to the shared FSIndexer engine
 (:func:`flow_sdk.fs_store.indexer.walk.gitignore_walk`), so scan scope matches
 every other walker in the codebase: dot-directories ARE walked, ``.claude/`` is
@@ -71,10 +80,30 @@ class FolderNode:
     inputs_hash: str
     existing_hash: str      # inputs_hash currently on disk (index.md frontmatter)
     manual: bool            # index.md frontmatter `manual: true` → never rewrite
+    ground_truth: bool = False   # `ground_truth: true` → human-authored, never rewrite
+    has_index: bool = False      # an index.md exists on disk (whoever wrote it)
+    index_title: str = ""        # its H1/stem, captured by the same read
 
     @property
     def is_stale(self) -> bool:
         return not self.existing_hash or self.existing_hash != self.inputs_hash
+
+    @property
+    def protected(self) -> bool:
+        """Either opt-out flag: the generator must not write this folder's index."""
+        return self.manual or self.ground_truth
+
+    @property
+    def is_generator_authored(self) -> bool:
+        """The on-disk ``index.md`` carries an ``inputs_hash``, so we wrote it.
+
+        The generator stamps ``inputs_hash`` into everything it renders, so its
+        absence is proof of a hand-written file. Without this, ``existing_hash
+        == ""`` collapses "no index.md at all" and "someone's own index.md" into
+        one indistinguishable stale state — and the latter is the one a rebuild
+        would destroy.
+        """
+        return self.has_index and bool(self.existing_hash)
 
 
 # ── hashing ───────────────────────────────────────────────────────────────────
@@ -164,13 +193,16 @@ def scan_tree(
         own = _own_hash(files)
         merkle = _merkle_hash(own, subfolders)
 
-        existing_hash, manual = "", False
+        existing_hash, manual, ground_truth, index_title = "", False, False, ""
         idx = folder / INDEX_FILENAME
-        if idx.is_file():
+        has_index = idx.is_file()
+        if has_index:
             try:
                 doc = MarkdownDocument.from_path(idx)
                 existing_hash = str(doc.get("inputs_hash", "") or "")
                 manual = bool(doc.get("manual", False))
+                ground_truth = bool(doc.get("ground_truth", False))
+                index_title = doc.title
             except OSError:
                 pass
 
@@ -184,6 +216,9 @@ def scan_tree(
             inputs_hash=merkle,
             existing_hash=existing_hash,
             manual=manual,
+            ground_truth=ground_truth,
+            has_index=has_index,
+            index_title=index_title,
         )
         if on_node is not None:
             on_node(folder, "folder")
