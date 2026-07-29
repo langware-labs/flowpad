@@ -204,7 +204,10 @@ def migrate_presence_shaped_members(data: Any) -> Any:
 
 class Entity(DBEntity):
     env_vars: SerializeAsAny[EntityEnvVars[EnvVar] | None] = Field(default=None)
-    visitor_role: str | None = Field(default=None)
+    # Auth projection for the requesting caller — computed per request, never
+    # another machine's business. EntityField (not APIField) keeps it off the API
+    # surface exactly as the plain `Field` did.
+    visitor_role: str | None = EntityField(default=None, sharing=Sharing.PRIVATE)
     labels: List[str] | None = APIField(default=None)
     tags: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project", sharing=Sharing.PRIVATE)
@@ -327,76 +330,14 @@ class Entity(DBEntity):
             return int(dt.timestamp() * 1000) if dt else None
         return value
 
-    # Locally-authoritative fields a hub refresh must NEVER overwrite. The hub
-    # is the source of truth for *content*; these describe the local copy's own
-    # state (do-I-have-a-hub-twin, FS-indexer flags). Subclasses extend this
-    # with their own local-only state (e.g. download/body status, on-disk
-    # paths). Used by ``is_stale`` / ``merge_hub_payload`` at the remote
-    # boundary. ClassVar so pydantic treats it as config, not a field.
-    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset(
-        {
-            "remote",
-            "system",
-            "fetched_at",
-            "asset_occurrences",
-            # This machine's on-disk path for the asset. The hub payload carries
-            # the SENDER's absolute path, which is never valid here — letting it
-            # land (or letting a hub refresh blank it) makes the next save
-            # re-derive placement from scratch, which is how a child's folder
-            # ended up nested inside its parent's. ``_BASE_LOCAL_FIELDS`` already
-            # strips it from the portable JSON for the same reason; the hub
-            # boundary must agree.
-            "asset_ref",
-        }
-    )
-
-    # The base set of SENDER-LOCAL fields that never travel in the portable entity
-    # JSON (``to_common_json`` — the bundle ``entities.json`` envelope and, in
-    # time, the hub push). These describe THIS machine's copy — placement, mount,
-    # local provenance, local user ids, local-only projections — so the receiver
-    # re-derives them. Per-type additions are declared on ``TypeInfo.local_fields``
-    # (e.g. a claude_session's ``worker_session_id``) and unioned in by
-    # ``_local_fields``. NOTE: dates are deliberately NOT here — the bundle
-    # preserves send-time; the hub body strips them separately.
-    _BASE_LOCAL_FIELDS: ClassVar[frozenset[str]] = frozenset(
-        {
-            # placement / mount — the receiver re-derives from its own filesystem
-            "scope",
-            "project_id",
-            "asset_ref",
-            "path",
-            "fs_storage_mount_path",
-            "cwd",
-            "installed_root",
-            # local provenance / flags
-            "git_origin",
-            "remote",
-            "system",
-            "fetched_at",
-            # local user ids — do not resolve on the receiver
-            "created_by",
-            "updated_by",
-            # local-only projections / caches
-            "private_context_entities_",
-            "private_context_entities",
-            "private_context_entity_data",
-            "shared_context_entity_data",
-            "message_count",
-            "tags",
-            "members",
-            "asset_occurrences",
-            "duplicate_count",
-            # pydantic computed
-            "expand",
-        }
-    )
-
-    # Mirror-image of LOCAL_ONLY_FIELDS for ``remote=True`` rows: fields the
-    # HUB owns and local bookkeeping must never move. ``updated_date`` is the
-    # LWW clock (``is_stale`` compares it) — a local re-stamp runs the clock
-    # ahead of the hub, pinning ``is_stale`` False and masking real hub
-    # changes. Respected by ``from_record`` (the disk→DB re-index path).
-    HUB_AUTHORITATIVE_FIELDS: ClassVar[frozenset[str]] = frozenset({"updated_date"})
+    # Field-sharing policy is declared PER FIELD (``Sharing`` on the field), not
+    # in class-level name lists. Three lists used to live here — LOCAL_ONLY_FIELDS
+    # (hub-pull), _BASE_LOCAL_FIELDS (bundle egress) and HUB_AUTHORITATIVE_FIELDS
+    # (reindex) — plus ``TypeInfo.local_fields`` and ``_hub_body``'s own literal.
+    # They disagreed with each other, and subclasses had to remember to union the
+    # base set or silently lose its protections. Read the policy through
+    # ``fields_not_sent_to_hub`` / ``fields_not_accepted_from_hub`` /
+    # ``fields_owned_by_hub`` / ``fields_not_in_bundle`` on the record base.
 
     # Orphan-ness ("source asset missing on disk") is no longer a stored field —
     # it is the dynamic ``FSRecord.orphan`` (``not asset_ref.exists()``),
@@ -486,7 +427,9 @@ class Entity(DBEntity):
 
     # Optional per-instance FS storage configuration
     # If not set, falls back to class default via get_default_fs_storage_provider()
-    fs_storage_provider: StorageProvider | None = Field(default=None)
+    # Which storage backend THIS machine uses. `Project._hub_body` popped it by
+    # hand; that pop is the rule, so state it on the field instead.
+    fs_storage_provider: StorageProvider | None = EntityField(default=None, sharing=Sharing.PRIVATE)
     fs_storage_mount_path: str | None = EntityField(default=None, sharing=Sharing.PRIVATE)
 
     # VFS path relative to a root entity (e.g., compute node)
@@ -2243,19 +2186,26 @@ class Entity(DBEntity):
         # have a Tab pointing at it, so the project-reconcile below is update-only.
         was_create = not self.exist_in_db
         suppress_store = _SUPPRESS_STORE.get()
-        from flow_sdk.fs_store.fs_record import record_sync_guard
 
-        # Keep a normal DB write and its filesystem mirror indivisible with
-        # respect to the opposite disk→DB path.  ``record_sync_guard`` is
-        # explicitly same-task reentrant: ``FSRecord.sync_to_db`` owns it when
-        # it reaches this save through ``from_record``.
-        async with record_sync_guard(self.get_type(), self.id):
+        type_info = SchemaRegistry.get(self.get_type())
+        if type_info is not None and type_info.db_only:
+            # A DB-only type has no filesystem shadow and therefore no opposite
+            # disk→DB sync to serialize against.
             await super().save(user_id, notify=notify)
-            if not suppress_store:
-                # Sync metadata down to disk + upsert main_ref iff missing
-                # (Record contract: writes go through main_ref FSRef, no
-                # per-type store()).
-                await self.store()
+        else:
+            from flow_sdk.fs_store.fs_record import record_sync_guard
+
+            # Keep a normal DB write and its filesystem mirror indivisible with
+            # respect to the opposite disk→DB path.  ``record_sync_guard`` is
+            # explicitly same-task reentrant: ``FSRecord.sync_to_db`` owns it when
+            # it reaches this save through ``from_record``.
+            async with record_sync_guard(self.get_type(), self.id):
+                await super().save(user_id, notify=notify)
+                if not suppress_store:
+                    # Sync metadata down to disk + upsert main_ref iff missing
+                    # (Record contract: writes go through main_ref FSRef, no
+                    # per-type store()).
+                    await self.store()
 
         # The disk→DB adopt path (from_record) suppresses disk write-back via
         # the _SUPPRESS_STORE contextvar so the source-of-truth file is never

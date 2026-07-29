@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 from fastapi import HTTPException
 from pydantic import field_validator
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.visitor import Visitor
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -64,8 +64,11 @@ class User(Entity):
     # not on the shared Organization entity. Defaults to "member".
     organization_id: str | None = APIField(None)
     organization_role: str = APIField(default="member")
-    salt_: str | None = None
-    hashed_password_: str | None = None
+    # Credentials never leave this machine. They were bare pydantic defaults —
+    # no policy at all — which resolved to SHARED, i.e. they would have ridden a
+    # User share to the hub.
+    salt_: str | None = EntityField(default=None, sharing=Sharing.PRIVATE)
+    hashed_password_: str | None = EntityField(default=None, sharing=Sharing.PRIVATE)
     _unique: ClassVar[list[str]] = ["email"]
 
     @field_validator("email", mode="before")

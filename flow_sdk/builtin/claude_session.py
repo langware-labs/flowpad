@@ -43,7 +43,6 @@ class ClaudeSession(Entity):
 
     # Local copy state — a received session is local-authoritative and has no hub
     # twin, so a (hypothetical) hub refresh must never clear ``received``.
-    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = Entity.LOCAL_ONLY_FIELDS | frozenset({"received"})
 
     _api_visible: ClassVar[bool] = False
 
