@@ -82,3 +82,31 @@ async def get_oauth_providers_as_env_table(user=None) -> EntityEnvVars:
     if user is None:
         return providers
     return merge_env_tables(providers, user.get_env_table())
+
+
+async def resolve_user_credentials_name(provider: str) -> Optional[str]:
+    """The SOD entry name holding ``provider``'s user token — local OR hub.
+
+    ``provider_registry.user_credentials_name`` only knows the providers this
+    instance can complete a flow for, so every hub-defined provider resolved to
+    ``None`` and its attach was rejected as "Unknown OAuth provider" — even
+    though the answer was sitting on the provider row all along, in ``ref_name``
+    (the hub names these ``{PROVIDER}_OAUTH_USER_TOKEN``).
+
+    Local first, for the same reason ``union_providers`` prefers local: a
+    desktop credential is directly resolvable and a hub one is not, so a name
+    collision must not send the user through the wrong flow.
+    """
+    from flow_sdk.core.oauth.provider_registry import user_credentials_name  # noqa: PLC0415
+
+    local = user_credentials_name(provider)
+    if local:
+        return local
+
+    from flow_sdk.core.oauth.hub_providers import hub_provider_rows  # noqa: PLC0415
+
+    wanted = (provider or "").strip().lower()
+    for row in (await hub_provider_rows()).values:
+        if row.name.strip().lower() == wanted:
+            return row.ref_name or None
+    return None
