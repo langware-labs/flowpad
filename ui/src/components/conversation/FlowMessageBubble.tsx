@@ -20,7 +20,7 @@ import {
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
 import { BodyStatus, FlowMessageKind, forwardMessage } from '@sdk/entities/flow-message';
@@ -805,24 +805,7 @@ export function MessageEntityChip({
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, refetch } = useEntity<APIEntity<any>>(typeId);
-
-  // Installing is the moment a staged asset becomes resolvable: the backend
-  // answers 404 while the attachment is staged (ClaudeSession refuses to invent
-  // the SENDER's transcript for one that isn't installed) and resolves right
-  // after. The client cached that 404 as TERMINAL, and nothing else can clear
-  // it — `useEntity`'s fetch effect keys on the typeId, which doesn't change,
-  // and a disk-recovered asset has no DB row, so no `data_op` is ever emitted
-  // for it either. Without this retry the chip renders the stale miss until a
-  // page reload rebuilds the store. `refetch` drops the not-found marker before
-  // re-asking, so one call is enough.
-  const installed = attachment?.installed ?? false;
-  const wasInstalled = useRef(installed);
-  useEffect(() => {
-    if (installed && !wasInstalled.current) void refetch();
-    wasInstalled.current = installed;
-  }, [installed, refetch]);
-
+  const { data } = useEntity<APIEntity<any>>(typeId);
   const state = chipStateFor(!!data, attachment, forceShow);
   if (state === 'hidden') return null;
   // Git-link chip: a git context folder shared through push-notify. The chip
