@@ -138,6 +138,12 @@ CONVERGED_TO_PRIVATE = {
     "asset_ref", "scope", "path", "cwd", "installed_root", "fs_storage_mount_path", "expand",
     "my_process_id", "project_root", "project_name",
 }
+# Fields that carried NO policy at all (bare pydantic `Field`, so they resolved
+# to SHARED and travelled) and are now declared PRIVATE. `fs_storage_provider`
+# was popped from the hub body by hand in `Project._hub_body` — that pop was the
+# policy; `visitor_role` is a per-request auth projection whose declaration even
+# said "Use Field not APIField for security".
+NEWLY_DECLARED_PRIVATE = {"fs_storage_provider", "visitor_role"}
 BASE_LOCAL_ONLY = ["asset_occurrences", "asset_ref", "fetched_at", "remote", "system"]
 HUB_AUTHORITATIVE = ["updated_date"]
 
@@ -227,28 +233,37 @@ def test_seam_policy_per_type(module, name, kwargs, extra_bundle, local_only, un
     # ignores `exclude` entries a model doesn't have, which is why the literal
     # could carry `path`/`cwd`/`installed_root` for types that never had them —
     # so assert the difference is exactly the undeclared names, not a loosening.
-    literal = set(BASE_BUNDLE_EXCLUDE + extra_bundle)
+    literal = set(BASE_BUNDLE_EXCLUDE + extra_bundle) | NEWLY_DECLARED_PRIVATE
     declared = set(cls.model_fields) | set(cls.model_computed_fields)
     assert set(inst._local_fields()) == literal & declared
     assert (literal - set(inst._local_fields())) <= (literal - declared)
     # Derived per type now, so compare against the literal narrowed to what this
     # type declares, plus the fields the convergence newly withholds.
-    hub_expected = (set(BASE_HUB_EXCLUDE) | CONVERGED_TO_PRIVATE) & declared
+    hub_expected = (set(BASE_HUB_EXCLUDE) | CONVERGED_TO_PRIVATE | NEWLY_DECLARED_PRIVATE) & declared
     assert set(_base_hub_exclude(cls, inst)) == hub_expected
-    assert sorted(cls.LOCAL_ONLY_FIELDS) == sorted(local_only)
-    assert sorted(cls.HUB_AUTHORITATIVE_FIELDS) == HUB_AUTHORITATIVE
+    # Ingress protection is now derived: PRIVATE ∪ HUB_WRITE. It is a superset
+    # of the old hand-written LOCAL_ONLY_FIELDS (which listed only the fields
+    # someone remembered), so assert containment plus the type's own additions.
+    blocked = cls.fields_not_accepted_from_hub()
+    assert set(local_only) & declared <= blocked
+    assert cls.fields_owned_by_hub() == {"created_date", "updated_date"} & declared
     # Coverage honesty: a new field the filler can't populate must be handled,
     # not silently excluded from every assertion above.
     assert could_not_fill == sorted(unfillable)
 
 
-def test_flow_message_stale_ignore_is_local_only_plus_the_clocks():
-    """The one derivable set — it should fall out of the mechanism, not be listed."""
+def test_flow_message_stale_ignore_is_derived_not_listed():
+    """`_STALE_IGNORE_FIELDS` is gone — `is_stale` derives it.
+
+    The per-device state a hub refresh must not reset (`is_read`, `body_status`,
+    …) is exactly what a touch-vs-change comparison has to ignore, so the second
+    list was always the first list plus the clocks.
+    """
     from flow_sdk.builtin.flow_message import FlowMessage
 
-    assert set(FlowMessage._STALE_IGNORE_FIELDS) == set(FlowMessage.LOCAL_ONLY_FIELDS) | {
-        "updated_date", "updated_by",
-    }
+    assert not hasattr(FlowMessage, "_STALE_IGNORE_FIELDS")
+    blocked = FlowMessage.fields_not_accepted_from_hub()
+    assert {"is_read", "body_status", "is_draft", "prompt_auto_handled"} <= blocked
 
 
 def test_folder_no_longer_needs_an_override_to_hide_its_local_path():

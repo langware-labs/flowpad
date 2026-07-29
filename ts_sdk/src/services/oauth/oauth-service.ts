@@ -74,6 +74,18 @@ export interface OAuthCallbackResponse {
   installed_plugins: any[];
 }
 
+/** The backend's own message for a failed OAuth call.
+ *
+ * These paths fail for reasons the user can act on ("no token yet", "this
+ * instance cannot complete a flow for that provider"), and all of that lives in
+ * the `{status:'FAIL', message}` envelope. Re-throwing only Axios's
+ * "Request failed with status code 500" throws that away, so the toast ends up
+ * saying nothing at all. */
+function oauthErrorText(error: unknown, fallback: string): string {
+  const envelope = (error as { response?: { data?: { message?: string; detail?: string } } })?.response?.data;
+  return envelope?.message || envelope?.detail || (error instanceof Error ? error.message : fallback);
+}
+
 export class OauthFlow extends EventEmitter {
   public readonly oAuthRequestInfo: OAuthClientRequestInfo;
   public readonly authWindow: OAuthWindow | null = null;
@@ -398,9 +410,7 @@ export class OAuthService {
       await dataManager.callAction<unknown, void>(actionInfo);
     } catch (error) {
       console.error(`[OAuthService] OAuth attach failed for ${provider}:`, error);
-      throw new Error(
-        `Failed to attach ${provider} to entity: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
+      throw new Error(oauthErrorText(error, `Failed to attach ${provider} to entity`));
     }
   }
 
@@ -415,9 +425,7 @@ export class OAuthService {
       return response;
     } catch (error) {
       console.error(`[OAuthService] OAuth detach failed for ${provider}:`, error);
-      throw new Error(
-        `Failed to detach ${provider} from entity: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
+      throw new Error(oauthErrorText(error, `Failed to detach ${provider} from entity`));
     }
   }
 

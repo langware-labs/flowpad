@@ -19,11 +19,22 @@ interface ErrorEnvelope {
 }
 
 export function errorMessage(error: unknown, fallback: string): string {
+  // The envelope is checked BEFORE `Error.message`, and the order matters: an
+  // AxiosError is BOTH — an Error whose message is the useless "Request failed
+  // with status code 500", carrying the server's actual explanation at
+  // `response.data`. Testing `instanceof Error` first threw that away and put
+  // the status line in front of the user.
+  if (typeof error === 'object' && error !== null) {
+    const e = error as ErrorEnvelope;
+    const fromEnvelope = e.response?.data?.detail || e.response?.data?.message;
+    if (fromEnvelope) return fromEnvelope;
+  }
+
   if (error instanceof Error && error.message) return error.message;
 
   if (typeof error === 'object' && error !== null) {
     const e = error as ErrorEnvelope;
-    return e.response?.data?.detail || e.response?.data?.message || e.detail || e.message || fallback;
+    return e.detail || e.message || fallback;
   }
 
   return fallback;

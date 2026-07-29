@@ -22,6 +22,7 @@ from flow_sdk.request_context.methods import (
     delete_entity_credentials,
     delete_user_credentials,
     get_current_request_info,
+    get_current_request_user_fresh,
     set_entity_credentials,
     set_user_credentials,
 )
@@ -471,7 +472,12 @@ async def get_env_vars_table_action() -> ApiSuccessResponse:
 
         return ApiSuccessResponse(data=await get_oauth_providers_as_env_table(target_entity))
     else:
-        user_table = user.env_vars or EntityEnvVars(values=[])
+        # Fresh, not `request_info.user`: the join side decides whether each
+        # of this entity's references resolves, and the cached user's env_vars
+        # predate every credential stored since the process booted — which
+        # renders a perfectly valid reference as MISSING.
+        env_user = await get_current_request_user_fresh() or user
+        user_table = env_user.env_vars or EntityEnvVars(values=[])
         project_table = target_entity.env_vars or EntityEnvVars(values=[])
         env_vars_status_table = merge_env_tables(project_table, user_table, base_entity_typeid=target_entity.typeid)
         return ApiSuccessResponse(data=env_vars_status_table)

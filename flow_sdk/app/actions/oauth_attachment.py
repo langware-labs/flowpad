@@ -36,7 +36,7 @@ from flow_sdk.core.entity.entity_env.env_utils import build_shared_var_name
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.core.oauth.provider_registry import user_credentials_name
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.request_context.methods import get_current_request_info
+from flow_sdk.request_context.methods import get_current_request_info, get_current_request_user_fresh
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,8 @@ async def validate_request_context() -> RequestValidation:
     if not request_info.target_entity_typeid:
         return _failed("No target entity found in request context", OAuthErrorCode.NO_TARGET_ENTITY)
     return RequestValidation(
-        user=request_info.user, target_entity_typeid=request_info.target_entity_typeid
+        user=await get_current_request_user_fresh(),
+        target_entity_typeid=request_info.target_entity_typeid,
     )
 
 
@@ -262,6 +263,8 @@ async def disconnect_action(provider: str) -> OAuthAttachmentResult:
         request_info = get_current_request_info()
         if not request_info or not request_info.user:
             return validation.error
-        validation.user = request_info.user
+        # Same re-read as the validated path — disconnect deletes the very
+        # credential the cached user may not know about.
+        validation.user = await get_current_request_user_fresh()
 
     return await disconnect_oauth_provider(validation.user, provider)
