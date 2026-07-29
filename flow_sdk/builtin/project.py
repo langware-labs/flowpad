@@ -21,7 +21,7 @@ from pydantic import (
 from pydantic.alias_generators import to_camel
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
-from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
+from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sharing
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
@@ -117,7 +117,7 @@ class Project(Entity):
         description="Last UI view mode used in this project (vibe|standard|advanced|dev). "
         "Applied on project load so the mode is remembered per project.",
     )
-    fs_storage_provider: StorageProvider | None = StorageProvider.SANDBOX
+    fs_storage_provider: StorageProvider | None = EntityField(default=StorageProvider.SANDBOX, sharing=Sharing.PRIVATE)
     fs_storage_mount_path: str | None = APIField(default=None, description="Full path to the project folder", sharing=Sharing.PRIVATE)
     # Portable repository identity for a project shared through the hub. This
     # is never the sender's local worktree path; the recipient uses it to
@@ -674,8 +674,8 @@ class Project(Entity):
         """
         body = super()._hub_body()
         for local_only in (
-            # `fs_storage_mount_path` is withheld by its declaration now.
-            "fs_storage_provider",
+            # `fs_storage_mount_path` / `fs_storage_provider` are withheld by
+            # their declarations now.
             "last_mode",
             "session_code",
             "host_member_id",

@@ -1,23 +1,17 @@
-"""P2 — the derived sets must equal today's hand-maintained literals, per class.
+"""Field-sharing policy is declared per field, uniformly — the standing guard.
 
-This is the guard that makes the whole consolidation safe, and it is deliberately
-CLASS-LEVEL: no instances, no ``model_dump``, no ``exclude_none``. Both egress
-seams drop None-valued fields, so an instance-based check cannot see a field that
-happens to be unset — and a missed annotation on a None-defaulted field
-(``asset_ref``, ``cwd``, ``installed_root``, ``git_origin`` are all this shape) is
-exactly the silent leak this refactor risks.
+The six hand-maintained name lists are gone (``_BASE_LOCAL_FIELDS``,
+``TypeInfo.local_fields``, ``_hub_body``'s literal, ``LOCAL_ONLY_FIELDS`` and its
+subclass unions, ``HUB_AUTHORITATIVE_FIELDS``, ``_STALE_IGNORE_FIELDS``). This
+file replaces the migration guard that compared the derived sets against them,
+and keeps the two invariants that made that guard worth having — both of which
+caught real bugs while the consolidation was landing.
 
-Note the failure mode INVERTS with this work. Today a stale name in one of the
-literals is a harmless no-op, because ``model_dump(exclude={unknown})`` ignores
-names the model doesn't have. Once the sets are derived from declarations, a
-field nobody annotated simply travels. Hence: every Entity subclass, every
-boundary, compared against the literal that governs it today.
-
-TWO DIVERGENCES ARE EXPECTED AND NAMED
-    The lists below are the deliberate behaviour changes this work makes, held
-    here as explicit exceptions so they are reviewed rather than absorbed. Each is
-    deleted by the phase that lands it, at which point the assertions become
-    plain equality.
+It is CLASS-LEVEL on purpose: no instances, no ``model_dump``, no
+``exclude_none``. The egress seams drop None-valued fields, so an instance-based
+check cannot see a field that happens to be unset, and the fields most likely to
+be mis-declared (``asset_ref``, ``cwd``, ``installed_root``, ``git_origin``) are
+exactly that shape.
 """
 
 from __future__ import annotations
@@ -25,27 +19,29 @@ from __future__ import annotations
 import pytest
 
 import flow_sdk.models.entities  # noqa: F401  — imports every entity module
+from flow_sdk.api.api_types.api_field import Sharing, sharing_policy
 from flow_sdk.core.entity.entity_model import Entity
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
-# P4 will stop pushing these to the hub. Today the bundle seam strips them while
-# `_hub_body` still sends them — local paths the hub has no use for, which is why
-# the receiver defends with `sanitized.pop("asset_ref")`. One `Sharing` value per
-# field cannot express both, so annotating them PRIVATE reads as "not sent to the
-# hub" before the consumer flips.
-CONVERGENCE_PENDING_HUB_PUSH = frozenset({
-    "asset_ref", "scope", "path", "cwd", "installed_root", "fs_storage_mount_path", "expand",
-    # Task's `TypeInfo.local_fields`, same shape: bundle-stripped, hub-sent.
-    "my_process_id", "project_root", "project_name",
+# Fields still declared with a bare pydantic ``Field`` / plain default, so they
+# carry no policy and resolve to SHARED. Each needs a decision; they are listed
+# rather than silently tolerated. Anything NOT here must be declared through the
+# ``EntityField`` family — that is what makes the policy uniform instead of
+# per-location.
+#
+# The ones already resolved and removed from this list: `fs_storage_provider`
+# (Project popped it from the hub body by hand — the pop WAS the policy),
+# `visitor_role` (a per-request auth projection), and User's `salt_` /
+# `hashed_password_`, which had no policy at all and would have ridden a User
+# share to the hub.
+UNDECLARED_EXEMPT = frozenset({
+    "env_vars",            # entity env vars — may legitimately travel with a shared agent
+    "job_provider_type", "allowed_api_execution",  # Job/SystemJob runtime config
+    "ga_client_id", "utm_params",                  # Visitor analytics
+    "agent", "client_type",                        # Connection wire config
+    "type",                                        # SystemJob re-declares the discriminator
 })
-
-# `HUB_AUTHORITATIVE_FIELDS` is only `updated_date` — the LWW clock, where a local
-# re-stamp runs the comparison ahead and masks real hub changes. `created_date` is
-# equally hub-owned (never sent, always accepted) but was never listed, so
-# `from_record` may re-stamp it. Deriving from HUB_READ protects it too; strictly
-# safer, but a change, so it is named here until P3d reviews it.
-CONVERGENCE_PENDING_HUB_OWNED = frozenset({"created_date"})
 
 
 def _entity_classes() -> list[type[Entity]]:
@@ -57,12 +53,10 @@ def _entity_classes() -> list[type[Entity]]:
             walk(sub)
 
     walk(Entity)
-    return [Entity, *seen.values()]
-
-
-def _declared(cls) -> set[str]:
-    """Names this class actually has — the derived sets can only contain these."""
-    return set(cls.model_fields) | set(cls.model_computed_fields)
+    # Production classes only. Test modules define their own throwaway entities
+    # with bare `Field`s, and they are not part of the app's field surface — in a
+    # full-suite run they would otherwise be walked here and reported.
+    return [Entity, *(c for c in seen.values() if c.__module__.startswith("flow_sdk."))]
 
 
 ENTITY_CLASSES = _entity_classes()
@@ -75,52 +69,89 @@ def test_there_are_entity_classes_to_check():
 
 
 @pytest.mark.parametrize("cls", ENTITY_CLASSES, ids=IDS)
-def test_bundle_exclusion_matches_local_fields(cls):
-    """`fields_not_in_bundle()` must reproduce `_local_fields()`."""
-    declared = _declared(cls)
-    today = {f for f in cls._BASE_LOCAL_FIELDS if f in declared}
-    # Per-type additions live on TypeInfo; resolve them the way `_local_fields` does.
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+def test_every_field_carries_a_policy(cls):
+    """No field may be declared with a bare pydantic ``Field``.
 
-    info = SchemaRegistry.get(cls.get_type()) if cls.get_type() else None
-    today |= {f for f in (getattr(info, "local_fields", None) or ()) if f in declared}
-    assert cls.fields_not_in_bundle() == today
-
-
-@pytest.mark.parametrize("cls", ENTITY_CLASSES, ids=IDS)
-def test_hub_push_exclusion_matches_the_hub_body_literal(cls):
-    """`fields_not_sent_to_hub()` must reproduce `_hub_body`'s exclude literal."""
-    declared = _declared(cls)
-    today = {f for f in _HUB_BODY_LITERAL if f in declared}
-    expected = today | (CONVERGENCE_PENDING_HUB_PUSH & declared)
-    assert cls.fields_not_sent_to_hub() == expected
-
-
-@pytest.mark.parametrize("cls", ENTITY_CLASSES, ids=IDS)
-def test_hub_pull_protection_matches_local_only_fields(cls):
-    """`fields_not_accepted_from_hub()` must reproduce `LOCAL_ONLY_FIELDS`."""
-    declared = _declared(cls)
-    today = {f for f in cls.LOCAL_ONLY_FIELDS if f in declared}
-    # PRIVATE also blocks ingress, so every bundle-private field is protected too.
-    expected = today | (cls.fields_not_in_bundle() & declared)
-    assert cls.fields_not_accepted_from_hub() >= expected
-    # ...and nothing beyond PRIVATE ∪ HUB_WRITE may be blocked.
-    assert cls.fields_not_accepted_from_hub() <= declared
+    A bare declaration carries no ``sharing`` key at all, so it resolves to
+    SHARED — it travels to the hub and into share bundles, and a reviewer reading
+    the class sees nothing to suggest otherwise. That is how
+    ``Entity.fs_storage_mount_path`` (a local mount path) and User's
+    ``hashed_password_`` came to be shareable.
+    """
+    undeclared = sorted(
+        name
+        for name, info in cls.model_fields.items()
+        if not (isinstance(info.json_schema_extra, dict) and "sharing" in info.json_schema_extra)
+        and name not in UNDECLARED_EXEMPT
+    )
+    assert undeclared == [], (
+        f"{cls.__name__}: declared with a bare pydantic Field, so they silently "
+        f"resolve to SHARED: {undeclared}. Use APIField/EntityField with an "
+        f"explicit `sharing=`, or add to UNDECLARED_EXEMPT with a reason."
+    )
 
 
 @pytest.mark.parametrize("cls", ENTITY_CLASSES, ids=IDS)
-def test_hub_owned_matches_hub_authoritative_fields(cls):
-    """`fields_owned_by_hub()` must reproduce `HUB_AUTHORITATIVE_FIELDS`."""
-    declared = _declared(cls)
-    today = {f for f in cls.HUB_AUTHORITATIVE_FIELDS if f in declared}
-    assert cls.fields_owned_by_hub() == today | (CONVERGENCE_PENDING_HUB_OWNED & declared)
+def test_a_subclass_never_silently_drops_an_inherited_policy(cls):
+    """Re-declaring a field REPLACES the ancestor's ``FieldInfo`` wholesale.
+
+    So a subclass that re-declares a non-SHARED base field without repeating the
+    policy silently opens it up. That is not hypothetical: ``Conversation``
+    re-declared ``created_by``, and ``CodexSession``/``CopilotSession`` each
+    carried their own ``received`` — all three lost the base's protection, and
+    only this check found them.
+
+    A deliberate widening is still possible; it just has to be written down as
+    an explicit ``sharing=`` on the subclass field.
+    """
+    offenders = []
+    for name, info in cls.model_fields.items():
+        own = sharing_policy(info)
+        if own is not Sharing.SHARED:
+            continue
+        for ancestor in cls.__mro__[1:]:
+            fields = getattr(ancestor, "model_fields", None)
+            if not fields or name not in fields:
+                continue
+            inherited = sharing_policy(fields[name])
+            if inherited is not Sharing.SHARED:
+                offenders.append(f"{name} (ancestor {ancestor.__name__} declares {inherited})")
+            break
+    assert offenders == [], (
+        f"{cls.__name__} re-declares fields and drops the inherited policy: {offenders}"
+    )
 
 
-# The literal `Entity._hub_body` passes today. Kept here rather than imported so
-# that deleting it in P5 forces this file to be updated deliberately.
-_HUB_BODY_LITERAL = frozenset({
-    "private_context_entities_", "private_context_entities", "private_context_entity_data",
-    "shared_context_entity_data", "created_by", "updated_by", "created_date", "updated_date",
-    "remote", "system", "fetched_at", "message_count", "git_origin", "asset_occurrences",
-    "duplicate_count", "tags", "project_id", "members",
-})
+def test_the_four_boundaries_are_consistent_with_each_other():
+    """The accessors are derived from one declaration, so they cannot disagree.
+
+    PRIVATE blocks both directions; HUB_READ is exactly the hub-owned set and is
+    withheld from the hub; HUB_WRITE travels but is never accepted.
+    """
+    from flow_sdk.builtin.flow_message import FlowMessage
+
+    private = {n for n, i in FlowMessage.model_fields.items() if sharing_policy(i) is Sharing.PRIVATE}
+    hub_read = {n for n, i in FlowMessage.model_fields.items() if sharing_policy(i) is Sharing.HUB_READ}
+    hub_write = {n for n, i in FlowMessage.model_fields.items() if sharing_policy(i) is Sharing.HUB_WRITE}
+
+    assert private <= FlowMessage.fields_not_sent_to_hub()
+    assert private <= FlowMessage.fields_not_accepted_from_hub()
+    assert private <= FlowMessage.fields_not_in_bundle()
+    assert hub_read <= FlowMessage.fields_not_sent_to_hub()
+    assert hub_read == FlowMessage.fields_owned_by_hub() & set(FlowMessage.model_fields)
+    assert hub_write <= FlowMessage.fields_not_accepted_from_hub()
+    assert not (hub_write & FlowMessage.fields_not_sent_to_hub()), "HUB_WRITE must still travel"
+    assert not (hub_write & FlowMessage.fields_not_in_bundle()), "HUB_WRITE must ride bundles"
+
+
+def test_the_known_policies_resolve_as_intended():
+    """Spot-check one field per value on the types that motivated each."""
+    from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.builtin.task import Task
+    from flow_sdk.builtin.user import User
+
+    assert sharing_policy(Task.model_fields["title"]) is Sharing.SHARED
+    assert sharing_policy(Task.model_fields["asset_ref"]) is Sharing.PRIVATE
+    assert sharing_policy(Task.model_fields["updated_date"]) is Sharing.HUB_READ
+    assert sharing_policy(FlowMessage.model_fields["is_read"]) is Sharing.HUB_WRITE
+    assert sharing_policy(User.model_fields["hashed_password_"]) is Sharing.PRIVATE

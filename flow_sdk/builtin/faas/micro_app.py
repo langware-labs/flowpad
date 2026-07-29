@@ -25,7 +25,7 @@ from starlette.responses import Response
 
 from flow_sdk.config import default_service_config
 import logging as service_log
-from flow_sdk.api.api_types.api_field import APIField, NoDbBField, Sharing
+from flow_sdk.api.api_types.api_field import APIField, EntityField, NoDbBField, Sharing
 from flow_sdk.api.api_request import APIRequest
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.builtin.faas.codebase import AppCodebase
@@ -73,7 +73,7 @@ class MicroApp(Entity):
     )
     project_id: Optional[str] = APIField(default=None, description="Owning project, mirroring the Artifact's", sharing=Sharing.PRIVATE)
 
-    name: str
+    name: str = EntityField(sharing=Sharing.SHARED)
     # NOT unique. It was, from when a micro-app name WAS its hostname and the
     # namespace was global. Host routing resolves by id (``request_info.
     # parse_micro_app_request``) and nothing reads ``get_by_name``, so the

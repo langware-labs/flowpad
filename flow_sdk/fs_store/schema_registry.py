@@ -277,6 +277,10 @@ class TypeInfo:
     # was built from — home for type-specific extras beyond the flat fields.
     # Runtime-only; the flat fields above remain the serialized surface.
     metadata: Any = field(default=None, compare=False, repr=False)
+    # True ⇒ Entity.save persists the row in the DB only and never creates an
+    # FSRecord shadow. Such types have no disk→DB adopt path. Runtime-only; not
+    # part of the schema hash.
+    db_only: bool = field(default=False, compare=False, repr=False)
     # Per-type pydantic metadata model: the FS↔DB schema. Its field set defines
     # which entity fields with ``persist=DEFAULT`` are mirrored to metadata.json,
     # and ``FSRecord.meta_dict`` returns a typed instance when it is set.
@@ -309,11 +313,6 @@ class TypeInfo:
     # (the markdown-asset family); a ``.js``/``.py``/… asset overrides it so its
     # backing file matches the indexer's glob. Runtime-only.
     main_ext: str = ".md"
-    # Per-type ADDITIONS to the base sender-local field set
-    # (``entity_model._BASE_LOCAL_FIELDS``). Host-local fields that never travel in
-    # ``Entity.to_common_json()`` / the hub body. Resolved with the base via
-    # ``local_fields_for(type)``. Runtime-only; not part of the schema hash.
-    local_fields: frozenset = field(default_factory=frozenset, compare=False, repr=False)
     # Fields the ASSIGNEE of a shared entity owns. When the local user is the
     # entity's assignee (and not its reporter), a hub-reflected update carries
     # ONLY these — everything else on the row belongs to whoever handed the work
@@ -687,8 +686,6 @@ class SchemaRegistry:
                 existing.main_file_is_asset_ref = True
             if info.main_ext != ".md":
                 existing.main_ext = info.main_ext
-            if info.local_fields:
-                existing.local_fields = frozenset(existing.local_fields) | frozenset(info.local_fields)
             if info.assignee_owned_fields:
                 existing.assignee_owned_fields = tuple(info.assignee_owned_fields)
             if info.pack_exclude:
@@ -725,6 +722,8 @@ class SchemaRegistry:
                 existing.parent_share_on_default = True
             if info.shared_child:
                 existing.shared_child = True
+            if info.db_only:
+                existing.db_only = True
             if info.metadata is not None:
                 existing.metadata = info.metadata
             if info.meta_model is not None:

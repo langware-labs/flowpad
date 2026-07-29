@@ -31,6 +31,5 @@ class CodexSession(Entity):
     asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     received: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
 
-    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = Entity.LOCAL_ONLY_FIELDS | frozenset({"received"})
 
     _api_visible: ClassVar[bool] = False

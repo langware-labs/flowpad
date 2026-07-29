@@ -79,8 +79,13 @@ async def materialize_remote_task(
     if not ent_id:
         return None
 
-    sanitized = {k: v for k, v in data.items() if Task.is_api_field(k)}
-    sanitized.pop("asset_ref", None)  # hub paths never bind local storage
+    # Drop everything the hub may not dictate — PRIVATE (never accepted) plus
+    # HUB_WRITE (per-device state). This replaces a hand-written
+    # `sanitized.pop("asset_ref")` ("hub paths never bind local storage"): the
+    # same rule, now stated once on the field instead of per call site, and it
+    # covers the CREATE branch below as well as the merge.
+    blocked = Task.fields_not_accepted_from_hub()
+    sanitized = {k: v for k, v in data.items() if Task.is_api_field(k) and k not in blocked}
     sanitized["id"] = ent_id
 
     existing = await Task.get_one({"id": ent_id})
@@ -103,10 +108,10 @@ async def materialize_remote_task(
     # The bridge refills them when it can (``hub_bridge._fill_empty_blobs``);
     # this is the backstop for every other caller.
     blob_fields = set(Task.get_blob_fields_names() or [])
-    # ``LOCAL_ONLY_FIELDS`` IS the "hub must never overwrite this" set (it is why
-    # ``asset_ref`` was added to it) — restating a narrower copy here would go
-    # stale the next time a field joins it.
-    keep_local = {"id"} | Task.LOCAL_ONLY_FIELDS
+    # Derived from the field declarations: everything PRIVATE (never accepted
+    # from outside) or HUB_WRITE (per-device state). Restating a copy here would
+    # go stale the next time a field's policy changes.
+    keep_local = {"id"} | blocked
     for k, v in sanitized.items():
         if k in keep_local or v is None:
             continue
