@@ -68,7 +68,11 @@ async def attached(tmp_path: Path, monkeypatch):
     _git(source, "commit", "-qm", "sample context assets")
 
     origin = base / "sample-context-git.git"
-    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "init", "--bare", "-q", "-b", "main", str(origin)],
+        check=True,
+        capture_output=True,
+    )
     _git(source, "remote", "add", "origin", origin.resolve().as_uri())
     _git(source, "push", "-q", "-u", "origin", "main")
 
