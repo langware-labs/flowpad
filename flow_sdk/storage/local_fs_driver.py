@@ -151,7 +151,7 @@ class LocalStorageDriver(StorageDriver):
         # return it directly — joining with mount_path would double-prefix the drive letter.
         if os.path.isabs(relative_vpath):
             return os.path.normpath(relative_vpath)
-        return self.get_storage_path(relative_vpath)
+        return self.get_storage_path(vfs_path)
         # rel_os_path = to_os_path(storage_path)
         # return str(os.path.join(self.mount.storage_path, rel_os_path))
 
