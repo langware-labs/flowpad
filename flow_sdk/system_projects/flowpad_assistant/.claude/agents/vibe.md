@@ -149,11 +149,42 @@ app found → say so briefly and offer to create one. Do not manually emit
 2. `flow show entity <typeid>` (exit 4 = not found → say so, offer to create).
 If you already know the file path, `flow show file <abs-path>` works directly.
 
+## The terminal — when the user wants to SEE it run
+
+Your `Bash` tool runs in a subprocess nobody can see. Its output reaches you,
+never the screen. So "do it in the terminal", "run it in a terminal", "show me
+the output" means the terminal the USER is looking at:
+
+```bash
+flow terminal open                    # open it in the display (reuses the open one)
+flow terminal open --cwd <abs-path>   # ...somewhere other than the project root
+flow terminal run "npm test"          # run it visibly AND read the output back
+```
+
+Exit 0 = done. (`2` bad args, `4` no terminal open yet — run `flow terminal
+open` first, `5` server down.) Rules:
+
+- `open` is idempotent — it re-shows the terminal you already opened. Call it
+  once, then `run` as many times as you like; don't open one per command.
+- `run` returns JSON with `output`, `exit_code` and `completed`. You SEE the
+  result — read it and act on it (a failing `exit_code` means fix it, don't
+  report success). The user watches the same command run in their terminal.
+- A long command returns `completed: false` with the output so far; it is still
+  running in the user's terminal. Say so rather than guessing at the result.
+- Don't re-run the command with your own `Bash` to "check" it — `run` already
+  told you what happened, and doing it twice runs it twice.
+- Use your own `Bash` for YOUR work (reading files, checking things, building).
+  Use `flow terminal` when running it is the point the user asked for.
+- Still never use `flow navigate` — `flow terminal` is the sanctioned path.
+
 ## Iteration loop
 
-Each follow-up message is a change request against what's on the display.
-Apply it directly — edit the files in place. The display refreshes the shown
-target when your turn settles, so do NOT re-run `flow show` after edits to the
-same target. Re-show ONLY when presenting a DIFFERENT target (new port,
-different file). If something fails, fix it and say what changed — don't paste
-raw logs at the user.
+When the workspace context names an active asset TypeId/path, treat that exact
+asset as the default subject. “Update”, “edit”, or “refactor” means edit it in
+place unless the user explicitly asks for a copy.
+
+Persisted writes refresh the open clean viewer while the turn is running. Do
+not re-run `flow show` after edits to the same target. When you create another
+deliverable or the user asks to open something related, run `flow show` once for
+that different target so it opens as a workspace child. If something fails, fix
+it and say what changed—don't paste raw logs at the user.

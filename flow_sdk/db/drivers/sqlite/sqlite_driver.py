@@ -128,6 +128,10 @@ class SafeJSONEncoder(json.JSONEncoder):
 
 logger = logging.getLogger(__name__)
 
+# Distinguishes "no compare-and-set requested" from an expected value of None,
+# which is itself a meaningful JSON comparison (field absent / null).
+_UNSET = object()
+
 
 class SQLiteTransactionHandler(TransactionHandler):
     """Transaction handler for SQLite async sessions."""
@@ -1113,6 +1117,91 @@ class SQLiteDBDriver(DBDriver):
             current.last_active_at = timestamp_ms
             current._dirty = False
             return current, True
+
+    async def _patch_data_field(
+        self,
+        entity_id: str,
+        entity_type: str,
+        field_name: str,
+        value: object,
+        expected_value: object = _UNSET,
+    ) -> tuple[DBBaseRecord | None, bool]:
+        """Patch one entity-data field without upserting or rewriting stale state.
+
+        The UPDATE itself proves that the row still exists — and, when
+        ``expected_value`` is supplied, that the field still carries the value
+        the caller inspected. A delayed background callback therefore cannot
+        recreate a deleted entity or overwrite a concurrent user edit through
+        ``save()``'s intentional upsert path.
+        """
+        if not field_name or not field_name.replace("_", "").isalnum():
+            raise ValueError(f"Invalid entity data field: {field_name!r}")
+
+        entity_type = entity_type.lower()
+        json_path = f"$.{field_name}"
+        async with self._session_ctx() as session:
+            current_result = await session.execute(
+                select(EntitySchema).where(
+                    EntitySchema.id == entity_id,
+                    EntitySchema.type == entity_type,
+                )
+            )
+            schema = current_result.scalar_one_or_none()
+            if schema is None:
+                return None, False
+
+            current = self._schema_to_entity(schema)
+            if field_name not in current.__class__.model_fields:
+                raise ValueError(f"Unknown {entity_type} data field: {field_name!r}")
+
+            self.apply_update_fields(current)
+            where = [EntitySchema.id == entity_id, EntitySchema.type == entity_type]
+            if expected_value is not _UNSET:
+                current_value = func.json_extract(func.coalesce(EntitySchema.data, "{}"), json_path)
+                where.append(current_value.is_(None) if expected_value is None else current_value == expected_value)
+            result = await session.execute(
+                update(EntitySchema)
+                .where(*where)
+                .values(
+                    updated_by=current.updated_by,
+                    updated_date=current.updated_date,
+                    updated_through=current.updated_through,
+                    data=func.json_set(
+                        func.coalesce(EntitySchema.data, "{}"),
+                        json_path,
+                        func.json(json.dumps(value, cls=SafeJSONEncoder)),
+                    ),
+                )
+            )
+            if not result.rowcount:
+                return None, False
+
+            setattr(current, field_name, value)
+            current._dirty = False
+            return current, True
+
+    async def compare_and_set_data_field(
+        self,
+        entity_id: str,
+        entity_type: str,
+        field_name: str,
+        expected_value: object,
+        value: object,
+    ) -> tuple[DBBaseRecord | None, bool]:
+        """Patch one field only while it still holds ``expected_value``."""
+        return await self._patch_data_field(
+            entity_id, entity_type, field_name, value, expected_value=expected_value
+        )
+
+    async def update_existing_data_field(
+        self,
+        entity_id: str,
+        entity_type: str,
+        field_name: str,
+        value: object,
+    ) -> tuple[DBBaseRecord | None, bool]:
+        """Patch one field on an existing row; a missing row stays missing."""
+        return await self._patch_data_field(entity_id, entity_type, field_name, value)
 
     async def _create_entity(self, entity: DBBaseRecord, owner: TypeId | None, session: AsyncSession) -> DBBaseRecord:
         """Create a new entity.

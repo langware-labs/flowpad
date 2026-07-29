@@ -3,6 +3,7 @@ import {
   formatGitOrigin,
   gitOriginOf,
   gitOriginRepoFullName,
+  gitOriginWebUrl,
   isCompleteGitOrigin,
   isSafeRelPath,
   type GitOrigin,
@@ -65,5 +66,60 @@ describe('completeness + reading off an entity', () => {
     expect(gitOriginOf({ git_origin: ORIGIN })).toEqual(ORIGIN);
     expect(gitOriginOf({})).toBeNull();
     expect(gitOriginOf(null)).toBeNull();
+  });
+});
+
+describe('gitOriginWebUrl — the page a human opens', () => {
+  const origin = (over: Partial<GitOrigin> = {}): GitOrigin => ({ ...ORIGIN, rel_path: 'docs/readme.md', ...over });
+
+  it('deep-links a file, keeping a slashed branch name intact', () => {
+    expect(gitOriginWebUrl(origin())).toBe(
+      'https://github.com/Acme/Widgets/blob/feature/x/docs/readme.md',
+    );
+  });
+
+  it('uses tree for a directory', () => {
+    expect(gitOriginWebUrl(origin({ rel_path: 'docs' }), { isDir: true })).toBe(
+      'https://github.com/Acme/Widgets/tree/feature/x/docs',
+    );
+  });
+
+  it('drops a .git suffix from the repo name', () => {
+    expect(gitOriginWebUrl(origin({ name: 'Widgets.git' }))).toContain('/Acme/Widgets/blob/');
+  });
+
+  it('uses the gitlab and bitbucket browse grammars', () => {
+    expect(gitOriginWebUrl(origin({ provider: 'gitlab', branch: 'main' }))).toBe(
+      'https://gitlab.com/Acme/Widgets/-/blob/main/docs/readme.md',
+    );
+    expect(gitOriginWebUrl(origin({ provider: 'bitbucket', branch: 'main' }))).toBe(
+      'https://bitbucket.org/Acme/Widgets/src/main/docs/readme.md',
+    );
+  });
+
+  it('falls back to the head commit when there is no branch', () => {
+    expect(gitOriginWebUrl(origin({ branch: '', head_commit: 'abc123' }))).toBe(
+      'https://github.com/Acme/Widgets/blob/abc123/docs/readme.md',
+    );
+  });
+
+  it('falls back to the repo root without a ref, at the root, or on an unsafe path', () => {
+    const root = 'https://github.com/Acme/Widgets';
+    expect(gitOriginWebUrl(origin({ branch: '', head_commit: null }))).toBe(root);
+    expect(gitOriginWebUrl(origin({ rel_path: '.' }))).toBe(root);
+    expect(gitOriginWebUrl(origin({ rel_path: '../outside' }))).toBe(root);
+    expect(gitOriginWebUrl(origin({ rel_path: '/abs/path' }))).toBe(root);
+  });
+
+  it('has no web URL for a file remote, an unknown provider, or a nameless repo', () => {
+    expect(gitOriginWebUrl(origin({ provider: 'file', owner: '/srv/git' }))).toBeNull();
+    expect(gitOriginWebUrl(origin({ provider: '' }))).toBeNull();
+    expect(gitOriginWebUrl(origin({ owner: '' }))).toBeNull();
+  });
+
+  it('encodes path segments', () => {
+    expect(gitOriginWebUrl(origin({ rel_path: 'docs/my notes.md' }))).toBe(
+      'https://github.com/Acme/Widgets/blob/feature/x/docs/my%20notes.md',
+    );
   });
 });

@@ -37,7 +37,11 @@ test.describe('Whiteboard — Smoke (S1–S3)', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    const { id } = await createWhiteboard(request, 'smoke-s3', 'smoke s3');
+    const { id } = await createWhiteboard(
+      request,
+      `smoke-s3-${Date.now()}-${Math.floor(Math.random() * 10_000)}`,
+      'smoke s3',
+    );
     // AssetDocPointer grammar requires an explicit typeid/ method segment.
     await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
     await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
@@ -45,7 +49,7 @@ test.describe('Whiteboard — Smoke (S1–S3)', () => {
 
     // Excalidraw container healthy height (CSS-missing regression inflates to 33,554,432).
     const containerH = await page.evaluate(() => {
-      const el = document.querySelector('[class*="excalidraw-container"]') as HTMLElement | null;
+      const el = document.querySelector('[class*="excalidraw-container"]');
       return el?.clientHeight ?? -1;
     });
     expect(containerH).toBeGreaterThan(100);
@@ -64,7 +68,8 @@ test.describe('Whiteboard — Smoke (S1–S3)', () => {
     );
     expect(real, `Excalidraw console errors: ${real.join('\n')}`).toHaveLength(0);
 
-    // Cleanup (best-effort; folder remains on disk by design).
+    // Cleanup (best-effort; the unique folder name prevents a stale capsule
+    // identity from colliding with a later run if the folder remains on disk).
     await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
   });
 });

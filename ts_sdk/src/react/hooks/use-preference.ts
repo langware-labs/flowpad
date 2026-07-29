@@ -37,14 +37,39 @@ const subscribe = (callback: () => void) => {
 
 const getSnapshot = () => instancePreferences.version;
 
-export function usePreference<T = unknown>(tag: PrefKey): [T, (value: T) => void] {
+/**
+ * Whether `tag`'s value is known yet — see `InstancePreferences.isResolved`.
+ *
+ * Use it wherever falling back to the registry default would paint a user-visible
+ * arrangement that the stored value then contradicts: hold the decision while
+ * this is false instead of rendering a guess and repainting. Re-renders on
+ * PREFERENCES_LOADED, so the wait ends the moment the value lands.
+ */
+export function usePreferenceResolved(tag: PrefKey): boolean {
+  usePreferencesVersion();
+  return instancePreferences.isResolved(tag);
+}
+
+/**
+ * Subscribe to *any* preference change, without binding to one key.
+ *
+ * The load-on-mount + subscribe primitive both other hooks in this file are built
+ * on, and the one consumers use directly when they read several prefs imperatively
+ * — the Preferences screen's `visibleWhen` filter, whose hook count must not depend
+ * on how many rows it is about to render.
+ */
+export function usePreferencesVersion(): number {
   useEffect(() => {
     if (!instancePreferences.isLoaded) {
       void instancePreferences.loadJson();
     }
   }, []);
 
-  useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export function usePreference<T = unknown>(tag: PrefKey): [T, (value: T) => void] {
+  usePreferencesVersion();
 
   const setValue = useCallback(
     (value: T) => {

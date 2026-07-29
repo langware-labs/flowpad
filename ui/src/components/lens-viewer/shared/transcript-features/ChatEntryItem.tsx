@@ -16,9 +16,34 @@ function needsTruncation(text: string): boolean {
   return text.split('\n').length > 3 || text.length > 280;
 }
 
+function thinkingExpansionKey(entry: UnifiedEntry): string {
+  return `flowpad:transcript-thinking:${entry.sessionId}:${entry.id}`;
+}
+
+/** sessionStorage is absent under SSR/jsdom-without-storage; read and write
+ * must agree on that, so both go through these two helpers. */
+function readThinkingExpanded(entry: UnifiedEntry): boolean {
+  if (typeof sessionStorage === 'undefined') return false;
+  return sessionStorage.getItem(thinkingExpansionKey(entry)) === '1';
+}
+
+function writeThinkingExpanded(entry: UnifiedEntry, expanded: boolean): void {
+  if (typeof sessionStorage === 'undefined') return;
+  if (expanded) sessionStorage.setItem(thinkingExpansionKey(entry), '1');
+  else sessionStorage.removeItem(thinkingExpansionKey(entry));
+}
+
 export function ChatEntryItem({ entry, isExpanded, onToggle, isAdvanced }: Props) {
-  const [showThinking, setShowThinking] = useState(false);
+  const [showThinking, setShowThinking] = useState(() => readThinkingExpanded(entry));
   const timestamp = formatEntryTime(entry);
+
+  const toggleThinking = () => {
+    setShowThinking((current) => {
+      const next = !current;
+      writeThinkingExpanded(entry, next);
+      return next;
+    });
+  };
 
   // ── User turn (text body) ──────────────────────────────────────────────────
   if (entry.role === 'user' && entry.text) {
@@ -137,7 +162,7 @@ export function ChatEntryItem({ entry, isExpanded, onToggle, isAdvanced }: Props
                   {thinkingCanTruncate && (
                     <button
                       type="button"
-                      onClick={() => setShowThinking((v) => !v)}
+                      onClick={toggleThinking}
                       className="mt-1.5 flex items-center gap-1 text-[11px] text-purple-600 hover:text-purple-700 dark:text-purple-300 dark:hover:text-purple-200"
                     >
                       {showThinking ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}

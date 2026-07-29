@@ -68,9 +68,10 @@ skill, …) are anchored to the conversation and recursively auto-share.
    model (resolution chain + unresolved-sender alert).
 5. **[Hub Fan-out & Conversation Loader](./hub-fanout-and-loader.md)** — how a
    local message reaches the hub and fans out (content-skips-sender,
-   status-honors-sender), the OSS receive/upsert path, the materialize pipeline,
-   conversation-list reconcile/staleness, and the URL-first conversation loader
-   cascade. (Supersedes the old root `DESIGN_loadConversation.md`.)
+   installation-gated status receipts), the OSS receive/upsert path, the
+   materialize pipeline, conversation-list reconcile/staleness, and the
+   URL-first conversation loader cascade. (Supersedes the old root
+   `DESIGN_loadConversation.md`.)
 
 ## Glossary
 

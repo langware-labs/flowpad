@@ -15,7 +15,7 @@ test('first home message immediately acknowledges submit and opens chat', async 
 
   const prompt =
     "generate architecture documentation for a gym management application that allows to match trainers to users based on user's needs, trainer's abilities and available gym infrastructure";
-  const input = page.locator('textarea[aria-label^="What would you like to work on"]');
+  const input = page.locator('textarea[aria-label="What would you like to work on?"]');
   await input.fill(prompt);
 
   const createRequest = page.waitForRequest(

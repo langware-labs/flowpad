@@ -44,19 +44,22 @@ def _load_doc(path: Path) -> dict | None:
 
 def _convergent_id(data: dict) -> str | None:
     """The reference's convergent id: the adopted in-file ``id`` when valid, else
-    recompute ``SecretOrigin.key()`` from the locator. Never path-derived."""
+    recomputed from ``(project_id, env_var)``. Never path-derived.
+
+    A pre-re-key reference carries neither ``project_id`` nor a usable id under
+    the new scheme; it yields ``None`` and is skipped. There is no migration —
+    the file stays on disk untouched.
+    """
     from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+    from flow_sdk.builtin.secret_origin_identity import secret_origin_id  # noqa: PLC0415
 
     raw = str(data.get("id") or "").strip()
     if raw and is_valid_entity_id(raw):
         return raw
-    locator = data.get("locator")
-    if isinstance(locator, dict):
-        try:
-            return SECRET_ORIGIN_ADAPTER.validate_python(locator).key()
-        except Exception:  # noqa: BLE001
-            return None
+    project_id = str(data.get("project_id") or "").strip()
+    env_var = str(data.get("env_var") or "").strip()
+    if project_id and env_var:
+        return secret_origin_id(project_id, env_var)
     return None
 
 
@@ -103,22 +106,22 @@ def secret_origin_id_from_file(ref: FSRef | Path) -> str | None:
 
 
 def secret_origin_identity_key(ref: FSRef | Path) -> str | None:
+    """The stable key behind the id — ``(project_id, env_var)``.
+
+    Delegates to ``secret_origin_identity.stable_key`` rather than restating the
+    recipe. The previous version hardcoded a second copy of the per-kind locator
+    field table, which is precisely the kind of duplicate that drifts.
+    """
+    from flow_sdk.builtin.secret_origin_identity import stable_key  # noqa: PLC0415
+
     data = _load_doc(Path(getattr(ref, "_path", ref)))
-    locator = data.get("locator") if data else None
-    if not isinstance(locator, dict):
+    if not data:
         return None
-    kind = str(locator.get("kind") or "local")
-    field_names = {
-        "local": ("sod_name",),
-        "env-local": ("env_key",),
-        "flowpad-hub": ("secret_id",),
-        "gcp": ("gcp_project", "secret", "version"),
-        "1password": ("vault", "item", "field"),
-    }.get(kind)
-    if field_names is None:
+    project_id = str(data.get("project_id") or "").strip()
+    env_var = str(data.get("env_var") or "").strip()
+    if not project_id or not env_var:
         return None
-    disc = ":".join(str(locator.get(name) or "") for name in field_names)
-    return f"secret-origin:{kind}:{disc}"
+    return stable_key(project_id, env_var)
 
 
 # ── extractor ─────────────────────────────────────────────────────────────────
@@ -141,6 +144,11 @@ def extract_secret_origin(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     data = _load_doc(path)
     if data is None:
         return []
+    if not str(data.get("project_id") or "").strip() or not str(data.get("env_var") or "").strip():
+        # A pre-re-key reference. Left on disk, never mutated, simply not indexed
+        # — identity now requires both halves and we do not guess either.
+        logger.info("[secret-origin] skipping reference without project_id/env_var: %s", path)
+        return []
     try:
         assert_value_free(data, where=f"secret reference {path.name}")
     except ValueError as e:
@@ -153,6 +161,7 @@ def extract_secret_origin(ref: FSRef, resolved_id: str) -> list[FSRecord]:
         status="active",
         content=str(data.get("name") or path.stem),
         metadata={
+            "project_id": data.get("project_id") or "",
             "env_var": data.get("env_var") or "",
             "locator": data.get("locator") or {},
             "sod_store": data.get("sod_store") or "",

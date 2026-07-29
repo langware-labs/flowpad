@@ -1,4 +1,11 @@
-import { dataContext, FSRef, Journey, JourneyJournal, QueryRequest } from '@sdk';
+import {
+  dataContext,
+  FSRef,
+  isHubOnly,
+  Journey,
+  JourneyJournal,
+  QueryRequest,
+} from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useActiveJourneyId } from './use-active-journey-id';
@@ -218,7 +225,7 @@ function useJourneys(enabled = true) {
     () => new QueryRequest({ type: Journey.type, scope: [], query: null, name: 'journeys:all' }),
     [],
   );
-  return useEntitiesQuery<Journey>(request, { enabled });
+  return useEntitiesQuery<Journey>(request, { enabled: enabled && !isHubOnly() });
 }
 
 /** The caller's journals — WS-live, so a REST advance re-emits here. */
@@ -227,7 +234,7 @@ function useJournals(enabled = true) {
     () => new QueryRequest({ type: JourneyJournal.type, scope: [], query: null, name: 'journeyJournals:all' }),
     [],
   );
-  return useEntitiesQuery<JourneyJournal>(request, { enabled });
+  return useEntitiesQuery<JourneyJournal>(request, { enabled: enabled && !isHubOnly() });
 }
 
 /**

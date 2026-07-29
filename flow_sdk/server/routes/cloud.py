@@ -12,7 +12,7 @@ The browser-mode login callback lives at ``/auth/login_callback`` — see
 
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -22,6 +22,34 @@ router = APIRouter(prefix="/api/v1/cloud")
 # Standardized copy for the privacy-mode block — kept in sync with the
 # frontend guard (``ts_sdk/src/services/privacy-guard.ts``).
 LOCAL_MODE_LOGIN_MESSAGE = "Login disabled in Local mode"
+
+
+@router.get("/wiki/{wiki_ref}/resolve")
+async def resolve_hub_wiki_route(
+    wiki_ref: str,
+    word: str = Query(..., min_length=1),
+):
+    """Resolve a Hub Wiki through the desktop's authenticated cloud transport.
+
+    The Hub call itself uses the canonical
+    ``/api/v1/graph/wiki/<wiki-ref>/resolve`` API.  This local route is the
+    single-origin bridge used by the browser and also warms the local read cache
+    for the resolved Wiki target.
+    """
+
+    from flow_sdk.cloud_client.wiki_cache import HubWikiCacheError, resolve_hub_wiki
+    from flow_sdk.request_context.methods import get_current_request_info
+
+    request_info = get_current_request_info()
+    owner = request_info.user if request_info is not None else None
+    try:
+        result = await resolve_hub_wiki(wiki_ref, word, owner=owner)
+    except HubWikiCacheError as exc:
+        return JSONResponse(
+            content=ApiFailResponse(message=str(exc)).model_dump(mode="json"),
+            status_code=502,
+        )
+    return ApiSuccessResponse(data=result)
 
 
 def _local_mode_login_block():

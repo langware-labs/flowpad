@@ -11,23 +11,24 @@ import json
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.agentic_process import (
+    READONLY_ASSET_SOURCES,
     AssetDescriptor,
     AssetSource,
     AssetUsageKind,
-    READONLY_ASSET_SOURCES,
+    hydrate_asset_descriptor_remote,
     is_readonly_source,
 )
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
 from flow_sdk.fs_store.path_utils import canonical_posix_path
-
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
 
@@ -163,6 +164,64 @@ def _file_read(path: str | Path, entry_id: str = "entry-read-1"):
         tool_name="Read",
         path=str(path),
     )
+
+
+@pytest.mark.asyncio
+async def test_descriptor_remote_sentinel_direct_and_batched_hydration():
+    entity = Skill(
+        id=str(uuid.uuid4()),
+        name=f"remote_skill_{uuid.uuid4().hex[:6]}",
+        remote=True,
+    )
+    await entity.save()
+    missing_id = str(uuid.uuid4())
+    already_stamped = AssetDescriptor(
+        typeid=f"skill-{uuid.uuid4()}",
+        source=AssetSource.EMBEDDED,
+        posix_path=None,
+        remote=True,
+    )
+    resolved = AssetDescriptor(
+        typeid=f"skill-{entity.id}",
+        source=AssetSource.EMBEDDED,
+        posix_path=None,
+    )
+    missing = AssetDescriptor(
+        typeid=f"skill-{missing_id}",
+        source=AssetSource.EMBEDDED,
+        posix_path=None,
+    )
+    named = AssetDescriptor(
+        typeid="agent-@local",
+        source=AssetSource.INLINE,
+        posix_path=None,
+    )
+
+    try:
+        with (
+            patch.object(Skill, "get_all", new=AsyncMock(wraps=Skill.get_all)) as get_all,
+            patch.object(
+                Skill,
+                "get_one",
+                new=AsyncMock(side_effect=AssertionError("get_one is not allowed")),
+            ),
+        ):
+            await hydrate_asset_descriptor_remote(
+                [already_stamped, resolved, missing, named]
+            )
+
+        assert get_all.await_count == 1
+        assert already_stamped.remote is True
+        assert resolved.remote is True
+        assert missing.remote is False
+        assert named.remote is False
+        assert AssetDescriptor(
+            typeid="agent-@local",
+            source=AssetSource.INLINE,
+            posix_path=None,
+        ).to_row()["remote"] is False
+    finally:
+        await entity.delete()
 
 
 def _stub_transcript(monkeypatch, entries: list) -> None:

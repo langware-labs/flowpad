@@ -695,7 +695,7 @@ async def _pack_webapp_artifact_attachment(
     slug = _safe_entity_name(ent)
     dest = attachment_dir / key / "webapps" / slug
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(src, dest, dirs_exist_ok=True, ignore=_ASSET_PACK_IGNORE)
+    shutil.copytree(src, dest, dirs_exist_ok=True, ignore=_pack_ignore(entry_type, src))
     metadata_path = _write_graph_git_transfer_metadata(attachment_dir.parent, entry_type, entry_id, ent)
     transfers[key] = {
         "transfer_mode": _TRANSFER_MODE_COPY,
@@ -726,8 +726,9 @@ async def _pack_file_backed_attachment(
     receiver mirror the sender's repo layout via the anchor-free restore. The
     leaf name and every capsule byte are preserved from an existing source.
 
-    Build/environment cruft is filtered via ``_ASSET_PACK_IGNORE`` (deep
-    ``.venv``/cache trees blow past Windows MAX_PATH on extractall).
+    Build/environment cruft — plus anything the type declares as
+    ``pack_exclude`` — is filtered via ``_pack_ignore`` (deep ``.venv``/cache
+    trees blow past Windows MAX_PATH on extractall).
     """
     # A TASK chip is a record-carrier (its folder is task.md bookkeeping), not
     # a git-shareable asset. In a git-mode message — the assignment message
@@ -805,7 +806,7 @@ async def _pack_file_backed_attachment(
     dest = (entry_root / PurePosixPath(origin.rel_path)) if origin is not None else (subdir / src_root.name)
     dest.parent.mkdir(parents=True, exist_ok=True)
     if src_root.is_dir():
-        shutil.copytree(src_root, dest, dirs_exist_ok=True, ignore=_ASSET_PACK_IGNORE)
+        shutil.copytree(src_root, dest, dirs_exist_ok=True, ignore=_pack_ignore(entry_type, src_root))
     else:
         shutil.copy2(src_root, dest)
 
@@ -1856,7 +1857,8 @@ async def _notify_staged_attachments(mas: list) -> None:
 # *.pyc`) blow past Windows' 260-char MAX_PATH on the receiver's extractall —
 # which silently aborts the whole download. Keep this in sync with the spirit
 # of a `.gitignore`: ship source, not built environments.
-_ASSET_PACK_IGNORE = shutil.ignore_patterns(
+# Build/environment cruft — type-agnostic, never worth shipping.
+_ASSET_PACK_PATTERNS: tuple[str, ...] = (
     ".venv",
     "venv",
     "env",
@@ -1869,6 +1871,37 @@ _ASSET_PACK_IGNORE = shutil.ignore_patterns(
     ".pytest_cache",
     ".ruff_cache",
 )
+_ASSET_PACK_IGNORE = shutil.ignore_patterns(*_ASSET_PACK_PATTERNS)
+
+
+def _pack_ignore(type_name: str | None, root: Path | str):
+    """The copytree filter for a folder-backed asset of ``type_name``.
+
+    Global cruft everywhere, plus that type's ``TypeInfo.pack_exclude`` — per-type
+    file policy is declared on the type, not branched on at this call site. A
+    task's inner ``spec.md`` (the plan) is the motivating case: the folder is
+    copied verbatim, so without this the plan rode along with every share.
+
+    ``pack_exclude`` applies ONLY at the asset folder's own root, never deeper.
+    A nested CHILD ENTITY can have the same filename — a ``spec`` entity parented
+    to a task is literally a ``spec.md``, one level down under the task's folder —
+    and dropping that would break the bundle's nested-entity contract (it did:
+    ``test_bundle_entity_envelope_matrix`` caught it). Root-only keeps the
+    distinction the filename alone can't carry: the task's own plan vs somebody
+    else's entity that happens to live inside.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    extra = tuple(getattr(SchemaRegistry.get(type_name), "pack_exclude", ()) or ()) if type_name else ()
+    if not extra:
+        return _ASSET_PACK_IGNORE
+    root_str = str(root)
+    at_root = shutil.ignore_patterns(*_ASSET_PACK_PATTERNS, *extra)
+
+    def _ignore(src_dir, names):
+        return (at_root if str(src_dir) == root_str else _ASSET_PACK_IGNORE)(src_dir, names)
+
+    return _ignore
 
 
 def _zip_bundle(tmp_root: Path, dest_dir: Path | None, fm_id: str | None) -> Path:

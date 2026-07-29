@@ -37,6 +37,7 @@ class EntryKind(str, Enum):
     WEB_FETCH = "web_fetch"
     TODO_UPDATE = "todo_update"
     AGENT_SPAWN = "agent_spawn"
+    WORKER_UNAVAILABLE = "worker_unavailable"
     # Context compaction / summarization boundary (checkpoint + resume). See
     # ``entries/compaction.py``.
     COMPACTION = "compaction"

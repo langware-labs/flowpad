@@ -182,8 +182,10 @@ export interface Browseable {
 export interface BrowseableRoot extends Browseable {
   kind: 'root';
 
-  /** Does this root own the given pointer? First truthy wins during
-   *  auto-expand. */
+  /** Does this root own the given pointer? Every matching root participates in
+   *  auto-expand. This is intentional for resource-addressed pointers: the
+   *  same VFS file can appear under both a semantic root (for example
+   *  Markdown) and a physical filesystem root (Files). */
   ownsPointer: (pointer: DockPointer) => boolean;
 
   /**

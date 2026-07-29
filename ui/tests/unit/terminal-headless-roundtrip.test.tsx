@@ -210,6 +210,8 @@ vi.mock('@src/hooks/use-instance-preferences', () => ({ useInstancePreferences: 
 vi.mock('@src/hooks/use-preference', () => {
   const tuples = new Map<string, [Record<string, never>, () => void]>();
   return {
+    // Resolved: the surface reconcile only acts once the mode is known.
+    usePreferenceResolved: () => true,
     usePreference: (key: string) => {
       if (!tuples.has(key)) tuples.set(key, [{}, () => {}]);
       return tuples.get(key);
@@ -232,9 +234,12 @@ vi.mock('@src/navigation', () => ({
 }));
 vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'light' }) }));
 vi.mock('@src/components/view-mode', () => ({ useIsAdvanced: () => true }));
-vi.mock('@src/contexts/chat-ui-mode-context', () => ({
-  useChatUiOverride: () => null,
-  setChatUiOverride: () => {},
+// Pinned to the terminal surface so only the pty_mode TRANSPORT flip moves the
+// view — which is the round trip under test.
+vi.mock('@src/contexts/view-mode-context', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/contexts/view-mode-context')>()),
+  useSessionSurface: () => 'terminal',
+  useViewMode: () => 'advanced',
 }));
 vi.mock('@src/notifications/notify', () => ({
   notify: { error: () => {}, success: () => {}, info: () => {}, warning: () => {} },

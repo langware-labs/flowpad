@@ -365,7 +365,7 @@ describe('selecting a tab stamps recency on the Tab entity', () => {
     await user.click(await screen.findByTestId('opener-menu-row-claude'));
 
     const expectedPath = `/dock/shell/agentic_process-${NEW_PROCESS_ID}`;
-    await waitFor(() => expect(window.location.pathname).toBe(expectedPath));
+    await waitFor(() => expect(screen.getByTestId('router-location')).toHaveTextContent(expectedPath));
 
     // Let the process `open` complete so the loader runs to the select-stamp.
     await waitFor(() => expect(releaseNewProcessOpen).toEqual(expect.any(Function)));

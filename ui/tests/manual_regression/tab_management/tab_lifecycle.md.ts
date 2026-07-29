@@ -8,26 +8,67 @@
  *     — first-class `Tab` entities, materialized by the route loader on every
  *     navigation and rendered as chips (testId `tab-content-<pointer>`).
  *
- * These scenarios lock the bug this work fixed (opening Terminals used to evict
- * a content surface like Assets) and the Tab lifecycle: open → coexist → select
- * → soft-close (visible=false, row survives) → reopen (same row, no duplicate).
+ * These scenarios lock the Tab lifecycle within one backend-owned project
+ * scope: open → coexist → select → soft-close (visible=false, row survives) →
+ * reopen (same row, no duplicate). Global/projectless tabs intentionally live
+ * in a different strip and therefore are not valid coexistence fixtures here.
  *
- * Assertions mix DOM (the chips) and the backend `Tab` rows (via fetch), so the
+ * Assertions mix DOM (the chips) and backend `Tab` rows (via the explicit
+ * instance API context), so the
  * test proves the URL-first → loader-upsert → strip-render → soft-close path
  * end-to-end. Assumes backend + frontend are running.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { apiBase, apiContext } from '../_shared/api';
+import { withViewMode } from '../_shared/view-mode';
+
+interface TabRow {
+  pointer: string;
+  visible: boolean;
+}
+
+interface StoredDockPointer {
+  tabHash?: string;
+  viewType?: string;
+  pointer?: string;
+}
+
+interface BootstrapData {
+  default_project?: string | { id?: string };
+}
 
 function dismissModals(page: Page) {
   return page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('viewMode', 'advanced');
   });
 }
 
-async function visibleTabs(page: Page): Promise<Array<{ pointer: string; visible: boolean }>> {
-  return page.evaluate(async () => {
-    const res = await fetch('/api/v1/graph/tab').then((r) => r.json());
+async function defaultProjectId(): Promise<string> {
+  const api = await apiContext();
+  try {
+    const response = await api.get(`${apiBase()}/api/v1/graph/bootstrap`);
+    const body = await response.json();
+    const project = (body.data as BootstrapData | undefined)?.default_project;
+    const id = typeof project === 'string' ? project : project?.id;
+    if (!id) throw new Error('bootstrap did not provide a default project');
+    return id;
+  } finally {
+    await api.dispose();
+  }
+}
+
+function projectDock(path: string, projectId: string): string {
+  const url = new URL(withViewMode(path, 'advanced'), 'http://flowpad.test');
+  url.searchParams.set('scope-mode', 'project');
+  url.searchParams.set('scope-activeProjectId', projectId);
+  return `${url.pathname}${url.search}`;
+}
+
+async function visibleTabs(): Promise<Array<{ pointer: string; visible: boolean }>> {
+  const api = await apiContext();
+  try {
+    const response = await api.get(`${apiBase()}/api/v1/graph/tab`);
+    const res = await response.json();
     // Tab.pointer is stored as the DockPointer JSON (`{"viewType","pointer"}`)
     // for tabs minted post-refactor, or the legacy opaque `viewType|pointer`
     // string for older rows. Normalize both to the `viewType|pointer` tabHash
@@ -35,7 +76,7 @@ async function visibleTabs(page: Page): Promise<Array<{ pointer: string; visible
     const toHash = (p: string): string => {
       if (p && p.startsWith('{')) {
         try {
-          const o = JSON.parse(p);
+          const o = JSON.parse(p) as StoredDockPointer;
           return o.tabHash ?? `${o.viewType ?? ""}|${o.pointer ?? ""}`;
         } catch {
           return p;
@@ -43,8 +84,13 @@ async function visibleTabs(page: Page): Promise<Array<{ pointer: string; visible
       }
       return p;
     };
-    return (res.data || []).map((t: any) => ({ pointer: toHash(t.pointer), visible: t.visible }));
-  });
+    return ((res.data || []) as TabRow[]).map((t) => ({
+      pointer: toHash(t.pointer),
+      visible: t.visible,
+    }));
+  } finally {
+    await api.dispose();
+  }
 }
 
 test.describe('Tab Management — content tab lifecycle', () => {
@@ -54,50 +100,61 @@ test.describe('Tab Management — content tab lifecycle', () => {
 
   // ── 1. open → a content surface becomes a persistent visible Tab ──────────
   test('open Assets materializes a visible Tab chip', async ({ page }) => {
-    await page.goto('/dock/assets');
-    await expect(page.locator('[data-testid="tab-content-assets|all"]')).toBeVisible({ timeout: 10_000 });
-    const rows = await visibleTabs(page);
-    expect(rows.find((r) => r.pointer === 'assets|all')?.visible).toBe(true);
+    const projectId = await defaultProjectId();
+    const assetsKey = `assets|project:${projectId}`;
+    await page.goto(projectDock('/dock/assets', projectId));
+    await expect(page.locator(`[data-testid="tab-content-${assetsKey}"]`)).toBeVisible({ timeout: 10_000 });
+    const rows = await visibleTabs();
+    expect(rows.find((r) => r.pointer === assetsKey)?.visible).toBe(true);
   });
 
-  // ── 2. coexist — opening Terminals does NOT evict Assets (the reported bug) ─
-  test('Assets and Terminals coexist in the strip', async ({ page }) => {
-    await page.goto('/dock/assets');
-    await expect(page.locator('[data-testid="tab-content-assets|all"]')).toBeVisible({ timeout: 10_000 });
-    await page.goto('/dock/shell');
-    // The Assets content chip must still be present after navigating to shell.
-    await expect(page.locator('[data-testid="tab-content-assets|all"]')).toBeVisible({ timeout: 10_000 });
+  // ── 2. coexist — opening another project tab does not evict Assets ─────────
+  test('Assets and Files coexist in the project strip', async ({ page }) => {
+    const projectId = await defaultProjectId();
+    const assetsKey = `assets|project:${projectId}`;
+    const filesKey = `explorer|project:${projectId}`;
+    await page.goto(projectDock('/dock/assets', projectId));
+    await page.goto(projectDock('/dock/explorer', projectId));
+    await expect(page.locator(`[data-testid="tab-content-${assetsKey}"]`)).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator(`[data-testid="tab-content-${filesKey}"]`)).toBeVisible({ timeout: 10_000 });
   });
 
   // ── 3. select — clicking a content chip is URL-first ──────────────────────
   test('clicking the Assets chip navigates back (URL-first)', async ({ page }) => {
-    await page.goto('/dock/assets');
-    await page.goto('/dock/search');
-    await page.locator('[data-testid="tab-content-assets|all"]').click();
+    const projectId = await defaultProjectId();
+    const assetsKey = `assets|project:${projectId}`;
+    await page.goto(projectDock('/dock/assets', projectId));
+    await page.goto(projectDock('/dock/explorer', projectId));
+    await page.locator(`[data-testid="tab-content-${assetsKey}"]`).click();
     await expect(page).toHaveURL(/\/dock\/assets/, { timeout: 10_000 });
   });
 
   // ── 4. soft-close — close flips the Tab to visible=false; the row survives ─
   test('closing a content tab is a soft-close (row survives visible=false)', async ({ page }) => {
-    await page.goto('/dock/search');
-    const chip = page.locator('[data-testid="tab-content-search|"]');
+    const projectId = await defaultProjectId();
+    const filesKey = `explorer|project:${projectId}`;
+    await page.goto(projectDock('/dock/explorer', projectId));
+    const chip = page.locator(`[data-testid="tab-content-${filesKey}"]`);
     await expect(chip).toBeVisible({ timeout: 10_000 });
     await chip.hover();
     // Close button is hover-gated; force the click past the opacity transition.
-    await page.locator('[data-testid="tab-content-search|"] [aria-label="Close tab"]').click({ force: true });
+    await chip.locator('[aria-label="Close tab"]').click({ force: true });
     // The contract is the soft-close: the row survives as visible=false (never
     // delete-to-close, so the close broadcasts cross-client).
     await expect(async () => {
-      const rows = await visibleTabs(page);
-      expect(rows.find((r) => r.pointer === 'search|')?.visible).not.toBe(true);
+      const rows = await visibleTabs();
+      expect(rows.find((r) => r.pointer === filesKey)?.visible).not.toBe(true);
     }).toPass({ timeout: 10_000 });
   });
 
   // ── 5. reopen — same pointer reuses the one row (no duplicate) ────────────
   test('reopening reuses the same Tab row (no duplicate)', async ({ page }) => {
-    await page.goto('/dock/assets');
-    await page.goto('/dock/assets'); // navigate twice
-    const rows = (await visibleTabs(page)).filter((r) => r.pointer === 'assets|all');
+    const projectId = await defaultProjectId();
+    const assetsKey = `assets|project:${projectId}`;
+    const assetsUrl = projectDock('/dock/assets', projectId);
+    await page.goto(assetsUrl);
+    await page.goto(assetsUrl); // navigate twice
+    const rows = (await visibleTabs()).filter((r) => r.pointer === assetsKey);
     expect(rows.length).toBeLessThanOrEqual(1);
     expect(rows[0]?.visible).toBe(true);
   });

@@ -11,6 +11,8 @@ from pydantic import BaseModel
 from flow_sdk.builtin.agent_hook import AgentHook, AgentProvider, HookEventType, HookScope
 from flow_sdk.builtin.claude_settings_sync import (
     SNIFFER_HOOK_NAME as SNIFFER_COMMAND_NAME,
+)
+from flow_sdk.builtin.claude_settings_sync import (
     purge_sniffer_entries_from_settings,
 )
 from flow_sdk.core import action

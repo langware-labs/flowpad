@@ -241,3 +241,24 @@ describe('Tab.dockPointer legacy pointer compatibility', () => {
     );
   });
 });
+
+describe('Tab.fromResponse target_remote compatibility', () => {
+  it('preserves booleans and clears a cached value when an old server omits it', () => {
+    const id = 'ded5ca0c-cf9b-4c21-a012-a772a9fd28ee';
+    const base = {
+      id,
+      pointer: '{"viewType":"conversation","pointer":"remote-test"}',
+    };
+
+    const cloud = Tab.fromResponse([{ ...base, target_remote: true }])[0];
+    expect(cloud.target_remote).toBe(true);
+
+    const local = Tab.fromResponse([{ ...base, target_remote: false }])[0];
+    expect(local).toBe(cloud);
+    expect(local.target_remote).toBe(false);
+
+    const legacy = Tab.fromResponse([base])[0];
+    expect(legacy).toBe(cloud);
+    expect(legacy.target_remote).toBeUndefined();
+  });
+});

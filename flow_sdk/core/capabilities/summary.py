@@ -78,8 +78,11 @@ def _intent_label(intent: str) -> str:
     return intent.replace("_", " ").title()
 
 
-def _worker_type_for(kind: str) -> str | None:
-    """The worker_type an MCP kind targets (its third segment); None otherwise."""
+def _worker_type_for(kind: str, *, registry, reference_kind: str | None = None) -> str | None:
+    """Resolve the concrete worker behind a harness/reference or MCP kind."""
+    registered = registry.worker_type_for_kind(reference_kind or kind)
+    if registered is not None:
+        return registered
     if is_mcp_capability_kind(kind):
         parts = kind.split(".")
         return parts[2] if len(parts) >= 3 else None
@@ -177,7 +180,11 @@ async def compute_capabilities_summary(wait_for_discovery: bool = True) -> Capab
                 ),
                 runnable=spec.runnable,
                 installable=installable,
-                worker_type=_worker_type_for(kind),
+                worker_type=_worker_type_for(
+                    kind,
+                    registry=registry,
+                    reference_kind=reference_kind,
+                ),
                 homepage_url=spec.homepage_url,
                 reference_kind=reference_kind,
                 dependencies=deps,

@@ -19,7 +19,6 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from flow_sdk._compat import StrEnum
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer._frontmatter import (
@@ -52,6 +51,7 @@ TASK_FRONTMATTER_FIELDS = (
     "due_at",
     "start_date",
     "completed_at",
+    "archived_at",
     "spec_type",
     "shared_by_id",
     "shared_process_id",
@@ -83,25 +83,12 @@ TASK_FRONTMATTER_FIELDS = (
 )
 
 # ---------------------------------------------------------------------------
-# Domain enums (moved from flow_sdk/fs_records/task.py)
+# Domain enums live on the ENTITY — ``flow_sdk.builtin.task`` declares
+# ``TaskStatus`` / ``TaskType`` / ``TaskKind``. This module used to carry a second
+# copy of all three (unused here, and free to drift from the ones the entity
+# actually validates against); import them from there if this module ever needs
+# one. One type registry, one enum per typed value.
 # ---------------------------------------------------------------------------
-
-
-class TaskStatus(StrEnum):
-    TO_DO = "to_do"
-    IN_PROGRESS = "in_progress"
-    DONE = "done"
-
-
-class TaskType(StrEnum):
-    TASK = "Task"
-    ANALYSIS = "analysis"
-    SKILL_CREATION = "skill_creation"
-
-
-class TaskKind(StrEnum):
-    STANDARD = "standard"
-    GROUP = "group"
 
 
 # ---------------------------------------------------------------------------
@@ -301,9 +288,13 @@ def _extract_from_manifest(ref: FSRef, manifest: Path, task_dir: Path, resolved_
         "title": name,
         "status": status,
     }
-    # Only the historically-indexed fields — legacy manifests may carry
-    # sender-local keys (my_process_id/project_root); do NOT adopt those.
-    for key in ("description", "objective", "task_type", "priority", "spec_type"):
+    # Same canonical field set as ``task.md`` (plus the two manifest-only keys),
+    # so the legacy path can't drift from it. Sender-local keys
+    # (my_process_id/project_root) are excluded BY CONSTRUCTION: the constant is
+    # a whitelist that omits them. A second hand-written list here is what let
+    # ``archived_at`` go missing, silently resurrecting archived tasks as active
+    # ``to_do`` rows on every reindex.
+    for key in (*TASK_FRONTMATTER_FIELDS, "description", "objective"):
         if data.get(key) is not None:
             kwargs[key] = data[key]
     rec = FSRecord(**kwargs)

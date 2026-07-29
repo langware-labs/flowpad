@@ -11,14 +11,17 @@ Resolution policy (the ``flow navigate file`` behaviour):
   * path   → the indexed asset's entity when one owns it via ``asset_ref``
              (stable editor view), else a raw vfs pointer — this is what makes
              "agent writes hello.md, then shows it" work without indexing;
-  * port   → a webapp preview.
+  * artifact_id → an app, with its live runtime derived from its companions;
+  * port   → a webapp preview (an entity-less dev server).
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.path_utils import canonical_posix_path
@@ -30,6 +33,8 @@ class DisplayTargetKind(StrEnum):
     ENTITY = "entity"
     VFS = "vfs"
     WEBAPP = "webapp"
+    APP = "app"
+    SHELL = "shell"
 
 
 class InvalidDisplayTarget(ValueError):
@@ -44,13 +49,15 @@ async def resolve_display_target(
     typeid: str | None = None,
     path: str | None = None,
     port: object = None,
+    artifact_id: str | None = None,
 ) -> dict:
     """Resolve one display address to its payload dict.
 
-    Exactly one of ``typeid`` / ``path`` / ``port`` should be given (checked in
-    that priority order). Returns ``{"kind": DisplayTargetKind, ...}``; raises
-    ``InvalidDisplayTarget`` / ``DisplayTargetNotFound`` for the caller to map
-    onto its own response shape (HTTP error body, exit code, ...).
+    Exactly one of ``typeid`` / ``path`` / ``artifact_id`` / ``port`` should be
+    given (checked in that priority order). Returns ``{"kind":
+    DisplayTargetKind, ...}``; raises ``InvalidDisplayTarget`` /
+    ``DisplayTargetNotFound`` for the caller to map onto its own response shape
+    (HTTP error body, exit code, ...).
     """
     if typeid:
         try:
@@ -63,6 +70,13 @@ async def resolve_display_target(
             entity = None  # unknown type collapses to "not found"
         if entity is None:
             raise DisplayTargetNotFound(f"Entity not found: {typeid}")
+        if entity.get_type() == "shell":
+            # A terminal is not an editable document: it is HOSTED as a tab, so
+            # the FE routes this kind to a shell-dock navigation rather than to
+            # an editor. Without its own kind it would arrive as a generic
+            # entity target, and `editorForType('shell')` is undefined — the
+            # display would silently fall back to the empty preview.
+            return shell_target(entity)
         return _entity_payload(entity)
 
     if path:
@@ -90,13 +104,59 @@ async def resolve_display_target(
                 }
         return {"kind": DisplayTargetKind.VFS, "path": resolved}
 
+    if artifact_id:
+        return await _app_payload(str(artifact_id))
+
     if port is not None:
         try:
             return {"kind": DisplayTargetKind.WEBAPP, "port": int(port)}  # type: ignore[arg-type]
         except (TypeError, ValueError) as e:
             raise InvalidDisplayTarget(f"Invalid port: {port!r}") from e
 
-    raise InvalidDisplayTarget("Must include one of: typeid, path, port")
+    raise InvalidDisplayTarget("Must include one of: typeid, path, port, artifact_id")
+
+
+async def _app_payload(artifact_id: str) -> dict:
+    """Resolve an app by its Artifact — the source plane — plus its companions.
+
+    An app is reachable two ways: a dev server on a port (``Deployment``) or its
+    built output served by us (``MicroApp``). Both, either, or neither may exist
+    at any moment, and which one is live changes without the app changing. So
+    the address is the artifact id, and the runtime is *derived* here rather
+    than baked into the pin — that is what stops a stale port from becoming the
+    identity of an app.
+    """
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+    from flow_sdk.builtin.faas.micro_app import MicroApp  # noqa: PLC0415
+
+    if not is_valid_entity_id(artifact_id):
+        raise InvalidDisplayTarget(f"Invalid artifact_id: {artifact_id!r}")
+
+    # All three reads key off the same artifact id, so nothing here waits on
+    # anything else — this resolve sits in front of every app display.
+    artifact, deployment, micro_app = await asyncio.gather(
+        Artifact.get_by_id(artifact_id),
+        Deployment.get_one({"artifact_id": artifact_id}),
+        MicroApp.get_by_artifact_id(artifact_id),
+    )
+    if artifact is None:
+        raise DisplayTargetNotFound(f"Artifact not found: {artifact_id}")
+
+    port = deployment.runtime_port if deployment is not None else None
+
+    payload: dict = {
+        "kind": DisplayTargetKind.APP,
+        "artifact_id": artifact_id,
+        "typeid": f"{Artifact.get_type()}-{artifact_id}",
+        "name": artifact.name,
+        "runtime": "dev" if port else ("served" if micro_app is not None else "unbuilt"),
+    }
+    if port:
+        payload["port"] = port
+    if micro_app is not None:
+        payload["micro_app_id"] = micro_app.id
+    return payload
 
 
 def _folder_main_files() -> dict[str, str]:
@@ -245,6 +305,24 @@ def entity_target(type_name: str, entity_id: str, *, name: str | None = None) ->
         "type": type_name,
         "id": entity_id,
         "name": name or None,
+    }
+
+
+def shell_target(shell: Entity) -> dict:
+    """A SHELL DisplayTarget payload — an address for a live terminal.
+
+    Unlike every other kind this is not something the display *renders*: the FE
+    opens the shell's dock, which a mounted vibe workspace adopts as a child tab
+    (see ``isAdoptableChildDock``). One hosting mechanism, shared with the
+    terminal a guided journey opens. ``workdir`` rides along so a caller can
+    label the terminal without re-fetching it."""
+    return {
+        "kind": DisplayTargetKind.SHELL,
+        "typeid": f"shell-{shell.id}",
+        "type": "shell",
+        "id": str(shell.id),
+        "name": getattr(shell, "name", None) or None,
+        "workdir": getattr(shell, "workdir", None) or None,
     }
 
 

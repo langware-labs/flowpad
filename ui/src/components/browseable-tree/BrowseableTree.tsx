@@ -46,11 +46,10 @@ function collectVisibleSelectable(root: Browseable, tree: ReturnType<typeof useB
  *  - Clicking the chevron toggles expansion; it does not navigate.
  *  - Selection is derived from `activePointer` — never stored locally.
  *  - Expansion is ephemeral (local Set<string>).
- *  - When `activePointer` changes, the first root that `ownsPointer` is
- *    asked for the ancestor chain and every ancestor is expanded.
+ *  - When `activePointer` changes, every root that `ownsPointer` is asked for
+ *    its ancestor chain and every ancestor is expanded.
  */
 export function BrowseableTree(props: BrowseableTreeProps) {
-  const { t } = useLingui();
   const {
     roots,
     activePointer,
@@ -71,6 +70,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   // Set of open-tab identities → rows backed by an open tab stay bright, the rest
   // dim (see BrowseableRow). Subscribed once here, passed down through the tree.
   const openTabHashes = useOpenTabHashes();
+  const treeElementRef = useRef<HTMLDivElement | null>(null);
   const lastResolvedRef = useRef<string | null>(null);
   const [dragData, setDragData] = useState<BrowseableDragData | null>(null);
 
@@ -128,18 +128,22 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   // adapter like useAssetTypes loads after initial render).
   useEffect(() => {
     if (!activePointer) return;
-    const key = `${activePointer.viewType ?? ''}::${activePointer.pointer ?? ''}::${activeKey ?? ''}`;
+    const key = `${activePointer.viewType ?? ''}::${activePointer.pointer ?? ''}::${activeKey ?? ''}::${rootIdsKey}`;
     if (key === lastResolvedRef.current) return;
-    void tree.expandParentsForPointer(activePointer).then((leaf) => {
+    void tree.expandParentsForPointer(activePointer).then((leaves) => {
       requestAnimationFrame(() => {
-        // Prefer the keyed target: a typeid URL expands the type root (pathFor →
-        // [root]) so the matching leaf renders, but it's keyed by vfs path, not
-        // the URL's typeid. Find it by `data-selection-key`; fall back to the
-        // pathFor leaf (the vfs case). Only mark resolved once a target is found
-        // so a not-yet-rendered typeid leaf retries on the next children load.
+        // Resource identity crosses presentation routes: an editor pointer and
+        // an Assets fs pointer can name the same VFS file. Prefer the first
+        // matching resource row in DOM/root order, then retain the typeid-key
+        // fallback for entity-addressed assets and finally the first path leaf.
+        const resourceUri = activePointer.resourceVfsPath?.uri;
+        const treeElement = treeElementRef.current;
         const el =
-          (activeKey && document.querySelector(`[data-selection-key="${CSS.escape(activeKey)}"]`)) ||
-          (leaf && document.querySelector(`[data-browseable-id="${CSS.escape(leaf.id)}"]`));
+          (resourceUri &&
+            treeElement?.querySelector(`[data-resource-vfs="${CSS.escape(resourceUri)}"]`)) ||
+          (activeKey && treeElement?.querySelector(`[data-selection-key="${CSS.escape(activeKey)}"]`)) ||
+          (leaves[0] &&
+            treeElement?.querySelector(`[data-browseable-id="${CSS.escape(leaves[0].id)}"]`));
         if (!el) return;
         lastResolvedRef.current = key;
         el.scrollIntoView({ block: 'center' });
@@ -173,7 +177,12 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   }
 
   return (
-    <div className={`flex h-full flex-col ${className}`} role="tree" aria-label={header?.title}>
+    <div
+      ref={treeElementRef}
+      className={`flex h-full flex-col ${className}`}
+      role="tree"
+      aria-label={header?.title}
+    >
       {header && (
         <div className="flex items-center gap-1 border-b p-1.5">
           <span className="text-xs font-medium text-muted-foreground">{header.title}</span>
@@ -276,8 +285,9 @@ function BrowseableRow({
       // Pointer-string match: the original path (vfs leaf, list/folder roots, etc.).
       (node.pointer &&
         activePointer &&
-        node.pointer.viewType === activePointer.viewType &&
-        node.pointer.pointer === activePointer.pointer)
+        ((node.pointer.viewType === activePointer.viewType &&
+          node.pointer.pointer === activePointer.pointer) ||
+          node.pointer.resourceVfsPath?.equals(activePointer.resourceVfsPath)))
     )
   );
 
@@ -595,7 +605,11 @@ function BrowseableRow({
   );
 
   return (
-    <div data-browseable-id={node.id} data-selection-key={node.selectionKey}>
+    <div
+      data-browseable-id={node.id}
+      data-selection-key={node.selectionKey}
+      data-resource-vfs={node.pointer?.resourceVfsPath?.uri}
+    >
       {node.tooltip ? (
         <Tooltip>
           <TooltipTrigger asChild>{rowEl}</TooltipTrigger>

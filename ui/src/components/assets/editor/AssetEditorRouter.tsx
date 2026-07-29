@@ -1,6 +1,7 @@
 import { Agent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { lazy, Suspense, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
@@ -12,6 +13,7 @@ import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
 import { MissingAssetCard } from './MissingAssetCard';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
+import type { WikiLinkTarget } from './markdown/MarkdownEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { TaskAssetEditor } from './task/TaskAssetEditor';
 import { AgentAssetEditor } from './agent/AgentAssetEditor';
@@ -35,6 +37,12 @@ const SpreadsheetAssetEditor = lazy(() =>
 interface AssetEditorRouterProps {
   /** The ViewType.ASSETS pointer, e.g. "editor/<editor>/<method>/<value>". */
   pointer: string;
+  /** Optional heading slug for a Wiki target rendered at its Wiki URL. */
+  fragment?: string;
+  /** Reflect entity-record reads to Hub while preserving the normal editor UI. */
+  hubReflect?: boolean;
+  /** Keep links inside Wiki-rendered documents on the same page and namespace. */
+  wikiLinkTarget?: WikiLinkTarget;
 }
 
 /** True if `assetType` (a RecordType value) has an asset editor. */
@@ -65,7 +73,12 @@ function ConnectingFallback() {
  * the FSRef straight from the compute-node-rooted path; `code` → raw CodeEditor.
  * Editors resolve/refresh the backing entity off the FSRef themselves.
  */
-export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
+export function AssetEditorRouter({
+  pointer,
+  fragment,
+  hubReflect = false,
+  wikiLinkTarget,
+}: AssetEditorRouterProps) {
   const ptr = (() => {
     try {
       const p = AssetDocPointer.parse(pointer);
@@ -83,6 +96,16 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
       : null;
   const { data: typeIdEntity, isLoading: entityLoading, isError: entityError, refetch: refetchEntity } = useEntity(typeId);
   const { computeNode, flow } = useAgentContext();
+  const {
+    data: entityRecord,
+    isLoading: recordLoading,
+    isError: recordError,
+    refetch: refetchRecord,
+  } = useQuery({
+    queryKey: ['asset-record-refs', hubReflect ? 'hub' : 'local', typeId?.toString()],
+    queryFn: () => typeIdEntity!.record({ hubReflect }),
+    enabled: !!typeIdEntity && ptr?.method === AssetRoutingMethod.TYPEID,
+  });
 
   // Derive the FSRef + the record type for this asset in ONE unconditional memo
   // (must run before the early returns to keep hook order stable). The FSRef is
@@ -91,17 +114,20 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
   // churn the identity of every downstream hook keyed on it (useEntityByPath via
   // EntityResolutionGate, useAssetRevisionStatus, the editors' content load),
   // which a backend-scan WS flood turns into a per-frame reload (the "flicker").
-  const assetRef = (typeIdEntity as { asset_ref?: string } | null)?.asset_ref ?? null;
+  const mainRef = entityRecord?.mainRef ?? null;
   const computeNodeKey = computeNode?.typeId?.toString() ?? null;
   const derived = useMemo<{ fsRef: FSRef; assetType: string } | null>(() => {
     if (!ptr || !ptr.editor || isFileOnlyEditor(ptr.editor)) return null;
     if (ptr.method === AssetRoutingMethod.TYPEID) {
-      // Build the FSRef from the entity's canonical asset_ref (the path the
-      // editors' EntityResolutionGate matches on — the folder for skill/whiteboard,
-      // the .md for agent/markdown). Editors derive their own inner doc.
-      if (!assetRef || !computeNode?.typeId) return null;
+      // The entity owns its content layout. record/refs carries both the path
+      // and the filesystem authority, so this works for local mounts and Hub
+      // entity storage without a compute-node or sender-local asset_ref.
+      if (!mainRef) return null;
       return {
-        fsRef: new FSRef(assetRef.replace(/^\//, ''), computeNode.typeId),
+        fsRef: recordContentRef(
+          mainRef,
+          !!dataManager.getTypeInfo(typeId!.type)?.folder_backed,
+        ),
         assetType: typeId!.type,
       };
     }
@@ -115,7 +141,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     // ptr/typeId are derived deterministically from `pointer`; keying on the
     // stable strings keeps the memo from re-minting the FSRef every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pointer, assetRef, computeNodeKey]);
+  }, [pointer, mainRef, computeNodeKey]);
 
   if (!ptr || !ptr.editor) {
     return (
@@ -154,7 +180,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
   }
 
   // A typeid pointer whose entity has SETTLED with nothing usable (404 /
-  // fetch error / resolved-but-no-asset_ref — e.g. a tab pointing at a
+  // fetch error / resolved-but-no-main-ref — e.g. a tab pointing at a
   // markdown that was never materialized) is terminal, not "still
   // connecting". Surface the shared missing-asset card instead of spinning
   // forever — the `!derived` guard below otherwise conflates this with the
@@ -163,7 +189,8 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     typeId &&
     ptr.method === AssetRoutingMethod.TYPEID &&
     !entityLoading &&
-    (entityError || !assetRef)
+    !recordLoading &&
+    (entityError || recordError || !mainRef)
   ) {
     // owns_main_ref types (task/spec) re-render their backing file from the
     // default body on save, so an orphaned row (no asset_ref / file gone — e.g.
@@ -178,7 +205,10 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
       <MissingAssetCard
         typeLabel={typeId.type}
         fsRef={new FSRef(typeId.toString(), computeNode?.typeId ?? typeId)}
-        onRetry={() => void refetchEntity()}
+        onRetry={() => {
+          void refetchEntity();
+          void refetchRecord();
+        }}
         entity={typeIdEntity ?? null}
         onRebuild={
           ownsMainRef && orphan
@@ -199,9 +229,10 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Skill.type}
           fsRef={fsRef}
           typeLabel="skill"
+          resolvedEntity={typeIdEntity as Skill | undefined}
           render={(skill) => (
             <AssetCollisionProvider entity={skill}>
-              <SkillAssetEditor fsRef={fsRef!} skill={skill} />
+              <SkillAssetEditor fsRef={fsRef!} skill={skill} wikiLinkTarget={wikiLinkTarget} />
             </AssetCollisionProvider>
           )}
         />
@@ -212,6 +243,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Task.type}
           fsRef={fsRef}
           typeLabel="task"
+          resolvedEntity={typeIdEntity as Task | undefined}
           render={(task) => (
             <AssetCollisionShell entity={task}>
               <TaskAssetEditor fsRef={fsRef!} task={task} />
@@ -225,9 +257,10 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Agent.type}
           fsRef={fsRef}
           typeLabel="agent"
+          resolvedEntity={typeIdEntity as Agent | undefined}
           render={(agent) => (
             <AssetCollisionProvider entity={agent}>
-              <AgentAssetEditor fsRef={fsRef!} agent={agent} />
+              <AgentAssetEditor fsRef={fsRef!} agent={agent} wikiLinkTarget={wikiLinkTarget} />
             </AssetCollisionProvider>
           )}
         />
@@ -238,6 +271,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Whiteboard.type}
           fsRef={fsRef}
           typeLabel="whiteboard"
+          resolvedEntity={typeIdEntity as Whiteboard | undefined}
           render={(whiteboard) => (
             <AssetCollisionShell entity={whiteboard}>
               <WhiteboardAssetEditor fsRef={fsRef!} whiteboard={whiteboard} />
@@ -251,6 +285,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={DeckTemplate.type}
           fsRef={fsRef}
           typeLabel="deck template"
+          resolvedEntity={typeIdEntity as DeckTemplate | undefined}
           render={(deckTemplate) => (
             <AssetCollisionShell entity={deckTemplate}>
               <DeckTemplateViewer fsRef={fsRef} deckTemplate={deckTemplate} />
@@ -264,6 +299,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Deck.type}
           fsRef={fsRef}
           typeLabel="deck"
+          resolvedEntity={typeIdEntity as Deck | undefined}
           render={(deck) => (
             <AssetCollisionShell entity={deck}>
               <DeckViewer fsRef={fsRef} deck={deck} />
@@ -277,6 +313,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Journey.type}
           fsRef={fsRef}
           typeLabel="journey"
+          resolvedEntity={typeIdEntity as Journey | undefined}
           render={(journey) => <JourneyViewer journey={journey} />}
         />
       );
@@ -286,6 +323,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Spreadsheet.type}
           fsRef={fsRef}
           typeLabel="spreadsheet"
+          resolvedEntity={typeIdEntity as Spreadsheet | undefined}
           render={(spreadsheet) => (
             <AssetCollisionShell entity={spreadsheet}>
               <Suspense fallback={<ConnectingFallback />}>
@@ -301,6 +339,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={AgentTrace.type}
           fsRef={fsRef}
           typeLabel="agent trace"
+          resolvedEntity={typeIdEntity as AgentTrace | undefined}
           render={(trace) => (
             <AssetCollisionShell entity={trace}>
               <AgentTraceAssetEditor fsRef={fsRef!} trace={trace} />
@@ -314,6 +353,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={DynamicWorkflow.type}
           fsRef={fsRef}
           typeLabel="dynamic workflow"
+          resolvedEntity={typeIdEntity as DynamicWorkflow | undefined}
           render={(workflow) => (
             <AssetCollisionShell entity={workflow}>
               <DynamicWorkflowAssetEditor fsRef={fsRef!} workflow={workflow} />
@@ -327,6 +367,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={UsageReport.type}
           fsRef={fsRef}
           typeLabel="usage report"
+          resolvedEntity={typeIdEntity as UsageReport | undefined}
           render={(report) => (
             <AssetCollisionShell entity={report}>
               <UsageReportAssetEditor fsRef={fsRef!} report={report} />
@@ -340,6 +381,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={AssetCleanupReport.type}
           fsRef={fsRef}
           typeLabel="asset cleanup report"
+          resolvedEntity={typeIdEntity as AssetCleanupReport | undefined}
           render={(report) => (
             <AssetCollisionShell entity={report}>
               <AssetCleanupReportAssetEditor fsRef={fsRef!} report={report} />
@@ -351,7 +393,15 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
       // Markdown family (markdown, claude_md, claude_memory, claude_rules,
       // command, plan) is intentionally NOT gated — a raw file may have no
       // first-class entity; PlainMarkdownAssetEditor tolerates entity=null.
-      return <PlainMarkdownAssetEditor fsRef={fsRef} assetType={assetType} />;
+      return (
+        <PlainMarkdownAssetEditor
+          fsRef={fsRef}
+          assetType={assetType}
+          resolvedEntity={typeIdEntity as APIEntity<APIEntity<any>> | undefined}
+          fragment={fragment}
+          wikiLinkTarget={wikiLinkTarget}
+        />
+      );
     default:
       return (
         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -359,4 +409,13 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
         </div>
       );
   }
+}
+/** Resolve the content root from the backend type registry's layout contract.
+ * Folder-backed records expose a primary file, but their editor owns its
+ * sibling files too, so the editor receives that file's containing folder. */
+export function recordContentRef(mainRef: FSRef, folderBacked: boolean): FSRef {
+  if (folderBacked && mainRef.refType !== 'folder') {
+    return mainRef.parent;
+  }
+  return mainRef;
 }

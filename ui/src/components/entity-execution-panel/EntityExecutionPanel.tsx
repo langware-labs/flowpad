@@ -48,11 +48,8 @@ import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerH
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { AssetManagerButton } from '@src/components/asset-manager';
-import {
-  DEFAULT_WORKER_TYPE,
-  normalizeWorkerType,
-  type WorkerType,
-} from '@src/components/workers/worker-types';
+import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
+import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 
 const EMPTY_TURN_GROUPS: TurnGroup[] = [];
 
@@ -205,6 +202,9 @@ interface EntityExecutionPanelProps {
    */
   promptContext?: { label: string; text: string } | null;
   onPromptContextConsumed?: () => void;
+  /** Called when the history picker chooses a concrete process. Hosts whose
+   * process identity is URL-bound use this to navigate/rebind the workspace. */
+  onProcessSelected?: (processId: string) => void;
   /**
    * Seed the picker to a SPECIFIC process instead of the "latest-wins" default.
    * Used when the panel must stay bound to one session across target-URL changes
@@ -259,9 +259,12 @@ export function EntityExecutionPanel({
   autoPrompt,
   promptContext,
   onPromptContextConsumed,
+  onProcessSelected,
   initialProcessId,
 }: EntityExecutionPanelProps) {
   const { t } = useLingui();
+  const capabilityDefaultWorkerType = useDefaultWorkerType();
+  const resolvedDefaultWorkerType = defaultWorkerType ?? capabilityDefaultWorkerType;
   const targetStr = target ?? '';
 
   // 1. Pull all processes attached to this target; sort newest-first for picker + auto-select.
@@ -291,6 +294,11 @@ export function EntityExecutionPanel({
   //    or, when combined with startNewSession(), a fresh one on the next send.
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(initialProcessId ?? null);
   const [forceNew, setForceNew] = useState(false);
+  // `setForceNew(true)` is intentionally rendered state, but a user can click
+  // New and submit in the same browser task before React commits that render.
+  // Keep the creation intent in a ref as well so the send handler observes it
+  // synchronously and never reuses the session the user just left.
+  const forceNewRef = useRef(false);
 
   // When target changes (navigating between files), reset picker state — but
   // seed back to `initialProcessId` when the host pins a session (vibe keeps the
@@ -298,6 +306,7 @@ export function EntityExecutionPanel({
   useEffect(() => {
     setSelectedProcessId(initialProcessId ?? null);
     setForceNew(false);
+    forceNewRef.current = false;
   }, [targetStr, initialProcessId]);
 
   const pickedProcess: AgenticProcess | null = useMemo(() => {
@@ -437,7 +446,7 @@ export function EntityExecutionPanel({
   const [pendingAttachedRefs, setPendingAttachedRefs] = useState<string[]>([]);
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
   const [pendingModel, setPendingModel] = useState<string | null>(defaultModel ?? null);
-  const [pendingWorkerType, setPendingWorkerType] = useState<WorkerType | null>(defaultWorkerType ?? null);
+  const [pendingWorkerType, setPendingWorkerType] = useState<WorkerType | null>(null);
   const [modelSavePending, setModelSavePending] = useState(false);
 
   const activeModelValue = (activeProcess?.cli_config as Record<string, unknown> | undefined)?.model;
@@ -447,7 +456,7 @@ export function EntityExecutionPanel({
     : (pendingModel ?? defaultModel ?? null);
   const effectiveWorkerType = activeProcess
     ? normalizeWorkerType(activeProcess.worker_type)
-    : (pendingWorkerType ?? defaultWorkerType ?? null);
+    : (pendingWorkerType ?? resolvedDefaultWorkerType);
 
   const handleModelChange = useCallback(async (model: string) => {
     if (activeProcess && modelSavePending) return;
@@ -487,20 +496,23 @@ export function EntityExecutionPanel({
   }, [activeProcess, effectiveModel, effectiveProjectId, effectiveWorkdir, onActiveWorkerChange]);
 
   const startNewSession = useCallback(() => {
+    forceNewRef.current = true;
     setSelectedProcessId(null);
     setLocalProcess(null);
     setForceNew(true);
     setPendingAttachedRefs([]);
     setPendingProjectId(null);
     setPendingModel(effectiveModel);
-    setPendingWorkerType(effectiveWorkerType ?? defaultWorkerType ?? DEFAULT_WORKER_TYPE);
-  }, [defaultWorkerType, effectiveModel, effectiveWorkerType]);
+    setPendingWorkerType(effectiveWorkerType ?? resolvedDefaultWorkerType);
+  }, [effectiveModel, effectiveWorkerType, resolvedDefaultWorkerType]);
 
   const selectSession = useCallback((processId: string) => {
+    forceNewRef.current = false;
     setSelectedProcessId(processId);
     setLocalProcess(null);
     setForceNew(false);
-  }, []);
+    onProcessSelected?.(processId);
+  }, [onProcessSelected]);
 
   const liveAttachedRefs = useMemo(
     () => (activeProcess?.embedded_asset_refs ?? []).map((r) => r.toString()),
@@ -527,12 +539,13 @@ export function EntityExecutionPanel({
   const handleSend = useCallback(async (text: string, opts?: { forceNewProcess?: boolean }) => {
     if (!targetStr) return;
     inputHistory.addToHistory(text);
+    const mustCreateNew = opts?.forceNewProcess === true || forceNewRef.current;
 
     // Mid-turn sends ENQUEUE instead of racing a second turn: the backend
     // owns the queue and auto-drains it as the worker frees up (the composer
     // stays usable while busy; the queue chip shows the pending count).
     const turnBusy = !!activeProcess && isBusy(activeProcess);
-    if (!opts?.forceNewProcess && activeProcess && (turnBusy || sending)) {
+    if (!mustCreateNew && activeProcess && (turnBusy || sending)) {
       const composed = promptContext ? `${promptContext.text}\n\n${text}` : text;
       try {
         await activeProcess.enqueue(composed);
@@ -547,12 +560,12 @@ export function EntityExecutionPanel({
     if (sending) return;
     setSending(true);
     try {
-      let proc = opts?.forceNewProcess ? null : activeProcess;
+      let proc = mustCreateNew ? null : activeProcess;
       const isPtyPoll = transport === 'pty-poll';
 
       // Lazy-create on first send.
       if (!proc) {
-        if (selectedProcessId && !opts?.forceNewProcess) return;
+        if (selectedProcessId && !mustCreateNew) return;
         if (createInFlightRef.current) return;
         createInFlightRef.current = true;
         try {
@@ -582,6 +595,7 @@ export function EntityExecutionPanel({
             catch (err) { console.error('[EntityExecutionPanel] attach on create failed', ref, err); }
           }
           setLocalProcess(newProcess);
+          forceNewRef.current = false;
           proc = newProcess;
         } finally {
           createInFlightRef.current = false;
@@ -796,7 +810,11 @@ export function EntityExecutionPanel({
         {dense
           ? (
             <>
-              <TurnGroupsList groups={inlineGroups} worker={activeProcess?.worker_type ?? undefined} />
+              <TurnGroupsList
+                groups={inlineGroups}
+                worker={activeProcess?.worker_type ?? undefined}
+                onWorkerChange={handleWorkerChange}
+              />
               {activeProcess && (
                 <ChatActivityLine
                   process={activeProcess}

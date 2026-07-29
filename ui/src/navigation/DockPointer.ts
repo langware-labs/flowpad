@@ -18,8 +18,13 @@ import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewTy
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { buildDockUrl, parseDockUrl, parseQueryParams } from './url-builder';
 import { isValidView } from './validators';
-import { AssetDocPointer } from './AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType, LOCAL_COMPUTE_NODE } from './asset-doc-types';
+import {
+  assetEditorValue,
+  assetWikiValue,
+  normalizeAssetVfsPath,
+  serializeAssetDocPointer,
+} from './asset-doc-pointer-grammar';
 import {
   ALL_SCOPE_FILTER,
   dockOptionsToScopeFilter,
@@ -70,10 +75,9 @@ export const LANG_PARAM = 'lang';
 export const JOURNEY_PARAM = 'journeyId';
 
 /**
- * Canonicalize a compute-node-relative path: forward slashes, collapsed
- * separators, no leading/trailing slash. Single owner of the rel-path form the
- * `fs/<relPath>` assets pointer carries (fsFolderRoot re-exports this for the
- * browse-side consumers).
+ * Canonicalize an entity-relative path: forward slashes, collapsed separators,
+ * no leading/trailing slash. Route identity itself is always carried by
+ * VFSPath; this helper remains for entitySubPath and legacy-route ingestion.
  */
 export function normalizeRel(path: string | null | undefined): string {
   if (!path) return '';
@@ -169,6 +173,10 @@ export class DockPointer implements IDockPointer {
   /** Which SPA-surface this dock addresses. Defaults to `desk` (today's desktop
    *  app); a sibling of `viewType`, never folded into `pointer`. */
   public readonly page: PageId;
+  /** Set ONLY on a dock rebuilt from a stored Tab.pointer, where the folded
+   *  sub-pointer can no longer be inspected. A live URL dock leaves this
+   *  undefined and `toJSON` derives the bit from its real pointer. */
+  private storedWorkspaceContent?: boolean;
 
   constructor(data: IDockPointer, layout?: Layout);
   constructor(viewType?: ViewType, pointer?: string, options?: Record<string, string>, layout?: Layout, page?: PageId);
@@ -325,6 +333,7 @@ export class DockPointer implements IDockPointer {
     else delete nextOptions[VIEW_MODE_PARAM];
     return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
   }
+
 
   /**
    * The translated-body language this dock asks to show, or null for the
@@ -612,7 +621,18 @@ export class DockPointer implements IDockPointer {
     //   editor/<editor>/vfs/<computeNodeTypeId>/<relPath>
     // The editor is derived from the record type (one editor serves many types).
     const editor = editorForType(assetType) ?? AssetEditor.MARKDOWN;
-    return AssetDocPointer.forVfs(editor, vfsPath, undefined, options).toDockPointer(layout);
+    const path = normalizeAssetVfsPath(vfsPath);
+    return new DockPointer(
+      ViewType.ASSETS,
+      serializeAssetDocPointer({
+        mode: AssetMode.EDITOR,
+        value: path.absVfsPath,
+        editor,
+        method: AssetRoutingMethod.VFS,
+      }),
+      options,
+      layout,
+    );
   }
 
   /**
@@ -628,7 +648,17 @@ export class DockPointer implements IDockPointer {
     options?: Record<string, string>,
   ): DockPointer {
     const editor = editorForType(assetType) ?? AssetEditor.MARKDOWN;
-    return AssetDocPointer.forTypeId(editor, typeId, options).toDockPointer(layout);
+    return new DockPointer(
+      ViewType.ASSETS,
+      serializeAssetDocPointer({
+        mode: AssetMode.EDITOR,
+        value: typeId.toString(),
+        editor,
+        method: AssetRoutingMethod.TYPEID,
+      }),
+      options,
+      layout,
+    );
   }
 
   /**
@@ -640,7 +670,16 @@ export class DockPointer implements IDockPointer {
   static forWiki(name: string, layout: Layout = Layout.DOCK, space?: string, fragment?: string): DockPointer {
     // Canonical grammar: wiki/<space>/<name> (space default @local). An optional
     // `fragment` deep-links to a heading; it rides as a query param, not the path.
-    return AssetDocPointer.forWiki(name, space, undefined, fragment).toDockPointer(layout);
+    const options = fragment ? { wikiFragment: fragment } : undefined;
+    return new DockPointer(
+      ViewType.ASSETS,
+      serializeAssetDocPointer({
+        mode: AssetMode.WIKI,
+        value: assetWikiValue(name, space),
+      }),
+      options,
+      layout,
+    );
   }
 
   /**
@@ -686,23 +725,80 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for a real-filesystem folder browsed inside the Assets
-   * view (a project context folder or any folder under one).
-   * Pointer format: "fs/<relPath>" — relPath is compute-node-relative (no
-   * leading slash), the same form the Explorer's VFS listing uses.
-   * URL: /dock/assets/fs/<relPath>
+   * Create a filesystem-browser pointer from canonical VFS identity.
+   *
+   * Route grammar: `fs/vfs/<absVfsPath>`. `vfs://` is deliberately not placed
+   * in the path segments; `VFSPath.absVfsPath` is the route-safe serialization.
    */
-  static forAssetFsFolder(path: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.ASSETS, `fs/${normalizeRel(path)}`, undefined, layout);
+  static forAssetFs(vfsPath: VFSPath, layout: Layout = Layout.DOCK): DockPointer {
+    if (!vfsPath.isAbsolute) {
+      throw new Error(`Asset filesystem pointers require an absolute VFS path: "${vfsPath.rawPath}"`);
+    }
+    return new DockPointer(
+      ViewType.ASSETS,
+      `fs/${AssetRoutingMethod.VFS}/${vfsPath.absVfsPath}`,
+      undefined,
+      layout,
+    );
   }
 
   /**
-   * Parse an `fs/<relPath>` assets pointer into its compute-node-relative path.
-   * Returns null if the pointer is not an fs pointer.
+   * Transitional source-compatible builder. New callers should construct a
+   * VFSPath explicitly and use `forAssetFs`; relative and machine paths here
+   * resolve against the canonical local locator (`compute_node-@local`).
+   *
+   * @deprecated use `forAssetFs(VFSPath)`
    */
-  static parseAssetFsPointer(pointer: string | undefined | null): string | null {
-    if (!pointer || !pointer.startsWith('fs/')) return null;
-    return pointer.slice('fs/'.length);
+  static forAssetFsFolder(path: string, layout: Layout = Layout.DOCK): DockPointer {
+    const parsed = VFSPath.parse(path);
+    const vfsPath = parsed.isAbsolute
+      ? parsed
+      : path.startsWith('/') || /^[A-Za-z]:[/\\]/.test(path)
+        ? VFSPath.fromMachinePath(path, LOCAL_COMPUTE_NODE)
+        : VFSPath.fromTypeId(LOCAL_COMPUTE_NODE, normalizeRel(path));
+    return DockPointer.forAssetFs(vfsPath, layout);
+  }
+
+  /** Parse the canonical `fs/vfs/<absVfsPath>` assets route. */
+  static parseAssetFsPointer(pointer: string | undefined | null): VFSPath | null {
+    const prefix = `fs/${AssetRoutingMethod.VFS}/`;
+    if (!pointer?.startsWith(prefix)) return null;
+    const parsed = VFSPath.parse(pointer.slice(prefix.length));
+    return parsed.isAbsolute ? parsed : null;
+  }
+
+  /**
+   * Return the canonical replacement for a legacy `fs/<relative>` route.
+   * Legacy fs routes could only address this machine, so the durable locator is
+   * `compute_node-@local`; live UUIDs remain an I/O concern.
+   */
+  canonicalLegacyAssetFsDock(): DockPointer | null {
+    const assetsPointer =
+      this.viewType === ViewType.ASSETS ? (this.pointer ?? null) : this.assetSubPointer;
+    const canonicalPrefix = `fs/${AssetRoutingMethod.VFS}/`;
+    if (!assetsPointer?.startsWith('fs/') || assetsPointer.startsWith(canonicalPrefix)) {
+      return null;
+    }
+
+    const relativePath = normalizeRel(assetsPointer.slice('fs/'.length));
+    const canonical = DockPointer.forAssetFs(
+      VFSPath.fromTypeId(LOCAL_COMPUTE_NODE, relativePath),
+      this.layout,
+    );
+    const rebased =
+      this.viewType === ViewType.PROJECT
+        ? DockPointer.rebaseAssetsOntoProject(
+            canonical,
+            DockPointer.splitProjectPointer(this.pointer).projectId,
+          )
+        : canonical;
+    return new DockPointer(
+      rebased.viewType,
+      rebased.pointer,
+      this.options,
+      this.layout,
+      this.page,
+    );
   }
 
   /**
@@ -1508,13 +1604,24 @@ export class DockPointer implements IDockPointer {
     // JSON is constant for a given scope regardless of which type was last viewed
     // → the backend mints ONE Tab row per scope; (b) `Tab.dockPointer` rebuilds the
     // same tabHash directly from the stored field; (c) clicking the chip reopens the
-    // scoped browser root.
+    // scoped browser root. Preserve only whether the live Assets URL addresses
+    // content: the backend needs that URL-owned fact to validate a workspace
+    // parent edge after the sub-pointer itself is folded out of tab identity.
+    // It does not change tabHash, so editor/list URLs still share one row.
     if (VIEWER_REGISTRY[this.viewType]?.scopeKeyed) {
+      // A dock rebuilt from stored JSON has already had its sub-pointer folded
+      // to '' (and `fromUrl` supplied a default), so re-deriving the bit there
+      // would invent one. Trust what was stored; derive only for a live URL.
+      const workspaceContent =
+        this.storedWorkspaceContent ??
+        (this.viewType === ViewType.ASSETS &&
+          (this.pointer?.startsWith(`${AssetMode.EDITOR}/`) || this.pointer?.startsWith(`${AssetMode.WIKI}/`)));
       return JSON.stringify({
         viewType: this.viewType,
         pointer: '',
         options: this.scopeFilter ? scopeFilterToDockOptions(this.scopeFilter) : undefined,
         tabHash: this.tabHash,
+        workspaceContent: workspaceContent || undefined,
       });
     }
     // Pointer-folding views (Preferences, …) persist a constant identity: pointer
@@ -1534,6 +1641,7 @@ export class DockPointer implements IDockPointer {
         viewType?: string;
         pointer?: string;
         options?: Record<string, string>;
+        workspaceContent?: boolean;
       };
       const { viewType, pointer, options } = parsed;
       if (!viewType) return null;
@@ -1551,7 +1659,13 @@ export class DockPointer implements IDockPointer {
       );
       // Restore scope options (assets identity) so the reconstructed dock's
       // tabHash matches the live nav dock's.
-      return normalized.options ? new DockPointer(dp.viewType, dp.pointer, normalized.options, dp.layout, dp.page) : dp;
+      const restored = normalized.options
+        ? new DockPointer(dp.viewType, dp.pointer, normalized.options, dp.layout, dp.page)
+        : dp;
+      // Carry the stored bit verbatim — absent means false, not "unknown", so a
+      // toJSON → fromJSON → toJSON round trip is stable.
+      restored.storedWorkspaceContent = parsed.workspaceContent === true;
+      return restored;
     } catch {
       return null;
     }
@@ -1645,27 +1759,59 @@ export class DockPointer implements IDockPointer {
    * `vfsPath` use to read their respective addressing form off the same pointer.
    */
   private assetEditorValue(pointer: string | null, method: AssetRoutingMethod): string | null {
-    if (!pointer) return null;
-    try {
-      const ap = AssetDocPointer.parse(pointer);
-      return ap.mode === AssetMode.EDITOR && ap.method === method ? ap.value : null;
-    } catch {
-      /* list/folder/wiki or malformed — not an editor pointer */
-      return null;
-    }
+    return assetEditorValue(pointer, method);
   }
 
   /**
-   * The VFS path an asset-editor dock addresses (`assets/editor/<editor>/vfs/<path>`),
-   * or null for any other shape. Pure parse via the canonical `AssetDocPointer`
-   * grammar — no network. Used by `Tab.getFromDockPointer` to resolve a
-   * path-addressed asset's project via `getEntityByPath`. Handles both the plain
-   * ASSETS dock and the PROJECT-rebased form (un-rebased via `assetSubPointer`).
+   * Canonical filesystem identity addressed by this route, independent of the
+   * view that renders it. Pure string parsing; no network or request context.
+   *
+   * Supported route families:
+   * - Assets editor: `editor/<editor>/vfs/<absVfsPath>`
+   * - Assets files:  `fs/vfs/<absVfsPath>`
+   * - project-rebased variants of both
+   * - Explorer: `<absVfsPath>`
+   * - Plan: `vfs/<absVfsPath>`
+   * - raw editor when its pointer already carries an absolute VFS path
+   */
+  get resourceVfsPath(): VFSPath | null {
+    const assetsPointer = this.viewType === ViewType.ASSETS ? (this.pointer ?? null) : this.assetSubPointer;
+    if (assetsPointer) {
+      const fsPath = DockPointer.parseAssetFsPointer(assetsPointer);
+      if (fsPath) return fsPath;
+
+      const editorValue = this.assetEditorValue(assetsPointer, AssetRoutingMethod.VFS);
+      if (editorValue) {
+        const parsed = VFSPath.parse(editorValue);
+        return parsed.isAbsolute ? parsed : null;
+      }
+    }
+
+    if (this.viewType === ViewType.PLAN && this.pointer) {
+      const plan = DockPointer.parsePlanPointer(this.pointer);
+      if (plan?.kind === 'vfs') {
+        const parsed = VFSPath.parse(plan.vfsValue);
+        return parsed.isAbsolute ? parsed : null;
+      }
+    }
+
+    if (
+      (this.viewType === ViewType.EXPLORER || this.viewType === ViewType.EDITOR) &&
+      this.pointer
+    ) {
+      const parsed = VFSPath.parse(this.pointer);
+      return parsed.isAbsolute ? parsed : null;
+    }
+
+    return null;
+  }
+
+  /**
+   * @deprecated use `resourceVfsPath`, whose name reflects that VFS identity is
+   * shared across editor, Files, Explorer, and Plan route grammars.
    */
   get vfsPath(): VFSPath | null {
-    const assetsPointer = this.viewType === ViewType.ASSETS ? (this.pointer ?? null) : this.assetSubPointer;
-    const value = this.assetEditorValue(assetsPointer, AssetRoutingMethod.VFS);
-    return value ? VFSPath.parse(value) : null;
+    return this.resourceVfsPath;
   }
 
   /** DEPRECATED: use fromJSON instead. Reconstruct the navigable DockPointer from a
