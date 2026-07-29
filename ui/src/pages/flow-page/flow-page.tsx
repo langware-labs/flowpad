@@ -1,15 +1,10 @@
-import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { CollapsedSidebar } from '@src/components/collapsed-sidebar';
 import { Footer } from '@src/components/footer';
-import { EnvVar, useEnvVarsStore } from '@src/hooks/use-env-vars-store';
-import { EnvVarType } from '@src/types/envVarTypes';
-import { useEntityEnv } from '@sdk/react/hooks';
 import { SidebarProvider } from '@src/components/ui/sidebar';
 import { useIsVibe } from '@src/components/view-mode';
 import { useDockNavigation, useIsHomeSurface } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { PageId } from '@sdk';
-import { useEffect, useMemo } from 'react';
 import { ContentPanel } from './content-panel/content-panel';
 import { VibeWorkspace } from './vibe-workspace';
 import { VibeNewChat } from './vibe-new-chat';
@@ -19,28 +14,6 @@ import { isContentAssetDock } from '@src/navigation/content-asset-dock';
 import { AssetVibeWorkspace } from './asset-vibe-workspace';
 
 export default function FlowPage() {
-  const { flow } = useAgentContext();
-
-  // Memoize the flow object to prevent unnecessary re-renders
-  const memoizedFlow = useMemo(() => flow, [flow]);
-  const { setEnvVars } = useEnvVarsStore();
-  // Use the unified hook to fetch environment variables - only for logged-in users
-  const { table } = useEntityEnv({
-    entityTypeId: memoizedFlow?.projectTypeId,
-  });
-
-  // Convert table data to EnvVar[] for backward compatibility and set in store
-  useEffect(() => {
-    if (table?.values) {
-      const envVars: EnvVar[] = table.values.map((row) => ({
-        name: row.name,
-        var_type: row.var_type as EnvVarType, // Type will be validated by EnvVarType
-        description: row.description || '',
-      }));
-      setEnvVars(envVars);
-    }
-  }, [table, setEnvVars]);
-
   const isVibe = useIsVibe();
   // A Vibe "session" = a workspace surface: the process's own dock (its ONE
   // shell URL — vibe is a view mode, not a URL family) OR a child tab opened

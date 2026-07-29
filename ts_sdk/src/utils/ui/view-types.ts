@@ -56,6 +56,8 @@ export enum ViewType {
   SHELL = 'shell',
   EDITOR = 'editor',
   WEB_APP = 'web-app',
+  // Retired decode-only aliases; the loader redirects to /dock/credentials/<subview>
+  // and `normalizeRetiredDockPointer` resolves saved tabs. See CREDENTIALS.
   ENVIRONMENT = 'environment',
   CONNECTIONS = 'connections',
   ARTIFACTS = 'artifacts', // Renamed from RESULTS
@@ -66,7 +68,7 @@ export enum ViewType {
   DOCS = 'docs',
   ASSISTANCE = 'assistance', // expert assistance tasks
   SURVEY = 'survey',
-  API_KEYS = 'api-keys',
+  API_KEYS = 'api-keys', // Retired decode-only alias; see ENVIRONMENT
   HOOKS = 'hooks', // Claude Code hooks configuration
   MACHINE = 'machine', // Machine overview (processes, network)
   EXPLORER = 'explorer', // File explorer view

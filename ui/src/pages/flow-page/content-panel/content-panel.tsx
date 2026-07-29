@@ -1,14 +1,12 @@
 import { SpecEditor } from '@src/components/spec-editor/SpecEditor';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { AIConfigView } from '@src/components/ai-config-view';
-import { ApiKeysView } from '@src/components/api-keys-view/api-keys-view';
 import { ArtifactsView } from '@src/components/artifacts';
 import { AssistanceViewer } from '@src/components/assistance-viewer/AssistanceViewer';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import { AssetCompareView } from '@src/components/code-editor/AssetCompareView';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { DocsViewer } from '@src/components/docs-viewer/DocsViewer';
-import { EnvVarsManager } from '@src/components/EnvVarsManager';
 import { ExplorerView } from '@src/components/explorer-view';
 import { HooksManager } from '@src/components/hooks-manager';
 import { LensViewer } from '@src/components/lens-viewer';
@@ -28,14 +26,11 @@ import { LiveStatus } from '@src/pages/live-status';
 import { SearchView } from '@src/pages/search-view/SearchView';
 
 import { dataContext, PageId } from '@sdk';
-import { useAuth, useContext } from '@sdk/react/hooks';
+import { useAuth } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
 import { HubAssetsPage } from '@src/components/assets/HubAssetsPage';
 import { CollaborationPage, LiveSessionView } from '@src/components/collaboration';
-import { ConnectionsManager } from '@src/components/connections-manager';
 import { CredentialsView } from '@src/components/credentials-view/CredentialsView';
-import { LoginRequiredPanel } from '@src/components/credentials-view/LoginRequiredPanel';
-import { DeskEnvApiKeyPanel } from './DeskEnvApiKeyPanel';
 import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
@@ -44,7 +39,6 @@ import { TriggersView } from '@src/components/triggers-view';
 import { WebappViewer } from '@src/components/webapp-viewer';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
-import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
 import { Tab } from '@sdk';
 import { useTerminalTabs } from '@src/tabs/useTabs';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -126,7 +120,6 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
   const { user } = useAuth();
 
   const { agent } = useAgentContext();
-  const { project: contextProject } = useContext();
 
   // Sync flow focus and URL dock state to viewer store
   useActiveViewer();
@@ -147,8 +140,6 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
 
   // Survey state (shared with chat-panel)
   const { activeSurveyData, onSurveyComplete } = useSurveyStore();
-  const { addEnvVar, deleteEnvVar } = useEnvVarsStore();
-  const { setOpenEnvironmentTab } = useEnvVarsStore();
 
   // Same live retry path as vibe-workspace: prompt the active process.
   const onWebappErrorRetry = useCallback(
@@ -166,11 +157,6 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
   );
 
   // Shell entity sync is automatic via DataOp stream — no manual sync needed.
-
-  // React to shouldOpenEnvironmentTab flag
-  useEffect(() => {
-    setOpenEnvironmentTab(() => navigation.openTab(ViewType.ENVIRONMENT));
-  }, [navigation, setOpenEnvironmentTab]);
 
   // When the URL's active terminal is closing (is_disabled), redirect to the
   // first alive tab. A pointer-less shell URL is loader-owned (the loader
@@ -316,40 +302,8 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         );
       case ViewType.SYSTEM_PROFILE:
         return <LiveStatus />;
-      case ViewType.ENVIRONMENT:
-        return user?.id && dataContext.project?.typeId ? (
-          <div className="h-full overflow-auto p-4">
-            <EnvVarsManager
-              entityTypeId={dataContext.project.typeId}
-              onEnvVarSaved={addEnvVar}
-              onEnvVarDeleted={deleteEnvVar}
-              onEnvVarUpdated={() => {
-                // noteItemUpdated was a Flow entity method - no-op for now
-              }}
-            />
-            {/* Legacy: this tab has always also hosted the USER's API key.
-                Composed here rather than inside the table, which is
-                entity-scoped and would otherwise fetch user keys at every
-                mount, including the ones that never show them. */}
-            <DeskEnvApiKeyPanel entityTypeId={dataContext.project.typeId} />
-          </div>
-        ) : (
-          <LoginRequiredPanel
-            message={<Trans>Please log in to view and manage environment variables.</Trans>}
-          />
-        );
-      case ViewType.CONNECTIONS:
-        return (
-          <ConnectionsManager className="h-full p-4" projectTypeId={contextProject?.typeId} />
-        );
       case ViewType.CREDENTIALS:
         return <CredentialsView />;
-      case ViewType.API_KEYS:
-        return (
-          <div className="h-full overflow-auto p-4">
-            <ApiKeysView className="max-w-4xl" />
-          </div>
-        );
       case ViewType.AI_CONFIG:
         return <AIConfigView />;
       case ViewType.HOOKS:
