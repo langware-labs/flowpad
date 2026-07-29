@@ -43,54 +43,49 @@ from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR
 
 logger = logging.getLogger(__name__)
 
-# (legacy scope-relative dir, destination type name, project_scope_only).
+# (legacy scope-relative dir, destination scope-relative dir, project_scope_only).
 #
-# The destination is always ``agentic-assets/<type name>`` — repo families are
-# named after their type. ``project_scope_only`` marks a legacy path that is a
-# real harness directory at user scope and must be left alone there.
-LEGACY_FAMILIES: list[tuple[str, str, bool]] = [
+# ONE table: every row is "move the children of A to B". Repo assets land under
+# ``agentic-assets/<type>`` (families are named after their type — asserted against
+# the live registry by ``test_every_repo_destination_is_a_real_repo_family``);
+# untyped files land at a literal path. ``project_scope_only`` marks a legacy path
+# that is a REAL harness directory at user scope and must be left alone there.
+LEGACY_DIRS: list[tuple[str, str, bool]] = [
     # Reclassified out of the harness dot-dirs.
-    (".claude/whiteboards", "whiteboard", False),
-    (".claude/journeys", "journey", False),
-    (".claude/graph-workflows", "graph_workflow", False),
-    (".claude/agent_traces", "agent_trace", False),
-    (".claude/usage_reports", "usage_report", False),
-    (".claude/cleanup_reports", "asset_cleanup_report", False),
+    (".claude/whiteboards", f"{AGENTIC_ASSETS_DIR}/whiteboard", False),
+    (".claude/journeys", f"{AGENTIC_ASSETS_DIR}/journey", False),
+    (".claude/graph-workflows", f"{AGENTIC_ASSETS_DIR}/graph_workflow", False),
+    (".claude/agent_traces", f"{AGENTIC_ASSETS_DIR}/agent_trace", False),
+    (".claude/usage_reports", f"{AGENTIC_ASSETS_DIR}/usage_report", False),
+    (".claude/cleanup_reports", f"{AGENTIC_ASSETS_DIR}/asset_cleanup_report", False),
     # ``~/.claude/plans`` is Claude Code's own plan-mode output — project scope only.
-    (".claude/plans", "plan", True),
+    (".claude/plans", f"{AGENTIC_ASSETS_DIR}/plan", True),
     # Installed (received) transcripts. The harnesses' OWN session stores
     # (~/.claude/projects, ~/.codex/sessions, ~/.copilot/session-state) are
     # untouched — they are read in place by the per-worker walkers.
-    (".claude/transcripts", "claude_session", False),
-    (".agents/transcripts", "codex_session", False),
-    (".github/transcripts", "copilot_session", False),
+    (".claude/transcripts", f"{AGENTIC_ASSETS_DIR}/claude_session", False),
+    (".agents/transcripts", f"{AGENTIC_ASSETS_DIR}/codex_session", False),
+    (".github/transcripts", f"{AGENTIC_ASSETS_DIR}/copilot_session", False),
     # Reclassified out of the bare project root.
-    ("prompts", "prompt", False),
-    ("assets/spreadsheets", "spreadsheet", False),
+    ("prompts", f"{AGENTIC_ASSETS_DIR}/prompt", False),
+    ("assets/spreadsheets", f"{AGENTIC_ASSETS_DIR}/spreadsheet", False),
     # The earlier repo-asset cut shipped without a mover, so these legacy
     # locations may still be sitting un-indexed in older projects.
-    ("tasks", "task", False),
-    ("specs", "spec", False),
-    ("assets/datasets", "dataset", False),
-    ("assets/decks", "deck", False),
-    ("assets/deck-templates", "deck_template", False),
-]
-
-# (legacy scope-relative dir, destination scope-relative dir, project_scope_only).
-#
-# Untyped files are not repo assets, so their destination is a literal path rather
-# than ``agentic-assets/<type>``. ``.claude/docs`` and ``.claude/files`` were
-# flowpad's own inventions inside Claude Code's namespace — markdown is now
-# ``AssetClass.DOCS`` (``docs/``) and untyped bytes are ``AssetClass.PROJECT``
-# (the project root itself, so the tree reflects git structure).
-#
-# ``~/.claude/docs`` moves to ``~/docs`` rather than being left behind: it is the
-# only home-scope markdown store, and ``markdown_flat_fn`` now scans ``~/docs``,
-# so not moving it would silently de-index every user-scope doc.
-LEGACY_LITERAL_DIRS: list[tuple[str, str, bool]] = [
+    ("tasks", f"{AGENTIC_ASSETS_DIR}/task", False),
+    ("specs", f"{AGENTIC_ASSETS_DIR}/spec", False),
+    ("assets/datasets", f"{AGENTIC_ASSETS_DIR}/dataset", False),
+    ("assets/decks", f"{AGENTIC_ASSETS_DIR}/deck", False),
+    ("assets/deck-templates", f"{AGENTIC_ASSETS_DIR}/deck_template", False),
+    # Untyped files. ``.claude/docs`` and ``.claude/files`` were flowpad's own
+    # inventions inside Claude Code's namespace: markdown is now
+    # ``AssetClass.DOCS`` (``docs/``) and untyped bytes are ``AssetClass.PROJECT``
+    # (the project root, so the tree reflects git structure).
+    #
+    # ``~/.claude/docs`` MUST move: it is the only home-scope markdown store and
+    # ``markdown_flat_fn`` now scans ``~/docs``, so leaving it would silently
+    # de-index every user-scope doc. ``~/.claude/files`` is left alone — PROJECT is
+    # project-scope only, and strewing loose files across $HOME is never right.
     (".claude/docs", "docs", False),
-    # Untyped bytes land at the root; PROJECT is project-scope only, so a stray
-    # ``~/.claude/files`` is deliberately left alone rather than strewn across $HOME.
     (".claude/files", "", True),
 ]
 
@@ -152,11 +147,6 @@ def _project_mounts() -> list[Path]:
     return out
 
 
-def _migrate_family(root: Path, legacy_rel: str, type_name: str, report: RootReport) -> None:
-    """Move every child of ``<root>/<legacy_rel>`` into ``agentic-assets/<type>``."""
-    _move_children(root, legacy_rel, f"{AGENTIC_ASSETS_DIR}/{type_name}", report)
-
-
 def _move_children(root: Path, legacy_rel: str, dest_rel: str, report: RootReport) -> None:
     """Move every child of ``<root>/<legacy_rel>`` to ``<root>/<dest_rel>``.
 
@@ -192,14 +182,7 @@ def _move_children(root: Path, legacy_rel: str, dest_rel: str, report: RootRepor
 
 def _migrate_root(root: Path, scope: str) -> RootReport:
     report = RootReport(root=root, scope=scope)
-    for legacy_rel, type_name, project_only in LEGACY_FAMILIES:
-        if project_only and scope != "project":
-            continue
-        try:
-            _migrate_family(root, legacy_rel, type_name, report)
-        except OSError as e:
-            logger.warning("migrate 0.2.112: %s under %s failed: %s", legacy_rel, root, e)
-    for legacy_rel, dest_rel, project_only in LEGACY_LITERAL_DIRS:
+    for legacy_rel, dest_rel, project_only in LEGACY_DIRS:
         if project_only and scope != "project":
             continue
         try:

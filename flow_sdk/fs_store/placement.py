@@ -26,8 +26,14 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
 
 from flow_sdk._compat import StrEnum
+
+if TYPE_CHECKING:
+    # Type-only: keeps this module's runtime imports to stdlib + ``_compat`` (see
+    # the module docstring) while still naming the real origin type.
+    from flow_sdk.builtin.fs_origin import FSOrigin
 
 
 class HarnessType(StrEnum):
@@ -316,7 +322,15 @@ def untyped_fallback_class(filename: str) -> AssetClass:
     return AssetClass.DOCS if is_markdown_filename(filename) else AssetClass.PROJECT
 
 
-def untyped_rel_subdir(filename: str, *, origin: object | None = None) -> str:
+# The family each untyped-fallback class mounts. Stated once here so the
+# class→family pairing can't drift from ``untyped_fallback_class``'s choice.
+UNTYPED_FALLBACK_FAMILY: dict[AssetClass, str] = {
+    AssetClass.DOCS: DOCS_FAMILY,
+    AssetClass.PROJECT: PROJECT_ROOT_FAMILY,
+}
+
+
+def untyped_rel_subdir(filename: str, *, origin: "FSOrigin | None" = None) -> str:
     """Scope-relative subdir for an untyped file — the single owner of that layout,
     shared by stage-time entry layout and install-time resolution so the two can
     never disagree.
@@ -329,11 +343,13 @@ def untyped_rel_subdir(filename: str, *, origin: object | None = None) -> str:
     if rel is not None:
         return rel
     cls = untyped_fallback_class(filename)
-    family = DOCS_FAMILY if cls == AssetClass.DOCS else PROJECT_ROOT_FAMILY
-    return LAYOUT_REGISTRY[cls].mount(family, harness=None)
+    # Still routed through ``mount`` rather than returning the family directly:
+    # it is the one place the mount rule lives, so a future prefix on DOCS or
+    # PROJECT is picked up here for free.
+    return LAYOUT_REGISTRY[cls].mount(UNTYPED_FALLBACK_FAMILY[cls], harness=None)
 
 
-def _origin_rel_dir(origin: object | None) -> str | None:
+def _origin_rel_dir(origin: "FSOrigin | None") -> str | None:
     """The DIRECTORY part of an origin's ``rel_path``, or None when there is no
     usable one. ``rel_path`` points at the asset itself (a file, here), so the
     subdir is its parent; a repo-root file yields ``""``.
@@ -342,7 +358,7 @@ def _origin_rel_dir(origin: object | None) -> str | None:
     joined onto a local root, so an unsafe value must fall through to the class
     default rather than escape the root.
     """
-    rel = str(getattr(origin, "rel_path", "") or "").strip() if origin is not None else ""
+    rel = (origin.rel_path or "").strip() if origin is not None else ""
     if not rel:
         return None
     from flow_sdk.builtin.fs_origin import is_safe_rel_path  # noqa: PLC0415

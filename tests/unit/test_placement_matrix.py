@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.builtin.local_origin import LocalOrigin
 from flow_sdk.fs_store.placement import (
     LAYOUT_REGISTRY,
     WORKER_PREFIX,
@@ -137,27 +138,20 @@ def test_untyped_file_falls_back_to_docs_or_project_root():
     assert untyped_rel_subdir("photo.png") == ""
 
 
-class _Origin:
-    """Stand-in for an FSOrigin — only ``rel_path`` is read here."""
-
-    def __init__(self, rel_path):
-        self.rel_path = rel_path
-
-
 def test_untyped_file_follows_a_safe_origin_rel_path():
     """The origin wins over the fallback: an untyped file returns to the position
     it held in the sender's tree, which is the whole point of mirroring git."""
-    assert untyped_rel_subdir("notes.md", origin=_Origin("docs/guides/notes.md")) == "docs/guides"
-    assert untyped_rel_subdir("photo.png", origin=_Origin("assets/img/photo.png")) == "assets/img"
+    assert untyped_rel_subdir("notes.md", origin=LocalOrigin(rel_path="docs/guides/notes.md")) == "docs/guides"
+    assert untyped_rel_subdir("photo.png", origin=LocalOrigin(rel_path="assets/img/photo.png")) == "assets/img"
     # A repo-ROOT file yields the root itself, not the fallback.
-    assert untyped_rel_subdir("photo.png", origin=_Origin("photo.png")) == ""
+    assert untyped_rel_subdir("photo.png", origin=LocalOrigin(rel_path="photo.png")) == ""
 
 
 def test_unsafe_origin_rel_path_falls_back_instead_of_escaping():
     """``rel_path`` is sender-controlled and gets joined onto a local root, so a
     traversal attempt must fall through to the class default — never escape."""
     for evil in ("../../etc/passwd", "/etc/passwd", "C:/Windows/system32/x.md", ""):
-        assert untyped_rel_subdir("x.md", origin=_Origin(evil)) == "docs"
+        assert untyped_rel_subdir("x.md", origin=LocalOrigin(rel_path=evil)) == "docs"
 
 
 def test_docs_type_reaches_both_scopes(tmp_path):
