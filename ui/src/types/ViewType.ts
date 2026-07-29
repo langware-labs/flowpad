@@ -160,18 +160,6 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'overview',
     canAddAsTab: true,
   },
-  [ViewType.ENVIRONMENT]: {
-    title: 'Environment',
-    iconName: 'KeyRound',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
-  [ViewType.CONNECTIONS]: {
-    title: 'Connections',
-    iconName: 'LogIn',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
   [ViewType.DIFF]: {
     title: 'Diff Viewer',
     iconName: 'GitCompare',
@@ -219,12 +207,6 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'ListChecks',
     tabLocation: 'overview',
     canAddAsTab: false,
-  },
-  [ViewType.API_KEYS]: {
-    title: 'API Keys',
-    iconName: 'Key',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
   },
   [ViewType.HOOKS]: {
     title: 'Hooks',
