@@ -1222,7 +1222,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     // In-flight dedup for GETs: share a pending request with concurrent callers
     // (e.g. StrictMode double-invoke, or multiple components mounting at once).
-    // Safe because GETs are idempotent. Mutations (POST/PUT/DELETE) are never deduped.
+    // Safe because GETs are idempotent. Mutations (POST/PUT/PATCH/DELETE) are never deduped.
     const method = actionInfo.method ?? 'GET';
     const isDedupable = method === 'GET' && !actionInfo.abortSignal;
     if (isDedupable) {
@@ -1246,13 +1246,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     switch (method) {
       case 'POST':
       case 'PUT':
+      case 'PATCH':
         if (!actionInfo.queryParameters) {
           throw new Error(`Can not call ${method} action ${actionInfo.name}, Missing request data`);
         }
-        response =
-          method === 'POST'
-            ? ((await apiClient.post<Res>(endpoint, actionInfo.bodyParameters, requestConfig)) as unknown as Res)
-            : ((await apiClient.put<Res>(endpoint, actionInfo.bodyParameters, requestConfig)) as unknown as Res);
+        {
+          // One body-carrying send per verb — keeps adding a verb to the case
+          // labels above the only edit, instead of another ternary level.
+          const send = { POST: apiClient.post, PUT: apiClient.put, PATCH: apiClient.patch }[method];
+          response = (await send.call(
+            apiClient,
+            endpoint,
+            actionInfo.bodyParameters,
+            requestConfig,
+          )) as unknown as Res;
+        }
         break;
       case 'DELETE':
         response = (await apiClient.delete<Res>(endpoint, {
