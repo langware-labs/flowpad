@@ -212,6 +212,7 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         await loadShellRoute(dock.pointer, context.requestPath, {
           scope: dock.scopeFilter,
           viewMode: dock.viewMode,
+          options: dock.options,
         });
         break;
       case ViewType.PROJECT:
