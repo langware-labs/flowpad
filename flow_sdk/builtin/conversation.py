@@ -15,7 +15,7 @@ class MessageRef(NamedTuple):
     landed_at: Optional[datetime]
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.user import normalize_email
 from flow_sdk.core import Entity
 from flow_sdk.db.drivers.db_base_record import TypeId
@@ -134,10 +134,10 @@ class Conversation(Entity):
     # convs reflect ``None`` here (the receiver must NOT fabricate a 'system'
     # sentinel). Ownership for display/authz resolves from the participant
     # roster's ``owner`` role; all ``created_by ==`` checks are null-safe.
-    created_by: Optional[str] = APIField(default=None)
+    created_by: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
-    message_count: int = APIField(0)
+    message_count: int = APIField(0, sharing=Sharing.PRIVATE)
     message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"typeid": ..., "ts": ...}]
     # Roster cache lives on the Entity base as ``members`` (generic hub capability).
     # The hub sends/receives the conversation roster on the WIRE as ``participants``

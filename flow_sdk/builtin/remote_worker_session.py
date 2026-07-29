@@ -19,7 +19,7 @@ from typing import Any, ClassVar, Optional
 import logging
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity, action
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -135,6 +135,7 @@ class RemoteWorkerSession(Entity):
         default=None, description="Host-side AgenticProcess that executes prompts (host only)."
     )
     project_id: Optional[str] = APIField(
+        sharing=Sharing.PRIVATE,
         default=None, description="Host project/workdir the worker runs in (host only)."
     )
 

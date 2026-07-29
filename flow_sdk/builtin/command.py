@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 
 
@@ -19,4 +19,4 @@ class Command(Entity):
     name: str | None = APIField(default=None)
     command_name: str | None = APIField(default=None)
     content: str | None = APIField(default=None)
-    asset_ref: str = APIField(default="")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)

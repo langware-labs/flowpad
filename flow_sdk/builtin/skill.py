@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import ClassVar, Type
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.context_data_schemas import SkillContextData
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -25,7 +25,7 @@ class Skill(Entity):
     type: str = APIField(default=BuiltinEntityType.SKILL.value)
     name: str = APIField(default="")
     description: str = APIField(default="")
-    asset_ref: str = APIField(default="")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
     body: str = APIField(default="")
     metadata: dict | None = APIField(default=None)
 

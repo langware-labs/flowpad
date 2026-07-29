@@ -27,7 +27,7 @@ links are untouched (zero migration).
 
 from typing import Optional
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.fs_origin import FSOrigin, is_safe_rel_path
 from flow_sdk.builtin.fs_origin_field import FSOriginField
 from flow_sdk.builtin.local_origin import LocalOrigin
@@ -50,7 +50,7 @@ class Folder(Entity):
 
     # LOCAL resolved-path cache on THIS machine (see module docstring). Not the
     # transportable identity; set at add time (sender) or on resolve (receiver).
-    path: Optional[str] = APIField(default=None, description="Local resolved path of the directory (per-machine cache)")
+    path: Optional[str] = APIField(default=None, description="Local resolved path of the directory (per-machine cache)", sharing=Sharing.PRIVATE)
 
     def __init__(self, **data):
         # Tolerant backfill: an old row / bundle may carry a legacy ``path`` or

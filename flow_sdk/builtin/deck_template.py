@@ -26,7 +26,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 
 
@@ -47,7 +47,7 @@ class DeckTemplate(Entity):
 
     # Absolute path of the template folder on disk, stamped by the indexer /
     # ``Entity.from_fs_ref``. A plain string, mirrors DATASET/WHITEBOARD.
-    asset_ref: str = APIField(default="")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
 
     def layout_html(self, name: str) -> Optional[str]:
         """Lazily read one layout component's HTML from disk, else ``None``."""

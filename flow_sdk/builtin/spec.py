@@ -5,7 +5,7 @@ from typing import ClassVar, List, Optional, Dict, Any
 from pydantic import model_validator
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.db.drivers.db_base_record import TypeId
 
@@ -22,7 +22,7 @@ class Spec(Entity):
     content: Optional[str] = APIField(None, blob=True)
     spec_type: str = APIField(SpecType.PLAN)
     author_id: Optional[str] = APIField(None)
-    asset_ref: Optional[str] = APIField(None)
+    asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     metadata: Optional[Dict[str, Any]] = APIField(None)
 
     @model_validator(mode="after")

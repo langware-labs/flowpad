@@ -37,7 +37,7 @@ class Sharing(StrEnum):
                       outside: local placement, local flags, local projections.
 
     The share-bundle axis is DERIVED, not declared: a bundle strips exactly
-    ``PRIVATE``. The one exception is ``portable`` below.
+    ``PRIVATE`` — no field needs to say otherwise.
 
     Deliberately named ``PRIVATE`` rather than ``LOCAL``: "local" already means a
     privacy switch (``is_local_mode``), a compute node (``@local``), a storage
@@ -75,7 +75,6 @@ def EntityField(
     role: str = "*",
     persist: Persist = Persist.DEFAULT,
     sharing: Sharing = Sharing.SHARED,
-    portable: bool | None = None,
     json_schema_extra: dict[str, Any] | None = None,
     **kwargs,
 ):
@@ -85,8 +84,6 @@ def EntityField(
     json_schema_extra.update({"db_exclude": db_exclude})
     json_schema_extra.update({"persist": str(Persist(persist))})
     json_schema_extra.update({"sharing": str(Sharing(sharing))})
-    if portable is not None:
-        json_schema_extra.update({"portable": bool(portable)})
     return Field(default=default, default_factory=default_factory, json_schema_extra=json_schema_extra, **kwargs)
 
 
@@ -119,17 +116,15 @@ def sharing_policy(field_info) -> Sharing:
 
 
 def is_portable(field_info) -> bool:
-    """Whether this field rides a SHARE BUNDLE.
+    """Whether this field rides a SHARE BUNDLE — everything except ``PRIVATE``.
 
-    Defaults to "everything except ``PRIVATE``", so the bundle axis needs no
-    declaration of its own. ``portable=`` overrides it for the two fields where
-    the bundle genuinely disagrees with the hub direction: ``created_by`` /
-    ``updated_by`` are hub-accepted but must not travel in a bundle (a local user
-    id does not resolve on the receiver).
+    The bundle axis is DERIVED, with no declaration of its own. That is worth
+    stating because the design initially carried a ``portable=`` override for the
+    fields where the bundle disagrees with the hub direction — and once the
+    policy was resolved field by field, that set turned out to be empty: the two
+    ``HUB_READ`` clocks ride bundles, and everything a bundle strips is
+    ``PRIVATE``. An override with no users is a flag that rots (see ``role``).
     """
-    extra = _extra(field_info)
-    if "portable" in extra:
-        return bool(extra["portable"])
     return sharing_policy(field_info) is not Sharing.PRIVATE
 
 
