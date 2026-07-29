@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useOAuthConnection } from '@sdk/react/hooks/useOAuthConnection';
 import { cn } from '@src/lib/utils';
+import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useConnectionTimestamps } from './connections-manager/use-connection-timestamps';
 import { Button } from './ui/button';
@@ -113,7 +114,13 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         await attach(connectionId, providerName);
       }
     } catch (error) {
-      console.error(`Failed to connect to ${connection.provider}:`, error);
+      // Surfaced, not just logged: every failure here (no token yet, a provider
+      // this instance cannot complete a flow for, a backend refusal) used to
+      // land in the console only, so the button looked like it did nothing.
+      notify.error({
+        title: t`${connection.provider} connection failed`,
+        message: errorMessage(error, t`Could not connect to ${connection.provider}.`),
+      });
     }
   };
 
@@ -126,7 +133,10 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       // Status 3: Detach from current project
       await detach(connectionId, providerName);
     } catch (error) {
-      console.error(`Failed to disconnect from ${connection.provider}:`, error);
+      notify.error({
+        title: t`${connection.provider} disconnect failed`,
+        message: errorMessage(error, t`Could not disconnect from ${connection.provider}.`),
+      });
     }
   };
 

@@ -12,6 +12,16 @@ describe('errorMessage', () => {
     expect(errorMessage(new Error('boom'), 'fallback')).toBe('boom');
   });
 
+  it('reads the envelope off an axios rejection, which is also an Error', () => {
+    // The shape that matters in practice: axios throws an Error whose message
+    // is the status line and whose `response.data` holds what the server said.
+    const axiosish = Object.assign(new Error('Request failed with status code 500'), {
+      response: { data: { status: 'FAIL', message: 'Desktop OAuth not supported for provider: slack' } },
+    });
+
+    expect(errorMessage(axiosish, 'fallback')).toBe('Desktop OAuth not supported for provider: slack');
+  });
+
   it('prefers the backend detail over every other field', () => {
     const err = {
       response: { data: { detail: 'backend detail', message: 'backend message' } },
