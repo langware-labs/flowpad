@@ -14,30 +14,41 @@ the machine's own store.
 Five kinds are registered:
 
 - **`local`** — a name in this instance's app-secret store (SOD, `sodot`).
-  Machine-local, **never shareable**.
+  The `sod_name` is machine-specific, so it is stripped on share; the
+  declaration itself still travels.
 - **`env-local`** — a key in the project's git-ignored `.env.local`. Shareable as
   a value-free pointer; each machine supplies its own value (full driver).
 - **`gcp`** / **`1password`** — external-provider slots (`ProviderStubDriver`):
   the pointer travels and materializes, but resolution routes to the setup wizard
   until a real integration lands.
-- **`flowpad-hub`** — a hub-hosted secret referenced by id. The pointer travels
-  with a shared project; runtime value resolution is a **no-op stub** until the
-  hub exposes a scoped value-fetch endpoint (see [Gaps](#gaps-and-follow-ups)).
+- **`flowpad-hub`** — a secret held by the hub, named by `(project_id, name)`.
+  `HubSecretDriver` resolves it through the hub's consent-gated
+  `env-var/<NAME>/value` route with the caller's own hub credentials.
 
-The pointer / driver / convergent-`key()` core below is shared by every kind; the
+The pointer / driver core below is shared by every kind; the
 non-`local` kinds, the two SOD stores, and the setup wizard are detailed under
 [Extensions](#extensions-asset-backed-refs--two-stores--providers--setup-wizard).
 
 Backend:
 - Value objects: `flow_sdk/builtin/secret_origin_locator.py`,
-  `local_secret_ref.py`, `hub_secret_ref.py`, `secret_origin_field.py`
+  `local_secret_ref.py`, `env_local_secret_ref.py`, `hub_secret_ref.py`,
+  `secret_origin_field.py`
+- Identity: `flow_sdk/builtin/secret_origin_identity.py`
 - Entity: `flow_sdk/builtin/secret_origin.py`
 - Driver registry: `flow_sdk/builtin/secret_origin_driver.py`,
-  `drivers/local_secret_driver.py`, `drivers/hub_secret_driver.py`
+  `drivers/local_secret_driver.py`, `drivers/env_local_secret_driver.py`,
+  `drivers/hub_secret_driver.py`
+- Value stores: `flow_sdk/builtin/env_local_store.py`,
+  `flow_sdk/cli/auth/secrets.py`; drift baselines in `secret_origin_digest.py`
+- Resolution: `flow_sdk/builtin/secret_origin_resolver.py`
 - Project actions + share payload: `flow_sdk/builtin/project.py`
 - Receive/materialize: `flow_sdk/app/actions/membership_sync.py`
-- Worker injection: `flow_sdk/builtin/agentic_process/cli_drivers/cli_worker_base_driver.py`
-- TS SDK: `ts_sdk/src/entities/project.ts`
+- Injection adapters: `flow_sdk/builtin/agentic_process/cli_drivers/cli_worker_base_driver.py`
+  (workers), `flow_sdk/core/flow/models/execution/env_context.py` (compute node),
+  `flow_sdk/builtin/shell.py` (PTY)
+- Node attachment: `flow_sdk/builtin/faas/compute_node.py`
+- TS SDK: `ts_sdk/src/entities/project.ts`,
+  `ts_sdk/src/entities/compute-node/compute-node.ts`
 
 ## The core invariant
 
@@ -124,10 +135,12 @@ in place on re-mint).
   Secrets UI *writes* the sodot entry; a local `SecretOrigin` *points* at it by
   name. (It does **not** use `get_entity_credentials`, whose composed key is a
   different namespace nothing populates.)
-- **`flowpad-hub` is a `ProviderStubDriver`** whose `resolve` returns `None` —
-  the deferred seam; the pointer can be carried and materialized, but no value
-  is injected until the hub value endpoint exists. (There is no
-  `hub_secret_driver.py`; earlier revisions of this doc described one.)
+- **`HubSecretDriver.resolve`** (`builtin/drivers/hub_secret_driver.py`) fetches
+  the value from the hub's `env-var/<NAME>/value` route with the caller's own
+  hub credentials. It caches **nothing** — every launch re-asks, so a revoked
+  grant stops working immediately — and its `can_resolve` answers from the
+  project's env-var table (masked metadata) rather than the gated route, since
+  the Secrets card probes it per secret on every render.
 
 ## Project linking (actions)
 
@@ -137,10 +150,12 @@ folders. The per-entry sidecar stores **value-free** metadata only —
 `{name, env_var, kind, locator, scope, typeid}` (`SecretOrigin.context_data`).
 
 - **`add-secret-pointer`** (`name`, `env_var`, `scope`, `kind`, and
-  `sod_name`/`secret_id`/`locator`): validates `env_var`; rejects a `local`
-  pointer with `scope='shared'`; rejects binding an `env_var` already bound to a
-  different pointer; mints the `SecretOrigin` and links it into the private or
-  shared bucket. Returns the project `model_dump`.
+  `sod_name`/`secret_id`/`locator`): validates `env_var`, mints the
+  `SecretOrigin` and links it into the private or shared bucket. Returns the
+  project `model_dump`. There is **no** uniqueness check to perform — the id is
+  `(project_id, env_var)`, so re-declaring an env var mints the same row and
+  updates it in place. Pointing a declaration at a different provider is an
+  edit, not a second secret.
 - **`remove-secret-pointer`** (by `typeid`, `name`, or `env_var`): unlinks from
   both buckets. **The `SecretOrigin` row and the stored secret value are left
   intact** (another project may point at the same secret).
@@ -197,42 +212,71 @@ On invitation-accept, `materialize_remote_membership_entity` calls
 
 The received pointer is inert at runtime until its kind's driver can resolve a
 value **with the receiver's own credentials** — `env-local` resolves once the
-receiver runs the setup wizard; `flowpad-hub` awaits the hub endpoint.
+receiver runs the setup wizard; `flowpad-hub` resolves against the hub if the
+receiver is allowed to use it. Until then the receiver sees the declaration
+flagged `missing-value`, which is why every kind travels: a receiver has to see
+a declaration in order to be told they are missing its value.
 
-## Runtime injection into workers
+## Runtime injection
 
-`apply_worker_secret_env(env, process)` (async) is called on every worker spawn
-path — `agentic_process.py` (PTY restart, inline print-mode turn) and the
-`claude`/`codex`/`copilot` headless drivers — immediately after the sync
-`apply_worker_env`. It:
+`resolve_project_secrets(project, only=)` in `builtin/secret_origin_resolver.py`
+is the **one** place declarations become values. It walks the project's
+`secret_origin` links (private + shared), reads the locator from the context
+sidecar (falling back to the entity row for receiver mirrors, which have none),
+and `asyncio.gather`s the driver resolves. Per-secret errors are swallowed and
+logged **by name** — a missing or unresolvable secret never crashes a spawn, and
+a value never reaches a log line.
 
-1. resolves the owning `Project` (by `project_id`, else ancestor walk);
-2. iterates the project's `secret_origin` links (private + shared);
-3. skips any `env_var` already present (an explicit env wins — `setdefault`);
-4. `get_secret_origin_driver(kind).resolve(locator, project=, process=, secret_origin=)`
-   → `SecretStr`, and folds `env.setdefault(env_var, value.get_secret_value())`;
-5. swallows per-secret errors (a missing/unresolvable secret **never crashes a
-   spawn**), logging names only — never values.
+Two thin adapters carry the result to the two transports, so a change to how a
+secret resolves cannot apply to one and miss the other:
 
-The unwrapped value lands **only** in the transient spawn env dict handed to
-`create_subprocess_exec`. It never touches the persisted CLI options, the
-rendered command, or `FLOWPAD_EXECUTION_SCOPE`.
+- **`apply_worker_secret_env(env, process)`** — a process env dict for a worker
+  on this machine, called on every spawn path (`agentic_process.py` PTY restart
+  and inline print-mode turn, plus the `claude`/`codex`/`copilot` headless
+  drivers) right after the sync `apply_worker_env`.
+- **`resolve_node_secret_env(project)`** — a `list[FlowEnv]` for a compute node,
+  unioned into `Project.initialize`'s env list and prefixed onto commands by the
+  provider (`compute/providers/env_prefix.py`).
+
+`secret_env_dict(project, base)` owns the precedence rule — **an
+explicitly-set env var always wins** — and `Shell.start_pty` uses it so a plain
+terminal on the node sees the same set a worker does.
+
+The unwrapped value lands **only** in a transient spawn env dict or a
+single-command shell prefix. It never touches the persisted CLI options, the
+rendered command, `FLOWPAD_EXECUTION_SCOPE`, or the node's filesystem —
+`set_env`/`~/.bashrc` is reserved for the `FLOWPAD_*` proxy config.
+
+### Which secrets a node may see
+
+`ComputeNode.attached_secrets` is a value-free `{project_id: [ENV_VAR]}` map:
+the token *is* the env var name and the project is the namespace, so nothing
+secret is stored and the map travels with a shared node. That is the intent —
+secrets are on the node, so whoever gets the node gets them, and resolution
+still happens on the receiver's machine from their own store.
+
+**An absent project key means every secret that project declares.** A node
+nobody has curated is unrestricted, which is what lets attachment ship without
+changing existing behaviour. The rule is decoded in
+`ComputeNode.effective_attached` and nowhere else. `attach-all-secrets` writes
+today's names explicitly rather than a standing `*`, which would silently widen
+what a shared node exposes each time a secret was declared.
 
 ## Shareability, by kind
 
 | | `local` | `env-local` | `flowpad-hub` |
 |---|---|---|---|
-| Shareable | No (blocked at add + skipped in share + rejected on receive) | Yes (pointer travels) | Yes (pointer travels) |
-| What travels | nothing | the locator (`env_key`) + `sod_store` | the locator (`secret_id`) + `sod_store` |
-| Who resolves the value | the owner's machine, from SOD | the receiver's machine, from its own `.env.local` (via the wizard) | the receiver's machine, with the receiver's own hub creds |
-| Runtime resolve today | live (`read_secret`) | live (`.env.local`) | **stub → `None`** (awaits hub endpoint) |
+| Shareable | Yes (the declaration travels; the `sod_name` does not) | Yes (pointer travels) | Yes (pointer travels) |
+| What travels | `env_var` + `name` + `kind` + `sod_store` | the locator (`env_key`) + `sod_store` | the locator (`project_id`, `name`) + `sod_store` |
+| Who resolves the value | the owner's machine, from SOD | the receiver's machine, from its own `.env.local` (via the wizard) | the hub, for a caller its ACL allows |
+| Runtime resolve today | live (`read_secret`) | live (`.env.local`) | live (`env-var/<NAME>/value`) |
 
 `gcp` / `1password` share exactly like `env-local` (locator travels, receiver
 supplies its own value) but resolve via the setup wizard until a real integration
-lands. This is the same `kind`-determines-shareability model as `FSOrigin` (local
-folder unshareable / git folder shareable): a shared pointer is a *reference*; the
-value stays in the provider and is fetched by the receiver, never shipped by the
-sender.
+lands. A shared declaration is a *reference*: the value stays in its store and is
+fetched by the receiver, never shipped by the sender. What varies by kind is not
+*whether* it travels but *which coordinate* is portable — a `sod_name` names an
+entry in one machine's keychain and is dropped on the wire.
 
 ## Tests
 
@@ -245,6 +289,20 @@ sends an empty map after removal; and `apply_worker_secret_env` resolves from SO
 into the spawn env **without mutating persisted CLI options**.
 Value-object/driver/union coverage mirrors `tests/unit/test_fs_origin.py`.
 
+`tests/unit/test_secret_origin_identity.py` pins the identity recipe, including
+that it is independent of where the value lives — the property the re-key
+exists for.
+
+`tests/unit/test_env_local_store.py` covers the git verdict, including the two
+cases a line-match gets wrong: a `*.local` wildcard, and a `.env.local` git
+already tracks. `tests/unit/test_secret_warnings.py` covers both warnings and
+sweeps every response surface for the value **and the digest**.
+
+`tests/unit/test_compute_node_secrets.py` and `test_node_secret_load.py` cover
+attachment, including that an uncurated node is unrestricted;
+`test_node_secret_resume.py` pins that loading writes nothing to the node's rc
+file.
+
 `ui/tests/hub/secret_share_two_client.test.ts` is the cross-instance acceptance
 test over a live hub: a value-free reference travels, the id converges, no
 plaintext crosses, and the receiver goes `missing → provide → available` with the
@@ -255,27 +313,54 @@ Run: `uv run pytest tests/unit -q -k "secret_origin or local_secret or worker_se
 
 ## Extensions (asset-backed refs · two stores · providers · setup wizard)
 
-The pointer / driver / convergent-`key()` core is unchanged; these extend its
-documented seams:
+The pointer / driver core is unchanged; these extend its documented seams:
 
-- **Asset-backed reference.** A `SecretOrigin` is now a value-free file asset at
-  `<project>/assets/sodot/<name>.json`, indexed like any other asset
+- **Asset-backed reference.** A `SecretOrigin` is a value-free file asset at
+  `<project>/assets/sodot/<ENV_VAR>.json`, indexed like any other asset
   (`schema/type_info/secret_origin_type_info.py`, `fs_store/indexer/functions/secret_origin.py`).
-  The file id is the **convergent `key()`** (never path-derived), so a
-  file-indexed row and a DB-minted row collide on one id. `assert_value_free`
-  guards the writer **and** the indexer extractor (two trust boundaries: never
-  emit a value; never ingest a git-arrived file that carries one).
+  The filename **is** the identity, and the file carries the same convergent id
+  (never path-derived), so a file-indexed row and a DB-minted row collide on
+  one id. `assert_value_free` guards the writer **and** the indexer extractor
+  (two trust boundaries: never emit a value; never ingest a git-arrived file
+  that carries one) — and it rejects digest keys as well as plaintext ones.
 - **Two SOD stores.** `local` (`sodot`, encrypted) and `env-local` (the project's
   git-ignored `.env.local`, `builtin/env_local_store.py`). `sod_store` records
   which store the wizard caches a provided value into; the sender picks it.
 - **Pluggable providers.** The driver registry gains `can_resolve()`,
   `setup_hint()`, and `store()` (symmetric with `resolve()` — the driver owns its
-  store). `local`/`env-local` are full; `gcp`/`1password`/`flowpad-hub` are one
-  parametrized `ProviderStubDriver` that routes to the wizard.
-- **Setup wizard.** `Project.secret-resolve-status` reports available/missing per
-  driver (value-free); `Project.provide-secret` writes a user value into the
-  secret's store via `driver.store()`. The Secrets card
+  store). `local`, `env-local` and `flowpad-hub` are full drivers;
+  `gcp`/`1password` are one parametrized `ProviderStubDriver` that routes to the
+  wizard. `HubSecretDriver.store()` deliberately refuses and points at
+  `push-secret-to-cloud`, which owns the publication gate — caching locally
+  instead would create a second copy the hub never sees.
+- **Setup wizard.** `Project.secret-resolve-status` reports available/missing
+  (value-free) and, with it, `found_in` and a `missing-value` warning.
+  Availability is a **union** across both local stores and the declared
+  provider: the local stores exist for usage, so a value in `.env.local` under
+  the right env var satisfies a `gcp` declaration on this machine.
+  `Project.provide-secret` writes a user value into the secret's store via
+  `driver.store()`. The Secrets card
   (`ui/src/components/project-home/SecretsCard.tsx`) surfaces the whole model.
+- **`.env.local` inventory and hard block.** `Project.env-local-status` lists
+  the keys detected in the file — **names and line numbers only** — alongside a
+  git verdict. Writing a value is refused outright when the file is
+  committable: `gitignore_status` asks git (`check-ignore` plus `ls-files`,
+  because ignore rules do not apply to a file git already **tracks**), and
+  `ensure_gitignored` appends and then re-verifies rather than assuming.
+  `EnvLocalCard` renders the list and opens the file at a key's line; declaring
+  a key is additive and never edits `.env.local`.
+- **Value-change warning.** `Project.secret-drift-status` reports
+  `value-changed` when a value no longer matches the one that was provided. The
+  baseline is a **salted** digest in the per-instance `sodot`
+  (`builtin/secret_origin_digest.py`) — unsalted, a short secret's digest is
+  brute-forceable and would be a slow copy of the secret. It is a separate,
+  opt-in action because answering it requires *fetching* values, which would
+  violate `can_resolve`'s no-fetch contract.
+- **Cloud round-trip.** `Project.push-secret-to-cloud` stores a value on the hub
+  through the hub's own `env-var` action, gated on `hub_published_at` (a marker
+  distinct from `remote`, which is also set when a project is shared *to* us).
+  `Project.delete-secret-from-cloud` deletes from the hub **and only the hub** —
+  the declaration, the `sodot` entry and `.env.local` are all left untouched.
 
 Coverage: `tests/unit/test_secret_asset_and_wizard.py` (asset mint + convergent
 id + value-free guard, env-local/sodot resolve-status + provide, and the
@@ -295,9 +380,14 @@ value-free).
    secret reference travels with a git-shared project even without a live hub
    share; the asset writer/indexer exist, but the `add-secret-pointer` → shared
    git folder wiring is the remaining work.
-2. **Hub value resolution** — `flowpad-hub` resolve is a stub; a hub-hosted secret
-   injects nothing until the hub adds an authenticated, `allowed_to_use`-gated,
-   audited value-fetch endpoint plus the client resolver.
+2. **Hub OAuth providers cannot be attached.** A provider defined by the hub
+   renders in the Connections tab, but `attach_action` / `detach_action` /
+   `disconnect_oauth_provider` resolve the credential name through
+   `core/oauth/provider_registry.py`, which knows only the locally-flowable
+   providers — so any hub provider returns `NO_SOD_FOUND`. The union in
+   `core/oauth/hub_providers.py::union_providers` happens at the `EnvVar` level,
+   after the provider→credential-name mapping has been flattened away. The fix
+   is to union at the provider-spec level with a source registry.
 3. **Sharing consent** — the hub `EnvVar.allowed_to_use` ACL exists but has no
    grant/revoke route.
 4. **Other providers** — `gcp`/`1password` (and `azure`/`github`) are registered
