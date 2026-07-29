@@ -144,7 +144,7 @@ async def test_no_incumbent_uses_canonical_path_winner(
         lambda _path: None,
     )
     await get_db_driver().delete_entities_by_type("markdown")
-    docs = tmp_path / "proj" / ".claude" / "docs"
+    docs = tmp_path / "proj" / "docs"
     docs.mkdir(parents=True)
     aid = "8858ca29-5b9a-4d1e-a74f-2b988586f71c"
     b = docs / "b.md"

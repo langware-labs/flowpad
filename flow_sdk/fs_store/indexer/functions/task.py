@@ -1,9 +1,10 @@
-"""Walker + extractor + helpers for TASK records.
+"""Extractor + helpers for TASK records.
 
-A task is now a FOLDER asset (like ``skill``): ``<project>/tasks/<name>/`` holds
+A task is a FOLDER asset (like ``skill``): ``agentic-assets/task/<name>/`` holds
 ``task.md`` (markdown + YAML frontmatter carrying the task fields) plus an inner
 ``spec.md`` (the plan/issue content — a PLAIN file, NOT its own entity; fenced
-from the markdown walker via ``markdown._TYPED_RECORD_DIRS``).
+from the markdown walker by the ``agentic-assets`` ancestor check in
+``markdown._typed_record_dirs``).
 
 Legacy ``tasks/<title>/header.json`` (or ``manifest.json``) folders are still
 tolerated for the migration window — extraction and the TypeInfo reader use the
@@ -30,7 +31,6 @@ from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
 )
 from flow_sdk.fs_store.indexer.functions.skill import read_frontmatter_id_from_yaml
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 # Canonical Task fields that round-trip through ``task.md`` frontmatter, besides
@@ -93,40 +93,6 @@ TASK_FRONTMATTER_FIELDS = (
 
 # ---------------------------------------------------------------------------
 # Walker — one TASK FSRef per tasks/<name>/ folder
-# ---------------------------------------------------------------------------
-
-
-def _is_task_folder(task_dir: Path) -> bool:
-    """A task folder carries a ``task.md`` (new) or a legacy manifest."""
-    return (task_dir / "task.md").is_file() or _legacy_manifest(task_dir) is not None
-
-
-def task_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        tasks_dir = Path(node.path) / "tasks"
-        if not tasks_dir.is_dir():
-            continue
-        for task_dir in sorted(tasks_dir.iterdir()):
-            # Skip the "spec" sibling used for task specs (legacy convention).
-            if not task_dir.is_dir() or task_dir.name == "spec":
-                continue
-            if not _is_task_folder(task_dir):
-                continue
-            key = str(task_dir.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(task_dir, record_type=RecordType.TASK, parent=node))
-    return out
-
-
-# ---------------------------------------------------------------------------
-# Legacy manifest helpers
 # ---------------------------------------------------------------------------
 
 

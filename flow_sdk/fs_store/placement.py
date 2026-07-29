@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from flow_sdk._compat import StrEnum
 
@@ -58,14 +58,22 @@ class AssetClass(StrEnum):
     another tool's namespace and collides the day that tool claims the name, so
     anything flowpad-native is REPO instead — including artifacts PRODUCED BY a
     harness (transcripts, traces) that the harness never reads back from there.
+
+    UNTYPED bytes (a received PDF, image, or plain ``.md`` with no TypeInfo) are
+    NOT a class of their own. They follow their ``FSOrigin`` — a ``GitOrigin``
+    when the file came from a repo, so the receiver's tree mirrors the sender's —
+    and only fall back to a class when no origin can be reconstituted here:
+    ``DOCS`` for markdown, ``PROJECT`` for everything else. The goal is a tree
+    that reflects git structure, not a flowpad drop-box.
     """
 
-    INTERNAL = "internal"  # flowpad's own subtree; no harness prefix, no fan-out
+    INTERNAL = "internal"  # flowpad's own state subtree; no harness prefix, no fan-out
     HARNESS = "harness"  # tied to ONE harness (declared via ``TypeInfo.harness``)
     SHARED = "shared"  # every harness understands it → syncmd fan-out
-    NONE = "none"  # raw files, no TypeInfo, no harness semantics
     REPO = "repo"  # flowpad-native repo asset under ``agentic-assets/<type>``;
     #                        folder-backed, children nest recursively (see AGENTIC_ASSETS_DIR)
+    DOCS = "docs"  # a free document at the scope root: ``<root>/docs/``
+    PROJECT = "project"  # untyped bytes at the project root itself (no subdir)
 
 
 class Scope(StrEnum):
@@ -185,12 +193,26 @@ class LayoutClass:
 # asset's own ``agentic-assets/`` subfolder — the same segment, recursively.
 AGENTIC_ASSETS_DIR = "agentic-assets"
 
+# The family a DOCS asset mounts under, and the (empty) family a PROJECT asset
+# mounts under — ``mount("")`` yields ``""`` and ``root / ""`` is the root itself.
+DOCS_FAMILY = "docs"
+PROJECT_ROOT_FAMILY = ""
+
+# ONLY ``harness_scoped`` classes may write inside a harness dot-dir, and that set
+# is asserted to be exactly {HARNESS, SHARED} by
+# ``test_placement_matrix.test_only_harness_classes_mount_a_dot_dir``. That guard
+# is the one this table needed: the retired ``NONE`` class was harness_scoped and
+# quietly mounted ``.claude/docs`` / ``.claude/files``, and because it had no
+# TypeInfo the registry-iterating guard could not see it.
 LAYOUT_REGISTRY: dict[AssetClass, LayoutClass] = {
     AssetClass.INTERNAL: LayoutClass(harness_scoped=False, fan_out=False, user_scope=False),
     AssetClass.HARNESS: LayoutClass(harness_scoped=True, fan_out=False, user_scope=True),
     AssetClass.SHARED: LayoutClass(harness_scoped=True, fan_out=True, user_scope=True),
-    AssetClass.NONE: LayoutClass(harness_scoped=True, fan_out=False, user_scope=True),
     AssetClass.REPO: LayoutClass(harness_scoped=False, fan_out=False, user_scope=True, root_prefix=AGENTIC_ASSETS_DIR),
+    AssetClass.DOCS: LayoutClass(harness_scoped=False, fan_out=False, user_scope=True),
+    # Untyped bytes land in the project itself; a bare ``~/<file>`` is never a
+    # sane destination, so PROJECT is project-scope only.
+    AssetClass.PROJECT: LayoutClass(harness_scoped=False, fan_out=False, user_scope=False),
 }
 
 
@@ -225,14 +247,15 @@ def root_for_scope(scope: str, *, project_mount: str | Path | None = None) -> Pa
 
 
 def effective_harness(asset_class: AssetClass, declared: HarnessType | None, default_worker: str) -> str | None:
-    """Which harness's convention this write uses: the type's declared harness
-    for HARNESS types, the caller's ``default_worker`` for SHARED/NONE, and none
-    for INTERNAL (which is harness-less)."""
+    """Which harness's convention this write uses: the type's declared harness for
+    HARNESS types, the caller's ``default_worker`` for SHARED, and none for every
+    harness-less class (INTERNAL/REPO/DOCS/PROJECT — their mount carries no
+    dot-dir, so there is no harness to resolve)."""
     if asset_class == AssetClass.HARNESS:
         return declared or HarnessType.CLAUDE
-    if asset_class in (AssetClass.INTERNAL, AssetClass.REPO):
-        return None  # harness-less (INTERNAL: bare family; REPO: agentic-assets/ prefix)
-    return default_worker  # SHARED, NONE → the machine's canonical harness
+    if not LAYOUT_REGISTRY[asset_class].harness_scoped:
+        return None
+    return default_worker  # SHARED → the machine's canonical harness
 
 
 def family_subdir(
@@ -279,32 +302,52 @@ def resolve_destination(
     return root / subdir if root is not None else None
 
 
-def resolve_raw_file_destination(
-    filename: str,
-    scope: str,
-    *,
-    default_worker: str,
-    project_mount: str | Path | None = None,
-) -> Path | None:
-    """Destination directory for a raw OS-picker file (NONE class) — a file with
-    no TypeInfo. Markdown → ``<harness>/docs``, everything else → ``<harness>/files``.
-    Single owner of the raw-file layout so stage-time and install-time agree.
-    """
-    if not LAYOUT_REGISTRY[AssetClass.NONE].supports(scope):
-        return None
-    root = root_for_scope(scope, project_mount=project_mount)
-    if root is None:
-        return None
-    return root / raw_file_rel_subdir(filename, default_worker=default_worker)
+def untyped_fallback_class(filename: str) -> AssetClass:
+    """The class an untyped file falls back to when its ``FSOrigin`` cannot be
+    reconstituted here: markdown is a document (``DOCS`` → ``docs/``), anything
+    else is just bytes that belong in the project (``PROJECT`` → the root).
 
-
-def raw_file_rel_subdir(filename: str, *, default_worker: str = HarnessType.CLAUDE) -> str:
-    """Scope-relative subdir for a raw file (NONE class) — e.g. ``.claude/docs``
-    for markdown, ``.claude/files`` otherwise. Single owner of the raw-file
-    layout, shared by stage-time entry layout and install-time resolution so the
-    two can never disagree.
+    This is a FALLBACK. The primary placement for an untyped file is its origin's
+    ``rel_path`` (see ``untyped_rel_subdir``), which is what makes a received file
+    land where it lived in the sender's repo.
     """
     from flow_sdk.builtin.flow_message_bundle import is_markdown_filename  # noqa: PLC0415
 
-    family = "docs" if is_markdown_filename(filename) else "files"
-    return LAYOUT_REGISTRY[AssetClass.NONE].mount(family, harness=default_worker)
+    return AssetClass.DOCS if is_markdown_filename(filename) else AssetClass.PROJECT
+
+
+def untyped_rel_subdir(filename: str, *, origin: object | None = None) -> str:
+    """Scope-relative subdir for an untyped file — the single owner of that layout,
+    shared by stage-time entry layout and install-time resolution so the two can
+    never disagree.
+
+    Prefers the origin's ``rel_path`` directory when the origin carries a safe one
+    (mirroring the sender's tree); otherwise the fallback class's mount: ``docs``
+    for markdown, ``""`` (the project root) for everything else.
+    """
+    rel = _origin_rel_dir(origin)
+    if rel is not None:
+        return rel
+    cls = untyped_fallback_class(filename)
+    family = DOCS_FAMILY if cls == AssetClass.DOCS else PROJECT_ROOT_FAMILY
+    return LAYOUT_REGISTRY[cls].mount(family, harness=None)
+
+
+def _origin_rel_dir(origin: object | None) -> str | None:
+    """The DIRECTORY part of an origin's ``rel_path``, or None when there is no
+    usable one. ``rel_path`` points at the asset itself (a file, here), so the
+    subdir is its parent; a repo-root file yields ``""``.
+
+    Gated on ``is_safe_rel_path`` — ``rel_path`` is sender-controlled and gets
+    joined onto a local root, so an unsafe value must fall through to the class
+    default rather than escape the root.
+    """
+    rel = str(getattr(origin, "rel_path", "") or "").strip() if origin is not None else ""
+    if not rel:
+        return None
+    from flow_sdk.builtin.fs_origin import is_safe_rel_path  # noqa: PLC0415
+
+    if not is_safe_rel_path(rel):
+        return None
+    parent = str(PurePosixPath(rel.replace("\\", "/")).parent)
+    return "" if parent == "." else parent

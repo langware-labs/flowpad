@@ -55,7 +55,7 @@ async def test_typeless_record_update_advances_updated_date(tmp_path: Path) -> N
     the stored value. Before the from_record fix this silently regressed.
     """
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "x.md"
     md.write_text("# initial\n", encoding="utf-8")
@@ -94,7 +94,7 @@ async def test_typeless_record_single_row_no_duplicate_on_resync(tmp_path: Path)
     stays at 1 across multiple re-indexes.
     """
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     (docs / "only.md").write_text("# one\n", encoding="utf-8")
 

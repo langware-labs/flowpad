@@ -31,7 +31,7 @@ def _resolved_id(path: Path) -> str | None:
 
 
 def _conflicting_markdown(tmp_path: Path) -> Path:
-    path = tmp_path / "proj" / ".claude" / "docs" / "conflict.md"
+    path = tmp_path / "proj" / "docs" / "conflict.md"
     path.parent.mkdir(parents=True)
     path.write_text(
         f"---\nid: {CANONICAL_ID}\nasset_id: {LEGACY_ID}\n---\n# conflict\n",

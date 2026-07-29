@@ -1741,11 +1741,12 @@ async def _stage_attachment(
 # install layout, so ``_restore_file_backed_entry`` (anchor-free verbatim
 # mirror) and the scoped reindex work unchanged.
 #
-# Markdown lands under ``.claude/docs/`` — indexed as MARKDOWN by BOTH the
-# project (REAL_PROJECT_CWD) and user (USER_HOME_FOLDER) ``markdown_flat_fn``
-# walkers, which key on ``<root>/.claude/docs/**/*.md``. Everything else lands
-# under ``.claude/files/`` (copied on install; no dedicated walker yet, so not
-# auto-indexed — tracked as out-of-scope).
+# An untyped file follows its ``FSOrigin`` when the attachment carries one (so the
+# receiver's tree mirrors the sender's repo); otherwise it falls back by class —
+# markdown to ``docs/``, anything else to the project root. Both are owned by
+# ``placement.untyped_rel_subdir``. Non-markdown still has no dedicated walker, so
+# it is copied but not auto-indexed — it is at least visible and git-tracked now,
+# which the old ``.claude/files/`` was not.
 _MARKDOWN_SUFFIXES = frozenset({".md", ".markdown"})
 # Videos the bubble renders inline as a card — no staged chip. Images use the
 # shared ``is_image_filename`` predicate (single source of truth for pictures).
@@ -1756,13 +1757,17 @@ def is_markdown_filename(filename: str) -> bool:
     return PurePosixPath(filename).suffix.lower() in _MARKDOWN_SUFFIXES
 
 
-def file_attachment_rel_subdir(filename: str) -> str:
-    """Install-layout subdir for a raw file, mirrored in its staged entry dir.
-    Delegates to ``placement.raw_file_rel_subdir`` — the single owner of the
-    raw-file (NONE class) layout — so stage-time and install-time agree."""
-    from flow_sdk.fs_store.placement import raw_file_rel_subdir  # noqa: PLC0415
+def file_attachment_rel_subdir(filename: str, *, origin: object | None = None) -> str:
+    """Install-layout subdir for an untyped file, mirrored in its staged entry dir.
 
-    return raw_file_rel_subdir(filename)
+    Delegates to ``placement.untyped_rel_subdir`` — the single owner of that
+    layout — so stage-time and install-time can never disagree. ``origin``, when
+    the attachment carries one, puts the file back at its position in the sender's
+    tree; without one the fallback is ``docs/`` for markdown, the project root
+    otherwise."""
+    from flow_sdk.fs_store.placement import untyped_rel_subdir  # noqa: PLC0415
+
+    return untyped_rel_subdir(filename, origin=origin)
 
 
 def _should_stage_file_attachment(filename: str) -> bool:
@@ -1788,6 +1793,7 @@ async def _stage_file_attachments(
     transcripts are skipped (see ``_should_stage_file_attachment``)."""
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.fs_store.operations import flow_message as fm_data_ops  # noqa: PLC0415
+    from flow_sdk.fs_store.placement import untyped_fallback_class, user_scope_allowed  # noqa: PLC0415
 
     staged: list = []
     for att in msg_data.get("attachment", []) or []:
@@ -1823,9 +1829,11 @@ async def _stage_file_attachments(
             description=None,
             git_origin=None,
             transfer_mode="copy",
-            # A raw file is always user-installable (docs/ or files/ under
-            # ~/.claude); there's no TypeInfo for 'file' to derive this from.
-            user_scope_allowed=True,
+            # There's no TypeInfo for 'file', so the class comes from the filename
+            # and the ONE policy owner answers from it: a markdown doc is
+            # user-installable (``~/docs``), untyped bytes are project-only —
+            # a bare file dropped in the user's home is never a sane destination.
+            user_scope_allowed=user_scope_allowed(untyped_fallback_class(filename)),
             owner_typeid=owner_typeid,
         )
         staged.append(ma)

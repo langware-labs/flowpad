@@ -21,6 +21,11 @@ Contract:
 * ``~/.claude/plans`` is NEVER touched. That directory belongs to Claude Code
   (plan-mode output) and flowpad still reads it via ``claude_plan_fn``; only
   PROJECT-scope ``.claude/plans`` was flowpad's own.
+* Untyped files move too — ``.claude/docs`` → ``docs/`` and ``.claude/files`` →
+  the project root (see ``LEGACY_LITERAL_DIRS``). Both were flowpad inventions
+  inside Claude Code's namespace, and ``~/.claude/docs`` in particular MUST move:
+  ``markdown_flat_fn`` now scans ``~/docs``, so leaving it would de-index every
+  user-scope document.
 
 Entry point: ``run()``. The runner calls it with no args.
 """
@@ -69,6 +74,24 @@ LEGACY_FAMILIES: list[tuple[str, str, bool]] = [
     ("assets/datasets", "dataset", False),
     ("assets/decks", "deck", False),
     ("assets/deck-templates", "deck_template", False),
+]
+
+# (legacy scope-relative dir, destination scope-relative dir, project_scope_only).
+#
+# Untyped files are not repo assets, so their destination is a literal path rather
+# than ``agentic-assets/<type>``. ``.claude/docs`` and ``.claude/files`` were
+# flowpad's own inventions inside Claude Code's namespace — markdown is now
+# ``AssetClass.DOCS`` (``docs/``) and untyped bytes are ``AssetClass.PROJECT``
+# (the project root itself, so the tree reflects git structure).
+#
+# ``~/.claude/docs`` moves to ``~/docs`` rather than being left behind: it is the
+# only home-scope markdown store, and ``markdown_flat_fn`` now scans ``~/docs``,
+# so not moving it would silently de-index every user-scope doc.
+LEGACY_LITERAL_DIRS: list[tuple[str, str, bool]] = [
+    (".claude/docs", "docs", False),
+    # Untyped bytes land at the root; PROJECT is project-scope only, so a stray
+    # ``~/.claude/files`` is deliberately left alone rather than strewn across $HOME.
+    (".claude/files", "", True),
 ]
 
 
@@ -131,10 +154,18 @@ def _project_mounts() -> list[Path]:
 
 def _migrate_family(root: Path, legacy_rel: str, type_name: str, report: RootReport) -> None:
     """Move every child of ``<root>/<legacy_rel>`` into ``agentic-assets/<type>``."""
+    _move_children(root, legacy_rel, f"{AGENTIC_ASSETS_DIR}/{type_name}", report)
+
+
+def _move_children(root: Path, legacy_rel: str, dest_rel: str, report: RootReport) -> None:
+    """Move every child of ``<root>/<legacy_rel>`` to ``<root>/<dest_rel>``.
+
+    ``dest_rel`` may be ``""`` — the root itself, which is where untyped bytes go.
+    """
     legacy = root / legacy_rel
     if not legacy.is_dir():
         return
-    dest = root / AGENTIC_ASSETS_DIR / type_name
+    dest = root / dest_rel if dest_rel else root
 
     children = sorted(legacy.iterdir())
     for child in children:
@@ -147,7 +178,8 @@ def _migrate_family(root: Path, legacy_rel: str, type_name: str, report: RootRep
             continue
         dest.mkdir(parents=True, exist_ok=True)
         shutil.move(str(child), str(target))
-        report.moved.append((f"{legacy_rel}/{child.name}", f"{AGENTIC_ASSETS_DIR}/{type_name}/{child.name}"))
+        dest_label = f"{dest_rel}/{child.name}" if dest_rel else child.name
+        report.moved.append((f"{legacy_rel}/{child.name}", dest_label))
 
     # Drop the legacy directory once it is empty, so the next run is a clean
     # no-op and the dot-dir stops advertising a family the harness never had.
@@ -165,6 +197,13 @@ def _migrate_root(root: Path, scope: str) -> RootReport:
             continue
         try:
             _migrate_family(root, legacy_rel, type_name, report)
+        except OSError as e:
+            logger.warning("migrate 0.2.112: %s under %s failed: %s", legacy_rel, root, e)
+    for legacy_rel, dest_rel, project_only in LEGACY_LITERAL_DIRS:
+        if project_only and scope != "project":
+            continue
+        try:
+            _move_children(root, legacy_rel, dest_rel, report)
         except OSError as e:
             logger.warning("migrate 0.2.112: %s under %s failed: %s", legacy_rel, root, e)
     return report
