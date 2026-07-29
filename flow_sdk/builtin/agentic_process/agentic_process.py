@@ -6367,20 +6367,45 @@ class AgenticProcess(Entity):
         candidate = (candidate or "").strip()
         if not candidate:
             return False
+
+        # Turn-end/flush callbacks can outlive ``close`` on another hydrated
+        # instance of this same process. A normal ``save`` is intentionally an
+        # upsert, so that stale callback could recreate a row that close +
+        # delete just removed. Re-read the authoritative row, then atomically
+        # compare-and-set only its still-empty name. The DB primitive never
+        # inserts and never rewrites lifecycle fields from this stale snapshot.
+        current = await AgenticProcess.get_by_id(str(self.id))
+        if current is None or (current.name or "").strip() or current.auto_rename is False:
+            return False
+        persisted, stamped = await self._db.compare_and_set_data_field(
+            str(self.id),
+            self.type,
+            "name",
+            current.name,
+            candidate,
+        )
+        if not stamped or persisted is None:
+            return False
         self.name = candidate
-        await self.save()
+
+        # Close/delete may win immediately after the atomic stamp. Never mirror
+        # or broadcast this stale object; use the latest durable row, and do
+        # nothing further when it is already gone or a user rename won next.
+        durable = await AgenticProcess.get_by_id(str(self.id))
+        if durable is None or durable.name != candidate:
+            return True
         # Mirror onto the chip: the terminal tab renders Tab.name, and nothing else
         # reflects a terminal entity's name change onto it — so heal it here (also
         # overwrites a legacy frozen `<type>-<id>` Tab.name). set_label keeps
         # auto_rename intact.
-        if await self._mirror_name_to_tabs(candidate):
+        if await durable._mirror_name_to_tabs(candidate):
             from flow_sdk.builtin.tab import broadcast_tabs_changed  # noqa: PLC0415
 
             await broadcast_tabs_changed()
         # Broadcast the entity itself so live name consumers (footer list, chat
         # header) refresh — owned here so every stamp seam gets it for free.
         try:
-            await self.notify_updated()
+            await durable.notify_updated()
         except Exception:
             logger.debug("AgenticProcess %s: stamp notify failed", self.id, exc_info=True)
         logger.info("AgenticProcess %s: stamped default name %r", self.id, candidate[:80])
@@ -7155,15 +7180,30 @@ class AgenticProcess(Entity):
             report_dict = report.model_dump()
             if report_dict == self.status_report:
                 return
+
+            # Transcript debounce callbacks hold independently hydrated process
+            # objects and can finish after another request closes + deletes the
+            # process. Persist this projection as an update-only field patch;
+            # the normal whole-entity save path is an intentional upsert and
+            # would otherwise resurrect the stale RUNNING snapshot.
+            durable = await AgenticProcess.get_by_id(str(self.id))
+            if durable is None or durable.status != self.status:
+                return
+            persisted, updated = await self._db.update_existing_data_field(
+                str(self.id),
+                self.type,
+                "status_report",
+                report_dict,
+            )
+            if not updated or persisted is None:
+                return
             self.status_report = report_dict
-            try:
-                await self.save()
-            except Exception:
-                logger.debug(
-                    "AgenticProcess %s: status_report save failed",
-                    self.id,
-                    exc_info=True,
-                )
+
+            # Close/delete can still win immediately after the atomic patch.
+            # Suppress stale progress events once lifecycle ownership changed.
+            durable = await AgenticProcess.get_by_id(str(self.id))
+            if durable is None or durable.status != self.status:
+                return
             # Unified-bus dual-publish AFTER the persist (a law-5 subscriber
             # fetching on receipt reads the post-write row).
             from flow_sdk.builtin.agentic_process.agent_on_tag import emit_agent_status

@@ -312,6 +312,27 @@ class DBDriver(Generic[RecordType]):
         """Atomically update only recency; return ``(current, stamped)``."""
         raise NotImplementedError("stamp_last_active_at is not implemented")
 
+    async def compare_and_set_data_field(
+        self,
+        entity_id: str,
+        entity_type: str,
+        field_name: str,
+        expected_value: object,
+        value: object,
+    ) -> tuple[Optional[RecordType], bool]:
+        """Atomically patch one JSON data field on an existing matching row."""
+        raise NotImplementedError("compare_and_set_data_field is not implemented")
+
+    async def update_existing_data_field(
+        self,
+        entity_id: str,
+        entity_type: str,
+        field_name: str,
+        value: object,
+    ) -> tuple[Optional[RecordType], bool]:
+        """Atomically patch one JSON field without ever inserting a missing row."""
+        raise NotImplementedError("update_existing_data_field is not implemented")
+
     async def save(self, entity: DBBaseRecord, owner: TypeId | None = None):
         raise NotImplementedError("create is not implemented")
 
@@ -448,24 +469,20 @@ _default_driver = "sqlite"  # Default to SQLite driver
 # swap. It is a plain ``asyncio.Lock`` taken inside the already-async call
 # paths (no event-loop reaching).
 #
-# ``_lifecycle_in_progress`` is the same-task bypass: the mutator's own nested
-# session opens (bootstrap rebuild, clear_index, entity-cache work that runs
-# *while it holds the lock*) must NOT re-acquire the non-reentrant lock or
-# they self-deadlock. Modeled on the existing ``_standalone_session_var``
-# same-task handoff in sqlite_driver.py: a ContextVar set inside the held
-# region, so the holder's coroutine sees it True.
+# ``_lifecycle_in_progress`` is the same-task bypass: a mutator's own nested
+# session opens during the atomic swap must NOT re-acquire the non-reentrant
+# lock or they self-deadlock. Modeled on the existing
+# ``_standalone_session_var`` same-task handoff in sqlite_driver.py: a
+# ContextVar set inside the held region, so the holder's coroutine sees it
+# True.
 #
-# Context propagation note: a child task spawned *inside* the held region
-# (e.g. anything bootstrap rebuild launches via create_task) inherits the
-# True snapshot and therefore also bypasses. That is correct AND required:
-# by the time the rebuild/bootstrap runs, the close→unlink→init→repoint has
-# already completed, so those nested opens target the freshly-rebuilt engine
-# — there is no longer any deleted file to straddle, and forcing them to
-# block on the lock the parent still holds would deadlock. Foreign request /
-# WS / indexer work arrives as top-level tasks created by the ASGI server
-# OUTSIDE this context (their snapshot is the default False), so they
-# correctly block on the lock until the swap completes. Verified: a task
-# created outside the guard blocks; one created inside inherits the bypass.
+# Context propagation note: a child task spawned inside the held region
+# inherits the True snapshot and therefore also bypasses. Lifecycle mutators
+# must only spawn such work after the destructive swap is complete. Foreign
+# request / WS / indexer work arrives as top-level tasks created outside this
+# context (their snapshot is the default False), so it correctly blocks until
+# the swap completes. Verified: a task created outside the guard blocks; one
+# created inside inherits the bypass.
 _DB_LIFECYCLE_LOCK = asyncio.Lock()
 _lifecycle_in_progress: ContextVar[bool] = ContextVar("db_lifecycle_in_progress", default=False)
 
@@ -487,10 +504,11 @@ def remove_db_sidecars(db_path: Path) -> None:
 async def db_lifecycle_guard() -> "AsyncIterator[None]":
     """Hold the DB-lifecycle lock for the duration of a destructive swap.
 
-    Acquire around the full close→unlink/swap→init→repoint(→bootstrap) block
-    of a lifecycle mutator. Sets ``_lifecycle_in_progress`` for the holder's
-    coroutine so its own nested session opens bypass the lock instead of
-    self-deadlocking on this non-reentrant lock.
+    Acquire around the full close→unlink/swap→init→repoint block of a
+    lifecycle mutator. Record-writing bootstrap/reseed work must run after
+    releasing this guard to preserve record-lock→session-lock ordering. Sets
+    ``_lifecycle_in_progress`` for the holder's coroutine so its own nested
+    session opens bypass this non-reentrant lock.
     """
     async with _DB_LIFECYCLE_LOCK:
         token = _lifecycle_in_progress.set(True)
