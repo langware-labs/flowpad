@@ -1888,14 +1888,21 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         _t.time("get_desktop_info+get_scan_info+compute_harness_state+capabilities_summary")
 
         # Sniffer hook is opt-in via InstanceSettings.sniffer_enabled
-        # (default off). When disabled, bootstrap reports whatever is in the
-        # DB (None if it was never enabled, the existing entity if the user
-        # toggled it on via the hooks-sniffer action) but never auto-installs
-        # hooks into ~/.claude/settings.json on its own.
+        # (default off). "Disabled" has ONE meaning everywhere — no sniffer
+        # commands in ~/.claude/settings.json — and it is enforced from both
+        # ends: the hooks-sniffer DELETE action purges on an explicit toggle
+        # off, and this boot path purges when nothing here backs the sniffer
+        # (default-off, or entries left behind by an uninstalled/other
+        # instance). Enabled state is the DB entity, so a user who toggled the
+        # sniffer on keeps it across restarts even with the instance gate off.
         from flow_sdk.app.actions.hooks_sniffer import (  # noqa: PLC0415
             _create_or_update_sniffer_hook,
             _get_sniffer_hook,
             sniffer_installed,
+        )
+        from flow_sdk.builtin.agent_hook import HookScope  # noqa: PLC0415
+        from flow_sdk.builtin.claude_settings_sync import (  # noqa: PLC0415
+            purge_sniffer_entries_from_settings,
         )
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
@@ -1904,17 +1911,27 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         try:
             sniffer_hook = await _get_sniffer_hook()
             _t.time("get_sniffer_hook")
-            if get_instance_settings().sniffer_enabled and (not sniffer_hook or not sniffer_hook.enabled):
+            sniffer_active = bool(sniffer_hook and sniffer_hook.enabled)
+            # What settings.json actually carries — the UI warns on this, not on
+            # the DB entity, so a sniffer installed by another instance shows
+            # up. Read once here; each branch below knows what it changed it to.
+            sniffer_is_installed = sniffer_installed()
+            _t.time("sniffer_installed")
+            if get_instance_settings().sniffer_enabled and not sniffer_active:
                 sniffer_hook = await _create_or_update_sniffer_hook(user)
                 _t.time("create_or_update_sniffer_hook")
                 await sniffer_hook.apply()
+                sniffer_is_installed = sniffer_installed()
                 _t.time("sniffer_hook.apply")
-            # What settings.json actually carries — the UI warns on this, not on
-            # the DB entity, so a sniffer installed by another instance shows up.
-            sniffer_is_installed = sniffer_installed()
-            _t.time("sniffer_installed")
+            elif not sniffer_active and sniffer_is_installed:
+                # Disabled, yet the settings file still carries sniffer
+                # commands — stale. Same purge the DELETE action runs, so both
+                # roads to "off" leave the harness in the same state.
+                purge_sniffer_entries_from_settings(HookScope.USER)
+                sniffer_is_installed = False
+                _t.time("purge_stale_sniffer_entries")
         except Exception as e:
-            logging.warning(f"Failed to auto-enable sniffer hook: {e}")
+            logging.warning(f"Failed to reconcile sniffer hook: {e}")
 
         # Build BootstrapInfo using Pydantic model
         types = build_all_type_payloads()
