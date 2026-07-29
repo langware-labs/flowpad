@@ -696,6 +696,7 @@ msgstr "פעולה:"
 #: src/components/account/system-diagnoses.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/connections-manager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -915,6 +916,10 @@ msgstr "הוסף לסדרה הפעילה"
 #: src/components/hooks-manager/index.tsx
 msgid "Add Trigger"
 msgstr "הוסף טריגר"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Add Variable"
+msgstr ""
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Added vibe agent"
@@ -1270,27 +1275,27 @@ msgstr "בדיקת גישת API עברה בהצלחה (200 OK)"
 msgid "API Key"
 msgstr "מפתח API"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "API key copied successfully"
 msgstr "מפתח ה-API הועתק בהצלחה"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API Key Deleted"
 msgstr "מפתח API נמחק"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API Key Deletion"
 msgstr "מחיקת מפתח API"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API Key Generated"
 msgstr "מפתח API נוצר"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API Key Generation"
 msgstr "יצירת מפתח API"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API key has been removed successfully"
 msgstr "מפתח ה-API הוסר בהצלחה"
 
@@ -1927,6 +1932,7 @@ msgstr "לא ניתן לעדכן — מוצגים הנתונים מהסנכרו�
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -2968,7 +2974,7 @@ msgstr "שיחות"
 msgid "Copied"
 msgstr "הועתק"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Copied to Clipboard"
 msgstr "הועתק ללוח"
 
@@ -2984,7 +2990,7 @@ msgstr "Copilot"
 msgid "Copilot session"
 msgstr "הפעלת Copilot"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -3162,6 +3168,10 @@ msgstr "שגיאה בהקפאת ההקשר"
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Could not generate a link"
 msgstr "לא ניתן ליצור קישור"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Could not load environment variables"
+msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "Could not load source: {error}"
@@ -3683,7 +3693,7 @@ msgstr "מחק הכל"
 msgid "Delete all failed"
 msgstr "מחיקת הכל נכשלה"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Delete API Key"
 msgstr "מחק מפתח API"
 
@@ -3896,6 +3906,8 @@ msgstr "תאר מה היית רוצה ש-Claude יעשה…"
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assistance-viewer/TaskDetail.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Description"
@@ -3909,7 +3921,11 @@ msgstr "תיאור (אופציונלי)"
 msgid "Description like prepare my daily brief"
 msgstr "תיאור, למשל: הכנת התקציר היומי שלי"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/EnvVarsManager.tsx
+msgid "Description of this environment variable"
+msgstr ""
+
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Description:"
 msgstr "תיאור:"
 
@@ -4585,6 +4601,10 @@ msgstr "הזן שם hook"
 msgid "Enter the code here"
 msgstr "יש להזין כאן את הקוד"
 
+#: src/components/EnvVarsManager.tsx
+msgid "Enter the variable value"
+msgstr ""
+
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Enter trigger description"
 msgstr "הכנס תיאור טריגר"
@@ -4641,6 +4661,22 @@ msgstr "משתנה סביבה"
 msgid "ENV_VAR"
 msgstr "משתנה_סביבה"
 
+#: src/components/EnvVarsManager.tsx
+msgid "Environment variable created successfully"
+msgstr ""
+
+#: src/components/EnvVarsManager.tsx
+msgid "Environment variable deleted successfully"
+msgstr ""
+
+#: src/components/EnvVarsManager.tsx
+msgid "Environment variable updated successfully"
+msgstr ""
+
+#: src/components/EnvVarsManager.tsx
+msgid "Environment Variables"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "error"
 msgstr "שגיאה"
@@ -4658,8 +4694,16 @@ msgstr "שגיאה"
 #: src/components/account/system-log.tsx
 #: src/components/account/system-log.tsx
 #: src/components/agent-layout/error-screen/error-screen.tsx
-#: src/components/api-keys-view/api-keys-view.tsx
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/machine-overview/node-secrets.tsx
 #: src/components/project-home/BindSecretDialog.tsx
@@ -5000,9 +5044,13 @@ msgstr "הסרה נכשלה"
 msgid "Failed to Delete"
 msgstr "כישלון במחיקה"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Failed to delete API key"
 msgstr "הייתה שגיאה במחיקת מפתח API"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Failed to delete environment variable"
+msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -5047,7 +5095,7 @@ msgstr "הורדת היומנים נכשלה"
 msgid "Failed to fetch metrics"
 msgstr "אחזור המדדים נכשל"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Failed to generate API key"
 msgstr "הייתה שגיאה ביצירת מפתח API"
 
@@ -5547,7 +5595,7 @@ msgstr "זרימה או צומת חישוב לא זמינים"
 msgid "Flowpad"
 msgstr "Flowpad"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "FlowPad API Key"
 msgstr "מפתח API של FlowPad"
 
@@ -5763,11 +5811,11 @@ msgstr "שער"
 msgid "GB"
 msgstr "ג'יגה-בייט"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Generate an API key to authenticate API requests to FlowPad"
 msgstr "צור מפתח API לאימות בקשות API ל-FlowPad"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Generate FlowPad API Key"
 msgstr "צור מפתח API של FlowPad"
 
@@ -6370,7 +6418,7 @@ msgstr "כישלון בייבוא"
 msgid "Import mermaid → board"
 msgstr "ייבוא mermaid → ללוח"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Important:"
 msgstr "חשוב:"
 
@@ -6965,6 +7013,10 @@ msgstr "עזוב"
 msgid "Leave conversation"
 msgstr "עזוב שיחה"
 
+#: src/components/EnvVarsManager.tsx
+msgid "Leave empty to keep current value"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "Leave this conversation?"
 msgstr "לעזוב את השיחה הזו?"
@@ -7226,6 +7278,10 @@ msgstr "טוען דיף…"
 msgid "Loading document..."
 msgstr "טוען מסמך..."
 
+#: src/components/EnvVarsManager.tsx
+msgid "Loading environment variables..."
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Loading errors..."
 msgstr "טוען שגיאות..."
@@ -7477,6 +7533,9 @@ msgstr "נדרשת כניסה לחיפוש בבסיס נתונים של Flowpad"
 msgid "Login required"
 msgstr "נדרשת כניסה"
 
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "Login Required"
 msgstr "נדרש כניסה"
@@ -7886,6 +7945,7 @@ msgstr "לא זמין"
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -7899,12 +7959,17 @@ msgstr "שם"
 msgid "name (e.g. coding)"
 msgstr "שם (לדוגמה: coding)"
 
+#: src/components/EnvVarsManager.tsx
+msgid "Name (uppercase letters, numbers, and underscores only)"
+msgstr ""
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Name *"
 msgstr "שם *"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/EnvVarsManager.tsx
 msgid "Name is required"
 msgstr "שם הוא חובה"
 
@@ -7917,7 +7982,7 @@ msgid "Name this entity"
 msgstr "שם ישות זו"
 
 #: src/components/account/user-info.tsx
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Name:"
 msgstr "שם:"
 
@@ -8131,6 +8196,10 @@ msgstr "כרטיסייה חדשה"
 #: src/tabs/useTerminalStripController.tsx
 msgid "New Terminal"
 msgstr "טרמינל חדש"
+
+#: src/components/EnvVarsManager.tsx
+msgid "New Value (optional, max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
+msgstr ""
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #: src/components/workflows-view/WorkflowsNavigator.tsx
@@ -9118,6 +9187,10 @@ msgstr "לא מוערך"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not runnable here"
 msgstr "לא ניתן להפעיל כאן"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Not set"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not signed in — please re-authenticate"
@@ -10185,6 +10258,18 @@ msgstr "אנא תקן את הבעיה במאגר שלך ונסה שוב."
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "Please log in to view and manage environment variables."
 msgstr "בואו להתחבר כדי להציג ולנהל משתנים סביבה."
+
+#: src/components/EnvVarsManager.tsx
+msgid "Please login in order to add a new variable"
+msgstr ""
+
+#: src/components/EnvVarsManager.tsx
+msgid "Please login in order to edit environment variables"
+msgstr ""
+
+#: src/components/EnvVarsManager.tsx
+msgid "Please login in order to save environment variables"
+msgstr ""
 
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
 msgid "Please make sure the server is running."
@@ -11632,6 +11717,7 @@ msgstr "מדדי Sandbox"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/cron-view/CronForm.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -11673,7 +11759,7 @@ msgstr "השמירה נכשלה"
 msgid "Save the current asset changes as a version before running improvement."
 msgstr "יש לשמור את השינויים הנוכחיים של הנכס כגרסה לפני הפעלת השיפור"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Save this API key now. You won't be able to see it again!"
 msgstr "שמור את מפתח ה-API הזה עכשיו. לא תוכל לראות אותו שוב!"
 
@@ -12208,6 +12294,10 @@ msgstr "בחר פגישה"
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Select text to add a link"
 msgstr "בחר טקסט כדי להוסיף קישור"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Select variable type"
+msgstr ""
 
 #: src/components/webapp-viewer.tsx
 #~ msgid "Select webapp..."
@@ -13168,6 +13258,7 @@ msgstr "סטטיסטיקות"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/connections-manager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -13273,6 +13364,12 @@ msgstr "היטל תת־גרף"
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Submit"
 msgstr "שלחו"
+
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+msgid "Success"
+msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Suggest a prompt for the other user to approve"
@@ -14170,6 +14267,8 @@ msgid "Two quick steps in your browser:"
 msgstr "שני צעדים מהירים בדפדפן:"
 
 #: src/components/account/db-stats.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/graph-view/ui/TopBar.tsx
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -14281,6 +14380,10 @@ msgstr "שגיאה לא ידועה"
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
 #~ msgid "Unknown error loading activation rule"
 #~ msgstr "שגיאה לא ידועה בטעינת כלל הפעלה"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Unknown error occurred"
+msgstr ""
 
 #: src/components/account/organization-panel.tsx
 #: src/components/account/user-info.tsx
@@ -14495,8 +14598,8 @@ msgstr "משתמש"
 msgid "User ID:"
 msgstr "מזהה משתמש:"
 
-#: src/components/api-keys-view/api-keys-view.tsx
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "User not found"
 msgstr "משתמש לא נמצא"
 
@@ -14540,16 +14643,37 @@ msgstr "שגיאת אימות (422) - בעיית פורמט בקשה או ישו
 
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/EnvVarsManager.tsx
 msgid "Value"
 msgstr "ערך"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/EnvVarsManager.tsx
+msgid "Value (max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
+msgstr ""
+
+#: src/components/EnvVarsManager.tsx
+msgid "Value is required for new variables"
+msgstr ""
+
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Value:"
 msgstr "ערך:"
+
+#: src/components/EnvVarsManager.tsx
+msgid "VAR_NAME"
+msgstr ""
 
 #: src/components/skills-viewer/amd-editor/components/blocks/SetBlock.tsx
 #~ msgid "variable"
 #~ msgstr "משתנה"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Variable name must contain only uppercase letters, numbers, and underscores"
+msgstr ""
+
+#: src/components/EnvVarsManager.tsx
+msgid "Variable type is required"
+msgstr ""
 
 #: src/components/agentic-progress/shared/variables-inspector.tsx
 #~ msgid "Variables"
@@ -15033,6 +15157,10 @@ msgstr "עדיין אינכם משויכים לארגון. ארגונים מוג
 msgid "You must be logged in"
 msgstr "עליך להיות מחובר"
 
+#: src/components/EnvVarsManager.tsx
+msgid "You must be logged in to delete environment variables"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "You own — delete for everyone"
@@ -15069,7 +15197,7 @@ msgstr "בשיחה זו יש משתתף יחיד בלבד — הודעה זו ל
 msgid "You've been invited to a conversation"
 msgstr "הוזמנת לשיחה"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Your API key for authenticating API requests to FlowPad"
 msgstr "מפתח ה-API שלך לאימות בקשות API ל-FlowPad"
 
@@ -15086,7 +15214,7 @@ msgstr "שם התצוגה שלך"
 msgid "Your markup on this image will be lost."
 msgstr "ההערות שלך בתמונה זו תאבדו."
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Your new API key has been created. Please save it securely."
 msgstr "מפתח ה-API החדש שלך נוצר. אנא שמור אותו בצורה מאובטחת."
 
