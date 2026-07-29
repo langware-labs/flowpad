@@ -2,6 +2,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { ContextEntitiesEnum, dataContext } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { ProjectSelectorModal } from '@src/components/project-selector';
+import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useProjects } from '@src/hooks/use-projects';
 import { FolderOpen } from 'lucide-react';

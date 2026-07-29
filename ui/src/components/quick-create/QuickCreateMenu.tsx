@@ -12,6 +12,7 @@ import {
   useEnsureProject,
   useGitCloneDialogSubmit,
 } from '@src/components/project-selector';
+import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
 import {
   DropdownMenu,
   DropdownMenuContent,
