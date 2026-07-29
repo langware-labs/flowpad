@@ -28,7 +28,7 @@ const TYPE_LABEL: Record<string, string> = {
   conversation: 'Conversations',
   task: 'Tasks',
   markdown: 'Docs',
-  agentic_flow: 'Flows',
+  graph_workflow: 'Flows',
 };
 
 export function HubRecordsView({ type }: { type?: string }) {

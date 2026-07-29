@@ -163,7 +163,7 @@ EventBus.on(tag_pattern, handler, {target?, scope?}) → unsub
 |------------|-------|
 | `DBEntity.save` / `notify_updated` / `delete` | `entity.created/updated/deleted`, target = `to_entity`, scope += `from_entity` — **dual-published**; legacy `data_op_msg` invalidation untouched |
 | `fsop_watcher._fire` | `fs.added/modified/deleted`, target = the path's asset (or vfs ref); Triggers become `(pattern, target?, scope?)` subscriptions |
-| `FlowManager` boundaries (`_broadcast_*`) | `flow.started/waiting/done/failed`, target = the flow/journey entity, run/node detail in `data`; run-*internal* routing stays inside the engine; inbound, `inject`/`$external` = how a bus event enters a run |
+| `GraphWorkflowManager` boundaries (`_broadcast_*`) | `flow.started/waiting/done/failed`, target = the flow/journey entity, run/node detail in `data`; run-*internal* routing stays inside the engine; inbound, `inject`/`$external` = how a bus event enters a run |
 | Worker status tick | `agent.status`, target = the AgenticProcess (status enum in `data`) |
 | Heartbeat / hub link / compute registration | `node.connected/disconnected/heartbeat/status`, target = the ComputeNode — replaces today's three-mechanism spread |
 | Hub bridge (`_dispatch_event`) | relays inbound hub events with `origin: hub`, `actor` preserved |

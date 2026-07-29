@@ -11,7 +11,7 @@ export * from './cloud_login';
 export * from './cloud_status';
 export * from './privacy_mode';
 export * from './toplog';
-export * from './agentic-flows';
+export * from './graph-workflows';
 export * from './authService';
 export * from './oauth/oauth-service';
 export * from './fsService';

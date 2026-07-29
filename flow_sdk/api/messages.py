@@ -1,10 +1,10 @@
 import uuid
 from enum import Enum
-from flow_sdk._compat import StrEnum
 from typing import Any, ClassVar, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_request import APIRequest
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.request_context.auth_info import AuthContext
@@ -38,7 +38,7 @@ class WSMessageType(Enum):
     PRIVACY_MODE_MSG = "privacy_mode_msg"
     TOPLOG_STATE_MSG = "toplog_state_msg"
     FLOW_RUN_EVENT_MSG = "flow_run_event_msg"
-    FLOW_NODE_STATUS_MSG = "flow_node_status_msg"
+    GRAPH_WORKFLOW_NODE_STATUS_MSG = "flow_node_status_msg"
     # The unified event bus frame (docs/flow-events.md) — carries one FlowEvent.
     TAG_MSG = "tag_msg"
 
@@ -153,10 +153,10 @@ class ToplogStateMessage(BaseMessage):
     filter: Dict[str, bool]
 
 
-class FlowRunEventMessage(BaseMessage):
-    """Broadcast for every event/lifecycle beat of an AgenticFlow run — the
+class GraphWorkflowRunEventMessage(BaseMessage):
+    """Broadcast for every event/lifecycle beat of an GraphWorkflow run — the
     live run stream. ``kind``: run_start | event | run_end. The TS mirror is
-    ``FlowRunEventMessage`` in ``ts_sdk/src/websocket.ts``."""
+    ``GraphWorkflowRunEventMessage`` in ``ts_sdk/src/websocket.ts``."""
 
     message_type: str = WSMessageType.FLOW_RUN_EVENT_MSG.value
     flow_id: str
@@ -169,13 +169,13 @@ class FlowRunEventMessage(BaseMessage):
     ts: str = ""
 
 
-class FlowNodeStatusMessage(BaseMessage):
+class GraphWorkflowNodeStatusMessage(BaseMessage):
     """Broadcast on every scheduler transition for a flow node — the push feed
     for live queue/active counters and node status lines.
     ``phase``: queued | merged | started | finished | failed.
-    The TS mirror is ``FlowNodeStatusMessage`` in ``ts_sdk/src/websocket.ts``."""
+    The TS mirror is ``GraphWorkflowNodeStatusMessage`` in ``ts_sdk/src/websocket.ts``."""
 
-    message_type: str = WSMessageType.FLOW_NODE_STATUS_MSG.value
+    message_type: str = WSMessageType.GRAPH_WORKFLOW_NODE_STATUS_MSG.value
     flow_id: str
     run_id: str
     node_id: str

@@ -114,9 +114,9 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   // journal-WS-watch gap (updates only reached watch-holding tabs).
   // useOnTag rides the handler on a ref, so refresh's unstable identity
   // cannot churn the subscription (it resubscribes only on target change).
-  useOnTag('flow.step.done', () => {
+  useOnTag('graph_workflow.step.done', () => {
     if (journeyId) void refresh();
-  }, { target: journeyId ? targetOf('agentic_flow', journeyId) : 'agentic_flow:none' });
+  }, { target: journeyId ? targetOf('graph_workflow', journeyId) : 'graph_workflow:none' });
 
   // ── present the current step (once per cursor PER RUN) ──
   // The key includes the JOURNAL id: a restart mints a fresh journal whose

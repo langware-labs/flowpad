@@ -11,9 +11,9 @@ export * from './compute-node';
 // Legacy exports for backwards compatibility
 export * from './compute_enum';
 export * from './compute_node';
-export * from './flow-node';
-export * from './agentic-flow';
-export * from './agentic-flow-run';
+export * from './graph-workflow-node';
+export * from './graph-workflow';
+export * from './graph-workflow-run';
 export * from './fs_item';
 export * from './job';
 export * from './job_execution';

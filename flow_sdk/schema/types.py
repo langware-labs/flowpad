@@ -178,19 +178,19 @@ class EntityType(StrEnum):
     PROCESS_RESULT = "process_result"
     CRON_EVENT = "cron_event"
     FLOW_MESSAGE = "flow_message"
-    # ── Flow-graph slice (FlowManager) — DB-only entities, no asset_ref ──────
+    # ── Flow-graph slice (GraphWorkflowManager) — DB-only entities, no asset_ref ──────
     # A station in the flow graph: binds a program (skill/callback/instruction)
     # to execution defaults; executions are separate AgenticProcess entities.
-    FLOW_NODE = "flow_node"
+    GRAPH_WORKFLOW_NODE = "flow_node"
     # A folder-backed flow document (graph.json + display.json + scripts/ +
     # runs/). NOTE: "flow" stays reserved by the retired conversational Flow.
-    AGENTIC_FLOW = "agentic_flow"
-    # One execution of an AgenticFlow — row is start/end bookkeeping; the full
+    GRAPH_WORKFLOW = "graph_workflow"
+    # One execution of an GraphWorkflow — row is start/end bookkeeping; the full
     # trace lives in the flow folder's runs/<id>.jsonl.
-    AGENTIC_FLOW_RUN = "agentic_flow_run"
+    GRAPH_WORKFLOW_RUN = "graph_workflow_run"
     # A folder-backed guided-onboarding document (graph.json of guided_step
-    # nodes + child *.html pages). Runs on the FlowManager engine like an
-    # AgenticFlow, but typed separately so it stays out of the Flows list.
+    # nodes + child *.html pages). Runs on the GraphWorkflowManager engine like an
+    # GraphWorkflow, but typed separately so it stays out of the Flows list.
     JOURNEY = "journey"
     # A user's private progress through a Journey (DB-only, one per user+journey).
     JOURNEY_JOURNAL = "journey_journal"
