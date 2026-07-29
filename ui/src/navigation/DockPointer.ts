@@ -173,6 +173,10 @@ export class DockPointer implements IDockPointer {
   /** Which SPA-surface this dock addresses. Defaults to `desk` (today's desktop
    *  app); a sibling of `viewType`, never folded into `pointer`. */
   public readonly page: PageId;
+  /** Set ONLY on a dock rebuilt from a stored Tab.pointer, where the folded
+   *  sub-pointer can no longer be inspected. A live URL dock leaves this
+   *  undefined and `toJSON` derives the bit from its real pointer. */
+  private storedWorkspaceContent?: boolean;
 
   constructor(data: IDockPointer, layout?: Layout);
   constructor(viewType?: ViewType, pointer?: string, options?: Record<string, string>, layout?: Layout, page?: PageId);
@@ -1600,13 +1604,24 @@ export class DockPointer implements IDockPointer {
     // JSON is constant for a given scope regardless of which type was last viewed
     // → the backend mints ONE Tab row per scope; (b) `Tab.dockPointer` rebuilds the
     // same tabHash directly from the stored field; (c) clicking the chip reopens the
-    // scoped browser root.
+    // scoped browser root. Preserve only whether the live Assets URL addresses
+    // content: the backend needs that URL-owned fact to validate a workspace
+    // parent edge after the sub-pointer itself is folded out of tab identity.
+    // It does not change tabHash, so editor/list URLs still share one row.
     if (VIEWER_REGISTRY[this.viewType]?.scopeKeyed) {
+      // A dock rebuilt from stored JSON has already had its sub-pointer folded
+      // to '' (and `fromUrl` supplied a default), so re-deriving the bit there
+      // would invent one. Trust what was stored; derive only for a live URL.
+      const workspaceContent =
+        this.storedWorkspaceContent ??
+        (this.viewType === ViewType.ASSETS &&
+          (this.pointer?.startsWith(`${AssetMode.EDITOR}/`) || this.pointer?.startsWith(`${AssetMode.WIKI}/`)));
       return JSON.stringify({
         viewType: this.viewType,
         pointer: '',
         options: this.scopeFilter ? scopeFilterToDockOptions(this.scopeFilter) : undefined,
         tabHash: this.tabHash,
+        workspaceContent: workspaceContent || undefined,
       });
     }
     // Pointer-folding views (Preferences, …) persist a constant identity: pointer
@@ -1626,6 +1641,7 @@ export class DockPointer implements IDockPointer {
         viewType?: string;
         pointer?: string;
         options?: Record<string, string>;
+        workspaceContent?: boolean;
       };
       const { viewType, pointer, options } = parsed;
       if (!viewType) return null;
@@ -1643,7 +1659,13 @@ export class DockPointer implements IDockPointer {
       );
       // Restore scope options (assets identity) so the reconstructed dock's
       // tabHash matches the live nav dock's.
-      return normalized.options ? new DockPointer(dp.viewType, dp.pointer, normalized.options, dp.layout, dp.page) : dp;
+      const restored = normalized.options
+        ? new DockPointer(dp.viewType, dp.pointer, normalized.options, dp.layout, dp.page)
+        : dp;
+      // Carry the stored bit verbatim — absent means false, not "unknown", so a
+      // toJSON → fromJSON → toJSON round trip is stable.
+      restored.storedWorkspaceContent = parsed.workspaceContent === true;
+      return restored;
     } catch {
       return null;
     }
