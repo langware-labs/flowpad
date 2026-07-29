@@ -15,6 +15,7 @@ from flow_sdk.schema.types import EntityType
 COPILOT_SESSION = TypeMetadata(
     type=EntityType.COPILOT_SESSION,
     indexed_by_default=True,
+    api_visible=True,  # see CLAUDE_SESSION
     icon="Copilot",  # see CLAUDE_SESSION
     from_disk_fn=extract_copilot_session,
     identity_backend=derived_identity(copilot_session_id_from_file),
