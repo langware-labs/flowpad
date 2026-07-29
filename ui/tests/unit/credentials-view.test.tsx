@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   pointer: 'environment' as string | undefined,
   page: 'hub' as string,
   user: { id: 'u1' } as { id: string } | null,
+  contextProject: null as { id: string } | null,
   projects: [
     { id: 'proj-a', name: 'Alpha', typeId: 'project-a', fs_storage_mount_path: '/a' },
     { id: 'proj-b', name: 'Beta', typeId: 'project-b', fs_storage_mount_path: '/b' },
@@ -33,6 +34,7 @@ vi.mock('@sdk/react/hooks', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useAuth: () => ({ user: h.user }),
 }));
+vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: h.contextProject }) }));
 vi.mock('@src/hooks/use-projects', () => ({
   useProjects: () => ({ projects: h.projects, isLoading: false, refetch: vi.fn() }),
 }));

@@ -8,6 +8,7 @@ import { ProjectSelector } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
+import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ChevronDown, KeyRound } from 'lucide-react';
@@ -33,6 +34,7 @@ export const CredentialsView: React.FC = () => {
   const { user } = useAuth();
   const { navigation, currentDock } = useDockNavigation();
   const { projects, isLoading } = useProjects();
+  const { project: contextProject } = useContext();
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const { tab, projectId } = parseCredentialsPointer(currentDock?.pointer);
@@ -49,11 +51,15 @@ export const CredentialsView: React.FC = () => {
     [projects],
   );
 
-  // useProjects sorts by recency, so the head is the last-touched project —
-  // the same default the rest of the app uses when nothing is pinned.
+  // The URL wins; then the current project, so the header agrees with the
+  // footer's StatusBar rather than quietly showing a different one; then the
+  // head of `useProjects`, which is recency-sorted.
   const selected = useMemo(
-    () => (projects ?? []).find((p) => p.id === projectId) ?? (projects ?? [])[0],
-    [projects, projectId],
+    () =>
+      (projects ?? []).find((p) => p.id === projectId) ??
+      (projects ?? []).find((p) => p.id === contextProject?.id) ??
+      (projects ?? [])[0],
+    [projects, projectId, contextProject?.id],
   );
 
   const go = (nextTab: CredentialsSubview, nextProjectId?: string) => {
@@ -75,7 +81,9 @@ export const CredentialsView: React.FC = () => {
 
   return (
     <div className="flex h-full flex-col" data-testid="credentials-view">
-      <div className="flex items-center gap-3 border-b px-4 py-2">
+      {/* Fixed height: the picker is taller than the title and is hidden on API
+          Keys, so an auto-height header would jump 4px on every tab switch. */}
+      <div className="flex h-11 shrink-0 items-center gap-3 border-b px-4">
         <KeyRound className="h-4 w-4" />
         <h2 className="text-sm font-semibold">
           <Trans>Credentials</Trans>
