@@ -550,6 +550,14 @@ class TypeInfo:
             "parent_type": self.parent_type,
             "locations": self.locations,
             "main_subdir": self.main_subdir,
+            # The placement axis itself, so the client never re-derives a mount
+            # from a hand-written table. ``main_subdir`` above is only the
+            # claude-default VIEW of these three; the FE needs the class to know
+            # whether a harness choice even applies (REPO/INTERNAL are
+            # harness-less) and the family to build a non-default harness mount.
+            "asset_class": str(self.asset_class) if self.asset_class else None,
+            "harness": str(self.harness) if self.harness else None,
+            "family": self.family,
             "main_layout": self.main_layout,
             "main_file": self.main_file,
             "main_file_is_asset_ref": self.main_file_is_asset_ref,
@@ -857,19 +865,24 @@ class SchemaRegistry:
         return [info.type_name for info in cls.repo_family_to_info().values()]
 
     @classmethod
-    def main_subdir_to_info(cls, family: str) -> "dict[str, TypeInfo]":
-        """Types declaring ``family``, keyed by their scope-relative install
-        subdir (``main_subdir``) — e.g. for the transcripts family:
-        ``{".claude/transcripts": …, ".agents/transcripts": …}``.
+    def harness_scoped_families(cls) -> frozenset[str]:
+        """Every family that mounts inside a harness dot-dir (``skills``,
+        ``agents``, ``commands``, ``rules``, ``workflows``).
 
-        One family generally maps to several subdirs because each type's harness
-        contributes its own prefix, so a walker over "where this family installs"
-        needs the whole set. Generic on purpose: the registry knows how to index
-        its types, and the CALLER owns which family it cares about — keeping any
-        one domain's vocabulary out of the registry.
+        The mirror of ``repo_family_to_info`` for the other half of the layout
+        space, and the SINGLE owner of the ``harness_scoped`` predicate. Walkers
+        that need "is this path already claimed by a typed indexer?" ask here
+        rather than hand-listing directory names — a type enrolls by declaring
+        its ``asset_class``, so the answer cannot drift behind the registry.
         """
+        from flow_sdk.fs_store.placement import LAYOUT_REGISTRY  # noqa: PLC0415
+
         cls._ensure_loaded()
-        return {info.main_subdir: info for info in cls._types.values() if info.family == family and info.main_subdir}
+        return frozenset(
+            v.family
+            for v in cls._types.values()
+            if v.asset_class and v.family and LAYOUT_REGISTRY[v.asset_class].harness_scoped
+        )
 
     @classmethod
     def get_public_entity_types(cls) -> list[str]:

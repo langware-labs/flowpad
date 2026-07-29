@@ -8,7 +8,6 @@ from flow_sdk.fs_store.indexer.functions.claude_sessions import (
     claude_session_stable_key,
     extract_claude_session,
 )
-from flow_sdk.fs_store.placement import TRANSCRIPTS_FAMILY
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
 
@@ -26,12 +25,13 @@ CLAUDE_SESSION = TypeMetadata(
     id_namespace=uuid.NAMESPACE_DNS,
     # A session IS its transcript file, so it is an ordinary file-backed asset:
     # the ONE generic packer/installer handles it, and the bytes never travel
-    # under a separate name. Harness-scoped like ``agent_trace`` /
-    # ``usage_report`` — the same genre (a record produced BY one worker), and
-    # the class that allows a global install alongside a project one.
-    asset_class="harness",
-    harness="claude",
-    family=TRANSCRIPTS_FAMILY,
+    # under a separate name. REPO, not HARNESS: Claude Code's own session store
+    # is ``~/.claude/projects/<proj>/<id>.jsonl`` (globbed by ``claude_sessions_fn``)
+    # — it has never read a ``.claude/transcripts``, so an INSTALLED transcript is
+    # a flowpad artifact and belongs in the repo hierarchy. Which CLI produced it
+    # is carried by the TYPE, so no ``harness`` declaration is needed.
+    asset_class="repo",
+    family="claude_session",
     main_layout="file",
     main_ext=".jsonl",
     # No ``receive_policy``: a shared transcript stages and waits for the normal

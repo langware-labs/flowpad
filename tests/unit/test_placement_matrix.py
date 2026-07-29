@@ -140,32 +140,90 @@ def test_internal_type_is_project_only(tmp_path):
 
 # ── Golden table: the permanent byte-identical guard ─────────────────────────
 # Type → (expected project-scope subdir, expected asset_class). This is the
-# authoritative placement contract: it must hold BEFORE the literals migrate
-# (via the derive shim), AFTER they migrate (explicit fields), and AFTER
-# ``main_subdir`` is deleted. Add a row when you add a file-backed type.
+# authoritative placement contract. Add a row when you add a file-backed type.
 GOLDEN = {
+    # Dot-dir families. Every one of these is a directory the harness ITSELF
+    # reads — see HARNESS_OWNED_FAMILIES below, which is the guard that keeps
+    # this half of the table honest.
     "skill": (".claude/skills", AssetClass.SHARED),
     "agent": (".claude/agents", AssetClass.SHARED),
     "command": (".claude/commands", AssetClass.HARNESS),
     "claude_rules": (".claude/rules", AssetClass.HARNESS),
-    "plan": (".claude/plans", AssetClass.HARNESS),
     "dynamic_workflow": (".claude/workflows", AssetClass.HARNESS),
-    "whiteboard": (".claude/whiteboards", AssetClass.HARNESS),
-    "graph_workflow": ("agentic-assets/graph_workflow", AssetClass.REPO),
-    "agent_trace": (".claude/agent_traces", AssetClass.HARNESS),
-    "usage_report": (".claude/usage_reports", AssetClass.HARNESS),
-    "asset_cleanup_report": (".claude/cleanup_reports", AssetClass.HARNESS),
-    "markdown": ("docs", AssetClass.INTERNAL),
-    "markdown_index": ("docs", AssetClass.INTERNAL),
+    # Flowpad-native assets: the recursive agentic-assets/<type> hierarchy.
     "spec": ("agentic-assets/spec", AssetClass.REPO),
     "task": ("agentic-assets/task", AssetClass.REPO),
-    "prompt": ("prompts", AssetClass.INTERNAL),
     "dataset": ("agentic-assets/dataset", AssetClass.REPO),
     "deck": ("agentic-assets/deck", AssetClass.REPO),
     "deck_template": ("agentic-assets/deck_template", AssetClass.REPO),
-    "spreadsheet": ("assets/spreadsheets", AssetClass.INTERNAL),
+    "whiteboard": ("agentic-assets/whiteboard", AssetClass.REPO),
+    "journey": ("agentic-assets/journey", AssetClass.REPO),
+    "graph_workflow": ("agentic-assets/graph_workflow", AssetClass.REPO),
+    "agent_trace": ("agentic-assets/agent_trace", AssetClass.REPO),
+    "usage_report": ("agentic-assets/usage_report", AssetClass.REPO),
+    "asset_cleanup_report": ("agentic-assets/asset_cleanup_report", AssetClass.REPO),
+    "plan": ("agentic-assets/plan", AssetClass.REPO),
+    "prompt": ("agentic-assets/prompt", AssetClass.REPO),
+    "spreadsheet": ("agentic-assets/spreadsheet", AssetClass.REPO),
+    # Installed (received) transcripts. The harness's OWN store is elsewhere
+    # (~/.claude/projects, ~/.codex/sessions, ~/.copilot/session-state) and is
+    # read by the per-worker walkers, not by placement.
+    "claude_session": ("agentic-assets/claude_session", AssetClass.REPO),
+    "codex_session": ("agentic-assets/codex_session", AssetClass.REPO),
+    "copilot_session": ("agentic-assets/copilot_session", AssetClass.REPO),
+    # Free files at the repo root — no container, no harness prefix.
+    "markdown": ("docs", AssetClass.INTERNAL),
+    "markdown_index": ("docs", AssetClass.INTERNAL),
     "secret_origin": ("assets/sodot", AssetClass.INTERNAL),
 }
+
+# The ONLY family names flowpad may write inside a harness dot-dir, because they
+# are the only ones the harnesses themselves read:
+#   Claude Code  — https://code.claude.com/docs/en/claude-directory
+#   Copilot      — .github/skills (also accepts .claude/skills, .agents/skills)
+#   AGENTS.md    — .agents/AGENTS.md, .agents/skills
+# Adding a row here is a claim about ANOTHER tool's namespace: check its docs
+# first. If flowpad invented the directory, the type is REPO, not HARNESS.
+HARNESS_OWNED_FAMILIES = frozenset(
+    {
+        "skills",
+        "agents",
+        "commands",
+        "rules",
+        "workflows",
+        "output-styles",
+        "themes",
+        "plugins",
+        "projects",
+        "memory",
+        "agent-memory",
+    }
+)
+
+
+def test_no_squatting_in_harness_dot_dirs():
+    """Every harness-prefixed type mounts a family its harness actually reads.
+
+    The regression this locks out: flowpad quietly minting ``.claude/<whatever>``
+    for its own artifacts (whiteboards, journeys, transcripts, usage reports),
+    which both misrepresents the file to anyone reading the repo and collides the
+    day Claude Code claims the name.
+    """
+    from flow_sdk.fs_store.placement import LAYOUT_REGISTRY  # noqa: PLC0415
+
+    offenders = {
+        name: info.family
+        for name in SchemaRegistry.get_all_types()
+        if (info := SchemaRegistry.get(name)) is not None
+        and info.asset_class
+        and info.family
+        and LAYOUT_REGISTRY[info.asset_class].harness_scoped
+        and info.family not in HARNESS_OWNED_FAMILIES
+    }
+    assert not offenders, (
+        f"these types write a harness dot-dir their harness never reads: {offenders}. "
+        "Flowpad-native assets belong in agentic-assets/<type> (AssetClass.REPO)."
+    )
 
 
 @pytest.mark.parametrize("type_name,expected", list(GOLDEN.items()))

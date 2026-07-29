@@ -14,7 +14,7 @@ integration cost.
 
 **Reference impl:** `flow_sdk/builtin/agentic_process/cli_drivers/claude/`
 **Protocol surface:** `flow_sdk/builtin/agentic_process/cli_drivers/cli_worker_base_driver.py`
-  (`WorkerDriver`, `AgenticWorker`, `WorkerCLIOptions`)
+  (`WorkerDriver`, `AgenticWorker`, `AgentOptions`)
 
 ## Sections
 1. CLI Invocation & Switches
@@ -269,7 +269,7 @@ integration cost.
 
 ### Prompt input channel
 - **Need:** Deliver the user prompt to the subprocess
-- **Claude:** `--` positional arg via `ClaudeCliOptions.to_spawn_args(instruction=prompt)`; stdin is DEVNULL (claude/stream_worker.py:90, 203)
+- **Claude:** `--` positional arg via `ClaudeAgentOptions.to_spawn_args(instruction=prompt)`; stdin is DEVNULL (claude/stream_worker.py:90, 203)
 - **Codex:** stdin pipe: `self._proc.stdin.write(prompt.encode("utf-8"))` then close (codex/stream_worker.py:109, 121-125)
 - **Required:** Yes
 - **Vendor must expose:** A documented prompt-injection channel (arg or stdin)
@@ -681,7 +681,7 @@ integration cost.
 
 ### Plain resume by id
 - **Need:** Multi-turn against the same worker session by single flag.
-- **Claude:** `--resume <session_id>` (claude/cli.py:123, 227); `ClaudeDriver.cli_options` flips `cmd.resume = True` once a transcript exists for `process.session_id` (claude/driver.py:77-79); factory `AgenticProcess.resume(session_id=...)` pre-bakes `ClaudeCliOptions(resume=True)` (agentic_process.py:545-559); headless multi-turn auto-detects via `transcript_path(process) is not None` (claude/driver.py:137)
+- **Claude:** `--resume <session_id>` (claude/cli.py:123, 227); `ClaudeDriver.cli_options` flips `cmd.resume = True` once a transcript exists for `process.session_id` (claude/driver.py:77-79); factory `AgenticProcess.resume(session_id=...)` pre-bakes `ClaudeAgentOptions(resume=True)` (agentic_process.py:545-559); headless multi-turn auto-detects via `transcript_path(process) is not None` (claude/driver.py:137)
 - **Codex:** not supported
 - **Required:** Yes
 - **Vendor must expose:** a single CLI flag that resumes an existing session by id, plus a driver hook that toggles it when a transcript for that id already exists on disk.
@@ -785,8 +785,8 @@ integration cost.
 
 ### Arbitrary env-var passthrough
 - **Need:** Worker subprocess inherits a caller-controlled `dict[str, str]` of env vars.
-- **Claude:** `env_vars` dict on `ClaudeCliOptions`, returned by `to_spawn_args()` as the env dict (claude/cli.py:55-56, 250)
-- **Codex:** `env_vars` dict on `CodexCliOptions`, returned by `to_spawn_args()` (codex/cli.py:46-47, 116, 135)
+- **Claude:** `env_vars` dict on `ClaudeAgentOptions`, returned by `to_spawn_args()` as the env dict (claude/cli.py:55-56, 250)
+- **Codex:** `env_vars` dict on `CodexAgentOptions`, returned by `to_spawn_args()` (codex/cli.py:46-47, 116, 135)
 - **Required:** Yes
 - **Vendor must expose:** mutable `env_vars` mapping flowed verbatim into the subprocess environment
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
@@ -796,7 +796,7 @@ integration cost.
 ### `FLOWPAD_EXECUTION_SCOPE` env injection
 - **Need:** Hook routing back to originating process — worker subprocess gets a JSON-encoded `[{type, id}]` identifying its AgenticProcess (see Hooks section for the full handshake).
 - **Claude:** `cmd.add_env("FLOWPAD_EXECUTION_SCOPE", json.dumps([{"type": ..., "id": ...}]))` (PTY path); same dict-set in headless path (agentic_process.py:783-786; claude/driver.py:167-171)
-- **Codex:** Same path — `add_env` is on the shared `WorkerCLIOptions` base (agentic_process.py:783-786)
+- **Codex:** Same path — `add_env` is on the shared `AgentOptions` base (agentic_process.py:783-786)
 - **Required:** Yes
 - **Vendor must expose:** ability to set arbitrary env vars at launch time (covered by env-var passthrough)
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A
@@ -870,8 +870,8 @@ integration cost.
 
 ### `FLOWPAD_EXECUTION_SCOPE` env routing
 - **Need:** Worker process env must carry `FLOWPAD_EXECUTION_SCOPE` (JSON array of `{type, id}`) so hook payloads route back to the originating AgenticProcess via `_route_to_source_process`.
-- **Claude:** `ClaudeCliOptions` injects `FLOWPAD_EXECUTION_SCOPE` via `add_env`; `ClaudeDriver.headless_prompt` mirrors it for print-mode (claude/cli.py:29; claude/driver.py:164)
-- **Codex:** not supported (no scope injection in `CodexCliOptions`)
+- **Claude:** `ClaudeAgentOptions` injects `FLOWPAD_EXECUTION_SCOPE` via `add_env`; `ClaudeDriver.headless_prompt` mirrors it for print-mode (claude/cli.py:29; claude/driver.py:164)
+- **Codex:** not supported (no scope injection in `CodexAgentOptions`)
 - **Required:** Yes
 - **Vendor must expose:** Ability to inject arbitrary env vars into the worker subprocess (inherited by hook child processes).
 - [ ] Supported · [ ] Partial · [ ] Not supported · [ ] N/A

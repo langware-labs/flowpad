@@ -1,4 +1,4 @@
-import { Agent, DynamicWorkflow, Layout, Markdown, Project, Prompt, Skill, Task, Whiteboard } from '@sdk';
+import { Agent, dataManager, DynamicWorkflow, Layout, Markdown, Project, Prompt, Skill, Task, Whiteboard } from '@sdk';
 import { PromptEditDialog } from '@src/components/prompt-library/PromptEditDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { BookMarked, Bot, Boxes, CheckSquare, FileText, Palette, Sparkles, type LucideIcon } from 'lucide-react';
@@ -42,16 +42,15 @@ export interface QuickCreateDescriptor {
   wikiword: string;
   /** React icon component, rendered in the quick-create menu and dialog header. */
   Icon: LucideIcon;
-  /** Sub-folder under the scope root for Claude / All (e.g. ".claude/skills"). */
-  defaultSubFolder: string;
-  /** Codex project-scope sub-folder. Falls back to defaultSubFolder when omitted. */
-  codexProjectSubFolder?: string;
-  /** Codex user-scope sub-folder. Falls back to codexProjectSubFolder, then defaultSubFolder. */
-  codexUserSubFolder?: string;
-  /** Copilot project-scope sub-folder. Falls back to defaultSubFolder when omitted. */
-  copilotProjectSubFolder?: string;
-  /** Copilot user-scope sub-folder. Falls back to copilotProjectSubFolder, then defaultSubFolder. */
-  copilotUserSubFolder?: string;
+  /**
+   * Last-resort sub-folder, used ONLY when the backend registry has not loaded
+   * (an isolated unit test, or the dialog opening before bootstrap resolves).
+   * The real answer comes from `TypeInfo` — see {@link subFolderFor}. Do not add
+   * per-harness variants here: that table is what drifted out of sync with the
+   * backend and told users their task went to `.claude/tasks` for months after
+   * it had moved to `agentic-assets/task`.
+   */
+  fallbackSubFolder: string;
   /** Creation function — shared between the quick-create dialog and AssetsPage. */
   create: (args: QuickCreateCreateArgs) => Promise<QuickCreateResult>;
   /**
@@ -66,24 +65,48 @@ export interface QuickCreateDescriptor {
   }>;
 }
 
-function leafOf(subFolder: string): string {
-  const idx = subFolder.lastIndexOf('/');
-  return idx >= 0 ? subFolder.slice(idx + 1) : subFolder;
+/**
+ * Harness → dot-directory. The ONE thing the client still has to know, because
+ * it is an external standard rather than a flowpad decision: Claude Code reads
+ * `.claude/`, the AGENTS.md standard `.agents/`, Copilot `.github/`. Mirrors
+ * `WORKER_PREFIX` in `flow_sdk/fs_store/placement.py` — note codex maps onto
+ * `.agents` (the standard it speaks), NOT `.codex`.
+ */
+const HARNESS_DIR: Partial<Record<HarnessKind, string>> = {
+  claude: '.claude',
+  codex: '.agents',
+  copilot: '.github',
+};
+
+/**
+ * True when the harness chips mean anything for this type.
+ *
+ * Only SHARED assets (skill, agent) exist in a per-harness location, so only
+ * they get a choice. HARNESS types are pinned to the one harness that reads
+ * them; REPO types mount under `agentic-assets/` with no dot-dir at all; and
+ * INTERNAL types are bare at the scope root. Offering a harness chip for those
+ * would let the UI promise a destination the backend will not honour.
+ */
+export function harnessAppliesTo(type: string): boolean {
+  return dataManager?.getTypeInfo?.(type)?.asset_class === 'shared';
 }
 
-/** Resolve the sub-folder for a (descriptor, harness, scope) tuple. */
-export function subFolderFor(descriptor: QuickCreateDescriptor, harness: HarnessKind, scope: ScopeKind): string {
+/**
+ * Resolve the sub-folder for a (descriptor, harness, scope) tuple.
+ *
+ * The backend owns placement: `TypeInfo.main_subdir` is the resolved mount for
+ * the default (claude) harness, derived server-side from the type's
+ * asset_class/harness/family. This function only swaps the dot-dir prefix when
+ * the user picks a non-default harness for a SHARED type — the single case
+ * where more than one destination legitimately exists.
+ */
+export function subFolderFor(descriptor: QuickCreateDescriptor, harness: HarnessKind): string {
   if (harness === 'none') return '';
-  if (harness === 'all') return `assets/${leafOf(descriptor.defaultSubFolder)}`;
-  if (harness === 'codex') {
-    if (scope === 'user') return descriptor.codexUserSubFolder ?? descriptor.codexProjectSubFolder ?? descriptor.defaultSubFolder;
-    return descriptor.codexProjectSubFolder ?? descriptor.defaultSubFolder;
-  }
-  if (harness === 'copilot') {
-    if (scope === 'user') return descriptor.copilotUserSubFolder ?? descriptor.copilotProjectSubFolder ?? descriptor.defaultSubFolder;
-    return descriptor.copilotProjectSubFolder ?? descriptor.defaultSubFolder;
-  }
-  return descriptor.defaultSubFolder;
+  const info = dataManager?.getTypeInfo?.(descriptor.type);
+  const mount = info?.main_subdir ?? descriptor.fallbackSubFolder;
+  if (!info?.family || info.asset_class !== 'shared') return mount;
+  if (harness === 'all' || harness === 'claude') return mount;
+  return `${HARNESS_DIR[harness] ?? '.claude'}/${info.family}`;
 }
 
 export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
@@ -92,11 +115,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     label: 'Skill',
     wikiword: 'Skill assets',
     Icon: Sparkles,
-    defaultSubFolder: '.claude/skills',
-    codexProjectSubFolder: '.agents/skills',
-    codexUserSubFolder: '.codex/skills',
-    copilotProjectSubFolder: '.copilot/skills',
-    copilotUserSubFolder: '.copilot/skills',
+    fallbackSubFolder: '.claude/skills',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Skill.createInProject(project, name, folderVfsPath);
       return {
@@ -114,11 +133,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     label: 'Sub agent',
     wikiword: 'Sub agents',
     Icon: Bot,
-    defaultSubFolder: '.claude/agents',
-    codexProjectSubFolder: '.codex/agents',
-    codexUserSubFolder: '.codex/agents',
-    copilotProjectSubFolder: '.copilot/agents',
-    copilotUserSubFolder: '.copilot/agents',
+    fallbackSubFolder: '.claude/agents',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Agent.createInProject(project, name, folderVfsPath);
       return {
@@ -136,7 +151,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     label: 'Dynamic Workflow',
     wikiword: 'Dynamic workflows',
     Icon: Boxes,
-    defaultSubFolder: '.claude/workflows',
+    fallbackSubFolder: '.claude/workflows',
     create: async ({ project, name }) => {
       const saved = await DynamicWorkflow.createInProject(project, name);
       return {
@@ -152,9 +167,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     label: 'Task',
     wikiword: 'Task assets',
     Icon: CheckSquare,
-    defaultSubFolder: '.claude/tasks',
-    codexProjectSubFolder: '.codex/tasks',
-    copilotProjectSubFolder: '.copilot/tasks',
+    fallbackSubFolder: 'agentic-assets/task',
     create: async ({ project, name }) => {
       const task = await Task.createInProject(project, name);
       return {
@@ -168,9 +181,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     label: 'Markdown',
     wikiword: 'Markdown documents',
     Icon: FileText,
-    defaultSubFolder: '.claude/docs',
-    codexProjectSubFolder: '.codex/docs',
-    copilotProjectSubFolder: '.copilot/docs',
+    fallbackSubFolder: 'docs',
     create: async ({ project, name }) => {
       const md = await Markdown.createInProject(project, name);
       return {
@@ -184,9 +195,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     label: 'Whiteboard',
     wikiword: 'Whiteboard assets',
     Icon: Palette,
-    defaultSubFolder: '.claude/whiteboards',
-    codexProjectSubFolder: '.codex/whiteboards',
-    copilotProjectSubFolder: '.copilot/whiteboards',
+    fallbackSubFolder: 'agentic-assets/whiteboard',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Whiteboard.createInProject(project, name, folderVfsPath);
       return {
@@ -201,7 +210,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     wikiword: 'Prompt library',
     Icon: BookMarked,
     // `prompts/` is Flowpad's own convention, not a harness one — no variants.
-    defaultSubFolder: 'prompts',
+    fallbackSubFolder: 'agentic-assets/prompt',
     // A prompt is its text, so the library dialog creates it in one step.
     Dialog: PromptEditDialog,
     create: async ({ project, name }) => {

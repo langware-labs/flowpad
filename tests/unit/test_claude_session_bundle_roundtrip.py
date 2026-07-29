@@ -1,7 +1,7 @@
 """ClaudeSession bundle pack/unpack: the FILE-BACKED asset family path.
 
 A session IS its transcript file, so ``claude_session`` declares a placement
-(``asset_class="harness"`` / ``family="transcripts"``) and rides the ONE generic
+(``asset_class="repo"`` / ``family="claude_session"``) and rides the ONE generic
 ``_pack_file_backed_attachment`` — the same lane as skill/spec/markdown. There is
 no bespoke session packer, no separately-named transcript FILE attachment, and no
 private received-transcripts store.
@@ -90,7 +90,7 @@ async def test_pack_puts_transcript_inside_the_session_entry(tmp_path):
     # The transcript rides at the type's declared subdir inside the entry.
     transcript_entries = [n for n in carried if n.endswith(".jsonl")]
     assert transcript_entries, f"transcript not carried inside the entry: {carried}"
-    assert any(".claude/transcripts/" in n for n in transcript_entries), transcript_entries
+    assert any("agentic-assets/claude_session/" in n for n in transcript_entries), transcript_entries
 
     # It is NOT smuggled through the raw-file lane under a transport name.
     assert not any(n.startswith("attachment/files/") for n in names), names

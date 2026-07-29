@@ -26,7 +26,7 @@ from uuid import uuid4
 from pydantic import SerializationInfo, model_serializer, model_validator
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField, Persist
+from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.builtin.agentic_process.asset_dir import AssetDir
 from flow_sdk.builtin.agentic_process.cli_drivers import (
@@ -704,7 +704,7 @@ class AgenticProcess(Entity):
     type: str = APIField(default="agentic_process")
 
     instruction_content: str | None = APIField(default=None)
-    asset_ref: str | None = APIField(default=None)
+    asset_ref: str | None = APIField(default=None, sharing=Sharing.PRIVATE)
     context_data: dict[str, Any] = APIField(default_factory=dict)
     cli_config: dict[str, Any] = APIField(default_factory=dict)
     workdir: str | None = APIField(default=None)
@@ -715,7 +715,7 @@ class AgenticProcess(Entity):
     shell_mode: bool = APIField(
         default=False, description="False=direct PTY spawn (default), True=legacy zsh intermediary"
     )
-    project_id: str | None = APIField(default=None)
+    project_id: str | None = APIField(default=None, sharing=Sharing.PRIVATE)
     collaboration_room_id: str | None = APIField(
         default=None,
         description="CollaborationRoom this process was spawned in, if any",

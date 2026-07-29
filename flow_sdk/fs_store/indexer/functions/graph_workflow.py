@@ -1,4 +1,4 @@
-"""Walker + extractor + id mint + asset-hash for GRAPH_WORKFLOW records.
+"""Extractor + id mint + asset-hash for GRAPH_WORKFLOW records.
 
 An agentic flow is a folder containing ``graph.json`` (the flow document —
 see ``flow_sdk/graph_workflow_manager/graph_workflow_doc.py``) plus ``display.json`` (layout),
@@ -19,12 +19,9 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 GRAPH_JSON = "graph.json"
-
-
 def _load_doc(flow_dir: Path) -> GraphWorkflowDoc | None:
     try:
         return parse_graph_workflow_doc((flow_dir / GRAPH_JSON).read_text(encoding="utf-8"))

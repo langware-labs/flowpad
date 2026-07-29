@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.local_secret_ref import LocalSecretRef
 from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER, SecretOriginField
 from flow_sdk.builtin.secret_origin_identity import secret_origin_id
@@ -75,6 +75,7 @@ class SecretOrigin(Entity):
         "'sodot' | 'env-local'. Empty = derive from locator kind.",
     )
     project_id: str = APIField(
+        sharing=Sharing.PRIVATE,
         default="",
         description="The project this declaration belongs to. Half of the identity — see secret_origin_identity.",
     )

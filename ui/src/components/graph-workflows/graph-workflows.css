@@ -1,4 +1,4 @@
-/* Agentic Flows — Atlas design language (port of the hub org-graph atlas.css,
+/* Graph Workflows — Atlas design language (port of the hub org-graph atlas.css,
  * re-scoped under .graph-workflows and adapted to a React Flow canvas).
  * Surfaces/text inherit the app's shadcn tokens so light/dark follows the
  * theme toggle for free; graph hues: structure = indigo (--flow), accent /

@@ -18,7 +18,7 @@ keeping only — never for routing or layout.
 from pathlib import Path
 from typing import ClassVar, Optional
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
 
@@ -45,7 +45,7 @@ class GraphWorkflow(Entity):
     type: str = APIField(default=EntityType.GRAPH_WORKFLOW.value)
     name: str = APIField(default="")
     description: str = APIField(default="")
-    asset_ref: str = APIField(default="")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
     enabled: bool = APIField(default=True, description="The flow's active switch.")
 
     _api_visible: ClassVar[bool] = True

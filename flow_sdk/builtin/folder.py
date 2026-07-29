@@ -27,7 +27,7 @@ links are untouched (zero migration).
 
 from typing import Optional
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.fs_origin import FSOrigin, is_safe_rel_path
 from flow_sdk.builtin.fs_origin_field import FSOriginField
 from flow_sdk.builtin.local_origin import LocalOrigin
@@ -50,7 +50,7 @@ class Folder(Entity):
 
     # LOCAL resolved-path cache on THIS machine (see module docstring). Not the
     # transportable identity; set at add time (sender) or on resolve (receiver).
-    path: Optional[str] = APIField(default=None, description="Local resolved path of the directory (per-machine cache)")
+    path: Optional[str] = APIField(default=None, description="Local resolved path of the directory (per-machine cache)", sharing=Sharing.PRIVATE)
 
     def __init__(self, **data):
         # Tolerant backfill: an old row / bundle may carry a legacy ``path`` or
@@ -68,15 +68,18 @@ class Folder(Entity):
         super().__init__(**data)
 
     def _hub_body(self) -> dict:
-        """Folder hub payload: never leak the local resolved path.
+        """Folder hub payload: strip non-transportable origins.
 
         Folders normally travel as project context refs plus
-        ``shared_context_origins``. This guard keeps direct Folder share/create
-        paths from exposing a machine-local cache, and strips non-transportable
-        origins entirely.
+        ``shared_context_origins``. The local resolved ``path`` is withheld by
+        the field declaration itself (``Sharing.PRIVATE``); what remains here is
+        the runtime check that an origin is transportable, which no per-field
+        policy can express.
         """
         body = super()._hub_body()
-        body.pop("path", None)
+        # `path` is withheld by the base seam now (declared PRIVATE); this
+        # override is left with the one thing that is NOT per-field policy — a
+        # runtime predicate on the origin's transportability.
         origin = self.origin
         if origin is None or not origin.transportable:
             body.pop("origin", None)

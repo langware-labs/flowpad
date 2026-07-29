@@ -1,39 +1,14 @@
-"""Shared walker / JSON-load / id-mint plumbing for the ``report.json``-folder
+"""Shared JSON-load / id-mint plumbing for the ``report.json``-folder
 record families (``usage_report``, ``asset_cleanup_report``).
 
-Both live at ``<scope>/.claude/<subdir>/<name>/report.json`` — one folder per
-generated report — and differ only in the subdir, the RecordType, and the
-headline fields their extractor lifts into the record.
+Both live at ``<scope>/agentic-assets/<type>/<name>/report.json`` — one folder per
+generated report — and differ only in the RecordType and the headline fields
+their extractor lifts into the record. Discovery is the generic ``repo_assets_fn``.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
-
-from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.record_types import RecordType
-
-REPORT_JSON = "report.json"
-
-
-def walk_report_dirs(nodes: list[FSRef], subdir: str, record_type: RecordType) -> list[FSRef]:
-    """One FSRef per ``<node>/.claude/<subdir>/<name>/report.json``."""
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        reports_root = Path(node.path) / ".claude" / subdir
-        if not reports_root.is_dir():
-            continue
-        for report_dir in sorted(reports_root.iterdir()):
-            doc = report_dir / REPORT_JSON
-            if not doc.is_file():
-                continue
-            key = str(doc.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(doc, record_type=record_type, parent=node))
-    return out
 
 
 def load_report(path: Path) -> dict:

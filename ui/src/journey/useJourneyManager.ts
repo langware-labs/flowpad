@@ -207,12 +207,12 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
       : null;
   const shellId = shellTypeId?.type === Shell.type ? shellTypeId.id : undefined;
 
-  // The project the JOURNEY ships in: `<root>/.claude/journeys/<name>`. Its
+  // The project the JOURNEY ships in: `<root>/agentic-assets/journey/<name>`. Its
   // try-it steps must run THERE — a tour that says "the repo you're in IS
   // syncmd" was otherwise writing files into whatever project happened to be
   // active (and running `syncmd` outside a git repo, where it cannot work).
   const journeyRoot = useMemo(
-    () => /^(.*)\/\.claude\/journeys\/[^/]+\/?$/.exec(assetRef)?.[1] ?? null,
+    () => /^(.*)\/agentic-assets\/journey\/[^/]+\/?$/.exec(assetRef)?.[1] ?? null,
     [assetRef],
   );
 

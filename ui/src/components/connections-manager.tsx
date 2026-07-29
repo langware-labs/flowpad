@@ -3,15 +3,24 @@ import { CheckCircle } from 'lucide-react';
 import * as React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useOAuthConnection } from '@sdk/react/hooks/useOAuthConnection';
+import { cn } from '@src/lib/utils';
+import { notify } from '@src/notifications';
+import { useConnectionTimestamps } from './connections-manager/use-connection-timestamps';
 import { Button } from './ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { TooltipProvider } from './ui/tooltip';
 
-interface ConnectionsManagerProps {
-  connections?: OAuthConnection[];
+export interface ConnectionsManagerProps {
+  /**
+   * The project an OAuth token attaches to. Connect and disconnect are
+   * disabled without one — a token has to be granted TO something.
+   */
+  projectTypeId?: TypeId;
+  className?: string;
+  /** Render the "OAuth Connections" heading. */
+  header?: boolean;
   onConnectionConnect?: (connectionId: string) => void;
   onConnectionDisconnect?: (connectionId: string, detachResult?: OAuthDetachResult) => void;
-  currentProject?: TypeId;
 }
 
 // Extended OAuth connection type that includes providerName for internal use
@@ -20,29 +29,14 @@ interface ExtendedOAuthConnection extends OAuthConnection {
 }
 
 export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
+  projectTypeId,
+  className,
+  header = true,
   onConnectionConnect,
   onConnectionDisconnect,
-  currentProject,
 }) => {
   const { t } = useLingui();
-  const [connectionTimestamps, setConnectionTimestamps] = React.useState<Record<string, Date>>(() => {
-    // Load from localStorage on initialization
-    try {
-      const saved = localStorage.getItem('oauth-connection-timestamps');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Convert string dates back to Date objects
-        const result: Record<string, Date> = {};
-        for (const [key, value] of Object.entries(parsed)) {
-          result[key] = new Date(value as string);
-        }
-        return result;
-      }
-      return {};
-    } catch {
-      return {};
-    }
-  });
+  const { timestamps: connectionTimestamps, record, forget } = useConnectionTimestamps();
 
   // Handle OAuth authentication success (auth completed, auto-attached)
   const handleOAuthAuthSuccess = React.useCallback(
@@ -55,31 +49,19 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // Handle OAuth attach success (connection is now fully connected)
   const handleOAuthAttachSuccess = React.useCallback(
     (connectionId: string) => {
-      const now = new Date();
-      // Set the connection timestamp
-      setConnectionTimestamps((prev) => ({
-        ...prev,
-        [connectionId]: now,
-      }));
-
+      record(connectionId);
       onConnectionConnect?.(connectionId);
     },
-    [onConnectionConnect],
+    [onConnectionConnect, record],
   );
 
   // Handle OAuth connection disconnect
   const handleOAuthDisconnect = React.useCallback(
     (connectionId: string, detachResult?: OAuthDetachResult) => {
-      setConnectionTimestamps((prev) => {
-        const newTimestamps = { ...prev };
-        delete newTimestamps[connectionId];
-        return newTimestamps;
-      });
-
-      // Call the parent callback
+      forget(connectionId);
       onConnectionDisconnect?.(connectionId, detachResult);
     },
-    [onConnectionDisconnect],
+    [onConnectionDisconnect, forget],
   );
 
   const {
@@ -90,7 +72,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     attach,
     detach,
   } = useOAuthConnection({
-    currentProject,
+    projectTypeId,
     onConnectionDisconnect: handleOAuthDisconnect,
     onOAuthAuthSuccess: handleOAuthAuthSuccess, // OAuth auth completed (status: AVAILABLE)
     onAttachSuccess: handleOAuthAttachSuccess, // Attach completed (status: CONNECTED)
@@ -111,9 +93,11 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     const connection = allConnections.find((conn) => conn.id === connectionId);
     if (!connection) return;
     // Check if we have a current project
-    if (!currentProject) {
-      console.error('[ConnectionsManager] ERROR - No current project available for OAuth connection');
-      alert(t`No current project available. Please create a project first before connecting OAuth providers.`);
+    if (!projectTypeId) {
+      notify.error({
+        title: t`No project selected`,
+        message: t`Pick a project first — an OAuth token is granted to a project, not to the app.`,
+      });
       return;
     }
 
@@ -178,9 +162,14 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   };
 
   return (
-    <div className="flex h-full flex-col p-4">
+    // No frame of its own — the host supplies height and padding.
+    <div className={cn('flex min-h-0 flex-col', className)} data-testid="connections-manager">
       <div className="mb-4">
-        <h2 className="text-xl font-semibold"><Trans>OAuth Connections</Trans></h2>
+        {header && (
+          <h2 className="text-xl font-semibold">
+            <Trans>OAuth Connections</Trans>
+          </h2>
+        )}
       </div>
 
       <div className="flex-1 overflow-auto">

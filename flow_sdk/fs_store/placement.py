@@ -47,7 +47,18 @@ class HarnessType(StrEnum):
 
 
 class AssetClass(StrEnum):
-    """The "definition" axis — what an asset type fundamentally is."""
+    """The "definition" axis — what an asset type fundamentally is.
+
+    THE RULE for the two harness-prefixed classes: a harness dot-dir holds only
+    what that harness itself reads. `.claude/` means `skills`, `agents`,
+    `commands`, `rules`, `workflows`, `output-styles`, `themes`, `plugins`,
+    `projects`, `memory` — Claude Code's documented vocabulary. Copilot reads
+    `.github/skills`; the AGENTS.md standard defines `.agents/AGENTS.md` and
+    `.agents/skills`. Inventing a sibling (`.claude/whiteboards`) squats in
+    another tool's namespace and collides the day that tool claims the name, so
+    anything flowpad-native is REPO instead — including artifacts PRODUCED BY a
+    harness (transcripts, traces) that the harness never reads back from there.
+    """
 
     INTERNAL = "internal"  # flowpad's own subtree; no harness prefix, no fan-out
     HARNESS = "harness"  # tied to ONE harness (declared via ``TypeInfo.harness``)
@@ -168,11 +179,6 @@ class LayoutClass:
             return self.project_scope
         return False  # SYSTEM (or anything else) is never a placement input
 
-
-# The family every worker-session type declares. A received transcript installs
-# to ``<scope root>/<harness prefix>/transcripts/<id>.jsonl``; the indexer walks
-# exactly those subdirs via ``installed_transcripts.transcript_subdir_to_info``.
-TRANSCRIPTS_FAMILY = "transcripts"
 
 # The recursive repo-asset container. A REPO asset lives at
 # ``<container>/agentic-assets/<type>/<name>``; its children nest under the

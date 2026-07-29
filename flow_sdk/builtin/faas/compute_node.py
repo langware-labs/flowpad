@@ -14,7 +14,7 @@ from typing import Any, AsyncIterator, Literal, overload
 from fastapi import BackgroundTasks
 from pydantic import Field
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
 from flow_sdk.builtin.faas.desktop_actions import DesktopActionsMixin
@@ -99,7 +99,7 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
     attached_secrets: dict[str, list[str]] = APIField(default_factory=dict)
     # Override Entity's fs_storage fields with compute node defaults
     fs_storage_provider: StorageProvider | None = Field(default=StorageProvider.SANDBOX)
-    fs_storage_mount_path: str | None = APIField(default=None)
+    fs_storage_mount_path: str | None = APIField(default=None, sharing=Sharing.PRIVATE)
     home_dir: str | None = APIField(default=None)
 
     def _start_activity(self, job_name: str, timeout_seconds: int = 600):

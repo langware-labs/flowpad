@@ -48,7 +48,15 @@ export type RailItemId =
  * `home` and `tasks` exist on both surfaces and mean different things on each —
  * another reason not to share one union.
  */
-export type HubRailItemId = 'home' | 'world' | 'organization' | 'conversations' | 'tasks' | 'docs' | 'flows';
+export type HubRailItemId =
+  | 'home'
+  | 'world'
+  | 'organization'
+  | 'conversations'
+  | 'tasks'
+  | 'docs'
+  | 'flows'
+  | 'credentials';
 
 export type RailPlacement =
   /** Rides the top rail. */

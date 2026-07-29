@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 
 # Canonical per-example metadata filename inside an IO_FOLDER example dir.
@@ -152,7 +152,7 @@ class Dataset(Entity):
     # ``Entity.from_fs_ref`` so ``examples()`` can lazily parse rows. A plain
     # string (not an FSRef) because ``examples()`` does ``str(asset_ref)`` to get
     # the path. Mirrors WHITEBOARD/COMMAND.
-    asset_ref: str = APIField(default="")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
 
     def examples(self, kind: Optional[ExampleKind] = None) -> List[Example]:
         """Lazily parse the dataset's rows from disk, optionally filtered by kind.
