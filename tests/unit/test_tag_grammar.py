@@ -70,17 +70,17 @@ def test_ancestors():
 
 
 def test_glob_vs_prefix_semantics_diverge():
-    # Glob: `flow` does NOT match `flow.done` (no partial-tree matching
-    # without `*`); prefix containment says flow.done IS within flow.
-    assert not tag_matches("flow", "flow.done")
-    assert tag_is_within("flow.done", "flow")
+    # Glob: `flow` does NOT match `graph_workflow.done` (no partial-tree matching
+    # without `*`); prefix containment says graph_workflow.done IS within graph_workflow.
+    assert not tag_matches("graph_workflow", "graph_workflow.done")
+    assert tag_is_within("graph_workflow.done", "graph_workflow")
 
 
 def test_tag_tree_derivation():
-    tree = tag_tree(["flow.step.done", "flow.done", "entity.created"])
-    assert tree[""] == ["entity", "flow"]
-    assert tree["flow"] == ["flow.done", "flow.step"]
-    assert tree["flow.step"] == ["flow.step.done"]
+    tree = tag_tree(["graph_workflow.step.done", "graph_workflow.done", "entity.created"])
+    assert tree[""] == ["entity", "graph_workflow"]
+    assert tree["graph_workflow"] == ["graph_workflow.done", "graph_workflow.step"]
+    assert tree["graph_workflow.step"] == ["graph_workflow.step.done"]
     assert tree["entity"] == ["entity.created"]
 
 

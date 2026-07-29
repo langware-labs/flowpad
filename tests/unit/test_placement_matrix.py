@@ -151,7 +151,7 @@ GOLDEN = {
     "plan": (".claude/plans", AssetClass.HARNESS),
     "dynamic_workflow": (".claude/workflows", AssetClass.HARNESS),
     "whiteboard": (".claude/whiteboards", AssetClass.HARNESS),
-    "agentic_flow": (".claude/agentic-flows", AssetClass.HARNESS),
+    "graph_workflow": ("agentic-assets/graph_workflow", AssetClass.REPO),
     "agent_trace": (".claude/agent_traces", AssetClass.HARNESS),
     "usage_report": (".claude/usage_reports", AssetClass.HARNESS),
     "asset_cleanup_report": (".claude/cleanup_reports", AssetClass.HARNESS),

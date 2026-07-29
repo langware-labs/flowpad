@@ -817,7 +817,7 @@ class AgenticProcess(Entity):
         default=None,
         description=(
             "Terminal exit code of a driverless EXECUTION process (a flow "
-            "function subprocess) — stamped by the FlowManager when the "
+            "function subprocess) — stamped by the GraphWorkflowManager when the "
             "subprocess finishes. None for worker-driven processes."
         ),
     )
@@ -2378,12 +2378,9 @@ class AgenticProcess(Entity):
     @action.post(action_name="register-webapp-artifact")
     async def _http_register_webapp_artifact(self) -> ApiSuccessResponse | ApiFailResponse:
         """Create/update a web Artifact and its local Deployment."""
-        from datetime import datetime  # noqa: PLC0415
 
-        from flow_sdk._compat import UTC  # noqa: PLC0415
-        from flow_sdk.api.api_types.identifier import adopt_entity_id, mint_uuid  # noqa: PLC0415
+        from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
         from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
         from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
         from flow_sdk.builtin.local_origin import LocalOrigin  # noqa: PLC0415
         from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415

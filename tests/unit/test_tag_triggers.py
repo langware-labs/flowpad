@@ -143,16 +143,20 @@ async def test_tag_trigger_preserves_envelope_identity_on_flow_entry(tmp_path):
     """Phase 7 post-review: the TAG-trigger door preserves the triggering
     envelope's id + actor onto the flow entry, matching the subscription door."""
     import json as _json
-    from flow_sdk.builtin.agentic_flow import AgenticFlow
-    from flow_sdk.flow_manager import FlowManager, flow_functions, get_flow_manager
-    from flow_sdk.flow_manager.journal import read_run_journal
+
+    from flow_sdk.builtin.graph_workflow import GraphWorkflow
+    from flow_sdk.graph_workflow_manager import (
+        get_graph_workflow_manager,
+        graph_workflow_functions,
+    )
+    from flow_sdk.graph_workflow_manager.journal import read_run_journal
     from flow_sdk.tags import FlowEvent, event_bus
 
-    @flow_functions.register("v2_trig_prov")
+    @graph_workflow_functions.register("v2_trig_prov")
     def _p(event_name, data, ctx):
         return {}
 
-    flow = AgenticFlow(name="trigprov", asset_ref=str(tmp_path / "trigprov"))
+    flow = GraphWorkflow(name="trigprov", asset_ref=str(tmp_path / "trigprov"))
     await flow.save()
     trigger = _tag_trigger(tag_pattern="tp.*")
     await trigger.save()
@@ -170,7 +174,7 @@ async def test_tag_trigger_preserves_envelope_identity_on_flow_entry(tmp_path):
         env = FlowEvent(tag="tp.fire", target="x:1",
                         ctx={"origin": "local_server", "actor": "user:u-7"})
         event_bus.deliver(env)
-        fm = get_flow_manager()
+        fm = get_graph_workflow_manager()
         await _settle()
         runs = fm.live_run_ids()
         for _ in range(100):
@@ -178,8 +182,8 @@ async def test_tag_trigger_preserves_envelope_identity_on_flow_entry(tmp_path):
                 break
             await asyncio.sleep(0.01)
         entries = read_run_journal(tmp_path / "trigprov",
-                                   (await __import__("flow_sdk.builtin.agentic_flow_run",
-                                    fromlist=["AgenticFlowRun"]).AgenticFlowRun.get_all(
+                                   (await __import__("flow_sdk.builtin.graph_workflow_run",
+                                    fromlist=["GraphWorkflowRun"]).GraphWorkflowRun.get_all(
                                         {"flow_id": flow.id}))[0].id)
         row = next(e for e in entries if e["kind"] == "event")
         assert row["event_id"] == env.id

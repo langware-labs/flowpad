@@ -157,7 +157,7 @@ export function CollapsedSidebar() {
     hooks: { title: t`Hooks`, icon: Webhook, viewType: ViewType.HOOKS },
     files: { title: t`Files`, icon: FolderOpen, viewType: ViewType.EXPLORER },
     capabilities: { title: t`Capabilities`, icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
-    'agentic-flows': { title: t`Agentic Flows`, icon: Workflow, viewType: ViewType.AGENTIC_FLOWS },
+    'graph-workflows': { title: t`Graph Workflows`, icon: Workflow, viewType: ViewType.GRAPH_WORKFLOWS },
   };
 
   // Hub page has its own minimal rail — Home + the browse entries. It bypasses
@@ -177,7 +177,7 @@ export function CollapsedSidebar() {
         },
         { id: 'tasks', title: t`Tasks`, icon: CheckSquare, viewType: ViewType.HUB_RECORDS, pointer: 'task' },
         { id: 'docs', title: t`Docs`, icon: FileText, viewType: ViewType.HUB_RECORDS, pointer: 'markdown' },
-        { id: 'flows', title: t`Flows`, icon: Workflow, viewType: ViewType.HUB_RECORDS, pointer: 'agentic_flow' },
+        { id: 'flows', title: t`Flows`, icon: Workflow, viewType: ViewType.HUB_RECORDS, pointer: 'graph_workflow' },
         {
           id: 'world',
           title: t`Your world`,

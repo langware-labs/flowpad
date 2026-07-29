@@ -74,8 +74,8 @@ const GenericSubgraphView = lazy(() =>
   import('@src/components/graph-view/SubgraphView').then((m) => ({ default: m.GenericSubgraphView })),
 );
 // Lazy like GRAPH — keeps @xyflow/react out of app bootstrap.
-const AgenticFlowsView = lazy(() =>
-  import('@src/components/agentic-flows/AgenticFlowsView').then((m) => ({ default: m.AgenticFlowsView })),
+const GraphWorkflowsView = lazy(() =>
+  import('@src/components/graph-workflows/GraphWorkflowsView').then((m) => ({ default: m.GraphWorkflowsView })),
 );
 const SurveyView = lazy(() =>
   import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })),
@@ -437,10 +437,10 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
             <GenericSubgraphView />
           </Suspense>
         );
-      case ViewType.AGENTIC_FLOWS:
+      case ViewType.GRAPH_WORKFLOWS:
         return (
           <Suspense fallback={null}>
-            <AgenticFlowsView />
+            <GraphWorkflowsView />
           </Suspense>
         );
       case ViewType.K_BROWSER:

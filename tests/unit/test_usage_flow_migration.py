@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from flow_sdk.usage_report.flow_node import _window_from_event
+from flow_sdk.usage_report.graph_workflow_function import _window_from_event
 from tests.conftest import async_context
 
 
@@ -47,7 +47,7 @@ async def test_publish_function_posts_feed_entry(tmp_path):
 @async_context
 async def test_seed_migrates_retired_monolith_graph():
     from flow_sdk.builtin.trigger import Trigger
-    from flow_sdk.flow_manager.service_flows import _get_or_create_flow, _seed_daily_analysis
+    from flow_sdk.graph_workflow_manager.service_graph_workflows import _get_or_create_flow, _seed_daily_analysis
     from flow_sdk.server.builtin_triggers import set_service_triggers
 
     await set_service_triggers()
@@ -104,13 +104,13 @@ async def test_seed_migrates_retired_monolith_graph():
 
 
 def test_registries_are_separated():
-    """FlowFunctions live in their own registry; trigger_callbacks holds only
+    """GraphWorkflowFunctions live in their own registry; trigger_callbacks holds only
     trigger-signature handlers — the two-signature wart stays dead."""
     from flow_sdk.builtin import trigger_callbacks
-    from flow_sdk.flow_manager import flow_functions
+    from flow_sdk.graph_workflow_manager import graph_workflow_functions
     from flow_sdk.usage_report import callback as _register  # noqa: F401
 
-    assert flow_functions.get("flow_publish_usage_report") is not None
+    assert graph_workflow_functions.get("flow_publish_usage_report") is not None
     assert trigger_callbacks.get("flow_publish_usage_report") is None
     assert trigger_callbacks.get("builtin_daily_usage_report") is None
     assert trigger_callbacks.get("flow_daily_usage_report") is None

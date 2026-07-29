@@ -12,7 +12,7 @@ export const RESERVED_TAG_ROOTS: ReadonlySet<string> = new Set([
   'hub',
   'node',
   'agent',
-  'flow',
+  'graph_workflow',
   'app',
   'application',
   'workload',

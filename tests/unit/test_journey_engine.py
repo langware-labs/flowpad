@@ -1,4 +1,4 @@
-"""Journey engine — guided_step park/resume lifecycle on the FlowManager.
+"""Journey engine — guided_step park/resume lifecycle on the GraphWorkflowManager.
 
 A guided_step parks the run (keeps it alive via `suspended`) instead of spawning
 a worker; the frontend injects the node's `done` to release + route it onward.
@@ -7,10 +7,10 @@ No LLM, no frontend — just the engine contract the User Journey feature rides 
 import asyncio
 import json
 
-from flow_sdk.builtin.agentic_flow_run import AgenticFlowRun, RunStatus
+from flow_sdk.builtin.graph_workflow_run import GraphWorkflowRun, RunStatus
 from flow_sdk.builtin.journey import Journey
-from flow_sdk.flow_manager import FlowManager, parse_flow_doc
-from flow_sdk.flow_manager.flow_doc import GUIDED_PRESENT_KINDS
+from flow_sdk.graph_workflow_manager import GraphWorkflowManager, parse_graph_workflow_doc
+from flow_sdk.graph_workflow_manager.graph_workflow_doc import GUIDED_PRESENT_KINDS
 from tests.conftest import async_context
 
 
@@ -48,7 +48,7 @@ async def _make_journey(tmp_path, nodes, edges):
 
 def test_guided_step_validates():
     assert "asset_editor" in GUIDED_PRESENT_KINDS
-    doc = parse_flow_doc(json.dumps({
+    doc = parse_graph_workflow_doc(json.dumps({
         "version": 1, "nodes": [_step("s1"),
                                 {"id": "bad", "node_type": "guided_step",
                                  "node_data": {"present": {"dock": {"kind": "nope"}},
@@ -67,7 +67,7 @@ async def test_guided_step_parks_and_advances(tmp_path):
         [_step("s1"), _step("s2")],
         [_edge("e1", "s1", "done", "s2")],
     )
-    fm = FlowManager()
+    fm = GraphWorkflowManager()
 
     # Arm: deliver directly to s1 → the run PARKS (alive, suspended, not sunk).
     fe = await fm.inject(journey.id, "start", target_node="s1")
@@ -86,7 +86,7 @@ async def test_guided_step_parks_and_advances(tmp_path):
     # Advance s2 (terminal): no onward edge → run finalizes cleanly.
     await fm.inject(journey.id, "done", execution_id=run_id, source_node="s2")
     await _until(lambda: not fm.live_run_ids(), "run finalized")
-    row = await AgenticFlowRun.get_by_id(run_id)
+    row = await GraphWorkflowRun.get_by_id(run_id)
     assert row is not None and row.status == RunStatus.COMPLETE.value
 
 
@@ -105,7 +105,7 @@ def test_shipped_journeys_are_valid():
     graphs = sorted(glob.glob("flow_sdk/system_projects/*/agentic-assets/journey/*/graph.json"))
     assert graphs, "no shipped journeys found — did the path change?"
     problems = {
-        Path(g).parent.name: parse_flow_doc(Path(g).read_text(encoding="utf-8")).validate_graph()
+        Path(g).parent.name: parse_graph_workflow_doc(Path(g).read_text(encoding="utf-8")).validate_graph()
         for g in graphs
     }
     assert not any(problems.values()), problems

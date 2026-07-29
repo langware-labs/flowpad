@@ -130,8 +130,8 @@ export interface ToplogStateMessage extends BaseMessage {
 }
 
 /**
- * Broadcast for every event/lifecycle beat of an AgenticFlow run — the live
- * run stream. Backend mirror: FlowRunEventMessage in flow_sdk/api/messages.py.
+ * Broadcast for every event/lifecycle beat of an GraphWorkflow run — the live
+ * run stream. Backend mirror: GraphWorkflowRunEventMessage in flow_sdk/api/messages.py.
  */
 /** The unified event-bus frame — one serialized FlowEvent (docs/flow-events.md). */
 export interface TagMsg extends BaseMessage {
@@ -139,7 +139,7 @@ export interface TagMsg extends BaseMessage {
   event: import('./tags/EventBus').FlowEvent;
 }
 
-export interface FlowRunEventMessage extends BaseMessage {
+export interface GraphWorkflowRunEventMessage extends BaseMessage {
   message_type: 'flow_run_event_msg';
   flow_id: string;
   run_id: string;
@@ -153,11 +153,11 @@ export interface FlowRunEventMessage extends BaseMessage {
 }
 
 /**
- * Broadcast on every FlowManager scheduler transition for a flow node — the
+ * Broadcast on every GraphWorkflowManager scheduler transition for a flow node — the
  * push feed for live queue/active counters and node status lines.
- * Backend mirror: FlowNodeStatusMessage in flow_sdk/api/messages.py.
+ * Backend mirror: GraphWorkflowNodeStatusMessage in flow_sdk/api/messages.py.
  */
-export interface FlowNodeStatusMessage extends BaseMessage {
+export interface GraphWorkflowNodeStatusMessage extends BaseMessage {
   message_type: 'flow_node_status_msg';
   flow_id: string;
   run_id: string;
@@ -628,10 +628,10 @@ export class ConnectionManager extends EventEmitter {
       return this.onTagMessage(data as TagMsg);
     }
     if (data.message_type === 'flow_run_event_msg') {
-      return this.onFlowRunEventMessage(data as FlowRunEventMessage);
+      return this.onGraphWorkflowRunEventMessage(data as GraphWorkflowRunEventMessage);
     }
     if (data.message_type === 'flow_node_status_msg') {
-      return this.onFlowNodeStatusMessage(data as FlowNodeStatusMessage);
+      return this.onGraphWorkflowNodeStatusMessage(data as GraphWorkflowNodeStatusMessage);
     }
     if (data.message_type === 'toplog_state_msg') {
       return this.onToplogStateMessage(data as ToplogStateMessage);
@@ -689,11 +689,11 @@ export class ConnectionManager extends EventEmitter {
     this.emit('on_tag_msg', data);
   }
 
-  onFlowRunEventMessage(data: FlowRunEventMessage) {
+  onGraphWorkflowRunEventMessage(data: GraphWorkflowRunEventMessage) {
     this.emit('on_flow_run_event_msg', data);
   }
 
-  onFlowNodeStatusMessage(data: FlowNodeStatusMessage) {
+  onGraphWorkflowNodeStatusMessage(data: GraphWorkflowNodeStatusMessage) {
     this.emit('on_flow_node_status_msg', data);
   }
 
