@@ -487,13 +487,13 @@ Serialization mapping:
 | `outputFormat`      | `output_format`       |
 | `processType`       | `process_type`        |
 
-`ComputeNode.createProcess` receives this serialized context. Backend `scan_actions._scan_create_process()` stores process-level fields such as `workdir`, `project_id`, and `target_typeid_str`; moves CLI-related fields into `ClaudeCliOptions`/`cli_config`; and leaves remaining context in `context_data`.
+`ComputeNode.createProcess` receives this serialized context. Backend `scan_actions._scan_create_process()` stores process-level fields such as `workdir`, `project_id`, and `target_typeid_str`; moves CLI-related fields into `ClaudeAgentOptions`/`cli_config`; and leaves remaining context in `context_data`.
 
 ### CLI Config
 
 `cli_config` stores serialized worker CLI options. `AgenticProcess.cli_options` reconstructs the live command through `process.driver.cli_options(process)`.
 
-For Claude, `ClaudeCliOptions` supports:
+For Claude, `ClaudeAgentOptions` supports:
 
 | Option                                | CLI effect                                                                                |
 | ------------------------------------- | ----------------------------------------------------------------------------------------- |
@@ -512,7 +512,7 @@ For Claude, `ClaudeCliOptions` supports:
 | `additional_dirs` / `add_dirs`        | repeated `--add-dir <path>`; includes generated assets dir when instructions/assets exist |
 | `print_mode`                          | `-p`                                                                                      |
 
-For Codex, `CodexCliOptions` builds `codex exec` arguments such as `--json`, `--ephemeral`, `-C <workdir>`, `-m <model>`, and `--dangerously-bypass-approvals-and-sandbox`.
+For Codex, `CodexAgentOptions` builds `codex exec` arguments such as `--json`, `--ephemeral`, `-C <workdir>`, `-m <model>`, and `--dangerously-bypass-approvals-and-sandbox`.
 
 ### Embedded Assets
 
@@ -750,7 +750,7 @@ The following names appear in older docs or compatibility shims but are not the 
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
 | `flow_sdk/builtin/agentic_process/agentic_process.py`                    | Main `AgenticProcess` entity, lifecycle, prompt/open/close actions, serialization.           |
 | `flow_sdk/builtin/agentic_process/status_predicates.py`                  | `WorkerMode`, `is_ready_for_input`, process/worker predicate exports.                        |
-| `flow_sdk/builtin/agentic_process/cli_drivers/cli_worker_base_driver.py` | `AgenticContext`, `AgenticWorker`, `WorkerCLIOptions`, `WorkerDriver`, `get_driver()`.       |
+| `flow_sdk/builtin/agentic_process/cli_drivers/cli_worker_base_driver.py` | `AgenticContext`, `AgenticWorker`, `AgentOptions`, `WorkerDriver`, `get_driver()`.       |
 | `flow_sdk/builtin/agentic_process/cli_drivers/claude/driver.py`          | Claude driver: CLI options, print turns, transcript path/status/history, prompt composition. |
 | `flow_sdk/builtin/agentic_process/cli_drivers/claude/cli.py`             | Claude CLI option builder and direct PTY spawn args.                                         |
 | `flow_sdk/builtin/agentic_process/cli_drivers/claude/stream_worker.py`   | `claude -p --output-format stream-json` print-mode worker.                                   |

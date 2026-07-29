@@ -45,12 +45,12 @@ engine is legacy, scheduled for phase 8/10.
 
 ## Phase 0 — Claim the name  ✅
 
-Rename the run-local envelope (`graph_workflow_manager/envelope.py`) `FlowEvent` →
+Rename the run-local envelope (`graph_workgraph_workflow_manager/envelope.py`) `FlowEvent` →
 `RunEvent`; define the standard `FlowEvent` in `flow_sdk/tags/envelope.py`;
 rename TS `TagEvent` → `FlowEvent` (+ `TagCtx` → `FlowEventCtx`). Pure
 vocabulary — zero behavior, zero wire change.
 
-**Acceptance:** grep gates — no `FlowEvent` under `flow_sdk/graph_workflow_manager/`,
+**Acceptance:** grep gates — no `FlowEvent` under `flow_sdk/graph_workgraph_workflow_manager/`,
 no `TagEvent` in ts_sdk/ui; all existing tests green.
 
 ### Log
@@ -103,7 +103,7 @@ legacy `GraphWorkflowRunEventMessage`/`GraphWorkflowNodeStatusMessage`; terminal
 
 *Emissions — explicit calls at the four lifecycle boundaries (NOT inside the
 WS mirror helpers; boundary semantics ≠ status mirroring), via one helper
-`_emit_flow_tag(run, subtag, data)` in `graph_workflow_manager/manager.py` that fills
+`_emit_flow_tag(run, subtag, data)` in `graph_workgraph_workflow_manager/manager.py` that fills
 `target = f"graph_workflow:{run.flow.flow_id}"` and
 `ctx.scope = [f"graph_workflow_run:{run.id}", f"graph_workflow:{run.flow.flow_id}"]`
 (innermost-first). `ctx.actor` stays None until phase 7 threads attribution.*
@@ -131,7 +131,7 @@ via `tag_msg` (not just watch-holders), the journal-WS-watch gap closes for
 cross-tab journey progress too — the bug the workaround note in that file
 documents.*
 
-*Tests — extend `tests/unit/test_graph_workflow_manager.py` with a bus-capture fixture
+*Tests — extend `tests/unit/test_graph_workgraph_workflow_manager.py` with a bus-capture fixture
 (`event_bus.on('graph_workflow.*', collect)` + clear in teardown): a run emits
 started→output→done with correct target/scope ordering; a guided park emits
 `flow.waiting` and its release emits `flow.step.done`; a tripped run emits
@@ -146,7 +146,7 @@ closure made visible).*
 
 ### Log
 - 2026-07-22 — shipped as planned. `_emit_flow_tag` + five boundary sites in
-  `graph_workflow_manager/manager.py`; `useJourneyManager` post-advance `.then(refresh)`
+  `graph_workgraph_workflow_manager/manager.py`; `useJourneyManager` post-advance `.then(refresh)`
   chain replaced by ONE `flow.step.done` subscription (target-filtered to the
   journey). 3 bus-capture tests added (44/44 with the tag suites). Live
   drill: clicked step 1 of getting-started → tray advanced event-driven;

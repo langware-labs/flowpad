@@ -93,7 +93,7 @@ no-op defaults a concrete worker overrides.
 | `set_history(history)` | no-op | |
 | `manages_history() -> bool` | `False` | |
 
-### `WorkerCLIOptions` (~:190) — the shell/argv command builder
+### `AgentOptions` (~:190) — the shell/argv command builder
 
 Turns a structured config into an argv (canonical) and a shell string (derived) for PTY
 injection or subprocess spawn. Subclasses declare a vendor spec and override `_emit_flags()`.
@@ -134,7 +134,7 @@ inputs that would light up a phantom "restart required" glow:
   `FLOWPAD_DEFAULT_WORKER` env, `claude` if unset — the hook that lets the UI vitest run the
   suite under any backend). Aliases (`claude_code`, `claude_code_cli` → `claude`) map to
   registry keys; result cached per name in `_DRIVER_CACHE`.
-- `factory(cli_json, worker_type) -> WorkerCLIOptions` (~:448) — legacy CLI-options factory,
+- `factory(cli_json, worker_type) -> AgentOptions` (~:448) — legacy CLI-options factory,
   dispatches the string keys `"claude"`/`"codex"`/`"copilot"` (the stable wire form in
   serialised `cli_config`) to the vendor options class's `from_json`.
 
@@ -189,7 +189,7 @@ and a `cli_worker.py`/`code_agentic_worker.py` PTY pair; codex adds `session_det
 | File | Role |
 | --- | --- |
 | `driver.py` | The `WorkerDriver` implementation |
-| `cli.py` | `…CliOptions(WorkerCLIOptions)` — argv/flag builder |
+| `cli.py` | `…AgentOptions(AgentOptions)` — argv/flag builder |
 | `stream_worker.py` | `…CLIStreamWorker(AgenticWorker)` — headless subprocess + FlowData stream |
 | `event_to_flowdata.py` | Native JSONL event → `FlowData` mapping |
 | `session_history.py` | Session-file discovery + transcript→`FlowData` replay |
