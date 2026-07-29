@@ -11,6 +11,7 @@ export * from './useConnectionStatus';
 export * from './useContext';
 export * from './useCapability';
 export * from './useEntityEnv';
+export * from './useEntityEnvMutations';
 export * from './useFS';
 export * from './useFSStore';
 export * from './useGlobalEvnets';
