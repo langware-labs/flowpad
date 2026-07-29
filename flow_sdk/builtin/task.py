@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, List, Optional
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.core import Entity
 
@@ -34,7 +34,7 @@ class Task(Entity):
     title: str = APIField("")
     # Task is a folder-backed markdown asset (see task_type_info): asset_ref is
     # the ``tasks/<name>/`` folder holding ``task.md`` + inner ``spec.md``.
-    asset_ref: Optional[str] = APIField(None)
+    asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     description: Optional[str] = APIField(None, blob=True)
     status: str = APIField(TaskStatus.TO_DO)
     last_viewed_at: Optional[datetime] = APIField(None)
@@ -68,10 +68,10 @@ class Task(Entity):
     # the hub, and the owner (authorized on the child) pulls it during
     # ``sync-group`` — see ``group_task_action._sync_group_owner``.
     priority: Optional[str] = APIField(None)
-    tags: List[str] = APIField([])
+    tags: List[str] = APIField([], sharing=Sharing.PRIVATE)
     shared_by_id: Optional[str] = APIField(None)
     spec_type: Optional[str] = APIField(None)
-    my_process_id: Optional[str] = APIField(None)
+    my_process_id: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     shared_process_id: Optional[str] = APIField(None)
     # NOTE: spec_id, conversation_id, links — moved into the unified
     # ``context_entities`` list on the base ``Entity``. Read via
@@ -93,9 +93,9 @@ class Task(Entity):
     folder_name: Optional[str] = APIField(None)
     output_dir: Optional[str] = APIField(None)
     process_id: Optional[str] = APIField(None)
-    project_name: Optional[str] = APIField(None)
-    project_root: Optional[str] = APIField(None)
-    git_origin: Optional[GitOrigin] = APIField(None)
+    project_name: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+    project_root: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+    git_origin: Optional[GitOrigin] = APIField(None, sharing=Sharing.PRIVATE)
     recipient_email: Optional[str] = APIField(None)
     result_uname: Optional[str] = APIField(None)
     sender_email: Optional[str] = APIField(None)

@@ -45,9 +45,6 @@ class _Probe(DBBaseRecord):
     hub_write_f: Optional[str] = APIField(None, sharing=Sharing.HUB_WRITE)
     hub_read_f: Optional[str] = APIField(None, sharing=Sharing.HUB_READ)
     private_f: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
-    # The residue: hub-accepted, but must not ride a bundle (a local user id does
-    # not resolve on the receiver). This is the ONLY reason `portable` exists.
-    hub_read_local_f: Optional[str] = APIField(None, sharing=Sharing.HUB_READ, portable=False)
 
     # NOTE the decorator-argument form. Setting `.json_schema_extra` on the
     # property afterwards does NOT reach the `ComputedFieldInfo` — the policy is
@@ -72,7 +69,6 @@ CASES = {
     "hub_write_f": (Sharing.HUB_WRITE, True, False, False, True),
     "hub_read_f": (Sharing.HUB_READ, False, True, True, True),
     "private_f": (Sharing.PRIVATE, False, False, False, False),
-    "hub_read_local_f": (Sharing.HUB_READ, False, True, True, False),
 }
 
 

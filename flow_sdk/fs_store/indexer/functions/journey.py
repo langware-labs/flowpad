@@ -1,9 +1,10 @@
-"""Walker + extractor + id mint + asset-hash for JOURNEY records.
+"""Extractor + id mint + asset-hash for JOURNEY records.
 
 A journey is a folder containing ``graph.json`` (a GraphWorkflowDoc of guided_step nodes)
 plus ``display.json`` (layout), ``runs/`` (execution journals) and child ``*.html``
-pages shown during the journey. Cloned from the graph_workflow walker family;
-scans ``<scope>/.claude/journeys/*/``.
+pages shown during the journey. Discovery is the generic ``repo_assets_fn``
+walk of ``<scope>/agentic-assets/journey/*/``; this module owns the extractor,
+id mint and asset-hash.
 
 Freshness tracks ``graph.json`` + child ``*.html`` (the authored pages) — not
 ``display.json`` or ``runs/``.
@@ -12,32 +13,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from flow_sdk.graph_workflow_manager.graph_workflow_doc import GraphWorkflowDoc, parse_graph_workflow_doc
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions._folder_capsule import read_folder_capsule_id
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.graph_workflow_manager.graph_workflow_doc import GraphWorkflowDoc, parse_graph_workflow_doc
 
 GRAPH_JSON = "graph.json"
-
-
-def journey_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        journeys_dir = Path(node.path) / ".claude" / "journeys"
-        if not journeys_dir.is_dir():
-            continue
-        for entry in sorted(journeys_dir.iterdir()):
-            if not entry.is_dir() or not (entry / GRAPH_JSON).exists():
-                continue
-            key = str(entry.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(entry, record_type=RecordType.JOURNEY, parent=node))
-    return out
 
 
 def _load_doc(journey_dir: Path) -> GraphWorkflowDoc | None:

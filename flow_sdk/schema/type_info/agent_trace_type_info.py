@@ -55,13 +55,12 @@ AGENT_TRACE = TypeMetadata(
     icon="Route",
     api_visible=True,
     index_fields=["name", "session_id", "verdict"],
-    asset_class="harness",
-    harness="claude",
-    family="agent_traces",
+    asset_class="repo",
+    family="agent_trace",
     main_layout="folder",
     main_file="trace.json",
-    # asset_ref IS .claude/agent_traces/<name>/trace.json (the walker emits the
-    # inner file), so create and rescan agree on the inner-file path.
+    # asset_ref IS agentic-assets/agent_trace/<name>/trace.json (the walker emits
+    # the inner file), so create and rescan agree on the inner-file path.
     main_file_is_asset_ref=True,
     default_body_fn=_agent_trace_default_body,
     # The skill is the file's sole author; entity saves re-render trace.json —

@@ -1,10 +1,10 @@
 """Walker + extractor + id mint for DATASET records.
 
-A dataset is a folder under ``assets/datasets/`` containing a ``dataset.json``
+A dataset is a folder under ``agentic-assets/dataset/`` containing a ``dataset.json``
 manifest (which is also the walker's marker file). The manifest declares the
 physical layout; the example rows live beside it:
 
-    assets/datasets/<slug>/
+    agentic-assets/dataset/<slug>/
       dataset.json                 # {"metadata": {id?, data_layout, field_spec, schema, …}, "data": {…}}
       data.csv                     # data_layout == "csv"
       examples/0001/...            # data_layout == "io_folder" (see below)
@@ -72,7 +72,7 @@ def dataset_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
-    """Emit one DATASET FSRef per ``assets/datasets/<slug>/`` folder containing a
+    """Emit one DATASET FSRef per ``agentic-assets/dataset/<slug>/`` folder containing a
     ``dataset.json`` manifest."""
     out: list[FSRef] = []
     seen: set[str] = set()

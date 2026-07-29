@@ -1,10 +1,10 @@
 """Walker + extractor + id mint for DECK records.
 
-A deck is a generated presentation — a folder under ``assets/decks/`` containing
+A deck is a generated presentation — a folder under ``agentic-assets/deck/`` containing
 a ``deck.json`` build record (the walker's marker file) and the assembled,
 self-contained ``<name>.html``:
 
-    assets/decks/<slug>/
+    agentic-assets/deck/<slug>/
       deck.json          # {"title", "template": "../../deck-templates/<name>", "slides": [...]}
       <name>.html        # self-contained Reveal deck (inlined CSS/JS + base64 media)
 
@@ -43,7 +43,7 @@ def deck_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
-    """Emit one DECK FSRef per ``assets/decks/<slug>/`` folder containing a
+    """Emit one DECK FSRef per ``agentic-assets/deck/<slug>/`` folder containing a
     ``deck.json`` build record."""
     out: list[FSRef] = []
     seen: set[str] = set()

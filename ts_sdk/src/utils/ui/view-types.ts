@@ -56,6 +56,8 @@ export enum ViewType {
   SHELL = 'shell',
   EDITOR = 'editor',
   WEB_APP = 'web-app',
+  // Retired decode-only aliases; the loader redirects to /dock/credentials/<subview>
+  // and `normalizeRetiredDockPointer` resolves saved tabs. See CREDENTIALS.
   ENVIRONMENT = 'environment',
   CONNECTIONS = 'connections',
   ARTIFACTS = 'artifacts', // Renamed from RESULTS
@@ -66,7 +68,7 @@ export enum ViewType {
   DOCS = 'docs',
   ASSISTANCE = 'assistance', // expert assistance tasks
   SURVEY = 'survey',
-  API_KEYS = 'api-keys',
+  API_KEYS = 'api-keys', // Retired decode-only alias; see ENVIRONMENT
   HOOKS = 'hooks', // Claude Code hooks configuration
   MACHINE = 'machine', // Machine overview (processes, network)
   EXPLORER = 'explorer', // File explorer view
@@ -103,6 +105,18 @@ export enum ViewType {
   ATLAS = 'atlas', // Retired decode-only alias; loader redirects to /dock/hub/worldview/…
   HUB_RECORDS = 'records', // Hub entity list by type (page=hub) - /dock/hub/records/<type>
   HUB_ENTITY = 'entity', // Hub single-entity viewer (page=hub) - /dock/hub/entity/<type>/<id>
+  CREDENTIALS = 'credentials', // Env vars + OAuth connections + API keys - /dock/hub/credentials/<subview>[/<projectId>]
+}
+
+/**
+ * CredentialsSubview enum for the credentials view's internal tabs.
+ * Used as pointer in dock/credentials/:pointer URLs, optionally followed by a
+ * project id: `credentials/environment/<projectId>`.
+ */
+export enum CredentialsSubview {
+  ENVIRONMENT = 'environment',
+  CONNECTIONS = 'connections',
+  API_KEYS = 'api-keys',
 }
 
 /**

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import ClassVar, TYPE_CHECKING
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.core import action
 from flow_sdk.core.entity.entity_model import Entity
@@ -23,7 +23,7 @@ class Agent(Entity):
     type: str = APIField(default=BuiltinEntityType.AGENT.value)
     name: str | None = APIField(default=None)
     description: str | None = APIField(default=None)
-    asset_ref: str = APIField(default="")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
     # How the agent is used. HARNESS (default) = a normal sub-agent; VIBE = a
     # vibe persona layered on top of the standard vibe agent (embedded after it
     # on vibe process start). Sourced from the `.claude/agents/*.md` frontmatter

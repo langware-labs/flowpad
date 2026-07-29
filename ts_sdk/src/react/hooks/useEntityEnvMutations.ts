@@ -1,37 +1,27 @@
 import { useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { EntityEnv, EnvVarType, TypeId } from '@sdk';
+import { EntityEnv, EnvVar, TypeId } from '@sdk';
+
+import { entityEnvQueryKey } from './useEntityEnv';
 
 /**
  * Writes to an entity's env-var table, paired with the cache invalidation they
  * require.
  *
- * The point is the query key. `['entity-env-table', <id>]` is read by
- * {@link useEntityEnv} and was previously re-typed by hand at every call site —
- * five of them in one component — so a rename would have silently left stale
- * tables behind. It is written here and nowhere else.
+ * The point is the invalidation. Every write has to land on the same cache
+ * entry {@link useEntityEnv} reads, and that pairing was previously re-typed by
+ * hand at every call site — five of them in one component — so a write added
+ * without one left a stale table behind. The key itself lives in
+ * {@link entityEnvQueryKey}.
  *
  * These **rethrow**. Turning a failure into user-facing copy is the UI's job,
  * not the SDK's, and the two consumers word their toasts differently.
  */
 
-export interface EnvVarCreateInput {
-  name: string;
-  var_type: EnvVarType;
-  description?: string;
-  value: string;
-}
-
-export interface EnvVarUpdateInput {
-  var_type?: EnvVarType;
-  description?: string;
-  value?: string;
-}
-
 export interface UseEntityEnvMutations {
-  create(input: EnvVarCreateInput): Promise<void>;
-  update(name: string, patch: EnvVarUpdateInput): Promise<void>;
+  create(input: EnvVar): Promise<void>;
+  update(name: string, patch: Partial<EnvVar>): Promise<void>;
   remove(name: string): Promise<void>;
   /** Re-fetch the table without writing — for changes made through another path. */
   invalidate(): void;
@@ -43,7 +33,10 @@ export function useEntityEnvMutations(entityTypeId?: TypeId): UseEntityEnvMutati
 
   const invalidate = useCallback(() => {
     if (!key) return;
-    void queryClient.invalidateQueries({ queryKey: ['entity-env-table', key] });
+    void queryClient.invalidateQueries({ queryKey: entityEnvQueryKey(entityTypeId) });
+    // `key` is the invalidation's real identity; entityTypeId rides along for the
+    // key builder and is stable whenever key is.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryClient, key]);
 
   return useMemo<UseEntityEnvMutations>(() => {
@@ -55,11 +48,11 @@ export function useEntityEnvMutations(entityTypeId?: TypeId): UseEntityEnvMutati
     return {
       invalidate,
       async create(input) {
-        await new EntityEnv(requireEntity()).create(input as never);
+        await new EntityEnv(requireEntity()).create(input);
         invalidate();
       },
       async update(name, patch) {
-        await new EntityEnv(requireEntity()).update(name, patch as never);
+        await new EntityEnv(requireEntity()).update(name, patch);
         invalidate();
       },
       async remove(name) {

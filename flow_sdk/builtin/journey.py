@@ -9,7 +9,7 @@ the step's standard signal and injects its ``done``.
 
 Folder layout::
 
-    <scope>/.claude/journeys/<name>/
+    <scope>/agentic-assets/journey/<name>/
         graph.json      # the journey document (guided_step nodes + edges)
         display.json    # canvas layout only
         runs/           # execution journals (one JSONL per run)
@@ -22,7 +22,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Optional
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
 
@@ -99,7 +99,7 @@ class Journey(Entity):
     type: str = APIField(default=EntityType.JOURNEY.value)
     name: str = APIField(default="")
     description: str = APIField(default="")
-    asset_ref: str = APIField(default="")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
     enabled: bool = APIField(default=True, description="The journey's active switch.")
 
     _api_visible: ClassVar[bool] = True
@@ -149,7 +149,7 @@ class Journey(Entity):
 
         Systemness is a property of the LOCATION (see
         ``config.is_system_project_path``); a journey sits a few levels below
-        the project dir (``<project>/.claude/journeys/<name>``), so walk up."""
+        the project dir (``<project>/agentic-assets/journey/<name>``), so walk up."""
         from flow_sdk.config import is_system_project_path
 
         if not self.asset_ref:

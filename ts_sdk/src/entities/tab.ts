@@ -6,6 +6,7 @@ import { TypeId } from '../models/TypeId';
 import { EntityTypes } from '../schema/types';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 import { isHubOnly } from '../utils/hub-runtime';
+import { normalizeRetiredDockPointer } from '../utils/ui/retired-views';
 import { normalizeWorldViewDockPointer } from '../worldview/dock-pointer';
 import { Project } from './project';
 
@@ -110,7 +111,7 @@ function normalizeLegacyPointer(
 }
 
 function withCanonicalTabHash(pointer: IDockPointer): IDockPointer {
-  const normalized = normalizeWorldViewDockPointer(pointer);
+  const normalized = normalizeWorldViewDockPointer(normalizeRetiredDockPointer(pointer));
   const viewType = normalized.viewType ?? '';
   const subPointer = normalized.pointer ?? '';
   return {
