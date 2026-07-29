@@ -336,7 +336,6 @@ def main() -> int:
             {"user_id": ALICE_ID, "email": "alice@local.test", "name": "Alice"},
             {"user_id": BOB_ID,   "email": "bob@local.test",   "name": "Bob"},
         ],
-        "message_status_visible": True,
         "context_entities": [{"type": "spec", "id": spec_incident}],
         "tags": [], "system": False, "remote": False, "orphan": False,
     }

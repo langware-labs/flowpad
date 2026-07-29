@@ -24,6 +24,7 @@ import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { openNewChat } from '@src/navigation/open-new-chat';
 import { FolderOpen, FolderPlus, GitBranch } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
@@ -104,12 +105,9 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   const handleStartSession = useCallback(
     async (workerType: 'claude_code' | 'codex' | 'copilot') => {
       onOpenChange(false);
-      const result = await navigation.openNewClaudeProcess({ workerType });
-      if (!result) {
-        notify.error({ title: t`Failed to start session` });
-        return;
-      }
-      await navigation.openShellProcess(result.processId);
+      // openNewChat creates AND navigates (carrying the chat mode) — no second nav.
+      const process = await openNewChat(navigation, { workerType });
+      if (!process) notify.error({ title: t`Failed to start session` });
     },
     [navigation, onOpenChange, t],
   );

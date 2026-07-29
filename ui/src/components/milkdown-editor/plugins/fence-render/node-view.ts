@@ -1,24 +1,18 @@
 /**
  * NodeView for `code_block`, hosting the Render | Code tab strip.
  *
- * Render-only: it never dispatches a document change, so the markdown a fence
- * serializes to is byte-identical whether or not its language has a renderer.
  * The `contentDOM` (the `<code>` element ProseMirror writes source text into)
- * always exists — the tabs only toggle visibility. Removing it would break
- * position mapping.
+ * always exists and remains the authoritative fence body — the tabs only
+ * toggle visibility. That makes the Code pane a normal editor surface with the
+ * host's undo, autosave and Markdown serialization. Render-pane edits dispatch
+ * through `commit` into that same content.
  *
  * A language with no registered renderer falls through to the schema's own
  * `toDOM`, so every other fence behaves exactly as it did before.
  */
 
 import { DOMSerializer, type Node as PMNode } from '@milkdown/prose/model';
-import type {
-  Decoration,
-  EditorView,
-  NodeView,
-  NodeViewConstructor,
-  ViewMutationRecord,
-} from '@milkdown/prose/view';
+import type { Decoration, EditorView, NodeView, NodeViewConstructor, ViewMutationRecord } from '@milkdown/prose/view';
 import { fenceModeFromDecorations, setFenceMode, type FenceMode } from './fence-mode';
 import { NO_HOST_SERVICES, type FenceHostServices } from './host-services';
 import { getFenceRenderer, type FenceRenderer, type FenceTheme } from './registry';
@@ -51,11 +45,7 @@ const attributeWatches = new WeakMap<Element, Map<string, AttributeWatch>>();
  * the same mutation. Returns an unsubscribe that disconnects the observer once
  * its last listener goes away.
  */
-function watchAttribute(
-  target: Element,
-  attribute: string,
-  listener: AttributeListener,
-): () => void {
+function watchAttribute(target: Element, attribute: string, listener: AttributeListener): () => void {
   let byAttribute = attributeWatches.get(target);
   if (!byAttribute) {
     byAttribute = new Map();
@@ -108,6 +98,7 @@ class FenceRenderNodeView implements NodeView {
   private readonly tabs: HTMLElement;
   private readonly preview: HTMLElement;
   private readonly source: HTMLElement;
+  private readonly feedback: HTMLElement;
   private readonly renderTab: HTMLButtonElement;
   private readonly codeTab: HTMLButtonElement;
 
@@ -178,7 +169,16 @@ class FenceRenderNodeView implements NodeView {
     this.contentDOM = document.createElement('code');
     this.source.appendChild(this.contentDOM);
 
-    this.dom.append(this.tabs, this.preview, this.source);
+    // Validation belongs to the fence, not either pane. In particular, putting
+    // it inside preview makes malformed YAML invisible at the exact moment the
+    // author is correcting it in Code.
+    this.feedback = document.createElement('div');
+    this.feedback.className = 'fence-render-feedback';
+    this.feedback.setAttribute('contenteditable', 'false');
+    this.feedback.setAttribute('aria-live', 'polite');
+    this.feedback.hidden = true;
+
+    this.dom.append(this.tabs, this.preview, this.source, this.feedback);
 
     // Both signals are re-checked by the render guard, so these listeners can
     // schedule unconditionally: a mutation that changes nothing costs one
@@ -304,6 +304,7 @@ class FenceRenderNodeView implements NodeView {
       });
       if (token !== this.renderToken) return; // superseded by a newer render
       this.preview.replaceChildren(host);
+      this.clearError();
       this.renderedSignature = signature;
       this.lastRenderFailed = false;
     } catch (error) {
@@ -315,13 +316,19 @@ class FenceRenderNodeView implements NodeView {
     }
   }
 
+  private clearError(): void {
+    this.feedback.replaceChildren();
+    this.feedback.hidden = true;
+  }
+
   private showError(error: unknown): void {
-    this.preview.querySelector('.fence-render-error')?.remove();
     const chip = document.createElement('div');
     chip.className = 'fence-render-error';
     chip.setAttribute('data-testid', 'fence-render-error');
+    chip.setAttribute('role', 'alert');
     chip.textContent = error instanceof Error ? error.message : String(error);
-    this.preview.appendChild(chip);
+    this.feedback.replaceChildren(chip);
+    this.feedback.hidden = false;
   }
 
   update(node: PMNode, decorations: readonly Decoration[]): boolean {
@@ -342,11 +349,18 @@ class FenceRenderNodeView implements NodeView {
     return true;
   }
 
-  /** The tabs and preview are chrome, not editable content. */
+  private isChrome(target: globalThis.Node): boolean {
+    return (
+      this.tabs.contains(target) ||
+      this.preview.contains(target) ||
+      this.feedback.contains(target)
+    );
+  }
+
+  /** The tabs, preview and validation feedback are chrome, not editable content. */
   stopEvent(event: Event): boolean {
     const target = event.target as globalThis.Node | null;
-    if (!target) return false;
-    return this.tabs.contains(target) || this.preview.contains(target);
+    return target ? this.isChrome(target) : false;
   }
 
   /**
@@ -355,7 +369,7 @@ class FenceRenderNodeView implements NodeView {
    * chrome for the same reason.
    */
   ignoreMutation(mutation: ViewMutationRecord): boolean {
-    return this.tabs.contains(mutation.target) || this.preview.contains(mutation.target);
+    return this.isChrome(mutation.target);
   }
 
   destroy(): void {

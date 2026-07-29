@@ -7,22 +7,31 @@ Drives the public Python provider API (`LocalComputeProvider`):
 - `set_env(name, value)` persists a var to the shell rc file, `set_env(name, None)`
   removes it, and re-setting updates it — verified by reading the rc file back.
 
-The `set_env` tests redirect `$HOME` to a tmp dir so they never touch the real
-`~/.bashrc`. No mocks — real subprocesses via the real provider.
+The two `run_command` tests run against BOTH providers (`any_provider`). The
+`set_env` tests stay local-only: they assert on THIS machine's rc file under a
+redirected `$HOME`, while E2B's `set_env` emits a GNU-sed command for a remote
+`~/.bashrc` — the assertion does not transfer.
+
+No mocks of the code under test — real subprocesses, real providers; the E2B
+leg replaces only the network seam.
 """
 
 import pytest
 
 from flow_sdk.core.flow.models.execution.env_context import FlowEnv
-
-from tests.unit.conftest import node, py_command as _py  # noqa: F401
+from tests.unit.conftest import any_provider, compute_provider_kind, node  # noqa: F401
+from tests.unit.conftest import py_command as _py
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_run_command_env_visible_to_child(node):
-    """A var passed via `run_command(env=[...])` is visible to the child process."""
-    provider, node_id = node
+async def test_run_command_env_visible_to_child(any_provider):
+    """A var passed via `run_command(env=[...])` is visible to the child process.
+
+    Runs on BOTH providers — the E2B leg is what catches a divergence in the
+    prefix construction, which is exactly how it drifted into taking a dict.
+    """
+    provider, node_id = any_provider
     env = [FlowEnv(name="FLOWPAD_ENV_PROBE", value="hello-42")]
     read_back = _py("import os,sys; sys.stdout.write(os.environ.get('FLOWPAD_ENV_PROBE',''))")
 
@@ -34,9 +43,12 @@ async def test_run_command_env_visible_to_child(node):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_run_command_env_does_not_persist(node):
-    """The inline-env prefix affects only that one command, not later ones."""
-    provider, node_id = node
+async def test_run_command_env_does_not_persist(any_provider):
+    """The inline-env prefix affects only that one command, not later ones.
+
+    This is the property that keeps project secrets off the node entirely.
+    """
+    provider, node_id = any_provider
     env = [FlowEnv(name="FLOWPAD_ENV_ONESHOT", value="present")]
     read_back = _py("import os,sys; sys.stdout.write(os.environ.get('FLOWPAD_ENV_ONESHOT','<unset>'))")
 

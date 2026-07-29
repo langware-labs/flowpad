@@ -78,6 +78,11 @@ class Markdown(Entity):
 class Docs(Markdown):
     type: str = APIField(default="markdown")
     title: str = APIField(default="")
+    # Hub storage is entity-scoped and canonical, independent of the sender's
+    # local asset path. Share-time byte transport publishes this record's main
+    # ref under the stable Hub name.
+    _hub_asset_layout: ClassVar[str] = "file"
+    _hub_main_file: ClassVar[str] = "document.md"
     # OKF-compatible metadata. Values are preserved as authored for
     # storage/search; the tag binding readers independently select and
     # normalize the grammar-valid dot paths used by the taxonomy.

@@ -60,8 +60,8 @@ export function useAction<T>(actionInfo: ActionInfo | null, options: UseActionOp
         }
       }
     } catch (e: unknown) {
-      console.log('use action error', e);
       if (!controller.signal.aborted && mountedRef.current && currentSeq === fetchSeqRef.current) {
+        console.log('use action error', e);
         const err = e instanceof Error ? e : new Error(String(e));
         setError(err);
       }
@@ -82,6 +82,11 @@ export function useAction<T>(actionInfo: ActionInfo | null, options: UseActionOp
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      // React Strict Mode intentionally runs effect setup → cleanup → setup on
+      // first mount. Cleanup aborts the first request, so its URL must become
+      // fetchable again; otherwise the replacement setup mistakes the aborted
+      // request for a completed one and leaves the hook permanently empty.
+      lastFetchedUrlRef.current = null;
       if (inFlightControllerRef.current) {
         try {
           inFlightControllerRef.current.abort();

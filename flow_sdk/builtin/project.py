@@ -23,6 +23,7 @@ from pydantic.alias_generators import to_camel
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.api.type_id import TypeId
+from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
@@ -161,6 +162,14 @@ class Project(Entity):
     shared_secret_origins: dict[str, dict[str, Any]] = APIField(
         default_factory=dict,
         description="Hub-side value-free secret pointer metadata keyed by SecretOrigin typeid.",
+    )
+    hub_published_at: str | None = APIField(
+        default=None,
+        description=(
+            "When THIS instance published the project to the hub. Distinct from "
+            "``remote``, which is also set when a project is shared TO us — so "
+            "``remote`` cannot answer 'may I write to the hub row?' and this can."
+        ),
     )
     shared_context_origins: dict[str, dict[str, Any]] = APIField(
         default_factory=dict,
@@ -493,6 +502,30 @@ class Project(Entity):
         return None
 
     @classmethod
+    async def index_by_mount(cls) -> dict[str, "Project"]:
+        """One read → ``{canonical_mount: Project}``, for resolving MANY paths.
+
+        ``find_by_cwd`` is O(all projects) *per call*; a caller resolving a whole
+        tree of paths with it does one full table read per path. This is the
+        object-carrying twin of ``indexer.roots.load_project_mounts()``, which
+        returns ``(mount, id)`` pairs only — callers that must then read each
+        project's fields (``context_dir_infos``, ``name``) need the entities.
+
+        Read-only: a pure lookup that never mints. Callers wanting find-or-create
+        want ``recover_by_path`` instead. First mount wins on a duplicate,
+        matching ``find_by_cwd``'s first-match contract.
+        """
+        out: dict[str, Project] = {}
+        for proj in await cls.get_all():
+            mount = proj.fs_storage_mount_path
+            if not mount or not is_valid_project_cwd(mount, include_temp=True):
+                continue
+            key = canonical_posix_path(mount).rstrip("/")
+            if key and key not in out:
+                out[key] = proj
+        return out
+
+    @classmethod
     async def recover_by_path(cls, path: str) -> "Project | None":
         """Recover (or materialize) a Project for ``path``.
 
@@ -689,16 +722,20 @@ class Project(Entity):
                 name = secret.name or ""
                 env_var = secret.env_var
                 sod_store = secret.effective_sod_store()
-            # ``local`` (sodot-by-name) is machine-specific — the sod_name is
-            # meaningless off-machine, so it never travels. Every other kind
-            # (env-local / gcp / 1password / flowpad-hub) is a value-free pointer
-            # the receiver resolves with their own store/provider.
-            if (locator or {}).get("kind") == "local":
-                continue
+            # EVERY declaration travels, including ``local``. A receiver has to
+            # SEE a declaration in order to be told they are missing its value —
+            # dropping it would silently hide the secret the project needs. What
+            # does not travel is the machine-specific coordinate: a sod_name
+            # names an entry in the sender's keychain and means nothing
+            # elsewhere, so it is stripped from the wire locator.
+            locator = dict(locator or {})
+            if locator.get("kind") == "local":
+                locator.pop("sod_name", None)
             payload[str(tid)] = {
                 "name": name,
+                "project_id": str(self.id),
                 "env_var": env_var,
-                "kind": (locator or {}).get("kind"),
+                "kind": locator.get("kind"),
                 "locator": locator,
                 "sod_store": sod_store,
             }
@@ -761,6 +798,10 @@ class Project(Entity):
             await client.post(build_hub_url(self.get_type()), body)
             if "remote" in type(self).model_fields:
                 self.remote = True
+            # Publication marker. Receiver materialization also sets ``remote``,
+            # so only this line distinguishes "I published it" from "it was
+            # shared to me" — which is what the push-to-cloud gate needs.
+            self.hub_published_at = _now_iso()
             if not recipients:
                 return self
             for email in recipients:
@@ -921,6 +962,17 @@ class Project(Entity):
         mcp_connector = await self.get_mcp_connector()
         if initialize_options.mcp_connector_init:
             process_env_list = await get_env_vars_context(get_current_request_info().user, self)
+            # Union in the node's attached project secrets. get_env_vars_context
+            # wins a name collision, mirroring the setdefault precedence the
+            # worker path has always used.
+            from flow_sdk.core.flow.models.execution.env_context import (  # noqa: PLC0415
+                resolve_node_secret_env,
+            )
+
+            taken = {e.name for e in process_env_list}
+            process_env_list = process_env_list + [
+                e for e in await resolve_node_secret_env(self) if e.name not in taken
+            ]
             async with mcp_connector.initialize(initialize_options, process_env_list):
                 pass
 
@@ -933,7 +985,12 @@ class Project(Entity):
         return ApiSuccessResponse(data={"compute_node": compute_node.model_dump() if compute_node else None})
 
     @action.get(action_name="get-assets")
-    async def get_assets_action(self, types: str | None = None, limit: int = 1000):
+    async def get_assets_action(
+        self,
+        types: str | None = None,
+        limit: int = 1000,
+        browsing: BrowsingOptions | None = None,
+    ):
         """Discoverable assets for this project, pre-process (staging).
 
         The project-level counterpart of ``agentic_process/{id}/get-assets``:
@@ -945,11 +1002,21 @@ class Project(Entity):
         ``project_id`` per row and a top-level ``truncated`` flag — the seam
         for FTS-backed long-tail search. Never unbounded: ``limit`` is
         clamped; callers wanting more should search, not list.
+
+        ``browsing.menu`` adds ONE key, ``menu`` — the Assets navigator's
+        structure (per-type groups with accumulated counts) for this project and,
+        recursively, for each of its context folders. ``assets`` and
+        ``truncated`` are unchanged and always present, so the existing flat
+        consumers are untouched. The menu carries no leaves: type rows still
+        load their entities lazily from ``/search`` on expand.
+
+        Read-only throughout — no mint, no write, no indexer walk.
         """
         from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
             AssetDescriptor,
             AssetSource,
             collect_base_source_dirs,
+            hydrate_asset_descriptor_remote,
             scan_path_asset_descriptors,
         )
 
@@ -965,9 +1032,10 @@ class Project(Entity):
         )
         limit = max(1, min(int(limit), 2000))
 
+        want_assets = browsing is None or browsing.assets
         sources, _seen = collect_base_source_dirs(self)
 
-        file_backed = [t for t in requested if t != "spec"]
+        file_backed = [t for t in requested if t != "spec"] if want_assets else []
         descriptors: list[AssetDescriptor] = []
         if file_backed:
             descriptors = await scan_path_asset_descriptors(
@@ -977,7 +1045,7 @@ class Project(Entity):
                 limit=limit,
             )
 
-        if "spec" in requested and len(descriptors) < limit:
+        if want_assets and "spec" in requested and len(descriptors) < limit:
             from flow_sdk.builtin.spec import Spec  # noqa: PLC0415
             from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
 
@@ -1010,15 +1078,30 @@ class Project(Entity):
                         ),
                         posix_path=None,
                         project_id=str(spec_project_id) if spec_project_id else None,
+                        remote=bool(getattr(spec_entity, "remote", False)),
                     )
                 )
 
-        return ApiSuccessResponse(
-            data={
-                "assets": [d.to_row() for d in descriptors],
-                "truncated": len(descriptors) >= limit,
-            }
-        )
+        await hydrate_asset_descriptor_remote(descriptors)
+        data = {
+            "assets": [d.to_row() for d in descriptors],
+            "truncated": len(descriptors) >= limit,
+        }
+        if browsing is not None and browsing.menu:
+            from flow_sdk.builtin.asset_menu import build_asset_menu  # noqa: PLC0415
+
+            menu = await build_asset_menu(
+                self,
+                # Only narrow when the CALLER asked for types. ``requested``
+                # defaults to the flat staging list (skill/agent/markdown/spec);
+                # the menu's own default is every browseable scannable type,
+                # because it stands in for the whole Assets navigator.
+                types=requested if types else None,
+                recursive=browsing.recursive,
+                max_depth=browsing.max_depth,
+            )
+            data["menu"] = menu.to_row()
+        return ApiSuccessResponse(data=data)
 
     @action.get(action_name="get-worker-sessions")
     async def _get_worker_sessions_action(self):
@@ -1086,21 +1169,17 @@ class Project(Entity):
         except Exception as e:  # noqa: BLE001
             return ApiFailResponse(message=f"Invalid secret locator: {e}")
 
-        # ``local`` (sodot by name) is machine-local — a sod_name is meaningless
-        # off-machine, so it can't be a shared pointer (docs/secret_share.md).
-        if loc.kind == "local":
-            if scope == "shared":
-                return ApiFailResponse(message="Local (sodot-by-name) secret pointers can only be private")
-            if not getattr(loc, "sod_name", ""):
-                return ApiFailResponse(message="sod_name is required for local secret pointers")
-        name = name or getattr(loc, "sod_name", "") or getattr(loc, "secret_id", "") or loc.kind
+        if loc.kind == "local" and not getattr(loc, "sod_name", ""):
+            return ApiFailResponse(message="sod_name is required for local secret pointers")
+        name = name or getattr(loc, "sod_name", "") or getattr(loc, "secret_id", "") or env_var
 
-        candidate_typeid = f"{BuiltinEntityType.SECRET_ORIGIN.value}-{SecretOrigin.id_for_locator(loc)}"
-        for existing in self.secret_origins:
-            if existing.get("env_var") == env_var and existing.get("typeid") != candidate_typeid:
-                return ApiFailResponse(message=f"env_var {env_var} is already bound to another secret pointer")
-
-        secret = await SecretOrigin.mint_for(locator=loc, name=name, env_var=env_var, sod_store=sod_store)
+        # No uniqueness CHECK is needed any more: the id is (project_id, env_var),
+        # so re-declaring an env var mints the same row and updates it in place.
+        # The name is the key — pointing it at a different provider is an edit,
+        # not a second secret.
+        secret = await SecretOrigin.mint_for(
+            project_id=str(self.id), env_var=env_var, locator=loc, name=name, sod_store=sod_store
+        )
         data = secret.context_data(scope=scope)
         if scope == "shared":
             self.add_shared_context_entities(secret.typeid, data=data)
@@ -1112,7 +1191,7 @@ class Project(Entity):
         sodot_dir = self._assets_sodot_dir()
         if sodot_dir is not None:
             try:
-                secret.to_json_asset(sodot_dir / f"{name}.json")
+                secret.to_json_asset(sodot_dir / f"{env_var}.json")
             except Exception as e:  # noqa: BLE001
                 log.warning("[secret] could not write reference asset for %s: %s", name, e)
 
@@ -1151,10 +1230,10 @@ class Project(Entity):
             if sodot_dir is not None:
                 for tid in targets:
                     entry = self.get_context_entry_data(tid) or {}
-                    nm = (entry.get("name") or "").strip()
-                    if nm:
+                    ev = (entry.get("env_var") or "").strip()
+                    if ev:
                         try:
-                            (sodot_dir / f"{nm}.json").unlink(missing_ok=True)
+                            (sodot_dir / f"{ev}.json").unlink(missing_ok=True)
                         except OSError:
                             pass
             self.remove_shared_context_entities(*targets)
@@ -1171,6 +1250,7 @@ class Project(Entity):
         from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
 
         rows: list[dict[str, Any]] = []
+        env_local_names, sodot_names = self._local_store_names()
         # Drive off the value-free ``secret_origins`` summary — it reads the local
         # sidecar on the authoring machine and the mirrored ``shared_secret_origins``
         # on a receiver, so a shared pointer resolves on both sides.
@@ -1180,21 +1260,189 @@ class Project(Entity):
                 driver = get_secret_origin_driver(loc.kind)
             except Exception:  # noqa: BLE001
                 continue
-            try:
-                available = await driver.can_resolve(loc, project=self)
-            except Exception:  # noqa: BLE001
-                available = False
+            env_var = entry.get("env_var") or ""
+            found_in = await self._where_is_secret_value(
+                env_var, loc, driver, env_local_names, sodot_names
+            )
             hint = driver.setup_hint(loc)
             rows.append(
                 {
                     "typeid": entry.get("typeid"),
                     "name": entry.get("name"),
-                    "env_var": entry.get("env_var"),
+                    "env_var": env_var,
                     "kind": loc.kind,
                     "scope": entry.get("scope"),
                     "sod_store": entry.get("sod_store") or hint.get("sod_store"),
-                    "status": "available" if available else "missing",
+                    "status": "available" if found_in else "missing",
+                    "found_in": found_in,
+                    # The receiver-facing warning: a declaration this machine
+                    # cannot satisfy. Computed, never stored.
+                    "warning": None if found_in else "missing-value",
                     "setup_hint": hint,
+                }
+            )
+        return ApiSuccessResponse(data={"secrets": rows})
+
+    def _local_store_names(self) -> tuple[set[str], set[str]]:
+        """``(env-local keys, sodot names)`` — both whole-store scans, done ONCE.
+
+        Each is a full read (a file parse and a sodot decrypt), so doing them per
+        secret turned one Secrets-card render into S file reads and S store
+        walks. Names only: neither call reads a value.
+        """
+        from flow_sdk.builtin.env_local_store import list_env_local  # noqa: PLC0415
+
+        try:
+            env_local = {row["key"] for row in list_env_local(self)}
+        except Exception:  # noqa: BLE001
+            env_local = set()
+        try:
+            from flow_sdk.cli.auth.secrets import get_secrets  # noqa: PLC0415
+
+            sodot = {entry.get("name") for entry in get_secrets()}
+        except Exception:  # noqa: BLE001
+            sodot = set()
+        return env_local, sodot
+
+    async def _where_is_secret_value(
+        self, env_var: str, loc, driver, env_local: set[str], sodot: set[str]
+    ) -> str | None:
+        """Which store on THIS machine can satisfy this declaration, if any.
+
+        Deliberately a UNION across both local stores and the declared provider,
+        not just the provider the declaration names. The local stores exist for
+        usage — a value sitting in .env.local under the right env var satisfies a
+        `gcp` declaration on this machine just as well, and reporting it missing
+        would be wrong.
+
+        Every probe is existence-only. No value is fetched here; that contract is
+        what lets the Secrets card call this on every render.
+        """
+        if env_var:
+            if env_var in env_local:
+                return "env-local"
+            if env_var in sodot:
+                return "sodot"
+        try:
+            if await driver.can_resolve(loc, project=self):
+                return "provider"
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+    @action.post(action_name="push-secret-to-cloud")
+    async def push_secret_to_cloud(self, env_var: str = "", value: str = "") -> "ApiResponse":
+        """Store a secret on the hub, which is the system of record.
+
+        Reuses the hub's own ``env-var`` action — we are not building a second
+        secret manager. The hub stores the value through the same path as every
+        other hub secret.
+
+        Gated on publication: there is no hub row to attach a secret to until
+        the project exists there. The failure carries ``project_not_published``
+        so the UI can offer to publish rather than parse prose.
+        """
+        from flow_sdk.builtin.secret_origin import is_valid_secret_origin_env_var  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.core.entity.entity_env.env_types import EnvVarType  # noqa: PLC0415
+
+        env_var = (env_var or "").strip()
+        if not is_valid_secret_origin_env_var(env_var):
+            return ApiFailResponse(message=f"invalid env_var: {env_var!r}")
+        if not value:
+            return ApiFailResponse(message="a value is required to push a secret to the cloud")
+        if not self.hub_published_at:
+            return ApiFailResponse(
+                message="This project is not in the cloud yet.",
+                data={"error": "project_not_published"},
+            )
+
+        response = await hub_post(
+            BuiltinEntityType.PROJECT,
+            {"name": env_var, "value": value, "var_type": EnvVarType.API_KEY.value},
+            str(self.id),
+            action="env-var",
+        )
+        if response is None:
+            return ApiFailResponse(message="could not reach the hub")
+
+        # Point the local declaration at the hub copy. The value stays there.
+        await self.add_secret_pointer(
+            name=env_var,
+            env_var=env_var,
+            scope="shared",
+            locator={"kind": "flowpad-hub", "project_id": str(self.id), "name": env_var},
+        )
+        return ApiSuccessResponse(data={"ok": True, "env_var": env_var})
+
+    @action.post(action_name="delete-secret-from-cloud")
+    async def delete_secret_from_cloud(self, env_var: str = "") -> "ApiResponse":
+        """Delete a secret from the hub — CLOUD ONLY.
+
+        The local copy is deliberately untouched: not the SecretOrigin
+        declaration, not the sodot entry, not ``.env.local``, not this project's
+        own env_vars. "Delete from cloud" means exactly that and nothing more.
+
+        Calls hub_delete directly rather than routing through _hub_reflect,
+        which silently no-ops when ``remote`` is false — unacceptable for a
+        destructive operation the user believes happened.
+        """
+        from flow_sdk.cloud_client.transport.hub_http import hub_delete  # noqa: PLC0415
+
+        env_var = (env_var or "").strip()
+        if not env_var:
+            return ApiFailResponse(message="env_var is required")
+        if not self.hub_published_at:
+            return ApiFailResponse(
+                message="This project is not in the cloud.",
+                data={"error": "project_not_published"},
+            )
+
+        response = await hub_delete(
+            BuiltinEntityType.PROJECT, str(self.id), action="env-var", sub_path=env_var
+        )
+        if response is None:
+            return ApiFailResponse(message="could not reach the hub")
+        return ApiSuccessResponse(data={"ok": True, "env_var": env_var})
+
+    @action.post(action_name="secret-drift-status")
+    async def secret_drift_status(self) -> "ApiResponse":
+        """Which declared secrets hold a different value than when last provided.
+
+        Separate from ``secret-resolve-status`` on purpose: answering this
+        REQUIRES fetching values, which would violate ``can_resolve``'s
+        documented no-fetch contract. Keeping it a distinct, opt-in action means
+        the cheap status call stays cheap and honest, and values are only pulled
+        when someone is actually looking at the Secrets tab.
+
+        Values are hashed and discarded — never returned, logged, or persisted.
+        """
+        from flow_sdk.builtin.secret_origin_digest import check_drift  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_driver import get_secret_origin_driver  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+
+        rows: list[dict[str, Any]] = []
+        for entry in self.secret_origins:
+            env_var = entry.get("env_var") or ""
+            try:
+                loc = SECRET_ORIGIN_ADAPTER.validate_python(entry.get("locator") or {})
+                driver = get_secret_origin_driver(loc.kind)
+            except Exception:  # noqa: BLE001
+                continue
+            try:
+                resolved = await driver.resolve(loc, project=self)
+            except Exception:  # noqa: BLE001
+                resolved = None
+            if resolved is None:
+                continue
+            drifted = await asyncio.to_thread(
+                check_drift, str(self.id), env_var, resolved.get_secret_value()
+            )
+            rows.append(
+                {
+                    "typeid": entry.get("typeid"),
+                    "env_var": env_var,
+                    "warning": "value-changed" if drifted else None,
                 }
             )
         return ApiSuccessResponse(data={"secrets": rows})
@@ -1237,13 +1485,64 @@ class Project(Entity):
 
         # Driver-dispatched, symmetric with resolve(): the driver owns which SOD
         # store it writes to. External-provider slots raise SecretProvideUnsupported.
+        from flow_sdk.builtin.env_local_store import EnvLocalNotWritable  # noqa: PLC0415
+
         try:
             await get_secret_origin_driver(loc.kind).store(loc, value, project=self)
         except SecretProvideUnsupported as e:
             return ApiFailResponse(message=str(e))
+        except EnvLocalNotWritable as e:
+            # Hard block, not a warning: the destination file is committable, so
+            # writing the value there would leak it on the next git share. The
+            # code lets the UI render the specific fix.
+            return ApiFailResponse(message=str(e), data={"block_code": e.code})
         except Exception as e:  # noqa: BLE001
             return ApiFailResponse(message=f"could not store value: {e}")
+        from flow_sdk.builtin.secret_origin_digest import record_digest  # noqa: PLC0415
+
+        # Baseline for the value-changed warning. Best-effort and value-free —
+        # only a salted digest is kept, in the encrypted store.
+        await asyncio.to_thread(record_digest, str(self.id), entry.get("env_var") or "", value)
         return ApiSuccessResponse(data={"ok": True, "env_var": entry.get("env_var")})
+
+    @action.post(action_name="env-local-status")
+    async def env_local_status(self) -> "ApiResponse":
+        """What is in this project's ``.env.local``, and may we write to it?
+
+        **Names only — no value ever crosses this boundary.** The detected-keys
+        table renders straight from this, so the response physically cannot
+        carry one.
+
+        ``blocked`` is the hard block: ``.env.local`` sits in a git repo that
+        does not exclude it, so a value written there would be committable.
+        """
+        from flow_sdk.builtin.env_local_store import (  # noqa: PLC0415
+            env_local_block,
+            env_local_path,
+            gitignore_status,
+            list_env_local,
+        )
+
+        path = env_local_path(self)
+        # One probe, reused — gitignore_status costs three git subprocesses.
+        gitignore = gitignore_status(self)
+        block = env_local_block(gitignore)
+        declared = {row.get("env_var") for row in self.secret_origins if row.get("env_var")}
+        keys = [
+            {"key": row["key"], "line": row["line"], "declared": row["key"] in declared}
+            for row in list_env_local(self)
+        ]
+        return ApiSuccessResponse(
+            data={
+                "path": str(path) if path is not None else None,
+                "exists": bool(path is not None and path.exists()),
+                "gitignore": gitignore,
+                "blocked": block is not None,
+                "block_code": block["code"] if block else None,
+                "block_reason": block["reason"] if block else None,
+                "keys": keys,
+            }
+        )
 
     # ── Context folders (Folder entities linked via context buckets) ────────
 
@@ -1309,6 +1608,17 @@ class Project(Entity):
         await super().save(owner, notify=notify)
         if was_create:
             await self._stamp_index_sentinel()
+            # Auto-index trigger "Project Create". Detached: a project create must
+            # never wait on (or fail because of) a filesystem walk. The hook
+            # itself no-ops unless the preference selects that trigger.
+            from flow_sdk.fs_store.indexer.auto_index import maybe_auto_index
+
+            asyncio.create_task(maybe_auto_index(str(self.id), created=True))
+        # Every Project owns one deterministic DB-only Wiki. This idempotent
+        # repair also converges Projects created before Wiki existed.
+        from flow_sdk.wiki.service import ensure_default_wiki
+
+        await ensure_default_wiki(self)
         return self
 
     async def _stamp_index_sentinel(self) -> None:
@@ -1321,6 +1631,31 @@ class Project(Entity):
                 record.write_hash()
         except Exception:
             log.debug("[project] index-sentinel stamp on create failed", exc_info=True)
+
+    @action.post(action_name="activate")
+    async def activate(self) -> "ApiResponse":
+        """Project activation — the one "the user is now in this project" signal.
+
+        Overrides the generic all-types ``activate`` for projects only:
+        ``ActionRegistry.get_by_name`` resolves ``project.activate`` before the
+        bare ``activate``, and ``action.all`` builds that key from this class's
+        ``type`` field default. The recency stamp is delegated to the generic
+        handler verbatim, so the response contract (``{"last_active_at": …}``) is
+        unchanged.
+
+        The auto-index is a DETACHED task, never awaited. The caller is a
+        fire-and-forget recency stamp from ``setContextEntityTypeId`` on the
+        frontend, whose equality guard means this fires exactly once per real
+        project switch. Detaching is what guarantees an index conflict (409) or a
+        slow walk can never reach the activation response.
+        """
+        from flow_sdk.core.entity.entity_model import _http_activate
+        from flow_sdk.fs_store.indexer.auto_index import maybe_auto_index
+
+        resp = await _http_activate(self)
+        if isinstance(resp, ApiSuccessResponse):
+            asyncio.create_task(maybe_auto_index(str(self.id), created=False))
+        return resp
 
     @action.post(action_name="add-context-dir")
     async def add_context_dir(self, path: str, scope: str = "private") -> "ApiResponse":

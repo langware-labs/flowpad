@@ -60,7 +60,7 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <EntityIcon type={Artifact.type} size={16} />
+          <EntityIcon type={Artifact.type} remote={artifact.remote} size={16} />
           <span className="truncate text-sm font-medium">{artifact.displayName}</span>
         </div>
 

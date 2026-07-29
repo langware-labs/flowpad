@@ -26,6 +26,66 @@ from flow_sdk.utils.hub import HubError, hub_delete, hub_get, hub_post, hub_put,
 logger = logging.getLogger(__name__)
 
 
+def scope_body_to_assignee_fields(entity: Entity, body: dict[str, Any]) -> dict[str, Any]:
+    """Narrow an outbound entity update to what the ASSIGNEE is allowed to change.
+
+    A shared entity is ONE hub row, and ``Entity.is_stale`` is whole-row LWW —
+    while the client PUTs its entire snapshot (``FlowSync/store.ts``). So the
+    assignee flipping a status ships their whole (possibly stale) copy, and the
+    hub row — then the owner's row, then the owner's ``task.md`` via
+    ``owns_main_ref`` — takes the assignee's title and body. Measured live
+    2026-07-28: the owner's rename and rewrite were both reverted by a status
+    click.
+
+    Declared per type as ``TypeInfo.assignee_owned_fields``; types that declare
+    nothing are untouched. Self-assignment is not narrowed — reporter and
+    assignee being the same person means there is only one author.
+
+    This is the single chokepoint, deliberately: filtering here means the bad
+    values never reach the hub, so no inbound guard has to guess which peer
+    authored an op (hub payloads carry no author).
+    """
+    if not body:
+        return body
+    from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    owned = tuple(getattr(SchemaRegistry.get(entity.get_type()), "assignee_owned_fields", ()) or ())
+    if not owned:
+        return body
+    assignee = normalize_email(getattr(entity, "assignee", None) or "")
+    if not assignee:
+        return body
+    reporter = normalize_email(getattr(entity, "reporter", None) or "")
+    if reporter and reporter == assignee:
+        return body
+
+    # The CLOUD identity, not ``User.get_local()`` — that one is the desktop user
+    # (whoever owns the machine), and on any instance the two differ. Read from
+    # the plaintext instance config rather than ``load_credentials()``: this runs
+    # on every reflected PUT (i.e. every debounced editor save of an assigned
+    # task), and the credential store costs ~5 file reads + 4 Fernet decrypts per
+    # call, blocking the event loop. ``cloud_login`` writes the same user record
+    # to both.
+    from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+
+    me = normalize_email((get_user() or {}).get("email"))
+    if not me or me != assignee:
+        return body
+
+    scoped = {k: v for k, v in body.items() if k in owned}
+    dropped = sorted(set(body) - set(scoped))
+    if dropped:
+        logger.info(
+            "[hub-reflect] %s-%s: assignee update scoped to %s (dropped %s)",
+            entity.get_type(),
+            entity.id,
+            list(scoped),
+            dropped,
+        )
+    return scoped
+
+
 def should_reflect_to_hub(entity: Entity | None, hub_reflect: bool, action_name: str | None = None) -> bool:
     """True iff this action call should be forwarded to the hub instead of run locally.
 
@@ -184,7 +244,7 @@ async def reflect_to_hub(
         # broadcast, then return the MERGED LOCAL entity — the same shape a normal
         # (non-reflected) update returns, so the local cache and the client stay
         # consistent (the hub is the source of truth for every differing scalar).
-        hub_resp = await hub_put(et, hub_id, body or {})
+        hub_resp = await hub_put(et, hub_id, scope_body_to_assignee_fields(entity, body or {}))
         updates = _merge_hub_entity_into_local(entity, hub_resp)
         if updates:
             entity.apply_field_updates(updates)

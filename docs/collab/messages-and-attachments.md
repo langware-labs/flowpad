@@ -273,15 +273,20 @@ reached the hub.
 CREATED    local create        (model default; hub never stores it)
 SENT       hub on accept/persist (stamped on add_message, returned in the ACK)
 DELIVERED  recipient client pulled it  -> auto-ack mark_delivered
-RECEIVED   recipient READ it    -> mark_received, fanned to ALL participants
+RECEIVED   recipient READ it    -> mark_received, shared through auto-watch
 ```
 
 The receiver's bridge auto-acks delivery on inbound CREATE: it fires the
-`mark_delivered` action (`flow_sdk/cloud_client/hub_bridge.py:559`) — skipping
+`mark_delivered` action from `HubWsBridge._handle_flow_message_op` — skipping
 when the local user is the sender — which is the only signal that ticks the
-sender's UI from ✓ to ✓✓. The read receipt goes through the `mark_received`
-action (`flow_sdk/cloud_client/hub_bridge.py:829`); the hub fans the resulting
-UPDATE to every participant so all copies tick to ✓✓ blue.
+sender's UI from ✓ to ✓✓. Read receipts go through
+`HubWsBridge.mark_received`; the hub fans the resulting UPDATE through
+role-based auto-watch so accessible copies tick to ✓✓ blue.
+
+Both recipient acknowledgements are gated by the reporting installation's
+`preferences.notifications.share_message_status` preference. Disabling it
+does not hide receipt data other participants already shared and does not
+affect the sender's initial `SENT` acknowledgement.
 
 ### Inbound monotonicity guard
 

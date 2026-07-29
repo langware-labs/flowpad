@@ -130,7 +130,8 @@ class CloudManager extends EventEmitter {
   private _cloudUrl = '';
   private _connection: ConnectionSlot<HubConnectionStatus> = makeConnectionSlot<HubConnectionStatus>('disconnected');
   private _lastHubError: HubClientErrorInfo | null = null;
-  private _pending: { resolve: (r: CloudLoginResult) => void; reject: (e: Error) => void; off: () => void } | null = null;
+  private _pending: { resolve: (r: CloudLoginResult) => void; reject: (e: Error) => void; off: () => void } | null =
+    null;
   private _initialized = false;
 
   /** Seed initial state from the graph bootstrap response. Called once from main.ts. */
@@ -155,6 +156,10 @@ class CloudManager extends EventEmitter {
         await this._setLoggedIn(bootstrap.user as unknown as Record<string, unknown>);
       } else {
         await this._setLoggedOut();
+        // The hub surface has no anonymous mode: a session-less load (first
+        // visit, expired or cleared cookie, post-logout reload) goes straight
+        // to the provider login instead of rendering a signed-out shell.
+        window.location.assign(this._hubLoginUrl());
       }
       return;
     }
@@ -204,7 +209,9 @@ class CloudManager extends EventEmitter {
     // Resync after a local-WS reconnect: connection-status broadcasts that
     // landed while the socket was down would otherwise be lost forever,
     // leaving the avatar stuck on whatever state we saw last.
-    cm.on('on_reconnected', () => { void this._refreshFromStatus(); });
+    cm.on('on_reconnected', () => {
+      void this._refreshFromStatus();
+    });
 
     // Always verify login on load, even when the bootstrap seed says logged-out:
     // a freshly-booted sandbox whose auto-login failed seeds logged-out and would
@@ -213,9 +220,19 @@ class CloudManager extends EventEmitter {
     await this._refreshFromStatus();
   }
 
+  /** Hub-mode login URL. Carries the current SPA location as ``target_path``
+   *  so the provider round-trip lands the browser back where it was — the hub
+   *  validates the value against its open-redirect allowlist
+   *  (``AuthProvider.safe_target_path``) and falls back to `/` otherwise. */
+  private _hubLoginUrl(): string {
+    const target = `${window.location.pathname || ''}${window.location.search || ''}`;
+    if (!target || target === '/') return `${API_PREFIX}/login`;
+    return `${API_PREFIX}/login?${new URLSearchParams({ target_path: target })}`;
+  }
+
   async login(): Promise<CloudLoginResult | void> {
     if (isHubOnly()) {
-      window.location.assign(`${API_PREFIX}/login`);
+      window.location.assign(this._hubLoginUrl());
       return;
     }
 
@@ -287,7 +304,11 @@ class CloudManager extends EventEmitter {
         // with the local redirect below.
       }
       await this._setLoggedOut();
-      window.location.assign(returnTo ?? '/');
+      // Land on the provider login rather than the SPA root: the hub surface
+      // has no signed-out mode (a root load would just bounce back to login
+      // via the bootstrap redirect — this skips the dead hop). `returnTo`
+      // still wins so the invitee re-auth flow keeps its accept callback.
+      window.location.assign(returnTo ?? `${API_PREFIX}/login`);
       return;
     }
 
@@ -511,11 +532,7 @@ class CloudManager extends EventEmitter {
   }
 
   /** Apply a new connection slot value. Emits connection_status_changed + cloud_status_changed. */
-  private _applyConnectionStatus(
-    status: HubConnectionStatus,
-    error: string | null,
-    emit = true,
-  ) {
+  private _applyConnectionStatus(status: HubConnectionStatus, error: string | null, emit = true) {
     const prev = this._connection.status;
     const prevError = this._connection.error;
     this._connection = { status, error };

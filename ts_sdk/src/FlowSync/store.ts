@@ -316,6 +316,27 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   private onFlowData(typeId: TypeId, flowDataJson: any) {
+    // Parse the envelope before cache resolution. Entity events are also
+    // surfaced at manager level so late-mounting hosts can key directly on the
+    // target TypeId without depending on which entity instance is hydrated.
+    const elementType = flowDataJson.element_type || flowDataJson.elementType || 'notification';
+    const attributes = flowDataJson.attributes || {};
+    if (elementType === 'entity_event') {
+      const event = String(attributes.event ?? '');
+      const payload = (attributes.payload as Record<string, unknown>) ?? {};
+      this.emit('on_entity_event', typeId, event, payload);
+
+      const entity = this.getByTypeIdFromCache<T>(typeId);
+      if (!entity) {
+        console.debug(`[DataManager.onFlowData] Entity not found in cache for typeId: ${typeId.toString()}`);
+        return;
+      }
+      if (typeof (entity as any).onEntityEvent === 'function') {
+        (entity as any).onEntityEvent(event, payload);
+      }
+      return;
+    }
+
     // Get entity from cache
     const entity = this.getByTypeIdFromCache<T>(typeId);
     if (!entity) {
@@ -324,21 +345,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
 
     // Create FlowData from JSON
-    const elementType = flowDataJson.element_type || flowDataJson.elementType || 'notification';
-    const attributes = flowDataJson.attributes || {};
-
-    // Transport-level envelope from Python Entity.emit_entity_event — never
-    // ingested into the flow stream or renderer pipeline. Route straight to
-    // the entity's onEntityEvent hook.
-    if (elementType === 'entity_event') {
-      const event = String(attributes.event ?? '');
-      const payload = (attributes.payload as Record<string, unknown>) ?? {};
-      if (typeof (entity as any).onEntityEvent === 'function') {
-        (entity as any).onEntityEvent(event, payload);
-      }
-      return;
-    }
-
     // Backend sends content as 'flow_value', fallback to 'content' for compatibility
     const content = flowDataJson.flow_value ?? flowDataJson.content ?? '';
 
@@ -1203,10 +1209,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       };
     }
 
-    // Per-call hub-reflection opt-in: send the `Hub-Reflect` header so the local
-    // server forwards this call to the hub (default is don't-reflect). Applies to
-    // every verb branch below since they all pass `requestConfig`.
-    if (actionInfo.hubReflect) {
+    // Per-call hub-reflection opt-in: send the `Hub-Reflect` header only to a
+    // desktop/local server, which owns the forwarding bridge. In Hub-only mode
+    // this client already targets Hub directly, so reflecting again is neither
+    // meaningful nor part of the Hub API contract.
+    if (actionInfo.hubReflect && !isHubOnly()) {
       requestConfig = {
         ...(requestConfig ?? {}),
         headers: { ...(requestConfig?.headers ?? {}), 'Hub-Reflect': 'true' },
@@ -1215,7 +1222,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     // In-flight dedup for GETs: share a pending request with concurrent callers
     // (e.g. StrictMode double-invoke, or multiple components mounting at once).
-    // Safe because GETs are idempotent. Mutations (POST/PUT/DELETE) are never deduped.
+    // Safe because GETs are idempotent. Mutations (POST/PUT/PATCH/DELETE) are never deduped.
     const method = actionInfo.method ?? 'GET';
     const isDedupable = method === 'GET' && !actionInfo.abortSignal;
     if (isDedupable) {
@@ -1239,13 +1246,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     switch (method) {
       case 'POST':
       case 'PUT':
+      case 'PATCH':
         if (!actionInfo.queryParameters) {
           throw new Error(`Can not call ${method} action ${actionInfo.name}, Missing request data`);
         }
-        response =
-          method === 'POST'
-            ? ((await apiClient.post<Res>(endpoint, actionInfo.bodyParameters, requestConfig)) as unknown as Res)
-            : ((await apiClient.put<Res>(endpoint, actionInfo.bodyParameters, requestConfig)) as unknown as Res);
+        {
+          // One body-carrying send per verb — keeps adding a verb to the case
+          // labels above the only edit, instead of another ternary level.
+          const send = { POST: apiClient.post, PUT: apiClient.put, PATCH: apiClient.patch }[method];
+          response = (await send.call(
+            apiClient,
+            endpoint,
+            actionInfo.bodyParameters,
+            requestConfig,
+          )) as unknown as Res;
+        }
         break;
       case 'DELETE':
         response = (await apiClient.delete<Res>(endpoint, {
@@ -1281,7 +1296,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       sub_path: actionInfo.subpath,
       query_params: actionInfo.queryParameters as Record<string, unknown> | null,
       body: actionInfo.bodyParameters as Record<string, unknown> | null,
-      hub_reflect: actionInfo.hubReflect,
+      hub_reflect: actionInfo.hubReflect && !isHubOnly(),
     };
 
     const response = await connectionManager.sendRestApiMessage<Res>(message, options);

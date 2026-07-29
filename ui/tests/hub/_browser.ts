@@ -53,7 +53,9 @@ export async function openInstancePage(browser: Browser, name: string): Promise<
   // timeout mask.
   await page
     .waitForFunction(
-      () => typeof (window as unknown as { navigation?: { openShellProcess?: unknown } }).navigation?.openShellProcess === 'function',
+      () =>
+        typeof (window as unknown as { navigation?: { openShellProcess?: unknown } }).navigation?.openShellProcess ===
+        'function',
       undefined,
       { timeout: 30_000 },
     )
@@ -154,15 +156,20 @@ export async function driveShareDialog(page: Page, opts: ShareDialogOptions): Pr
 }
 
 /**
- * Receiver side: reload home, refresh the Recent strip, and click the
- * invitation Accept CTA. Retries the refresh a few times — the invitation has
- * to sync down from the hub first.
+ * Receiver side: sync pending invitations, enter Inbox through the live app,
+ * and click the invitation Accept CTA. Retries the refresh a few times — the
+ * invitation has to sync down from the hub first.
  */
-export async function acceptInvitationInUI(
-  inst: InstancePage,
-  conversationId?: string,
-): Promise<void> {
+export async function acceptInvitationInUI(inst: InstancePage, conversationId?: string): Promise<void> {
   const { page } = inst;
+  if (conversationId) {
+    // Leave any asset editor before materializing the invitation. An editor's
+    // asset-stat subscriptions react to those entity ops; keeping it mounted
+    // while opening Inbox makes an unrelated invalidation storm compete with
+    // the Inbox tab loader. This is a real production URL-first click, not a
+    // harness-side state write or document reload.
+    await page.locator('[data-rail-item="home"]').click();
+  }
   // Catch the pending invitation down from the hub FIRST, then load the page
   // once. The targeted invitation sync materializes the placeholder row
   // without dispatching catch-up work for every historical conversation; that
@@ -171,42 +178,56 @@ export async function acceptInvitationInUI(
   await fetch(`${inst.apiUrl}/api/v1/graph/invitation-sync`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: '{}',
+    body: JSON.stringify(conversationId ? { conversation_id: conversationId } : {}),
   }).catch(() => undefined);
-  // A known id belongs in Inbox, which renders the complete list. Going
-  // through Home first launches a second conversation-list reconcile before
-  // the Inbox navigation; on a long-lived instance those overlapping
-  // reconciles can replace the just-materialized row between visibility and
-  // click. Enter the authoritative full list once.
-  await page.goto(
-    conversationId ? `${inst.feUrl}/dock/inbox?viewMode=advanced` : inst.feUrl,
-    { waitUntil: 'domcontentloaded' },
-  );
+  if (conversationId) {
+    // The receiver page is already a live app realm. Use the production
+    // URL-first rail action so React Router owns the Inbox transition; a hard
+    // page reload here tears down the socket/watch graph, re-runs bootstrap,
+    // and overlaps shell + Inbox conversation reconciles before the accept can
+    // even start.
+    await page.locator('[data-rail-item="inbox"]').click();
+  } else {
+    await page.goto(inst.feUrl, { waitUntil: 'domcontentloaded' });
+  }
 
   const accept = conversationId
     ? page
-        .locator(
-          `[data-testid="inbox-conversation-row"][data-conversation-id="${conversationId}"]`,
-        )
+        .locator(`[data-testid="inbox-conversation-row"][data-conversation-id="${conversationId}"]`)
         .getByTestId('inbox-accept-invitation-button')
     : page.getByTestId('accept-invitation-button').first();
-  const refresh = page.getByTestId('refresh-conversations-button');
+  // The broad, no-id Home path retains its real Recent-strip refresh. A known
+  // id is in Inbox, where that selector does not exist; silently attempting it
+  // consumed two seconds per loop without refreshing anything.
+  const refresh = conversationId ? null : page.getByTestId('refresh-conversations-button');
   const deadline = Date.now() + 18_000;
   for (;;) {
     if (await accept.isVisible().catch(() => false)) break;
     // Cheap in-page refresh (no reload) if the strip rendered it.
-    await refresh.click({ timeout: 2_000 }).catch(() => undefined);
+    await refresh?.click({ timeout: 2_000 }).catch(() => undefined);
     if (Date.now() > deadline) {
       throw new Error(`no invitation Accept CTA appeared on ${inst.name} within 18s`);
     }
     await page.waitForTimeout(1_000);
   }
   if (conversationId) {
-    // This helper owns the UI action only. The caller's next-state assertion
-    // (shared chip, message text, or READY bundle) proves the asynchronous
-    // accept/join/materialize pipeline completed within that scenario's
-    // existing budget.
-    await accept.click();
+    // A Playwright click resolves once the DOM action is dispatched; it does
+    // not wait for an async React handler's fetch to finish. The next matrix
+    // step navigates this same page, so leaving here before the canonical
+    // invitation-accept POST resolves can abort the request. Synchronize on
+    // that exact response with no independent timeout budget: the containing
+    // test's unchanged cap remains the only deadline.
+    const [response] = await Promise.all([
+      page.waitForResponse((candidate) => {
+        const request = candidate.request();
+        return request.method() === 'POST' && new URL(candidate.url()).pathname === '/api/v1/graph/invitation-accept';
+      }),
+      accept.click(),
+    ]);
+    const body = await response.json().catch(() => null);
+    if (!response.ok() || body?.status !== 'SUCCESS') {
+      throw new Error(`invitation accept failed on ${inst.name}: HTTP ${response.status()} ${JSON.stringify(body)}`);
+    }
     return;
   }
 
@@ -216,7 +237,10 @@ export async function acceptInvitationInUI(
   const buttons = page.getByTestId('accept-invitation-button');
   const count = await buttons.count();
   for (let i = count - 1; i >= 0; i--) {
-    await buttons.nth(i).click({ timeout: 5_000 }).catch(() => undefined);
+    await buttons
+      .nth(i)
+      .click({ timeout: 5_000 })
+      .catch(() => undefined);
     await page.waitForTimeout(500);
   }
   await page.waitForTimeout(1_500);
@@ -238,10 +262,7 @@ export async function openConversation(inst: InstancePage, conversationId: strin
  * Mechanics use the instance's backend API (same `inst.apiUrl` probe
  * `acceptInvitationInUI` uses) — no browser injection. Returns the project dir.
  */
-export async function mapConversationToProject(
-  inst: InstancePage,
-  conversationId: string,
-): Promise<string> {
+export async function mapConversationToProject(inst: InstancePage, conversationId: string): Promise<string> {
   const { mkdtempSync } = await import('node:fs');
   const os = await import('node:os');
   const nodePath = await import('node:path');
@@ -278,10 +299,6 @@ export async function replyInComposer(inst: InstancePage, text: string): Promise
 }
 
 /** Wait until the given text is visible somewhere in the conversation view. */
-export async function waitForMessageText(
-  inst: InstancePage,
-  text: string,
-  timeoutMs = 25_000,
-): Promise<void> {
+export async function waitForMessageText(inst: InstancePage, text: string, timeoutMs = 25_000): Promise<void> {
   await inst.page.getByText(text, { exact: false }).first().waitFor({ timeout: timeoutMs });
 }

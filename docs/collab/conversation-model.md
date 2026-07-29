@@ -82,12 +82,11 @@ membership + role list and the basis for ownership/authz decisions. Roles
 list of typed pointers `[{"typeid": "flow_message-@<id>", "ts": "<ISO>"}, …]`
 ordered oldest-first by jsonl append order; `message_count` is its length.
 
-### `message_status_visible` (`:135`)
-When `False`, the original sender stops receiving delivery-status receipts
-(`delivered`/`received`) for their own messages — used to keep one-way /
-broadcast-style conversations from spamming the sender. Co-recipients still see
-them. The hub-side filtering that enforces this lives in
-[`./hub-fanout-and-loader.md`](./hub-fanout-and-loader.md) §Status fan-out.
+### Message-status sharing
+Receipt sharing is not Conversation state. Each FlowPad installation controls
+whether it emits `delivered` and `received` acknowledgements through
+`preferences.notifications.share_message_status`. Existing receipt data remains
+visible, and the preference does not affect acknowledgements shared by peers.
 
 ### `dismissed_at` (`:139`) vs `archived_at` (`:145`)
 Two independent suppression clocks with the same **auto-revive** semantics:

@@ -968,6 +968,9 @@ app.add_typer(navigate_app, name="navigate")
 from flow_sdk.cli.commands.show_cmd import show_app
 app.add_typer(show_app, name="show")
 
+from flow_sdk.cli.commands.terminal_cmd import terminal_app
+app.add_typer(terminal_app, name="terminal")
+
 from flow_sdk.cli.commands.tag_cmd import tag_app
 app.add_typer(tag_app, name="tag")
 

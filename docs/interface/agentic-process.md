@@ -240,7 +240,7 @@ These live on `ComputeNode` (`flow_sdk/builtin/faas/compute_node.py`), not `Agen
 
 | Action | Verb | Python method | Description |
 | --- | --- | --- | --- |
-| `createProcess` | POST | `create_process_action` → `_scan_create_process` (`scan_actions.py:256`) | Create a new idle AgenticProcess on this node. Body `{context, result?, visible?, pty_mode?, launch_prompt?}`. `pty_mode` (default `True`) is the transport intent; `launch_prompt` is enqueued **before** the auto-start so the worker boots with it as its launch instruction. Returns the entity. |
+| `createProcess` | POST | `create_process_action` → `_scan_create_process` (`scan_actions.py:256`) | Create a new idle AgenticProcess on this node. Body `{context, result?, visible?, pty_mode?, launch_prompt?}`. `pty_mode` (default `True`) is the transport intent; `launch_prompt` is enqueued **before** the auto-start so the worker boots with it as its launch instruction. Returns the full authoritative serialized entity, including explicit false values such as `pty_mode:false` and `visible:false`; callers must not depend on a creation broadcast arriving first. |
 | `upsertSessionProcess` | POST | `upsert_session_process` → `_scan_upsert_session_process` (`scan_actions.py:549`) | Idempotent on `sessionId`. Body (camelCase) `{sessionId, workdir?, projectId?, workerType?}`. Adopts an existing vendor session (codex/claude) as an AgenticProcess. Backend/test callers; UI prefers `terminals/get_by_worker_id/<id>`. |
 
 ---
@@ -253,13 +253,14 @@ Class: `AgenticProcess extends APIEntity<AgenticProcess> implements IAgenticProc
 - `execute(command, options?)` — simplest one-shot: `createProcess` → `watch` → `executeInstruction` (AMD-wrapped).
 - `openTab(workerType, prompt?, project?, opts?)` — spawn a visible tab (or headless when `opts.ptyMode===false`); seeds `prompt` via `createProcess({launchPrompt})`, then `openTerminalDock`.
 - `launch(opts)` — start a session in an explicit project workdir; can mount the Flowpad Assistant via `load_flowpad_assistant`; first prompt rides the queue.
-- `spawn(options, workerOptions?)` — low-level factory: build `ClaudeCliOptions` → `save` → headless (`watch`+`executeInstruction`) or PTY (`start`). Returns `SpawnResult`.
+- `spawn(options, workerOptions?)` — low-level factory over the backend-owned `ComputeNode.createProcess` seam, followed by headless (`watch`+`executeInstruction`) or PTY (`start`) activation. Returns `SpawnResult`.
 - `getByIdWithHistory(id)` — `getById` + auto `loadHistory`.
 - `openRecordInTerminal(record)` — open an existing session record as a terminal.
 - `getByWorkerId(workerId, workerType?)` — resolve a process from a vendor worker/session id (auto-discovers `workerType`).
 
 ### Getters
-- `status` → `ProcessStatus`; `workerStatus` → `WorkerStatus` (transcript-derived).
+- `status` → `ProcessStatus`; `workerStatus` → `WorkerStatus | undefined`
+  (transcript-derived; `undefined` when the wire reports no transcript status).
 - `cliOptions` (get/set) → `ClaudeCliOptions`.
 - `ptyConnection` → the live `PtyConnection | undefined`; `shellEntity` → `Shell | null`.
 - Dock-pointer family: `dockPointer`, `terminalDockPointer`, `transcriptDockPointer`, `searchDockPointer` (URL-first navigation targets).
@@ -284,7 +285,8 @@ Class: `AgenticProcess extends APIEntity<AgenticProcess> implements IAgenticProc
 Local `EventEmitter` events (subscribe via `.on(name, fn)`):
 - `flow_data` — each streamed FlowData (base `handleFlowData`).
 - `complete` — terminal success; `error` — turn/worker error.
-- `state_change` — status/lifecycle change (drives `wait()`).
+- `state_change` — delta for a `status`, `busy`, or `workerStatus` change; drives
+  reactive process consumers including `wait()`.
 - `status` — `(newStatus, oldStatus)`; `status_report` — counters projection; `prompting-change`, `line`.
 - `restarted` — terminal should clear + re-attach the PTY. Emitted directly by `restart`/`switchMode(interactive)`, and bridged from the backend `worker.restarted` entity event via `onEntityEvent` (server-initiated `self-restart`).
 - `entity_event` — generic backend entity event bridge. Wizard callers wait for
@@ -296,7 +298,13 @@ Local `EventEmitter` events (subscribe via `.on(name, fn)`):
 - `ISpawnWorkerOptions` — how `spawn` activates: `instruction`, `headless`, `sync`, `workerSessionId`, `visible`, `result`, `watchProcess`, `ptyTimeout`.
 - `serializeAgenticContext(ctx)` — camelCase → snake_case for the REST body (`permissionMode`→`permission_mode`, `targetVfsPath`→`target_typeid_str`, etc.).
 
-> **Caution — `spawn({headless:true})` does not set `pty_mode`.** `spawn` writes `visible` onto the new entity but never sets `pty_mode`, which defaults to `True` on the Python model. A "headless" spawn therefore leaves the entity's transport intent as PTY even though `spawn` drives it via `watch()`+`executeInstruction()`. Prefer `createProcess({ pty_mode: false })` / `openTab(..., { ptyMode:false })` when you need a durably-headless process (the loader reads `pty_mode`, not the spawn path, to decide whether to attach a PTY). Documented arch-review finding.
+> **Headless spawn invariant.** `spawn(options, {headless:true})` sends
+> `{visible:false, pty_mode:false}` through `ComputeNode.createProcess`. The
+> backend save, action response, returned SDK entity, and a later entity reload
+> must all retain `pty_mode:false`; the route loader reads that durable field to
+> decide whether to attach a PTY. `createProcess` therefore returns the full
+> authoritative entity rather than relying on a WebSocket save broadcast to
+> hydrate omitted fields.
 
 ---
 

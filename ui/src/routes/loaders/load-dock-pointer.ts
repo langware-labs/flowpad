@@ -2,6 +2,7 @@ import {
   AgenticProcess,
   dataContext,
   isValidTag,
+  PageId,
   Plan,
   Project,
   QueryRequest,
@@ -208,7 +209,11 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
   try {
     switch (dock.viewType) {
       case ViewType.SHELL:
-        await loadShellRoute(dock.pointer, context.requestPath, { scope: dock.scopeFilter, viewMode: dock.viewMode });
+        await loadShellRoute(dock.pointer, context.requestPath, {
+          scope: dock.scopeFilter,
+          viewMode: dock.viewMode,
+          options: dock.options,
+        });
         break;
       case ViewType.PROJECT:
         await loadProjectRoute(dock.pointer, { viewMode: dock.viewMode });
@@ -218,7 +223,10 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         break;
       case ViewType.ASSETS:
         await adoptScopeProject(dock);
-        await loadAssetRoute(dock.pointer);
+        await loadAssetRoute(dock.pointer, {
+          allowLocalWikiAlias: dock.page !== PageId.HUB,
+          wikiAuthority: dock.page === PageId.HUB ? 'hub' : 'local',
+        });
         break;
       case ViewType.TASKS:
         await loadTasksRoute(dock.pointer);

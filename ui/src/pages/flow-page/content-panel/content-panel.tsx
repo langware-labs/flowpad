@@ -30,6 +30,7 @@ import { SearchView } from '@src/pages/search-view/SearchView';
 import { ConnectionStatus, dataContext, navigator, PageId, type OAuthConnection } from '@sdk';
 import { useAuth, useContext } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
+import { HubAssetsPage } from '@src/components/assets/HubAssetsPage';
 import { CollaborationPage, LiveSessionView } from '@src/components/collaboration';
 import { ConnectionsManager } from '@src/components/connections-manager';
 import { CapabilitiesView } from '@src/components/capabilities-view';
@@ -267,6 +268,8 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
       case ViewType.CONVERSATION:
         // Reuse the OSS conversation viewer (pure-graph, hub-safe) under page=hub.
         return <ConversationRoute />;
+      case ViewType.ASSETS:
+        return <HubAssetsPage />;
       case ViewType.HOME:
       default:
         return <HubHome />;

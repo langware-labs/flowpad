@@ -3,10 +3,8 @@ import { apiBase } from '../_shared/api';
 
 const API = apiBase();
 
-/** Ensure the ACTIVE project has at least one markdown doc and return its name.
+/** Create a markdown doc in the active project and return its entity id.
  *
- * The browseable tree is project-scoped; a fresh/cleared instance has an empty
- * docs folder, so tests that open "the first .md leaf" must seed their own.
  * Uses the SCOPED create (`/graph/project/<id>/markdown`) — the unscoped form
  * materializes under $HOME instead of the project (owns_main_ref scoping). */
 export async function ensureProjectMarkdown(request: APIRequestContext): Promise<string> {
@@ -21,12 +19,7 @@ export async function ensureProjectMarkdown(request: APIRequestContext): Promise
     data: { name },
   });
   if (!r.ok()) throw new Error(`seed markdown failed: ${r.status()} ${await r.text()}`);
-  // The browseable tree lists INDEXED records and indexing is explicit-only (no
-  // auto-index on create). Index the new doc under its project so "the first .md
-  // leaf" actually surfaces in the tree.
-  const idx = await request.post(
-    `${API}/api/v1/graph/compute_node/@local/fs-records/index?type=markdown&projects=${projectId}&user=false&force=true`,
-  );
-  if (!idx.ok()) throw new Error(`index markdown after seed failed: ${idx.status()}`);
-  return `${name}.md`;
+  const id = (await r.json())?.data?.id;
+  if (!id) throw new Error('seed markdown returned no entity id');
+  return id;
 }

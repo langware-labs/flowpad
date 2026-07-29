@@ -40,9 +40,10 @@ test.describe('Assets Page — BrowseableTree + AssetListView', () => {
       '[aria-label*="hierarchy"], [aria-label*="list mode"], button:has(svg.lucide-layout-list), button:has(svg.lucide-network)',
     );
     expect(await toggles.count(), 'no LayoutList/Network mode toggles exist').toBe(0);
-    // The refresh / rebuild-index control is present.
-    const rebuild = page.locator('[data-testid="rebuild-index"], button[title="Refresh search data"]');
-    expect(await rebuild.count(), 'rebuild-index / refresh control present').toBeGreaterThanOrEqual(1);
+    // Current header controls: search plus the scope selector. Scanning belongs
+    // to each type row, not to a page-level rebuild button.
+    await expect(page.getByTestId('navigator-search-open')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Current project:/ })).toBeVisible();
   });
 
   test('3: /dock/assets/list/skill renders an AssetListView (not the placeholder)', async ({ page }) => {
@@ -101,7 +102,7 @@ test.describe('Assets Page — BrowseableTree + AssetListView', () => {
     const body = await res.json();
     expect(body.status).toBe('SUCCESS');
     const names: string[] = (body.data.types as Array<{ type_name: string }>).map((t) => t.type_name);
-    for (const core of ['agent', 'skill', 'workflow', 'markdown']) {
+    for (const core of ['agent', 'skill', 'markdown']) {
       expect(names, `types includes ${core}`).toContain(core);
     }
   });

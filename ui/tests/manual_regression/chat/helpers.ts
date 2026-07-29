@@ -1,4 +1,5 @@
-import { type Page, expect } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { type QaViewMode, withViewMode } from '../_shared/view-mode';
 
 /**
  * Dismiss the DesktopSetupModal if it appears.
@@ -13,9 +14,9 @@ export async function dismissSetupModal(page: Page) {
 }
 
 /** Navigate to landing and wait for it to fully load. */
-export async function gotoLanding(page: Page) {
+export async function gotoLanding(page: Page, viewMode?: QaViewMode) {
   // The home landing is at /dock/home (root / redirects to FlowPage which loads home)
-  await page.goto('/dock/home');
+  await page.goto(viewMode ? withViewMode('/dock/home', viewMode) : '/dock/home');
   // Handle setup modal (DesktopSetupModal) if it appears despite localStorage suppression
   const skipButton = page.getByRole('button', { name: 'Skip' });
   if (await skipButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
@@ -92,7 +93,7 @@ export async function sendInstruction(page: Page, message: string) {
 }
 
 /** @deprecated The old chat status bar (DONE) no longer exists in the shell terminal model. */
-export async function waitForDone(page: Page, _timeout = 45_000) {
+export async function waitForDone(page: Page) {
   // The shell terminal doesn't have a DONE status indicator
   // Wait a fixed amount of time as fallback
   await page.waitForTimeout(3_000);

@@ -1,5 +1,5 @@
 import { dataContext, instancePreferences, onPreferenceChange, PREF_REGISTRY, PrefKey, type Project } from '@sdk';
-import { usePreference } from '@src/hooks/use-preference';
+import { usePreference, usePreferenceResolved } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
 import { useEffect, useSyncExternalStore } from 'react';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
@@ -13,6 +13,16 @@ declare global {
   }
 }
 
+/**
+ * View mode fuses TWO axes on purpose, so one control picks both:
+ *  - the session SURFACE — read with `surfaceForViewMode` (vibe workspace / chat
+ *    pane / xterm);
+ *  - the chrome TIER — read with `isAdvancedMode` (debug toolbars, trace
+ *    gutters, `AdvancedOnly`).
+ * So `Advanced` means "a terminal AND the full chrome", not just a terminal.
+ * Keep that in mind before gating anything new on `isAdvancedMode`: you are
+ * attaching it to a surface choice as well as a complexity preference.
+ */
 export enum ViewMode {
   // Hierarchy (simplest → fullest): Vibe ⊂ Standard ⊂ Advanced ⊂ Dev.
   Vibe = 'vibe',
@@ -50,6 +60,53 @@ function toViewMode(v: unknown): ViewMode {
  */
 export function isAdvancedMode(mode: ViewMode): boolean {
   return mode === ViewMode.Advanced || mode === ViewMode.Dev;
+}
+
+/**
+ * The SURFACE a view mode shows an agent session in — the single mapping that
+ * makes View mode the one mode selector. Vibe is the vibe workspace, Standard is
+ * the chat pane, Advanced/Dev is the raw terminal.
+ *
+ * This used to be a second preference (`chat mode`), which could and did drift
+ * out of sync with View mode — both carried a `vibe` and each control wrote only
+ * its own. One enum, one preference, one control.
+ */
+export type SessionSurface = 'vibe' | 'chat' | 'terminal';
+
+export function surfaceForViewMode(mode: ViewMode): SessionSurface {
+  if (mode === ViewMode.Vibe) return 'vibe';
+  return isAdvancedMode(mode) ? 'terminal' : 'chat';
+}
+
+/** Transport for a mode: only the terminal surface runs an interactive PTY. */
+export function viewModePtyMode(mode: ViewMode): boolean {
+  return surfaceForViewMode(mode) === 'terminal';
+}
+
+/**
+ * Reactive surface, or `null` for NOT KNOWN YET.
+ *
+ * On the first load in a browser profile there is no localStorage boot seed for
+ * `preferences.ui.view_mode`, so `get()` serves the registry default and the
+ * session would paint that surface for ~1s until `preferences.json` lands, then
+ * repaint into the user's real one. Callers hold the arrangement while this is
+ * null instead of painting a guess. After that first load the boot seed makes it
+ * true synchronously, so the wait is a first-run cost only.
+ *
+ * `useViewMode()` deliberately keeps its non-null contract — chrome (isAdvanced
+ * &c.) can render against the default and correct itself invisibly. Only the
+ * session SURFACE is expensive to get wrong, because it mounts a whole pane.
+ */
+export function useSessionSurface(): SessionSurface | null {
+  const mode = useViewMode();
+  const resolved = usePreferenceResolved(PrefKey.VIEW_MODE);
+  const override = useSyncExternalStore(
+    subscribeViewModeOverride,
+    getViewModeOverrideSnapshot,
+    getViewModeOverrideSnapshot,
+  );
+  if (override) return surfaceForViewMode(override);
+  return resolved ? surfaceForViewMode(mode) : null;
 }
 
 const viewModeOverrideListeners = new Set<() => void>();
@@ -179,7 +236,26 @@ export function applyProjectViewMode(project: Project): void {
   }
 }
 
+// The last mode that wasn't Vibe. Entering Vibe ADOPTS it as the persisted
+// preference (useDockViewModeOverrideSync), which overwrites whatever the user
+// had — so without this latch, an Advanced user who visits Vibe and leaves is
+// silently and unrecoverably dropped to Standard (ViewToggle only renders modes
+// at or below the current rank, so the Advanced button isn't even on screen).
+// Module-scope, session-lived, deliberately not persisted.
+let lastNonVibeViewMode: ViewMode | null = null;
+
+function recordNonVibe(val: ViewMode): void {
+  if (val !== ViewMode.Vibe) lastNonVibeViewMode = val;
+}
+recordNonVibe(getViewMode());
+
+/** Where an "exit vibe" affordance should land: the mode in use before Vibe. */
+export function previousNonVibeViewMode(): ViewMode {
+  return lastNonVibeViewMode ?? ViewMode.Standard;
+}
+
 export function setViewMode(val: ViewMode): void {
+  recordNonVibe(val);
   instancePreferences.set(PrefKey.VIEW_MODE, val);
   applyAttribute(getEffectiveViewMode());
   stampProjectViewMode(dataContext.project, val);

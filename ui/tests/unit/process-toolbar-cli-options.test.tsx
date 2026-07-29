@@ -50,10 +50,6 @@ vi.mock('@src/components/terminal/interactive-terminal/command-status-viewer', (
   CommandStatusViewer: () => null,
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: {} }) }));
-vi.mock('@src/contexts/chat-ui-mode-context', () => ({
-  setChatUiOverride: () => {},
-  useChatUiOverride: () => null,
-}));
 // SessionInfoPopover discovers the on-disk session record on mount — no
 // backend in this tier.
 vi.mock('@sdk/resource_management/fs_records/claude/claude-session.js', () => ({

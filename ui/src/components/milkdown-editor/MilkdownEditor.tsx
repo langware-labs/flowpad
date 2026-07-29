@@ -16,6 +16,7 @@ import {
 import { gfm, insertTableCommand } from '@milkdown/preset-gfm';
 import { tableBlock } from '@milkdown/components/table-block';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { listener, listenerCtx } from '@milkdown/plugin-listener';
 import { prism, prismConfig } from '@milkdown/plugin-prism';
 import { emoji } from '@milkdown/plugin-emoji';
@@ -180,6 +181,12 @@ interface MilkdownEditorProps {
    * gating — hidden in view/review modes.
    */
   toolbarRight?: React.ReactNode;
+  /**
+   * Optional host for the edit toolbar. `undefined` keeps the toolbar above the
+   * document; an element portals it into that host; `null` opts into external
+   * placement while the host ref is mounting (so no extra toolbar flashes).
+   */
+  toolbarPortalTarget?: HTMLElement | null;
   /**
    * Fires when the caret moves to a different top-level block. The `bodyLine`
    * is 1-indexed against the `content` prop (body markdown). Approximate when
@@ -566,10 +573,12 @@ function MilkdownToolbar({
   activeState,
   onRequestLink,
   rightSlot,
+  embedded = false,
 }: {
   activeState: ActiveState;
   onRequestLink: () => void;
   rightSlot?: React.ReactNode;
+  embedded?: boolean;
 }) {
   const { t } = useLingui();
   const [loading, get] = useInstance();
@@ -610,7 +619,13 @@ function MilkdownToolbar({
   const alignDisabled = codeBlock;
 
   return (
-    <div className="flex flex-shrink-0 items-center gap-0.5 border-b bg-muted/20 px-2 py-1">
+    <div
+      className={`flex flex-shrink-0 items-center gap-0.5 ${
+        embedded ? 'rounded-md border bg-muted/20 px-1 py-0.5' : 'border-b bg-muted/20 px-2 py-1'
+      }`}
+      data-testid="milkdown-toolbar"
+      data-embedded={embedded ? 'true' : 'false'}
+    >
       <TextFormatButtons activeState={activeState} onRequestLink={onRequestLink} />
       <div className="mx-1.5 h-4 w-px bg-border" />
       {headingBtn(t`Normal text`, <Pilcrow className="h-3.5 w-3.5" />, callCommand(turnIntoTextCommand.key), headingLevel === 0 && !codeBlock)}
@@ -1073,7 +1088,7 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
   );
 }
 
-export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugins, onLinkClick, editorRef: externalEditorRef, toolbarRight, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
+export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugins, onLinkClick, editorRef: externalEditorRef, toolbarRight, toolbarPortalTarget, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const [activeState, setActiveState] = useState<ActiveState>(EMPTY_ACTIVE);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
@@ -1266,16 +1281,19 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
     if (next) setLinkPopup(next);
   }, []);
 
+  const formattingToolbar = (
+    <MilkdownToolbar
+      activeState={activeState}
+      onRequestLink={handleRequestLink}
+      rightSlot={toolbarRight}
+      embedded={toolbarPortalTarget !== undefined}
+    />
+  );
+
   return (
     <MilkdownProvider>
       <div className="flex h-full flex-col overflow-hidden">
-        {!isReadOnly && (
-          <MilkdownToolbar
-            activeState={activeState}
-            onRequestLink={handleRequestLink}
-            rightSlot={toolbarRight}
-          />
-        )}
+        {!isReadOnly && toolbarPortalTarget === undefined && formattingToolbar}
         <div
           className="min-h-0 flex-1 overflow-auto"
           onMouseOver={handleMouseOver}
@@ -1285,6 +1303,9 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
           <MilkdownEditorInner content={content} onChange={onChange} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} />
         </div>
       </div>
+      {!isReadOnly && toolbarPortalTarget
+        ? createPortal(formattingToolbar, toolbarPortalTarget)
+        : null}
       {!isReadOnly && !linkPopup && (
         <SelectionToolbar
           rect={selectionRect}

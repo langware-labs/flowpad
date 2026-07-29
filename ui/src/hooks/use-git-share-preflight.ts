@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActionInfo, dataManager, type TypeId } from '@sdk';
+import { ActionInfo, dataManager, type GitOrigin, type TypeId } from '@sdk';
 
 /**
  * Backend-owned Git-sharing eligibility for one asset. The Share dialog's Git
@@ -16,6 +16,12 @@ export interface GitSharePreflight {
   reason: string | null;
   /** Stable machine code for the state (tests / branching). */
   code: string | null;
+  /**
+   * The repo this asset comes from, when one could be derived — present even
+   * when `available` is false (a dirty tree still has an origin). Null only
+   * when there is genuinely no repo/remote to name.
+   */
+  origin: GitOrigin | null;
   /**
    * True once the backend has answered for the current ref. IDLE and "available"
    * both carry `code: null`, so callers that branch on the code need this to
@@ -38,14 +44,45 @@ interface PreflightResponse {
   git_origin: Record<string, unknown> | null;
 }
 
+/**
+ * The one parse seam for the backend's `git_origin` payload. Returns the shared
+ * `GitOrigin` model rather than a local mirror of it, so a new backend field is
+ * added in one place (the model) instead of here as well.
+ */
+function toOrigin(raw: Record<string, unknown> | null | undefined): GitOrigin | null {
+  if (!raw) return null;
+  const { provider, owner, name, branch, head_commit, rel_path } = raw as Record<
+    string,
+    string | null | undefined
+  >;
+  if (!provider || !owner || !name) return null;
+  return {
+    kind: 'git',
+    provider,
+    owner,
+    name,
+    branch: branch ?? '',
+    head_commit: head_commit ?? null,
+    rel_path: rel_path ?? '.',
+  };
+}
+
 type PreflightState = Omit<GitSharePreflight, 'refetch'>;
 
-const IDLE: PreflightState = { loading: false, available: false, reason: null, code: null, answered: false };
+const IDLE: PreflightState = {
+  loading: false,
+  available: false,
+  reason: null,
+  code: null,
+  origin: null,
+  answered: false,
+};
 const FAILED: PreflightState = {
   loading: false,
   available: false,
   reason: 'Could not check Git eligibility.',
   code: 'status-failure',
+  origin: null,
   answered: true,
 };
 
@@ -87,6 +124,7 @@ export function useGitSharePreflight(
           available: !!res.available,
           reason: res.reason ?? null,
           code: res.code ?? null,
+          origin: toOrigin(res.git_origin),
           answered: true,
         });
       })

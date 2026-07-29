@@ -23,7 +23,8 @@ import { Callable } from './types';
  * opens the port preview.
  */
 export interface ReceiveShowTarget {
-  kind?: 'entity' | 'vfs' | 'webapp';
+  /** Mirrors python `DisplayTargetKind` (flow_sdk/core/display_target.py). */
+  kind?: 'entity' | 'vfs' | 'webapp' | 'app' | 'shell';
   typeid?: string;
   type?: string;
   id?: string;
@@ -1385,9 +1386,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Returns a Record with recordFolderRef (record folder) and mainRef (primary content).
    * Use ref.child() to navigate further: entity.record().then(r => r.mainRef?.child("subdir"))
    */
-  public async record(): Promise<Record> {
+  public async record(options: { hubReflect?: boolean } = {}): Promise<Record> {
     const actionInfo = new ActionInfo('record', this.typeId.type, this.typeId.id, 'GET');
     actionInfo.subpath = 'refs';
+    actionInfo.hubReflect = options.hubReflect === true;
     const result = await dataManager.callAction<void, RecordRefs>(actionInfo);
     return new Record(result as RecordRefs);
   }

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { TypeId } from '@sdk';
+import { compactEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { ShareButton } from '@src/components/entity-actions/ShareButton';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
@@ -19,8 +20,8 @@ export interface EntityActionsToolbarProps {
   /** Optional icon key persisted on the bookmark.data; the home desktop grid uses it. */
   favoriteIcon?: string;
   /**
-   * 'prominent' (default for header surfaces) renders Share as a labeled pill.
-   * 'compact' renders Share as an icon-only button.
+   * 'prominent' renders Share as a labeled pill.
+   * 'compact' (default) renders every action as a same-sized icon button.
    */
   variant?: Variant;
   /** Slot for caller-supplied extra trailing actions (e.g. <ExportEntityButton>). */
@@ -84,6 +85,11 @@ export function EntityActionsToolbar({
         title={favoriteTitle}
         icon={favoriteIcon}
         size={variant === 'prominent' ? 16 : 14}
+        className={
+          variant === 'compact'
+            ? `${compactEntityActionClassName} p-0`
+            : undefined
+        }
       />
 
       {trailing}

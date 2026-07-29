@@ -24,6 +24,7 @@ from flow_sdk.builtin.flow_message import FlowMessage, derive_session_fields
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.discovery.notify import send_resource_sync
+from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.operations.conversation import (
     append_message_pointer,
     default_jsonl_path,
@@ -31,7 +32,6 @@ from flow_sdk.fs_store.operations.conversation import (
     message_pointers,
     project_pointers_to_entity,
 )
-from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.record_types import RecordType
 
 logger = logging.getLogger(__name__)

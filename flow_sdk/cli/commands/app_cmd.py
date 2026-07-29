@@ -64,6 +64,7 @@ def open_app(
     process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
     port: Annotated[Optional[int], typer.Option("--port", help="Override the app port.")] = None,
     no_start: Annotated[bool, typer.Option("--no-start", help="Register/show only; do not launch a server.")] = False,
+    dist: Annotated[Optional[str], typer.Option("--dist", help="Build-output dir (relative to the app) to serve as the app's delivery.")] = None,
     install: Annotated[bool, typer.Option("--install/--no-install", help="Install JS dependencies if node_modules is missing.")] = True,
     timeout: Annotated[float, typer.Option("--timeout", help="Seconds to wait for the port after starting.")] = 75.0,
     max_depth: Annotated[int, typer.Option("--max-depth", help="Maximum directory depth to scan.")] = 6,
@@ -96,12 +97,60 @@ def open_app(
         candidate,
         process_id=process_id,
         request=request,
+        dist=dist,
         port_override=port,
         no_start=no_start,
         install=install,
         timeout=timeout,
     )
     _ok(opened)
+
+
+@app_app.command("serve", help="Register an app's built output so Flowpad serves it, and show it.")
+def serve_app(
+    name: Annotated[Optional[str], typer.Argument(help="Display name for the app (defaults to the folder name).")] = None,
+    root: Annotated[Optional[str], typer.Option("--root", help="The app directory (defaults to cwd).")] = None,
+    dist: Annotated[Optional[str], typer.Option("--dist", help="Build output within the app to serve. Omit when the folder IS the output.")] = None,
+    process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
+    no_show: Annotated[bool, typer.Option("--no-show", help="Register only; do not present it in the display.")] = False,
+) -> None:
+    """Serve the app from Flowpad's own origin — no dev server, no port.
+
+    This is the mode an app wants when it talks to Flowpad: served from the
+    backend's origin, it is handed the API origin and the session cookies ride
+    along, so the SDK works with nothing to configure. Registering without a
+    port is what makes the display resolve `served` instead of pointing at a dev
+    server that isn't there.
+    """
+    app_dir = _resolve_root(root)
+    process_id = _resolve_process_id(process)
+
+    data = _register_webapp(
+        process_id,
+        {
+            "name": (name or "").strip() or app_dir.name,
+            "path": str(app_dir),
+            "dist": dist,
+            "description": f"Flowpad-served web app at {app_dir}",
+            "show": not no_show,
+        },
+    )
+    micro_app = data.get("micro_app")
+    if micro_app is None:
+        _fail(
+            EXIT_NOT_FOUND,
+            "NO_BUILD_OUTPUT",
+            f"No servable output under {app_dir}. Build the app first, or pass --dist <dir>.",
+        )
+    _ok(
+        {
+            "source": "serve",
+            "artifact": data.get("artifact"),
+            "micro_app": micro_app,
+            "shown": data.get("shown"),
+            "serving": micro_app.get("location_root"),
+        }
+    )
 
 
 def _resolve_root(root: str | None) -> Path:
@@ -198,6 +247,7 @@ def _open_candidate(
     *,
     process_id: str,
     request: str,
+    dist: str | None = None,
     port_override: int | None,
     no_start: bool,
     install: bool,
@@ -238,6 +288,10 @@ def _open_candidate(
             "start_cmd": start_cmd,
             "health": candidate.health,
             "description": f"{candidate.kind} web app at {app_dir}",
+            # Names the built output the backend should serve as this app's
+            # delivery. Omitted, the backend looks for a conventional build dir
+            # and falls back to the app folder itself when it is already static.
+            "dist": dist,
             "metadata": {
                 "app_kind": candidate.kind,
                 "evidence": candidate.evidence,

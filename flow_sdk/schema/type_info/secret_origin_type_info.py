@@ -21,6 +21,10 @@ from flow_sdk.schema.types import EntityType
 
 
 class SecretOriginMeta(BaseMeta):
+    # project_id + env_var ARE the identity (see secret_origin_identity);
+    # locator and sod_store are declaration detail — where to fetch, where to
+    # cache — and may change without the secret becoming a different secret.
+    project_id: Optional[str] = None
     env_var: Optional[str] = None
     locator: Optional[dict] = None
     sod_store: Optional[str] = None
@@ -34,7 +38,7 @@ SECRET_ORIGIN = TypeMetadata(
     # add-secret-pointer action, which writes the reference json.
     creatable=False,
     indexed_by_default=True,
-    index_fields=["name", "env_var"],
+    index_fields=["name", "env_var", "project_id"],
     asset_class="internal",
     family="assets/sodot",
     main_layout="file",

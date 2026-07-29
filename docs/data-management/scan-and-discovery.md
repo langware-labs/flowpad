@@ -8,7 +8,9 @@ This document describes the discovery mechanisms used throughout `flow_sdk` to l
 
 > **Disk is the source of truth.** Records are scanned from disk; the Entity/DB layer is a queryable index that can be deleted and rebuilt from disk without data loss. See `docs/CLAUDE.md`.
 
-> **Indexing is explicit-action only.** A scan or index pass runs only when something explicitly requests it: a user clicking "reindex" in the UI (`POST /fs-records/index`), a scan/resource action, or a narrow self-heal that fires *only* when the caller passes an explicit `?hint_path=` (`_try_self_heal_missing_entity`, `flow_sdk/server/routes/graph.py`). It is **never** triggered automatically from mount, navigation, focus, bootstrap, or an interval (see the no-auto-walk rule, `feedback_no_auto_indexing.md`). Read-only `index-status` is the only thing the bootstrap path touches.
+> **Indexing is explicit-action only, with one opt-out exception.** A scan or index pass runs only when something explicitly requests it: a user clicking "reindex" in the UI (`POST /fs-records/index`), a scan/resource action, or a narrow self-heal that fires *only* when the caller passes an explicit `?hint_path=` (`_try_self_heal_missing_entity`, `flow_sdk/server/routes/graph.py`). It is still **never** triggered from mount, focus, an interval, or the bootstrap request; read-only `index-status` is the only thing the bootstrap path touches.
+>
+> The exception is **auto-index on project selection** (`preferences.auto_index.*`, on by default) — see [When Does Indexing Run](#when-does-indexing-run). It is a deliberate reversal of the original no-auto-walk rule (`feedback_no_auto_indexing.md`), taken because a never-indexed project presents as a permanently empty Assets menu with no signal telling the user to act. Everything the old rule protected still holds: the run is scoped to the one project, gated behind a preference the user can switch off, never walks a protected folder without consent, and never sweeps orphans.
 
 ---
 
@@ -112,6 +114,21 @@ When `opts.types` is set, `scan()` computes the reverse-reachability closure (`_
 ### Chunked / threaded DFS
 
 Walkers are typically synchronous file I/O. `scan()` runs them in chunks of `_SCAN_CHUNK_NODES = 256` node-visits per `asyncio.to_thread` round-trip, yielding the event loop between chunks so progress emits and concurrent requests stay responsive. Async walkers (rare) are detected via `_is_async_walker` and awaited on the main loop.
+
+### Out-of-process discovery (`SubprocessScanIndexer`)
+
+`preferences.auto_index.index_function = subprocess` (the default) swaps in `SubprocessScanIndexer`, which overrides **only** `scan()`. `index()` is inherited verbatim, so the per-record loop and every SQLite write stay in the server process.
+
+The boundary is deliberately drawn there rather than around the whole run: SQLite serializes writers regardless of which process issues them, so moving the writes off-process buys no write throughput while losing the `_session_ctx` contextvar handshake, `record_sync_guard`, the `_COMPUTE_ACTIVITIES` single-flight gate, and `_DB_LIFECYCLE_LOCK` — and it would break the rule stated in `flow_manager/function_runner.py` that *a subprocess must never open the instance DB directly*. The walk is GIL-bound CPU plus filesystem I/O with no DB at all, which is the part a separate process actually parallelizes.
+
+Wire protocol: `flow_sdk/fs_store/indexer/ndjson_stream.py`, shared with `RSIndexerAdapter`. The child (`python -m flow_sdk.fs_store.indexer.scan_child`) takes one JSON request on stdin — roots, options, and the parent's **effective** records/data roots, which it adopts rather than re-deriving — and emits NDJSON candidates, progress snapshots, and one terminal `{"result": …}` line.
+
+Two details are load-bearing:
+
+* **Candidates carry their parent link** (`parent_i` / `parent_ref`), not just resolved `scope` / `project_id` / `read_only`. `index()` derives a record's enclosure `parent_type_id` from `ref._parent` directly (`ref_typeid(getattr(ref, "_parent", None))`), so a purely flattened candidate silently unparents every received asset.
+* **The terminal result line is a safety mechanism.** Without it a child killed mid-stream is indistinguishable from a clean scan, and a truncated candidate set reaching `index()` would let the orphan sweep delete every record the child never emitted. Its absence is a hard failure.
+
+Any failure — spawn error, bad JSON, missing result line, non-zero exit — logs one warning and falls back to the in-process walk, mirroring `_maybe_rs_indexer`. Note the child pays full interpreter + `flow_sdk` import startup (~1.5s), so `thread` is faster for small projects; `subprocess` buys isolation and GIL-free parallelism on large trees.
 
 ---
 
@@ -307,8 +324,30 @@ There is **no filesystem-watcher-triggered indexer walk** — a file changing on
 | **GET-time lazy refresh** (per entity) | If the record's `index_required` says the source changed, re-run `sync_to_db()` + stamp the sentinel — one record, no walk | `Entity.check_and_refresh_record()` (`flow_sdk/core/entity/entity_model.py`) |
 | **404 self-heal** (dock loader) | A single-file, single-type forced index when a navigation carries `?hint_path=` for an entity the DB doesn't have | `_try_self_heal_missing_entity` (`flow_sdk/app/actions/graph.py`) → `flow_sdk/fs_store/transcript_indexer/handlers/single_file_indexers.py` |
 | **Resource-browser scans** | Read-only `FSIndexer.scan()` projections (no DB writes) | `flow_sdk/builtin/faas/scan_indexer.py` |
+| **Project selection / creation** (opt-out, `preferences.auto_index.*`) | A project-scoped `index()` when the user enters a project, so its assets are present without a manual run. Detached from the `activate` response; silently skips when another index holds the activity | `flow_sdk/fs_store/indexer/auto_index.py` → `ComputeNode._auto_index_project` |
 
-The deliberate absence of auto-indexing is a product decision: walks are user-visible work (progress pill) and only start on an explicit click or the narrow startup/system scope above.
+Auto-indexing on project selection is **on by default** and controlled by the four
+`preferences.auto_index.*` keys (the "Auto Index" preferences tab):
+
+| Key | Values | Default |
+|---|---|---|
+| `enabled` | bool | `true` |
+| `index_type` | `fast` (skip-fresh delta) \| `full` (`force=true`) | `fast` |
+| `index_trigger` | `project_create` \| `first_selection` \| `every_selection` | `first_selection` |
+| `index_function` | `subprocess` \| `thread` | `subprocess` |
+
+`first_selection` is tracked by an `auto_index_at` marker in the project record's shadow
+`metadata.json` — deliberately **not** `indexed_at` (project create stamps that sentinel,
+so it is non-null from birth) and not `last_active_at` (its writer overwrites the prior
+value before returning). The marker is stamped only once the index activity is actually
+held, so a run skipped for contention does not consume a project's one first-selection
+chance.
+
+Everything else still requires an explicit click. Two invariants the auto path must keep:
+it always resolves roots with `foreground=False`, so a protected-folder project is gated
+and an in-app consent request is queued rather than tripping an OS dialog on a plain
+project switch; and it always runs with `orphan_action=INDEX` (count-only), so an
+automatic run can never delete records.
 
 ## Scan & Index API Endpoints
 

@@ -1,4 +1,3 @@
-import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { WebappViewer } from '@src/components/webapp-viewer';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
@@ -7,14 +6,12 @@ import PersistentIframe, { PersistentIframeHandle } from '@src/components/persis
 import { DisplayToolbar, WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { captureElementAsImageFile } from '@src/components/display-toolbar/capture-region';
 import { annotateImage } from '@src/components/image-annotator/image-annotator-store';
-import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '@src/components/ui/resizable';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
-import { useViewerStore, useProcessWebApp } from '@src/hooks/flow-hooks';
+import { useViewerStore, useProcessWebApp, useAppDisplay } from '@src/hooks/flow-hooks';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, editorForPath, editorForType } from '@src/navigation/asset-doc-types';
-import { useEntity } from '@src/hooks/entity-hooks';
 import { DisplayHistoryButton } from './display-history-button';
 import {
   AgenticProcess,
@@ -22,24 +19,24 @@ import {
   type DisplayEntry,
   FlowData,
   fsStore,
-  ProcessKind,
-  Project,
   TypeId,
   ViewType,
 } from '@sdk';
 import { resolveProcessInputDir } from '@src/utils/upload-to-input-dir';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { setActiveTabParent } from '@src/tabs/tab-parent-context';
-import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { notify } from '@src/notifications/notify';
-import { WorkspaceChildStrip } from './workspace-child-strip';
-import { VibeAssignTaskButton } from './VibeAssignTaskButton';
-import { VibeCollaborateButton } from './VibeCollaborateButton';
-import { ContentPanel } from './content-panel/content-panel';
-import { createVibeProcessForProject, embedVibeAgent, launchVibeSessionForProject } from './use-start-vibe-session';
+import { shellIdFromShowTarget } from '@src/navigation/shell-show-target';
 import { ViewMode } from '@src/contexts/view-mode-context';
+import { WorkspaceChildStrip } from './workspace-child-strip';
+import { useProcessSurface } from '@src/components/terminal/interactive-terminal/use-process-surface';
+import { ContentPanel } from './content-panel/content-panel';
+import { launchVibeSessionForProject } from './use-start-vibe-session';
 import { VIBE_STARTER_PROMPTS } from './vibe-starter-prompts';
-import type { VibeWorkspaceSession } from './use-vibe-workspace-session';
+import {
+  type VibeWorkspaceSession,
+  useVibeWorkspaceSessionHost,
+} from './use-vibe-workspace-session';
+import { VibeChatPane } from './vibe-chat-pane';
 import {
   buildDisplayAnnotationPrompt,
   displayAnnotationContextForDock,
@@ -50,22 +47,8 @@ import {
   type DisplayAnnotationContext,
   type DisplayShowTarget,
 } from './display-annotation';
-import { Plus } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import {
-  normalizeVibeModelTier,
-  VIBE_MODEL_DEFAULT,
-  VibeModelSelect,
-  type VibeModelTier,
-} from './vibe-model-select';
-import { VibeWorkerSelect } from './vibe-worker-select';
-import {
-  DEFAULT_WORKER_TYPE,
-  normalizeWorkerType,
-  type WorkerType,
-} from '@src/components/workers/worker-types';
-import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 
 const McpAppPreview = lazy(() =>
   import('@src/components/mcp-app-preview/McpAppPreview').then((m) => ({ default: m.McpAppPreview })),
@@ -156,79 +139,30 @@ interface VibeWorkspaceProps {
 
 export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const { t } = useLingui();
-  const { project, flow } = useAgentContext();
+  const { project } = useAgentContext();
   const { navigation, currentDock } = useDockNavigation();
   // Select only the stable setter — subscribing to the whole store would
   // re-render this component on its own `currentContext` writes (it never reads it).
   const setCurrentContext = useViewerStore((s) => s.setCurrentContext);
 
-  // Register this workspace's PROCESS tab (its one shell-dock tab — the
-  // workspace anchor) as the parent for content tabs materialized while we're
-  // mounted (the open button, links inside child content). This is the ONLY
-  // child-tab grouping seam — consumed at the tab chokepoint, which adopts
-  // content-asset docks exclusively (never a process/project dock).
-  useEffect(() => {
-    setActiveTabParent(session.processTab?.id ?? null);
-    return () => setActiveTabParent(null);
-  }, [session.processTab?.id]);
+  // Bind by the workspace session id. The same hook also owns parent
+  // registration/materialization for process and child presentations.
+  const activeProcess = useVibeWorkspaceSessionHost(session);
+  // Vibe has no InteractiveTerminal, so this is where the session's transport is
+  // kept aligned with the view mode while the workspace is on screen. It also
+  // hands back the reactive entity, so this component needs no subscription of
+  // its own.
+  const persistedProcess = useProcessSurface({ process: activeProcess });
 
-  // The process tab is the anchor children are parented to and the row the
-  // strip reads. The route loader mints it on the process URL; this covers the
-  // paths it can't (deep-linked child URLs, a row lost to the orphan reap after
-  // the process recovered). Idempotent get-or-create; a failed mint (e.g. the
-  // process entity is gone) just leaves processTab null, same as before.
-  useEffect(() => {
-    if (session.processTab) return;
-    void setupTabAndAdopt(session.processDock);
-  }, [session.processTab, session.processDock]);
-
-  // id-based TypeId (NOT project.typeId, which is the uname form `project-@local`) —
-  // must match the target HomeLanding.handleVibeSubmit created the process with.
-  const target = useMemo(
-    () => (project?.id ? new TypeId(Project.type, project.id).toString() : null),
-    [project?.id],
-  );
-  const [pendingWorkerSwitch, setPendingWorkerSwitch] = useState<{
-    workerType: WorkerType;
-    model: VibeModelTier;
-  } | null>(null);
-
-  // The display's process. On the display URL `flow` IS the process; on a child
-  // URL `flow` is the child's entity, so the agent-driven display machinery
-  // (onShow/webapp/focus) goes inert — correct, since a child URL renders the
-  // ContentPanel override instead of the pin.
-  const activeProcess =
-    flow instanceof AgenticProcess && flow.id === session.processId ? flow : null;
   const streamItems = useAgenticProcessStream(activeProcess);
   const focus = useVibeFocus(streamItems);
-
-  const handleActiveWorkerChange = useCallback(
-    ({ workerType, model }: { workerType: WorkerType; model: string | null }) => {
-      setPendingWorkerSwitch({ workerType, model: normalizeVibeModelTier(model) });
-    },
-    [],
-  );
-
-  const confirmWorkerSwitch = useCallback(() => {
-    if (!project?.id || !pendingWorkerSwitch) return;
-    void createVibeProcessForProject({
-      projectId: project.id,
-      workdir: project.fs_storage_mount_path || project.name || undefined,
-      navigation,
-      model: pendingWorkerSwitch.model,
-      workerType: pendingWorkerSwitch.workerType,
-    }).catch((error) => {
-      console.error('[Vibe] Failed to switch worker:', error);
-      notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });
-    });
-  }, [
-    navigation,
-    pendingWorkerSwitch,
-    project?.fs_storage_mount_path,
-    project?.id,
-    project?.name,
-    t,
-  ]);
+  const displayStack = persistedProcess?.displayStack ?? [];
+  const lastShown = (
+    persistedProcess?.context_data as { last_shown?: DisplayShowTarget } | undefined
+  )?.last_shown;
+  const persistedShown =
+    lastShown ?? (displayStack.length ? displayStack[displayStack.length - 1] : null);
+  const persistedShownKey = persistedShown ? JSON.stringify(persistedShown) : '';
 
   // Agent-declared display focus (`flow show` → on_show entity event). The
   // last shown target PINS the display: it outranks the involuntary per-file
@@ -247,26 +181,35 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     }
     // Restore the persisted pin (context_data.last_shown / newest stack entry) so
     // a display mounted AFTER the agent's `flow show` (page reload, late-opened
-    // tab) still lands on the deliverable — the on_show entity event has no replay.
-    const lastShown = (activeProcess.context_data as { last_shown?: DisplayShowTarget } | undefined)
-      ?.last_shown;
-    const stack = activeProcess.displayStack;
-    setShown(lastShown ?? (stack.length ? stack[stack.length - 1] : null));
+    // tab) still lands on the deliverable — the on_show entity event has no
+    // replay. Key the effect on the payload, not entity identity: the SDK
+    // updates cached entities in place.
+    //
+    // A shell target is NOT restorable content: the terminal it addresses lives
+    // on as its own child tab, and re-pinning it here would drag the user back
+    // into the terminal on every reload.
+    setShown(shellIdFromShowTarget(persistedShown) ? null : persistedShown);
+  }, [activeProcess, persistedShownKey]);
+
+  useEffect(() => {
+    if (!activeProcess) return;
     return activeProcess.onShow((payload) => {
+      // A terminal is hosted as a tab, not rendered in the pane — open its dock
+      // and let workspace adoption place it (the journey's path exactly).
+      const shellId = shellIdFromShowTarget(payload);
+      if (shellId) {
+        void navigation.openShell(shellId, { viewMode: ViewMode.Vibe });
+        return;
+      }
       setShown(payload);
       setShowNonce((n) => n + 1);
     });
-  }, [activeProcess]);
+  }, [activeProcess, navigation]);
 
   // The `flow show` history (oldest first) is the AUTHORITATIVE server stack —
-  // derived from the reactive process entity (the wholesale-replace guard keeps
-  // it fresh), never a hand-appended local mirror. `useEntity` re-renders on the
-  // backend's context_data update.
-  const reactiveProcess = useEntity<AgenticProcess>(activeProcess?.typeId ?? null);
-  const displayStack = useMemo(
-    () => reactiveProcess.data?.displayStack ?? activeProcess?.displayStack ?? [],
-    [reactiveProcess.data, activeProcess],
-  );
+  // read on every render from the reactive process entity, never a
+  // hand-appended local mirror. `useEntity` re-renders on the backend's
+  // context_data update even when the SDK mutates the entity in place.
 
   // Open a past display as its OWN standard tab (the reusable behavior): convert
   // the stored target to its dock pointer and navigate. Webapps have no dock
@@ -282,7 +225,13 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // Feed the dev-server port into the viewer store — the exact channel
   // WebappViewer reads (`currentContext.viewerOptions.port`). A shown webapp
   // wins over stream focus. This is store state, not URL state.
+  //
+  // A shown APP is deliberately absent here: it carries its own identity
+  // (artifact_id) and derives its runtime, so pushing its port into the shared
+  // viewer store would re-create the port side-channel this replaces — and
+  // leave a stale port behind the moment the app is served instead.
   useEffect(() => {
+    if (shown?.kind === 'app') return;
     if (shown?.kind === 'webapp' && shown.port != null) {
       setCurrentContext({ viewerOptions: { port: String(shown.port) } });
       return;
@@ -302,6 +251,16 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   );
   const webAppConfig = useProcessWebApp(activeProcess, webappPort);
   const webappFrameRef = useRef<PersistentIframeHandle>(null);
+
+  // A shown app: identity is the artifact, runtime (dev server vs built output
+  // we serve) is derived and user-switchable.
+  const appDisplay = useAppDisplay(
+    activeProcess,
+    shown?.kind === 'app' ? (shown.artifact_id ?? null) : null,
+    shown?.kind === 'app' && shown.port != null ? String(shown.port) : null,
+    shown?.kind === 'app' && (shown.runtime === 'dev' || shown.runtime === 'served') ? shown.runtime : null,
+  );
+  const appFrameRef = useRef<PersistentIframeHandle>(null);
 
   const submitAnnotatedDisplay = useCallback(async (file: File, context: DisplayAnnotationContext) => {
     if (!activeProcess?.id) throw new Error('No active Vibe session');
@@ -445,6 +404,45 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
 
     if (shown) {
       switch (shown.kind) {
+        case 'app': {
+          if (!appDisplay.src) return preview;
+          const appContext = displayAnnotationContextForShown(shown, appDisplay.src, appDisplay.port);
+          return (
+            <DisplayToolbar
+              externalUrl={appDisplay.src}
+              onAnnotate={(target) => {
+                void handleAnnotateDisplay(target, appContext);
+              }}
+              historySlot={historySlot}
+              perType={
+                <WebappDisplayToolbar
+                  host={appDisplay.src}
+                  port={appDisplay.port ?? ''}
+                  runtime={appDisplay.runtime}
+                  runtimes={appDisplay.available}
+                  onRuntimeChange={appDisplay.setRuntime}
+                  onRefresh={() => appFrameRef.current?.refresh()}
+                />
+              }
+            >
+              <PersistentIframe
+                // Keyed by src so a runtime switch remounts the wrapper.
+                // Changing src in place leaves BOTH the outgoing and incoming
+                // frames parked at opacity-0 — the registry activates a
+                // container on mount, and an in-place src change retires the
+                // old one without ever activating the new one. Switching
+                // runtimes is the first thing to change src routinely; the
+                // port-only path below effectively never does.
+                key={appDisplay.src}
+                ref={appFrameRef}
+                testId="vibe-app-frame"
+                src={appDisplay.src}
+                cacheKey={showNonce + refreshStamp}
+                onErrorRetry={() => onRetry(t`The web app is not working, please try to fix it.`)}
+              />
+            </DisplayToolbar>
+          );
+        }
         case 'webapp': {
           if (!webAppConfig.host) return preview;
           const webappContext = displayAnnotationContextForShown(shown, webAppConfig.host, webappPort);
@@ -544,6 +542,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     onRetry,
     webAppConfig,
     webappPort,
+    appDisplay,
     t,
     navigation,
     activeProcess,
@@ -554,88 +553,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full w-full">
       <ResizablePanel defaultSize={36} minSize={24} maxSize={55}>
-        <EntityExecutionPanel
-          target={target}
-          processType={ProcessKind.Chat}
-          className="h-full border-r border-border"
-          dense
-          // "New" starts a fresh build session; the function form of
-          // leadingSlot hides the panel's built-in new-session icon so the
-          // header shows exactly one new-chat affordance.
-          leadingSlot={({ startNewSession }) => (
-            <button
-              type="button"
-              onClick={startNewSession}
-              title={t`New build`}
-              // Carries the panel's new-session testid: this pill replaces the
-              // built-in icon button (hidden by the function-form leadingSlot),
-              // and tests use it as the vibe-workspace mount signal.
-              data-testid="entity-execution-new"
-              // Green (theme-aware): the primary "create" affordance stands out
-              // against the neutral "Recent" pill next to it, in both light and
-              // dark themes.
-              className="inline-flex h-6 items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 text-xs font-medium text-green-600 transition-colors hover:bg-green-500/20 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
-            >
-              <Plus className="h-3 w-3" />
-              {t`New`}
-            </button>
-          )}
-          emptyStateText={t`What do you want to work on`}
-          newSessionLabel={t`New build`}
-          historyLabel={t`Build history`}
-          // Surface history as a first-class "Recent" pill sitting on the left
-          // next to the green "New" pill (not the bare icon on the right).
-          historyTriggerLabel={t`Recent`}
-          historyOnLeft
-          showProcessNameBar
-          afterHistorySlot={
-            <>
-              <VibeAssignTaskButton
-                projectId={project?.id ?? null}
-                sessionTypeId={activeProcess?.typeId ?? null}
-              />
-              <VibeCollaborateButton
-                projectId={project?.id ?? null}
-                sessionTypeId={activeProcess?.typeId ?? null}
-              />
-            </>
-          }
-          pastSessionsLabel={t`Past builds`}
-          noPastSessionsLabel={t`No past builds`}
-          defaultProjectId={project?.id ?? null}
-          defaultWorkdir={project?.fs_storage_mount_path ?? null}
-          defaultModel={VIBE_MODEL_DEFAULT}
-          defaultWorkerType={DEFAULT_WORKER_TYPE}
-          modelSelectSlot={({ value, disabled, onChange }) => (
-            <VibeModelSelect
-              value={normalizeVibeModelTier(value)}
-              onChange={(next) => onChange(next)}
-              disabled={disabled}
-            />
-          )}
-          workerSelectSlot={({ value, disabled, onChange }) => (
-            <VibeWorkerSelect
-              value={normalizeWorkerType(value)}
-              onChange={(next) => onChange(next)}
-              disabled={disabled || !project?.id}
-            />
-          )}
-          onActiveWorkerChange={handleActiveWorkerChange}
-          // Keep the chat bound to the workspace's process as the user browses
-          // its child tabs (on a child URL `target`'s latest-wins pick could
-          // otherwise drift to another session).
-          initialProcessId={session.processId}
-          // A `New` build must reach parity with the vibe-home creation path
-          // (createVibeProcessForProject): enable the assistant, embed the vibe
-          // persona, and — URL-first — rebind the workspace to the new process
-          // so the URL-derived Display follows it (and a reload preserves it).
-          // The panel's local swap alone would strand the URL on the old process.
-          onProcessCreated={async (p) => {
-            await p.enableAssistant();
-            await embedVibeAgent(p);
-            void navigation.openShellProcess(p.id, { viewMode: ViewMode.Vibe });
-          }}
-        />
+        {activeProcess && <VibeChatPane process={activeProcess} />}
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={64} minSize={45}>
@@ -662,20 +580,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           </div>
         </div>
       </ResizablePanel>
-      <ConfirmDialog
-        open={!!pendingWorkerSwitch}
-        onOpenChange={(open) => {
-          if (!open) setPendingWorkerSwitch(null);
-        }}
-        title={
-          pendingWorkerSwitch
-            ? t`Start new ${workerLabel(pendingWorkerSwitch.workerType)} chat?`
-            : t`Start new chat?`
-        }
-        description={t`Changing worker requires a new chat. The current chat stays in history.`}
-        confirmLabel={t`Start new chat`}
-        onConfirm={confirmWorkerSwitch}
-      />
     </ResizablePanelGroup>
   );
 }

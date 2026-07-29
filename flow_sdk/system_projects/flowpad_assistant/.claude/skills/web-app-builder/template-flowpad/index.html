@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flowpad App</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1 id="app-title">Flowpad App</h1>
+      <div class="status" id="status" role="status">Connecting…</div>
+    </header>
+
+    <main id="main" hidden>
+      <!-- Replace this starter with the app the user asked for. The pattern to
+           keep: render from the watched query, never from local state you
+           mutate yourself, so other windows and agents stay in sync. -->
+      <form id="create-form" class="create-row">
+        <input id="new-title" type="text" placeholder="New task…" autocomplete="off" required />
+        <button type="submit">Add</button>
+      </form>
+      <ul id="items" class="items"></ul>
+      <p id="empty" class="empty">Nothing yet.</p>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

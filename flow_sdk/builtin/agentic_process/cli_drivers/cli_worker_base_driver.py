@@ -486,8 +486,10 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
     WorkerCLIOptions.env_vars because those are persisted and rendered.
     """
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: PLC0415
-    from flow_sdk.builtin.secret_origin_driver import get_secret_origin_driver  # noqa: PLC0415
+    from flow_sdk.builtin.secret_origin_resolver import (  # noqa: PLC0415
+        attached_env_vars_for,
+        resolve_project_secrets,
+    )
 
     project = None
     project_id = getattr(process, "project_id", None)
@@ -501,33 +503,14 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
     if project is None:
         return env
 
-    seen: set[str] = set()
-    for bucket in ("private", "shared"):
-        for tid in project.context_of_type("secret_origin", bucket=bucket):
-            if str(tid) in seen:
-                continue
-            seen.add(str(tid))
-            entry = project.get_context_entry_data(tid) or {}
-            env_var = (entry.get("env_var") or "").strip()
-            if env_var and env_var in env:
-                continue
-            secret = await SecretOrigin.get_by_id(tid.id)
-            if secret is None:
-                continue
-            env_var = env_var or (secret.env_var or "").strip()
-            if not env_var or env_var in env:
-                continue
-            try:
-                resolved = await get_secret_origin_driver(secret.locator.kind).resolve(
-                    secret.locator,
-                    project=project,
-                    process=process,
-                    secret_origin=secret,
-                )
-            except Exception:
-                continue
-            if resolved is not None:
-                env.setdefault(env_var, resolved.get_secret_value())
+    # Node attachment gates the worker too, not only the connector's commands.
+    # None = nothing curated on this node, i.e. every declared secret, so an
+    # untouched setup behaves exactly as it did before attachment existed.
+    only = await attached_env_vars_for(project)
+    resolved = await resolve_project_secrets(project, only=only, process=process)
+    for env_var, value in resolved.items():
+        # setdefault, not assignment: an explicitly-set env var wins.
+        env.setdefault(env_var, value.get_secret_value())
 
     # API-key auth (harness in "api" mode): inject the provider env block + key.
     # Lazy import avoids a cycle with the driver registry. This wins over device

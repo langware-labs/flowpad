@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from textwrap import indent
 
 from .entry import EntryKind
+from .formats import TranscriptFormat
 from .transcript import AgentTranscriptFile
 
 logger = logging.getLogger(__name__)
@@ -53,7 +55,7 @@ def worker_summary_log(
     worker_type: str,
     *,
     max_chars: int = _DEFAULT_MAX_CHARS,
-    transcript_format: str | None = None,
+    transcript_format: TranscriptFormat | str | None = None,
 ) -> str:
     """Return an extractive, search-indexable text rendering of a transcript.
 
@@ -106,3 +108,33 @@ def worker_summary_log(
             exc_info=True,
         )
         return ""
+
+
+def worker_continuation_prompt(
+    path: str | Path,
+    worker_type: str,
+    worker_name: str,
+    *,
+    transcript_format: TranscriptFormat | str | None = None,
+) -> str:
+    """Build a deterministic, extractive prompt for a cross-worker handoff.
+
+    The existing summary renderer owns filtering and its bounded transcript
+    prefix. An empty summary is not a valid continuation: callers must surface
+    that failure instead of sending a context-free provider-switch prompt.
+    """
+    summary = worker_summary_log(
+        path,
+        worker_type,
+        transcript_format=transcript_format,
+    )
+    if not summary:
+        raise ValueError("Transcript has no readable conversation to continue")
+    # The entry renderer uses ``==== kind id ====`` banners. Without a blank
+    # line + indentation, Markdown treats that next line as a Setext heading
+    # underline and renders the intro as an enormous H1 in chat.
+    rendered_summary = indent(summary, "    ")
+    return (
+        f"We are continuing the conversation from {worker_name}:\n\n"
+        f"{rendered_summary}"
+    )

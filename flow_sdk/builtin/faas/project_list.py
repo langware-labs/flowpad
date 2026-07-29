@@ -324,14 +324,16 @@ async def list_projects_from_indexer() -> dict[str, Any]:
     """Return one project row per canonical cwd.
 
     Single source of truth: ``get_all_projects()`` (Claude scan ∪ Codex scan ∪
-    Project entity table, deduped + creates missing Project entities). This
-    function then enriches each row with per-worker session counts read off
-    disk — same shape the UI expected from the legacy implementation.
+    Project entity table, deduped). Listing is deliberately read-only: a picker
+    may discover hundreds of historical worker cwds, but only the path the user
+    selects is materialized by ``useEnsureProject``. This function then enriches
+    each row with per-worker session counts read off disk — same shape the UI
+    expected from the legacy implementation.
     """
     from flow_sdk.fs_store.indexer.functions._claude_projects import _claude_projects_dir
     from flow_sdk.fs_store.operations.all_projects import get_all_projects
 
-    all_projects = await get_all_projects(create_missing=True)
+    all_projects = await get_all_projects(create_missing=False)
     codex_activity = _codex_activity_by_cwd()
     copilot_activity = _copilot_activity_by_cwd()
     # One pass over claude_root → cwd lookup; otherwise the per-project search

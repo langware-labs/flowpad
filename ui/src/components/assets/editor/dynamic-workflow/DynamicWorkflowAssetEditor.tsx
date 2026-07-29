@@ -1,11 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
-import { DynamicWorkflow, FSRef, ProcessKind, TypeId } from '@sdk';
+import { useEffect, useState } from 'react';
+import { DynamicWorkflow, FSRef, ProcessKind } from '@sdk';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel/EntityExecutionPanel';
-import { ShareButton } from '@src/components/entity-actions/ShareButton';
-import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { Button } from '@src/components/ui/button';
-import { genericEntityShareSource } from '@src/hooks/share-sources';
 import { notify } from '@src/notifications';
 import { Boxes, Play, Save, Zap } from 'lucide-react';
 
@@ -26,18 +23,9 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
   const [script, setScript] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
 
   const fileName = fsRef.path.split('/').pop() ?? 'workflow.js';
   const dirPath = fsRef.path.slice(0, -fileName.length - 1);
-  const shareSource = useMemo(
-    () =>
-      genericEntityShareSource(
-        new TypeId(workflow.type, workflow.id),
-        { label: workflow.name || fileName },
-      ),
-    [workflow.id, workflow.name, workflow.type, fileName],
-  );
 
   useEffect(() => {
     let alive = true;
@@ -89,12 +77,6 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
         dirty={dirty}
         actions={
           <div className="flex items-center gap-2">
-            <ShareButton
-              variant="compact"
-              onClick={() => setShareOpen(true)}
-              tooltip="Share to a conversation"
-              testId="dynamic-workflow-editor-share"
-            />
             <Button
               size="sm"
               variant="outline"
@@ -160,13 +142,6 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
           className="h-full"
         />
       </div>
-      {shareOpen && (
-        <ShareToConversationDialog
-          open={shareOpen}
-          onClose={() => setShareOpen(false)}
-          source={shareSource}
-        />
-      )}
     </div>
   );
 }

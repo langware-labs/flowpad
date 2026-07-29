@@ -14,12 +14,11 @@ Adapted for flow-cli:
 import pytest
 from cryptography.fernet import Fernet
 
-from flow_sdk.api.oauth_api import OAuthAction, OAuthErrorCode, OauthClientRequestInfo
+from flow_sdk.api.oauth_api import OAuthAction, OauthClientRequestInfo, OAuthErrorCode
 from flow_sdk.config import ServiceConfig, SodProvider
 from flow_sdk.request_context.methods import set_default_test_sod_driver, set_user_credentials
-from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
+from flow_sdk.responses.response import ApiResponseStatus
 from flow_sdk.sod.file_sod import FileSodStorage
-
 
 # -- Unit tests for OAuth types (no server needed) --
 
@@ -110,60 +109,47 @@ async def test_oauth_status_check(bootstrapped_client, user):
 
 
 @pytest.mark.asyncio
-async def test_oauth_attach_stub(bootstrapped_client, user):
-    """
-    Test: OAuth attach returns success stub response.
-
-    In desktop mode, attach is a no-op stub for API compatibility.
-    """
+async def test_oauth_attach_rejects_an_unknown_provider(bootstrapped_client, user):
+    """Attach used to be a stub that returned 200 and mutated nothing. It is now
+    the real two-sided share, so a provider this instance cannot resolve a
+    credential for is an explicit failure rather than a silent success."""
     client = bootstrapped_client
 
-    response = await client.post(
-        f"/api/v1/graph/user/{user.id}/oauth/test_provider/attach"
-    )
+    response = await client.post(f"/api/v1/graph/user/{user.id}/oauth/test_provider/attach")
 
-    assert response.status_code == 200, f"OAuth attach failed: {response.text}"
+    # The envelope is what clients branch on; this framework maps every
+    # ApiFailResponse to a 500 regardless of cause, so the status code carries
+    # no information here.
     res = response.json()
-    assert res["status"] == ApiResponseStatus.SUCCESS.value
-    assert "attached" in res["message"].lower() or "stub" in res["message"].lower()
+    assert res["status"] == "FAIL"
+    assert res["data"]["error"] == OAuthErrorCode.NO_SOD_FOUND.value
 
 
 @pytest.mark.asyncio
-async def test_oauth_detach_stub(bootstrapped_client, user):
-    """
-    Test: OAuth detach returns success stub response.
-
-    In desktop mode, detach is a no-op stub for API compatibility.
-    """
+async def test_oauth_attach_without_a_credential_says_so(bootstrapped_client, user):
+    """A known provider the user has not connected: the failure names the real
+    reason (no credential to share) instead of pretending to attach."""
     client = bootstrapped_client
 
-    response = await client.post(
-        f"/api/v1/graph/user/{user.id}/oauth/test_provider/detach"
-    )
+    response = await client.post(f"/api/v1/graph/user/{user.id}/oauth/github/attach")
 
-    assert response.status_code == 200, f"OAuth detach failed: {response.text}"
     res = response.json()
-    assert res["status"] == ApiResponseStatus.SUCCESS.value
-    assert "detach" in res["message"].lower() or "stub" in res["message"].lower()
+    assert res["status"] == "FAIL"
+    assert res["data"]["error"] == OAuthErrorCode.SOD_NOT_FOUND_IN_ENV_VARS.value
 
 
 @pytest.mark.asyncio
-async def test_oauth_disconnect_stub(bootstrapped_client, user):
-    """
-    Test: OAuth disconnect returns success stub response.
-
-    In desktop mode, disconnect is a no-op stub for API compatibility.
-    """
+async def test_oauth_detach_is_idempotent_and_reports_a_real_count(bootstrapped_client, user):
+    """Detaching something never attached is a success with 0 remaining — not a
+    500, and not the hardcoded 0 the stub always returned regardless of state."""
     client = bootstrapped_client
 
-    response = await client.post(
-        f"/api/v1/graph/user/{user.id}/oauth/test_provider/disconnect"
-    )
+    response = await client.post(f"/api/v1/graph/user/{user.id}/oauth/github/detach")
 
-    assert response.status_code == 200, f"OAuth disconnect failed: {response.text}"
+    assert response.status_code == 200
     res = response.json()
     assert res["status"] == ApiResponseStatus.SUCCESS.value
-    assert "disconnect" in res["message"].lower() or "stub" in res["message"].lower()
+    assert res["data"]["remaining_attachment_count"] == 0
 
 
 @pytest.mark.asyncio

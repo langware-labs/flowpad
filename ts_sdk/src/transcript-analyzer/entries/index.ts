@@ -11,3 +11,8 @@ export { ToolUseEntry, type ToolUseEntryData } from './tool_use';
 export { CodexUsageEntry, UsageEntry, type CodexUsageEntryData, type UsageEntryData } from './usage';
 export { UnknownEntry, type UnknownEntryData } from './unknown';
 export { UserMessageEntry, type UserMessageEntryData } from './user_message';
+export {
+  WorkerUnavailableEntry,
+  type WorkerUnavailableEntryData,
+  type WorkerUnavailableReason,
+} from './worker_unavailable';

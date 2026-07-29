@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, PropertyMock, patch
 
 import pytest
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.fs_store.record_paths import (
     get_default_records_data_root,
@@ -38,7 +39,7 @@ def use_tmp_records_root(tmp_path):
 
 
 def _proc(**kwargs) -> AgenticProcess:
-    return AgenticProcess(id=str(uuid.uuid4()), **kwargs)
+    return AgenticProcess(id=mint_uuid(), **kwargs)
 
 
 def _patch_transcript_path(value=None):
@@ -53,13 +54,27 @@ async def test_stamps_subject_and_keeps_auto_rename():
     with _patch_transcript_path(), patch(
         "flow_sdk.builtin.worker_history.get_worker_session_name",
         new=AsyncMock(return_value="Base directory spec"),
-    ), patch.object(AgenticProcess, "save", new=AsyncMock()) as save:
+    ), patch.object(
+        AgenticProcess,
+        "get_by_id",
+        new=AsyncMock(return_value=proc),
+    ), patch.object(
+        proc._db,
+        "compare_and_set_data_field",
+        new=AsyncMock(return_value=(proc, True)),
+    ) as compare_and_set:
         changed = await proc.stamp_default_name()
     assert changed is True
     assert proc.name == "Base directory spec"
     # The critical invariant: a STAMP must NOT pin auto_rename (unlike rename()).
     assert proc.auto_rename is True
-    save.assert_awaited_once()
+    compare_and_set.assert_awaited_once_with(
+        str(proc.id),
+        proc.type,
+        "name",
+        None,
+        "Base directory spec",
+    )
 
 
 async def test_stamp_mirrors_name_onto_open_tab():
@@ -77,7 +92,15 @@ async def test_stamp_mirrors_name_onto_open_tab():
     with _patch_transcript_path(), patch(
         "flow_sdk.builtin.worker_history.get_worker_session_name",
         new=AsyncMock(return_value="Base directory spec"),
-    ), patch.object(AgenticProcess, "save", new=AsyncMock()), patch(
+    ), patch.object(
+        AgenticProcess,
+        "get_by_id",
+        new=AsyncMock(return_value=proc),
+    ), patch.object(
+        proc._db,
+        "compare_and_set_data_field",
+        new=AsyncMock(return_value=(proc, True)),
+    ), patch(
         "flow_sdk.builtin.tab.Tab.get_all", new=AsyncMock(return_value=[tab])
     ), patch("flow_sdk.builtin.tab.broadcast_tabs_changed", new=AsyncMock()) as broadcast:
         changed = await proc.stamp_default_name()
@@ -171,7 +194,15 @@ async def test_headless_sdk_session_still_gets_a_default_name(tmp_path):
     jsonl = _write_headless_transcript(tmp_path, sid)
     proc = _proc(session_id=sid)
 
-    with _patch_transcript_path(jsonl), patch.object(AgenticProcess, "save", new=AsyncMock()):
+    with _patch_transcript_path(jsonl), patch.object(
+        AgenticProcess,
+        "get_by_id",
+        new=AsyncMock(return_value=proc),
+    ), patch.object(
+        proc._db,
+        "compare_and_set_data_field",
+        new=AsyncMock(return_value=(proc, True)),
+    ):
         changed = await proc.stamp_default_name()
 
     assert changed is True, (
@@ -184,6 +215,24 @@ async def test_headless_sdk_session_still_gets_a_default_name(tmp_path):
     assert name != sid and proc.id not in name, "name must be a title, not an id fallback"
     # Non-pinning invariant holds for the fallback path too.
     assert proc.auto_rename is True
+
+
+async def test_delayed_stamp_does_not_resurrect_deleted_process(initialize_test_db):
+    """A turn-end callback may finish after close/delete; naming is update-only."""
+    proc = _proc(session_id=str(uuid.uuid4()))
+    await proc.save()
+    stale = await AgenticProcess.get_by_id(str(proc.id))
+    assert stale is not None
+    await proc.delete()
+
+    with _patch_transcript_path(), patch(
+        "flow_sdk.builtin.worker_history.get_worker_session_name",
+        new=AsyncMock(return_value="Late worker title"),
+    ):
+        changed = await stale.stamp_default_name()
+
+    assert changed is False
+    assert await AgenticProcess.get_by_id(str(proc.id)) is None
 
 
 async def test_noop_when_no_subject_yet():

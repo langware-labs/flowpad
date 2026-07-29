@@ -2,13 +2,18 @@
 id: 5302e32d-a229-5a98-af31-939662265ef6
 ---
 
-# Wiki Link Graph — flowpad-oss
+# Wiki namespaces and link graph — flowpad-oss
 
 > **This document used to be a design plan** that described the wiki link graph as something to be built ("a graph primitives layer that does not yet exist"). That plan has shipped. The layer now exists as the `flow_sdk/wiki/` package, is wired into every record sync, and is exercised end-to-end by the editor. This document describes the system as it actually stands in code.
 
-The wiki layer turns `[[...]]`-style references inside markdown-backed records into a queryable edge graph. Every time a record syncs to the DB, its body is re-parsed, each reference is resolved to a concrete `(type, id)` entity, and the resulting edges replace that record's prior edges in a `links` table. Outgoing links and backlinks are then queryable by `(type, id)`, and a resolve-by-name HTTP endpoint powers `[[wikilink]]` navigation in the UI.
+The wiki layer has two related but distinct parts:
 
-The public API is deliberately **type/id-only** — it never imports `FSRecord` or `Entity`, so either layer can call it. See the package docstring at `flow_sdk/wiki/__init__.py`.
+- **Namespace resolution.** Every Project owns one stable default `Wiki` entity. A `WikiEntry` is an explicit binding from one canonical word to one target `TypeId`. If no entry exists, the default Wiki may resolve an exact-name project asset implicitly. This is the identity layer used by UI navigation and shared by the local server and Hub.
+- **Occurrence graph.** `[[...]]` references inside markdown-backed records are parsed into queryable outgoing edges and backlinks. Every record sync replaces that record's prior rows in the `links` table.
+
+`Wiki` and `WikiEntry` are DB-only entities; page content continues to belong to normal assets such as `markdown`, `skill`, or any other editor-backed type. The Wiki stores identity and bindings, not document bytes.
+
+The occurrence API is deliberately **type/id-only** — it never imports `FSRecord` or `Entity`, so either layer can call it. See the package docstring at `flow_sdk/wiki/__init__.py`.
 
 Source files:
 
@@ -18,10 +23,15 @@ Source files:
 | `flow_sdk/wiki/indexer.py` | Orchestrates parse → resolve → store for `index()`; thin pass-throughs for reads and delete |
 | `flow_sdk/wiki/parser.py` | `parse_links(body)` — extracts wiki/embed/markdown-link occurrences from a body |
 | `flow_sdk/wiki/resolver.py` | `resolve_link(link, ...)` — maps a parsed `WikiLink` to a concrete `(target_type, target_id)` |
+| `flow_sdk/wiki/service.py` | Default-Wiki lifecycle plus explicit/implicit word resolution |
 | `flow_sdk/wiki/store.py` | `AsyncLinkStore` — async CRUD on the `links` table over the shared SQLAlchemy engine |
 | `flow_sdk/wiki/types.py` | `WikiLink` frozen dataclass |
+| `flow_sdk/builtin/wiki.py` | DB-only `Wiki` and `WikiEntry` entities |
+| `flow_sdk/schema/type_info/wiki_*_type_info.py` | Registry metadata and icons for both entity types |
+| `flow_sdk/app/actions/wiki_action.py` | Wiki resolve/bind/unbind/default-Wiki actions and occurrence graph actions |
+| `flow_sdk/cloud_client/wiki_cache.py` | Desktop-to-Hub bridge and metadata-only remote cache |
 | `flow_sdk/db/drivers/sqlite/connection.py` | `LinksSchema` — the `links` table ORM definition |
-| `flow_sdk/server/routes/wiki.py` | `GET /api/v1/wiki/resolve` resolve-by-name endpoint |
+| `flow_sdk/server/routes/wiki.py` | Deprecated unscoped resolve compatibility endpoint |
 
 ---
 
@@ -37,7 +47,9 @@ A wiki link is any of the reference forms the parser recognizes in a record's bo
 | `[[name^block]]` | wikilink with a block anchor |
 | `![[name]]` | embed / transclusion |
 | `[text](./path.md)` | internal markdown link — relative, ends in `.md` (optionally with a `#fragment`); `http(s)://` targets are excluded |
-| `[text](/dock/assets/wiki/<name>)` | wiki dock-route link, emitted by the editor's "Add entity link" toolbar; the `<name>` segment is URL-decoded into `raw` |
+| `[text](/dock/assets/wiki/<name>)` | legacy local wiki dock-route link |
+| `[text](/dock/assets/wiki/<wiki-ref>/<name>)` | canonical local wiki dock-route link |
+| `[text](/dock/hub/assets/wiki/<wiki-ref>/<name>)` | canonical Hub wiki dock-route link |
 
 Two regexes drive wiki/embed matching and internal-markdown matching, plus a third for the dock-route form (`_WIKILINK_RE`, `_MD_LINK_RE`, `_WIKI_URL_RE` in `parser.py`). Before any of them run, `_mask_code_regions` replaces fenced code blocks (```` ``` ```` / `~~~`) and inline code spans with equal-length runs of spaces, so links inside code are never matched while line and column offsets are preserved.
 
@@ -65,7 +77,23 @@ Inside `wiki.index` (`flow_sdk/wiki/indexer.py`) the sequence is: `parse_links(b
 
 ---
 
-## Resolution
+## Namespace entities and page resolution
+
+### Project default Wiki
+
+`Project.save()` eagerly calls `ensure_default_wiki(project)`. The Wiki id is a deterministic UUID v5 minted from `project:<project-id>:default-wiki`, so repair is idempotent and a missing Project→Wiki child edge can be restored without inventing another namespace. On the desktop, `@local` is a Project-scoped alias handled by `Wiki.get_by_uname`; it is not persisted as the Wiki's uname and is not sent to Hub.
+
+Every project-owned asset is available through this default Wiki without creating a row per asset. `resolve(wiki, word)` canonicalizes the word while preserving case and Unicode, then applies:
+
+1. Look for `WikiEntry` children with the exact canonical word. Existing explicit entries take precedence; an entry whose target no longer exists resolves as `missing`, never through an implicit fallback.
+2. If there is no entry and this is the Project's deterministic default Wiki, search only Project-owned file/folder assets for exact `name` or `uname`.
+3. Return the identity union `{kind: "resolved", target_typeid, source: "entry"|"implicit"}`, `{kind: "missing"}`, or `{kind: "ambiguous"}`.
+
+`bind` and `unbind` are idempotent. A `WikiEntry` id is a deterministic UUID v5 of `(wiki id, canonical word)`, and its `target_typeid` points at the asset without turning that relationship into record metadata.
+
+Hub applies the caller's read ACL to both explicit targets and implicit Project children. An unreadable or deleted explicit target resolves as `missing` without falling through or disclosing the target; binding an unreadable target returns not-found.
+
+### Occurrence resolution
 
 `resolve_link` (`flow_sdk/wiki/resolver.py`) maps a parsed `WikiLink` to a concrete target entity. The current implementation resolves on the record **name** as written to disk:
 
@@ -139,23 +167,42 @@ Because `delete_for_id` clears edges on **either** side of the graph, deleting a
 
 ## HTTP / API surface
 
-The one server route is `GET /api/v1/wiki/resolve` (`flow_sdk/server/routes/wiki.py`, registered as `wiki_router` in `flow_sdk/server/routes/__init__.py`):
+Wiki namespace operations use the ordinary graph action grammar on both the local server and Hub:
 
-```
-GET /api/v1/wiki/resolve?name=<n>&prefer_type=<t>&space=<space>
-```
+| Method | Route | Result |
+|---|---|---|
+| `GET` | `/api/v1/graph/wiki/@local` | Desktop Project's default Wiki entity |
+| `GET` | `/api/v1/graph/project/<project-id>/default-wiki` | Ensure and return the stable default Wiki |
+| `GET` | `/api/v1/graph/wiki/<wiki-ref>/resolve?word=<word>` | Typed `resolved` / `missing` / `ambiguous` identity union |
+| `POST` | `/api/v1/graph/wiki/<wiki-ref>/bind` | Bind `{word, target_typeid}` and return the `WikiEntry` |
+| `DELETE` | `/api/v1/graph/wiki/<wiki-ref>/unbind?word=<word>` | Remove an explicit binding idempotently |
 
-It resolves a wikilink target by name and returns `{ type, id, asset_ref } | null`. It reuses the store's `find_entities_by_uname_or_name` for candidates and the resolver's `_pick_candidate` for tie-breaking (honoring `prefer_type`), then reads `asset_ref` from the entity row. A **miss returns JSON `null` with HTTP 200** — the frontend treats that as the "Create it" trigger, so a 404 would be a regression. `space` defaults to `@local`; non-local spaces are accepted for URL stability but currently resolved locally with a warning.
+After resolution, the UI follows the target through the type-neutral asset protocol:
 
-Note this is a **resolve-by-name** endpoint, not a full backlinks/neighbors REST surface — the graph-read functions (`outgoing`, `backlinks`) are consumed in-process by `FSRecord`, not exposed as their own HTTP routes.
+1. `GET /api/v1/graph/<type>/<id>`
+2. `GET /api/v1/graph/<type>/<id>/record/refs`
+3. `GET /api/v1/graph/<type>/<id>/fs/download/<main-path>`
+
+This makes file-backed Markdown and folder-backed assets such as Skills use the same viewer path. `record/refs` returns identity-bearing `FSRef` values; sender-local absolute paths are not the cross-machine contract.
+
+The shared frontend can reach Hub in two deployments. In Hub-only mode its configured API base is Hub itself, so `Wiki.resolveHub` calls the canonical graph action directly. From desktop mode, `GET /api/v1/cloud/wiki/<wiki-ref>/resolve?word=<word>` is a local single-origin bridge: the local backend calls that same Hub graph action, materializes only safe remote entity metadata, and lets the normal reflected `record/refs` + `fs` path fetch content on demand.
+
+`GET /api/v1/wiki/resolve` remains only as an unscoped compatibility adapter. New UI and SDK code must use the Wiki entity actions. Occurrence reads remain available as `/api/v1/graph/<type>/<id>/wiki/links` and `/wiki/backlinks`; `/wiki/reindex` re-extracts the source's occurrence rows.
 
 ---
 
 ## Frontend surface
 
-Wiki links are a first-class routing method in the asset-doc URL grammar (`ui/src/navigation/asset-doc-types.ts`, `WIKI = 'wiki'`). The pointer form is `/dock/assets/wiki/<space>/<name>`.
+Wiki links are a first-class routing method in the asset-doc URL grammar (`ui/src/navigation/asset-doc-types.ts`, `WIKI = 'wiki'`). Canonical browser URLs are:
+
+- Desktop/local: `/dock/assets/wiki/@local/<word>`
+- Hub authority: `/dock/hub/assets/wiki/<wiki-ref>/<word>`
+
+The same OSS/desktop UI bundle serves both surfaces; Hub mode changes the SDK API base and supported page set, not the Wiki component.
 
 - **Insertion.** The editor's "Add entity link" toolbar (`ui/src/components/wiki-toolbar/WikiLinkInsertDialog.tsx`) lets the user search any entity and insert either a `[[wikilink]]` or, in WYSIWYG mode, a clickable `[text](/dock/assets/wiki/<name>)` link — the exact form the parser's `_WIKI_URL_RE` recognizes.
-- **Resolution / navigation.** `WikiResolveView` (`ui/src/components/assets/editor/WikiResolveView.tsx`) and the `wikiResolve` helper in the asset loader (`ui/src/routes/loaders/load-asset.ts`) call `/wiki/resolve` (via `apiClient`, path-only) to turn a name into a record. Markdown hits render **inline** so the URL bar stays at `/dock/assets/wiki/<name>` and survives renames; other types (e.g. whiteboard) redirect to their dedicated editor via `openDock`. A miss shows a "Create as Markdown / Create as Whiteboard" picker that mints the record and re-navigates.
+- **Resolution / navigation.** A click calls `navigation.openDock(DockPointer.forWiki(...))`; React Router's Dock loader resolves the word through the typed SDK and writes context. The component never writes active context optimistically. Wiki links rendered inside a Hub page carry its page authority and Wiki UUID into the next DockPointer.
+- **Rendering.** The resolved `TypeId` selects the registered asset editor. The Hub/plain surface reads `entity.record().mainRef`; the full local surface uses the normal asset editor. The Wiki URL stays word-based while the target identity and content load behind it.
+- **Missing words.** A missing local `@local` word offers "Create as Markdown / Create as Whiteboard". Hub and non-local namespaces are read-only in this view and show a missing state without local creation controls.
 
-There is a manual-regression spec at `ui/src/test/manual_regression/wiki/wiki_link_layer.md` covering this end to end.
+Automated coverage lives in `tests/wiki/`, `tests/api/test_wiki_*`, `tests/api/test_hub_wiki_cache.py`, `ui/tests/unit/wiki-*`, `ui/tests/unit/navigation/AssetDocPointer.test.ts`, and the Hub's `flowpad/hub/tests/api/test_wiki.py`.

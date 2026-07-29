@@ -7,8 +7,9 @@
  * than regenerating it), so switching to the Code tab shows the edit already
  * applied, with comments and formatting intact.
  *
- * Structure — adding or removing params and errors — is deliberately not
- * editable here; that happens in the Code tab.
+ * Structure — adding/removing fields or changing compact members into object
+ * form — is deliberately edited in the Code tab. Existing scalar values,
+ * including member descriptions, are editable in the rendered card.
  *
  * Plain DOM, no React root: one root per fence, mounted and unmounted by a
  * ProseMirror NodeView, is a lifecycle hazard for a card this static.
@@ -38,15 +39,9 @@ import { formatSourceLabel, resolveSourceLocation } from './source-location';
  * `graph-view/icons/iconToDataUri.ts` uses to get a lucide icon outside a React
  * tree; computed once at module load.
  */
-const SOURCE_ICON = renderToStaticMarkup(
-  createElement(FileCode, { width: 12, height: 12, 'aria-hidden': true }),
-);
+const SOURCE_ICON = renderToStaticMarkup(createElement(FileCode, { width: 12, height: 12, 'aria-hidden': true }));
 
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className: string,
-  text?: string,
-): HTMLElementTagNameMap[K] {
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
   node.className = className;
   if (text != null) node.textContent = text;
@@ -123,11 +118,7 @@ function editable(
   return node;
 }
 
-function paramRow(
-  param: InterfaceParam,
-  canEdit: boolean,
-  edit: (change: InterfaceEdit) => void,
-): HTMLElement {
+function paramRow(param: InterfaceParam, canEdit: boolean, edit: (change: InterfaceEdit) => void): HTMLElement {
   const row = el('div', 'interface-card-param');
 
   row.appendChild(
@@ -161,7 +152,15 @@ function paramRow(
   }
 
   if (param.description) {
-    row.appendChild(el('span', 'interface-card-param-desc', param.description));
+    row.appendChild(
+      editable(
+        'interface-card-param-desc',
+        param.description,
+        `interface-param-description-${param.name}`,
+        canEdit,
+        (value) => edit({ kind: 'param-description', param: param.name, value }),
+      ),
+    );
   }
   return row;
 }
@@ -214,16 +213,20 @@ function propertyRow(
   }
 
   if (property.description) {
-    row.appendChild(el('span', 'interface-card-param-desc', property.description));
+    row.appendChild(
+      editable(
+        'interface-card-param-desc',
+        property.description,
+        `interface-property-description-${property.name}`,
+        canEdit,
+        (value) => edit({ kind: 'property-description', property: property.name, value }),
+      ),
+    );
   }
   return row;
 }
 
-function methodRow(
-  method: InterfaceMethod,
-  canEdit: boolean,
-  edit: (change: InterfaceEdit) => void,
-): HTMLElement {
+function methodRow(method: InterfaceMethod, canEdit: boolean, edit: (change: InterfaceEdit) => void): HTMLElement {
   const row = el('div', 'interface-card-param interface-card-method');
   row.appendChild(
     editable(
@@ -244,7 +247,15 @@ function methodRow(
     ),
   );
   if (method.description) {
-    row.appendChild(el('span', 'interface-card-param-desc', method.description));
+    row.appendChild(
+      editable(
+        'interface-card-param-desc',
+        method.description,
+        `interface-method-description-${method.name}`,
+        canEdit,
+        (value) => edit({ kind: 'method-description', method: method.name, value }),
+      ),
+    );
   }
   return row;
 }
@@ -414,9 +425,7 @@ function buildCard(
 
   const header = el('div', 'interface-card-header');
   header.appendChild(
-    editable('interface-card-name', spec.name, 'interface-name', canEdit, (value) =>
-      edit({ kind: 'name', value }),
-    ),
+    editable('interface-card-name', spec.name, 'interface-name', canEdit, (value) => edit({ kind: 'name', value })),
   );
   card.appendChild(header);
 
@@ -484,12 +493,7 @@ function buildCard(
  * computed against current text, or two edits in a row would apply the second
  * to pre-first-edit YAML and silently revert the first.
  */
-function draw(
-  source: string,
-  host: HTMLElement,
-  ctx: FenceRenderContext,
-  state: InterfaceCardViewState,
-): void {
+function draw(source: string, host: HTMLElement, ctx: FenceRenderContext, state: InterfaceCardViewState): void {
   const edit = (change: InterfaceEdit) => {
     const next = applyInterfaceEdit(source, change);
     if (next === source) return;

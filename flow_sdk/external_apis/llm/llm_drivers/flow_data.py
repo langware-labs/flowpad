@@ -142,6 +142,7 @@ class FlowElementType(StrEnum):
     CONTINUE = "continue"
     TOOL_CALL = "tool-call"
     TOOL_RESULT = "tool-result"
+    WORKER_UNAVAILABLE = "worker-unavailable"
     PROGRESS_REPORT = "progress_report"
 
     @classmethod
