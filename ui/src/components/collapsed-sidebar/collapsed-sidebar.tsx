@@ -130,9 +130,10 @@ export function CollapsedSidebar() {
   const { t } = useLingui();
 
   // Live count for the Tasks badge, and the Tasks existence gate. useProjectTasks
-  // is an unscoped reactive query (auto-refetches over WS on backend task writes),
-  // so both track the graph without any polling here. Gate = "any task at all";
-  // badge = the *active* ones, the subset needing attention now.
+  // is scoped to the active project — the same corpus the `list/task` surface the
+  // badge opens shows — and reactive (auto-refetches over WS on backend task
+  // writes), so both track the graph without any polling here. Gate = "any task in
+  // this project"; badge = the *active* ones, the subset needing attention now.
   const { data: tasks } = useProjectTasks();
   const activeTaskCount = tasks.filter(isTaskActive).length;
   const hasConversations = useHasConversations();
