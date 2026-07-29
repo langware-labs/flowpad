@@ -124,7 +124,10 @@ export function AssetEditorRouter({
       // entity storage without a compute-node or sender-local asset_ref.
       if (!mainRef) return null;
       return {
-        fsRef: mainRef,
+        fsRef: recordContentRef(
+          mainRef,
+          !!dataManager.getTypeInfo(typeId!.type)?.folder_backed,
+        ),
         assetType: typeId!.type,
       };
     }
@@ -406,4 +409,13 @@ export function AssetEditorRouter({
         </div>
       );
   }
+}
+/** Resolve the content root from the backend type registry's layout contract.
+ * Folder-backed records expose a primary file, but their editor owns its
+ * sibling files too, so the editor receives that file's containing folder. */
+export function recordContentRef(mainRef: FSRef, folderBacked: boolean): FSRef {
+  if (folderBacked && mainRef.refType !== 'folder') {
+    return mainRef.parent;
+  }
+  return mainRef;
 }
