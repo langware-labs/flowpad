@@ -7,7 +7,13 @@ probe's rejection must never render as "your token is dead".
 
 import pytest
 
-from flow_sdk.core.oauth.provider_probe import ProbeResult, get_probe, run_probe
+from flow_sdk.core.oauth.provider_probe import (
+    ProbeResult,
+    get_probe,
+    identity_from_credential,
+    run_probe,
+    token_from_credential,
+)
 
 
 def test_every_shown_provider_has_a_probe():
@@ -66,3 +72,26 @@ def test_only_the_unverified_probe_is_marked_as_such():
     assert get_probe("anthropic").unverified is True
     assert get_probe("github").unverified is False
     assert get_probe("slack").unverified is False
+
+
+def test_the_bearer_is_extracted_from_every_stored_credential_shape():
+    """Providers do not agree on what a stored credential looks like.
+
+    GitHub's SOD entry is the token string. Anthropic's is the whole normalized
+    OAuth response, a dict — sending THAT as the bearer would have read
+    Anthropic's refusal of `Bearer {'provider': ...}` as a dead token, and the
+    bug would only have appeared the moment someone logged in.
+    """
+    assert token_from_credential("gho_abc") == "gho_abc"
+    assert token_from_credential({"provider": "anthropic", "access_token": "sk-ant-oat01"}) == "sk-ant-oat01"
+    # A SOD driver may hand back the JSON it stored rather than a dict.
+    assert token_from_credential('{"access_token": "sk-json"}') == "sk-json"
+
+    for empty in (None, "", {}, {"refresh_token": "only-a-refresh"}):
+        assert token_from_credential(empty) is None, empty
+
+
+def test_identity_falls_back_to_what_the_credential_carries():
+    """Anthropic's probe cannot name the holder, but its stored response can."""
+    assert identity_from_credential({"email": "eran@langware.ai"}) == "eran@langware.ai"
+    assert identity_from_credential("a bare token") is None

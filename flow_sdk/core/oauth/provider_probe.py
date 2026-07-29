@@ -79,6 +79,50 @@ _PROBES: dict[str, ProviderProbe] = {
 }
 
 
+def token_from_credential(value: Any) -> Optional[str]:
+    """The bearer token inside a stored credential, whatever shape it was saved in.
+
+    Providers do not agree on this. GitHub's SOD entry is the token string;
+    Anthropic's is the whole normalized OAuth response — a dict with
+    ``access_token``, ``refresh_token``, ``expires_at`` and identity fields
+    (``desktop_oauth._normalize_anthropic_token_response``). Handing that dict
+    to a probe would send ``Bearer {'provider': 'anthropic', ...}`` and read the
+    provider's refusal as a dead token.
+
+    Also unwraps a JSON-encoded dict, because a SOD driver may hand back the
+    string it stored.
+    """
+    if not value:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("{"):
+            import json  # noqa: PLC0415
+
+            try:
+                return token_from_credential(json.loads(text))
+            except Exception:  # noqa: BLE001
+                return text
+        return text or None
+    if isinstance(value, dict):
+        for key in ("access_token", "token", "api_key"):
+            inner = value.get(key)
+            if isinstance(inner, str) and inner.strip():
+                return inner.strip()
+    return None
+
+
+def identity_from_credential(value: Any) -> Optional[str]:
+    """An identity the credential already carries, for providers whose probe does
+    not return one. Anthropic's stored response holds the account email."""
+    if isinstance(value, dict):
+        for key in ("email", "account", "organization_name", "account_uuid"):
+            found = value.get(key)
+            if isinstance(found, str) and found.strip():
+                return found.strip()
+    return None
+
+
 def get_probe(provider: str) -> Optional[ProviderProbe]:
     return _PROBES.get((provider or "").strip().lower())
 
@@ -114,8 +158,11 @@ async def run_probe(provider: str, token: str) -> ProbeResult:
             )
     except Exception as e:  # noqa: BLE001
         # A network failure is not an invalid token, and saying so would send the
-        # user to re-authorize for nothing.
-        return ProbeResult(ok=None, detail=f"Could not reach {provider}: {e}")
+        # user to re-authorize for nothing. httpx transport errors often carry an
+        # empty str(), so fall back to the class name — "Could not reach github: "
+        # tells the user nothing at all.
+        reason = str(e) or type(e).__name__
+        return ProbeResult(ok=None, detail=f"Could not reach {provider}: {reason}")
 
     if response.status_code in (401, 403):
         if probe.unverified:

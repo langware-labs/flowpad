@@ -411,7 +411,11 @@ async def _handle_test(provider: str) -> ApiResponse:
     hub for providers whose token it holds — so the same button works whichever
     side ran the flow.
     """
-    from flow_sdk.core.oauth.provider_probe import run_probe  # noqa: PLC0415
+    from flow_sdk.core.oauth.provider_probe import (  # noqa: PLC0415
+        identity_from_credential,
+        run_probe,
+        token_from_credential,
+    )
     from flow_sdk.request_context.methods import (  # noqa: PLC0415
         get_current_request_user_fresh,
         get_user_credentials,
@@ -425,18 +429,24 @@ async def _handle_test(provider: str) -> ApiResponse:
     if user is None:
         return ApiFailResponse(message="No user in request context")
 
-    token: str | None = None
+    stored: object = None
     try:
-        token = await get_user_credentials(user, cred_name, user.id)
+        stored = await get_user_credentials(user, cred_name, user.id)
     except Exception as e:  # noqa: BLE001
         logger.debug("OAuth test: no local credential for %s: %s", cred_name, e)
 
+    token = token_from_credential(stored)
     if not token and prefers_hub_flow(provider):
         # Only the hub can be holding it. A local-only provider (Anthropic's
         # loopback) has nothing there, so asking would be a wasted round-trip.
-        token = await hub_credential_value(hub_credentials_name_for(provider))
+        stored = await hub_credential_value(hub_credentials_name_for(provider))
+        token = token_from_credential(stored)
 
     result = await run_probe(provider, token or "")
+    # A provider whose probe cannot name the holder may still have shipped one in
+    # the credential itself (Anthropic stores the account email).
+    if result.ok and not result.identity:
+        result.identity = identity_from_credential(stored)
     logger.info("OAuth test: %s -> ok=%s (%s)", provider, result.ok, result.detail or result.identity)
     # Always a SUCCESS envelope: "the token is dead" is a successful test, and a
     # FAIL envelope would make the client show a transport error instead.
