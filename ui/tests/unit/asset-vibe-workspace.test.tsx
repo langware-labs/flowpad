@@ -122,6 +122,7 @@ afterEach(() => {
   setupMocks.ensureAssetVibeParentTab.mockReset();
   showListener = null;
   entityEventListener = null;
+  process.context_data = {};
 });
 
 describe('AssetVibeWorkspace', () => {
@@ -192,6 +193,46 @@ describe('AssetVibeWorkspace', () => {
     await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
     const opened = openDock.mock.calls[0][0] as DockPointer;
     expect(opened.pointer).toContain('markdown-6e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    expect(opened.viewMode).toBe(ViewMode.Vibe);
+  });
+
+  it('keeps an explicit history URL instead of replaying older last_shown state', () => {
+    process.context_data = {
+      last_shown: { kind: 'vfs', path: '/workspace/public/latest.html' },
+      display_stack: [
+        {
+          kind: 'vfs',
+          path: '/workspace/public/latest.html',
+          shown_at: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    };
+
+    render(<AssetVibeWorkspace isVibe session={session} />);
+
+    expect(openDock).not.toHaveBeenCalled();
+  });
+
+  it('replays last_shown written after mount when the transient event was missed', async () => {
+    const { rerender } = render(<AssetVibeWorkspace isVibe session={session} />);
+    const target = { kind: 'vfs', path: '/workspace/src/late-show.ts' };
+
+    act(() => {
+      process.context_data = {
+        last_shown: target,
+        display_stack: [
+          {
+            ...target,
+            shown_at: new Date(Date.now() + 1_000).toISOString(),
+          },
+        ],
+      };
+      rerender(<AssetVibeWorkspace isVibe session={session} />);
+    });
+
+    await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
+    const opened = openDock.mock.calls[0][0] as DockPointer;
+    expect(opened.pointer).toContain('late-show.ts');
     expect(opened.viewMode).toBe(ViewMode.Vibe);
   });
 

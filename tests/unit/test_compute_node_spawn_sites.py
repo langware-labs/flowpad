@@ -60,6 +60,7 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
     class FakeProc:
         def __init__(self, **kwargs):
             captured.update(kwargs)
+            self._data = kwargs
             self.id = "fresh-1"
             self.type = "agentic_process"
             self.shell_id = None
@@ -70,6 +71,9 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
         async def start_pty(self, visible=False, **kwargs):
             captured["__started_visible"] = visible
             return ApiSuccessResponse(data={"id": self.id})
+
+        def model_dump(self, mode=None):
+            return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
 
     with patch(_PATCH_REQ_SCAN, return_value=info), \
          patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
@@ -109,6 +113,7 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
     class FakeProc:
         def __init__(self, **kwargs):
             captured.update(kwargs)
+            self._data = kwargs
             self.id = "headless-1"
             self.type = "agentic_process"
             self.shell_id = None
@@ -119,6 +124,9 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
         async def start_pty(self, visible=False, **kwargs):
             captured["__started_visible"] = visible
             return ApiSuccessResponse(data={"id": self.id})
+
+        def model_dump(self, mode=None):
+            return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
 
     with patch(_PATCH_REQ_SCAN, return_value=info), \
          patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
@@ -139,12 +147,16 @@ async def test_scan_create_process_uses_capability_default_without_overriding_ex
     class FakeProc:
         def __init__(self, **kwargs):
             captured.append(kwargs)
+            self._data = kwargs
             self.id = f"proc-{len(captured)}"
             self.type = "agentic_process"
             self.shell_id = None
 
         async def save(self, owner=None):
             return None
+
+        def model_dump(self, mode=None):
+            return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
 
     default_info = _make_request_info({
         "context": {"workdir": "/tmp/proj", "env_vars": {"FLOWPAD_TEST_MARKER": "1"}},

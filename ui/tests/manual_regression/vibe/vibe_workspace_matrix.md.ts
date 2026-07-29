@@ -12,28 +12,16 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 
-import {
-  API,
-  createVibeFixture,
-  destroyVibeFixture,
-  openVibe,
-  showPath,
-  showPort,
-  showTypeId,
-} from './_helpers';
+import { API, createVibeFixture, destroyVibeFixture, openVibe, showPath, showPort, showTypeId } from './_helpers';
 
 test.describe('Claude Vibe Workspace browser matrix', () => {
   test('VW-01/VW-15: legacy display links canonicalize to one shell workspace tab', async ({ page, request }) => {
     const fixture = await createVibeFixture(request, 'vibe-entry');
     try {
       await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
-      await page.goto(
-        `/dock/display/agentic_process-${fixture.processId}?viewMode=vibe&matrix=legacy`,
-      );
+      await page.goto(`/dock/display/agentic_process-${fixture.processId}?viewMode=vibe&matrix=legacy`);
 
-      await expect(page).toHaveURL(
-        new RegExp(`/dock/shell/agentic_process-${fixture.processId}\\?.*viewMode=vibe`),
-      );
+      await expect(page).toHaveURL(new RegExp(`/dock/shell/agentic_process-${fixture.processId}\\?.*viewMode=vibe`));
       expect(new URL(page.url()).searchParams.get('matrix')).toBe('legacy');
       await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
       await expect(page.getByTestId('workspace-display-tab')).toHaveAttribute('aria-current', 'true');
@@ -41,14 +29,16 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
 
       const tabsResponse = await request.get(`${API}/api/v1/graph/tab/list_all`);
       expect(tabsResponse.status()).toBe(200);
-      const tabs = (await tabsResponse.json()).data ?? [];
-      const processTabs = tabs.filter(
-        (tab: { target_id?: string }) => tab.target_id === fixture.processId,
-      );
+      const tabs = (await tabsResponse.json()).data?.tabs ?? [];
+      const processTabs = tabs.filter((tab: { target_id?: string }) => tab.target_id === fixture.processId);
       expect(processTabs).toHaveLength(1);
       expect(processTabs[0].parent_tab_id ?? null).toBeNull();
-      expect(JSON.stringify(processTabs[0].dock_pointer ?? processTabs[0].dockPointer)).toContain('shell');
-      expect(JSON.stringify(processTabs[0].dock_pointer ?? processTabs[0].dockPointer)).not.toContain('display');
+      const processPointer =
+        processTabs[0].pointer ??
+        processTabs[0].dock_pointer ??
+        processTabs[0].dockPointer;
+      expect(JSON.stringify(processPointer)).toContain('shell');
+      expect(JSON.stringify(processPointer)).not.toContain('display');
     } finally {
       await destroyVibeFixture(request, fixture);
     }
@@ -95,9 +85,7 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await expect(page.getByTestId('workspace-child-strip')).toBeVisible();
 
       await page.getByTestId('workspace-display-tab').click();
-      await expect(page).toHaveURL(
-        new RegExp(`/dock/shell/agentic_process-${fixture.processId}\\?.*viewMode=vibe`),
-      );
+      await expect(page).toHaveURL(new RegExp(`/dock/shell/agentic_process-${fixture.processId}\\?.*viewMode=vibe`));
       await expect(htmlPreview).toBeVisible();
       await page.reload();
       await expect(htmlFrame.locator('#activate')).toHaveText('VW03_HTML_READY');
@@ -143,9 +131,8 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await app.locator('#count').click();
       await expect(app.locator('#count')).toHaveText('2');
 
-      const process = (await (
-        await request.get(`${API}/api/v1/graph/agentic_process/${fixture.processId}`)
-      ).json()).data;
+      const process = (await (await request.get(`${API}/api/v1/graph/agentic_process/${fixture.processId}`)).json())
+        .data;
       expect(process.context_data.display_stack).toHaveLength(1);
       expect(process.context_data.last_shown).toMatchObject({
         kind: 'webapp',
@@ -163,10 +150,9 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
   }) => {
     const fixture = await createVibeFixture(request, 'vibe-skill-image');
     try {
-      const skillResponse = await request.post(
-        `${API}/api/v1/graph/project/${fixture.projectId}/skill`,
-        { data: { name: 'vibe-qa-greeter' } },
-      );
+      const skillResponse = await request.post(`${API}/api/v1/graph/project/${fixture.projectId}/skill`, {
+        data: { name: 'vibe-qa-greeter' },
+      });
       expect(skillResponse.status()).toBe(200);
       const skill = (await skillResponse.json()).data;
       const skillDir = String(skill.asset_ref).replace(/\/SKILL\.md$/, '');
@@ -213,10 +199,9 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
     const createdIds: string[] = [];
     try {
       const createMarkdown = async (name: string, marker: string) => {
-        const response = await request.post(
-          `${API}/api/v1/graph/project/${fixture.projectId}/markdown`,
-          { data: { name } },
-        );
+        const response = await request.post(`${API}/api/v1/graph/project/${fixture.projectId}/markdown`, {
+          data: { name },
+        });
         expect(response.status()).toBe(200);
         const entity = (await response.json()).data as {
           id: string;
@@ -230,30 +215,23 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
 
       const source = await createMarkdown('vibe-origin-source', 'VW17_ORIGINAL');
       const related = await createMarkdown('vibe-origin-related', 'VW20_RELATED');
-      const processResponse = await request.get(
-        `${API}/api/v1/graph/agentic_process/${fixture.processId}`,
-      );
+      const processResponse = await request.get(`${API}/api/v1/graph/agentic_process/${fixture.processId}`);
       const process = (await processResponse.json()).data;
-      const updateProcess = await request.put(
-        `${API}/api/v1/graph/agentic_process/${fixture.processId}`,
-        {
-          data: {
-            ...process,
-            process_type: 'chat',
-            target_typeid_str: `markdown-${source.id}`,
-          },
+      const updateProcess = await request.put(`${API}/api/v1/graph/agentic_process/${fixture.processId}`, {
+        data: {
+          ...process,
+          process_type: 'chat',
+          target_typeid_str: `markdown-${source.id}`,
         },
-      );
+      });
       expect(updateProcess.status()).toBe(200);
 
       await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
-      await page.goto(
-        `/dock/assets/editor/markdown/typeid/markdown-${source.id}?viewMode=standard`,
-      );
+      await page.goto(`/dock/assets/editor/markdown/typeid/markdown-${source.id}?viewMode=standard`);
       await expect(page.getByText('vibe-origin-source.md')).toBeVisible();
-      await expect(
-        page.getByTestId('assets-page-header').getByTestId('asset-discuss-in-vibe'),
-      ).toBeVisible();
+      await expect(page.getByTestId('assets-page-header').getByTestId('asset-discuss-in-vibe')).toBeVisible();
+      expect(await page.locator('[data-panel-id="asset-vibe-chat"]').getAttribute('data-panel-size')).toBe('0.0');
+      expect(await page.locator('[data-panel-id="asset-vibe-content"]').getAttribute('data-panel-size')).toBe('100.0');
       const before = new URL(page.url());
       await page.getByTestId('asset-discuss-in-vibe').click();
 
@@ -263,29 +241,26 @@ test.describe('Claude Vibe Workspace browser matrix', () => {
       await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
       await expect(page.getByText('vibe-origin-source.md')).toBeVisible();
       await expect(page.getByTestId('workspace-child-strip')).toBeVisible();
+      expect(await page.locator('[data-panel-id="asset-vibe-chat"]').getAttribute('data-panel-size')).toBe('36.0');
+      expect(await page.locator('[data-panel-id="asset-vibe-content"]').getAttribute('data-panel-size')).toBe('64.0');
 
-      writeFileSync(
-        source.asset_ref,
-        `${readFileSync(source.asset_ref, 'utf8')}\n# VW18_LIVE_UPDATE\n`,
-        'utf8',
-      );
-      const reindex = await request.post(
-        `${API}/api/v1/graph/compute_node/@local/fs-records/invalidate`,
-        { data: { paths: [source.asset_ref], deleted_paths: [] } },
-      );
+      writeFileSync(source.asset_ref, `${readFileSync(source.asset_ref, 'utf8')}\n# VW18_LIVE_UPDATE\n`, 'utf8');
+      const reindex = await request.post(`${API}/api/v1/graph/compute_node/@local/fs-records/invalidate`, {
+        data: { paths: [source.asset_ref], deleted_paths: [] },
+      });
       expect(reindex.status()).toBe(200);
       await expect(page.getByText('VW18_LIVE_UPDATE')).toBeVisible();
 
       await showTypeId(request, fixture.processId, `markdown-${related.id}`);
-      await expect(page).toHaveURL(
-        new RegExp(`/dock/assets/editor/markdown/typeid/markdown-${related.id}`),
-      );
+      await expect(page).toHaveURL(new RegExp(`/dock/assets/editor/markdown/typeid/markdown-${related.id}`));
       await expect(page.getByText('VW20_RELATED')).toBeVisible();
       await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
       await expect(page.getByTestId('workspace-child-strip')).toBeVisible();
       await page.reload();
       await expect(page.getByText('VW20_RELATED')).toBeVisible();
       await expect(page.locator('[data-testid="entity-execution-new"]:visible')).toBeVisible();
+      expect(await page.locator('[data-panel-id="asset-vibe-chat"]').getAttribute('data-panel-size')).toBe('36.0');
+      expect(await page.locator('[data-panel-id="asset-vibe-content"]').getAttribute('data-panel-size')).toBe('64.0');
     } finally {
       for (const id of createdIds) {
         await request.delete(`${API}/api/v1/graph/markdown/${id}`).catch(() => undefined);

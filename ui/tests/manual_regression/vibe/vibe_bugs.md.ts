@@ -8,7 +8,7 @@
  * queue persistence, and URL-first rebinding after New.
  */
 import { expect, test } from '@playwright/test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -43,7 +43,7 @@ test.describe('Vibe Workspace confirmed-bug regressions', () => {
         };
       });
       expect(browserProject.id).toBe(fixture.projectId);
-      expect(path.resolve(String(browserProject.mount))).toBe(path.resolve(fixture.root));
+      expect(realpathSync(String(browserProject.mount))).toBe(realpathSync(fixture.root));
 
       const processResponse = await request.get(
         `${API}/api/v1/graph/agentic_process/${fixture.processId}`,
@@ -51,7 +51,7 @@ test.describe('Vibe Workspace confirmed-bug regressions', () => {
       expect(processResponse.status()).toBe(200);
       const process = (await processResponse.json()).data;
       expect(process.project_id).toBe(fixture.projectId);
-      expect(path.resolve(process.workdir)).toBe(path.resolve(fixture.root));
+      expect(realpathSync(process.workdir)).toBe(realpathSync(fixture.root));
       await expect(page.getByTestId('display-empty-state')).toBeVisible();
     } finally {
       await destroyVibeFixture(request, fixture);
@@ -164,7 +164,15 @@ test.describe('Vibe Workspace confirmed-bug regressions', () => {
       await input.fill('Reply with VIBE_NEW_REBOUND and do not create files.');
       await input.press('Enter');
 
-      await expect(page).toHaveURL(/\/dock\/shell\/agentic_process-.*viewMode=vibe/);
+      await expect(page).toHaveURL((url) => {
+        const processId =
+          url.pathname.match(/\/dock\/shell\/agentic_process-([0-9a-f-]+)/)?.[1] ?? null;
+        return (
+          processId !== null &&
+          processId !== fixture.processId &&
+          url.searchParams.get('viewMode') === 'vibe'
+        );
+      });
       newProcessId =
         page.url().match(/\/dock\/shell\/agentic_process-([0-9a-f-]+)/)?.[1] ?? null;
       expect(newProcessId).toBeTruthy();
@@ -174,7 +182,7 @@ test.describe('Vibe Workspace confirmed-bug regressions', () => {
         await request.get(`${API}/api/v1/graph/agentic_process/${newProcessId}`)
       ).json()).data;
       expect(created.project_id).toBe(fixture.projectId);
-      expect(path.resolve(created.workdir)).toBe(path.resolve(fixture.root));
+      expect(realpathSync(created.workdir)).toBe(realpathSync(fixture.root));
       expect(created.embedded_asset_refs.length).toBeGreaterThan(0);
 
       await page.reload();

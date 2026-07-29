@@ -21,16 +21,20 @@ The fix made connection membership backend-owned and symmetric:
 `flow_sdk/compute/providers/desktop/pty_session_manager.py`, and
 `docs/agent-management/pty-websocket.md`.
 
-## Why this is manual-only
+## Why physical sleep remains manual
 
 - It needs a **real OS sleep/wake** (or a real network sever). A `SIGSTOP`/`SIGCONT`
   of the backend does **not** reproduce it — on loopback the kernel keeps the socket
-  alive, so it self-heals. Only a real sleep drops the WS (`close 1006`) and
-  reconnects it. So this cannot be a Playwright `.md.ts`.
+  alive, so it self-heals. Browser offline/online emulation verifies the functional
+  reconnect contract in the automated `.md.ts`, but it cannot prove the OS-level
+  `close 1006` transport signature.
 - It must run against a **Vite-free, prod-style build**. The Vite dev server
   (`npm run dev`) force-reloads the page when its HMR socket reconnects on wake —
   that full reload *is* the "refresh cure" and **masks the bug**. Use a built UI
   served statically instead.
+- The automated oracle deliberately avoids coupling to the page-level `WebSocket`
+  constructor. HMR and runtime wrappers can replace that constructor without
+  changing whether the terminal actually resumes.
 
 ## Setup (prod-style, no Vite)
 
@@ -121,7 +125,9 @@ The whole loop can run hands-free — sleep AND auto-wake — without a manual l
 ## Pass criteria
 
 - Terminal advances past its pre-sleep frame **without any refresh**.
-- WS shows `close 1006` → reconnect (same `connection_id`); backend logs
-  `on_ws_disconnect` (park) then `on_ws_connect` (resume).
+- The original terminal remains selected and its URL is unchanged.
 - Closing a tab (the `×` button) still destroys the session — disconnect (park) and
   close (destroy) remain distinct.
+- For a physical sleep/wake diagnostic run, WS `close 1006` → reconnect with the
+  same `connection_id` and backend park → resume logs are supporting evidence, not
+  the automated test oracle.

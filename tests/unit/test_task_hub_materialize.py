@@ -15,6 +15,8 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin.task import Task
+from flow_sdk.db.db_entity import EntityExpansion
+from flow_sdk.flowpad_types.enums import ExpansionType
 
 
 @pytest.mark.asyncio
@@ -74,3 +76,41 @@ async def test_materialize_remote_task_keeps_the_body_when_the_hub_sends_empty(m
     assert out.status == "in_progress", "the field the assignee owns must still land"
     assert out.description == "the issue text"
     assert saved.get("description", "the issue text") == "the issue text"
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_materialize_remote_task_validates_expand_metadata_before_save(monkeypatch):
+    """A JSON hub projection must not leave ``expand`` as a plain dict."""
+    from flow_sdk.app.actions.task_receive import materialize_remote_task
+
+    existing = Task(id="t-1", title="Ship it", remote=True)
+    saved: dict = {}
+
+    async def fake_get_one(cls, query):
+        return existing
+
+    async def fake_save(self, *args, **kwargs):
+        saved["expand"] = self.expand
+        # Exercise the exact accessor that crashed in the live hub bridge.
+        saved["expanded_blobs"] = self.is_expanded_blobs()
+        return self
+
+    monkeypatch.setattr(Task, "get_one", classmethod(fake_get_one))
+    monkeypatch.setattr(Task, "save", fake_save)
+    monkeypatch.setattr(Task, "is_stale", staticmethod(lambda existing, data: True))
+
+    out = await materialize_remote_task(
+        {
+            "id": "t-1",
+            "title": "Ship it",
+            "status": "in_progress",
+            "expand": {"expansions": ["blobs"]},
+        },
+        someone_typeid=None,
+    )
+
+    assert isinstance(out.expand, EntityExpansion)
+    assert out.expand.expansions == {ExpansionType.Blobs}
+    assert isinstance(saved["expand"], EntityExpansion)
+    assert saved["expanded_blobs"] is True

@@ -20,6 +20,7 @@ from flow_sdk.builtin.tab import (
     Tab,
     _build_list,
     _http_close,
+    _http_close_many,
     _http_list,
     _http_new_tab,
     _http_order,
@@ -106,6 +107,18 @@ async def test_close_action_drops_from_list() -> None:
     b = await ensure_tab("c/b", project_id="p1")
     await _http_close(b)
     assert await _order("p1") == [a.id]
+
+
+async def test_close_many_durably_hides_every_tab_before_acknowledging() -> None:
+    a = await ensure_tab("cm/a", project_id="p1")
+    b = await ensure_tab("cm/b", project_id="p1")
+    c = await ensure_tab("cm/c", project_id="p1")
+
+    await _http_close_many(Tab, tab_ids=[a.id, b.id, a.id], project="p1")
+
+    assert await _order("p1") == [c.id]
+    assert (await Tab.get_one({"id": a.id})).visible is False
+    assert (await Tab.get_one({"id": b.id})).visible is False
 
 
 # ── Background teardown (fast close) ─────────────────────────────────────────

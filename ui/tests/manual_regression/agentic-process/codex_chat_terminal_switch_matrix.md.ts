@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { apiBase, apiContext } from '../_shared/api';
+import { withViewMode } from '../_shared/view-mode';
 
 test('C01/C03/C09/C10: a new headless Codex opens as chat and reload preserves transport identity', async ({ page }) => {
   const api = await apiContext();
@@ -32,12 +33,8 @@ test('C01/C03/C09/C10: a new headless Codex opens as chat and reload preserves t
   try {
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
-      localStorage.setItem('viewMode', 'standard');
     });
-    await page.goto('/dock/home');
-    await page.evaluate(() => {
-      (window as unknown as { setView?: (view: string) => void }).setView?.('standard');
-    });
+    await page.goto(withViewMode('/dock/home', 'standard'));
     await page.evaluate((id) => {
       (window as unknown as { navigation: { openShellProcess: (processId: string) => void } })
         .navigation.openShellProcess(id);

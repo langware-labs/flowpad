@@ -28,13 +28,21 @@
 import { promises as fsp } from 'node:fs';
 
 import { config, dataContext } from '@sdk';
-import { Conversation, acceptInvitation, fetchConversations } from '@sdk/entities/conversation';
+import { Conversation, acceptInvitation } from '@sdk/entities/conversation';
 import { Invitation } from '@sdk/entities/invitation';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import { hubConversationTitle, hubConversationWatchers, hubLogin } from './_hub';
-import { pollUntil, probeHub, probeLocalBackendLoggedIn, readRendezvous, waitMarker } from './_matrix';
+import {
+  pickPendingInvitation,
+  pollUntil,
+  probeHub,
+  probeLocalBackendLoggedIn,
+  readRendezvous,
+  syncPendingInvitation,
+  waitMarker,
+} from './_matrix';
 
 const JOINED = '/tmp/flowpad_rename_joined.txt';
 const HTTP_DONE = '/tmp/flowpad_rename_http_done.txt';
@@ -80,29 +88,20 @@ beforeEach(async (context: any) => {
 });
 
 async function findPendingInvitation(convId: string): Promise<Invitation | null> {
-  await fetchConversations();
   const all = await Invitation.query<Invitation>({ query: {} }, true);
-  const exact = all.find((inv) => !inv.accepted && (inv.target_url_path || '').includes(convId));
-  if (exact) return exact;
-  const mine = all
-    .filter((inv) => !inv.accepted && inv.recipient_email === bobEmail)
-    .sort((a, b) => String(b.created_date ?? '').localeCompare(String(a.created_date ?? '')));
-  return mine[0] ?? null;
+  return pickPendingInvitation(all, convId);
 }
 
 describe('hub: rename two-process — BOB (cross-validates HTTP + WS on the hub)', () => {
-  it('confirms both of alice\'s renames (HTTP, then WS) on the hub', async () => {
+  it("confirms both of alice's renames (HTTP, then WS) on the hub", async () => {
     const convId = await readRendezvous(25_000);
     const httpName = `http-${convId.slice(0, 8)}`;
     const wsName = `ws-${convId.slice(0, 8)}`;
     console.log(`[rename.bob] conv id: ${convId.slice(0, 8)}`);
 
-    const invitation = await pollUntil(
-      () => findPendingInvitation(convId),
-      25_000,
-      'pending invitation for conv',
-    );
-    const accepted = await acceptInvitation({ invitation_id: invitation.id! });
+    await syncPendingInvitation(config.SERVER_URL, convId);
+    const invitation = await pollUntil(() => findPendingInvitation(convId), 25_000, 'pending invitation for conv');
+    const accepted = await acceptInvitation({ invitation_id: invitation.id });
     expect(accepted.invitation_id).toBe(invitation.id);
     console.log('[rename.bob] invitation accepted + joined');
 
@@ -111,15 +110,11 @@ describe('hub: rename two-process — BOB (cross-validates HTTP + WS on the hub)
     // watch so the local data_op routes to this connection; ``subscribe()``
     // records each pushed entity version. A cross-user rename only lands here if
     // the hub fans the field update to bob and his bridge materializes it.
-    const conv = await pollUntil(
-      () => Conversation.getById<Conversation>(convId),
-      10_000,
-      'conversation materialized',
-    );
+    const conv = await pollUntil(() => Conversation.getById<Conversation>(convId), 10_000, 'conversation materialized');
     const offWatch = await conv.watch();
     let observedTitle: string | null = null;
     const offSub = conv.subscribe((u) => {
-      if (u) observedTitle = (u as Conversation).title ?? observedTitle;
+      if (u) observedTitle = u.title ?? observedTitle;
     });
 
     // Put the conversation in bob's browser context as the active entity — the

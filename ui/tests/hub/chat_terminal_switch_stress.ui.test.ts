@@ -187,33 +187,29 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
     }
   }
 
-  /** Read the mode switch's three state attrs in ONE round-trip. They live on
-   *  the segmented control's CONTAINER (the segments themselves are per-mode). */
-  async function readToggle(): Promise<{ enabled: boolean; switching: boolean; chatActive: boolean }> {
-    // The mode selector is the footer ViewToggle now, and it carries no
-    // in-flight state of its own — the transport reconcile is an effect. Read
-    // the live transport instead; `currentPty()` below is the authoritative
-    // signal this suite already keys on.
+  /** Read the footer selector's presence and rendered chat surface in one
+   *  round-trip. Transport readiness/completion come from the watched process,
+   *  because the URL-first footer intentionally owns no worker lifecycle state. */
+  async function readToggle(): Promise<{ present: boolean; chatActive: boolean }> {
     return page!.page.evaluate(() => {
       const el = document.querySelector('[data-testid="terminal-panel"][data-active="true"]');
-      const busy = document.querySelector('[data-testid="view-toggle"]') === null;
-      return { enabled: !busy, switching: false, chatActive: el?.getAttribute('data-pty-mode') === 'false' };
+      return {
+        present: document.querySelector('[data-testid="view-toggle"]') !== null,
+        chatActive: el?.getAttribute('data-pty-mode') === 'false',
+      };
     });
   }
 
-  /** The transport segments are enabled iff the agent is awaiting input AND not
-   *  mid-switch — one wait covers both the idle gate and the switching spinner.
-   *  (A transport segment's own `disabled` is `switching || (needs-transport-work
-   *  && !toggleEnabled)`, so these two cover every gated case — no separate
-   *  isDisabled() probe.) */
+  /** Wait inside the existing switch budget until the selector is mounted and
+   *  the authoritative watched process is ready for a lifecycle transition. */
   async function waitToggleEnabled(): Promise<void> {
     const end = Date.now() + SWITCH_BUDGET_MS;
     for (;;) {
       const t = await readToggle().catch(() => null);
-      if (t && t.enabled && !t.switching) return;
+      if (t?.present && inst!.sdk.isReadyForInput(proc)) return;
       if (Date.now() > end) {
         throw new Error(
-          `toggle never re-enabled (stuck mid-turn/switching) — toggle=${JSON.stringify(t)} ` +
+          `toggle never became ready — toggle=${JSON.stringify(t)} ` +
             `backend=${proc?.status}/${proc?.workerStatus} pty=${proc?.pty_mode}`,
         );
       }
@@ -234,37 +230,23 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
     return v === 'true' ? true : v === 'false' ? false : null;
   }
 
-  /** Drive the TRANSPORT to `targetPty` via the real mode switch. Keyed on
-   *  `pty_mode` (reliable) not the skin. Clicks are DIRECTIONAL now (a segmented
-   *  control, not a flipping button): we click the target segment. `switchTo`
-   *  early-returns if the worker isn't awaiting at the click instant (a silent
-   *  no-op), and sets `switching=true` asynchronously — so after each click we
-   *  wait for the switch to settle then check whether the transport reached the
-   *  target; if not we re-click. A directional click is a no-op ONLY when the
-   *  transport already matches (the hook's guard keys on `pty_mode`, not the
-   *  skin), which is exactly the loop's success condition — so it converges.
-   *  Bounded. */
+  /** Drive the transport to `targetPty` via one real directional mode click,
+   *  then spend the existing switch budget observing the authoritative live
+   *  `pty_mode`. URL navigation owns the mode commit and `useProcessSurface`
+   *  owns the asynchronous worker reconcile, so rapid re-clicks would only
+   *  enqueue duplicate navigations before the first commit. */
   async function switchTransportTo(targetPty: boolean): Promise<void> {
-    for (let attempt = 0; attempt < 6; attempt++) {
-      await waitToggleEnabled();
-      if ((await currentPty()) === targetPty) return; // already there
-      // Fire onClick directly: a Playwright pointer-click can miss on a small
-      // segment; el.click() always invokes the handler.
-      await page!.page
-        .getByTestId(targetPty ? 'view-toggle-advanced' : 'view-toggle-standard')
-        .evaluate((el) => (el as HTMLButtonElement).click());
-      const end = Date.now() + SWITCH_BUDGET_MS;
-      let settled = false;
-      while (Date.now() < end) {
-        const t = await readToggle().catch(() => null);
-        if (t && t.enabled && !t.switching) {
-          settled = true;
-          break;
-        }
-        await page!.page.waitForTimeout(150);
-      }
-      if (settled && (await currentPty()) === targetPty) return; // switched
-      // settled-but-not-switched (no-op) or still switching → re-click
+    await waitToggleEnabled();
+    if ((await currentPty()) === targetPty) return;
+    // Fire onClick directly: a Playwright pointer-click can miss on a small
+    // segment; el.click() always invokes the production URL-first handler.
+    await page!.page
+      .getByTestId(targetPty ? 'view-toggle-advanced' : 'view-toggle-standard')
+      .evaluate((el) => (el as HTMLButtonElement).click());
+    const end = Date.now() + SWITCH_BUDGET_MS;
+    while (Date.now() < end) {
+      if ((await currentPty()) === targetPty && inst!.sdk.isReadyForInput(proc)) return;
+      await page!.page.waitForTimeout(150);
     }
     throw new Error(
       `transport never reached pty=${targetPty} — pty=${await currentPty()} ` +

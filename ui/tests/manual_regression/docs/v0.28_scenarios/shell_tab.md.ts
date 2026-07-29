@@ -3,6 +3,7 @@
  * Source: shell_tab.md
  */
 import { expect, test, type Page } from '@playwright/test';
+import { withViewMode } from '../../_shared/view-mode';
 
 async function sendMarker(page: Page, marker: string) {
   const panel = page.locator('[data-testid="terminal-panel"][data-active="true"]').last();
@@ -16,14 +17,14 @@ test.describe('Shell tabs', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
-      localStorage.setItem('viewMode', 'advanced');
     });
   });
 
   test('two fresh terminals are responsive and isolated', async ({ page }) => {
-    await page.goto('/dock/shell/new_terminal');
-    await expect(page).toHaveURL(/\/dock\/shell\/shell-[\w-]+$/);
-    const firstSession = page.url().split('/').pop();
+    await page.goto(withViewMode('/dock/shell/new_terminal', 'advanced'));
+    await expect(page).toHaveURL(/\/dock\/shell\/shell-[\w-]+(?:\?.*)?$/);
+    const firstUrl = page.url();
+    const firstSession = new URL(firstUrl).pathname.split('/').pop();
     await expect(
       page.locator(`[data-testid="terminal-panel"][data-session-id="${firstSession}"] .xterm-rows`).first(),
     ).toBeAttached();
@@ -31,8 +32,9 @@ test.describe('Shell tabs', () => {
 
     await page.getByTestId('opener-plus-button').click();
     await page.getByTestId('opener-menu-row-terminal').click();
-    await expect(page).toHaveURL(/\/dock\/shell\/shell-[\w-]+$/);
-    const secondSession = page.url().split('/').pop();
+    await expect(page).not.toHaveURL(firstUrl);
+    await expect(page).toHaveURL(/\/dock\/shell\/shell-[\w-]+(?:\?.*)?$/);
+    const secondSession = new URL(page.url()).pathname.split('/').pop();
     expect(secondSession).not.toBe(firstSession);
     await expect(
       page.locator(`[data-testid="terminal-panel"][data-session-id="${secondSession}"] .xterm-rows`).first(),

@@ -1,19 +1,17 @@
 # Test Index
 
-> Last updated: 2026-07-28T16:05:54Z
+> Last updated: 2026-07-29T02:09:43Z
 > Scope: all manual-regression `.md` scenarios, `.md.ts` Playwright files, and standalone browser specs.
 
-## agentic-process (md=14, md.ts=18, spec.ts=0)
+## agentic-process (md=13, md.ts=16, spec.ts=0)
 
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |----------|------:|------------|-----------|------|
-| _resume_revalidate_v3.md.ts *(md.ts only)* | 2 | yes | no | other (challenge) |
 | agentic_process_visible_restored_on_load.md.ts *(md.ts only)* | 1 | yes | no | - |
 | codex_chat_terminal_full_matrix.md | 2 | yes | no | - |
 | codex_chat_terminal_switch_matrix.md | 2 | yes | no | - |
 | conversation_view_three_spawn_branches.md | 2 | yes | no | - |
 | embedded_close_preserves_process.md | 1 | yes | no | - |
-| fork_action_from_search_dock.md | 2 | yes | no | other (challenge) |
 | new_claude_session_no_console_errors.md | 1 | yes | no | - |
 | observability_surfaces.md | 3 | yes | no | - |
 | open_shell_from_process_workdir.md | 2 | yes | no | - |
@@ -151,7 +149,7 @@
 | rebuild_index_ui.md | 4 | yes | no | - |
 | record_search_from_home.md | 3 | yes | no | - |
 | record_search_view.md | 4 | yes | yes | - |
-| scan_records_viewer.md | 6 | yes | no | other (challenge) |
+| scan_records_viewer.md | 3 | yes | no | - |
 | search_bar.md | 6 | yes | no | - |
 | search_limit_param.md | 1 | yes | no | - |
 | search_scan_info_stats.md | 6 | yes | no | - |
@@ -210,7 +208,7 @@
 | flow_shell_tab_location.md | 1 | yes | no | - |
 | git_status_panel.md | 12 | yes | no | other (challenge) |
 | in_claude_ctrlv_does_not_paste.md | 1 | yes | no | - |
-| interactive_tabs_project_filtering_matrix.md | 60 | yes | no | platform |
+| interactive_tabs_project_filtering_matrix.md | 51 | yes | no | platform |
 | multiple_terminal_tabs.md | 1 | yes | no | - |
 | navigate_to_shell.md | 1 | yes | no | - |
 | plain_shell_url_loads_silently.md.ts *(md.ts only)* | 1 | yes | no | - |
@@ -269,7 +267,7 @@
 | multi_tab.md | 1 | yes | no | - |
 | scope.md | 2 | yes | no | - |
 | smoke.md | 3 | yes | no | - |
-| ui_ux.md | 5 | yes | no | other (challenge) |
+| ui_ux.md | 4 | yes | no | - |
 | wiki_integration.md | 2 | yes | no | other (challenge) |
 
 ## wiki (md=1, md.ts=1, spec.ts=0)
@@ -280,6 +278,4 @@
 
 ---
 
-TOTAL: md=134, md.ts=159, spec.ts=1, orphan .md (Phase 12 scope)=0
-
-
+TOTAL: md=133, md.ts=157, spec.ts=1, orphan .md (Phase 12 scope)=0

@@ -4,29 +4,11 @@ import { ensureProjectMarkdown } from './_seed';
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-// Open the markdown asset list, expand the markdown type + any doc folders,
-// and click the first markdown row to open it in the editor.
+// Create a markdown asset and open its canonical URL directly. These scenarios
+// exercise Milkdown, not asset-tree expansion or row-label presentation.
 async function openFirstMarkdownDoc(page: Page) {
-  // Project-scoped tree on a fresh instance has an empty docs folder — seed
-  // one doc so "the first .md leaf" exists (see _seed.ts).
-  await ensureProjectMarkdown(page.request);
-  await page.goto('/dock/assets/list/markdown');
-  await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-  const leaf = page.locator('[role="treeitem"]').filter({ hasText: /\.md$/ }).first();
-  await page.locator('[data-testid^="browseable-chevron-asset-type:markdown:"]').first().click().catch(() => {});
-
-  // Expand the markdown type and any nested doc folders until a .md leaf is
-  // visible. Poll instead of fixed sleeps so this stays fast and does not
-  // depend on a single hard-coded settle duration.
-  for (let attempt = 0; attempt < 20; attempt++) {
-    if (await leaf.isVisible().catch(() => false)) break;
-    const folders = page.locator('[data-testid^="browseable-chevron-md-folder:"]');
-    const fcount = await folders.count();
-    for (let i = 0; i < fcount; i++) await folders.nth(i).click().catch(() => {});
-    await page.waitForTimeout(300);
-  }
-  await expect(leaf).toBeVisible({ timeout: 15_000 });
-  await leaf.click();
+  const markdownId = await ensureProjectMarkdown(page.request);
+  await page.goto(`/dock/assets/editor/markdown/typeid/markdown-${markdownId}`);
   // "Doc opened" = the MarkdownEditor header mounted. Do NOT wait on `.ProseMirror`
   // here: the chosen editor mode is persisted across docs (PrefKey.EDITOR_MODE), so a
   // doc can restore in Review mode (ReviewSurface, no `.ProseMirror`) — the view chip
