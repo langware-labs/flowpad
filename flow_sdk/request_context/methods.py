@@ -256,6 +256,40 @@ def get_current_request_user():
     return request_info.user
 
 
+async def get_current_request_user_fresh():
+    """The request's user, re-read from the database.
+
+    ``request_info.user`` is the process-wide ``_LOCAL_USER_CACHE`` singleton
+    (``request_transaction_middleware``), resolved at the first request of the
+    process and never refreshed. Anything that writes to the user AFTER that —
+    every OAuth flow storing a token writes through its own freshly-fetched
+    user — is invisible to it.
+
+    For most callers that does not matter: they want the identity. It matters
+    enormously for anything reading or writing ``user.env_vars``, which is the
+    authoritative record of the user's credentials:
+
+    * reading it made ``oauth/attach`` report "SOD for provider
+      'github_credentials' not found" for a credential sitting in the database,
+      and made a project's env table resolve a valid reference to MISSING;
+    * writing through it would persist an env-var list that predates every
+      token stored since the process booted, silently dropping them.
+
+    Use this wherever ``env_vars`` is the point. Falls back to the cached object
+    when the re-read finds nothing, so a user that exists only in memory still
+    works.
+    """
+    request_info = get_current_request_info()
+    if request_info is None or request_info.user is None:
+        return None
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+
+    typeid = getattr(request_info.user, "typeid", None)
+    if typeid is None:
+        return request_info.user
+    return await Entity.get_by_typeid(typeid) or request_info.user
+
+
 def get_current_auth_result():
     request_info = get_current_request_info()
     if request_info is None:
