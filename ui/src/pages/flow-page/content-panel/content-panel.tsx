@@ -27,7 +27,7 @@ import { HubEntityView } from '@src/pages/hub-browse/HubEntityView';
 import { LiveStatus } from '@src/pages/live-status';
 import { SearchView } from '@src/pages/search-view/SearchView';
 
-import { ConnectionStatus, dataContext, navigator, PageId, type OAuthConnection } from '@sdk';
+import { dataContext, navigator, PageId } from '@sdk';
 import { useAuth, useContext } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
 import { HubAssetsPage } from '@src/components/assets/HubAssetsPage';
@@ -146,22 +146,6 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
   // Survey state (shared with chat-panel)
   const { activeSurveyData, onSurveyComplete } = useSurveyStore();
   const { addEnvVar, deleteEnvVar } = useEnvVarsStore();
-  const [connections, setConnections] = useState<OAuthConnection[]>([]);
-
-  const handleConnectionConnect = useCallback((connectionId: string) => {
-    setConnections((prev) =>
-      prev.map((conn) =>
-        conn.id === connectionId ? { ...conn, status: ConnectionStatus.CONNECTED, connectedAt: new Date() } : conn,
-      ),
-    );
-  }, []);
-
-  const handleConnectionDisconnect = useCallback((connectionId: string) => {
-    setConnections((prev) =>
-      prev.map((conn) => (conn.id === connectionId ? { ...conn, status: ConnectionStatus.DISCONNECTED } : conn)),
-    );
-  }, []);
-
   const { setOpenEnvironmentTab } = useEnvVarsStore();
 
   // Same live retry path as vibe-workspace: prompt the active process.
@@ -360,12 +344,7 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         );
       case ViewType.CONNECTIONS:
         return (
-          <ConnectionsManager
-            connections={connections}
-            currentProject={contextProject?.typeId}
-            onConnectionConnect={handleConnectionConnect}
-            onConnectionDisconnect={handleConnectionDisconnect}
-          />
+          <ConnectionsManager className="h-full p-4" projectTypeId={contextProject?.typeId} />
         );
       case ViewType.API_KEYS:
         return (
