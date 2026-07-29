@@ -101,4 +101,30 @@ describe('ConnectionsManager', () => {
     expect(screen.getByText(/No OAuth connections found/i)).toBeTruthy();
     h.providers = [{ name: 'github', display_name: 'GitHub', icon: undefined }];
   });
+
+  it('names the grant and lists the scopes it will request', () => {
+    // The two things a user needs before granting: which flow runs, and what it
+    // will be allowed to do. Both used to be invisible.
+    h.providers = [
+      { name: 'github', display_name: 'GitHub', kind: 'code', scopes: ['repo', 'read:org'] },
+      { name: 'anthropic', display_name: 'Anthropic', kind: 'loopback', scopes: ['user:profile'] },
+    ] as unknown[];
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    expect(screen.getByTestId('connection-kind-github').textContent).toBe('OAuth');
+    expect(screen.getByTestId('connection-kind-anthropic').textContent).toBe('OAuth + PKCE');
+
+    const scopes = screen.getByTestId('connection-scopes-github').textContent;
+    expect(scopes).toContain('repo');
+    expect(scopes).toContain('read:org');
+  });
+
+  it('does not claim "no scopes" when the owning side never published them', () => {
+    // A hub provider's scopes live in its manifest, which the table does not
+    // carry. Rendering an empty list would assert something false.
+    h.providers = [{ name: 'slack', display_name: 'slack', kind: 'code' }] as unknown[];
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    expect(screen.getByTestId('connection-scopes-slack').textContent).toContain('Shown at approval');
+  });
 });

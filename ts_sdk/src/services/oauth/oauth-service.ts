@@ -47,7 +47,16 @@ export interface OAuthProvider {
   name: string;
   display_name: string;
   icon?: string;
+  /** Which OAuth grant this provider's flow uses. */
+  kind?: OAuthFlowKind;
+  /** Scopes the flow will request; empty when the owning side does not publish them. */
+  scopes?: string[];
 }
+
+/** The OAuth grants a provider's flow can use. Mirrors the backend's
+ *  `OAuthFlowKind` — shown to the user because the three differ in what they
+ *  ask of them and in what the resulting token can do. */
+export type OAuthFlowKind = 'code' | 'loopback' | 'device';
 
 export interface OAuthConnection {
   id: string;

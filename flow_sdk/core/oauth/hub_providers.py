@@ -62,7 +62,12 @@ def _row_from_hub(item: dict[str, Any]) -> EnvVar | None:
     ref_name = str(item.get("ref_name") or "").strip()
     if not name or not ref_name:
         return None
-    return provider_env_var(name, name, ref_name, item.get("icon"))
+    # The hub runs a real authorization-code grant for everything it defines.
+    # Its manifest holds the scope list and the table does not publish it, so the
+    # scopes stay empty rather than being guessed.
+    from flow_sdk.core.oauth.provider_registry import OAuthFlowKind  # noqa: PLC0415
+
+    return provider_env_var(name, name, ref_name, item.get("icon"), kind=OAuthFlowKind.CODE.value)
 
 
 async def hub_provider_rows() -> EntityEnvVars:
@@ -102,13 +107,37 @@ async def hub_provider_rows() -> EntityEnvVars:
 
 
 def union_providers(local: EntityEnvVars, hub: EntityEnvVars) -> EntityEnvVars:
-    """Local rows first; a hub row with a colliding name is dropped, not merged."""
+    """One row per provider, describing the flow that will ACTUALLY run.
+
+    Local rows win on identity — the credential name has to stay the local one,
+    because `git push` and the `gh` capability read GitHub's token out of local
+    SOD by that name.
+
+    But identity is not the same as the grant. When a local provider only has a
+    DEVICE grant and the hub defines the same provider, the router prefers the
+    hub's authorization-code flow (see `_handle_auth`) — so the row must say
+    `code`, not `device`. A row advertising the grant that lost would be a table
+    telling the user something the button then contradicts.
+
+    Its scopes are cleared with it: the local list described the device app, and
+    the hub's live in a manifest the table does not carry, so anything kept here
+    would be stale.
+    """
+    from flow_sdk.core.oauth.provider_registry import OAuthFlowKind  # noqa: PLC0415
+
     by_name: dict[str, EnvVar] = {}
     for row in local.values:
         by_name[row.name.lower()] = row
     for row in hub.values:
-        if row.name.lower() in by_name:
-            logger.debug("[oauth] hub provider %r shadowed by the local one", row.name)
+        key = row.name.lower()
+        existing = by_name.get(key)
+        if existing is not None:
+            if existing.oauth_kind == OAuthFlowKind.DEVICE.value:
+                logger.debug("[oauth] %r keeps its local credential name but runs the hub's code flow", row.name)
+                existing.oauth_kind = OAuthFlowKind.CODE.value
+                existing.oauth_scopes = []
+            else:
+                logger.debug("[oauth] hub provider %r shadowed by the local one", row.name)
             continue
-        by_name[row.name.lower()] = row
+        by_name[key] = row
     return EntityEnvVars(values=[by_name[k] for k in sorted(by_name)])

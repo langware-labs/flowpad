@@ -87,6 +87,8 @@ export const useOAuthConnection = ({
           display_name: displayName,
           // Icon is stored in icon field
           icon: envVar.icon || undefined,
+          kind: (envVar.oauth_kind as OAuthProvider['kind']) || undefined,
+          scopes: envVar.oauth_scopes?.length ? envVar.oauth_scopes : undefined,
         });
       });
 
