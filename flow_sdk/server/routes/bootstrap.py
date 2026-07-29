@@ -1305,13 +1305,28 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
                     if not records:
                         continue
                     rec = records[0]
-                    if proj.id and getattr(rec, "project_id", None) is None:
+                    # System-project ownership is authoritative at seed time.
+                    # A desktop clear recreates the project with a fresh id,
+                    # while the shipped record metadata may still carry the
+                    # previous id. Never preserve that stale foreign key:
+                    # search scope and every project-derived view must point at
+                    # the project row created by this bootstrap.
+                    if proj.id:
                         object.__setattr__(rec, "project_id", proj.id)
                     # Stamp `system` on the record so from_record persists it in
                     # the single upsert — avoids a redundant second save() per
                     # file just to flip the flag (include_system filters rely on it).
                     object.__setattr__(rec, "system", True)
-                    await Entity.from_record(rec, notify=False)
+                    entity = await Entity.from_record(rec, notify=False)
+                    # ``from_record`` deliberately suppresses the DB→disk store
+                    # path, including its normal FTS upsert. System markdowns
+                    # are read directly from their shipped files (not record
+                    # shadows), so index their already-parsed search content
+                    # here. This keeps startup/reset seeding immediately
+                    # searchable without writing anything back to the source.
+                    search_content = rec.search_content
+                    if search_content is not None:
+                        await entity._fts_upsert(str(rec.type or rec._record_type), search_content)
                 except Exception as e:
                     logging.debug(f"[bootstrap] failed to index system markdown {md_path}: {e}")
 
