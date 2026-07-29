@@ -235,6 +235,13 @@ FLOWPAD_CLOUD_USER_PASSWORD=$password
 MINIHUB_RELOAD=False
 FLOWPAD_SKIP_DOTENV=true
 EOF
+  # The isolated backend intentionally skips the repo dotenv so its injected
+  # ports/identity cannot be clobbered. Carry the explicitly exported E2B
+  # credential through that boundary so provider-backed QA instances retain
+  # the same sandbox capability as the source checkout. Never print it.
+  if [ -n "${E2B_KEY:-}" ]; then
+    printf 'E2B_KEY=%s\n' "$E2B_KEY" >> "$ef"
+  fi
 
   # ---- 3. launch backend (detached) ----
   local be_log="$dir/launcher-backend.log" fe_log="$dir/launcher-frontend.log"
