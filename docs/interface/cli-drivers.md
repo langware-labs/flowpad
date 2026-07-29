@@ -189,7 +189,7 @@ and a `cli_worker.py`/`code_agentic_worker.py` PTY pair; codex adds `session_det
 | File | Role |
 | --- | --- |
 | `driver.py` | The `WorkerDriver` implementation |
-| `cli.py` | `…AgentOptions(AgentOptions)` — argv/flag builder |
+| `cli.py` | `<Vendor>AgentOptions(AgentOptions)` — argv/flag builder |
 | `stream_worker.py` | `…CLIStreamWorker(AgenticWorker)` — headless subprocess + FlowData stream |
 | `event_to_flowdata.py` | Native JSONL event → `FlowData` mapping |
 | `session_history.py` | Session-file discovery + transcript→`FlowData` replay |
