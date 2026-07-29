@@ -1,11 +1,13 @@
-import { ExecutionEnvironmentStatus, MachineSubview, PageId, ViewType, WorldViewProjection } from '@sdk';
+import { dataContext, ExecutionEnvironmentStatus, MachineSubview, PageId, ViewType, WorldViewProjection } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { useDesktops, nextDesktopName, type Step, type DesktopDetails } from '@src/hooks/use-desktops';
 import { NewDesktopDialog } from './NewDesktopDialog';
+import { EnvironmentBanner } from '@src/components/environment-banner/EnvironmentBanner';
 import {
   Building2,
   CheckCircle,
@@ -131,6 +133,11 @@ export function HubHome() {
     details,
   } = useDesktops();
   const launchStarted = steps.some((s) => s.status !== 'idle');
+  // Absent on older hubs that don't advertise the flag yet — treat as enabled.
+  const desktopsEnabled = dataContext.bootstrapInfo?.desktops_enabled !== false;
+  // Creating a desktop needs BOTH a provisioning-capable hub (e2b key) and a
+  // signed-in user — a visitor's launch would just 401.
+  const canCreateDesktop = desktopsEnabled && !!currentUser;
 
   // Inline rename: single-click a desktop name to edit it.
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -165,6 +172,7 @@ export function HubHome() {
 
   return (
     <div className="flex h-full flex-col overflow-auto">
+      <EnvironmentBanner />
       <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-10 sm:py-14">
         {/* Hero — greeting, same typographic treatment as HomeLanding */}
         <div className="flex flex-col items-center gap-3 text-center">
@@ -237,10 +245,10 @@ export function HubHome() {
                     }`}
                     title={p.displayName}
                   >
-                    <FolderGit2 className={`h-4 w-4 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
-                    <span className="truncate text-sm">
-                      {p.displayName || t`Untitled project`}
-                    </span>
+                    <FolderGit2
+                      className={`h-4 w-4 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`}
+                    />
+                    <span className="truncate text-sm">{p.displayName || t`Untitled project`}</span>
                   </button>
                 );
               })}
@@ -255,16 +263,28 @@ export function HubHome() {
           </h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {/* New desktop — always first, high-contrast + theme-aware. */}
-            <button
-              type="button"
-              onClick={() => setNewDesktop({})}
-              disabled={launching}
-              data-testid="new-desktop-button"
-              className="flex items-center justify-center gap-2 rounded-lg border border-primary/50 bg-primary/10 px-4 py-3 text-sm font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-60"
-            >
-              {launching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              {launching ? <Trans>Launching…</Trans> : <Trans>New Desktop</Trans>}
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {/* span keeps the tooltip working while the button is disabled */}
+                <span className="flex" tabIndex={canCreateDesktop ? -1 : 0}>
+                  <button
+                    type="button"
+                    onClick={() => setNewDesktop({})}
+                    disabled={launching || !canCreateDesktop}
+                    data-testid="new-desktop-button"
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/20 disabled:pointer-events-none disabled:border-primary/20 disabled:bg-primary/5"
+                  >
+                    {launching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    {launching ? <Trans>Launching…</Trans> : <Trans>New Desktop</Trans>}
+                  </button>
+                </span>
+              </TooltipTrigger>
+              {!canCreateDesktop && (
+                <TooltipContent>
+                  {!desktopsEnabled ? <Trans>Sandbox unavailable</Trans> : <Trans>Sign in to create desktops</Trans>}
+                </TooltipContent>
+              )}
+            </Tooltip>
 
             {desktops.map((d) => (
               <div
@@ -273,9 +293,10 @@ export function HubHome() {
                 data-node-id={d.id}
                 data-provider-id={d.node_provider_id}
                 data-status={details[d.id]?.status}
+                title={desktopsEnabled ? undefined : t`Sandbox unavailable`}
                 className={`group flex flex-col gap-1.5 rounded-lg border bg-card px-4 py-3 transition-colors ${statusCardClass(
                   details[d.id]?.status,
-                )}`}
+                )} ${desktopsEnabled ? '' : 'opacity-60'}`}
               >
                 <div className="flex items-center gap-3">
                   <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -302,8 +323,9 @@ export function HubHome() {
                         setDraftName(d.name || '');
                         setEditingId(d.id);
                       }}
-                      className="min-w-0 flex-1 truncate text-left text-sm hover:underline"
-                      title={t`Click to rename`}
+                      disabled={!desktopsEnabled}
+                      className="min-w-0 flex-1 truncate text-left text-sm hover:underline disabled:pointer-events-none"
+                      title={desktopsEnabled ? t`Click to rename` : undefined}
                       data-testid="desktop-name"
                     >
                       {d.name || t`Desktop`}
@@ -312,15 +334,17 @@ export function HubHome() {
                   <button
                     type="button"
                     onClick={() => void openDesktop(d)}
+                    disabled={!desktopsEnabled}
                     aria-label={t`Open desktop`}
                     data-testid="desktop-open"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
                   >
                     <ExternalLink className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
                     onClick={openDesktopSecrets}
+                    disabled={!desktopsEnabled}
                     aria-label={t`Machine secrets`}
                     data-testid="desktop-secrets"
                     className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
@@ -330,12 +354,16 @@ export function HubHome() {
                   <button
                     type="button"
                     onClick={() => void deleteDesktop(d)}
-                    disabled={deletingId === d.id}
+                    disabled={deletingId === d.id || !desktopsEnabled}
                     aria-label={t`Delete desktop`}
                     data-testid="desktop-delete"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:opacity-50 group-hover:opacity-100"
+                    className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
                   >
-                    {deletingId === d.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    {deletingId === d.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
                   </button>
                 </div>
                 <DesktopStatus info={details[d.id]} now={now} />
@@ -377,7 +405,9 @@ export function HubHome() {
       {/* New-desktop modal: name + optional git repo (with the connect-GitHub gate). */}
       <NewDesktopDialog
         open={!!newDesktop}
-        onOpenChange={(o) => { if (!o) setNewDesktop(null); }}
+        onOpenChange={(o) => {
+          if (!o) setNewDesktop(null);
+        }}
         defaultName={nextDesktopName(desktops)}
         initialGitUrl={newDesktop?.gitUrl}
         onLaunch={(opts) => void launch(opts)}
