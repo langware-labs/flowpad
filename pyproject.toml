@@ -22,7 +22,8 @@ dependencies = [
     "python-dotenv",
     "keyring",
     "keyrings.alt",
-    "fastmcp",
+    # FastMCP 4 uses MCP 2.x; pydantic-ai 1.x's MCP integration requires MCP 1.x.
+    "fastmcp>=3,<4",
     "httpx>=0.24.0,<1.0",
     "websockets",
     "sqlalchemy~=2.0.27",
@@ -49,7 +50,7 @@ dependencies = [
     "groq",
     "openai",
     "anthropic",
-    "pydantic-ai-slim>=1.62,<2",
+    "pydantic-ai-slim[mcp]>=1.62,<2",
     "distro",
     "appdirs",
     "colorama",
