@@ -294,6 +294,11 @@ export function EntityExecutionPanel({
   //    or, when combined with startNewSession(), a fresh one on the next send.
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(initialProcessId ?? null);
   const [forceNew, setForceNew] = useState(false);
+  // `setForceNew(true)` is intentionally rendered state, but a user can click
+  // New and submit in the same browser task before React commits that render.
+  // Keep the creation intent in a ref as well so the send handler observes it
+  // synchronously and never reuses the session the user just left.
+  const forceNewRef = useRef(false);
 
   // When target changes (navigating between files), reset picker state — but
   // seed back to `initialProcessId` when the host pins a session (vibe keeps the
@@ -301,6 +306,7 @@ export function EntityExecutionPanel({
   useEffect(() => {
     setSelectedProcessId(initialProcessId ?? null);
     setForceNew(false);
+    forceNewRef.current = false;
   }, [targetStr, initialProcessId]);
 
   const pickedProcess: AgenticProcess | null = useMemo(() => {
@@ -490,6 +496,7 @@ export function EntityExecutionPanel({
   }, [activeProcess, effectiveModel, effectiveProjectId, effectiveWorkdir, onActiveWorkerChange]);
 
   const startNewSession = useCallback(() => {
+    forceNewRef.current = true;
     setSelectedProcessId(null);
     setLocalProcess(null);
     setForceNew(true);
@@ -500,6 +507,7 @@ export function EntityExecutionPanel({
   }, [effectiveModel, effectiveWorkerType, resolvedDefaultWorkerType]);
 
   const selectSession = useCallback((processId: string) => {
+    forceNewRef.current = false;
     setSelectedProcessId(processId);
     setLocalProcess(null);
     setForceNew(false);
@@ -531,12 +539,13 @@ export function EntityExecutionPanel({
   const handleSend = useCallback(async (text: string, opts?: { forceNewProcess?: boolean }) => {
     if (!targetStr) return;
     inputHistory.addToHistory(text);
+    const mustCreateNew = opts?.forceNewProcess === true || forceNewRef.current;
 
     // Mid-turn sends ENQUEUE instead of racing a second turn: the backend
     // owns the queue and auto-drains it as the worker frees up (the composer
     // stays usable while busy; the queue chip shows the pending count).
     const turnBusy = !!activeProcess && isBusy(activeProcess);
-    if (!opts?.forceNewProcess && activeProcess && (turnBusy || sending)) {
+    if (!mustCreateNew && activeProcess && (turnBusy || sending)) {
       const composed = promptContext ? `${promptContext.text}\n\n${text}` : text;
       try {
         await activeProcess.enqueue(composed);
@@ -551,12 +560,12 @@ export function EntityExecutionPanel({
     if (sending) return;
     setSending(true);
     try {
-      let proc = opts?.forceNewProcess ? null : activeProcess;
+      let proc = mustCreateNew ? null : activeProcess;
       const isPtyPoll = transport === 'pty-poll';
 
       // Lazy-create on first send.
       if (!proc) {
-        if (selectedProcessId && !opts?.forceNewProcess) return;
+        if (selectedProcessId && !mustCreateNew) return;
         if (createInFlightRef.current) return;
         createInFlightRef.current = true;
         try {
@@ -586,6 +595,7 @@ export function EntityExecutionPanel({
             catch (err) { console.error('[EntityExecutionPanel] attach on create failed', ref, err); }
           }
           setLocalProcess(newProcess);
+          forceNewRef.current = false;
           proc = newProcess;
         } finally {
           createInFlightRef.current = false;
