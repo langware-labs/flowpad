@@ -32,6 +32,12 @@ async def _install_orphan_sniffer() -> None:
 
 async def test_bootstrap_purges_a_sniffer_no_entity_backs(client):
     """Gate off + no hook entity = disabled, so the stale commands must go."""
+    # The API-test DB is session-shared, so an earlier test (e.g. the agent-hook
+    # e2e) may have left an enabled sniffer entity — establish "no entity backs
+    # it" ourselves rather than assume it.
+    disable = await client.delete("/api/v1/graph/agent_hook/hooks-sniffer")
+    assert disable.status_code == 200, disable.text
+
     await _install_orphan_sniffer()
 
     response = await client.get("/api/v1/graph/bootstrap")
@@ -59,3 +65,9 @@ async def test_bootstrap_keeps_a_sniffer_the_user_enabled(client):
     assert sniffer_installed_in_settings(HookScope.USER)
     assert data["sniffer_installed"] is True
     assert data["sniffer_hook"] is not None
+
+    # Leave the shared session DB as we found the gate: no entity, no settings
+    # entries — later tests assert on both.
+    disable = await client.delete("/api/v1/graph/agent_hook/hooks-sniffer")
+    assert disable.status_code == 200, disable.text
+    assert not sniffer_installed_in_settings(HookScope.USER)

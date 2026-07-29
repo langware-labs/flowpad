@@ -2530,6 +2530,10 @@ msgstr "הענן מנותק"
 msgid "Cloud hub"
 msgstr "Hub בענן"
 
+#: src/components/environment-banner/EnvironmentBanner.tsx
+msgid "Cloud Sandbox"
+msgstr ""
+
 #: src/components/graph-view/GraphView.tsx
 #~ msgid "Cloud WorldView"
 #~ msgstr "תצוגת עולם בענן"
@@ -2844,6 +2848,7 @@ msgstr "החיבור הצליח, אך עדיין אין גישה למאגר הז
 msgid "Connecting..."
 msgstr "מתחבר..."
 
+#: src/components/assets/editor/WikiResolveView.tsx
 #: src/components/assets/editor/WikiResolveView.tsx
 #~ msgid "Connecting…"
 #~ msgstr "מתחברת..."
@@ -3917,6 +3922,7 @@ msgstr "תיאור, למשל: הכנת התקציר היומי שלי"
 msgid "Description:"
 msgstr "תיאור:"
 
+#: src/components/environment-banner/EnvironmentBanner.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/desktop/DesktopPage.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -4874,6 +4880,10 @@ msgstr "פורמט צפוי: /dock/show/<entity-vfs>?page=<page>&component=<comp
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Expert Assistance"
 msgstr "עזרה מומחה"
+
+#: src/components/environment-banner/EnvironmentBanner.tsx
+msgid "Explanation of Flowpad's runtime environments."
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Explore your organization and everything you can reach."
@@ -5950,6 +5960,10 @@ msgstr "אופן הצגת הגרף"
 msgid "Graph view"
 msgstr "תצוגת גרף"
 
+#: src/components/graph-view/webglSupport.tsx
+msgid "Graph view needs WebGL"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Group Events"
 msgstr "אירועים בקבוצה"
@@ -6289,6 +6303,7 @@ msgstr "https://github.com/owner/repo"
 msgid "https://github.com/owner/repo.git"
 msgstr "https://github.com/owner/repo.git"
 
+#: src/components/environment-banner/EnvironmentBanner.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
@@ -10282,6 +10297,10 @@ msgstr "תצוגה מקדימה"
 msgid "Preview {label}"
 msgstr "תצוגה מקדימה של {label}"
 
+#: src/components/wiki-tip/WikiModalRoot.tsx
+msgid "Preview of the wiki page, shown without leaving the current view."
+msgstr ""
+
 #: src/components/conversation/asset-review/StagedAssetViewer.tsx
 msgid "Preview truncated."
 msgstr "התצוגה קטומה."
@@ -11324,6 +11343,7 @@ msgstr "המשיכו בהרצה זו"
 #: src/components/assets/editor/EntityResolutionGate.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/assets/editor/MissingAssetCard.tsx
+#: src/components/graph-view/webglSupport.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -11635,6 +11655,11 @@ msgstr "יומני Sandbox"
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "Sandbox Metrics"
 msgstr "מדדי Sandbox"
+
+#: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubHome.tsx
+msgid "Sandbox unavailable"
+msgstr ""
 
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
@@ -12760,6 +12785,10 @@ msgstr "היכנסו"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Sign in to a coding assistant"
 #~ msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Sign in to create desktops"
+msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Sign in to see who's a member"
@@ -15089,6 +15118,10 @@ msgstr "מפתח ה-API שלך לאימות בקשות API ל-FlowPad"
 #: src/components/api-keys-view/api-keys-view.tsx
 msgid "Your API Keys"
 msgstr "מפתחות ה-API שלך"
+
+#: src/components/graph-view/webglSupport.tsx
+msgid "Your browser could not create a WebGL context, so the graph cannot render. This usually means graphics acceleration is disabled or the GPU process crashed."
+msgstr ""
 
 #: src/components/collaboration/StartRoomDialog.tsx
 #: src/components/collaboration/StartRoomDialog.tsx
