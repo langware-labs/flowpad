@@ -1,8 +1,8 @@
-"""PromptResult — the result of running a Prompt in a RemoteWorkerSession.
+"""PromptCompletion — the result of running a Prompt in a RemoteWorkerSession.
 
 Symmetric to ``Prompt`` (builtin/prompt.py): where a Prompt is the request a guest
-sends, a PromptResult is the answer the host's worker produced. It rides back as a
-``prompt_result-<id>`` TYPE_ID attachment on a reply FlowMessage (mirroring how a
+sends, a PromptCompletion is the answer the host's worker produced. It rides back as a
+``prompt_completion-<id>`` TYPE_ID attachment on a reply FlowMessage (mirroring how a
 Prompt attaches), carrying ``result_preview`` so the guest can read it before the
 body bundle downloads. A result is turn-grained (one per answered prompt) and may
 carry more than text — ``asset_refs`` points at files/assets the run produced.
@@ -15,8 +15,8 @@ from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
 
 
-class PromptResult(Entity):
-    type: str = APIField(default="prompt_result")
+class PromptCompletion(Entity):
+    type: str = APIField(default="prompt_completion")
     prompt_id: Optional[str] = APIField(
         default=None, description="Id of the Prompt this result answers."
     )

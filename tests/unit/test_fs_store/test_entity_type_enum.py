@@ -138,7 +138,7 @@ EXPECTED = {
     "NOTIFICATION": "notification",
     "INBOX_MANAGER": "inbox_manager",
     "RUN": "run",
-    "PROMPT_RESULT": "prompt_result",
+    "PROMPT_COMPLETION": "prompt_completion",
     "REMOTE_WORKER_SESSION": "remote_worker_session",
     # SemanticLock file targets (5a19f9e6) — additive member; the commit that
     # added it missed this freeze.
