@@ -21,7 +21,7 @@ export class GraphWorkflowNode extends APIEntity<GraphWorkflowNode> implements I
   node_type?: 'trigger' | 'agent' | 'function';
   program_ref?: string;
   enabled?: boolean;
-  static type: string = 'flow_node';
+  static type: string = 'graph_workflow_node';
 
   constructor(entity: Partial<IGraphWorkflowNode> = {}) {
     super(entity);

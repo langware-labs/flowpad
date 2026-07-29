@@ -4,7 +4,7 @@
  * a run; the run/journal surfaces light up from the live streams.
  */
 import { useState } from 'react';
-import { agenticFlows } from '@sdk/services/graph-workflows';
+import { graphWorkflows } from '@sdk/services/graph-workflows';
 import { useStudio } from '../store';
 
 export function InjectPanel() {
@@ -27,7 +27,7 @@ export function InjectPanel() {
       return;
     }
     try {
-      const res = await agenticFlows.inject(flowId, event.trim() || 'go', parsed, {
+      const res = await graphWorkflows.inject(flowId, event.trim() || 'go', parsed, {
         targetNode: targetNode || undefined,
       });
       setStatus(res ? `▶ run ${res.execution_id.slice(0, 8)}` : 'no response');

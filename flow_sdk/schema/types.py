@@ -181,7 +181,7 @@ class EntityType(StrEnum):
     # ── Flow-graph slice (GraphWorkflowManager) — DB-only entities, no asset_ref ──────
     # A station in the flow graph: binds a program (skill/callback/instruction)
     # to execution defaults; executions are separate AgenticProcess entities.
-    GRAPH_WORKFLOW_NODE = "flow_node"
+    GRAPH_WORKFLOW_NODE = "graph_workflow_node"
     # A folder-backed flow document (graph.json + display.json + scripts/ +
     # runs/). NOTE: "flow" stays reserved by the retired conversational Flow.
     GRAPH_WORKFLOW = "graph_workflow"

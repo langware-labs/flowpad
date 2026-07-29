@@ -63,8 +63,10 @@ a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
   graph. Bare `Workflow*` collides with the two Claude Code mirrors.
 - **`Flow` is still ambiguous** and should not be used for anything new. It survives in
   `FlowMessage` (a chat message), `FlowEvent` (the bus envelope), `FlowFile`,
-  `flow_sdk/core/flow/`, and `ui/src/pages/flow-page/`. Renaming `AgenticFlow` removed only
-  the *workflow* sense.
+  `flow_sdk/core/flow/`, and `ui/src/pages/flow-page/` — all unrelated to workflows.
+  Renaming `AgenticFlow` removed most of the *workflow* sense, but one spelling is
+  deliberately kept: the `flow_id` field on `GraphWorkflowRun` and `GraphWorkflowNode`, which
+  is a stored JSON key (renaming it needs a migration — see Phase 2).
 - **`harness` and `worker` are two names for one axis.** `HarnessType`
   (`fs_store/placement.py`) picks the dot-directory; `WorkerType` is the runtime driver.
   They're deliberately distinct and bridged by `_WORKER_NAME_TO_TYPE`, but the industry word

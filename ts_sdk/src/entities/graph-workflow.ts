@@ -6,7 +6,7 @@ import { IEntity } from '../IEntity';
  * flow_sdk/builtin/graph_workflow.py). graph.json (semantic) + display.json
  * (layout) live in the folder at `asset_ref`; read/write them via the
  * folder FSRef (whiteboard pattern). Runs + injection go through the
- * agenticFlows service.
+ * graphWorkflows service.
  */
 export interface IGraphWorkflow extends IEntity {
   name?: string;

@@ -1,6 +1,6 @@
 """Extractor + id mint + asset-hash for GRAPH_WORKFLOW records.
 
-An agentic flow is a folder containing ``graph.json`` (the flow document —
+A graph workflow is a folder containing ``graph.json`` (the flow document —
 see ``flow_sdk/graph_workflow_manager/graph_workflow_doc.py``) plus ``display.json`` (layout),
 ``scripts/`` (function node scripts) and ``runs/`` (execution journals). Cloned
 from the whiteboard walker family.

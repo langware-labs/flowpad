@@ -152,5 +152,5 @@ class GraphWorkflowsClient extends EventEmitter {
   }
 }
 
-export const agenticFlows = new GraphWorkflowsClient();
-export default agenticFlows;
+export const graphWorkflows = new GraphWorkflowsClient();
+export default graphWorkflows;
