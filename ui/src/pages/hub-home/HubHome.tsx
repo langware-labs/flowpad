@@ -7,6 +7,7 @@ import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { useDesktops, nextDesktopName, type Step, type DesktopDetails } from '@src/hooks/use-desktops';
 import { NewDesktopDialog } from './NewDesktopDialog';
+import { EnvironmentBanner } from '@src/components/environment-banner/EnvironmentBanner';
 import {
   Building2,
   CheckCircle,
@@ -171,6 +172,7 @@ export function HubHome() {
 
   return (
     <div className="flex h-full flex-col overflow-auto">
+      <EnvironmentBanner />
       <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-10 sm:py-14">
         {/* Hero — greeting, same typographic treatment as HomeLanding */}
         <div className="flex flex-col items-center gap-3 text-center">
@@ -243,10 +245,10 @@ export function HubHome() {
                     }`}
                     title={p.displayName}
                   >
-                    <FolderGit2 className={`h-4 w-4 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
-                    <span className="truncate text-sm">
-                      {p.displayName || t`Untitled project`}
-                    </span>
+                    <FolderGit2
+                      className={`h-4 w-4 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`}
+                    />
+                    <span className="truncate text-sm">{p.displayName || t`Untitled project`}</span>
                   </button>
                 );
               })}
@@ -335,7 +337,7 @@ export function HubHome() {
                     disabled={!desktopsEnabled}
                     aria-label={t`Open desktop`}
                     data-testid="desktop-open"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-50"
+                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
                   >
                     <ExternalLink className="h-4 w-4" />
                   </button>
@@ -357,7 +359,11 @@ export function HubHome() {
                     data-testid="desktop-delete"
                     className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
                   >
-                    {deletingId === d.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    {deletingId === d.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
                   </button>
                 </div>
                 <DesktopStatus info={details[d.id]} now={now} />
@@ -399,7 +405,9 @@ export function HubHome() {
       {/* New-desktop modal: name + optional git repo (with the connect-GitHub gate). */}
       <NewDesktopDialog
         open={!!newDesktop}
-        onOpenChange={(o) => { if (!o) setNewDesktop(null); }}
+        onOpenChange={(o) => {
+          if (!o) setNewDesktop(null);
+        }}
         defaultName={nextDesktopName(desktops)}
         initialGitUrl={newDesktop?.gitUrl}
         onLaunch={(opts) => void launch(opts)}
