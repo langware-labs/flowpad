@@ -15,7 +15,6 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from flow_sdk.builtin.change_event import ChangeEvent
 from flow_sdk.builtin.hook_models import get_action_handler
@@ -77,15 +76,15 @@ async def _fire(
 
     # Per-action try so one bad handler doesn't skip the rest.
 
-    # Flow activation: any active AgenticFlow with a trigger node referencing
-    # this trigger starts a run (see flow_manager.on_trigger_fired).
+    # Flow activation: any active GraphWorkflow with a trigger node referencing
+    # this trigger starts a run (see graph_workflow_manager.on_trigger_fired).
     if not is_test and trigger.id:
         try:
-            from flow_sdk.flow_manager import get_flow_manager
+            from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
-            await get_flow_manager().on_trigger_fired(trigger.id)
+            await get_graph_workflow_manager().on_trigger_fired(trigger.id)
         except Exception:
-            logger.exception("FSOp trigger %s: flow activation failed", trigger.name)
+            _log.exception("FSOp trigger %s: flow activation failed", trigger.name)
 
     for action in trigger.actions:
         try:
@@ -107,7 +106,7 @@ async def _fire(
     first = changes[0]
     sampled = [{"path": str(c.path), "change_type": c.change_type} for c in changes[:_LOG_CAP]]
     try:
-        from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry, discover as _discover_trigger_log
+        from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry
 
         _append_trigger_log_entry(
             trigger.name,

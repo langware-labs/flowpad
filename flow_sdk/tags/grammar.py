@@ -1,7 +1,7 @@
 """Shared dot-taxonomy grammar — THE single owner of tag string rules.
 
 One grammar serves every dot-separated vocabulary in the system: bus tags
-(``flow.step.done``), subscription patterns (``flow.*``), and the kind
+(``flow.step.done``), subscription patterns (``graph_workflow.*``), and the kind
 ontology (``application.web`` — see ``worldview/ontology.py``, now a shim over
 this module). TS twin: ``ts_sdk/src/tags/grammar.ts``; parity is pinned by
 the ``grammar`` section of ``tests/fixtures/flow_event_contract.json``.
@@ -120,7 +120,7 @@ def tag_pattern_problem(pattern: "str | None") -> Optional[str]:
         return "a non-empty tag pattern is required"
     if stripped == "*":
         return ('pattern "*" would fire on EVERY event in the system — '
-                'subscribe to a family (e.g. "entity.*", "flow.*") instead')
+                'subscribe to a family (e.g. "entity.*", "graph_workflow.*") instead')
     for i, seg in enumerate(stripped.split(".")):
         if seg == "*":
             continue

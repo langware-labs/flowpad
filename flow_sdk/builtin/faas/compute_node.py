@@ -1409,7 +1409,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     async def fix_all_cloud_errors_action(self) -> ApiResponse:
         """Spawn an AgenticProcess for each error with a saved cloud fix instruction."""
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
         from flow_sdk.fs_store.operations.claude_error import Fix, get_by_fingerprint
 
         request_info = get_current_request_info()
@@ -1427,7 +1427,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 spawned.append({"fingerprint": fp, "status": "skipped"})
                 continue
             try:
-                cmd = ClaudeCliOptions(permission_mode="bypassPermissions")
+                cmd = ClaudeAgentOptions(permission_mode="bypassPermissions")
                 rec_label = (getattr(rec, "name", None) or "").strip()
                 agentic_process = AgenticProcess(
                     cli_config=cmd.to_json(),

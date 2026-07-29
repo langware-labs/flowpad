@@ -963,8 +963,8 @@ msgid "Agent not found"
 msgstr "Agent not found"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-msgid "Agentic Flows"
-msgstr "Agentic Flows"
+#~ msgid "Agentic Flows"
+#~ msgstr "Agentic Flows"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "agents"
@@ -5993,6 +5993,10 @@ msgstr "Graph presentation"
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Graph view"
 msgstr "Graph view"
+
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+msgid "Graph Workflows"
+msgstr "Graph Workflows"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Group Events"

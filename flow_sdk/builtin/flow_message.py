@@ -350,7 +350,7 @@ class FlowMessage(Entity):
     )
     cloned_from_sender_id: Optional[str] = APIField(None, description="Original sender of the source message")
     # Live-session grouping key. Stamped at send time by the guest (who mints
-    # the session id) and on PromptResult replies by the host. The hub drops
+    # the session id) and on PromptCompletion replies by the host. The hub drops
     # unknown header fields until its schema mirrors this one, so the
     # ``remote_worker_session-<id>`` TYPE_ID attachment is the authoritative
     # wire carrier — ``derive_session_fields`` refills this on receive.

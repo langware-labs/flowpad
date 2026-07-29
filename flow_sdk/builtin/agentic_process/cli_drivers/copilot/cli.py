@@ -6,13 +6,13 @@ import logging
 import os
 from typing import Any
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.agentic_process.model_tiers import COPILOT_MODEL_TIERS
 
 logger = logging.getLogger(__name__)
 
 
-class CopilotCliOptions(WorkerCLIOptions):
+class CopilotAgentOptions(AgentOptions):
     """Builds Copilot CLI argv for headless JSON streaming or visible PTY mode."""
 
     # sm/md/lg → gpt-5.4-mini/gpt-5.4/gpt-5.5, applied when emitting command.
@@ -139,7 +139,7 @@ class CopilotCliOptions(WorkerCLIOptions):
         return data
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "CopilotCliOptions":
+    def from_json(cls, data: dict[str, Any]) -> "CopilotAgentOptions":
         return cls(
             session_id=data.get("session_id"),
             resume=bool(data.get("resume", False)),

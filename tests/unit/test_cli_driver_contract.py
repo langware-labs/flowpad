@@ -29,8 +29,8 @@ import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeDriver
-from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions, CodexDriver
-from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotCliOptions, CopilotDriver
+from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions, CodexDriver
+from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions, CopilotDriver
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.fs_store.record_paths import get_default_records_root, set_default_records_root
 from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
@@ -226,7 +226,7 @@ def test_codex_never_emits_fork_session_flag():
     # without a hasattr guard, but only claude serialises/emits it. Setting it
     # on codex options must not leak a ``--fork-session`` flag into argv or the
     # shell string on the resume path.
-    cmd = CodexCliOptions(workdir="/repo", session_id="s", resume=True)
+    cmd = CodexAgentOptions(workdir="/repo", session_id="s", resume=True)
     cmd.fork_session_id = "parent-src"
     argv, _ = cmd.to_spawn_args()
 
@@ -235,7 +235,7 @@ def test_codex_never_emits_fork_session_flag():
 
 
 def test_copilot_never_emits_fork_session_flag():
-    cmd = CopilotCliOptions(workdir="/repo", session_id="s", resume=True)
+    cmd = CopilotAgentOptions(workdir="/repo", session_id="s", resume=True)
     cmd.fork_session_id = "parent-src"
     argv, _ = cmd.to_spawn_args()
 

@@ -1,6 +1,6 @@
-"""CodexCliOptions — builds OpenAI Codex CLI shell command strings.
+"""CodexAgentOptions — builds OpenAI Codex CLI shell command strings.
 
-Mirrors the shape of ``ClaudeCliOptions`` for the ``codex exec`` non-interactive
+Mirrors the shape of ``ClaudeAgentOptions`` for the ``codex exec`` non-interactive
 path. The codex worker runs ``codex exec --json`` per turn; the JSON event
 stream is what gets converted to FlowData.
 
@@ -25,16 +25,16 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.agentic_process.model_tiers import CODEX_MODEL_TIERS
 
 logger = logging.getLogger(__name__)
 
 
-class CodexCliOptions(WorkerCLIOptions):
+class CodexAgentOptions(AgentOptions):
     """Builds a ``codex exec`` shell command string.
 
-    The intent is parity with ``ClaudeCliOptions`` so that the ``cmd_line``
+    The intent is parity with ``ClaudeAgentOptions`` so that the ``cmd_line``
     property on AgenticProcess returns something inspectable for codex too
     (the ``test_agentic_process_clock_agent`` test asserts on ``cmd_line``).
     """
@@ -198,7 +198,7 @@ class CodexCliOptions(WorkerCLIOptions):
         return d
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "CodexCliOptions":
+    def from_json(cls, data: dict[str, Any]) -> "CodexAgentOptions":
         return cls(
             session_id=data.get("session_id"),
             resume=bool(data.get("resume", False)),

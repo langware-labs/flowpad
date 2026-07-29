@@ -350,8 +350,8 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
-  [ViewType.AGENTIC_FLOWS]: {
-    title: 'Agentic Flows',
+  [ViewType.GRAPH_WORKFLOWS]: {
+    title: 'Graph Workflows',
     iconName: 'Workflow',
     tabLocation: 'dedicated',
     canAddAsTab: true,

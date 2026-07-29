@@ -23,14 +23,14 @@ def test_id_is_deterministic_uuid5_of_the_name():
 
     from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
 
-    a = Tag(name="flow.step.done")
-    b = Tag(name="  Flow.Step.Done ")  # normalization variant → same identity
+    a = Tag(name="graph_workflow.step.done")
+    b = Tag(name="  Graph_Workflow.Step.Done ")  # normalization variant → same identity
     assert a.id == b.id
-    assert a.id == mint_uuid("tag:flow.step.done", namespace=uuid.NAMESPACE_DNS)
-    assert a.name == b.name == "flow.step.done"
+    assert a.id == mint_uuid("tag:graph_workflow.step.done", namespace=uuid.NAMESPACE_DNS)
+    assert a.name == b.name == "graph_workflow.step.done"
     assert a.uname is None
     assert is_valid_entity_id(a.id)
-    assert Tag(name="flow.step.failed").id != a.id
+    assert Tag(name="graph_workflow.step.failed").id != a.id
 
 
 def test_namespace_tag_accepted_first_segment_only():
@@ -41,14 +41,14 @@ def test_namespace_tag_accepted_first_segment_only():
 
 
 def test_invalid_names_rejected_on_adoption():
-    for bad in ("", "flow..done", "flow step", "flow:step"):
+    for bad in ("", "graph_workflow..done", "flow step", "flow:step"):
         with pytest.raises((ValueError, TypeError)):
             Tag(name=bad)
 
 
 def test_caller_id_cannot_override_name_identity():
     supplied = "11111111-2222-4333-8444-555555555555"
-    assert Tag(id=supplied, name="flow.step.done").id == Tag(name="flow.step.done").id
+    assert Tag(id=supplied, name="graph_workflow.step.done").id == Tag(name="graph_workflow.step.done").id
 
 
 @pytest.mark.asyncio
@@ -99,7 +99,7 @@ def test_reserved_roots_match_the_cross_language_fixture():
 @pytest.mark.asyncio
 async def test_reserved_root_rejected_for_user_tags():
     with pytest.raises(ValueError, match="reserved system root"):
-        await Tag(name="flow.hacked").save()
+        await Tag(name="graph_workflow.hacked").save()
     # Namespaced and non-reserved roots are open to users.
     await Tag(name="--acme--.orders.created").save()
     await Tag(name="shipping.box.packed").save()
@@ -121,8 +121,8 @@ async def test_seed_system_tags_idempotent():
     assert first == len(SYSTEM_TAG_SEED)  # fresh DB: every row written
     assert await seed_system_tags() == 0  # re-run converges to a no-op
 
-    blessed = await resolve_tag("flow.step.done")
-    assert blessed is not None and blessed.system and blessed.title == "Flow step done"
+    blessed = await resolve_tag("graph_workflow.step.done")
+    assert blessed is not None and blessed.system and blessed.title == "Graph workflow step done"
 
     # Every seeded name is grammar-valid and reserved-rooted by a system row.
     for name, _title, _desc in SYSTEM_TAG_SEED:

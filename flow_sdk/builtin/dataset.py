@@ -34,9 +34,8 @@ from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 
-
 # Canonical per-example metadata filename inside an IO_FOLDER example dir.
-# Owned here (the model module) so writers (FlowManager's born-compatible
+# Owned here (the model module) so writers (GraphWorkflowManager's born-compatible
 # example stamps) and the indexer's reader agree by construction.
 EXAMPLE_META = "example.json"
 

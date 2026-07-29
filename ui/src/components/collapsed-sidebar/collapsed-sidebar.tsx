@@ -149,7 +149,7 @@ export function CollapsedSidebar() {
     hooks: { title: t`Hooks`, icon: Webhook, viewType: ViewType.HOOKS },
     files: { title: t`Files`, icon: FolderOpen, viewType: ViewType.EXPLORER },
     capabilities: { title: t`Capabilities`, icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
-    'agentic-flows': { title: t`Agentic Flows`, icon: Workflow, viewType: ViewType.AGENTIC_FLOWS },
+    'graph-workflows': { title: t`Graph Workflows`, icon: Workflow, viewType: ViewType.GRAPH_WORKFLOWS },
   };
 
   // Hub page has its own minimal rail — Home + the browse entries. It bypasses

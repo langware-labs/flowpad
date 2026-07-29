@@ -10,24 +10,24 @@ describe('mergeTagRows', () => {
   it('groups by first segment, sorted, one row per name', () => {
     const byRoot = mergeTagRows(
       [
-        { id: '1', name: 'flow.done' },
-        { id: '2', name: 'flow.started' },
+        { id: '1', name: 'graph_workflow.done' },
+        { id: '2', name: 'graph_workflow.started' },
         { id: '3', name: 'entity.created' },
       ],
-      { 'flow.done': OBS, 'zeta.web': OBS },
+      { 'graph_workflow.done': OBS, 'zeta.web': OBS },
     );
-    expect([...byRoot.keys()]).toEqual(['entity', 'flow', 'zeta']);
-    expect(byRoot.get('flow')!.map((r) => r.name)).toEqual(['flow.done', 'flow.started']);
+    expect([...byRoot.keys()]).toEqual(['entity', 'graph_workflow', 'zeta']);
+    expect(byRoot.get('graph_workflow')!.map((r) => r.name)).toEqual(['graph_workflow.done', 'graph_workflow.started']);
   });
 
   it('attaches observed stats to blessed rows and keeps anonymous rows separate', () => {
-    const byRoot = mergeTagRows([{ id: '1', name: 'flow.done' }], {
-      'flow.done': OBS,
-      'flow.mystery': OBS,
+    const byRoot = mergeTagRows([{ id: '1', name: 'graph_workflow.done' }], {
+      'graph_workflow.done': OBS,
+      'graph_workflow.mystery': OBS,
     });
-    const rows = byRoot.get('flow')!;
-    const blessed = rows.find((r) => r.name === 'flow.done')!;
-    const anonymous = rows.find((r) => r.name === 'flow.mystery')!;
+    const rows = byRoot.get('graph_workflow')!;
+    const blessed = rows.find((r) => r.name === 'graph_workflow.done')!;
+    const anonymous = rows.find((r) => r.name === 'graph_workflow.mystery')!;
     expect(blessed.blessed?.id).toBe('1');
     expect(blessed.observed).toEqual(OBS);
     expect(anonymous.blessed).toBeNull();

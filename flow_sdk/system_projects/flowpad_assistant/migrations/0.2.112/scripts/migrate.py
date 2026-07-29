@@ -1,7 +1,7 @@
 """Move flowpad-native assets out of the harness dot-dirs into ``agentic-assets/``.
 
 Flowpad used to write its own assets into ``.claude/<something>`` — whiteboards,
-journeys, agentic-flows, agent traces, usage/cleanup reports, received
+journeys, graph-workflows, agent traces, usage/cleanup reports, received
 transcripts. None of those directories are part of any harness's vocabulary
 (Claude Code reads ``skills``, ``agents``, ``commands``, ``rules``, ``workflows``,
 ``output-styles``, ``themes``, ``plugins``, ``projects``, ``memory``), so those
@@ -47,7 +47,7 @@ LEGACY_FAMILIES: list[tuple[str, str, bool]] = [
     # Reclassified out of the harness dot-dirs.
     (".claude/whiteboards", "whiteboard", False),
     (".claude/journeys", "journey", False),
-    (".claude/agentic-flows", "agentic_flow", False),
+    (".claude/graph-workflows", "graph_workflow", False),
     (".claude/agent_traces", "agent_trace", False),
     (".claude/usage_reports", "usage_report", False),
     (".claude/cleanup_reports", "asset_cleanup_report", False),

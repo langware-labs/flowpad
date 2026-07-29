@@ -1,6 +1,6 @@
 """Extractor + id mint + asset-hash for JOURNEY records.
 
-A journey is a folder containing ``graph.json`` (a FlowDoc of guided_step nodes)
+A journey is a folder containing ``graph.json`` (a GraphWorkflowDoc of guided_step nodes)
 plus ``display.json`` (layout), ``runs/`` (execution journals) and child ``*.html``
 pages shown during the journey. Discovery is the generic ``repo_assets_fn``
 walk of ``<scope>/agentic-assets/journey/*/``; this module owns the extractor,
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flow_sdk.flow_manager.flow_doc import FlowDoc, parse_flow_doc
+from flow_sdk.graph_workflow_manager.graph_workflow_doc import GraphWorkflowDoc, parse_graph_workflow_doc
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions._folder_capsule import read_folder_capsule_id
@@ -22,9 +22,9 @@ from flow_sdk.fs_store.record_types import RecordType
 GRAPH_JSON = "graph.json"
 
 
-def _load_doc(journey_dir: Path) -> FlowDoc | None:
+def _load_doc(journey_dir: Path) -> GraphWorkflowDoc | None:
     try:
-        return parse_flow_doc((journey_dir / GRAPH_JSON).read_text(encoding="utf-8"))
+        return parse_graph_workflow_doc((journey_dir / GRAPH_JSON).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
 
@@ -45,8 +45,8 @@ def read_auto_launch(journey_dir: Path) -> bool:
     reader (``Journey.auto_launch_enabled`` calls this too; disk is the single
     source of truth).
 
-    Read raw rather than off the parsed FlowDoc: `auto_launch` is a journey-only
-    concern the shared FlowDoc schema doesn't model, so it would be dropped."""
+    Read raw rather than off the parsed GraphWorkflowDoc: `auto_launch` is a journey-only
+    concern the shared GraphWorkflowDoc schema doesn't model, so it would be dropped."""
     import json  # noqa: PLC0415
 
     try:
@@ -59,7 +59,7 @@ def read_auto_launch(journey_dir: Path) -> bool:
 def read_gate(journey_dir: Path) -> dict | None:
     """The journey's `gate` block from the RAW graph.json, or None.
 
-    Journey-only concern outside the shared FlowDoc schema (same rationale as
+    Journey-only concern outside the shared GraphWorkflowDoc schema (same rationale as
     ``read_auto_launch``). Shape: ``{"requires_capabilities": [kind, ...]}`` —
     the journey is launchable only while at least one listed capability is
     not yet available (there is something left to set up)."""

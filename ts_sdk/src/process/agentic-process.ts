@@ -12,7 +12,7 @@ import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
 import { IEntity } from '../IEntity';
 import { FSRef, type FSRefJson } from '../fs/FSRef';
-import { ClaudeCliOptions, factory as cliOptionsFactory } from '../cli_workers';
+import { ClaudeAgentOptions, factory as cliOptionsFactory } from '../cli_workers';
 import { dataContext } from '../FlowSync/context';
 import { FlowDataFactory } from '../flow_processing/flow-data-factory';
 import { Shell, ShellStatus } from '../entities/shell';
@@ -603,7 +603,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * transport is pinned CLI (`pty_mode=false`) here, independent of `visible`.
    */
   static newHeadless(fields: Partial<IAgenticProcess> = {}): AgenticProcess {
-    const cliOptions = new ClaudeCliOptions({
+    const cliOptions = new ClaudeAgentOptions({
       permission_mode: 'bypassPermissions',
       print_mode: true,
       output_format: 'stream-json',
@@ -973,14 +973,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Mirrors Python AgenticProcess.cli_options property exactly:
    * workdir and session_id are injected from entity fields (not stored in cli_config).
    */
-  get cliOptions(): ClaudeCliOptions {
+  get cliOptions(): ClaudeAgentOptions {
     const workerType = (this.worker_type ?? this.cli_config?.worker_type ?? 'claude') as string;
-    const cmd = cliOptionsFactory(this.cli_config ?? {}, workerType) as ClaudeCliOptions;
+    const cmd = cliOptionsFactory(this.cli_config ?? {}, workerType) as ClaudeAgentOptions;
     if (this.session_id) cmd.session_id = this.session_id;
     const wd = this.workdir;
     if (wd) {
       cmd.workdir = wd;
-      if (cmd instanceof ClaudeCliOptions) {
+      if (cmd instanceof ClaudeAgentOptions) {
         cmd.envVars['CLAUDE_PROJECT_DIR'] ??= wd;
       }
     }
@@ -988,8 +988,18 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return cmd;
   }
 
-  set cliOptions(cmd: ClaudeCliOptions) {
+  set cliOptions(cmd: ClaudeAgentOptions) {
     this.cli_config = cmd.toJson();
+  }
+
+  /** The launch bundle — prompt, model, skills, dirs, permissions. Preferred
+   *  spelling; `cliOptions` stays as the alias the driver layer is named after. */
+  get agentOptions(): ClaudeAgentOptions {
+    return this.cliOptions;
+  }
+
+  set agentOptions(cmd: ClaudeAgentOptions) {
+    this.cliOptions = cmd;
   }
 
   /** Enable the Flowpad Assistant mount for this process — its

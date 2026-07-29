@@ -38,7 +38,7 @@ export type RailItemId =
   | 'hooks'
   | 'files'
   | 'capabilities'
-  | 'agentic-flows';
+  | 'graph-workflows';
 
 /**
  * Hub-page rail ids (page=hub). A SEPARATE union, not more members of
@@ -115,7 +115,7 @@ export const RAIL_ITEMS: readonly RailSpec[] = [
   { id: 'inbox', from: ViewMode.Vibe, placement: 'top', gate: 'conversations' },
   { id: 'tasks', from: ViewMode.Vibe, placement: 'top', gate: 'tasks' },
   { id: 'discover', from: ViewMode.Dev, placement: 'top' },
-  { id: 'agentic-flows', from: ViewMode.Dev, placement: 'top' },
+  { id: 'graph-workflows', from: ViewMode.Dev, placement: 'top' },
   { id: 'files', from: ViewMode.Vibe, placement: 'overflow' },
   { id: 'triggers', from: ViewMode.Advanced, placement: 'overflow' },
   { id: 'hooks', from: ViewMode.Advanced, placement: 'overflow' },

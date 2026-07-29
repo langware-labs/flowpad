@@ -1,6 +1,6 @@
-"""ClaudeCliOptions — builds Claude Code CLI shell command strings.
+"""ClaudeAgentOptions — builds Claude Code CLI shell command strings.
 
-Extends WorkerCLIOptions with all Claude-specific switches:
+Extends AgentOptions with all Claude-specific switches:
 session/resume, fork, model, debug, permissions, chrome, worktree, agents.
 
 Auto-injects CLAUDE_PROJECT_DIR from workdir.
@@ -11,12 +11,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.agentic_process.model_tiers import CLAUDE_MODEL_TIERS
 from flow_sdk.config import PLATFORM_WIN32
 
 
-class ClaudeCliOptions(WorkerCLIOptions):
+class ClaudeAgentOptions(AgentOptions):
     """Builds a ``claude`` CLI shell command string for PTY injection.
 
     All fields map 1-to-1 to CLI flags. The command object is constructed
@@ -26,7 +26,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
 
     Example::
 
-        cmd = ClaudeCliOptions(session_id="abc-123", resume=True, workdir="/proj")
+        cmd = ClaudeAgentOptions(session_id="abc-123", resume=True, workdir="/proj")
         cmd.add_env("FLOWPAD_EXECUTION_SCOPE", scope_json)
         shell_str = cmd.to_shell_string()
         # → cd '/proj' && CLAUDE_PROJECT_DIR='/proj' FLOWPAD_EXECUTION_SCOPE='...'
@@ -34,7 +34,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
 
     Fork example::
 
-        cmd = ClaudeCliOptions(
+        cmd = ClaudeAgentOptions(
             session_id="new-uuid",      # new worker_session_id
             resume=True,
             fork_session_id="src-uuid", # the session being forked from
@@ -96,7 +96,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
             self.env_vars.setdefault("CLAUDE_PROJECT_DIR", workdir)
 
     # ------------------------------------------------------------------
-    # WorkerCLIOptions contract
+    # AgentOptions contract
     # ------------------------------------------------------------------
 
     def _resolve_binary(self) -> list[str]:
@@ -223,7 +223,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
         return d
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "ClaudeCliOptions":
+    def from_json(cls, data: dict[str, Any]) -> "ClaudeAgentOptions":
         return cls(
             session_id=data.get("session_id"),
             resume=bool(data.get("resume", False)),
