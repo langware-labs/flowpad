@@ -3,6 +3,7 @@ import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/c
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { normalizePath, useProjectOpener } from '@src/components/open-project-component/use-open-project';
 import { NewProjectDialog, NewProjectFromGitDialog, useGitCloneDialogSubmit } from '@src/components/project-selector';
+import { RecentConversationsStrip } from '@src/components/project-activity-strip';
 import { notify } from '@src/notifications';
 import { dataContext } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
@@ -37,10 +38,7 @@ export function VibeNewChat() {
   const [isOpeningFolder, setIsOpeningFolder] = useState(false);
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
   const { homeTitle, homeBackgroundUrl } = useHomeCustomization();
-  const defaultWorkspacePath = useMemo(
-    () => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '',
-    [],
-  );
+  const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
 
   // On vibe home, opening/switching a project just changes the project and
   // lands on the fresh vibe home (never resumes an old build process) — that
@@ -67,10 +65,7 @@ export function VibeNewChat() {
   return (
     <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4">
       <HomeCustomBackground url={homeBackgroundUrl} />
-      <div
-        aria-hidden
-        className="vibe-hero-gradient pointer-events-none absolute inset-x-0 bottom-0 h-2/3"
-      />
+      <div aria-hidden className="vibe-hero-gradient pointer-events-none absolute inset-x-0 bottom-0 h-2/3" />
       <div
         className="relative z-10 flex w-full max-w-2xl flex-col items-center gap-4 text-center"
         data-testid="vibe-new-chat"
@@ -81,7 +76,10 @@ export function VibeNewChat() {
             className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent"
             fallback={
               <Trans>
-                Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
+                Hey{' '}
+                <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+                  {firstName}
+                </span>
               </Trans>
             }
           />
@@ -138,6 +136,12 @@ export function VibeNewChat() {
             <Trans>Open from git</Trans>
           </button>
         </div>
+        {/* Pending invitations are only actionable from the Inbox strip, and the
+            vibe home previously rendered no conversation surface at all — an
+            invitee landing here saw nothing to accept. */}
+        <div className="w-full max-w-md self-center">
+          <RecentConversationsStrip />
+        </div>
         <VibeRecentSessions />
       </div>
       <OpenProjectComponent open={isProjectModalOpen} onOpenChange={setIsProjectModalOpen} />
@@ -153,11 +157,7 @@ export function VibeNewChat() {
       {/* Mounted only while open — keeps the repo/branch pickers out of the
           home route's eager module graph. */}
       {isGitProjectOpen && (
-        <NewProjectFromGitDialog
-          open
-          onOpenChange={setIsGitProjectOpen}
-          onCreate={handleCreateGitProject}
-        />
+        <NewProjectFromGitDialog open onOpenChange={setIsGitProjectOpen} onCreate={handleCreateGitProject} />
       )}
     </div>
   );
