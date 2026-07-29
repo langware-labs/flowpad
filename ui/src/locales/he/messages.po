@@ -1522,6 +1522,10 @@ msgstr "לצרף"
 msgid "Attach a plan or skill"
 msgstr "צרף תוכנית או כישור"
 
+#: src/components/machine-overview/node-secrets.tsx
+msgid "Attach all"
+msgstr ""
+
 #: src/components/conversation/MessageComposer.tsx
 msgid "Attach an asset (skill, agent, doc, spec)"
 msgstr "צרף asset (skill, agent, doc, spec)"
@@ -3127,6 +3131,10 @@ msgstr "לא ניתן היה לבדוק את מצב ההתחברות"
 msgid "Could not copy the code"
 msgstr "לא היה ניתן להעתיק את הקוד"
 
+#: src/components/project-home/EnvLocalCard.tsx
+msgid "Could not declare that key"
+msgstr ""
+
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not delete"
 msgstr "לא היה ניתן למחוק"
@@ -3225,6 +3233,10 @@ msgstr "לא ניתן לעצור"
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not update"
 msgstr "לא היה ניתן לעדכן"
+
+#: src/components/machine-overview/node-secrets.tsx
+msgid "Could not update attached secrets"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
@@ -3546,6 +3558,14 @@ msgstr "רמת ניפוי כוללת הפעלות hook."
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Debug logging"
 msgstr "רישום ניפוי באגים"
+
+#: src/components/project-home/EnvLocalCard.tsx
+msgid "Declare"
+msgstr ""
+
+#: src/components/project-home/EnvLocalCard.tsx
+msgid "Declared"
+msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -3921,6 +3941,10 @@ msgstr "נתק"
 #: src/pages/discover-page/discover-page.tsx
 msgid "Details"
 msgstr "פרטים"
+
+#: src/components/project-home/EnvLocalCard.tsx
+msgid "Detected in .env.local"
+msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "Dev"
@@ -4637,8 +4661,10 @@ msgstr "שגיאה"
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/machine-overview/node-secrets.tsx
 #: src/components/project-home/BindSecretDialog.tsx
 #: src/components/project-home/BindSecretDialog.tsx
+#: src/components/project-home/EnvLocalCard.tsx
 #: src/components/project-home/SecretsCard.tsx
 #: src/components/project-home/SecretsCard.tsx
 msgid "Error"
@@ -6239,6 +6265,10 @@ msgstr "קישורים:"
 msgid "How does improving an asset work?"
 msgstr "איך עובד שיפור נכסים?"
 
+#: src/components/privacy-mode/privacy-mode-popover.tsx
+msgid "How privacy modes work"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "How to install"
 #~ msgstr ""
@@ -6387,6 +6417,14 @@ msgstr "משפר…"
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "In browser mode, projects must be in the workspace folder. Enter the full path manually."
 #~ msgstr "במצב דפדפן, פרויקטים חייבים להיות בתיקיית מרחב העבודה. הזן את הנתיב המלא ידנית."
+
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "In git ({gitLabel}), click to open."
+msgstr ""
+
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "In git, click to open."
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "In Index"
@@ -6915,6 +6953,7 @@ msgid "Learn about your data"
 msgstr "למד עוד על הנתונים שלך"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
+#: src/components/wiki-tip/WikiTip.tsx
 msgid "Learn more"
 msgstr "למידע נוסף"
 
@@ -6966,7 +7005,9 @@ msgstr "שורה"
 
 #. placeholder {0}: el.absRow
 #. placeholder {0}: link.line
+#. placeholder {0}: row.line
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
+#: src/components/project-home/EnvLocalCard.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "line {0}"
 msgstr "שורה {0}"
@@ -7373,6 +7414,10 @@ msgstr "טוען…"
 msgid "Local"
 msgstr "מקומי"
 
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "Local file, click to reveal."
+msgstr ""
+
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Local graph:"
 msgstr "גרף מקומי:"
@@ -7468,6 +7513,10 @@ msgstr "חיפוש פרויקט…"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Machine ID"
 msgstr "מזהה מכונה"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Machine secrets"
+msgstr ""
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "Manage API keys"
@@ -8467,6 +8516,10 @@ msgstr "אין הפעלות עדיין"
 msgid "No items"
 msgstr "אין פריטים"
 
+#: src/components/project-home/EnvLocalCard.tsx
+msgid "No keys found in this project's .env.local."
+msgstr ""
+
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "No known fix yet — use \"Fix It\" to start a session."
 msgstr "אין תיקון ידוע עדיין — השתמש ב\"תקן\" כדי להתחיל שיחה."
@@ -9082,6 +9135,10 @@ msgstr "הערה (אופציונלי)"
 msgid "Note: File is missing"
 msgstr "הערה: הקובץ חסר"
 
+#: src/components/machine-overview/node-secrets.tsx
+msgid "Nothing has been narrowed yet, so this machine sees every secret below."
+msgstr ""
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Nothing here yet — use the + below to add one."
 msgstr "אין כאן עדיין — השתמש בפלוס למטה כדי להוסיף אחד."
@@ -9205,6 +9262,10 @@ msgstr "פעיל"
 msgid "On Disk"
 msgstr "בדיסק"
 
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "On the cloud, click to open."
+msgstr ""
+
 #: src/components/account/settings-section.tsx
 msgid "Onboarding"
 msgstr "הכנה ראשונית"
@@ -9249,14 +9310,18 @@ msgstr "רק במחשב הזה — לעולם לא משותף"
 msgid "Open"
 msgstr "פתח"
 
+#: src/components/project-home/EnvLocalCard.tsx
+msgid "Open .env.local at this line"
+msgstr ""
+
 #. placeholder {0}: workerLabel(worker)
 #: src/components/terminal/ProjectsCounterChip.tsx
 msgid "Open {0} on…"
 msgstr "פתח {0} ב…"
 
 #: src/components/graph-view/ui/EntityIcon.tsx
-msgid "Open {gitLabel}"
-msgstr ""
+#~ msgid "Open {gitLabel}"
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetPickerPopover.tsx
@@ -9279,6 +9344,10 @@ msgstr "פתח ישיבת git worktree מבודדת חדשה בענף נפרד"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Open a project before starting a collaboration."
 msgstr "פתח פרויקט לפני תחילת שיתוף פעולה."
+
+#: src/components/machine-overview/node-secrets.tsx
+msgid "Open a project to choose which of its secrets this machine can see."
+msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Open a project to see its assets."
@@ -9463,8 +9532,8 @@ msgid "Open in new tab"
 msgstr "פתח בכרטיסייה חדשה"
 
 #: src/components/graph-view/ui/EntityIcon.tsx
-msgid "Open in repository"
-msgstr ""
+#~ msgid "Open in repository"
+#~ msgstr ""
 
 #: src/components/project-activity-strip/LearningCard.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
@@ -9525,8 +9594,8 @@ msgid "Open new tab menu"
 msgstr "פתח תפריט כרטיסייה חדש"
 
 #: src/components/graph-view/ui/EntityIcon.tsx
-msgid "Open on the cloud"
-msgstr ""
+#~ msgid "Open on the cloud"
+#~ msgstr ""
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
@@ -9616,6 +9685,10 @@ msgstr "פתח טרמינל ב-${workdir}"
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
 #~ msgid "Open terminal session"
 #~ msgstr "פתח ישיבת טרמינל"
+
+#: src/components/privacy-mode/privacy-mode-popover.tsx
+msgid "Open the {PRIVACY_WIKI_PAGE} page"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Open the latest doc"
@@ -10364,6 +10437,10 @@ msgstr "שם הפרויקט שונה"
 #: src/pages/flow-page/use-start-vibe-session.ts
 msgid "Project Required"
 msgstr "פרויקט נדרש"
+
+#: src/components/machine-overview/node-secrets.tsx
+msgid "Project secrets on this machine"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "projected"
@@ -11289,8 +11366,8 @@ msgid "Reveal in folder"
 msgstr "הצג בתיקייה"
 
 #: src/components/graph-view/ui/EntityIcon.tsx
-msgid "Reveal in the file browser"
-msgstr ""
+#~ msgid "Reveal in the file browser"
+#~ msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #~ msgid "Reveal the message that produced this transcript"
@@ -11950,6 +12027,7 @@ msgstr "סוד נמחק"
 msgid "Secret saved"
 msgstr "סוד נשמר"
 
+#: src/components/machine-overview/machine-overview.tsx
 #: src/components/project-home/ProjectHome.tsx
 #: src/components/project-home/SecretsCard.tsx
 msgid "Secrets"
@@ -13730,6 +13808,10 @@ msgstr "לתהליך זה אין עדיין הפעלת תמלול."
 msgid "This project has no assets yet."
 msgstr "לפרויקט הזה עדיין אין נכסים."
 
+#: src/components/machine-overview/node-secrets.tsx
+msgid "This project has no secrets declared yet."
+msgstr ""
+
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #~ msgid "This project is ready to publish and share over Git."
 #~ msgstr ""
@@ -13772,10 +13854,6 @@ msgstr "קובץ עקיבה זה אינו קשור לסשן עובד."
 msgid "This trace predates the call-stack view. Re-run the analysis (Refresh) to generate it."
 msgstr "עקבה זו קדומה מתצוגת stack הקריאות. הפעל מחדש את הניתוח (רענן) כדי ליצור אותה."
 
-#: src/components/assets/editor/WikiResolveView.tsx
-msgid "This Wiki target has no readable content."
-msgstr ""
-
 #: src/components/conversation/asset-review/StagedTranscriptPreview.tsx
 msgid "This transcript could not be read."
 msgstr "לא ניתן לקרוא את התמליל הזה."
@@ -13783,6 +13861,10 @@ msgstr "לא ניתן לקרוא את התמליל הזה."
 #: src/components/conversation/asset-review/StagedTranscriptPreview.tsx
 msgid "This transcript has no messages."
 msgstr "אין הודעות בתמליל הזה."
+
+#: src/components/assets/editor/WikiResolveView.tsx
+msgid "This Wiki target has no readable content."
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."

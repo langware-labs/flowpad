@@ -457,15 +457,14 @@ async def clear_all_data() -> ClearAllResult:
 
     # 4. Close DB, delete file, reinitialize
     from flow_sdk.db.database import close_db, init_db  # noqa: PLC0415
+    from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
+    from flow_sdk.db.db_relationship import DBRelationship  # noqa: PLC0415
     from flow_sdk.db.drivers.db_driver import (  # noqa: PLC0415
         _driver_instances,
         db_lifecycle_guard,
         get_db_driver,
-        LazyDBDriver,
         remove_db_sidecars,
     )
-    from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
-    from flow_sdk.db.db_relationship import DBRelationship  # noqa: PLC0415
 
     async def _wipe_and_reinit() -> None:
         # Serialize the close→unlink→init→repoint block against overlapping
