@@ -41,7 +41,14 @@ async def get_available_oauth_providers() -> List[OAuthProviderInfo]:
     ]
 
 
-def provider_env_var(name: str, display_name: str, credentials_name: str, icon: Optional[str]) -> EnvVar:
+def provider_env_var(
+    name: str,
+    display_name: str,
+    credentials_name: str,
+    icon: Optional[str],
+    kind: Optional[str] = None,
+    scopes: Optional[list[str]] = None,
+) -> EnvVar:
     """One provider, as a value-free pointer row."""
     return EnvVar(
         name=name,
@@ -51,13 +58,22 @@ def provider_env_var(name: str, display_name: str, credentials_name: str, icon: 
         ref_type=BuiltinEntityType.USER,
         ref_name=credentials_name,
         icon=icon,
+        oauth_kind=kind,
+        oauth_scopes=list(scopes or []),
     )
 
 
 def oauth_provider_rows() -> EntityEnvVars:
     return EntityEnvVars(
         values=[
-            provider_env_var(p.name, p.display_name, p.user_credentials_name, p.icon)
+            provider_env_var(
+                p.name,
+                p.display_name,
+                p.user_credentials_name,
+                p.icon,
+                kind=p.kind.value,
+                scopes=list(p.scopes),
+            )
             for p in local_providers()
         ]
     )

@@ -22,10 +22,29 @@ write, or a connected provider reads as MISSING: ``github_credentials``
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Optional
 
 GITHUB = "github"
 ANTHROPIC = "anthropic"
+
+
+class OAuthFlowKind(str, Enum):
+    """Which OAuth grant a provider's flow uses.
+
+    Surfaced to the user, because the three are not interchangeable from where
+    they sit: a code grant hands the browser to the provider and comes back with
+    a full-scope token, while a device grant makes them retype a code and — for
+    GitHub — is limited to what a device-flow app is registered for.
+    """
+
+    #: Authorization code, redirect handled by the hub. The real thing.
+    CODE = "code"
+    #: Authorization code + PKCE, redirect to a loopback port on this machine.
+    #: Also a real code grant; the redirect target is what differs.
+    LOOPBACK = "loopback"
+    #: RFC 8628 device grant — a user code typed into the provider's site.
+    DEVICE = "device"
 
 
 @dataclass(frozen=True)
@@ -36,6 +55,8 @@ class LocalOAuthProvider:
     display_name: str
     user_credentials_name: str
     icon: Optional[str] = None
+    kind: OAuthFlowKind = OAuthFlowKind.LOOPBACK
+    scopes: tuple[str, ...] = ()
 
 
 _PROVIDERS: dict[str, LocalOAuthProvider] = {
@@ -44,12 +65,18 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         display_name="GitHub",
         user_credentials_name="github_credentials",
         icon="Github",
+        # The DESKTOP-only grant. Preferred only when the hub cannot run the real
+        # code flow — see `_handle_auth`.
+        kind=OAuthFlowKind.DEVICE,
+        scopes=("repo", "read:org"),
     ),
     ANTHROPIC: LocalOAuthProvider(
         name=ANTHROPIC,
         display_name="Anthropic",
         user_credentials_name="anthropic_credentials",
         icon="Sparkles",
+        kind=OAuthFlowKind.LOOPBACK,
+        scopes=("user:profile", "user:inference"),
     ),
 }
 

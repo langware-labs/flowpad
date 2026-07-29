@@ -1,4 +1,10 @@
-import { ConnectionStatus, TypeId, type OAuthConnection, type OAuthDetachResult } from '@sdk';
+import {
+  ConnectionStatus,
+  TypeId,
+  type OAuthConnection,
+  type OAuthDetachResult,
+  type OAuthFlowKind,
+} from '@sdk';
 import { CheckCircle } from 'lucide-react';
 import * as React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -27,7 +33,17 @@ export interface ConnectionsManagerProps {
 // Extended OAuth connection type that includes providerName for internal use
 interface ExtendedOAuthConnection extends OAuthConnection {
   providerName: string;
+  kind?: OAuthFlowKind;
+  scopes?: string[];
 }
+
+/** What each grant asks of the user, in their terms — the column is only worth a
+ *  row's width if it says something they can act on. */
+const FLOW_KIND_LABEL: Record<OAuthFlowKind, { label: string; hint: string }> = {
+  code: { label: 'OAuth', hint: 'Authorization code — you approve in the browser and come back' },
+  loopback: { label: 'OAuth + PKCE', hint: 'Authorization code with PKCE, redirected back to this machine' },
+  device: { label: 'Device code', hint: 'You type a short code into the provider’s site' },
+};
 
 export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   projectTypeId,
@@ -87,6 +103,8 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       providerName: provider.name, // Keep the actual provider name for API calls
       status: providerStatuses[provider.name] || ConnectionStatus.DISCONNECTED,
       connectedAt: connectionTimestamps[provider.name.toLowerCase()],
+      kind: provider.kind,
+      scopes: provider.scopes,
     }));
   }, [availableProviders, providerStatuses, connectionTimestamps]);
 
@@ -186,8 +204,10 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[200px]"><Trans>Provider</Trans></TableHead>
-              <TableHead className="w-[250px]"><Trans>Status</Trans></TableHead>
+              <TableHead className="w-[180px]"><Trans>Provider</Trans></TableHead>
+              <TableHead className="w-[130px]"><Trans>Sign-in</Trans></TableHead>
+              <TableHead><Trans>Access requested</Trans></TableHead>
+              <TableHead className="w-[220px]"><Trans>Status</Trans></TableHead>
               <TableHead className="w-[150px]"><Trans>Actions</Trans></TableHead>
             </TableRow>
           </TableHeader>
@@ -218,7 +238,42 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                       <span className="align-middle">{connection.provider}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="w-[250px]">
+
+                  <TableCell className="w-[130px]" data-testid={`connection-kind-${connection.id}`}>
+                    {connection.kind ? (
+                      <span
+                        className="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground"
+                        title={FLOW_KIND_LABEL[connection.kind].hint}
+                      >
+                        {FLOW_KIND_LABEL[connection.kind].label}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground/60">—</span>
+                    )}
+                  </TableCell>
+
+                  <TableCell data-testid={`connection-scopes-${connection.id}`}>
+                    {connection.scopes?.length ? (
+                      <div className="flex flex-wrap gap-1">
+                        {connection.scopes.map((scope) => (
+                          <span
+                            key={scope}
+                            className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+                          >
+                            {scope}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      // Not "no scopes" — the side that owns the flow did not
+                      // publish them. Saying "none" would be a lie.
+                      <span className="text-xs text-muted-foreground/60">
+                        <Trans>Shown at approval</Trans>
+                      </span>
+                    )}
+                  </TableCell>
+
+                  <TableCell className="w-[220px]">
                     <TooltipProvider>
                       <div className="flex items-center gap-2">
                         {connection.status === ConnectionStatus.CONNECTED ? (

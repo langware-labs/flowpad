@@ -122,3 +122,49 @@ async def poll_hub_credential(credentials_name: str, timeout: int = OAUTH_CALLBA
             return True
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
     return await hub_holds_credential(credentials_name)
+
+
+async def hub_credential_value(credentials_name: str) -> Optional[str]:
+    """Read the token the hub stored, through the one route that returns a value.
+
+    Needed only for providers with LOCAL consumers of the raw token: `git push`,
+    the `gh` capability and the repo actions all read `github_credentials` out of
+    local SOD, so a GitHub token that exists only on the hub would leave them
+    broken while the Connections tab claimed success.
+
+    Providers with no local consumer (Slack) keep their token on the hub and are
+    resolved at launch time, which is the design everything else follows.
+    """
+    from flow_sdk.core.oauth.hub_providers import _cloud_user_id  # noqa: PLC0415
+
+    user_id = _cloud_user_id()
+    if not user_id:
+        return None
+    try:
+        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+
+        payload = await hub_get(
+            BuiltinEntityType.USER, user_id, action="env-var", sub_path=f"{credentials_name}/value"
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[oauth] could not read %r from the hub: %s", credentials_name, e)
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    if not isinstance(data, dict):
+        return None
+    value = data.get("value")
+    return str(value) if value else None
+
+
+def hub_credentials_name_for(provider: str) -> str:
+    """The hub's own naming for a provider's user token: ``{PROVIDER}_OAUTH_USER_TOKEN``.
+
+    Mirrors ``OauthProviderConfig.user_credentials_name`` on the hub. Needed
+    because a provider can be named differently on each side — GitHub's token is
+    ``github_credentials`` locally and ``GITHUB_OAUTH_USER_TOKEN`` on the hub —
+    and the poll has to watch the hub's name while the local row keeps ours.
+    """
+    return f"{(provider or '').strip().upper()}_OAUTH_USER_TOKEN"
