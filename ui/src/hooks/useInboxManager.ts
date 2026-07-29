@@ -1,4 +1,4 @@
-import { ConnectionManager, dataManager, InboxManager, TypeId } from '@sdk';
+import { ConnectionManager, dataManager, hubModeReady, InboxManager, isHubOnly, TypeId } from '@sdk';
 import { useEffect, useRef, useState } from 'react';
 import { useEntity } from './entity-hooks/useEntity';
 
@@ -21,30 +21,40 @@ import { useEntity } from './entity-hooks/useEntity';
 export function useInboxManager(): { unread: number } {
   const [uuid, setUuid] = useState<string | null>(null);
 
-  const { data, refetch } = useEntity<InboxManager>(
-    uuid ? new TypeId(InboxManager.type, uuid) : null,
-    { watch: true },
-  );
+  const { data, refetch } = useEntity<InboxManager>(uuid ? new TypeId(InboxManager.type, uuid) : null, { watch: true });
   const refetchRef = useRef(refetch);
   refetchRef.current = refetch;
 
   useEffect(() => {
     let cancelled = false;
-    dataManager
-      .getByTypeId(new TypeId(InboxManager.type, '@local'))
-      .then((entity) => {
-        if (!cancelled && entity?.id) setUuid(entity.id);
-      })
-      .catch(() => {
-        // Backend without the inbox_manager type (older server) — count stays 0.
-      });
-
+    let listening = false;
     const cm = ConnectionManager.getInstance();
     const onOpen = () => void refetchRef.current?.();
-    cm.on('on_open', onOpen);
+
+    void (async () => {
+      // `inbox_manager` is a desktop-only type — the hub backend rejects it
+      // with 422, and the WS-reconnect refetch would re-probe it endlessly.
+      // This hook mounts at app root, before bootstrap seeds the signal, so
+      // await readiness before deciding (see utils/hub-runtime.ts).
+      await hubModeReady();
+      if (cancelled || isHubOnly()) return;
+
+      dataManager
+        .getByTypeId(new TypeId(InboxManager.type, '@local'))
+        .then((entity) => {
+          if (!cancelled && entity?.id) setUuid(entity.id);
+        })
+        .catch(() => {
+          // Backend without the inbox_manager type (older server) — count stays 0.
+        });
+
+      cm.on('on_open', onOpen);
+      listening = true;
+    })();
+
     return () => {
       cancelled = true;
-      cm.off('on_open', onOpen);
+      if (listening) cm.off('on_open', onOpen);
     };
   }, []);
 
@@ -59,7 +69,6 @@ export function useInboxManager(): { unread: number } {
 export function useSyncOsBadge(): void {
   const { unread } = useInboxManager();
   useEffect(() => {
-    (window as unknown as { electronAPI?: { setBadge?: (n: number) => void } })
-      .electronAPI?.setBadge?.(unread);
+    (window as unknown as { electronAPI?: { setBadge?: (n: number) => void } }).electronAPI?.setBadge?.(unread);
   }, [unread]);
 }
