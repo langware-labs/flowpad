@@ -901,7 +901,7 @@ class Entity(DBEntity):
             entity.type = record_type
             # Hub-owned fields (the LWW clock), captured before the setattr loop
             # can overwrite them with stale disk-mirrored values from meta_dict().
-            hub_owned = {f: getattr(entity, f, None) for f in type(entity).HUB_AUTHORITATIVE_FIELDS}
+            hub_owned = {f: getattr(entity, f, None) for f in type(entity).fields_owned_by_hub()}
             all_updates = {**data, **record_domain, **stamp}
             for k, v in all_updates.items():
                 # Restrict to declared model fields so read-only computed
@@ -913,9 +913,8 @@ class Entity(DBEntity):
                     v = TypeAdapter(field.annotation).validate_python(v)
                 setattr(entity, k, v)
             if getattr(entity, "remote", False):
-                # Hub-authoritative rows: restore HUB_AUTHORITATIVE_FIELDS — a
-                # disk→DB re-index must not move the hub's clock (see the
-                # classvar). Index freshness is carried by the on-disk .hash
+                # Hub-authoritative rows: restore the fields declared HUB_READ —
+                # a disk→DB re-index must not move the hub's clock. Index freshness is carried by the on-disk .hash
                 # sentinel, not by updated_date. The driver preserves a
                 # non-None updated_date on save.
                 for f, v in hub_owned.items():
@@ -2198,14 +2197,27 @@ class Entity(DBEntity):
     @classmethod
     def merge_hub_payload(cls, local: "Entity", hub_payload: Dict[str, Any]) -> Dict[str, Any]:
         """Build a ``model_validate``-able dict that refreshes hub-owned fields
-        from ``hub_payload`` while preserving this type's ``LOCAL_ONLY_FIELDS``
-        (the locally-authoritative state the hub must never overwrite). The
-        hub's ``updated_date`` is carried through so the local save records the
-        hub timestamp (the driver preserves a non-None ``updated_date``)."""
+        from ``hub_payload`` while preserving the fields the hub may not
+        overwrite — everything declared ``PRIVATE`` (never accepted from outside)
+        or ``HUB_WRITE`` (per-device state ABOUT a shared thing: has THIS machine
+        downloaded the body, has THIS user read it).
+
+        The hub's ``updated_date`` is carried through so the local save records
+        the hub timestamp (the driver preserves a non-None ``updated_date``).
+        """
         merged = dict(hub_payload)
         merged["id"] = local.id
-        for field in cls.LOCAL_ONLY_FIELDS:
+        for field in cls.fields_not_accepted_from_hub():
             if field in cls.model_fields:
+                merged[field] = getattr(local, field, None)
+        # A blob field ABSENT from the payload means "not expanded", never "set
+        # to empty". Hub ops built from the DB row carry no blob at all (the
+        # sibling guard for the ""-valued case lives in `materialize_remote_task`
+        # / `hub_bridge._fill_empty_blobs`), and letting the absence through
+        # blanks a body we hold: the merged row validates with the blob None and
+        # the save writes that back.
+        for field in cls.get_blob_fields_names():
+            if field not in hub_payload and field in cls.model_fields:
                 merged[field] = getattr(local, field, None)
         # This IS the hub→local refresh boundary — stamp it (after the
         # LOCAL_ONLY restore loop, which would otherwise carry the stale value).
