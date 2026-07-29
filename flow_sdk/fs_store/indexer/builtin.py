@@ -90,10 +90,6 @@ def build_default_indexer() -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.codex_sessions import codex_sessions_fn
     from flow_sdk.fs_store.indexer.functions.copilot_sessions import copilot_sessions_fn
     from flow_sdk.fs_store.indexer.functions.dynamic_workflows import dynamic_workflows_fn
-    from flow_sdk.fs_store.indexer.functions.installed_transcripts import (
-        installed_transcript_output_types,
-        installed_transcripts_fn,
-    )
     from flow_sdk.fs_store.indexer.functions.journey import journey_fn
     from flow_sdk.fs_store.indexer.functions.markdown import (
         markdown_flat_fn,
@@ -219,21 +215,6 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.CWD_ROOT, command_fn, RecordType.COMMAND)
     idx.add_function(RecordType.CWD_ROOT, project_folder_walker_fn, RecordType.FOLDER)
     idx.add_function(RecordType.CWD_ROOT, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)
-
-    # Installed (received) transcripts: <harness prefix>/transcripts/*.jsonl under
-    # every scope root. The per-worker walkers above only glob each harness's OWN
-    # session store, so without this an installed transcript has no row and its
-    # attachment chip can never resolve. One walker covers all workers (the subdir
-    # → type map is derived from the type registry), registered on the same roots
-    # a transcript can install into: project scope (REAL_PROJECT_CWD / CWD_ROOT)
-    # and user scope (USER_HOME_FOLDER).
-    _transcript_outputs = installed_transcript_output_types()
-    for _root in (
-        RecordType.USER_HOME_FOLDER,
-        RecordType.REAL_PROJECT_CWD,
-        RecordType.CWD_ROOT,
-    ):
-        idx.add_function(_root, installed_transcripts_fn, _transcript_outputs)
 
     # Repo assets: the recursive agentic-assets/<type> hierarchy. One walker
     # discovers the whole nested tree per scope root (in-function recursion), so

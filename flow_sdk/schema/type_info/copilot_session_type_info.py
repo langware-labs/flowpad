@@ -8,7 +8,6 @@ from flow_sdk.fs_store.indexer.functions.copilot_sessions import (
     copilot_session_stable_key,
     extract_copilot_session,
 )
-from flow_sdk.fs_store.placement import TRANSCRIPTS_FAMILY
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
 
@@ -24,7 +23,7 @@ COPILOT_SESSION = TypeMetadata(
     # onto the ``.github`` prefix (shared with the github harness, pre-existing).
     asset_class="harness",
     harness="copilot",
-    family=TRANSCRIPTS_FAMILY,
+    family="transcripts",
     main_layout="file",
     main_ext=".jsonl",
     receive_row_overrides={"remote": False, "received": True},

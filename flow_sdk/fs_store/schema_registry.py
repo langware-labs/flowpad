@@ -838,21 +838,6 @@ class SchemaRegistry:
         return [info.type_name for info in cls.repo_family_to_info().values()]
 
     @classmethod
-    def main_subdir_to_info(cls, family: str) -> "dict[str, TypeInfo]":
-        """Types declaring ``family``, keyed by their scope-relative install
-        subdir (``main_subdir``) — e.g. for the transcripts family:
-        ``{".claude/transcripts": …, ".agents/transcripts": …}``.
-
-        One family generally maps to several subdirs because each type's harness
-        contributes its own prefix, so a walker over "where this family installs"
-        needs the whole set. Generic on purpose: the registry knows how to index
-        its types, and the CALLER owns which family it cares about — keeping any
-        one domain's vocabulary out of the registry.
-        """
-        cls._ensure_loaded()
-        return {info.main_subdir: info for info in cls._types.values() if info.family == family and info.main_subdir}
-
-    @classmethod
     def get_public_entity_types(cls) -> list[str]:
         cls._ensure_loaded()
         return [k for k, v in cls._types.items() if v.entity_cls is not None and v.api_visible]

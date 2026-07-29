@@ -8,7 +8,6 @@ from flow_sdk.fs_store.indexer.functions.claude_sessions import (
     claude_session_stable_key,
     extract_claude_session,
 )
-from flow_sdk.fs_store.placement import TRANSCRIPTS_FAMILY
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
 
@@ -31,7 +30,7 @@ CLAUDE_SESSION = TypeMetadata(
     # the class that allows a global install alongside a project one.
     asset_class="harness",
     harness="claude",
-    family=TRANSCRIPTS_FAMILY,
+    family="transcripts",
     main_layout="file",
     main_ext=".jsonl",
     # No ``receive_policy``: a shared transcript stages and waits for the normal
