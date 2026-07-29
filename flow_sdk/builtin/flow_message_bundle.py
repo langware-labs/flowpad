@@ -260,7 +260,7 @@ async def _pack_remote_worker_session_attachment(entry_id: str, attachment_dir: 
     receiver via ``RemoteWorkerSession.apply_snapshot`` (guest adopts
     host-authoritative fields by activity clock; a host row is never
     regressed). Serialized at pack/upload time, so every session message —
-    prompts, PromptResult replies, SESSION_EVENT lines — ships the session's
+    prompts, PromptCompletion replies, SESSION_EVENT lines — ships the session's
     state as of that turn for free. ``host_process_id`` / ``project_id`` are
     host-local (path-leaking) and never travel — the include list is
     ``RemoteWorkerSession.SNAPSHOT_FIELDS``."""

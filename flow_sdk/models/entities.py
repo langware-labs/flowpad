@@ -111,9 +111,9 @@ except ImportError as e:
     print(f"[WARN] Failed to import RemoteWorkerSession: {e}")
 
 try:
-    from flow_sdk.builtin.prompt_result import PromptResult  # noqa: F401
+    from flow_sdk.builtin.prompt_completion import PromptCompletion  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import PromptResult: {e}")
+    print(f"[WARN] Failed to import PromptCompletion: {e}")
 
 try:
     from flow_sdk.builtin.cron_event import CronEvent  # noqa: F401
