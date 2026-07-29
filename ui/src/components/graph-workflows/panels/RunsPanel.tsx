@@ -6,7 +6,7 @@
  * journals on demand.
  */
 import { useEffect, useState } from 'react';
-import { agenticFlows, type RunJournalEntry } from '@sdk/services/graph-workflows';
+import { graphWorkflows, type RunJournalEntry } from '@sdk/services/graph-workflows';
 import { asStr, fmtRelative, parseIsoMs } from '../fmt';
 import { useStudio } from '../store';
 
@@ -79,7 +79,7 @@ export function RunsPanel() {
   const replay = () => {
     if (!flowId || !selectedRunId) return;
     setActionStatus(null);
-    void agenticFlows
+    void graphWorkflows
       .replayRun(flowId, selectedRunId)
       .then((res) => setActionStatus(res?.run_id ? `▶ replayed as ${res.run_id.slice(0, 8)}` : 'replay failed'))
       .catch((e) => setActionStatus(String(e)));
@@ -88,7 +88,7 @@ export function RunsPanel() {
   const reexecute = (seq: number) => {
     if (!flowId || !selectedRunId) return;
     setActionStatus(null);
-    void agenticFlows
+    void graphWorkflows
       .reexecute(flowId, selectedRunId, seq)
       .then((res) => setActionStatus(res?.run_id ? `▶ #${seq} re-run as ${res.run_id.slice(0, 8)}` : 're-run failed'))
       .catch((e) => setActionStatus(String(e)));
@@ -101,7 +101,7 @@ export function RunsPanel() {
     }
     let cancelled = false;
     const load = () =>
-      void agenticFlows
+      void graphWorkflows
         .fetchRunJournal(flowId, selectedRunId)
         .then((j) => {
           if (!cancelled && j) setEntries(j);

@@ -22,6 +22,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
 
+
 def graph_workflows_home_dir() -> Path:
     """Default location for user-scope graph workflows.
 
@@ -31,13 +32,12 @@ def graph_workflows_home_dir() -> Path:
     where the shared ``repo_assets_fn`` walker looks.
     """
     from flow_sdk.fs_store.placement import Scope, resolve_destination
-    from flow_sdk.instance_settings import get_instance_settings
 
-    dest = resolve_destination(
-        EntityType.GRAPH_WORKFLOW.value, Scope.USER, default_worker="claude"
-    )
-    if dest is None:  # pragma: no cover — REPO types always resolve a user scope
-        return get_instance_settings().user_home / "agentic-assets" / "graph_workflow"
+    # REPO declares user_scope, and the type is registered, so this always
+    # resolves — a None here is a registry bug worth surfacing, not papering
+    # over with a second hand-rolled copy of the layout rule.
+    dest = resolve_destination(EntityType.GRAPH_WORKFLOW.value, Scope.USER, default_worker="claude")
+    assert dest is not None, "GRAPH_WORKFLOW has no resolved placement — check its TypeInfo"
     return dest
 
 

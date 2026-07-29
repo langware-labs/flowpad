@@ -4,7 +4,7 @@
  * Semantic truth is the flow folder's graph.json (doc); layout truth is
  * display.json. Both load/persist through the folder FSRef injected by the
  * view (whiteboard pattern). Live run/node state is push-driven from the
- * agenticFlows service streams.
+ * graphWorkflows service streams.
  */
 import { create } from 'zustand';
 import type {

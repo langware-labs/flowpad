@@ -3,13 +3,13 @@
  * flow, whiteboard pattern). The dock pointer carries the entity
  * (`graph_workflow-<id>`); the view resolves it, builds the folder FSRef from
  * `asset_ref`, and reads/writes graph.json (semantic) + display.json (layout)
- * with debounced persistence. Liveness is push-driven via the agenticFlows
+ * with debounced persistence. Liveness is push-driven via the graphWorkflows
  * service streams (flow_run_event_msg / flow_node_status_msg).
  */
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { GraphWorkflow, FSRef, TypeId, ViewType } from '@sdk';
 import {
-  agenticFlows,
+  graphWorkflows,
   type GraphWorkflowDoc,
   type GraphWorkflowNodeStatusMessage,
   type GraphWorkflowRunEventMessage,
@@ -133,7 +133,7 @@ export function GraphWorkflowsView() {
           doc: parsedDoc,
           display,
         });
-        const runs = await agenticFlows.listRuns(typeId.id).catch(() => undefined);
+        const runs = await graphWorkflows.listRuns(typeId.id).catch(() => undefined);
         if (!cancelled && runs) useStudio.getState().setRuns(runs);
       } catch (e) {
         if (!cancelled) useStudio.getState().setBootError(String(e));
@@ -162,7 +162,7 @@ export function GraphWorkflowsView() {
       useStudio.getState().applyRunEvent(msg);
       const flowId = useStudio.getState().flowId;
       if (flowId && msg.flow_id === flowId && (msg.kind === 'run_start' || msg.kind === 'run_end')) {
-        void agenticFlows.listRuns(flowId).then((runs) => {
+        void graphWorkflows.listRuns(flowId).then((runs) => {
           if (runs && useStudio.getState().flowId === flowId) useStudio.getState().setRuns(runs);
         });
       }
@@ -171,15 +171,15 @@ export function GraphWorkflowsView() {
       useStudio.getState().applyNodeStatus(msg);
       handleNodeStatusForProcWatch(msg);
     };
-    void agenticFlows
+    void graphWorkflows
       .bootstrap()
       .then(() => useStudio.getState().setConnected(true))
       .catch((e) => useStudio.getState().setBootError(String(e)));
-    agenticFlows.on('run_event', onRunEvent);
-    agenticFlows.on('node_status', onNodeStatus);
+    graphWorkflows.on('run_event', onRunEvent);
+    graphWorkflows.on('node_status', onNodeStatus);
     return () => {
-      agenticFlows.off('run_event', onRunEvent);
-      agenticFlows.off('node_status', onNodeStatus);
+      graphWorkflows.off('run_event', onRunEvent);
+      graphWorkflows.off('node_status', onNodeStatus);
     };
   }, []);
 
@@ -198,7 +198,7 @@ export function GraphWorkflowsView() {
     return (
       <div className="graph-workflows">
         <div className="afl-empty">
-          <div className="eye">agentic flows</div>
+          <div className="eye">graph workflows</div>
           <h2>No flow selected</h2>
           <p>Pick a flow from the left menu, or create one with “+ New flow”.</p>
         </div>
@@ -221,7 +221,7 @@ export function GraphWorkflowsView() {
     return (
       <div className="graph-workflows">
         <div className="afl-empty">
-          <div className="eye">agentic flows</div>
+          <div className="eye">graph workflows</div>
           <h2>Loading…</h2>
         </div>
       </div>

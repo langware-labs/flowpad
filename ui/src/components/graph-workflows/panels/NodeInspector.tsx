@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTriggers } from '@src/hooks/useTriggers';
 import { useAgents } from '@src/hooks/useAgents';
 import {
-  agenticFlows,
+  graphWorkflows,
   functionRuntime,
   type GraphWorkflowDocNode,
   type GraphWorkflowFunctionInfo,
@@ -180,7 +180,7 @@ function FunctionPicker({
   const [registry, setRegistry] = useState<GraphWorkflowFunctionInfo[]>([]);
   useEffect(() => {
     let cancelled = false;
-    void agenticFlows
+    void graphWorkflows
       .listFunctions()
       .then((fns) => {
         if (!cancelled && fns) setRegistry(fns);

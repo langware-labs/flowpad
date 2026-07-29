@@ -179,7 +179,7 @@ EXPECTED = {
     "TAG": "tag",
     "WIKI": "wiki",
     "WIKI_ENTRY": "wiki_entry",
-    "GRAPH_WORKFLOW": "graph_workflow", "GRAPH_WORKFLOW_NODE": "flow_node",
+    "GRAPH_WORKFLOW": "graph_workflow", "GRAPH_WORKFLOW_NODE": "graph_workflow_node",
     "GRAPH_WORKFLOW_RUN": "graph_workflow_run",
     # Journeys (0.2.105): folder-backed guided-onboarding doc + per-user
     # DB-only journal — additive members, no existing value changed.
