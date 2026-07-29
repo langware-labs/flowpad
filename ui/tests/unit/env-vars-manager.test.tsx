@@ -57,16 +57,13 @@ describe('EnvVarsManager', () => {
   });
   afterEach(() => cleanup());
 
-  it('does not render the API key panel unless asked', () => {
+  it('never renders the user-scoped API key panel', () => {
+    // This table is ENTITY-scoped. The panel is USER-scoped and used to be
+    // fused in behind a flag, which made every mount fetch user API keys it
+    // would not show. Hosts that want both compose them (DeskEnvApiKeyPanel).
     render(<EnvVarsManager entityTypeId={PROJECT} />);
 
     expect(screen.queryByTestId('flowpad-api-key-panel')).toBeNull();
-  });
-
-  it('renders it when a host opts in', () => {
-    render(<EnvVarsManager entityTypeId={PROJECT} apiKeyPanel />);
-
-    expect(screen.getByTestId('flowpad-api-key-panel')).toBeTruthy();
   });
 
   it('owns no frame, and takes a className', () => {

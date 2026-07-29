@@ -11,17 +11,11 @@ import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 import { useAuth, useEntityEnv, useEntityEnvMutations } from '@sdk/react/hooks';
-import { FlowPadApiKeyPanel, GeneratedApiKeyCallout } from './api-keys-view/FlowPadApiKeyPanel';
-import { useUserApiKeys } from './api-keys-view/use-user-api-keys';
 import { AlertCircle, CheckCircle, Edit, FileText, Key, Plus, Trash2, XCircle } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import React, { useState } from 'react';
 import { MAX_ENV_VAR_VALUE_LENGTH } from '../constants/validation';
 import { getEnvVarTypeLabel, isConfidential } from '../types/envVarTypes';
-
-interface EntityEnvVars {
-  values: EnvVarStatus[];
-}
 
 interface EnvVarApiInfo {
   name: string;
@@ -40,14 +34,6 @@ export interface EnvVarsManagerProps {
   className?: string;
   /** Render the "Environment Variables" heading + Add button. */
   header?: boolean;
-  /**
-   * Render the FlowPad API key panel beneath the table.
-   *
-   * Off by default, and that is the point: API keys belong to the USER while
-   * this table belongs to an ENTITY. Fusing the two made one scope look like
-   * the other, so a new mount has to ask for it deliberately.
-   */
-  apiKeyPanel?: boolean;
   onEnvVarSaved?: (envVar: { name: string; var_type: EnvVarType; description?: string }) => void;
   onEnvVarDeleted?: (envVarName: string) => void;
   onEnvVarUpdated?: (envVarName: string) => void;
@@ -57,7 +43,6 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
   entityTypeId,
   className,
   header = true,
-  apiKeyPanel = false,
   onEnvVarSaved,
   onEnvVarDeleted,
   onEnvVarUpdated,
@@ -68,11 +53,8 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
   const [newEnvVar, setNewEnvVar] = useState<Partial<EnvVar>>({});
   const { user } = useAuth();
   const { table, isLoading, error } = useEntityEnv({ entityTypeId, enabled: !!user?.id });
-  const envVarsTable: EntityEnvVars = { values: table?.values || [] };
+  const values = table?.values ?? [];
   const envMutations = useEntityEnvMutations(entityTypeId);
-  // API keys are USER-scoped while this table is ENTITY-scoped; `apiKeyPanel`
-  // is what keeps that distinction visible at each mount.
-  const apiKeys = useUserApiKeys({ onMutated: () => envMutations.invalidate() });
 
   // Helper functions to render status and type information
   const getStatusBadge = (row: EnvVarStatus) => {
@@ -156,7 +138,7 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
         }
 
         // Look up the provider directly from the table values
-        const providerRow = envVarsTable?.values.find(
+        const providerRow = values.find(
           (r) =>
             r.var_type === EnvVarType.OAUTH_PROVIDER_ID &&
             (r.name.toLowerCase() === providerName || providerName.includes(r.name.toLowerCase())),
@@ -405,8 +387,8 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {envVarsTable?.values && envVarsTable.values.length > 0 ? (
-                envVarsTable.values.map((envVar) => (
+              {values.length > 0 ? (
+                values.map((envVar) => (
                   <TableRow key={envVar.name}>
                     <TableCell className="font-mono">
                       <div className="flex items-center gap-2">
@@ -459,11 +441,6 @@ export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
           </Table>
         )}
       </div>
-
-      {apiKeyPanel && <FlowPadApiKeyPanel keys={apiKeys} className="mt-6" />}
-      {apiKeyPanel && apiKeys.generatedKey && (
-        <GeneratedApiKeyCallout apiKey={apiKeys.generatedKey} className="mt-6" />
-      )}
 
       {showEditDialog && (
         <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
