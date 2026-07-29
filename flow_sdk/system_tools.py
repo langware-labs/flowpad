@@ -468,11 +468,10 @@ async def clear_all_data() -> ClearAllResult:
     from flow_sdk.db.db_relationship import DBRelationship  # noqa: PLC0415
 
     async def _wipe_and_reinit() -> None:
-        # Serialize the entire close→unlink→init→repoint→bootstrap block against
-        # any overlapping lifecycle swap AND against fresh-session opens so no two
-        # engines can straddle the unlink. The guard also flags this coroutine so
-        # the nested session opens below (init_db / bootstrap rebuild) bypass the
-        # same non-reentrant lock instead of self-deadlocking.
+        # Serialize the close→unlink→init→repoint block against overlapping
+        # lifecycle swaps and fresh-session opens so no two engines can straddle
+        # the unlink. Bootstrap deliberately runs after this guard; it takes
+        # per-record locks and must preserve the normal record→session order.
         async with db_lifecycle_guard():
             # Close the SQLiteDriver's own engine before wiping the file
             sqlite_driver = _driver_instances.get("sqlite")
@@ -494,17 +493,25 @@ async def clear_all_data() -> ClearAllResult:
             DBEntity._db = new_driver
             DBRelationship._db = new_driver
 
-            # Invalidate the bootstrap cache and immediately rebuild the @local
-            # entities. Without the rebuild, subsequent requests addressed via
-            # `/compute_node/@local/...` cannot resolve `@local` (it has just been
-            # wiped) and the request middleware returns "Invalid request" until the
-            # client happens to call /bootstrap again.
-            from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
-                bootstrap,
-                invalidate_bootstrap_cache,
-            )
-            invalidate_bootstrap_cache()
-            await bootstrap()
+        # Rebuild @local immediately after the atomic file/driver swap, but
+        # outside the lifecycle lock. Entity.save() takes a per-record sync
+        # lock before it opens a DB session. Holding the lifecycle lock while
+        # bootstrap seeds entities reverses that normal order and deadlocks
+        # when a background writer already owns a record lock and is waiting
+        # for the lifecycle swap to finish (capability discovery exposed this
+        # on minute-boundary clears). Once the new driver is repointed, the
+        # destructive swap is complete and normal record→session ordering can
+        # safely resume.
+        #
+        # Without this rebuild, subsequent requests addressed via
+        # `/compute_node/@local/...` cannot resolve `@local` and return
+        # "Invalid request" until a client happens to call /bootstrap again.
+        from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
+            bootstrap,
+            invalidate_bootstrap_cache,
+        )
+        invalidate_bootstrap_cache()
+        await bootstrap()
 
         # Re-seed the system projects (e.g. @flowpad_assistant). These are seeded
         # only by the startup-index path — the bootstrap() route handler above
