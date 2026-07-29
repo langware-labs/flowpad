@@ -97,7 +97,7 @@ async def materialize_remote_task(
 
     if not Task.is_stale(existing, data):
         return existing
-    changed = False
+    updates: dict[str, Any] = {}
     # A payload built from the hub's DB row carries blob fields EMPTY (they're
     # db-excluded), and "" is not None — merging it would blank a body we hold.
     # The bridge refills them when it can (``hub_bridge._fill_empty_blobs``);
@@ -113,8 +113,16 @@ async def materialize_remote_task(
         if k in blob_fields and v == "" and getattr(existing, k, None):
             continue
         if getattr(existing, k, None) != v:
-            setattr(existing, k, v)
-            changed = True
+            updates[k] = v
+    if updates:
+        # Hub projections include typed API metadata such as
+        # ``expand={"expansions": ["blobs"]}``.  Assigning those JSON values
+        # directly bypasses Pydantic and leaves an invalid dict on the live
+        # entity; the next blob save then expects ``EntityExpansion`` and
+        # crashes.  Reuse the entity's validated update seam for the whole
+        # hub-owned delta.
+        existing.apply_field_updates(updates)
+    changed = bool(updates)
     if not existing.remote:
         existing.remote = True
         changed = True
