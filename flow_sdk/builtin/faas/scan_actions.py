@@ -555,14 +555,12 @@ class ScanActionsMixin:
                 # blocks on the turn; it also logs any drain-task exception.
                 process._schedule_queue_drain("enqueue")
 
-            return ApiSuccessResponse(
-                data={
-                    "id": process.id,
-                    "type": process.type,
-                    "shell_id": process.shell_id,
-                    "pty_pid": getattr(process, "pty_pid", None),
-                }
-            )
+            data = process.model_dump(mode="json")
+            # ``pty_pid`` is not an AgenticProcess field, but the legacy
+            # identity-only response exposed it. Keep the key additively while
+            # returning the full authoritative entity projection.
+            data.setdefault("pty_pid", getattr(process, "pty_pid", None))
+            return ApiSuccessResponse(data=data)
 
         except Exception as e:
             logging.exception(f"ComputeNode {self.id} createProcess error: {e}")
