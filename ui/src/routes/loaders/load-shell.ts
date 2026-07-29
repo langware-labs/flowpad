@@ -39,16 +39,15 @@ import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigatio
 import type { ViewMode } from '@src/contexts/view-mode-context';
 
 /**
- * The URL-derived values that must SURVIVE the scope-align redirect in
- * `reconcileProcessScope` — one home for "what the redirect carries" instead of
- * a growing positional tail. The redirect rebuilds the URL from scratch (the
- * loader `requestPath` contract is pathname-only), so anything not listed here
- * is dropped; widening the contract to carry the whole search string is the
- * tracked deeper fix.
+ * The URL-derived values that must survive the scope-align redirect in
+ * `reconcileProcessScope`. `options` is the complete parsed query record: scope
+ * reconciliation owns only the scope keys and must preserve every unrelated
+ * option (view mode, side windows, deep-link metadata, and future additions).
  */
 export interface ProcessRouteCarry {
   scope?: ScopeFilter | null;
   viewMode?: ViewMode | null;
+  options?: Record<string, string>;
 }
 import { ViewType } from '@sdk';
 import { projectScope, scopeFilterEqual, type ScopeFilter } from '@src/lib/scope-filter';
@@ -242,8 +241,9 @@ async function routeDefaultShell(shellUrl: ShellUrlBuilder): Promise<void> {
  * diverge (open an oss chat while sapora-streams was active → URL carries
  * sapora's scope), `replace()` the URL onto the same pointer carrying the
  * process's own project scope. This runs at LOAD, so it also corrects deep
- * links / hard refresh / back-forward, not just the click path. Projectless
- * targets keep whatever scope was seeded (no entity project to project from).
+ * links / hard refresh / back-forward, not just the click path. A genuinely
+ * projectless target actively removes any seeded project scope so its tab and
+ * the mounted view agree on the Global owner.
  *
  * Keyed off entity IDENTITY only and run BEFORE the runtime phase, so the scope
  * follows `project_id` regardless of how `loadProcess` later resolves — PTY
@@ -259,20 +259,29 @@ async function reconcileProcessScope(
   const proc =
     AgenticProcess.getByIdFromCache<AgenticProcess>(processId) ??
     (await AgenticProcess.getById<AgenticProcess>(processId).catch(() => null));
-  if (!proc?.project_id) return; // projectless / unresolvable target — leave the seeded scope as-is
-  const want = projectScope(proc.project_id);
+  if (!proc) return;
+  const pathProject = !proc.project_id && proc.workdir
+    ? await Project.getProjectByPath(proc.workdir)
+    : null;
+  const ownerProjectId = proc.project_id ?? pathProject?.id ?? null;
+  const base = new DockPointer(
+    ViewType.SHELL,
+    proc.terminalDockPointer.pointer,
+    carry?.options,
+    detectLayout(requestPath),
+  );
+  if (!ownerProjectId) {
+    if (!carry?.scope) return;
+    const url = base
+      .withoutScopeFilter()
+      .withViewMode(carry?.viewMode ?? null)
+      .toUrl(requestPath);
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw replace(url);
+  }
+  const want = projectScope(ownerProjectId);
   if (carry?.scope && scopeFilterEqual(carry.scope, want)) return; // already aligned — no redirect loop
-  // NOTE: this scope-align redirect drops the incoming URL's query options
-  // (`?sideWindows=dir`, etc.) — `requestPath` is pathname-only (loaders.ts:73
-  // strips the query before it reaches here) and this DockPointer seeds
-  // options=undefined. Carrying deep-link options through the redirect needs the
-  // loader `requestPath` contract to include the search string (touches
-  // detectLayout / buildShellRedirectUrl across all routes) — tracked separately;
-  // not fixed here. See dir_panel_scroll.md.ts for the affected deep-link.
-  // ONE exception, threaded explicitly: `?viewMode`. It selects which surface
-  // the process's single shell URL shows (vibe workspace / chat pane / xterm),
-  // so dropping it here would silently land the user in the wrong one.
-  const url = new DockPointer(ViewType.SHELL, proc.terminalDockPointer.pointer, undefined, detectLayout(requestPath))
+  const url = base
     .withScopeFilter(want)
     .withViewMode(carry?.viewMode ?? null)
     .toUrl(requestPath);
@@ -451,7 +460,8 @@ export async function loadShellRoute(
 
   // All redirects below preserve the request's layout keyword (dock/dev/win)
   // so a /win/shell focus window never falls back into full-app chrome (§7).
-  const shellUrl: ShellUrlBuilder = (p?: string) => buildShellRedirectUrl(requestPath, p);
+  const shellUrl: ShellUrlBuilder = (p?: string) =>
+    buildShellRedirectUrl(requestPath, p, carry?.options);
 
   // Gate on the FlowSync WS being OPEN. The dispatch chain below
   // (loadProcess → process.start → shell.attachPty → _reattach → callActionOverWS)
