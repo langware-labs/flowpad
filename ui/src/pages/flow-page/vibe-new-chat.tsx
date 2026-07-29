@@ -3,7 +3,6 @@ import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/c
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { normalizePath, useProjectOpener } from '@src/components/open-project-component/use-open-project';
 import { NewProjectDialog, NewProjectFromGitDialog, useGitCloneDialogSubmit } from '@src/components/project-selector';
-import { RecentConversationsStrip } from '@src/components/project-activity-strip';
 import { notify } from '@src/notifications';
 import { dataContext } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
@@ -135,12 +134,6 @@ export function VibeNewChat() {
             <GitBranch className="h-3.5 w-3.5 shrink-0" />
             <Trans>Open from git</Trans>
           </button>
-        </div>
-        {/* Pending invitations are only actionable from the Inbox strip, and the
-            vibe home previously rendered no conversation surface at all — an
-            invitee landing here saw nothing to accept. */}
-        <div className="w-full max-w-md self-center">
-          <RecentConversationsStrip />
         </div>
         <VibeRecentSessions />
       </div>
