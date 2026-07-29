@@ -8,7 +8,7 @@ import CodeEditor from '@src/components/code-editor/CodeEditor';
 import { AssetCompareView } from '@src/components/code-editor/AssetCompareView';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { DocsViewer } from '@src/components/docs-viewer/DocsViewer';
-import EnvVarsManager from '@src/components/EnvVarsManager';
+import { EnvVarsManager } from '@src/components/EnvVarsManager';
 import { ExplorerView } from '@src/components/explorer-view';
 import { HooksManager } from '@src/components/hooks-manager';
 import { LensViewer } from '@src/components/lens-viewer';
@@ -331,6 +331,10 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
       case ViewType.ENVIRONMENT:
         return user?.id && dataContext.project?.typeId ? (
           <EnvVarsManager
+            className="h-full p-4"
+            // Legacy: the desk Environment tab has always hosted the user's
+            // API key panel. New mounts get it only if they ask.
+            apiKeyPanel
             entityTypeId={dataContext.project.typeId}
             onEnvVarSaved={addEnvVar}
             onEnvVarDeleted={deleteEnvVar}
@@ -364,7 +368,11 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
           />
         );
       case ViewType.API_KEYS:
-        return <ApiKeysView />;
+        return (
+          <div className="h-full overflow-auto p-4">
+            <ApiKeysView className="max-w-4xl" />
+          </div>
+        );
       case ViewType.AI_CONFIG:
         return <AIConfigView />;
       case ViewType.HOOKS:

@@ -1,13 +1,4 @@
-import {
-  ActionInfo,
-  ApiKey,
-  ApiKeyCredentials,
-  dataManager,
-  EntityEnv,
-  EnvStatusEnum,
-  EnvVarType,
-  TypeId,
-} from '@sdk';
+import { EnvStatusEnum, EnvVarStatus, EnvVarType, TypeId } from '@sdk';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -16,35 +7,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { Textarea } from '@src/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { errorMessage } from '@src/lib/error-message';
+import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
-import { useAuth, useEntityEnv } from '@sdk/react/hooks';
-import { useQueryClient } from '@tanstack/react-query';
+import { useAuth, useEntityEnv, useEntityEnvMutations } from '@sdk/react/hooks';
+import { FlowPadApiKeyPanel, GeneratedApiKeyCallout } from './api-keys-view/FlowPadApiKeyPanel';
+import { useUserApiKeys } from './api-keys-view/use-user-api-keys';
 import { AlertCircle, CheckCircle, Edit, FileText, Key, Plus, Trash2, XCircle } from 'lucide-react';
 import React, { useState } from 'react';
 import { MAX_ENV_VAR_VALUE_LENGTH } from '../constants/validation';
-import { BuiltinEntityType, getEnvVarTypeLabel, isConfidential } from '../types/envVarTypes';
-
-interface ApiKeyListItem {
-  id: string;
-  name: string;
-  description?: string;
-  visible_value: string;
-  target_typeid: string;
-  expires_at?: string;
-  last_used_at?: string;
-  is_active: boolean;
-}
-
-interface EnvVarStatus {
-  name: string;
-  description?: string;
-  var_type: EnvVarType;
-  visible_value?: string;
-  icon?: string;
-  var_status?: EnvStatusEnum;
-  ref_name?: string;
-  ref_type?: BuiltinEntityType | string;
-}
+import { getEnvVarTypeLabel, isConfidential } from '../types/envVarTypes';
 
 interface EntityEnvVars {
   values: EnvVarStatus[];
@@ -62,15 +34,29 @@ interface EnvVar extends EnvVarApiInfo {
   value: string;
 }
 
-interface EnvVarManagerProps {
+export interface EnvVarsManagerProps {
   entityTypeId: TypeId;
+  className?: string;
+  /** Render the "Environment Variables" heading + Add button. */
+  header?: boolean;
+  /**
+   * Render the FlowPad API key panel beneath the table.
+   *
+   * Off by default, and that is the point: API keys belong to the USER while
+   * this table belongs to an ENTITY. Fusing the two made one scope look like
+   * the other, so a new mount has to ask for it deliberately.
+   */
+  apiKeyPanel?: boolean;
   onEnvVarSaved?: (envVar: { name: string; var_type: EnvVarType; description?: string }) => void;
   onEnvVarDeleted?: (envVarName: string) => void;
   onEnvVarUpdated?: (envVarName: string) => void;
 }
 
-const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
+export const EnvVarsManager: React.FC<EnvVarsManagerProps> = ({
   entityTypeId,
+  className,
+  header = true,
+  apiKeyPanel = false,
   onEnvVarSaved,
   onEnvVarDeleted,
   onEnvVarUpdated,
@@ -78,48 +64,13 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
   const [editingEnvVar, setEditingEnvVar] = useState<EnvVar | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [newEnvVar, setNewEnvVar] = useState<Partial<EnvVar>>({});
-  const [generatedApiKey, setGeneratedApiKey] = useState<ApiKeyCredentials | null>(null);
-  const [hasFlowPadApiKey, setHasFlowPadApiKey] = useState(false);
-  const [apiKeysReloadTrigger, setApiKeysReloadTrigger] = useState(0);
-  const [userApiKeys, setUserApiKeys] = useState<ApiKeyListItem[]>([]);
   const { user } = useAuth();
-  const queryClient = useQueryClient();
-
-  // Use the unified hook to load environment variables table data
-  const { table, isLoading } = useEntityEnv({ entityTypeId, enabled: !!user?.id });
-
-  // Transform table data to the format expected by the component
-  const envVarsTable: EntityEnvVars = {
-    values: table?.values || [],
-  };
-
-  // Load API keys from the user (not from the project entityTypeId)
-  React.useEffect(() => {
-    const loadUserApiKeys = async () => {
-      if (!user?.typeId) return;
-
-      try {
-        const actionInfo = new ActionInfo('api-keys', user.typeId.type, user.typeId.id, 'GET');
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await dataManager.callAction<any, ApiKeyListItem[]>(actionInfo);
-        setUserApiKeys(result || []);
-      } catch (error) {
-        console.error('Failed to load API keys:', error);
-        setUserApiKeys([]);
-      }
-    };
-
-    void loadUserApiKeys();
-  }, [user?.typeId, apiKeysReloadTrigger]); // Re-fetch when trigger changes
-
-  // Check if there's already a FlowPad API key (only active keys)
-  const existingApiKey = React.useMemo(() => {
-    return userApiKeys.find((apiKey) => apiKey.name?.includes('FLOWPAD_API_KEY') && apiKey.is_active);
-  }, [userApiKeys]);
-
-  React.useEffect(() => {
-    setHasFlowPadApiKey(!!existingApiKey);
-  }, [existingApiKey]);
+  const { table, isLoading, error } = useEntityEnv({ entityTypeId, enabled: !!user?.id });
+  const envVarsTable: EntityEnvVars = { values: table?.values || [] };
+  const envMutations = useEntityEnvMutations(entityTypeId);
+  // API keys are USER-scoped while this table is ENTITY-scoped; `apiKeyPanel`
+  // is what keeps that distinction visible at each mount.
+  const apiKeys = useUserApiKeys({ onMutated: () => envMutations.invalidate() });
 
   // Helper functions to render status and type information
   const getStatusBadge = (row: EnvVarStatus) => {
@@ -263,45 +214,13 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
     }
 
     try {
-      const entityEnv = new EntityEnv(entityTypeId);
-      await entityEnv.delete(envVarName);
-
+      await envMutations.remove(envVarName);
       onEnvVarDeleted?.(envVarName);
-
-      // Invalidate the query cache to update other components
-      void queryClient.invalidateQueries({ queryKey: ['entity-env-table', entityTypeId.toString()] });
-
-      notify.success({
-        title: 'Success',
-        message: 'Environment variable deleted successfully',
-      });
+      notify.success({ title: 'Success', message: 'Environment variable deleted successfully' });
     } catch (error: unknown) {
-      let errorMessage = 'Failed to delete environment variable';
-
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === 'object' && error !== null) {
-        const errorObj = error as {
-          response?: {
-            data?: {
-              detail?: string;
-              message?: string;
-            };
-          };
-          detail?: string;
-          message?: string;
-        };
-        errorMessage =
-          errorObj?.response?.data?.detail ||
-          errorObj?.response?.data?.message ||
-          errorObj?.detail ||
-          errorObj?.message ||
-          'Failed to delete environment variable';
-      }
-
       notify.error({
         title: 'Error',
-        message: errorMessage,
+        message: errorMessage(error, 'Failed to delete environment variable'),
       });
     }
   };
@@ -314,111 +233,6 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
     return value.length <= MAX_ENV_VAR_VALUE_LENGTH;
   };
 
-  const handleGenerateApiKey = async () => {
-    if (!user?.typeId) {
-      notify.error({
-        title: 'Error',
-        message: 'User not logged in',
-      });
-      return;
-    }
-
-    try {
-      setGeneratedApiKey(await ApiKey.generateSelfKey(user.typeId));
-
-      // Reload API keys list by triggering useEffect dependency
-      setApiKeysReloadTrigger((prev) => prev + 1);
-
-      // Invalidate the query cache to refresh the table
-      if (entityTypeId) {
-        void queryClient.invalidateQueries({ queryKey: ['entity-env-table', entityTypeId.toString()] });
-      }
-    } catch (error: unknown) {
-      let errorMessage = 'Failed to generate API key';
-
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === 'object' && error !== null) {
-        const errorObj = error as {
-          response?: {
-            data?: {
-              detail?: string;
-              message?: string;
-            };
-          };
-          detail?: string;
-          message?: string;
-        };
-        errorMessage =
-          errorObj?.response?.data?.detail ||
-          errorObj?.response?.data?.message ||
-          errorObj?.detail ||
-          errorObj?.message ||
-          'Failed to generate API key';
-      }
-
-      notify.error({
-        title: 'API Key Generation',
-        message: errorMessage,
-      });
-    }
-  };
-
-  const handleDeleteApiKey = async (keyId: string) => {
-    if (!user?.typeId) {
-      notify.error({
-        title: 'Error',
-        message: 'User not logged in',
-      });
-      return;
-    }
-
-    try {
-      await ApiKey.deleteById(user.typeId, keyId);
-
-      // Optimistically update: remove the deleted key from state immediately
-      setUserApiKeys((prev) => prev.filter((key) => key.id !== keyId));
-
-      // Clear the generated API key display if visible
-      setGeneratedApiKey(null);
-
-      // Reload API keys list by triggering useEffect dependency
-      setApiKeysReloadTrigger((prev) => prev + 1);
-
-      // Invalidate the query cache to refresh the table
-      if (entityTypeId) {
-        void queryClient.invalidateQueries({ queryKey: ['entity-env-table', entityTypeId.toString()] });
-      }
-    } catch (error: unknown) {
-      let errorMessage = 'Failed to delete API key';
-
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === 'object' && error !== null) {
-        const errorObj = error as {
-          response?: {
-            data?: {
-              detail?: string;
-              message?: string;
-            };
-          };
-          detail?: string;
-          message?: string;
-        };
-        errorMessage =
-          errorObj?.response?.data?.detail ||
-          errorObj?.response?.data?.message ||
-          errorObj?.detail ||
-          errorObj?.message ||
-          'Failed to delete API key';
-      }
-
-      notify.error({
-        title: 'API Key Deletion',
-        message: errorMessage,
-      });
-    }
-  };
 
   const handleSave = async () => {
     if (!user?.id) {
@@ -470,8 +284,6 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
     }
 
     try {
-      const entityEnv = new EntityEnv(entityTypeId);
-
       if (editingEnvVar) {
         // Check if any changes were made
         const hasChanges =
@@ -497,7 +309,7 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
           updateData.value = newEnvVar.value;
         }
 
-        await entityEnv.update(editingEnvVar.name, updateData);
+        await envMutations.update(editingEnvVar.name, updateData);
 
         // Call the generic callback for env var updates
         onEnvVarUpdated?.(editingEnvVar.name);
@@ -512,12 +324,9 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
           title: 'Success',
           message: 'Environment variable updated successfully',
         });
-
-        // Invalidate the query cache to update other components
-        void queryClient.invalidateQueries({ queryKey: ['entity-env-table', entityTypeId.toString()] });
       } else {
         // Create new env var
-        await entityEnv.create({
+        await envMutations.create({
           name: newEnvVar.name,
           var_type: newEnvVar.var_type || EnvVarType.API_KEY, // Default to API_KEY if not set
           description: newEnvVar.description || '',
@@ -534,47 +343,20 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
           title: 'Success',
           message: 'Environment variable created successfully',
         });
-
-        // Invalidate the query cache to update other components
-        void queryClient.invalidateQueries({ queryKey: ['entity-env-table', entityTypeId.toString()] });
       }
       setShowEditDialog(false);
     } catch (error: unknown) {
-      let errorMessage = 'Unknown error occurred';
-
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === 'object' && error !== null) {
-        const errorObj = error as {
-          response?: {
-            data?: {
-              detail?: string;
-              message?: string;
-            };
-          };
-          detail?: string;
-          message?: string;
-        };
-        // Try to extract detailed error message from various possible response structures
-        errorMessage =
-          errorObj?.response?.data?.detail ||
-          errorObj?.response?.data?.message ||
-          errorObj?.detail ||
-          errorObj?.message ||
-          'Unknown error occurred';
-      }
-
-      notify.error({
-        title: 'Error',
-        message: errorMessage,
-      });
+      notify.error({ title: 'Error', message: errorMessage(error, 'Unknown error occurred') });
     }
   };
 
   return (
-    <div className="flex h-full flex-col p-4">
+    // No frame of its own: no height, no padding. Hosts differ (a tab pane
+    // already scrolls and pads; a dedicated view does not), and a component
+    // that assumes one double-pads in the other.
+    <div className={cn('flex min-h-0 flex-col', className)} data-testid="env-vars-manager">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Environment Variables</h2>
+        {header && <h2 className="text-xl font-semibold">Environment Variables</h2>}
         <Button
           onClick={() => {
             if (!user?.id) {
@@ -588,14 +370,24 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
               setShowEditDialog(true);
             }
           }}
-          className="flex items-center gap-2"
+          className={cn('flex items-center gap-2', !header && 'ml-auto')}
+          data-testid="env-var-add"
         >
           <Plus className="h-4 w-4" />
           Add Variable
         </Button>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      {error && (
+        <div
+          className="mb-2 rounded border border-destructive/50 bg-destructive/10 px-2 py-1.5 text-xs text-destructive"
+          data-testid="env-vars-error"
+        >
+          {errorMessage(error, 'Could not load environment variables')}
+        </div>
+      )}
+
+      <div className="min-h-0 flex-1 overflow-auto">
         {isLoading ? (
           <div className="p-4 text-center text-neutral-500">Loading environment variables...</div>
         ) : (
@@ -666,94 +458,9 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
         )}
       </div>
 
-      {/* FlowPad API Key Section - Below Table */}
-      <div className="mt-6 rounded-lg border border-neutral-200 bg-transparent p-4">
-        <div className="mb-3">
-          <h3 className="text-base font-semibold text-foreground">FlowPad API Key</h3>
-          <p className="text-sm text-muted-foreground">
-            {hasFlowPadApiKey
-              ? 'Your API key for authenticating API requests to FlowPad'
-              : 'Generate an API key to authenticate API requests to FlowPad'}
-          </p>
-        </div>
-
-        {hasFlowPadApiKey && existingApiKey ? (
-          /* Show existing API key details */
-          <div className="space-y-3">
-            <div className="rounded-md border border-neutral-300 bg-transparent p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-sm font-medium text-muted-foreground">Name:</span>
-                <span className="font-mono text-sm text-foreground">{existingApiKey.name}</span>
-              </div>
-              {existingApiKey.description && (
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-muted-foreground">Description:</span>
-                  <span className="text-sm text-muted-foreground">{existingApiKey.description}</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-muted-foreground">Value:</span>
-                <span className="font-mono text-sm text-muted-foreground">{existingApiKey.visible_value}</span>
-              </div>
-            </div>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => {
-                void handleDeleteApiKey(existingApiKey.id);
-              }}
-              className="flex items-center gap-2"
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete API Key
-            </Button>
-          </div>
-        ) : (
-          /* Show generate button */
-          <Button
-            variant="outline"
-            onClick={() => {
-              void handleGenerateApiKey();
-            }}
-            className="flex items-center gap-2"
-          >
-            <Key className="h-4 w-4" />
-            Generate FlowPad API Key
-          </Button>
-        )}
-      </div>
-
-      {/* Display Generated API Key Below Table */}
-      {generatedApiKey && (
-        <div className="mt-6 rounded-lg border-2 border-yellow-500/50 bg-yellow-500/10 p-4">
-          <div className="mb-3 flex items-center gap-2 rounded bg-yellow-500/20 p-2 text-sm">
-            <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-500" />
-            <strong className="text-foreground">Important:</strong>{' '}
-            <span className="text-muted-foreground">
-              Copy this API key now. For security reasons, it won&apos;t be shown again.
-            </span>
-          </div>
-          <div className="flex gap-3">
-            <Textarea
-              value={generatedApiKey.api_key}
-              readOnly
-              className="flex-1 font-mono text-sm"
-              style={{ fontFamily: 'Monaco, Menlo, Consolas, monospace' }}
-              rows={2}
-            />
-            <Button
-              onClick={() => {
-                void navigator.clipboard.writeText(generatedApiKey.api_key);
-                notify.success({
-                  title: 'Copied to Clipboard',
-                  message: 'API key copied successfully',
-                });
-              }}
-            >
-              Copy to Clipboard
-            </Button>
-          </div>
-        </div>
+      {apiKeyPanel && <FlowPadApiKeyPanel keys={apiKeys} className="mt-6" />}
+      {apiKeyPanel && apiKeys.generatedKey && (
+        <GeneratedApiKeyCallout apiKey={apiKeys.generatedKey} className="mt-6" />
       )}
 
       {showEditDialog && (
