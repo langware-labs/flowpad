@@ -278,7 +278,7 @@ async def test_remote_project_materializes_shared_context_folder_with_empty_side
         Project,
         {
             "id": str(uuid4()),
-            "title": "Shared Project",
+            "name": "Shared Project",
             "shared_context_entities": [tid],
             "shared_context_origins": {tid: origin.model_dump(mode="json")},
         },

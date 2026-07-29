@@ -29,6 +29,7 @@ import { flatEntityRoots } from '@src/components/browseable-tree/adapters/flatEn
 import {
   basename as fsBasename,
   fsDragEntries,
+  fsFileViewerPointer,
   fsFolderNodeId,
   fsFolderRoot,
   normalizeRel,
@@ -654,6 +655,7 @@ export function useAssetsModel() {
         label: 'Files',
         rootIcon: <FolderOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
         pointerForRel: (rel) => DockPointer.forAssetFsFolder(rel),
+        filePointerForRel: (rel) => fsFileViewerPointer(fsTypeId, rel),
         ownsPointer: (p) => {
           if (p.viewType !== ViewType.ASSETS) return false;
           const rel = normalizeRel(DockPointer.parseAssetFsPointer(p.pointer) ?? '');

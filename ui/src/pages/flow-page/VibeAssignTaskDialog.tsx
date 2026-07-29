@@ -63,7 +63,7 @@ export function VibeAssignTaskDialog({
    *  transcript downgrades to a warning, exactly like the share path. */
   const collectTranscript = async (): Promise<TaskAssignOptions['transcript']> => {
     if (!attachTranscript || !sessionTypeId) return undefined;
-    const { files, sessionId, attached, failureReason } = await loadSessionTranscript(sessionTypeId);
+    const { sessionId, attached, failureReason } = await loadSessionTranscript(sessionTypeId);
     if (!attached) {
       notify.warning({
         title: t`Transcript not attached`,
@@ -71,7 +71,9 @@ export function VibeAssignTaskDialog({
       });
       return undefined;
     }
-    return { files, sessionId };
+    // No bytes: the session id is the whole attachment. The packer carries the
+    // transcript from the session entity's own asset_ref.
+    return { files: [], sessionId };
   };
 
   const submit = async () => {

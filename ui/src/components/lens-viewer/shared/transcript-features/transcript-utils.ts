@@ -12,6 +12,28 @@ import type { UnifiedEntry } from './types';
 export { formatNumber, formatAgo, formatDuration, formatTime } from '../format-utils';
 import { formatTime } from '../format-utils';
 
+/**
+ * Worker ↔ session entity-type, the one map for that direction (mirrors the
+ * backend `SESSION_TYPE_BY_WORKER`). `workerForSessionType` is what lets any
+ * surface holding only a record type — a search row, a staged attachment —
+ * address the worker-generic transcript route.
+ */
+export const SESSION_TYPE_BY_WORKER: Record<'claude' | 'codex' | 'copilot', string> = {
+  claude: 'claude_session',
+  codex: 'codex_session',
+  copilot: 'copilot_session',
+};
+
+const WORKER_BY_SESSION_TYPE: Record<string, 'claude' | 'codex' | 'copilot'> = Object.fromEntries(
+  Object.entries(SESSION_TYPE_BY_WORKER).map(([worker, type]) => [type, worker]),
+) as Record<string, 'claude' | 'codex' | 'copilot'>;
+
+/** The worker whose transcripts this record type holds, or undefined when the
+ *  type isn't a worker session at all. */
+export function workerForSessionType(type: string | null | undefined): 'claude' | 'codex' | 'copilot' | undefined {
+  return type ? WORKER_BY_SESSION_TYPE[type] : undefined;
+}
+
 /** Display label for a worker key (`claude`, `codex`, …). */
 export function workerLabel(worker: string | undefined): string {
   if (!worker) return 'Assistant';
@@ -73,7 +95,7 @@ export function operationFilterKey(op: GenericEntry): string {
  */
 export function thinkingPreview(thinking: string | null | undefined): string {
   if (!thinking) return '';
-  if (thinking.startsWith('[')) return '';   // bracketed placeholder — leave row blank, badge already says "thinking"
+  if (thinking.startsWith('[')) return ''; // bracketed placeholder — leave row blank, badge already says "thinking"
   const stripped = thinking.replace(/^\*\*(.+?)\*\*\s*\n+/, '$1 — ');
   const firstNonEmpty = stripped.split('\n').find((l) => l.trim()) ?? '';
   return firstNonEmpty.trim();

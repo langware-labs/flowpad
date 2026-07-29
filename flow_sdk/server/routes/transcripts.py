@@ -19,8 +19,8 @@ from fastapi.responses import JSONResponse
 from flow_sdk.transcript_analyzer.assembly import assemble_tree
 from flow_sdk.transcript_analyzer.entries import AgentSpawnEntry, MetaEntry
 from flow_sdk.transcript_analyzer.resolver import (
+    SESSION_TYPE_BY_WORKER,
     TranscriptNotFoundError,
-    received_transcript_dest,
     resolve_session_jsonl,
 )
 from flow_sdk.transcript_analyzer.transcript import AgentTranscriptFile
@@ -28,14 +28,30 @@ from flow_sdk.transcript_analyzer.transcript import AgentTranscriptFile
 logger = logging.getLogger(__name__)
 
 
-def _is_received(worker_type: str, session_id: str, resolved: Path) -> bool:
-    """True when ``resolved`` is the instance's received-transcripts copy for this
-    session — i.e. the transcript arrived via a shared message and never ran here,
-    so it is not resumable. Path-based (single source of truth: the same
-    ``received_transcript_dest`` the resolver falls back to). Both paths are
-    already absolute/canonical, so compare directly — no symlink-resolving I/O."""
-    dest = received_transcript_dest(worker_type, session_id)
-    return dest is not None and resolved == dest
+async def _is_received(worker_type: str, session_id: str) -> bool:
+    """True when this session arrived via a shared message and never ran here —
+    so the UI must not offer resume.
+
+    Reads the entity's own ``received`` flag, stamped at install from the type's
+    declared ``receive_row_overrides``. Previously this compared the resolved
+    path against a dedicated received-transcripts store; that store is gone now
+    that a received transcript is an ordinary installed asset living wherever the
+    user chose to install it, so there is no path to compare against."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    entity_type = SESSION_TYPE_BY_WORKER.get(worker_type)
+    if not entity_type:
+        return False
+    cls = SchemaRegistry.get_entity_cls(entity_type)
+    if cls is None:
+        return False
+    try:
+        ent = await cls.get_one({"id": session_id})
+    except Exception:  # a lookup failure must not fail the transcript read
+        logger.debug("transcripts: received lookup failed for %s", session_id, exc_info=True)
+        return False
+    return bool(getattr(ent, "received", False)) if ent is not None else False
+
 
 router = APIRouter()
 
@@ -105,11 +121,7 @@ def _build_header(transcript: AgentTranscriptFile) -> dict:
                     out[key] = v
             git = payload.get("git")
             if isinstance(git, dict):
-                out["git"] = {
-                    k: git.get(k)
-                    for k in ("branch", "commit_hash", "repository_url")
-                    if git.get(k)
-                }
+                out["git"] = {k: git.get(k) for k in ("branch", "commit_hash", "repository_url") if git.get(k)}
             break
     return out
 
@@ -123,9 +135,7 @@ async def _header_with_name(worker_type: str, transcript: AgentTranscriptFile) -
     try:
         from flow_sdk.builtin.worker_history import get_worker_session_name
 
-        name = await get_worker_session_name(
-            worker_type, transcript.session_id, jsonl_path=transcript.path
-        )
+        name = await get_worker_session_name(worker_type, transcript.session_id, jsonl_path=transcript.path)
         if name:
             header["name"] = name
     except Exception:  # noqa: BLE001
@@ -185,7 +195,7 @@ async def get_transcript(worker_type: str, path: str = ""):
         "worker_type": worker_type,
         "session_id": transcript.session_id,
         "path": str(transcript.path),
-        "received": _is_received(worker_type, transcript.session_id, p),
+        "received": await _is_received(worker_type, transcript.session_id),
         "header": await _header_with_name(worker_type, transcript),
         "entries": [entry.to_dict() for entry in transcript.entries],
     }
@@ -226,8 +236,8 @@ async def create_agent_trace(worker_type: str, session_id: str, request: Request
     import asyncio
     from datetime import datetime, timezone
 
-    from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.builtin.agent_trace import AgentTrace
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.transcript_analyzer.synthesizers.agent_trace import (
         merge_annotations,
         synthesize_agent_trace,
@@ -309,7 +319,7 @@ async def get_worker_session_transcript(worker_type: str, session_id: str):
         "worker_type": worker_type,
         "session_id": transcript.session_id,
         "path": str(transcript.path),
-        "received": _is_received(worker_type, transcript.session_id, path),
+        "received": await _is_received(worker_type, transcript.session_id),
         "header": await _header_with_name(worker_type, transcript),
         "entries": [entry.to_dict() for entry in transcript.entries],
     }
