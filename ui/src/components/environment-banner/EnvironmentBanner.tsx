@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { dataManager, FLOWPAD_ASSISTANT_PROJECT_UNAME, Layout, Project, TypeId } from '@sdk';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { openWikiModal } from '@src/components/wiki-tip/wiki-modal';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { MarkdownView } from '@src/components/markdown-view';
+import { notify } from '@src/notifications';
 
 /**
  * EnvironmentBanner — thin strip at the top of the home pages that color-codes
@@ -16,10 +19,16 @@ import { openWikiModal } from '@src/components/wiki-tip/wiki-modal';
  *   desktop  — green: the local desktop app (everything else)
  *
  * Clicking the banner opens the "Runtime environments" wiki page (a system doc
- * shipped with the Flowpad Assistant project). The `@local` wiki alias resolves
- * against the CURRENT project, so the click resolves the assistant project's
- * own default wiki first and opens the page in that space; hub mode falls back
- * to the wiki modal (the hub page has no /dock/assets/wiki route).
+ * shipped with the Flowpad Assistant project).
+ *
+ * Desk/e2b: the `@local` wiki alias resolves against the CURRENT project, so
+ * the click resolves the assistant project's own default wiki and opens the
+ * page in that space via the dock wiki view.
+ *
+ * Hub: the hub has NO `wiki` graph entity (both graph resolve paths 422), so
+ * the shared WikiResolveView cannot render there. Its one wiki surface is the
+ * legacy `GET /api/v1/wiki/resolve?name=...`, which serves the system doc's
+ * markdown `content` directly — fetch that and render it in a local dialog.
  */
 
 const WIKI_PAGE = 'Runtime environments';
@@ -61,27 +70,67 @@ async function assistantWikiRef(): Promise<string | null> {
   }
 }
 
+/** Fetch the page body from the hub's legacy wiki route. The route returns the
+ *  raw `{type, id, asset_ref, content}` shape — NO ApiResponse envelope — so
+ *  the sdk apiClient (whose interceptor unwraps `response.data.data`) would
+ *  yield undefined; use a plain same-origin fetch instead (hub mode serves the
+ *  SPA from the hub itself, so cookie auth rides along). */
+async function fetchHubWikiContent(name: string): Promise<string | null> {
+  const res = await fetch(`/api/v1/wiki/resolve?${new URLSearchParams({ name })}`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`wiki/resolve failed: HTTP ${res.status}`);
+  const body: unknown = await res.json();
+  const content = body && typeof body === 'object' ? (body as { content?: unknown }).content : null;
+  return typeof content === 'string' ? content : null;
+}
+
 export function EnvironmentBanner() {
   const { navigation } = useDockNavigation();
   const kind = detectRuntime();
+  const [hubDoc, setHubDoc] = useState<string | null>(null);
+
   const openWiki = async () => {
     if (isHubOnly()) {
-      openWikiModal(WIKI_PAGE);
+      try {
+        const content = await fetchHubWikiContent(WIKI_PAGE);
+        if (content) setHubDoc(content);
+        else notify.error({ title: `[[${WIKI_PAGE}]]`, message: 'Wiki page not found on this hub.' });
+      } catch (err) {
+        notify.error({
+          title: `[[${WIKI_PAGE}]]`,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
       return;
     }
     const wikiRef = await assistantWikiRef();
     navigation.openDock(DockPointer.forWiki(WIKI_PAGE, Layout.DOCK, wikiRef ?? undefined));
   };
+
   return (
-    <button
-      type="button"
-      onClick={() => void openWiki()}
-      data-testid="environment-banner"
-      data-runtime={kind}
-      title="What are Flowpad's runtime environments?"
-      className={`flex w-full shrink-0 cursor-pointer items-center justify-center py-1 text-xs font-medium hover:opacity-90 ${BANNER_CLASS[kind]}`}
-    >
-      <RuntimeLabel kind={kind} />
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => void openWiki()}
+        data-testid="environment-banner"
+        data-runtime={kind}
+        title="What are Flowpad's runtime environments?"
+        className={`flex w-full shrink-0 cursor-pointer items-center justify-center py-1 text-xs font-medium hover:opacity-90 ${BANNER_CLASS[kind]}`}
+      >
+        <RuntimeLabel kind={kind} />
+      </button>
+      <Dialog open={hubDoc !== null} onOpenChange={(open) => !open && setHubDoc(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>[[{WIKI_PAGE}]]</DialogTitle>
+            <DialogDescription className="sr-only">
+              <Trans>Explanation of Flowpad's runtime environments.</Trans>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="h-[70vh] overflow-auto">{hubDoc !== null && <MarkdownView value={hubDoc} />}</div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
