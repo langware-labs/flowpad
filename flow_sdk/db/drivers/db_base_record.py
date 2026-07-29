@@ -44,9 +44,14 @@ RecordRelationshipType = TypeVar("RecordRelationshipType", bound="DBBaseRelation
 _SHARING_CACHE: "WeakKeyDictionary[type, dict]" = WeakKeyDictionary()
 
 
+# Blob-backed field names per class — same rationale as the sharing map above.
+_BLOB_FIELDS_CACHE: "WeakKeyDictionary[type, list]" = WeakKeyDictionary()
+
+
 def clear_sharing_cache() -> None:
-    """Drop the resolved sharing map — for tests that define models on the fly."""
+    """Drop the per-class derived caches — for tests that define models on the fly."""
     _SHARING_CACHE.clear()
+    _BLOB_FIELDS_CACHE.clear()
 
 
 class DBBaseRecord(BaseModel):
@@ -233,8 +238,18 @@ class DBBaseRecord(BaseModel):
 
     @classmethod
     def get_blob_fields_names(cls) -> List[str]:
-        blob_fields_names = [name for name, field in cls.model_fields.items() if cls.is_blob_field(name)]
-        return blob_fields_names
+        """Blob-backed field names, cached per class.
+
+        It was a full ``model_fields`` scan (each name re-walking the MRO) on
+        every call — ~85µs for a 47-field model — and it sits on hot paths:
+        every save's blob write, every hub merge, the sqlite driver. Cached on
+        the same per-class mechanism as the sharing map.
+        """
+        cached = _BLOB_FIELDS_CACHE.get(cls)
+        if cached is None:
+            cached = [name for name in cls.model_fields if cls.is_blob_field(name)]
+            _BLOB_FIELDS_CACHE[cls] = cached
+        return cached
 
     @classmethod
     def has_blob_fields(cls) -> bool:
