@@ -3592,7 +3592,26 @@ async def _announce_new_invitations(fresh_invitations: list) -> None:
             )
 
 
-async def handle_invitation_sync(someone_typeid: str) -> ApiResponse:
+def _invitation_matches_target(hub_inv: dict, target_id: str | None) -> bool:
+    """Whether one pending invitation points at the caller's known target.
+
+    Conversation invitations carry an embedded ``conversation``; generic
+    membership invitations carry ``target``. ``target_url_path`` keeps older
+    hub payloads targetable without weakening the exact-id comparison.
+    """
+    if not target_id:
+        return True
+    conversation = hub_inv.get("conversation")
+    if isinstance(conversation, dict) and conversation.get("id") == target_id:
+        return True
+    target = hub_inv.get("target")
+    if isinstance(target, dict) and target.get("id") == target_id:
+        return True
+    target_path = str(hub_inv.get("target_url_path") or "").rstrip("/")
+    return bool(target_path) and target_path.rsplit("/", 1)[-1] == target_id
+
+
+async def handle_invitation_sync(someone_typeid: str, *, target_id: str | None = None) -> ApiResponse:
     """Pull pending invitations only — no inbox-fetch.
 
     Realtime callers (vitest ping-pong, mobile poll-then-accept) need to
@@ -3608,6 +3627,8 @@ async def handle_invitation_sync(someone_typeid: str) -> ApiResponse:
     invitations = await hub_get(BuiltinEntityType.INVITATION, action="pending") or []
     if not isinstance(invitations, list):
         invitations = []
+    if target_id:
+        invitations = [inv for inv in invitations if _invitation_matches_target(inv, target_id)]
 
     # Snapshot known invitation ids BEFORE materializing so we can tell a
     # newly-arrived invitation (→ OS notification below) from a re-synced one.
@@ -3721,7 +3742,9 @@ async def invitation_sync() -> ApiResponse:
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
-        return await handle_invitation_sync(request_info.someone_typeid)
+        body = await request_info.get_post_data() or {}
+        target_id = str(body.get("target_id") or body.get("conversation_id") or "").strip() or None
+        return await handle_invitation_sync(request_info.someone_typeid, target_id=target_id)
     except Exception as e:
         logger.error("[flow_message_action] invitation-sync error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
