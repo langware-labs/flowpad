@@ -28,6 +28,7 @@ from flow_sdk.core.oauth.hub_oauth import (
     hub_credentials_name_for,
     hub_start_auth,
     poll_hub_credential,
+    redirect_unreachable_reason,
 )
 from flow_sdk.core import action
 from flow_sdk.request_context.methods import get_current_request_info
@@ -277,15 +278,36 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
     # code flow for a provider, that is the flow we use. Anthropic's loopback IS
     # a code grant (code + PKCE, redirected to a port on this machine), so it
     # stays local and never needs the hub.
+    hub_refusal: str | None = None
     if prefers_hub_flow(provider):
         hub_payload = await hub_start_auth(provider)
         if hub_payload:
-            logger.info("OAuth: %s runs the authorization-code flow on the hub", provider)
-            return ApiSuccessResponse(data=hub_payload)
+            # Preflight the callback host BEFORE handing the browser a doomed
+            # consent screen. Signing in successfully and then landing nowhere is
+            # indistinguishable from "nothing happened" to the person clicking —
+            # which is exactly how a stale tunnel URL hid for as long as it did.
+            hub_refusal = await redirect_unreachable_reason(str(hub_payload.get("auth_url") or ""))
+            if not hub_refusal:
+                logger.info("OAuth: %s runs the authorization-code flow on the hub", provider)
+                return ApiSuccessResponse(data=hub_payload)
+
+        # The hub cannot carry this flow — unreachable, or its callback host is
+        # not serving. Either way it is "hub unavailable", so a provider with a
+        # local grant uses it rather than being refused: a device code beats no
+        # connection at all.
         if local is not None:
-            # Hub unreachable and we do have a local grant: use it rather than
-            # refusing. Offline is exactly what the device flow is good for.
-            logger.info("OAuth: hub unavailable; falling back to the local %s flow for %s", local.kind.value, provider)
+            logger.info(
+                "OAuth: hub cannot run %s (%s); falling back to the local %s flow",
+                provider,
+                hub_refusal or "unreachable",
+                local.kind.value,
+            )
+            return await get_desktop_oauth_auth_url(provider, user_id)
+
+        # Nothing local to fall back to. Say precisely why rather than letting
+        # the desktop path answer "not supported", which would be misleading.
+        if hub_refusal:
+            return ApiFailResponse(message=hub_refusal)
 
     return await get_desktop_oauth_auth_url(provider, user_id)
 
