@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { ActionInfo, ApiKey, ApiKeyCredentials, dataManager } from '@sdk';
+import { ActionInfo, ApiKey, ApiKeyCredentials } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
+import { useAction } from '@src/hooks/use-action';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
@@ -37,7 +38,6 @@ export interface UseUserApiKeys {
   generatedKey: ApiKeyCredentials | null;
   generate(): Promise<void>;
   remove(keyId: string): Promise<void>;
-  reload(): void;
 }
 
 const FLOWPAD_KEY_NAME = 'FLOWPAD_API_KEY';
@@ -45,27 +45,20 @@ const FLOWPAD_KEY_NAME = 'FLOWPAD_API_KEY';
 export function useUserApiKeys(opts?: { onMutated?: () => void }): UseUserApiKeys {
   const { t } = useLingui();
   const { user } = useAuth();
-  const [apiKeys, setApiKeys] = useState<UserApiKeyItem[]>([]);
   const [generatedKey, setGeneratedKey] = useState<ApiKeyCredentials | null>(null);
-  const [reloadTick, setReloadTick] = useState(0);
   const onMutated = opts?.onMutated;
 
-  useEffect(() => {
-    const load = async () => {
-      if (!user?.typeId) return;
-      try {
-        const action = new ActionInfo('api-keys', user.typeId.type, user.typeId.id, 'GET');
-        const result = await dataManager.callAction<unknown, UserApiKeyItem[]>(action);
-        setApiKeys(result || []);
-      } catch (error) {
-        console.error('Failed to load API keys:', error);
-        setApiKeys([]);
-      }
-    };
-    void load();
-  }, [user?.typeId, reloadTick]);
+  // `useAction` rather than a hand-rolled effect: it aborts the in-flight
+  // request and guards the sequence, so switching user mid-flight can't land a
+  // stale key list, and its `refetch` replaces the reload counter.
+  const action = useMemo(
+    () => (user?.typeId ? new ActionInfo('api-keys', user.typeId.type, user.typeId.id, 'GET') : null),
+    [user?.typeId],
+  );
+  const { data, refetch } = useAction<UserApiKeyItem[]>(action);
+  const apiKeys = useMemo(() => data ?? [], [data]);
 
-  const reload = useCallback(() => setReloadTick((n) => n + 1), []);
+  const reload = useCallback(() => void refetch(), [refetch]);
 
   // Derived, not mirrored into state: the previous copies kept a `hasFlowPadApiKey`
   // boolean in sync with this via an effect, which could only ever lag it.
@@ -103,8 +96,9 @@ export function useUserApiKeys(opts?: { onMutated?: () => void }): UseUserApiKey
       }
       try {
         await ApiKey.deleteById(user.typeId, keyId);
-        // Optimistic, so the row disappears before the reload lands.
-        setApiKeys((prev) => prev.filter((k) => k.id !== keyId));
+        // No optimistic removal: the backend soft-deletes, so the row comes
+        // back as Inactive rather than vanishing. Dropping it here would make
+        // it disappear and then reappear when the reload lands.
         setGeneratedKey(null);
         reload();
         onMutated?.();
@@ -122,5 +116,8 @@ export function useUserApiKeys(opts?: { onMutated?: () => void }): UseUserApiKey
     [user?.typeId, reload, onMutated, t],
   );
 
-  return { apiKeys, flowpadKey, generatedKey, generate, remove, reload };
+  return useMemo(
+    () => ({ apiKeys, flowpadKey, generatedKey, generate, remove }),
+    [apiKeys, flowpadKey, generatedKey, generate, remove],
+  );
 }
