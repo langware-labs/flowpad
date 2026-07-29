@@ -68,6 +68,10 @@ export default defineConfig(({ mode }) => {
       host: 'localhost',
       port: parseInt(env.VITE_PORT || '4097'),
       strictPort: true,
+      watch: {
+        // Playwright writes traces under the UI tree; they are evidence, not source.
+        ignored: ['**/tests/manual_regression/_results/**'],
+      },
       fs: {
         allow: [
           path.resolve(__dirname, './'),

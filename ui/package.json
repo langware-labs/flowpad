@@ -18,7 +18,7 @@
     "test:vitest:unit": "vitest run --silent=false --allowOnly --bail 1 --project unit",
     "test:vitest:api": "vitest run --silent=false --allowOnly --bail 1 --project api",
     "test:vitest:react": "vitest run --silent=false --allowOnly --bail 1 --project react",
-    "test:vitest:headless": "vitest run --silent=false --allowOnly --bail 1 --project headless",
+    "test:vitest:headless": "vitest run --silent=false --allowOnly --bail 1 --no-file-parallelism --project headless",
     "test:vitest:long": "vitest run --silent=false --allowOnly --bail 1 --project long",
     "test:vitest:hub": "vitest run --silent=false --allowOnly --bail 1 --project hub",
     "test:vitest:long:claude": "FLOWPAD_DEFAULT_WORKER=claude vitest run --silent=false --allowOnly --bail 1 --project long",
