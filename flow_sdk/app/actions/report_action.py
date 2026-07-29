@@ -128,7 +128,22 @@ async def report() -> ApiResponse:
 
     if resp.status_code != 200:
         logger.warning("[report] POST %s returned %s: %s", url, resp.status_code, resp.text[:300])
-        return ApiFailResponse(message="The reporting service rejected the report.", status_code=502)
+        # Prefer the hub's own client-intended message ("Could not send the diagnosis
+        # report email.") over a generic one — it is what the user ends up reading. The
+        # hub carries it in `detail` for a deliberate HTTPException and in `message` for
+        # the envelope it returns on anything unhandled; its generic fallback says less
+        # than ours, so drop that one.
+        try:
+            hub_body = resp.json() or {}
+            hub_message = hub_body.get("detail") or hub_body.get("message") or ""
+        except Exception:  # noqa: BLE001
+            hub_message = ""
+        if hub_message.strip().lower() == "internal server error":
+            hub_message = ""
+        return ApiFailResponse(
+            message=hub_message or "The reporting service rejected the report.",
+            status_code=502,
+        )
 
     logger.info("[report] emailed diagnosis %s to %s via hub", diag_id, REPORT_TO_EMAIL)
     return ApiSuccessResponse(data={"sent": True, "diagnosis_id": diag_id})

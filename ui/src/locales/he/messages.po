@@ -3196,6 +3196,10 @@ msgstr "לא ניתן לפתור את התיקייה"
 #~ msgid "Could not save changes"
 #~ msgstr "לא היה ניתן לשמור את השינויים"
 
+#: src/components/diagnose/use-diagnosis-report.ts
+msgid "Could not send report to the Flowpad team"
+msgstr ""
+
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
