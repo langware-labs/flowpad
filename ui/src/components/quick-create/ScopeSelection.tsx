@@ -33,6 +33,14 @@ interface ScopeSelectionProps {
   onPickFolder: () => Promise<string | null>;
   /** Opens the project picker (currently OpenProjectComponent). */
   onOpenProjectPicker: () => void;
+  /**
+   * False when the type has only one on-disk destination, so the harness chips
+   * are inert (see `harnessAppliesTo`). Only SHARED assets — skill, agent —
+   * genuinely live in a per-harness folder; a whiteboard or a task mounts under
+   * `agentic-assets/` no matter which chip is lit, so an enabled chip would be
+   * promising a destination the backend never writes.
+   */
+  harnessApplies?: boolean;
 }
 
 const SCOPE_OPTIONS: ScopeBarOption<ScopeKind>[] = [
@@ -58,6 +66,7 @@ export function ScopeSelection({
   onPathChange,
   onPickFolder,
   onOpenProjectPicker,
+  harnessApplies = true,
 }: ScopeSelectionProps) {
   const { t } = useLingui();
 
@@ -77,7 +86,7 @@ export function ScopeSelection({
   }, [onPickFolder, onScopeChange, scope]);
 
   const projectLabel = scope.project?.displayName ?? scope.project?.name ?? null;
-  const harnessDisabled = scope.kind === 'folder';
+  const harnessDisabled = scope.kind === 'folder' || !harnessApplies;
 
   return (
     <div className="flex flex-col gap-2">

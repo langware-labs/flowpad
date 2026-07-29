@@ -1,4 +1,4 @@
-"""Walker + extractor + id mint + asset-hash for AGENTIC_FLOW records.
+"""Extractor + id mint + asset-hash for AGENTIC_FLOW records.
 
 An agentic flow is a folder containing ``graph.json`` (the flow document —
 see ``flow_sdk/flow_manager/flow_doc.py``) plus ``display.json`` (layout),
@@ -19,31 +19,9 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 GRAPH_JSON = "graph.json"
-FLOWS_SUBDIR = ".claude/agentic-flows"
-
-
-def agentic_flow_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        flows_dir = Path(node.path) / ".claude" / "agentic-flows"
-        if not flows_dir.is_dir():
-            continue
-        for entry in sorted(flows_dir.iterdir()):
-            if not entry.is_dir() or not (entry / GRAPH_JSON).exists():
-                continue
-            key = str(entry.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(entry, record_type=RecordType.AGENTIC_FLOW, parent=node))
-    return out
-
-
 def _load_doc(flow_dir: Path) -> FlowDoc | None:
     try:
         return parse_flow_doc((flow_dir / GRAPH_JSON).read_text(encoding="utf-8"))

@@ -102,7 +102,7 @@ def test_shipped_journeys_are_valid():
     import glob
     from pathlib import Path
 
-    graphs = sorted(glob.glob("flow_sdk/system_projects/*/.claude/journeys/*/graph.json"))
+    graphs = sorted(glob.glob("flow_sdk/system_projects/*/agentic-assets/journey/*/graph.json"))
     assert graphs, "no shipped journeys found — did the path change?"
     problems = {
         Path(g).parent.name: parse_flow_doc(Path(g).read_text(encoding="utf-8")).validate_graph()

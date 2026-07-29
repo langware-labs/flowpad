@@ -1,6 +1,6 @@
-"""Walker + extractor + id mint for PROMPT records (docs/prompt-library.md).
+"""Extractor + id mint for PROMPT records (docs/prompt-library.md).
 
-Prompts live at ``<project>/prompts/<name>.md`` — YAML frontmatter for
+Prompts live at ``<scope>/agentic-assets/prompt/<name>.md`` — YAML frontmatter for
 metadata (``name``/``icon``/``color``/optional ``group_id``; the ``queue``
 block is reserved for v1.1 enqueue flags and intentionally stays file-only),
 body = the prompt text. Mirrors the SPEC recipe in ``spec.py``.
@@ -18,29 +18,7 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_frontmatter,
     _yaml_load,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
-
-
-def prompt_project_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        prompts_root = Path(node.path) / "prompts"
-        if not prompts_root.is_dir():
-            continue
-        for md in sorted(prompts_root.glob("*.md")):
-            if not md.is_file():
-                continue
-            key = str(md.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(md, record_type=RecordType.PROMPT, parent=node))
-    return out
 
 
 def _prompt_id_from_path(path: Path) -> str:

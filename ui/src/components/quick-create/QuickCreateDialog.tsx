@@ -25,7 +25,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScopeSelection, type HarnessKind, type Scope } from './ScopeSelection';
-import { getDescriptor, subFolderFor, type QuickCreateDescriptor } from './registry';
+import { getDescriptor, harnessAppliesTo, subFolderFor, type QuickCreateDescriptor } from './registry';
 import { useProjectSnapshot } from './useProjectSnapshot';
 
 interface QuickCreateDialogProps {
@@ -42,7 +42,7 @@ function projectPrefix(project: Project | null): string | null {
 
 function defaultPathFor(scope: Scope, descriptor: QuickCreateDescriptor, harness: HarnessKind): string {
   if (scope.kind === 'folder') return scope.folderPath ?? '';
-  const sub = subFolderFor(descriptor, harness, scope.kind);
+  const sub = subFolderFor(descriptor, harness);
   const prefix = scope.kind === 'user' ? '~' : projectPrefix(scope.project);
   return [prefix, sub].filter(Boolean).join('/') || sub;
 }
@@ -169,7 +169,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
     if (!descriptor || scope.kind !== 'project') return undefined;
     const prefix = projectPrefix(scope.project);
     if (prefix && path.startsWith(`${prefix}/`)) return path.slice(prefix.length + 1);
-    return subFolderFor(descriptor, harness, 'project');
+    return subFolderFor(descriptor, harness);
   }, [descriptor, scope, harness, path]);
 
   const handleCreate = useCallback(async () => {
@@ -248,6 +248,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
                 onPathChange={setPath}
                 onPickFolder={handlePickFolder}
                 onOpenProjectPicker={() => setProjectPickerOpen(true)}
+                harnessApplies={!!descriptor && harnessAppliesTo(descriptor.type)}
               />
             </div>
           </div>

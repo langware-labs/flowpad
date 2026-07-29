@@ -1,6 +1,6 @@
 """Walker + extractor + id mint for SPEC records.
 
-Specs live at ``<project>/specs/<name>/spec.md`` (markdown + YAML frontmatter).
+Specs live at ``<project>/agentic-assets/spec/<name>/spec.md`` (markdown + YAML frontmatter).
 Replaces the deleted ``SpecRecord`` subclass. Registration at module bottom.
 """
 
