@@ -38,13 +38,15 @@ lookup), `visible` (membership — non-null so a close broadcasts), `name` (labe
 `icon_key` + `worktree` (CREATE-only display primitives so a chip draws without
 fetching its backing entity), `tab_order`, `last_active_at`, `project_id`.
 
-**Identity is the `pointer` natural key — dedup reconciles by it, NOT by the
-derived id.** `ensure_tab(pointer, …)` queries `get_all({"pointer": pointer})`,
+**Identity is the canonical pointer hash; exact serialized-pointer reconciliation
+runs first.** `ensure_tab(pointer, …)` queries `get_all({"pointer": pointer})`,
 reuses the canonical `id == tab_id_for(pointer)` row, and soft-hides any
-foreign-id strays sharing that pointer. (Before this fix, a row minted under the
-old client-side scheme carried a random uuid4 id that an id-only lookup missed →
-a _second_ canonical row was minted → two visible chips for one pointer. The
-natural-key reconcile self-heals that on next open.)
+foreign-id strays sharing that pointer. Scope-keyed docks may carry presentation
+metadata that does not change the hash; when their exact JSON differs,
+`ensure_tab` falls back to the canonical id and updates the stored variant rather
+than inserting a second row. (Before natural-key reconciliation, a row minted
+under the old client-side scheme carried a random uuid4 id that an id-only lookup
+missed → a _second_ canonical row was minted → two visible chips for one pointer.)
 
 ## The `tab` actions (the only wire contract)
 
@@ -103,6 +105,13 @@ cleanup failure
   -> close_failed
 ```
 
+The first landing (or a landing after the client lifecycle registry is reset)
+materializes/resolves the backend row. An already-`opened` content-asset dock with
+the same tab identity takes a deliberate reuse fast path: it stamps activation and
+reruns the route-owned content adapter without another list/new-tab round trip.
+That path returns `TabSetupResult.tab == null`; the durable identity remains the
+existing backend `Tab` row and the lifecycle entry's `tabId`.
+
 Shell lifecycle:
 
 ```text
@@ -144,19 +153,18 @@ styling/tooltip. The redirect-only `/dock/shell/new_terminal` route is explicitl
 not materialized as a persistent tab; it creates a shell and redirects to the
 concrete shell dock.
 
-## A tab's project follows its target, never the ambient active project
+## A tab's project follows its target or explicit project URL, never ambient context
 
-`Tab.project_id` is the project of the tab's **target entity**, not whatever project
-was active in the client when the tab was materialized. The ambient project is the
-wrong source: on a cross-project open (switching projects and resuming a tab that
-lives in a non-active project, a deep link, or a recovery that races the loader's
-context switch) the active project is a _different_ project, and stamping it
-re-parented the tab — the chip then vanished from its real project's strip (the
-"wrong project minted on tab" bug).
+`Tab.project_id` is the project of the tab's **target entity**, with one explicit
+fallback: a `/dock/project/<project-id>/…` URL names the project when its content
+target is not indexed yet. It is never whatever project happened to be active in
+the client. Ambient context is the wrong source: on a cross-project open, deep
+link, or loader race it can be a _different_ project, and stamping it re-parents
+the tab so its chip vanishes from the real project's strip.
 
-One chokepoint resolves it: **`Tab.getFromDockPointer(dock)`** (SDK, `entities/tab.ts`),
-called by the loader as the single writer (`main-loader.ts`). It is self-sufficient
-(cache-first, network fallback) and resolves `project_id` from the dock's TARGET:
+The frontend chokepoint is **`Tab.getFromDockPointer(dock)`** (SDK,
+`entities/tab.ts`), called by the loader. It resolves the target cache-first with a
+network fallback and sends that project hint to `new_tab`:
 
 - a **project** tab (`targetTypeId.type === 'project'`) → its **own id** (a project
   belongs to itself);
@@ -164,7 +172,15 @@ called by the loader as the single writer (`main-loader.ts`). It is self-suffici
   entity's `project_id` (`getByTypeId` fallback on a cold miss);
 - else a **vfs** asset dock (`…/vfs/<path>`) → `dataManager.getEntityByPath(path)`
   → that entity's `project_id`;
+- else a project-pinned scope → that scoped project;
 - else (target-less: settings/search/home/diff) → null.
+
+The backend is the second authority belt. `ensure_tab` retries project resolution
+from the target when the client hint is absent. Every `list` / `list_all` then
+backfills a still-null row in memory from the target, or from the leading project
+segment of a project-scoped pointer when that project exists. This keeps a
+not-yet-indexed Markdown tab project-colored on its first cold load without
+consulting ambient client context.
 
 The pieces, each at the right layer:
 
@@ -176,8 +192,9 @@ The pieces, each at the right layer:
   isn't knowable from a vfs URL since one editor backs many types). No recovery, no
   indexing — distinct from `discoverByPath`, which stays only in `useEntityByPath`
   for the editor view's on-mount resolution.
-- The backend `ensure_tab` stores exactly the `project_id` it's given; all
-  resolution lives in `Tab.getFromDockPointer`.
+- The backend `ensure_tab` persists the resolved hint on create/reopen;
+  `_backfill_tab_projects` supplies the read-time target/pointer fallback for old
+  or still-unresolved rows.
 
 ## One client store, views derived locally
 
@@ -886,8 +903,10 @@ tab identity:
   TypeId/VFS target, reuses the newest matching Chat, or creates one
   headlessly. `Tab.getFromDockPointer` persists the resulting `parent_tab_id`.
 - **Raw files are first-class children:** non-empty `editor` pointers are
-  adoptable; empty editors, lists, folders, projects, and graph/lens docks are
-  not.
+  adoptable; scope-keyed Assets tabs fold that sub-pointer out of tab identity
+  but preserve `workspaceContent: true` in their serialized pointer so backend
+  parent validation keeps the content classification. Empty editors, lists,
+  folders, projects, and graph/lens docks are not adoptable.
 - **Terminals are children too:** a plain shell dock opened while a workspace
   is mounted is adopted and renders in its display pane (`ContentPanel`'s
   `ViewType.SHELL` case), so "open a terminal" in Vibe keeps the chat pane.

@@ -718,7 +718,7 @@ Convenience getters:
 | `flow_data`    | New `FlowData` arrived.               |
 | `complete`     | Client-side stream marked complete.   |
 | `error`        | Client-side stream marked failed.     |
-| `state_change` | Delta for `status` or `workerStatus`. |
+| `state_change` | Delta for `status`, `busy`, or `workerStatus`. |
 | `restarted`    | Emitted after frontend `restart()`.   |
 
 ***

@@ -15,7 +15,11 @@ pre-configured for the `@local` compute node.
 
 ## Activity Model
 
-Only one system activity runs at a time. `currentActivity === null` means idle.
+`SystemToolsService` exposes one foreground `currentActivity` at a time;
+`currentActivity === null` means the service is idle. The backend's exclusion
+boundary is narrower: `_COMPUTE_ACTIVITIES` is keyed by compute node and job
+name, so duplicate scans conflict with scans and duplicate indexes conflict
+with indexes, but a scan and an index can overlap.
 
 ```ts
 export type SystemActivity = 'clear' | 'archive' | 'load_from_archive' | 'scan' | 'index';
@@ -54,9 +58,16 @@ The service emits `'state_changed'` whenever any of these fields change.
 ## `progress_report` WebSocket Events
 
 During scan and index operations the backend broadcasts `progress_report`
-FlowData events over WebSocket. Each event carries a complete
-`IndexProgressTable` snapshot. Consumers replace their local table with the
-latest event; they do not merge sub-events.
+FlowData events over WebSocket to every active connection. Each event carries a
+complete `IndexProgressTable` snapshot. The envelope has no request/run id, so a
+connection can observe snapshots from a different concurrent activity (for
+example, the detached startup system-content index while a manual scan runs).
+Consumers must not assume every event received during an HTTP request belongs
+to that request.
+
+`SystemToolsService` sets its foreground phase before an operation and ignores
+events whose `job_name` differs while that phase is active. Accepted snapshots
+replace the local table wholesale; they are not merged.
 
 ```json
 {

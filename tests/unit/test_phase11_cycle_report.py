@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -220,6 +221,65 @@ def test_preflight_connects_then_reads_status_for_each_instance(monkeypatch, tmp
     ]
 
 
+def test_provider_validation_requires_live_sandbox_and_docker_nodes(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        phase11,
+        "_request_json",
+        lambda *_args, **_kwargs: {
+            "status": "SUCCESS",
+            "data": {
+                "sandbox_available": True,
+                "sandbox_compute_node": {"id": "sandbox-id"},
+                "docker_available": True,
+                "docker_compute_nodes": [{"id": "docker-id"}],
+            },
+        },
+    )
+    output = tmp_path / "providers.json"
+
+    phase11.validate_providers(
+        SimpleNamespace(
+            api_url="http://localhost:6034",
+            require_sandbox=True,
+            require_docker=True,
+            output=str(output),
+        )
+    )
+
+    assert json.loads(output.read_text()) == {
+        "docker_node_count": 1,
+        "docker_ready": True,
+        "sandbox_ready": True,
+        "status": "ready",
+    }
+
+
+def test_provider_validation_fails_closed_when_docker_worker_is_absent(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        phase11,
+        "_request_json",
+        lambda *_args, **_kwargs: {
+            "status": "SUCCESS",
+            "data": {
+                "sandbox_available": True,
+                "sandbox_compute_node": {"id": "sandbox-id"},
+                "docker_available": False,
+                "docker_compute_nodes": [],
+            },
+        },
+    )
+
+    with pytest.raises(phase11.Phase11Error, match="live Docker compute node"):
+        phase11.validate_providers(
+            SimpleNamespace(
+                api_url="http://localhost:6034",
+                require_sandbox=True,
+                require_docker=True,
+                output=str(tmp_path / "providers.json"),
+            )
+        )
+
+
 def test_runner_source_policy_has_no_dotenv_execution_or_new_wait_budget() -> None:
     executable_lines = [
         line.strip()
@@ -234,7 +294,89 @@ def test_runner_source_policy_has_no_dotenv_execution_or_new_wait_budget() -> No
     assert "--backend-only --keep-keychain --json" in executable
     assert "--workers=1" in executable
     assert "PLAYWRIGHT_JSON_OUTPUT_NAME" in executable
+    assert "</dev/null" in executable
+    assert "trap - ERR" in executable
+    assert "config_sha <&3; do" in executable
+    assert 'done 3< <(python3 "$HELPER" manifest-lines' in executable
+    assert '--expected-user-id "$QA_ALICE_HUB_ID"' in executable
     assert "QA_BOB_HUB_ID" in executable
+
+
+def test_report_source_matches_a_nested_path_relative_to_category_test_dir() -> None:
+    expected = "ui/tests/manual_regression/docs/v0.28_scenarios/LLM_comfigure.md.ts"
+
+    assert phase11._source_matches(
+        REPO,
+        expected,
+        "v0.28_scenarios/LLM_comfigure.md.ts",
+    )
+    assert not phase11._source_matches(
+        REPO,
+        expected,
+        "other/LLM_comfigure.md.ts",
+    )
+
+
+def test_runtime_reestablishes_verified_hub_socket_after_backend_reset(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    events: list[tuple[str, str]] = []
+    expected_user_id = "19a2e766-4f6f-49f8-8895-6ca44d105ecd"
+
+    monkeypatch.setattr(
+        phase11,
+        "_request_bytes",
+        lambda url: events.append(("app", url)) or b"",
+    )
+    monkeypatch.setattr(
+        phase11,
+        "_connect_and_validate_hub_ws",
+        lambda api, user_id: (
+            events.append(("connect", api)),
+            {"hub_ws_verified": True, "user_id": user_id},
+        )[1],
+    )
+    monkeypatch.setattr(
+        phase11,
+        "_validate_bootstrap",
+        lambda api: events.append(("bootstrap", api)) or 101,
+    )
+
+    def status(api: str, email: str, hub: str, user_id: str) -> dict:
+        assert events[-2:] == [
+            ("connect", api),
+            ("bootstrap", api),
+        ]
+        assert email == "alice@example.test"
+        assert hub == "http://localhost:8093"
+        assert user_id == expected_user_id
+        events.append(("status", api))
+        return {"hub_ws_connected": True, "hub_ws_verified": True}
+
+    monkeypatch.setattr(phase11, "_validate_cloud_status", status)
+    output = tmp_path / "runtime.json"
+
+    phase11.validate_runtime(
+        SimpleNamespace(
+            api_url="http://localhost:6034",
+            app_url="http://localhost:5034",
+            email="alice@example.test",
+            hub_url="http://localhost:8093",
+            expected_user_id=expected_user_id,
+            output=str(output),
+        )
+    )
+
+    assert events == [
+        ("app", "http://localhost:5034"),
+        ("connect", "http://localhost:6034"),
+        ("bootstrap", "http://localhost:6034"),
+        ("status", "http://localhost:6034"),
+    ]
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "ready"
+    assert payload["hub_ws_connect"]["user_id"] == expected_user_id
 
 
 def test_manifest_supports_root_scenarios_without_changing_nested_categories(tmp_path) -> None:

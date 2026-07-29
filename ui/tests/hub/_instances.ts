@@ -114,8 +114,7 @@ export function resolveLaunchedInstance(name: string): LaunchedInstance | null {
   }
 
   const expectedEnvFile = path.join(WORKTREE_ROOT, `.env.${name}.local`);
-  const launcherEnvFile =
-    typeof launcher.env_file === 'string' ? path.resolve(launcher.env_file) : '';
+  const launcherEnvFile = typeof launcher.env_file === 'string' ? path.resolve(launcher.env_file) : '';
   if (
     launcher.name !== name ||
     Number(launcher.backend_port) !== Number(backendPort) ||
@@ -198,7 +197,20 @@ export async function queryMessageAttachments(inst: ResolvedInstance, fmId: stri
 
 /** Find the exact pending invitation after the receiver's production catch-up. */
 export async function findPendingInvitation(inst: ResolvedInstance, convId: string): Promise<any> {
-  await inst.sdk.fetchConversations();
+  // Pull pending invitations only. `fetchConversations()` runs the broad
+  // conversation/message catch-up and, on a long-lived staff account, retries
+  // every historical bundle before this exact invitation can be observed.
+  // The production invitation-sync action exists specifically to avoid that
+  // unrelated work on realtime accept paths.
+  const response = await fetch(`${inst.apiUrl}/api/v1/graph/invitation-sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversation_id: convId }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || body?.status !== 'SUCCESS') {
+    throw new Error(`invitation sync failed on ${inst.name}: HTTP ${response.status} ${JSON.stringify(body)}`);
+  }
   const all: any[] = await (inst.sdk.Invitation as any).query({ query: {} }, true);
   return pickPendingInvitation(all, convId);
 }

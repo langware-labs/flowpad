@@ -3,6 +3,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import {
   closeTabWithLifecycle,
+  closeTabsWithLifecycle,
   excludeClosingTabs,
   getTabLifecycle,
   registerTabContentAdapter,
@@ -219,6 +220,36 @@ describe('tab lifecycle registry', () => {
 
     expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.CloseFailed);
     expect(getTabLifecycle(d.tabHash)?.error).toBe('close failed');
+  });
+
+  it('batch close hides tabs only after the durable action acknowledges', async () => {
+    const firstDock = dock('5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaa11');
+    const secondDock = dock('5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaa12');
+    const tabs = [tabFor(firstDock), tabFor(secondDock)];
+    let acknowledge: (rows: Tab[]) => void = () => {};
+    const closeResult = new Promise<Tab[]>((resolve) => {
+      acknowledge = resolve;
+    });
+    let markBatchStarted: () => void = () => {};
+    const batchStarted = new Promise<void>((resolve) => {
+      markBatchStarted = resolve;
+    });
+    const closeMany = vi.spyOn(Tab, 'closeManyByIds').mockImplementation(() => {
+      markBatchStarted();
+      return closeResult;
+    });
+
+    const closing = closeTabsWithLifecycle(tabs, null);
+    await batchStarted;
+
+    expect(closeMany).toHaveBeenCalledWith(tabs.map((tab) => tab.id), null);
+    expect(getTabLifecycle(firstDock.tabHash)).toBeNull();
+    expect(getTabLifecycle(secondDock.tabHash)).toBeNull();
+
+    acknowledge([]);
+    await closing;
+    expect(getTabLifecycle(firstDock.tabHash)?.state).toBe(TabLifecycleState.Closing);
+    expect(getTabLifecycle(secondDock.tabHash)?.state).toBe(TabLifecycleState.Closing);
   });
 
   it('clears lifecycle entries when tabs_changed removes the tab', async () => {

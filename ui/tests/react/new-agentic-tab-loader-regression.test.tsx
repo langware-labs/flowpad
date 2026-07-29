@@ -354,7 +354,7 @@ describe('new agentic-process loader handoff', () => {
 
     const expectedPath = `/dock/shell/agentic_process-${NEW_PROCESS_ID}`;
     await waitFor(() => {
-      expect(window.location.pathname).toBe(expectedPath);
+      expect(screen.getByTestId('router-location')).toHaveTextContent(expectedPath);
     });
 
     await waitFor(() => {

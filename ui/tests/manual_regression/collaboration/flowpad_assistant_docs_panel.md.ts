@@ -4,13 +4,22 @@
  *
  * /dock/project/@flowpad_assistant renders the project asset browser. The
  * "Flowpad Assistant" button toggles the floating chat (does NOT navigate), so
- * the space is reached by direct navigation. The seeded hello-flowpad doc is
- * reachable as a markdown asset (indexed + searchable).
+ * the space is reached by direct navigation. The shipped hello-flowpad doc is
+ * seeded into the entity and search indexes by startup/reset.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type APIRequestContext } from '@playwright/test';
 import { apiBase, apiContext } from '../_shared/api';
 
 const API = apiBase();
+
+async function assistantProjectId(rq: APIRequestContext): Promise<string> {
+  const response = await rq.get(`${API}/api/v1/graph/project/@flowpad_assistant`);
+  expect(response.status()).toBe(200);
+  const body = await response.json();
+  expect(body.status).toBe('SUCCESS');
+  expect(body.data?.id).toMatch(/^[0-9a-f-]{36}$/);
+  return body.data.id;
+}
 
 test.describe('Flowpad Assistant project space', () => {
   test.beforeEach(async ({ page }) => {
@@ -27,43 +36,36 @@ test.describe('Flowpad Assistant project space', () => {
     await page.goto('/dock/project/@flowpad_assistant');
     await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
     await expect(page.locator('body')).not.toContainText('No editor for type: project');
-    // Project view header renders "Project assets"; the project scope indicator
-    // is the project-name chip (data-testid="project-name-chip"), not a "Project:" label.
+    // Project identity is URL-owned. The browser projects that scope through
+    // the pressed Current project control; ProjectChip belongs to content
+    // headers and is not mounted on ProjectHome.
     await expect(page.getByText('Project assets').first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId('project-name-chip').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: /^Current project/ }).first()).toHaveAttribute('aria-pressed', 'true');
 
     const offending = errors.filter((e) => !/ResizeObserver|favicon/.test(e) && !/user-/.test(e) && !/agent_hook/.test(e) && !/\b404\b/.test(e));
     expect(offending, `Console errors: ${offending.join(', ')}`).toHaveLength(0);
   });
 
-  test('test 2: The seeded hello-flowpad doc is indexed and searchable', async () => {
+  test('test 2: The shipped hello-flowpad doc is seeded and searchable', async () => {
     test.setTimeout(60_000);
     const rq = await apiContext();
-    // Index markdown once (the action under test), scoped to the
-    // @flowpad_assistant system project — the seeded hello-flowpad doc lives
-    // there. Scoping matters: an UNSCOPED `index?type=markdown` still WALKS
-    // every registered root (the whole home tree) to discover markdown before
-    // filtering, which on a real machine is a ~150s operation that blows this
-    // test's 60s cap. The claim under test is only that the SEEDED doc indexes
-    // and becomes searchable, so we index exactly that doc's project (one small
-    // system-project subtree, ~0.4s) — same action, correct scope. Then poll
-    // the search (include_system to reach the seeded system doc) until the FTS
-    // commit settles and hello-flowpad surfaces — within the 15s cap.
-    // force=true is required, not incidental: the per-file harness reset uses
-    // `desktop-db/clear`, which wipes the entity DB + FTS but leaves the on-disk
-    // `.hash` index sentinels intact. A plain index then hits skip-fresh (hash
-    // still matches) and re-creates the entity rows WITHOUT repopulating FTS, so
-    // a search finds nothing. force bypasses skip-fresh and re-writes FTS. (The
-    // production rebuild path clears the sentinels itself, so real users never
-    // hit this; it is specific to the clear-then-bare-index sequence here.)
-    await rq.post(
-      `${API}/api/v1/graph/compute_node/@local/fs-records/index?type=markdown&user=false&projects=@flowpad_assistant&force=true`,
-    );
+    const projectId = await assistantProjectId(rq);
+    // The Phase 11 per-file reset mirrors production startup: both must seed
+    // shipped system markdowns into the entity table and FTS synchronously.
+    // No broad/manual re-index is needed (or allowed to hide a broken seed).
     await expect(async () => {
-      const res = await rq.get(`${API}/api/v1/search?record_type=markdown&q=hello&include_system=true`);
+      const res = await rq.get(
+        `${API}/api/v1/search?record_type=markdown&q=hello&include_system=true&user=false&projects=${projectId}`,
+      );
       expect(res.status()).toBe(200);
-      const text = JSON.stringify(await res.json());
-      expect(text).toMatch(/hello-flowpad/);
+      const body = await res.json();
+      expect(body.data?.results).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          record_id: 'dc8713d4-8841-47ab-a28d-8e3248106f5a',
+          name: 'Hello from Flowpad',
+          project_id: projectId,
+        }),
+      ]));
     }).toPass({ timeout: 15_000 });
     await rq.dispose();
   });

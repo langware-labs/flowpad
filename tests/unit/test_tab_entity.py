@@ -843,6 +843,23 @@ def _scoped_pointer(view: str, project_id: str) -> str:
     )
 
 
+def _scoped_asset_content_pointer(project_id: str) -> str:
+    """Scope-keyed asset content keeps its identity plus the adoption bit."""
+    return _test_json.dumps(
+        {
+            "viewType": "assets",
+            "pointer": "",
+            "options": {
+                "scope-mode": "project",
+                "scope-activeProjectId": project_id,
+            },
+            "tabHash": f"assets|project:{project_id}",
+            "workspaceContent": True,
+        },
+        separators=(",", ":"),
+    )
+
+
 def test_tab_id_prefers_tab_hash_and_stays_stable_without_it() -> None:
     pa, pb = str(uuid.uuid4()), str(uuid.uuid4())
     a = tab_id_for(_scoped_pointer("explorer", pa))
@@ -854,6 +871,42 @@ def test_tab_id_prefers_tab_hash_and_stays_stable_without_it() -> None:
     # projects…) must hash byte-identically to the pre-change derivation.
     plain = _test_json.dumps({"viewType": "shell", "pointer": "agentic_process-x"})
     assert tab_id_for(plain) == tab_id_for("shell|agentic_process-x")
+
+
+@pytest.mark.asyncio
+async def test_scope_keyed_asset_content_keeps_parent_until_browser_root() -> None:
+    from flow_sdk.builtin.project import Project
+
+    project_id = str(uuid.uuid4())
+    await Project(id=project_id, name=f"tab-content-{project_id[:8]}").save()
+    parent = await ensure_tab(
+        _jptr("shell", f"shell-{uuid.uuid4()}"),
+        project_id=project_id,
+    )
+    content_pointer = _scoped_asset_content_pointer(project_id)
+    root_pointer = _scoped_pointer("assets", project_id)
+
+    child = await ensure_tab(
+        content_pointer,
+        target_type="markdown",
+        target_id=str(uuid.uuid4()),
+        project_id=project_id,
+        parent_tab_id=parent.id,
+    )
+    assert child.parent_tab_id == parent.id
+
+    # The wire list/reap pass must retain the URL-proven content edge.
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    listed = await _build_tab_list(project_id)
+    listed_child = next(tab for tab in listed if tab.id == child.id)
+    assert listed_child.parent_tab_id == parent.id
+
+    # Navigating the same scope-keyed tab to its browser root keeps the uuid5
+    # identity but clears the no-longer-valid workspace edge.
+    root = await ensure_tab(root_pointer, project_id=project_id)
+    assert root.id == child.id
+    assert root.parent_tab_id is None
 
 
 @pytest.mark.asyncio

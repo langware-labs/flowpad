@@ -66,6 +66,18 @@ async function indexType(
   expect(response.status(), await response.text()).toBe(200);
 }
 
+async function invalidateDeletedPaths(
+  request: APIRequestContext,
+  survivingPath: string,
+  deletedPaths: string[],
+): Promise<void> {
+  const response = await request.post(
+    `${API}/api/v1/graph/compute_node/@local/fs-records/invalidate`,
+    { data: { paths: [survivingPath], deleted_paths: deletedPaths } },
+  );
+  expect(response.status(), await response.text()).toBe(200);
+}
+
 async function entity(request: APIRequestContext, type: string, id: string): Promise<ReflectedAsset> {
   const response = await request.get(`${API}/api/v1/graph/${type}/${id}`);
   expect(response.status(), await response.text()).toBe(200);
@@ -128,13 +140,13 @@ test('File collision state, URL panel, and removal lifecycle', async ({ page, re
   await expect(panel).toBeVisible();
 
   fs.unlinkSync(copyB);
-  await indexType(request, projectId, 'agent');
+  await invalidateDeletedPaths(request, source, [copyB]);
   await expect.poll(async () => (await entity(request, 'agent', seeded.id)).duplicate_count).toBe(1);
   await expect(badge).toContainText('1');
   await expect(panel.locator('[data-testid="asset-collision-row-duplicate"]')).toHaveCount(1);
 
   fs.unlinkSync(copyA);
-  await indexType(request, projectId, 'agent');
+  await invalidateDeletedPaths(request, source, [copyA]);
   await expect.poll(async () => (await entity(request, 'agent', seeded.id)).duplicate_count).toBe(0);
   await expect(badge).not.toBeVisible();
   await expect(panel).not.toBeVisible();

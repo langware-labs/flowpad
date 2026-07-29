@@ -2,14 +2,28 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import * as fs from 'fs';
 
 import { apiBase } from '../_shared/api';
+import { withViewMode } from '../_shared/view-mode';
 
 const API = apiBase();
 
-async function createWhiteboard(request: APIRequestContext, name: string) {
-  const res = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name } });
+async function createWhiteboard(request: APIRequestContext, name: string, projectId?: string) {
+  const scopePath = projectId ? `/project/${projectId}` : '';
+  const res = await request.post(`${API}/api/v1/graph${scopePath}/whiteboard`, { data: { name } });
   expect(res.status()).toBe(200);
   const body = await res.json();
   return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
+}
+
+async function pickProjectId(request: APIRequestContext): Promise<string> {
+  const res = await request.get(`${API}/api/v1/graph/project`);
+  expect(res.status()).toBe(200);
+  const projects = ((await res.json()).data || []) as Array<{
+    id: string;
+    fs_storage_mount_path?: string | null;
+  }>;
+  const project = projects.find((candidate) => candidate.fs_storage_mount_path);
+  expect(project, 'a project with fs_storage_mount_path exists').toBeTruthy();
+  return project.id;
 }
 
 async function openEditor(page: Page, id: string) {
@@ -23,55 +37,48 @@ async function openEditor(page: Page, id: string) {
 // Open the whiteboard asset list with the sidebar tree showing whiteboard rows.
 // Two setup facts the .md's "find a whiteboard row" step depends on:
 //   1. Whiteboard is `browseable_by=advanced` (TypeInfo) — it only appears in
-//      the Assets tree in Advanced view mode. `setView` beats any backend-stored
-//      view_mode preference (localStorage boot-key alone loses to it).
+//      the Assets tree in Advanced view mode. The URL carries that mode so the
+//      route loader remains the single writer of view state.
 //   2. Navigating to `/dock/assets/list/<type>` deliberately does NOT auto-expand
 //      the sidebar root (it avoids a duplicate /search of the right-panel list),
 //      so the whiteboard rows only materialize after its chevron is expanded —
 //      the same expand-if-collapsed pattern the agent asset-picker test uses.
-async function openWhiteboardListExpanded(page: Page) {
-  await page.goto('/dock/assets/list/whiteboard');
+async function openWhiteboardListExpanded(page: Page, projectId: string, whiteboardId: string) {
+  const scopedList = withViewMode(
+    `/dock/assets/list/whiteboard?scope-mode=project&scope-activeProjectId=${encodeURIComponent(projectId)}`,
+    'advanced',
+  );
+  await page.goto(scopedList);
   await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
-  await page.evaluate(() => (window as any).setView?.('advanced'));
   await expect
     .poll(() => page.evaluate(() => document.documentElement.getAttribute('data-view')), { timeout: 10_000 })
     .toBe('advanced');
-  const chevron = page.locator('[data-testid^="browseable-chevron-asset-type:whiteboard:"]').first();
+  const chevron = page.getByTestId('browseable-chevron-asset-type:whiteboard');
   await expect(chevron).toBeVisible({ timeout: 15_000 });
-  const anyRow = page.locator('[data-testid^="browseable-toolbar-delete:whiteboard:"]').first();
-  if (!(await anyRow.isVisible({ timeout: 2_000 }).catch(() => false))) {
+  const createdRow = page.locator(`[data-testid="browseable-toolbar-delete:whiteboard:${whiteboardId}"]`);
+  if (!(await createdRow.isVisible({ timeout: 2_000 }).catch(() => false))) {
     await chevron.click();
   }
-  await expect(anyRow).toBeVisible({ timeout: 15_000 });
+  await expect(createdRow).toBeVisible({ timeout: 15_000 });
+  return createdRow;
 }
 
-test.describe('Whiteboard — UI / UX (U1–U5)', () => {
+test.describe('Whiteboard — UI / UX (U1–U4)', () => {
   test('U1: tree row carries a Palette icon', async ({ page, request }) => {
     test.setTimeout(60_000);
     await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
-    const { id, assetRef } = await createWhiteboard(request, `ui-u1-${Date.now() % 10000}`);
-    // Materialize + index so the board shows as a row in the asset list.
-    await openEditor(page, id);
-    await page.evaluate(() => {
-      const lib = (window as any).__excalidrawLib;
-      const api = (window as any).__whiteboardApi;
-      api.updateScene({ elements: lib.convertToExcalidrawElements([{ type: 'rectangle', x: 10, y: 10, width: 60, height: 40, label: { text: 'X' } }]) });
-      const a = (window as any).__whiteboardApi;
-      (window as any).__whiteboardOnChange(a.getSceneElements(), a.getAppState(), a.getFiles());
-    });
-    for (let i = 0; i < 8; i++) {
-      await page.waitForTimeout(1_000);
-      if (fs.existsSync(`${assetRef}/board.json`)) break;
-    }
-    await request.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`);
+    const projectId = await pickProjectId(request);
+    const { id, assetRef } = await createWhiteboard(
+      request,
+      `ui-u1-${Date.now()}-${Math.floor(Math.random() * 10_000)}`,
+      projectId,
+    );
+    const createdRow = await openWhiteboardListExpanded(page, projectId, id);
 
-    await openWhiteboardListExpanded(page);
-
-    // Any whiteboard tree row's leading icon is a lucide Palette glyph (the
-    // whiteboard Entity's static icon = 'Palette'). Walk from a row's delete
+    // The created whiteboard row's leading icon is a lucide Palette glyph (the
+    // whiteboard TypeInfo icon = 'Palette'). Walk from its delete
     // button up to the treeitem and inspect its non-trash svg.
-    const hasPalette = await page.evaluate(() => {
-      const delBtn = document.querySelector('[data-testid^="browseable-toolbar-delete:whiteboard:"]');
+    const hasPalette = await createdRow.evaluate((delBtn) => {
       let row: Element | null = delBtn ? delBtn.parentElement : null;
       for (let i = 0; i < 10 && row; i++) {
         const svgs = Array.from(row.querySelectorAll('svg')).map((s) => s.getAttribute('class') || '');
@@ -89,23 +96,15 @@ test.describe('Whiteboard — UI / UX (U1–U5)', () => {
   test('U2: whiteboard list shows whiteboards only', async ({ page, request }) => {
     test.setTimeout(60_000);
     await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
-    // Ensure at least one whiteboard exists + is indexed so the list is populated.
-    const { id, assetRef } = await createWhiteboard(request, `ui-u2-${Date.now() % 10000}`);
-    await openEditor(page, id);
-    await page.evaluate(() => {
-      const lib = (window as any).__excalidrawLib;
-      const api = (window as any).__whiteboardApi;
-      api.updateScene({ elements: lib.convertToExcalidrawElements([{ type: 'rectangle', x: 10, y: 10, width: 60, height: 40, label: { text: 'X' } }]) });
-      const a = (window as any).__whiteboardApi;
-      (window as any).__whiteboardOnChange(a.getSceneElements(), a.getAppState(), a.getFiles());
-    });
-    for (let i = 0; i < 8; i++) {
-      await page.waitForTimeout(1_000);
-      if (fs.existsSync(`${assetRef}/board.json`)) break;
-    }
-    await request.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`);
-
-    await openWhiteboardListExpanded(page);
+    // Create in the same project scope the list route reads. Entity.store()
+    // updates the searchable record before this POST returns.
+    const projectId = await pickProjectId(request);
+    const { id, assetRef } = await createWhiteboard(
+      request,
+      `ui-u2-${Date.now()}-${Math.floor(Math.random() * 10_000)}`,
+      projectId,
+    );
+    await openWhiteboardListExpanded(page, projectId, id);
 
     // On the whiteboard list path, the rendered rows are all whiteboards — no
     // skill/agent/markdown rows leak in.
@@ -133,7 +132,7 @@ test.describe('Whiteboard — UI / UX (U1–U5)', () => {
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
       (window as any).__wbWrites = 0;
-      const open = XMLHttpRequest.prototype.open;
+      const open: XMLHttpRequest['open'] = Reflect.get(XMLHttpRequest.prototype, 'open');
       XMLHttpRequest.prototype.open = function (method: string, url: string, ...rest: any[]) {
         try {
           if (/board\.json/.test(String(url)) && String(method).toUpperCase() === 'POST') {
@@ -217,14 +216,5 @@ test.describe('Whiteboard — UI / UX (U1–U5)', () => {
 
     fs.rmSync(assetRef, { recursive: true, force: true });
     await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
-  });
-
-  // U5: read-only / view-only mode. The read-only preview component
-  // (WhiteboardThumbnail — renders thumbnail.svg as an <img>, no drawing
-  // toolbar) EXISTS but is not yet wired into any reachable UI surface
-  // (tree-row preview / ![[name]] transclusion have no callers), so there is
-  // no live surface to drive. Sanctioned skip per the .md.
-  test.skip('U5: read-only thumbnail / view-only mode (no reachable surface)', async () => {
-    // view-only-preview-not-yet-wired
   });
 });

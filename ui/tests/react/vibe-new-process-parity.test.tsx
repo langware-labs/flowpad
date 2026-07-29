@@ -89,6 +89,14 @@ vi.mock('@src/hooks/flow-hooks', () => ({
   useViewerStore: (sel: (s: { setCurrentContext: () => void }) => unknown) =>
     sel({ setCurrentContext: () => {} }),
   useProcessWebApp: () => ({ host: null }),
+  useAppDisplay: () => ({
+    runtime: null,
+    available: [],
+    src: '',
+    port: null,
+    microApp: null,
+    setRuntime: vi.fn(),
+  }),
 }));
 vi.mock('@src/hooks/use-agentic-process-stream', () => ({
   useAgenticProcessStream: () => [],

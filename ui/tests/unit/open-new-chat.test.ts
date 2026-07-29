@@ -127,21 +127,7 @@ describe('openNewChat + NavigationActions', () => {
     expect(navigate).toHaveBeenCalledTimes(1);
   });
 
-  it('BUG: suppresses the dock after the committed URL differs from the stamped one', () => {
-    // Pins a KNOWN DEFECT, not desired behaviour — delete this test when it is
-    // fixed (comparing dock identity via DockPointer.fromUrl instead of raw URL
-    // strings would remove it). Measured NOT to be the vibe-hero slowness: the
-    // commit fires at +2502ms with no suppression event.
-    //
-    // `commitBrowserNavigation` stamps the EXACT target URL as pending, and
-    // `openDock` hard no-ops while `pendingDockNavigationUrl === fullUrl`
-    // (NavigationActions.ts:351). The stamp is only released when the browser
-    // URL becomes byte-identical to it — or by a 1000ms fallback timer.
-    //
-    // Shell loaders redirect to append scope params, so the URL that actually
-    // COMMITS is never the one that was stamped. This pins what that costs: a
-    // repeat navigation to the same dock inside the window is dropped, and the
-    // only thing that clears it is the timer.
+  it('releases a pending dock after its loader redirects to a canonical URL', () => {
     window.history.pushState({}, '', '/dock/home');
     const navigate = vi.fn();
     const navigation = new NavigationActions(navigate, null);
@@ -153,9 +139,9 @@ describe('openNewChat + NavigationActions', () => {
     // The loader redirects; the browser lands on the same dock PLUS scope params.
     window.history.pushState({}, '', '/dock/shell/agentic_process-p1?scope-mode=project&scope-activeProjectId=proj-1');
 
-    // Same dock again — e.g. the workspace re-asserting its URL. The stamp still
-    // holds the param-less URL, so this is silently dropped.
+    // The redirect is a committed departure from the stamped source, so the
+    // same bare dock can be requested again immediately.
     navigation.openDock(pointer);
-    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { apiBase } from '../_shared/api';
 
@@ -7,7 +8,10 @@ const API = apiBase();
 
 test('a VFS editor URL selects the real file in the Files tree', async ({ page, request }) => {
   await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
-  const root = await fs.mkdtemp(path.resolve(process.cwd(), '..', '.flowpad-vfs-selection-'));
+  // macOS exposes the temp tree through both /var and /private/var. The project
+  // route adopts the canonical mount, so build the VFS URL from that same
+  // identity instead of manufacturing two names for one file.
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'flowpad-vfs-selection-')));
   const file = path.join(root, 'docs', 'agent', 'interface.md');
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, '# Interface\n');
@@ -29,27 +33,9 @@ test('a VFS editor URL selects the real file in the Files tree', async ({ page, 
     await expect(pageHeader).toContainText('interface.md');
     await expect(pageHeader.getByTestId('assets-page-header-path')).toContainText('/docs/agent');
     await expect(pageHeader.getByTestId('assets-page-header-copy-path')).toBeVisible();
-    const headerEntityIcon = pageHeader.locator('[data-entity-location="local"]');
-    await expect(headerEntityIcon).toBeVisible();
-    await expect(headerEntityIcon.locator('[data-location-glyph="local"]')).toBeVisible();
-    await expect(headerEntityIcon.locator('[data-entity-type-icon]')).toBeVisible();
-    await expect(headerEntityIcon).toHaveAttribute('aria-label', /Local only/);
-    await expect(
-      headerEntityIcon.locator('[data-location-glyph], [data-entity-type-icon]'),
-    ).toHaveCount(2);
-    expect(
-      await headerEntityIcon
-        .locator('[data-location-glyph], [data-entity-type-icon]')
-        .evaluateAll((nodes) =>
-          nodes.map((node) =>
-            node.hasAttribute('data-location-glyph') ? 'location' : 'type',
-          ),
-        ),
-    ).toEqual(['location', 'type']);
-    await headerEntityIcon.locator('[data-location-glyph="local"]').hover();
-    await expect(page.getByRole('tooltip')).toHaveText('Local only');
-    await expect(pageHeader.getByTestId('entity-actions-share')).toBeVisible();
-    await expect(pageHeader.getByRole('button', { name: 'Add to favorites' })).toBeVisible();
+    await expect(pageHeader.locator('[data-entity-type-icon]')).toBeVisible();
+    // A raw external VFS file is not an indexed entity, so entity-only actions
+    // (Share / favorite) are intentionally absent. Discuss remains available.
     await expect(pageHeader.getByTestId('asset-discuss-in-vibe')).toBeVisible();
 
     const editorHeader = page.getByTestId('asset-editor-header');

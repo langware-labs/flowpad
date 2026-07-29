@@ -1,4 +1,4 @@
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, DataManager, WorkerStatus } from '@sdk';
 import { getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
 import { describe, expect, it } from 'vitest';
 
@@ -24,5 +24,90 @@ describe('null worker_status on a RUNNING process', () => {
 
     // The label the chat composer renders next to the send button.
     expect(getStatusLabel(process)).toBe('Idle');
+  });
+
+  it('normalizes running → null to undefined and emits one transition', () => {
+    const process = new AgenticProcess({ worker_status: WorkerStatus.WORKING });
+    const transitions: unknown[] = [];
+    process.on('state_change', (event) => {
+      if (event.field === 'workerStatus') transitions.push(event);
+    });
+
+    (process as any).onEntityUpdate({ worker_status: null });
+
+    expect(process.workerStatus).toBeUndefined();
+    expect(transitions).toEqual([
+      {
+        field: 'workerStatus',
+        oldValue: WorkerStatus.WORKING,
+        newValue: undefined,
+      },
+    ]);
+  });
+
+  it('preserves the current status and emits nothing when worker_status is omitted', () => {
+    const process = new AgenticProcess({ worker_status: WorkerStatus.WORKING });
+    const transitions: unknown[] = [];
+    process.on('state_change', (event) => {
+      if (event.field === 'workerStatus') transitions.push(event);
+    });
+
+    (process as any).onEntityUpdate({ status: 'running' });
+
+    expect(process.workerStatus).toBe(WorkerStatus.WORKING);
+    expect(transitions).toEqual([]);
+  });
+
+  it('does not emit a duplicate transition for repeated null', () => {
+    const process = new AgenticProcess({ worker_status: WorkerStatus.WORKING });
+    const transitions: unknown[] = [];
+    process.on('state_change', (event) => {
+      if (event.field === 'workerStatus') transitions.push(event);
+    });
+
+    (process as any).onEntityUpdate({ worker_status: null });
+    (process as any).onEntityUpdate({ worker_status: null });
+
+    expect(process.workerStatus).toBeUndefined();
+    expect(transitions).toHaveLength(1);
+  });
+
+  it('clears both normalized and raw status through the cache update pipeline', () => {
+    const manager = new DataManager<AgenticProcess>();
+    const id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const process = manager.updateEntityFromJson<AgenticProcess>({
+      type: AgenticProcess.type,
+      id,
+      status: 'running',
+      busy: false,
+      worker_status: WorkerStatus.WORKING,
+    });
+    const transitions: unknown[] = [];
+    process.on('state_change', (event) => {
+      if (event.field === 'workerStatus') transitions.push(event);
+    });
+
+    const updated = manager.updateEntityFromJson<AgenticProcess>({
+      type: AgenticProcess.type,
+      id,
+      worker_status: null,
+    });
+    manager.updateEntityFromJson<AgenticProcess>({
+      type: AgenticProcess.type,
+      id,
+      worker_status: null,
+    });
+
+    expect(updated).toBe(process);
+    expect(updated.workerStatus).toBeUndefined();
+    expect((updated as any).worker_status).toBeNull();
+    expect(getStatusLabel(updated)).toBe('Idle');
+    expect(transitions).toEqual([
+      {
+        field: 'workerStatus',
+        oldValue: WorkerStatus.WORKING,
+        newValue: undefined,
+      },
+    ]);
   });
 });

@@ -122,6 +122,46 @@ async def test_workspace_folders_materialize_as_projects(project_db, tmp_path, m
         assert again_by_name[name].project_id == by_name[name].project_id
 
 
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_project_picker_listing_discovers_paths_without_materializing_them(
+    project_db,
+    tmp_path,
+    monkeypatch,
+):
+    """The picker returns discovered cwds but never bulk-creates Project rows."""
+    import flow_sdk.builtin.faas.project_list as project_list
+    import flow_sdk.fs_store.operations.all_projects as ap
+    from flow_sdk.builtin.project import Project
+
+    discovered = tmp_path / "historical-worker-project"
+    discovered.mkdir()
+    monkeypatch.setattr(ap, "iter_claude_project_paths", lambda **kwargs: iter(()))
+    monkeypatch.setattr(ap, "iter_codex_project_paths", lambda **kwargs: iter(()))
+    monkeypatch.setattr(ap, "iter_copilot_project_paths", lambda **kwargs: iter(()))
+    monkeypatch.setattr(ap, "iter_workspace_project_paths", lambda **kwargs: iter((discovered,)))
+
+    real_get_all_projects = ap.get_all_projects
+
+    async def read_only_projects(*, create_missing):
+        assert create_missing is False
+        return await real_get_all_projects(include_temp=True, create_missing=create_missing)
+
+    monkeypatch.setattr(ap, "get_all_projects", read_only_projects)
+    monkeypatch.setattr(project_list, "is_valid_project_cwd", lambda _cwd: True)
+    monkeypatch.setattr(project_list, "_codex_activity_by_cwd", lambda: {})
+    monkeypatch.setattr(project_list, "_copilot_activity_by_cwd", lambda: {})
+    monkeypatch.setattr(project_list, "_index_claude_dirs_by_cwd", lambda _root: {})
+
+    before = await Project.get_all()
+    result = await project_list.list_projects_from_indexer()
+    after = await Project.get_all()
+
+    assert [row["cwd"] for row in result["projects"]] == [str(discovered.resolve())]
+    assert after == before == []
+    assert await Project.find_by_cwd(str(discovered.resolve())) is None
+
+
 def test_copilot_project_iterator_rejects_home_but_keeps_subdir(
     tmp_path,
     monkeypatch,

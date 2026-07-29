@@ -1,5 +1,5 @@
 /**
- * Doc-chat (EntityExecutionPanel) mounts per editable doc-type with an
+ * Doc execution (EntityExecutionPanel) mounts per editable doc-type with an
  * asset_ref-resolved target, lazy-creates a process on first send, and recovers
  * a terminal status after refresh.
  * Source: doc_chat_per_type.md
@@ -13,9 +13,9 @@
 import { test, expect, type Page } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
 import { apiBase, apiContext } from '../_shared/api';
+import { withViewMode } from '../_shared/view-mode';
 
 const API = apiBase();
-const PANEL = '[data-testid="entity-execution-panel"]';
 const TEXTAREA = '[data-testid="entity-execution-input"]';
 
 /**
@@ -29,7 +29,7 @@ const TEXTAREA = '[data-testid="entity-execution-input"]';
  * panel resolves to is still "<recordType>-<uuid>".
  */
 // Fixtures must be ENTITIES the qa instance has indexed (so asset_ref resolves).
-// The skill editor EMBEDS the EntityExecutionPanel (composer always visible) —
+// The skill editor EMBEDS the EntityExecutionPanel behind its Eval side tab —
 // the canonical-grammar resolution + target binding is the regression guard.
 // (The agent editor no longer embeds an execution panel at all.) The
 // markdown-family editors (plan/claude_md/claude_memory) reach the SAME panel
@@ -76,27 +76,13 @@ function vfsUrl(editor: string, machinePath: string): string {
 }
 
 /**
- * Reveal the doc-chat panel. The `skill` editor keeps it behind its own "Chat"
- * tab that must be selected. (The markdown editor's side-window Chat tab was
- * removed — the markdown-family doc types are intentionally not driven here.)
+ * Reveal the skill's execution panel. The legacy Chat side-tab was replaced by
+ * the Eval surface, which owns the same target-bound EntityExecutionPanel.
  */
 async function openChatPanel(page: Page) {
-  // After the goto, the asset-editor loader normalizes the URL (it appends view
-  // params like ?sideWindows=…) — a client-side re-navigation that keeps
-  // resetting Playwright's locator resolution, so ACTIVE polling for the
-  // composer right after goto never stabilizes (proven: identical waitFor/expect
-  // times out, while an equal wall-clock settle then finds it). Let the loader's
-  // re-nav churn settle with a passive wait before probing. This is first-paint/
-  // post-redirect synchronization, NOT a raised cap to ride past a slow path.
-  await page.waitForTimeout(9_000);
-  // skill keeps the composer behind a "Chat" side-tab.
   const ta = page.locator(`${TEXTAREA}:visible`).first();
-  if (await ta.isVisible({ timeout: 8_000 }).catch(() => false)) return;
-  const chatTab = page.getByRole('button', { name: 'Chat', exact: true }).first();
-  if (await chatTab.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await chatTab.click();
-  }
-  await expect(ta).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Eval', exact: true }).click();
+  await expect(ta).toBeVisible();
 }
 
 /**
@@ -106,7 +92,7 @@ async function openChatPanel(page: Page) {
  */
 async function readPanelTarget(page: Page): Promise<string | null> {
   return page.evaluate((taSel) => {
-    const tas = Array.from(document.querySelectorAll(taSel)) as HTMLElement[];
+    const tas = Array.from(document.querySelectorAll<HTMLElement>(taSel));
     const ta = tas.find((e) => e.offsetParent !== null) ?? tas[0];
     if (!ta) return null;
     const key = Object.keys(ta).find((k) => k.startsWith('__reactFiber$'));
@@ -147,12 +133,11 @@ test.describe('doc-chat per type', () => {
 
   test('test 1: panel mounts on every doc-type with an asset_ref-resolved target', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('viewMode', 'advanced'));
     await dismissSetupModal(page);
 
     for (const { type, editor, machinePath } of DOCS) {
-      await page.goto(vfsUrl(editor, machinePath));
-      // Panel mounts (markdown editor keeps it behind the Chat side-tab).
+      await page.goto(withViewMode(vfsUrl(editor, machinePath), 'advanced'));
+      // Panel mounts behind the current Eval side-tab.
       await openChatPanel(page);
 
       // target resolves to `<type>-<uuid>` (asset_ref → TypeId via useEntityByPath).
@@ -175,11 +160,11 @@ test.describe('doc-chat per type', () => {
     }
   });
 
-  test('test 2: first send lazy-creates a process; status transitions to a terminal DONE', async () => {
+  test('test 2: first send lazy-creates a process; status transitions to a terminal DONE', () => {
     test.skip(true, 'live-claude: first send lazy-creates an AgenticProcess and the test waits for a DONE status + a non-empty ASSISTANT reply — Claude must actively think+respond (multi-minute). The live worker/process does not reliably complete headlessly in this QA harness (same limitation as the time_gutter/prompt_index ribbon tests). The mount/target/gating contract is covered by test 1.');
   });
 
-  test('test 3: refresh after a completed chat does not show stuck Thinking', async () => {
+  test('test 3: refresh after a completed chat does not show stuck Thinking', () => {
     test.skip(true, 'live-claude: continues from test 2 (a DONE process attached to the doc), which requires a completed live-Claude chat cycle that does not run headlessly here.');
   });
 });
