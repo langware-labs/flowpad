@@ -33,7 +33,12 @@ def _link_to_dict(link) -> dict:
     }
 
 
-@action.all(action_name="wiki", methods=["get", "post"], types="all")
+@action.all(
+    action_name="wiki",
+    methods=["get", "post"],
+    types="all",
+    allow_missing_target=True,
+)
 async def wiki_action():
     """One handler for both GET and POST; branches on (method, sub_path)."""
     info = get_current_request_info()
