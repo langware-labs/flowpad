@@ -258,7 +258,7 @@ export function UserDropdown() {
   }, []);
 
   const handleOpenFlowpadCloud = useCallback(() => {
-    window.open('https://staging.flowpad.ai', '_blank', 'noopener,noreferrer');
+    window.open('https://app.flowpad.ai', '_blank', 'noopener,noreferrer');
   }, []);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);

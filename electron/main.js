@@ -223,7 +223,7 @@ function writeDesktopVersion(version) {
 // Configuration
 const BACKEND_PORT = 9007;
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
-const FLOWPAD_CLOUD_URL = process.env.FLOWPAD_CLOUD_URL || 'https://staging.flowpad.ai';
+const FLOWPAD_CLOUD_URL = process.env.FLOWPAD_CLOUD_URL || 'https://app.flowpad.ai';
 const HEALTH_CHECK_INTERVAL = 500; // ms
 const MAX_HEALTH_CHECKS = 240; // 120 seconds — cold-start window. Sized to ride
                                // past the first-launch AV-scan + bytecode-compile
