@@ -674,7 +674,7 @@ class Project(Entity):
         """
         body = super()._hub_body()
         for local_only in (
-            "fs_storage_mount_path",
+            # `fs_storage_mount_path` is withheld by its declaration now.
             "fs_storage_provider",
             "last_mode",
             "session_code",

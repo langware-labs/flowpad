@@ -68,15 +68,18 @@ class Folder(Entity):
         super().__init__(**data)
 
     def _hub_body(self) -> dict:
-        """Folder hub payload: never leak the local resolved path.
+        """Folder hub payload: strip non-transportable origins.
 
         Folders normally travel as project context refs plus
-        ``shared_context_origins``. This guard keeps direct Folder share/create
-        paths from exposing a machine-local cache, and strips non-transportable
-        origins entirely.
+        ``shared_context_origins``. The local resolved ``path`` is withheld by
+        the field declaration itself (``Sharing.PRIVATE``); what remains here is
+        the runtime check that an origin is transportable, which no per-field
+        policy can express.
         """
         body = super()._hub_body()
-        body.pop("path", None)
+        # `path` is withheld by the base seam now (declared PRIVATE); this
+        # override is left with the one thing that is NOT per-field policy — a
+        # runtime predicate on the origin's transportability.
         origin = self.origin
         if origin is None or not origin.transportable:
             body.pop("origin", None)
