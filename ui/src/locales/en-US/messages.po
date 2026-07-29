@@ -2530,6 +2530,10 @@ msgstr "Cloud disconnected"
 msgid "Cloud hub"
 msgstr "Cloud hub"
 
+#: src/components/environment-banner/EnvironmentBanner.tsx
+msgid "Cloud Sandbox"
+msgstr "Cloud Sandbox"
+
 #: src/components/graph-view/GraphView.tsx
 #~ msgid "Cloud WorldView"
 #~ msgstr "Cloud WorldView"
@@ -2844,6 +2848,7 @@ msgstr "Connected, but still no access to this repo."
 msgid "Connecting..."
 msgstr "Connecting..."
 
+#: src/components/assets/editor/WikiResolveView.tsx
 #: src/components/assets/editor/WikiResolveView.tsx
 #~ msgid "Connecting…"
 #~ msgstr "Connecting…"
@@ -3913,6 +3918,7 @@ msgstr "Description like prepare my daily brief"
 msgid "Description:"
 msgstr "Description:"
 
+#: src/components/environment-banner/EnvironmentBanner.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/desktop/DesktopPage.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -4870,6 +4876,10 @@ msgstr "Expected format: /dock/show/<entity-vfs>?page=<page>&component=<componen
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Expert Assistance"
 msgstr "Expert Assistance"
+
+#: src/components/environment-banner/EnvironmentBanner.tsx
+msgid "Explanation of Flowpad's runtime environments."
+msgstr "Explanation of Flowpad's runtime environments."
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Explore your organization and everything you can reach."
@@ -5946,6 +5956,10 @@ msgstr "Graph presentation"
 msgid "Graph view"
 msgstr "Graph view"
 
+#: src/components/graph-view/webglSupport.tsx
+msgid "Graph view needs WebGL"
+msgstr "Graph view needs WebGL"
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Group Events"
 msgstr "Group Events"
@@ -6285,6 +6299,7 @@ msgstr "https://github.com/owner/repo"
 msgid "https://github.com/owner/repo.git"
 msgstr "https://github.com/owner/repo.git"
 
+#: src/components/environment-banner/EnvironmentBanner.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
@@ -10274,6 +10289,10 @@ msgstr "Preview"
 msgid "Preview {label}"
 msgstr "Preview {label}"
 
+#: src/components/wiki-tip/WikiModalRoot.tsx
+msgid "Preview of the wiki page, shown without leaving the current view."
+msgstr "Preview of the wiki page, shown without leaving the current view."
+
 #: src/components/conversation/asset-review/StagedAssetViewer.tsx
 msgid "Preview truncated."
 msgstr "Preview truncated."
@@ -11316,6 +11335,7 @@ msgstr "Resume this run"
 #: src/components/assets/editor/EntityResolutionGate.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/assets/editor/MissingAssetCard.tsx
+#: src/components/graph-view/webglSupport.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -11627,6 +11647,11 @@ msgstr "Sandbox Logs"
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "Sandbox Metrics"
 msgstr "Sandbox Metrics"
+
+#: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/HubHome.tsx
+msgid "Sandbox unavailable"
+msgstr "Sandbox unavailable"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
@@ -12751,6 +12776,10 @@ msgstr "Sign in"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Sign in to a coding assistant"
 #~ msgstr "Sign in to a coding assistant"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Sign in to create desktops"
+msgstr "Sign in to create desktops"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Sign in to see who's a member"
@@ -15076,6 +15105,10 @@ msgstr "Your API key for authenticating API requests to FlowPad"
 #: src/components/api-keys-view/api-keys-view.tsx
 msgid "Your API Keys"
 msgstr "Your API Keys"
+
+#: src/components/graph-view/webglSupport.tsx
+msgid "Your browser could not create a WebGL context, so the graph cannot render. This usually means graphics acceleration is disabled or the GPU process crashed."
+msgstr "Your browser could not create a WebGL context, so the graph cannot render. This usually means graphics acceleration is disabled or the GPU process crashed."
 
 #: src/components/collaboration/StartRoomDialog.tsx
 #: src/components/collaboration/StartRoomDialog.tsx
