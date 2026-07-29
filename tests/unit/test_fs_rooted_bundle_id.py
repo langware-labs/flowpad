@@ -200,7 +200,7 @@ async def test_pack_folder_asset_copies_capsule_verbatim(tmp_path, monkeypatch):
     base = (
         attachment_dir
         / f"{EntityType.WHITEBOARD.value}-{ENTITY_ID}"
-        / ".claude" / "whiteboards" / "my-board"
+        / "agentic-assets" / "whiteboard" / "my-board"
     )
     # Real source preserved.
     assert (base / "WHITE_BOARD.md").exists()

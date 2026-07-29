@@ -10,7 +10,7 @@ import { parseJourneyGraph } from '@src/journey/use-journey';
 
 const GRAPH_PATH = path.resolve(
   __dirname,
-  '../../../flow_sdk/system_projects/flowpad_assistant/.claude/journeys/setup-github/graph.json',
+  '../../../flow_sdk/system_projects/flowpad_assistant/agentic-assets/journey/setup-github/graph.json',
 );
 
 const graphText = readFileSync(GRAPH_PATH, 'utf-8');
