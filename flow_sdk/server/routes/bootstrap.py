@@ -431,6 +431,7 @@ def build_app_paths() -> AppPaths:
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
     """
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     root = get_os_root_path()
 
     def _vfs_relative(abs_path: str) -> str:
@@ -469,9 +470,7 @@ def build_app_paths() -> AppPaths:
     # Per-instance preferences. Lives under instance_dir so multiple instances
     # (oss / prod / app / dev) don't clobber each other's UI prefs. The same
     # absolute path on disk, expressed VFS-relative.
-    preferences = _vfs_relative(
-        str(get_instance_settings().instance_dir / "preferences.json")
-    )
+    preferences = _vfs_relative(str(get_instance_settings().instance_dir / "preferences.json"))
 
     return AppPaths(
         root=root,
@@ -581,6 +580,7 @@ async def is_cloud_login_available() -> bool:
             try:
                 from flow_sdk.cli.app_config import set_user
                 from flow_sdk.cli.auth.hub_login import delete_api_key
+
                 await asyncio.wait_for(asyncio.to_thread(delete_api_key), timeout=2.0)
                 set_user({})
             except Exception:
@@ -719,7 +719,8 @@ async def get_or_create_local_user() -> User:
             logging.warning(
                 "@local user has legacy random id %s; expected stable %s. "
                 "Keeping existing row to preserve references — wipe the DB to migrate.",
-                desktop_user.id, local_id,
+                desktop_user.id,
+                local_id,
             )
         # Handle existing desktop user with no email - update with default email
         if not desktop_user.email:
@@ -745,7 +746,8 @@ async def get_or_create_local_user() -> User:
             logging.warning(
                 "@local user (uname='local') has legacy random id %s; expected stable %s. "
                 "Keeping existing row to preserve references — wipe the DB to migrate.",
-                existing_by_uname.id, local_id,
+                existing_by_uname.id,
+                local_id,
             )
         # Ensure it has the desktop label
         if DESKTOP_LABEL not in (existing_by_uname.labels or []):
@@ -758,8 +760,7 @@ async def get_or_create_local_user() -> User:
         manually_overridden = NAME_OVERRIDE_LABEL in (existing_by_uname.labels or [])
         needs_email_update = not existing_by_uname.email
         needs_name_update = not manually_overridden and (
-            existing_by_uname.name == "Local Desktop User"
-            or (git_name and existing_by_uname.name != git_name)
+            existing_by_uname.name == "Local Desktop User" or (git_name and existing_by_uname.name != git_name)
         )
         if needs_email_update or needs_name_update:
             if needs_email_update:
@@ -832,7 +833,8 @@ async def get_or_create_local_project(desktop_user: Optional[Entity] = None) -> 
             logging.warning(
                 "@local project has legacy random id %s; expected stable %s. "
                 "Keeping existing row to preserve references — wipe the DB to migrate.",
-                project.id, local_id,
+                project.id,
+                local_id,
             )
         logging.info(f"@local project already exists: {project.id}")
         return project
@@ -883,7 +885,8 @@ async def get_or_create_local_workspace(desktop_user: Optional[Entity] = None) -
             logging.warning(
                 "@local workspace has legacy random id %s; expected stable %s. "
                 "Keeping existing row to preserve references — wipe the DB to migrate.",
-                workspace.id, local_id,
+                workspace.id,
+                local_id,
             )
         logging.info(f"@local workspace already exists: {workspace.id}")
         return workspace
@@ -916,6 +919,7 @@ def _local_entity_id(entity_type: str) -> str:
     """Deterministic per-machine id for the @local entities — see the single
     source of truth ``flow_sdk.utils.machine_id.local_entity_id``."""
     from flow_sdk.utils.machine_id import local_entity_id  # noqa: PLC0415
+
     return local_entity_id(entity_type)
 
 
@@ -950,7 +954,9 @@ async def get_or_create_local_compute_node(
         compute_node = await ComputeNode.create_local(owner=desktop_user)
         logging.info(
             "Created @local compute node: %s with owner: %s, mount_path: %s",
-            compute_node.id, desktop_user.id if desktop_user else "None", os_root,
+            compute_node.id,
+            desktop_user.id if desktop_user else "None",
+            os_root,
         )
         return compute_node
 
@@ -994,6 +1000,7 @@ def is_sandbox_available() -> bool:
         return False
     try:
         from flow_sdk.compute.providers.e2b.provider import E2B_AVAILABLE  # noqa: PLC0415
+
         return E2B_AVAILABLE
     except Exception:
         return False
@@ -1089,9 +1096,7 @@ async def get_or_create_sandbox_compute_node(
         try:
             compute_node.node_provider_id = _new_provider_id("sandbox")
             await compute_node.save()
-            logging.info(
-                f"@sandbox compute node initialized with provider_id: {compute_node.node_provider_id}"
-            )
+            logging.info(f"@sandbox compute node initialized with provider_id: {compute_node.node_provider_id}")
         except Exception as e:
             logging.warning(f"Failed to initialize @sandbox provider_id: {e}")
 
@@ -1117,14 +1122,14 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
 
     ensured: list[Project] = []
     for sub in sorted(root.iterdir()):
-        if not sub.is_dir() or sub.name.startswith('.'):
+        if not sub.is_dir() or sub.name.startswith("."):
             continue
         if sub.name == FLOWPAD_ASSISTANT_DIRNAME:
             uname = FLOWPAD_ASSISTANT_PROJECT_UNAME
             display_name = FLOWPAD_ASSISTANT_PROJECT_NAME
         else:
             uname = sub.name
-            display_name = sub.name.replace('_', ' ').title()
+            display_name = sub.name.replace("_", " ").title()
 
         mount_path = str(sub)
         existing = await Project.get_by_prop("uname", uname, "project")
@@ -1189,9 +1194,7 @@ async def _reap_protected_path_projects() -> None:
     projects = await Project.get_all()
     rows_by_id = {str(project.id): project for project in projects}
     protected_row_ids = {
-        str(project.id)
-        for project in projects
-        if project.fs_storage_mount_path and project.protected_path
+        str(project.id) for project in projects if project.fs_storage_mount_path and project.protected_path
     }
 
     # Orphan shadows are independent evidence: their DB row may already be
@@ -1208,15 +1211,9 @@ async def _reap_protected_path_projects() -> None:
             except (OSError, ValueError):
                 continue
             project_id = str(data.get("id") or shadow.name)
-            mount = (
-                data.get("fs_storage_mount_path")
-                or data.get("cwd")
-                or data.get("real_path")
-            )
+            mount = data.get("fs_storage_mount_path") or data.get("cwd") or data.get("real_path")
             name = data.get("name")
-            if not mount and isinstance(name, str) and (
-                os.path.isabs(name) or ntpath.isabs(name)
-            ):
+            if not mount and isinstance(name, str) and (os.path.isabs(name) or ntpath.isabs(name)):
                 mount = name
             if mount and is_protected_path(mount):
                 protected_shadow_ids.add(project_id)
@@ -1338,9 +1335,7 @@ async def index_system_content() -> None:
     except Exception as e:
         logging.warning(f"[startup-index] Failed to index system markdowns (non-fatal): {e}")
     try:
-        compute_node = await get_or_create_local_compute_node(
-            local_project=project, desktop_user=user
-        )
+        compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
         await compute_node._index_system_assets()
     except Exception as e:
         logging.warning(f"[startup-index] Failed to index system assets (non-fatal): {e}")
@@ -1442,8 +1437,7 @@ async def create_onboarding_assets(user: User) -> None:
 
     # 1) Favorite bookmark to the Welcome page on the home view (skip if present).
     has_bookmark = any(
-        getattr(bm, "source", None) == _ONBOARDING_SOURCE
-        for bm in await Bookmark.get_all(source_entity=user.typeid)
+        getattr(bm, "source", None) == _ONBOARDING_SOURCE for bm in await Bookmark.get_all(source_entity=user.typeid)
     )
     if not has_bookmark:
         favorite = Bookmark(
@@ -1509,7 +1503,9 @@ async def _delete_onboarding_assets(user: User) -> int:
 async def onboarding_status() -> ApiSuccessResponse[dict]:
     """Whether onboarding assets have been seeded. Onboarded ≡ the
     ``preferences.onboarding.welcome`` gate is off. Surfaced in profile settings."""
-    return ApiSuccessResponse[dict](data={"onboarded": not _read_pref(_ONBOARDING_WELCOME_KEY, _ONBOARDING_WELCOME_DEFAULT)})
+    return ApiSuccessResponse[dict](
+        data={"onboarded": not _read_pref(_ONBOARDING_WELCOME_KEY, _ONBOARDING_WELCOME_DEFAULT)}
+    )
 
 
 @router.post("/api/v1/onboarding/reset")
@@ -1522,7 +1518,9 @@ async def onboarding_reset() -> ApiSuccessResponse[dict]:
     _write_pref(_ONBOARDING_WELCOME_KEY, True)
     await create_onboarding_assets(user)
     logging.info(f"[onboarding/reset] removed {removed} asset(s), re-seeded for user {user.typeid}")
-    return ApiSuccessResponse[dict](data={"onboarded": not _read_pref(_ONBOARDING_WELCOME_KEY, _ONBOARDING_WELCOME_DEFAULT)})
+    return ApiSuccessResponse[dict](
+        data={"onboarded": not _read_pref(_ONBOARDING_WELCOME_KEY, _ONBOARDING_WELCOME_DEFAULT)}
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1555,6 +1553,7 @@ def setup_desktop_filesystem() -> None:
 
     # Create logs folder structure under the per-instance logs dir.
     from flow_sdk.instance_settings import get_instance_settings
+
     logs_base = get_instance_settings().logs_dir
     for subdir in ("server", "monitor", "main_desktop"):
         try:
@@ -1628,14 +1627,11 @@ def setup_desktop_filesystem() -> None:
         legacy = _read_existing_prefs(legacy_settings_path)
         if legacy is None:
             logging.warning(
-                f"Legacy settings at {legacy_settings_path} is not valid JSON "
-                f"or not a dict; falling back to defaults"
+                f"Legacy settings at {legacy_settings_path} is not valid JSON or not a dict; falling back to defaults"
             )
             return None
         # Legacy settings.json uses old flat field names — re-key to dotted PrefKeys.
-        migrated_pairs = {
-            legacy_key_map[k]: v for k, v in legacy.items() if k in legacy_key_map
-        }
+        migrated_pairs = {legacy_key_map[k]: v for k, v in legacy.items() if k in legacy_key_map}
         return {**default_prefs, **migrated_pairs}
 
     try:
@@ -1788,6 +1784,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             return ApiSuccessResponse[BootstrapInfo](data=_bootstrap_cache)
 
         from flow_sdk.utils import TimeIt  # noqa: PLC0415
+
         _t = TimeIt("Bootstrap")
 
         # Initialize database (creates tables if needed)
@@ -1804,6 +1801,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             clear_app_secret_metadata,
             recover_orphaned_sodot,
         )
+
         notice: Optional[dict] = None
         try:
             notice = await asyncio.wait_for(asyncio.to_thread(recover_orphaned_sodot), timeout=2.0)
@@ -1874,6 +1872,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         from flow_sdk.core.capabilities.harness_state import compute_harness_state  # noqa: PLC0415
         from flow_sdk.core.capabilities.summary import compute_capabilities_summary  # noqa: PLC0415
         from flow_sdk.system_tools import get_scan_info  # noqa: PLC0415
+
         # Harness state + capabilities summary are computed WITHOUT awaiting the
         # full capability-discovery sweep (~860ms env probe). That sweep already
         # runs as a detached startup task; the frontend reads harness/capability
@@ -1889,34 +1888,50 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         _t.time("get_desktop_info+get_scan_info+compute_harness_state+capabilities_summary")
 
         # Sniffer hook is opt-in via InstanceSettings.sniffer_enabled
-        # (default off). When disabled, bootstrap reports whatever is in the
-        # DB (None if it was never enabled, the existing entity if the user
-        # toggled it on via the hooks-sniffer action) but never auto-installs
-        # hooks into ~/.claude/settings.json on its own.
+        # (default off). "Disabled" has ONE meaning everywhere — no sniffer
+        # commands in ~/.claude/settings.json — and it is enforced from both
+        # ends: the hooks-sniffer DELETE action purges on an explicit toggle
+        # off, and this boot path purges when nothing here backs the sniffer
+        # (default-off, or entries left behind by an uninstalled/other
+        # instance). Enabled state is the DB entity, so a user who toggled the
+        # sniffer on keeps it across restarts even with the instance gate off.
         from flow_sdk.app.actions.hooks_sniffer import (  # noqa: PLC0415
             _create_or_update_sniffer_hook,
             _get_sniffer_hook,
             sniffer_installed,
         )
+        from flow_sdk.builtin.agent_hook import HookScope  # noqa: PLC0415
+        from flow_sdk.builtin.claude_settings_sync import (  # noqa: PLC0415
+            purge_sniffer_entries_from_settings,
+        )
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
         sniffer_hook = None
         sniffer_is_installed = False
         try:
             sniffer_hook = await _get_sniffer_hook()
             _t.time("get_sniffer_hook")
-            if get_instance_settings().sniffer_enabled and (
-                not sniffer_hook or not sniffer_hook.enabled
-            ):
+            sniffer_active = bool(sniffer_hook and sniffer_hook.enabled)
+            # What settings.json actually carries — the UI warns on this, not on
+            # the DB entity, so a sniffer installed by another instance shows
+            # up. Read once here; each branch below knows what it changed it to.
+            sniffer_is_installed = sniffer_installed()
+            _t.time("sniffer_installed")
+            if get_instance_settings().sniffer_enabled and not sniffer_active:
                 sniffer_hook = await _create_or_update_sniffer_hook(user)
                 _t.time("create_or_update_sniffer_hook")
                 await sniffer_hook.apply()
+                sniffer_is_installed = sniffer_installed()
                 _t.time("sniffer_hook.apply")
-            # What settings.json actually carries — the UI warns on this, not on
-            # the DB entity, so a sniffer installed by another instance shows up.
-            sniffer_is_installed = sniffer_installed()
-            _t.time("sniffer_installed")
+            elif not sniffer_active and sniffer_is_installed:
+                # Disabled, yet the settings file still carries sniffer
+                # commands — stale. Same purge the DELETE action runs, so both
+                # roads to "off" leave the harness in the same state.
+                purge_sniffer_entries_from_settings(HookScope.USER)
+                sniffer_is_installed = False
+                _t.time("purge_stale_sniffer_entries")
         except Exception as e:
-            logging.warning(f"Failed to auto-enable sniffer hook: {e}")
+            logging.warning(f"Failed to reconcile sniffer hook: {e}")
 
         # Build BootstrapInfo using Pydantic model
         types = build_all_type_payloads()
@@ -1924,6 +1939,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         from flow_sdk.i18n import get_supported_locales, get_translation_targets  # noqa: PLC0415
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         from flow_sdk.instance_settings.privacy_mode import get_privacy_mode  # noqa: PLC0415
+
         bootstrap_info = BootstrapInfo(
             types=types,
             user=entity_to_dict(user),
