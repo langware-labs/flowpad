@@ -838,7 +838,7 @@ dependencies = [
     { name = "ptyprocess", marker = "sys_platform != 'win32'" },
     { name = "pybars3" },
     { name = "pydantic" },
-    { name = "pydantic-ai-slim" },
+    { name = "pydantic-ai-slim", extra = ["mcp"] },
     { name = "python-dotenv" },
     { name = "pywinpty", marker = "sys_platform == 'win32'" },
     { name = "pyyaml" },
@@ -880,7 +880,7 @@ requires-dist = [
     { name = "dpath" },
     { name = "dpath", specifier = "~=2.2.0" },
     { name = "fastapi" },
-    { name = "fastmcp" },
+    { name = "fastmcp", specifier = ">=3,<4" },
     { name = "filelock" },
     { name = "greenlet" },
     { name = "groq" },
@@ -898,7 +898,7 @@ requires-dist = [
     { name = "ptyprocess", marker = "sys_platform != 'win32'" },
     { name = "pybars3", specifier = "~=0.9.7" },
     { name = "pydantic", specifier = ">=2.0.0" },
-    { name = "pydantic-ai-slim", specifier = ">=1.62,<2" },
+    { name = "pydantic-ai-slim", extras = ["mcp"], specifier = ">=1.62,<2" },
     { name = "python-dotenv" },
     { name = "pywinpty", marker = "sys_platform == 'win32'" },
     { name = "pyyaml", specifier = ">=6.0" },
@@ -2438,6 +2438,11 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/cc/8d/6350a49f2e4b636efbcfc233221420ab576e4ba4edba38254cb84ae4a1e6/pydantic_ai_slim-1.62.0.tar.gz", hash = "sha256:00d84f659107bbbd88823a3d3dbe7348385935a9870b9d7d4ba799256f6b6983", size = 422452, upload-time = "2026-02-19T05:07:10.292Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3d/67/21e9b3b0944568662e3790c936226bd48a9f27c6b5f27b5916f5857bc4d8/pydantic_ai_slim-1.62.0-py3-none-any.whl", hash = "sha256:5210073fadd46f65859a67da67845093c487f025fa430ed027151f22ec684ab2", size = 549296, upload-time = "2026-02-19T05:07:01.624Z" },
+]
+
+[package.optional-dependencies]
+mcp = [
+    { name = "mcp" },
 ]
 
 [[package]]
