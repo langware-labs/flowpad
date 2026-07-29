@@ -455,12 +455,12 @@ async def test_open_gate_retry_clears_latch():
 @pytest.mark.asyncio
 async def test_open_missing_fork_source_fails_before_shell_spawn():
     """A vanished fork parent must not degrade into ``--resume <new-id>``."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
     from flow_sdk.responses.response import ApiFailResponse
 
     source_id = "missing-fork-source"
     process = AgenticProcess.fork(source_id, workdir="/project", visible=True)
-    cmd = ClaudeCliOptions(
+    cmd = ClaudeAgentOptions(
         workdir="/project",
         session_id=process.session_id,
         resume=True,

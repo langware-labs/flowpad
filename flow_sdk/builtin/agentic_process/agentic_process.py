@@ -34,7 +34,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
 )
 from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticProcessContextKey,
-    WorkerCLIOptions,
+    AgentOptions,
     WorkerDriver,
     WorkerSpawnError,
     apply_worker_env,
@@ -513,7 +513,7 @@ def unregister_prompt_worker(process_id: str, worker: Any) -> bool:
 
 
 # Accepted per-turn ``permission_mode`` overrides (e.g. chat plan mode). Mirrors
-# the values ``ClaudeCliOptions`` knows how to translate to a CLI flag; gates
+# the values ``ClaudeAgentOptions`` knows how to translate to a CLI flag; gates
 # client input so an arbitrary string can't reach the spawn args.
 _VALID_PERMISSION_MODES = frozenset({"plan", "default", "acceptEdits", "bypassPermissions", "askUser"})
 
@@ -1045,9 +1045,9 @@ class AgenticProcess(Entity):
 
         Fork chain is walked automatically to find the nearest transcript on disk.
         """
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions  # noqa: PLC0415
 
-        cmd = ClaudeCliOptions(resume=True)
+        cmd = ClaudeAgentOptions(resume=True)
         proc = cls(workdir=workdir, **kwargs)
         proc.session_id = session_id
         proc.cli_config = cmd.to_json()
@@ -1063,7 +1063,7 @@ class AgenticProcess(Entity):
         """Factory: pre-bake the cli_config that ``start_pty()`` turns into
         ``claude --resume <parent> --fork-session --session-id <new>``.
 
-        Three things must all be set for ``ClaudeCliOptions.to_spawn_args``
+        Three things must all be set for ``ClaudeAgentOptions.to_spawn_args``
         to emit the fork incantation:
           * ``resume=True``
           * ``session_id=<new>``        (the fork's own pre-allocated sid)
@@ -1079,10 +1079,10 @@ class AgenticProcess(Entity):
         before the first turn, so transcript discovery doesn't race the
         ``system:init`` event.
         """
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions  # noqa: PLC0415
 
         new_session_id = str(uuid4())
-        cmd = ClaudeCliOptions(
+        cmd = ClaudeAgentOptions(
             resume=True,
             fork_session_id=session_id,
             session_id=new_session_id,
@@ -4696,7 +4696,7 @@ class AgenticProcess(Entity):
 
     @staticmethod
     def _apply_system_instruction_assets(
-        cmd: WorkerCLIOptions,
+        cmd: AgentOptions,
         assets: SystemInstructionAssets | None,
     ) -> None:
         if assets is None:
@@ -5381,7 +5381,7 @@ class AgenticProcess(Entity):
         except ValueError:
             return None
 
-    def _finalized_restart_cli_options(self) -> WorkerCLIOptions:
+    def _finalized_restart_cli_options(self) -> AgentOptions:
         """Launch-options snapshot for restart-comparison hashing. Excludes
         runtime env injection + resume-gated transcript cwd lookup — those are
         derived from transcript state that drifts between start-time and
@@ -5837,15 +5837,22 @@ class AgenticProcess(Entity):
             return False
 
     @property
-    def cli_options(self) -> "WorkerCLIOptions":
-        """Deserialize cli_config into a live ``WorkerCLIOptions`` via the driver.
+    def cli_options(self) -> "AgentOptions":
+        """Deserialize cli_config into a live ``AgentOptions`` via the driver.
 
         The concrete class depends on ``self.worker_type`` (claude/codex/copilot),
-        but callers only use the shared ``WorkerCLIOptions`` base contract
+        but callers only use the shared ``AgentOptions`` base contract
         (``workdir``, ``env_vars``, ``add_dirs``, ``fork_session_id``,
         ``cli_cmd``/``to_shell_string``) — no vendor type leaks out.
         """
         return get_driver(self.worker_type).cli_options(self)
+
+    @property
+    def agent_options(self) -> "AgentOptions":
+        """The launch bundle for this process — prompt, model, skills, dirs,
+        permissions. Preferred spelling; ``cli_options`` stays as the alias the
+        driver layer is named after."""
+        return self.cli_options
 
     @property
     def cmd_line(self) -> str:

@@ -1,4 +1,4 @@
-"""Tests for CodexCliOptions — Codex CLI switch and spawn scenarios."""
+"""Tests for CodexAgentOptions — Codex CLI switch and spawn scenarios."""
 
 import sys
 
@@ -10,7 +10,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
     import tomli as tomllib
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import factory
-from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions
 
 
 @pytest.fixture(autouse=True)
@@ -19,7 +19,7 @@ def force_posix(monkeypatch):
 
 
 def test_default_shell_string_uses_headless_json_exec():
-    cmd = CodexCliOptions(workdir="/repo")
+    cmd = CodexAgentOptions(workdir="/repo")
     result = cmd.to_shell_string()
 
     assert result.startswith("cd /repo && codex exec")
@@ -32,14 +32,14 @@ def test_default_shell_string_uses_headless_json_exec():
 
 
 def test_permission_mode_default_omits_bypass_flag():
-    cmd = CodexCliOptions(permission_mode="default", workdir="/repo")
+    cmd = CodexAgentOptions(permission_mode="default", workdir="/repo")
     result = cmd.to_shell_string()
 
     assert "--dangerously-bypass-approvals-and-sandbox" not in result
 
 
 def test_model_add_dirs_resume_and_skills_in_shell_string():
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         session_id="abc-123",
         resume=True,
         model="gpt-5.2",
@@ -59,7 +59,7 @@ def test_model_add_dirs_resume_and_skills_in_shell_string():
 
 
 def test_model_tier_persists_raw_and_emits_resolved_model():
-    cmd = CodexCliOptions(model="sm", workdir="/repo")
+    cmd = CodexAgentOptions(model="sm", workdir="/repo")
 
     assert cmd.model == "sm"
     assert cmd.to_json()["model"] == "sm"
@@ -70,7 +70,7 @@ def test_model_tier_persists_raw_and_emits_resolved_model():
 
 
 def test_json_spawn_args_read_prompt_from_stdin():
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         session_id="abc-123",
         resume=True,
         model="gpt-5.2",
@@ -103,7 +103,7 @@ def test_json_spawn_args_read_prompt_from_stdin():
 
 
 def test_interactive_spawn_args_use_bare_codex():
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         session_id="abc-123",
         resume=True,
         model="gpt-5.2",
@@ -136,7 +136,7 @@ def test_interactive_spawn_args_use_bare_codex():
 
 
 def test_interactive_spawn_respects_non_bypass_permissions():
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         permission_mode="default",
         json_stream=False,
         ephemeral=False,
@@ -161,7 +161,7 @@ def test_interactive_spawn_respects_non_bypass_permissions():
     ],
 )
 def test_interactive_trust_override_encodes_exact_workdir_as_toml_data(workdir):
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         workdir=workdir,
         json_stream=False,
         ephemeral=False,
@@ -180,7 +180,7 @@ def test_interactive_trust_override_uses_canonical_existing_workdir(tmp_path):
     alias = tmp_path / "alias"
     alias.symlink_to(real_workdir, target_is_directory=True)
 
-    argv, _ = CodexCliOptions(
+    argv, _ = CodexAgentOptions(
         workdir=str(alias),
         json_stream=False,
         ephemeral=False,
@@ -193,14 +193,14 @@ def test_interactive_trust_override_uses_canonical_existing_workdir(tmp_path):
 
 
 def test_headless_bypass_does_not_add_interactive_trust_override():
-    argv, _ = CodexCliOptions(workdir="/repo").to_spawn_args()
+    argv, _ = CodexAgentOptions(workdir="/repo").to_spawn_args()
 
     assert not any("trust_level" in arg for arg in argv)
     assert "check_for_update_on_startup=false" not in argv
 
 
 def test_interactive_non_bypass_does_not_add_trust_override():
-    argv, _ = CodexCliOptions(
+    argv, _ = CodexAgentOptions(
         permission_mode="default",
         workdir="/repo",
         json_stream=False,
@@ -218,7 +218,7 @@ def test_pty_shell_string_uses_bare_codex_not_codex_exec():
     always emitted the headless shape so ``cmd_line`` lied about the launch
     command on every PTY codex tab.
     """
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         workdir="/repo",
         model="gpt-5.2",
         add_dirs=["/extra"],
@@ -249,7 +249,7 @@ def test_pty_shell_string_matches_spawn_argv_token_for_token():
     (after shell-quoting) as ``to_spawn_args``. Catches future drift."""
     import shlex
 
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         workdir="/path with space",
         model="gpt-5.2",
         json_stream=False,
@@ -261,7 +261,7 @@ def test_pty_shell_string_matches_spawn_argv_token_for_token():
 
 
 def test_to_json_roundtrip():
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         session_id="abc",
         resume=True,
         model="gpt-5.2",
@@ -273,7 +273,7 @@ def test_to_json_roundtrip():
         json_stream=False,
         ephemeral=False,
     )
-    loaded = CodexCliOptions.from_json(cmd.to_json())
+    loaded = CodexAgentOptions.from_json(cmd.to_json())
 
     assert loaded.session_id == "abc"
     assert loaded.resume is True
@@ -290,13 +290,13 @@ def test_to_json_roundtrip():
 def test_factory_returns_codex_cli_cmd():
     cmd = factory({"resume": True, "session_id": "x"}, worker_type="codex")
 
-    assert isinstance(cmd, CodexCliOptions)
+    assert isinstance(cmd, CodexAgentOptions)
     assert cmd.resume is True
     assert cmd.session_id == "x"
 
 
 def test_from_json_defaults():
-    cmd = CodexCliOptions.from_json({})
+    cmd = CodexAgentOptions.from_json({})
 
     assert cmd.session_id is None
     assert cmd.resume is False
