@@ -58,6 +58,16 @@ export interface OAuthProvider {
  *  ask of them and in what the resulting token can do. */
 export type OAuthFlowKind = 'code' | 'loopback' | 'device';
 
+/** What a connection test found. */
+export interface OAuthTestResult {
+  /** true = the provider accepted the token; false = it rejected it;
+   *  null = not checked (no probe, or the provider could not be reached). */
+  ok: boolean | null;
+  /** Who the token belongs to, when the provider says. */
+  identity?: string | null;
+  detail?: string | null;
+}
+
 export interface OAuthConnection {
   id: string;
   provider: string;
@@ -402,6 +412,19 @@ export class OAuthService {
       // will time out naturally at the device-code's natural expiry.
       console.warn(`[OAuthService] cancelDeviceFlow failed for ${provider}:`, err);
     }
+  }
+
+  /** Result of calling the provider with the stored token.
+   *
+   *  `ok` is three-valued: true/false are answers, null means the question was
+   *  never asked (no probe for this provider, or the provider was unreachable) —
+   *  which must not be shown as a pass. */
+  public async test(provider: string, targetEntity?: TypeId): Promise<OAuthTestResult> {
+    const actionInfo = new ActionInfo('oauth');
+    if (targetEntity) actionInfo.targetEntity = targetEntity;
+    actionInfo.subpath = [provider, 'test'];
+    const raw = await dataManager.callAction<unknown, OAuthTestResult>(actionInfo);
+    return raw ?? { ok: null, detail: 'No response from the connection test' };
   }
 
   public async attach(provider: string, targetEntity: TypeId, sharedEntityVarName?: string): Promise<void> {

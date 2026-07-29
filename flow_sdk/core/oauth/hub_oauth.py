@@ -140,6 +140,15 @@ async def hub_credential_value(credentials_name: str) -> Optional[str]:
     user_id = _cloud_user_id()
     if not user_id:
         return None
+
+    # Ask only for something the hub says it has. Requesting a value the hub does
+    # not hold is not merely wasted — a refusal from the hub surfaces to the user
+    # as "Cloud request rejected", so the routine "not connected yet" case would
+    # pop an error toast at them for nothing.
+    if not await hub_holds_credential(credentials_name):
+        logger.debug("[oauth] hub does not hold %r; not asking for its value", credentials_name)
+        return None
+
     try:
         from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
 

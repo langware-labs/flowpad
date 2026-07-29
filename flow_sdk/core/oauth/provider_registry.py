@@ -74,7 +74,7 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         name=ANTHROPIC,
         display_name="Anthropic",
         user_credentials_name="anthropic_credentials",
-        icon="Sparkles",
+        icon="ClaudeCode",
         kind=OAuthFlowKind.LOOPBACK,
         scopes=("user:profile", "user:inference"),
     ),
@@ -100,3 +100,18 @@ def user_credentials_name(name: str) -> Optional[str]:
     """
     provider = get_local_provider(name)
     return provider.user_credentials_name if provider else None
+
+
+def prefers_hub_flow(name: str) -> bool:
+    """Whether this provider should run its flow on the hub when one is available.
+
+    True for a provider we can only complete with a DEVICE grant, and for one we
+    do not know at all. False for a local code grant (Anthropic's loopback),
+    which is already the real thing.
+
+    The ONE encoding of that rule. `_handle_auth` routes by it and the provider
+    row derives its advertised grant from it — written twice, the table would
+    eventually claim a grant the button does not run.
+    """
+    local = get_local_provider(name)
+    return local is None or local.kind == OAuthFlowKind.DEVICE

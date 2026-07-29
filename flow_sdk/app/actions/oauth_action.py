@@ -22,7 +22,7 @@ from flow_sdk.app.actions.desktop_oauth import (
 )
 from flow_sdk.app.actions.oauth_attachment import attach_action, detach_action, disconnect_action
 from flow_sdk.core.oauth import resolve_user_credentials_name
-from flow_sdk.core.oauth.provider_registry import OAuthFlowKind, get_local_provider
+from flow_sdk.core.oauth.provider_registry import get_local_provider, prefers_hub_flow
 from flow_sdk.core.oauth.hub_oauth import (
     hub_credential_value,
     hub_credentials_name_for,
@@ -112,6 +112,10 @@ async def oauth_main() -> ApiResponse:
             if not state:
                 return ApiFailResponse(message="State parameter required for wait-callback")
             return await _handle_wait_callback(provider, state)
+
+        # Test — prove the stored token still works, by calling the provider.
+        if oauth_action_str == "test":
+            return await _handle_test(provider)
 
         # Cancel — explicit teardown for device-flow sessions (used by UI Cancel button).
         if oauth_action_str == "cancel":
@@ -273,7 +277,7 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
     # code flow for a provider, that is the flow we use. Anthropic's loopback IS
     # a code grant (code + PKCE, redirected to a port on this machine), so it
     # stays local and never needs the hub.
-    if local is None or local.kind == OAuthFlowKind.DEVICE:
+    if prefers_hub_flow(provider):
         hub_payload = await hub_start_auth(provider)
         if hub_payload:
             logger.info("OAuth: %s runs the authorization-code flow on the hub", provider)
@@ -368,6 +372,10 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
         set_user_credentials,
     )
 
+    from flow_sdk.core.oauth.hub_providers import invalidate_hub_providers  # noqa: PLC0415
+
+    invalidate_hub_providers()
+
     user = await get_current_request_user_fresh()
     if user is None:
         return
@@ -390,6 +398,49 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
             )
         )
         await user.update()
+
+
+async def _handle_test(provider: str) -> ApiResponse:
+    """Call the provider with the stored token and report what came back.
+
+    Answers the question the Connected badge cannot: the row says a token exists
+    and a project may use it, which stays true after the token is revoked at the
+    provider. Only a real call can tell the difference.
+
+    The token is looked for where it actually lives — local SOD first, then the
+    hub for providers whose token it holds — so the same button works whichever
+    side ran the flow.
+    """
+    from flow_sdk.core.oauth.provider_probe import run_probe  # noqa: PLC0415
+    from flow_sdk.request_context.methods import (  # noqa: PLC0415
+        get_current_request_user_fresh,
+        get_user_credentials,
+    )
+
+    cred_name = await resolve_user_credentials_name(provider)
+    if not cred_name:
+        return ApiFailResponse(message=f"Unknown OAuth provider '{provider}'")
+
+    user = await get_current_request_user_fresh()
+    if user is None:
+        return ApiFailResponse(message="No user in request context")
+
+    token: str | None = None
+    try:
+        token = await get_user_credentials(user, cred_name, user.id)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("OAuth test: no local credential for %s: %s", cred_name, e)
+
+    if not token and prefers_hub_flow(provider):
+        # Only the hub can be holding it. A local-only provider (Anthropic's
+        # loopback) has nothing there, so asking would be a wasted round-trip.
+        token = await hub_credential_value(hub_credentials_name_for(provider))
+
+    result = await run_probe(provider, token or "")
+    logger.info("OAuth test: %s -> ok=%s (%s)", provider, result.ok, result.detail or result.identity)
+    # Always a SUCCESS envelope: "the token is dead" is a successful test, and a
+    # FAIL envelope would make the client show a transport error instead.
+    return ApiSuccessResponse(data=result.as_data())
 
 
 async def _get_github_token_for_current_user() -> tuple[str | None, str | None]:
