@@ -19,6 +19,11 @@ import { mostRecentProcess } from '@src/utils/process-recency';
  * diagnose / analysis, …): only `target` + `contextTypeids` differ. The launch is
  * headless because `set_graph_context` must bind BEFORE the worker's session
  * exists (it freezes once a transcript is keyed).
+ *
+ * When the surface has no project (or one with no local workdir) the launch
+ * can't resolve a cwd. That is a missing INPUT, not an error: the hook raises
+ * `needsProject` so the caller can show the project picker, and the pick
+ * resumes the very same launch through {@link launchWithProject}.
  */
 export function useContextProcess(opts: {
   /** Reuse key (`target_typeid_str`) — the identity entity, e.g. the message typeid. */
@@ -33,12 +38,72 @@ export function useContextProcess(opts: {
   /** Gate the resume lookup — pass `false` while the control is hidden so the
    *  per-target query doesn't run for every message that mounts this hook. */
   enabled?: boolean;
-}): { existing: AgenticProcess | null; busy: boolean; openOrLaunch: () => void } {
+}): {
+  existing: AgenticProcess | null;
+  busy: boolean;
+  openOrLaunch: () => void;
+  /** The click found no usable project — render the project picker. */
+  needsProject: boolean;
+  /** Close the picker without launching (user dismissed it). */
+  dismissProjectPicker: () => void;
+  /** Continue the pending launch with the project the user just picked. */
+  launchWithProject: (projectId: string) => void;
+} {
   const { navigation } = useDockNavigation();
   const { processes } = useProcessesForTarget(opts.target, { enabled: opts.enabled });
   const [busy, setBusy] = useState(false);
+  const [needsProject, setNeedsProject] = useState(false);
 
   const existing = useMemo(() => mostRecentProcess(processes), [processes]);
+
+  const { target, contextTypeids, projectId, name, workerType } = opts;
+
+  /** The launch itself. `false` ⇒ the project yielded no workdir (caller asks). */
+  const launchFor = useCallback(
+    async (launchProjectId: string | null | undefined): Promise<boolean> => {
+      const workdir = await resolveWorkdir(launchProjectId);
+      if (!workdir) return false;
+
+      const gc = new GraphContext({});
+      gc.context_typeids = contextTypeids;
+      gc.name = name ?? `Context ${gc.id.slice(0, 8)}`;
+      const scope = launchProjectId ? [new TypeId(Project.type, launchProjectId)] : [];
+      await gc.save(scope);
+
+      // Headless so set-graph-context binds before the worker's session exists.
+      const proc = await AgenticProcess.launch({
+        ...(workerType ? { workerType } : {}),
+        workdir,
+        projectId: launchProjectId ?? undefined,
+        target: target!,
+        sharedContextEntities: contextTypeids,
+        enableAssistant: true,
+        ptyMode: false,
+      });
+      if (proc.id) await proc.setGraphContext(gc.id);
+      return true;
+    },
+    [contextTypeids, name, target, workerType],
+  );
+
+  /** Shared launch wrapper: one busy flag, one error toast. */
+  const runLaunch = useCallback(
+    (launchProjectId: string | null | undefined, onNoWorkdir: () => void) => {
+      if (busy || !target) return;
+      setBusy(true);
+      void (async () => {
+        try {
+          if (!(await launchFor(launchProjectId))) onNoWorkdir();
+        } catch (err) {
+          console.error('[useContextProcess] launch failed', err);
+          notify.error({ title: 'Failed to start context process' });
+        } finally {
+          setBusy(false);
+        }
+      })();
+    },
+    [busy, target, launchFor],
+  );
 
   const openOrLaunch = useCallback(() => {
     // Resume: open the last process bound to this context.
@@ -46,40 +111,19 @@ export function useContextProcess(opts: {
       void navigation.openShellProcess(existing.id);
       return;
     }
-    if (busy || !opts.target) return;
-    setBusy(true);
-    void (async () => {
-      try {
-        const workdir = await resolveWorkdir(opts.projectId);
-        if (!workdir) {
-          notify.error({ title: 'No project workdir for this context' });
-          return;
-        }
-        const gc = new GraphContext({});
-        gc.context_typeids = opts.contextTypeids;
-        gc.name = opts.name ?? `Context ${gc.id.slice(0, 8)}`;
-        const scope = opts.projectId ? [new TypeId(Project.type, opts.projectId)] : [];
-        await gc.save(scope);
+    // No project yet → ask for one; the pick resumes this launch.
+    runLaunch(projectId, () => setNeedsProject(true));
+  }, [existing, navigation, projectId, runLaunch]);
 
-        // Headless so set-graph-context binds before the worker's session exists.
-        const proc = await AgenticProcess.launch({
-          ...(opts.workerType ? { workerType: opts.workerType } : {}),
-          workdir,
-          projectId: opts.projectId ?? undefined,
-          target: opts.target!,
-          sharedContextEntities: opts.contextTypeids,
-          enableAssistant: true,
-          ptyMode: false,
-        });
-        if (proc.id) await proc.setGraphContext(gc.id);
-      } catch (err) {
-        console.error('[useContextProcess] launch failed', err);
-        notify.error({ title: 'Failed to start context process' });
-      } finally {
-        setBusy(false);
-      }
-    })();
-  }, [existing, busy, opts.target, opts.contextTypeids, opts.projectId, opts.name, opts.workerType, navigation]);
+  const launchWithProject = useCallback(
+    (pickedProjectId: string) => {
+      setNeedsProject(false);
+      runLaunch(pickedProjectId, () => notify.error({ title: 'That project has no local workdir' }));
+    },
+    [runLaunch],
+  );
 
-  return { existing, busy, openOrLaunch };
+  const dismissProjectPicker = useCallback(() => setNeedsProject(false), []);
+
+  return { existing, busy, openOrLaunch, needsProject, dismissProjectPicker, launchWithProject };
 }

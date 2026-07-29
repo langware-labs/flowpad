@@ -12398,6 +12398,7 @@ msgstr "סשנים ({0})"
 msgid "Set conversation project"
 msgstr "הגדר פרויקט שיחה"
 
+#: src/components/context-process/ContextProcessButton.tsx
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Set project"
