@@ -1,5 +1,6 @@
 import {
   ActionInfo,
+  ApiKey,
   ApiKeyCredentials,
   dataManager,
   EntityEnv,
@@ -323,19 +324,7 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
     }
 
     try {
-      // Create ActionInfo for API key generation
-      const actionInfo = new ActionInfo('api-keys', user.typeId.type, user.typeId.id, 'POST');
-      actionInfo.bodyParameters = {
-        name: 'FLOWPAD_API_KEY',
-        description: 'API key for communicating with flowpad API itself',
-      };
-
-      // Call the action
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await dataManager.callAction<any, ApiKeyCredentials>(actionInfo);
-
-      // Store the entire result object with all credentials
-      setGeneratedApiKey(result);
+      setGeneratedApiKey(await ApiKey.generateSelfKey(user.typeId));
 
       // Reload API keys list by triggering useEffect dependency
       setApiKeysReloadTrigger((prev) => prev + 1);
@@ -375,7 +364,7 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
     }
   };
 
-  const handleDeleteApiKey = async (keyName: string) => {
+  const handleDeleteApiKey = async (keyId: string) => {
     if (!user?.typeId) {
       notify.error({
         title: 'Error',
@@ -385,14 +374,10 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
     }
 
     try {
-      // Create ActionInfo for API key deletion
-      const actionInfo = new ActionInfo('api-keys', user.typeId.type, user.typeId.id, 'DELETE');
-      actionInfo.subpath = [keyName];
-
-      await dataManager.callAction(actionInfo);
+      await ApiKey.deleteById(user.typeId, keyId);
 
       // Optimistically update: remove the deleted key from state immediately
-      setUserApiKeys((prev) => prev.filter((key) => key.name !== keyName));
+      setUserApiKeys((prev) => prev.filter((key) => key.id !== keyId));
 
       // Clear the generated API key display if visible
       setGeneratedApiKey(null);
@@ -715,7 +700,7 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
               variant="destructive"
               size="sm"
               onClick={() => {
-                void handleDeleteApiKey(existingApiKey.name);
+                void handleDeleteApiKey(existingApiKey.id);
               }}
               className="flex items-center gap-2"
             >
