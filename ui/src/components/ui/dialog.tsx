@@ -25,7 +25,7 @@ const DialogOverlay = React.forwardRef<
       // layer (transform-gpu is a belt-and-suspenders hint). Without it, a translucent
       // backdrop fails to blend over GPU surfaces (e.g. the xterm terminal), so the
       // terminal composites on top and bleeds through the whole dialog.
-      'fixed inset-0 z-50 transform-gpu isolate will-change-transform bg-black/80  data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+      'fixed inset-0 isolate z-50 transform-gpu bg-black/80 will-change-transform data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
       className,
     )}
     {...props}
@@ -44,7 +44,12 @@ const DialogContent = React.forwardRef<
       className={cn(
         // Same compositing-layer promotion as the overlay: keeps the content on its
         // own layer above the backdrop so the terminal's GPU layer can't interpose.
-        'fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] transform-gpu isolate will-change-transform gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg',
+        // grid-cols-[minmax(0,1fr)]: an implicit `auto` track is floored at the
+        // widest child's min-content width, so one unbreakable string (a long
+        // asset name / id in an attachment chip) grows the track past max-w and
+        // every row renders wider than the dialog's painted box. Pinning the
+        // track min to 0 keeps rows inside the panel so their own truncate wins.
+        'fixed left-[50%] top-[50%] isolate z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] transform-gpu grid-cols-[minmax(0,1fr)] gap-4 border bg-background p-6 shadow-lg duration-200 will-change-transform data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg',
         className,
       )}
       {...props}

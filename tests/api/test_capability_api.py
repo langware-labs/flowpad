@@ -43,7 +43,7 @@ async def test_capabilities_summary_groups_by_intent(bootstrapped_client):
     response = await bootstrapped_client.get("/api/v1/graph/capabilities/summary")
 
     assert response.status_code == 200, response.text
-    summary = response.json()
+    summary = response.json()["data"]
     intents = {group["intent"] for group in summary["intents"]}
     assert CapabilityKind.HARNESS.value in intents  # "harness"
     kinds = {cap["kind"] for cap in summary["capabilities"]}
@@ -67,10 +67,46 @@ async def test_setup_intent_launches_setup_agent(bootstrapped_client, monkeypatc
 
     monkeypatch.setattr(routes_mod, "run_capability_install_for_intent", _fake_intent)
 
-    response = await bootstrapped_client.post(
-        "/api/v1/graph/capabilities/setup-intent", json={"text": "I want email"}
-    )
+    response = await bootstrapped_client.post("/api/v1/graph/capabilities/setup-intent", json={"text": "I want email"})
 
     assert response.status_code == 200, response.text
     assert captured["text"] == "I want email"
-    assert response.json()["process_id"] == "pid-xyz"
+    assert response.json()["data"]["process_id"] == "pid-xyz"
+
+
+@pytest.mark.asyncio
+async def test_scoped_capability_test_answers_in_the_api_envelope(bootstrapped_client, monkeypatch):
+    """The project share/invite gate reads this through `apiClient`, which unwraps
+    `data`. A bare payload here reads back as `undefined` in the browser and the
+    gate blocks every project — so the envelope is part of the contract."""
+    import flow_sdk.server.routes.capabilities as routes_mod
+    from flow_sdk.core.capabilities.models import CapabilityCheck, CapabilityResult
+
+    async def _fake_test(kind, scope=None):
+        return CapabilityCheck(
+            kind=kind,
+            result=CapabilityResult(
+                ok=False,
+                available=False,
+                message="Project has no Git repository and remote.",
+                details={"reason": "no-git-remote"},
+            ),
+        )
+
+    monkeypatch.setattr(routes_mod.get_capability_registry(), "test", _fake_test)
+
+    response = await bootstrapped_client.post(
+        "/api/v1/graph/capabilities/test",
+        json={
+            "kind": CapabilityKind.GITHUB.value,
+            "scope_type": "project",
+            "scope_id": "11317f4e-ca67-58aa-b06c-4c5a39a16844",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "SUCCESS"
+    check = body["data"]
+    assert check["result"]["available"] is False
+    assert check["result"]["details"]["reason"] == "no-git-remote"

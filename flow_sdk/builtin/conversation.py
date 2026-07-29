@@ -191,12 +191,37 @@ class Conversation(Entity):
         when no shared entity resolves, and to ``None`` for a pure entity-less
         cross-user chat — which is left project-less by design (the receiver
         maps a project only in that one case).
+
+        Resolves against DB ROWS only — deliberately NOT through
+        ``Entity.project_id_of``, whose ``get_by_id`` lets a type recover itself
+        from disk (``ClaudeSession`` does). Binding a conversation to a project
+        is DURABLE INSTALL CONSENT (docs/collab/messages-and-attachments.md §6):
+        a bound conversation auto-installs every later arrival with no review,
+        so it must never be decided from a filesystem scan.
+
+        Concretely: a receiver materializes the conversation BEFORE the bundle
+        unpacks, so a shared session has no row yet. Going through the recovering
+        lookup, the id-keyed disk scan found the SENDER's transcript (two
+        instances sharing one home dir), derived the receiver's own project from
+        its ``cwd``, and bound the conversation — swallowing both the
+        pick-a-project step and the review dialog. Unresolvable now means
+        unbound, which is the correct answer: the receiver chooses.
         """
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
         for ref in (shared_context_entities or []):
             tid = _coerce_context_typeid(ref)
             if tid is None or not tid.id:
                 continue
-            proj = await cls.project_id_of(tid.type, tid.id)
+            model = SchemaRegistry.get_entity_cls(tid.type)
+            if model is None:
+                continue
+            try:
+                target = await model.get_one({"id": tid.id})
+                proj = await target.effective_project_id() if target is not None else None
+            except Exception:
+                logging.debug("resolve_project_id: failed for %s", tid, exc_info=True)
+                continue
             if proj:
                 return proj
         return fallback

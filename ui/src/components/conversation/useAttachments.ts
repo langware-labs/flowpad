@@ -3,7 +3,6 @@ import { FlowMessage, TypeId, type HubClientErrorInfo } from '@sdk';
 import { AttachmentType, BodyStatus, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import { AttachmentChipState } from './AttachmentChip';
 import { isImagePromptFileAttachment, isPromptAttachment } from './attachment-actions/prompt-attachment';
-import { isTranscriptAttachment } from './conversation-context-aggregation';
 import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-url';
 import { useFlowMessageProgress, type FlowMessageProgress } from './useFlowMessageProgress';
 import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
@@ -50,7 +49,7 @@ export interface AttachmentTypeChipView {
 }
 
 export interface UseAttachments {
-  /** FILE attachments (the conversation.jsonl transcript is filtered out). */
+  /** FILE attachments. */
   items: AttachmentView[];
   /** Non-structural TYPE_ID (entity) attachments — skill / markdown / agent /
    *  spec — as TypeIds. Rendered as entity chips once the body is
@@ -61,10 +60,6 @@ export interface UseAttachments {
    *  so every renderable attachment is local. The UI switches the whole message
    *  between the Download button and rendered chips off this one flag. */
   downloaded: boolean;
-  /** True when the message carries the `conversation.jsonl` transcript. The
-   *  transcript is deliberately NOT in `items` (it surfaces in the Context
-   *  tab) — this flag lets the bubble say so instead of rendering nothing. */
-  sharesTranscript: boolean;
   /** True when the message carries a PROMPT attachment (the prompt row
    *  renders it). */
   hasPrompt: boolean;
@@ -178,7 +173,6 @@ export function useAttachments(fm: FlowMessage | null | undefined, messageId: st
   const items = buildItems(fm, messageId);
   const entities = buildEntities(fm);
   const downloaded = fm?.body_downloaded ?? false;
-  const sharesTranscript = (fm?.attachment ?? []).some(isTranscriptAttachment);
   // Both prompt generations count: legacy PROMPT and entity-backed TYPE_ID.
   const hasPrompt = (fm?.attachment ?? []).some(isPromptAttachment);
   // The Download button badge + tooltip: one entry per attached asset
@@ -206,7 +200,6 @@ export function useAttachments(fm: FlowMessage | null | undefined, messageId: st
     items,
     entities,
     downloaded,
-    sharesTranscript,
     hasPrompt,
     assetCount,
     assetLabels,

@@ -3,7 +3,16 @@ import type { SearchResult } from '@src/hooks/use-record-search';
 import { DockPointer } from './DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
-import { AgenticProcess, Artifact, dataContext, dataManager, isTypeId, RecordType, TypeId } from '@sdk';
+import {
+  AgenticProcess,
+  Artifact,
+  dataContext,
+  dataManager,
+  isTypeId,
+  RecordType,
+  TypeId,
+  workerFromSessionType,
+} from '@sdk';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import type { NavigationActions } from './NavigationActions';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
@@ -56,8 +65,6 @@ function codexThreadIdFromResult(result: SearchResult): string {
   return result.record_id.replace(/^codex_session-/, '');
 }
 
-
-
 /**
  * The stable TypeId for a search result, or null when no usable id is present.
  * ``record_id`` may be a full ``<type>-<uuid>`` typeid (favorites store the full
@@ -91,19 +98,55 @@ function assetEditorPointer(assetType: string, r: SearchResult): DockPointer | n
   return r.asset_ref ? DockPointer.forAssetEditor(assetType, r.asset_ref) : null;
 }
 
+/**
+ * The ONE Transcript action, shared by every worker-session row.
+ *
+ * The worker is derived from the row's own type — never written literally — so
+ * claude/codex/copilot cannot drift onto different open paths again (claude used
+ * to open by session id here while the other two opened by path). Prefers
+ * ``asset_ref`` (a received transcript is an installed asset addressed by path)
+ * and falls back to the session id for a locally-run session, which the backend
+ * resolves against this machine's CLI dir.
+ */
+function transcriptPointer(r: SearchResult): DockPointer | null {
+  const tid = resultTypeId(r);
+  if (!tid) return null;
+  const worker = workerFromSessionType(tid.type) as 'claude' | 'codex' | 'copilot';
+  const ref = (r.asset_ref ?? '').trim() || tid.id;
+  return DockPointer.forLensTranscript(worker, ref);
+}
+
+const TRANSCRIPT_ACTION = {
+  icon: FileText,
+  name: 'Transcript',
+  action: (r: SearchResult, navigation: NavigationActions) => {
+    const ptr = transcriptPointer(r);
+    if (ptr) navigation.openDock(ptr);
+  },
+};
+
 export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   skill: {
     dockPointer: (r) => assetEditorPointer('skill', r),
     actions: [
-      { icon: Search, name: 'All skills', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }) },
+      {
+        icon: Search,
+        name: 'All skills',
+        dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }),
+      },
     ],
   },
   claude_hook: {
-    dockPointer: (r) => new DockPointer(ViewType.HOOKS, undefined, {
-      hookId: r.record_id,
-    }),
+    dockPointer: (r) =>
+      new DockPointer(ViewType.HOOKS, undefined, {
+        hookId: r.record_id,
+      }),
     actions: [
-      { icon: Search, name: 'All hooks', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'claude_hook' }) },
+      {
+        icon: Search,
+        name: 'All hooks',
+        dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'claude_hook' }),
+      },
     ],
   },
   agent: {
@@ -114,7 +157,11 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const sessionId = r.session_id;
       if (sessionId) {
         const p = await navigation.openWorkerSession(sessionId);
-        if (!p) notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        if (!p)
+          notify.error({
+            title: 'Session not found',
+            message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+          });
       }
     },
   },
@@ -124,7 +171,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       if (sessionId) {
         const p = await AgenticProcess.getByWorkerId(sessionId);
         if (!p) {
-          notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+          notify.error({
+            title: 'Session not found',
+            message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+          });
           return;
         }
         navigation.openDockPointer(p.dockPointer, r.created_at ? { t: r.created_at } : undefined);
@@ -139,7 +189,11 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const sessionId = r.session_id;
       if (sessionId) {
         const p = await navigation.openWorkerSession(sessionId);
-        if (!p) notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        if (!p)
+          notify.error({
+            title: 'Session not found',
+            message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+          });
       }
     },
   },
@@ -169,9 +223,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const tid = resultTypeId(r);
       return tid ? DockPointer.forTasks(tid.id) : null;
     },
-    actions: [
-      { icon: CheckSquare, name: 'All tasks', dockPointer: () => DockPointer.forTasks() },
-    ],
+    actions: [{ icon: CheckSquare, name: 'All tasks', dockPointer: () => DockPointer.forTasks() }],
   },
   agentic_process: {
     dockPointer: (r) => {
@@ -185,18 +237,20 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       // construction-free pointer when the process isn't cached.
       const cached = dataManager.getByTypeIdFromCache<AgenticProcess>(tid);
       if (cached) return cached.searchDockPointer;
-      const sessionId = (r as any).session_id ?? undefined;
+      const sessionId = (r as { session_id?: string | null }).session_id ?? undefined;
+      // The row's own worker, not a hardcoded 'claude' — a codex/copilot process
+      // used to fall back to the CLAUDE transcript lens here, which could only
+      // ever miss.
+      const worker = ((r as { worker_type?: string | null }).worker_type ?? 'claude') as 'claude' | 'codex' | 'copilot';
       return sessionId
-        ? DockPointer.forLensTranscript('claude', sessionId)
+        ? DockPointer.forLensTranscript(worker, sessionId)
         : new DockPointer(ViewType.SHELL, `${AgenticProcess.type}${TypeId.DELIMITER}${tid.id}`);
     },
   },
   project: {
     dockPointer: (r) => {
       const tid = resultTypeId(r);
-      return tid
-        ? new DockPointer(ViewType.ASSETS, 'list/all', { scope: 'project', project_ids: tid.id })
-        : null;
+      return tid ? new DockPointer(ViewType.ASSETS, 'list/all', { scope: 'project', project_ids: tid.id }) : null;
     },
   },
   artifact: {
@@ -208,9 +262,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     primaryAction: async (r, navigation) => {
       const tid = resultTypeId(r);
       if (!tid) return;
-      const artifact = await dataManager
-        .getByTypeId<Artifact>(new TypeId(Artifact.type, tid.id))
-        .catch(() => null);
+      const artifact = await dataManager.getByTypeId<Artifact>(new TypeId(Artifact.type, tid.id)).catch(() => null);
       if (!artifact) {
         notify.error({ title: 'App not found', message: 'This app is no longer available.' });
         return;
@@ -226,62 +278,46 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const threadId = codexThreadIdFromResult(r);
       const p = await AgenticProcess.getByWorkerId(threadId);
       if (!p) {
-        notify.error({ title: 'Session not found', message: `Session ${threadId} is not in Claude, Codex, or Copilot history.` });
+        notify.error({
+          title: 'Session not found',
+          message: `Session ${threadId} is not in Claude, Codex, or Copilot history.`,
+        });
         return;
       }
       navigation.openDock(p.dockPointer);
     },
-    actions: [
-      {
-        icon: FileText,
-        name: 'Transcript',
-        action: (r, navigation) => {
-          // codex/transcript lens (LensViewer.tsx case 'codex/transcript')
-          // expects URL-encoded absolute path. DockPointer.forLensTranscript
-          // applies the encoding when workerType === 'codex'.
-          if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript('codex', r.asset_ref));
-        },
-      },
-    ],
+    actions: [TRANSCRIPT_ACTION],
   },
   copilot_session: {
     primaryAction: async (r, navigation) => {
       const sessionId = r.record_id.replace(/^copilot_session-/, '');
       const p = await AgenticProcess.getByWorkerId(sessionId);
       if (!p) {
-        notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        notify.error({
+          title: 'Session not found',
+          message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+        });
         return;
       }
       navigation.openDock(p.dockPointer);
     },
-    actions: [
-      {
-        icon: FileText,
-        name: 'Transcript',
-        action: (r, navigation) => {
-          if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript('copilot', r.asset_ref));
-        },
-      },
-    ],
+    actions: [TRANSCRIPT_ACTION],
   },
   claude_session: {
     primaryAction: async (r, navigation) => {
       const sessionId = sessionIdFromResult(r);
       const p = await AgenticProcess.getByWorkerId(sessionId);
       if (!p) {
-        notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        notify.error({
+          title: 'Session not found',
+          message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+        });
         return;
       }
       navigation.openDock(p.dockPointer);
     },
     actions: [
-      {
-        icon: FileText,
-        name: 'Transcript',
-        action: (r, navigation) => {
-          navigation.openLens('claude', 'transcript', sessionIdFromResult(r));
-        },
-      },
+      TRANSCRIPT_ACTION,
       {
         icon: GitBranch,
         name: 'Fork',
@@ -291,10 +327,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
           const cwd = record?.cwd ?? undefined;
           const computeNode = dataContext.computeNode;
           if (!computeNode) throw new Error('[Fork] No compute node');
-          const p = await computeNode.createProcess(
-            cwd ? { workdir: cwd } : {},
-            { visible: true, watchProcess: false },
-          );
+          const p = await computeNode.createProcess(cwd ? { workdir: cwd } : {}, {
+            visible: true,
+            watchProcess: false,
+          });
           void navigation.openShellProcess(p.id);
         },
       },

@@ -207,6 +207,44 @@ async def _cross_link_installed_siblings(ma: MessageAttachment) -> None:
         )
 
 
+async def _apply_receive_row_overrides(ma: MessageAttachment, someone_typeid) -> None:
+    """Stamp the type's declared ``TypeInfo.receive_row_overrides`` onto the row
+    that was just installed — for EVERY branch, not just the row-only one.
+
+    Branch-independent on purpose. ``_install_row_entity`` can fold the overrides
+    into its create payload because it builds the row itself, but the file-backed
+    branch materializes its row through ``index_attachments`` (i.e. from disk),
+    which knows nothing about reception state. Without this, a declared flag like
+    ``received=True`` would apply only to types that happen to be row-only, so
+    moving a type off ``receive_policy='auto'`` would silently drop it.
+
+    Idempotent: re-applying the same declared values over the row-only branch's
+    payload merge is a no-op.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(ma.asset_type)
+    overrides = getattr(info, "receive_row_overrides", None) or {}
+    if not overrides or not ma.asset_id:
+        return
+    cls = SchemaRegistry.get_entity_cls(ma.asset_type)
+    if cls is None:
+        return
+    try:
+        ent = await cls.get_one({"id": ma.asset_id})
+        if ent is None:
+            return
+        dirty = False
+        for key, value in overrides.items():
+            if getattr(ent, key, None) != value:
+                setattr(ent, key, value)
+                dirty = True
+        if dirty:
+            await ent.save(someone_typeid)
+    except Exception:  # never fail an otherwise-successful install on this
+        logger.warning("[install] receive_row_overrides failed for %s-%s", ma.asset_type, ma.asset_id, exc_info=True)
+
+
 async def _finalize_install(
     ma: MessageAttachment,
     scope: str,
@@ -224,6 +262,7 @@ async def _finalize_install(
     ma.installed_root = installed_root
     ma.installed_at = datetime.now(UTC)
     await ma.save(someone_typeid, notify=True)
+    await _apply_receive_row_overrides(ma, someone_typeid)
     await _maybe_mint_bookmark(ma, someone_typeid)
     # Now that this asset is a real local entity, link it with the message's
     # other installed attachments (each one's private context gains the rest).

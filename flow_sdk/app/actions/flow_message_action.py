@@ -16,11 +16,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from flow_sdk._compat import UTC
 from flow_sdk import inbox
+from flow_sdk._compat import UTC
 from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.flow_message import AttachmentType, BodyStatus, DeliveryStatus, FlowMessage, FlowMessageKind
+from flow_sdk.builtin.flow_message import BodyStatus, DeliveryStatus, FlowMessage, FlowMessageKind
 from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.team import Team
@@ -3020,22 +3020,70 @@ async def _sync_conversation_messages(
             continue
         if not download_bundles:
             continue
-        attachment_filename = (raw_fm.get("attachment_filename") or "").strip()
-        if not attachment_filename:
-            continue
-        try:
-            await _download_and_unpack_bundle(
-                raw_fm["id"],
-                attachment_filename,
-                body_status=raw_fm.get("body_status"),
-            )
-        except Exception as b_err:  # noqa: BLE001
-            logger.warning(
-                "[conv-sync] conv=%s fm=%s bundle download failed: %s",
-                conv_id[:8],
-                raw_fm.get("id"),
-                b_err,
-            )
+        await _pull_bundle_for_hub_fm(conv_id, raw_fm)
+
+
+async def _pull_bundle_for_hub_fm(conv_id: str, raw_fm: dict) -> None:
+    """Download + unpack one hub FlowMessage's bundle body. Never raises.
+
+    The single implementation of "pull this message's body", shared by the
+    inline ``_sync_conversation_messages`` loop and the deferred
+    ``_pull_conversation_bundles`` below. ``_download_and_unpack_bundle``
+    self-gates on ``body_status`` (no-op unless READY) and ``unpack_bundle`` is
+    idempotent, so calling it twice for the same message is harmless.
+    """
+    attachment_filename = (raw_fm.get("attachment_filename") or "").strip()
+    if not attachment_filename:
+        return
+    try:
+        await _download_and_unpack_bundle(
+            raw_fm["id"],
+            attachment_filename,
+            body_status=raw_fm.get("body_status"),
+        )
+    except Exception as b_err:  # noqa: BLE001
+        logger.warning(
+            "[conv-sync] conv=%s fm=%s bundle download failed: %s",
+            conv_id[:8],
+            raw_fm.get("id"),
+            b_err,
+        )
+
+
+async def _pull_conversation_bundles(conv_id: str) -> None:
+    """Deferred body pull for a whole conversation — the bytes half of
+    ``_sync_conversation_messages``, run on its own after the metadata half.
+
+    Invitation-accept syncs metadata with ``download_bundles=False`` to keep the
+    Accept request off the filesystem. But accept is the ONLY pass that ever
+    sees the inviter's pre-accept messages (the hub WS fanouts from join-time
+    forward), so skipping the download there skipped it outright: a body-less
+    first message, no staged MessageAttachment rows, no entity chip. This runs
+    the same pull immediately after the response instead of during it.
+    """
+    hub_msgs = await hub_get(
+        BuiltinEntityType.FLOW_MESSAGE,
+        scope=[("conversation", conv_id)],
+    )
+    for raw_fm in hub_msgs or []:
+        if isinstance(raw_fm, dict) and raw_fm.get("id"):
+            await _pull_bundle_for_hub_fm(conv_id, raw_fm)
+
+
+def _schedule_conversation_bundle_pull(conv_id: str) -> None:
+    """Fire-and-forget ``_pull_conversation_bundles`` off the request path.
+
+    Mirrors ``_schedule_conversation_message_fetches``: accept stays a pure
+    membership+metadata call, the filesystem work runs after it returns.
+    """
+    try:
+        asyncio.create_task(
+            _pull_conversation_bundles(conv_id),
+            name=f"conv-bundle-pull-{conv_id[:8]}",
+        )
+    except RuntimeError:
+        # No running loop (e.g. a sync call context) — nothing to schedule.
+        pass
 
 
 _UNSET = object()  # sentinel: distinguishes "existing not provided" from "known absent (None)"
@@ -3225,7 +3273,15 @@ def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict) -
     (single-flight, cheap) fetch and let the authoritative reconcile settle
     it. A genuinely empty conversation just reconciles to empty again; once
     the hub ships counts this branch never fires.
+
+    A hub-deleted conversation is a hard "no" before any of the above: the
+    user deleted it, so ``local_conv`` is (correctly) always None going
+    forward, which would otherwise read as "never synced" forever and
+    re-dispatch a fetch that resurrects its full message history on every
+    single list call.
     """
+    if hub_conv.get("deleted_at"):
+        return False
     if local_conv is None:
         return True
     if Conversation.is_stale(local_conv, hub_conv):
@@ -3408,11 +3464,7 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     # render reflects reality.
     pruned_ids: list[str] = []
     if hub_reachable:
-        seen_ids = {
-            c.get("id")
-            for c in hub_convs
-            if c.get("id") and not c.get("deleted_at")
-        }
+        seen_ids = {c.get("id") for c in hub_convs if c.get("id") and not c.get("deleted_at")}
         seen_ids.update(invitation_conv_ids)
         # Re-read local state because the upsert + invitation steps may have
         # added rows that didn't exist when we snapshotted earlier.
@@ -3563,9 +3615,8 @@ async def handle_invitation_sync(someone_typeid: str) -> ApiResponse:
     with contextlib.suppress(Exception):
         from flow_sdk.builtin.invitation import Invitation as _LocalInvitation
         from flow_sdk.db.drivers.query import QueryFilter as _QF
-        known_inv_ids = {
-            row.id for row in await _LocalInvitation.get_all(_QF(type=BuiltinEntityType.INVITATION.value))
-        }
+
+        known_inv_ids = {row.id for row in await _LocalInvitation.get_all(_QF(type=BuiltinEntityType.INVITATION.value))}
 
     fresh_invitations = []
     for inv in invitations:
@@ -3909,6 +3960,13 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                     someone_typeid,
                     download_bundles=False,
                 )
+                # ...but the bytes still have to arrive. Accept is the only pass
+                # that ever sees the pre-accept messages (see above), so skipping
+                # the download here skipped it entirely — the payload never
+                # landed and the chip stayed in its pre-download hidden state.
+                # Pull it right AFTER the response instead: same work, still off
+                # the request path, so accept keeps its latency.
+                _schedule_conversation_bundle_pull(linked_conv_id)
                 conversation_synced = True
         except Exception as e:
             logger.warning("[invitation-accept] hub join+materialize failed: %s", e, exc_info=True)
@@ -4096,99 +4154,6 @@ async def invitation_accept() -> ApiResponse:
     except Exception as e:
         logger.error("[flow_message_action] invitation-accept error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
-
-
-# ---------------------------------------------------------------------------
-# Per-message Private Context actions
-#
-#   - `start-cc-from-transcript`: when the message has a `conversation.jsonl`
-#     FILE attachment, spawn a Claude session pre-loaded with that transcript
-#     path and ask for a brief analysis. The new AgenticProcess pins
-#     `target_typeid_str = <fm typeid>` so the frontend query picks it up.
-#
-# The action returns immediately with `process_id`; the entity-query channel
-# delivers updates to the UI as the run progresses.
-# ---------------------------------------------------------------------------
-
-
-async def _resolve_workdir_and_project_async(fm: FlowMessage) -> tuple[str, Optional[str]]:
-    """Async variant — pulls task.project_root + project_id where available."""
-    project_id: Optional[str] = None
-    workdir = ""
-    conv_id = fm.conversation_id
-    if conv_id:
-        conv = await Conversation.get_one({"id": conv_id})
-        if conv:
-            project_id = conv.project_id or project_id
-            task_typeid = (
-                conv.first_context_of_type(BuiltinEntityType.TASK.value)
-                if hasattr(conv, "first_context_of_type")
-                else None
-            )
-            if task_typeid:
-                task = await Task.get_one({"id": task_typeid.id})
-                if task:
-                    project_id = task.project_id or project_id
-                    workdir = (task.project_root or "").strip() or workdir
-    if project_id and not workdir:
-        from flow_sdk.builtin.project import Project
-
-        project = await Project.get_one({"id": project_id})
-        if project:
-            workdir = (project.fs_storage_mount_path or "").strip() or workdir
-    return workdir, project_id
-
-
-async def handle_start_cc_from_transcript(fm_id: str, someone_typeid: str) -> ApiResponse:
-    """Resolve transcript path + spawn info for a Claude session derived from this FM.
-
-    Spawning the AgenticProcess is intentionally left to the frontend
-    (mirrors `useMyProcess`'s pattern: ``AgenticProcess.spawn(..., { visible: true })``
-    + ``process.start({ instruction })``) so we get a real PTY-backed shell
-    the user can interact with — a backend-spawned ``visible=false`` worker
-    has no PTY to attach to and the dock's shell route falls back when
-    navigated to.
-    """
-    fm = await FlowMessage.get_one({"id": fm_id})
-    if not fm:
-        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
-
-    transcript = None
-    for att in fm.attachment or []:
-        if att.attachment_type == AttachmentType.FILE and att.data.endswith("conversation.jsonl"):
-            transcript = att
-            break
-    if not transcript:
-        return ApiFailResponse(message="No transcript attachment on this message")
-
-    transcript_path = transcript.local_path or transcript.data
-    workdir, project_id = await _resolve_workdir_and_project_async(fm)
-
-    return ApiSuccessResponse(
-        data={
-            "transcript_path": transcript_path,
-            "workdir": workdir,
-            "project_id": project_id,
-        }
-    )
-
-
-@action.post(action_name="start-cc-from-transcript", types=[BuiltinEntityType.FLOW_MESSAGE.value])
-async def start_cc_from_transcript() -> ApiResponse:
-    """Headless: start a Claude session from this FM's transcript attachment."""
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.target_entity_typeid:
-            return ApiFailResponse(message="No request info found")
-        if not request_info.someone_typeid:
-            return ApiFailResponse(message="Authentication required")
-        return await handle_start_cc_from_transcript(
-            fm_id=str(request_info.target_entity_typeid.id),
-            someone_typeid=request_info.someone_typeid,
-        )
-    except Exception as e:
-        logger.error("[flow_message_action] start-cc-from-transcript error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Start CC failed: {str(e)}")
 
 
 # ---------------------------------------------------------------------------
