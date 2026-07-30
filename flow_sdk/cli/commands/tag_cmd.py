@@ -5,6 +5,11 @@ bound to a dot-taxonomy tag — docs whose frontmatter lists it, source files
 carrying a ``tag`` capsule, wiki mentions — assembled server-side by
 ``POST /api/v1/tags/context`` (see flow_sdk/server/routes/tags.py).
 
+``flow tag create <name>`` blesses a name: the OPTIONAL Tag entity carrying a
+title/description (flow_sdk/builtin/tag.py). Bindings never need it — docs and
+capsules bind to anonymous names — so this only adds documentation, display,
+and wiki-mention resolution.
+
 Modes (LLMIndex summary tiers):
     line  — one line per bound doc / code site (the orientation pass)
     block — a ≤60-word summary per doc (the working set)
@@ -24,7 +29,11 @@ from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
+)
+from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
     post_graph_json as _post_graph_json,
 )
 
@@ -123,3 +132,42 @@ def tag_get(
         on_error=_on_error,
     )
     typer.echo(_render(data))
+
+
+@tag_app.command(
+    "create",
+    help="Bless a tag — create its Tag entity. NAME is a dot-taxonomy tag (e.g. breadcrumb.test.foo.rules).",
+)
+def tag_create(
+    name: Annotated[str, typer.Argument(help="Tag name, e.g. breadcrumb.test.foo.rules")],
+    title: Annotated[Optional[str], typer.Option("--title", help="UX display label")] = None,
+    description: Annotated[
+        Optional[str],
+        typer.Option("--description", "-d", help="What things under this tag mean"),
+    ] = None,
+) -> None:
+    """Idempotent by construction: ``id = uuid5("tag:<name>")``, so re-running
+    the same name upserts the same row instead of creating a second one.
+
+    Creation under a system-owned first segment (``flow``, ``entity``,
+    ``agent``, …) is refused by entity save-validation — the server answers 4xx
+    and that surfaces here as INVALID_TAG, not a crash.
+    """
+    if not name or not name.strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_TAG", "Empty tag name")
+    port = _discover_port()
+    url = f"http://127.0.0.1:{port}/api/v1/graph/tag"
+    payload: dict = {"name": name.strip()}
+    if title:
+        payload["title"] = title
+    if description:
+        payload["description"] = description
+
+    def _on_error(status_code: int, rbody: dict) -> None:
+        message = str(rbody.get("message") or f"HTTP {status_code}")
+        if 400 <= status_code < 500:
+            _fail(EXIT_INVALID_ARG, "INVALID_TAG", message)
+        _fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", message)
+
+    data = _post_graph_json(url, payload, on_error=_on_error)
+    typer.echo(f"tag-{data.get('id')}  {data.get('name')}")
