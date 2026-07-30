@@ -2,10 +2,8 @@ import { AgenticProcess, dataContext, fsStore, TypeId, VFSPath } from '@sdk';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { isContentAssetDock } from '@src/navigation/content-asset-dock';
-import { dockPointerForFile } from '@src/navigation/local-file-pointer';
-import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { editorForType } from '@src/navigation/asset-doc-types';
+import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { shellIdFromShowTarget } from '@src/navigation/shell-show-target';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
@@ -27,15 +25,6 @@ import type { IEntity } from '@sdk';
 interface AssetVibeWorkspaceProps {
   isVibe: boolean;
   session: VibeWorkspaceSession | null;
-}
-
-/** Asset/file show targets only — a `shell` target is handled before this. */
-function dockForShowTarget(target: DisplayShowTarget) {
-  const editor = target.type ? editorForType(target.type) : undefined;
-  if (editor && target.typeid) {
-    return AssetDocPointer.forTypeId(editor, new TypeId(target.typeid)).toDockPointer();
-  }
-  return target.path ? dockPointerForFile(target.path) : null;
 }
 
 /**
@@ -172,7 +161,7 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
         void navigationRef.current.openShell(shellId, { viewMode: ViewMode.Vibe });
         return;
       }
-      const targetDock = dockForShowTarget(target);
+      const targetDock = dockForDisplayTarget(target);
       if (!targetDock || !isContentAssetDock(targetDock)) return;
       const vibeDock = targetDock.withViewMode(ViewMode.Vibe);
       if (currentDockRef.current?.equals(vibeDock)) return;

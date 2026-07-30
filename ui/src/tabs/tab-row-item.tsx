@@ -15,7 +15,13 @@ import { useEntity } from '@src/hooks/entity-hooks';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { TabLifecycleState, type TabLifecycleEntry, useTabLifecycles } from '@src/tabs/tab-lifecycle';
-import { ContentTabTooltip, humanizeType, LazyProcessTooltip, PROVIDER_META } from '@src/tabs/provider-meta';
+import {
+  ContentTabTooltip,
+  humanizeType,
+  LazyProcessTooltip,
+  PROVIDER_META,
+  ShownTargetBadge,
+} from '@src/tabs/provider-meta';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
 import { FileText, FolderGit2 } from 'lucide-react';
 import React, { useMemo } from 'react';
@@ -69,7 +75,15 @@ export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): T
       icon: (
         <Icon className={`h-3.5 w-3.5 shrink-0 ${meta.iconClassName}`} data-provider={kind} aria-label={meta.label} />
       ),
-      badge: tab.worktree ? <FolderGit2 className="h-3 w-3 shrink-0 text-amber-500" /> : undefined,
+      // Worktree glyph + the agent's "I showed you something" marker. The badge
+      // slot is inline markers after the icon; both are optional and either can
+      // be absent, so render whatever is present rather than branching.
+      badge: (
+        <>
+          {tab.worktree && <FolderGit2 className="h-3 w-3 shrink-0 text-amber-500" />}
+          {processId && <ShownTargetBadge processId={processId} />}
+        </>
+      ),
       isDisabled,
       hasError: lifecycleOverlay.hasError,
       statusReason,
@@ -149,10 +163,8 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
   // at creation and can't track the asset you're viewing. For the ACTIVE Assets
   // tab we overlay the focused asset live from the current dock — its own name +
   // type icon — leaving inactive assets tabs on their stored scope title.
-  const focusVfsFilename =
-    currentDock?.viewType === ViewType.ASSETS ? currentDock.vfsPath?.filename || null : null;
-  const focusTypeId =
-    currentDock?.viewType === ViewType.ASSETS ? currentDock.targetTypeId ?? null : null;
+  const focusVfsFilename = currentDock?.viewType === ViewType.ASSETS ? currentDock.vfsPath?.filename || null : null;
+  const focusTypeId = currentDock?.viewType === ViewType.ASSETS ? (currentDock.targetTypeId ?? null) : null;
   const focusType = focusTypeId?.type;
   const focusEditable = !!(focusType && editorForType(focusType));
   const focusEntity = focusTypeId
@@ -166,8 +178,7 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
   // "analysis", so the prefixed "Agent analysis: …" title (which the header
   // carries) would only waste the narrow tab. Subscribe to that process so the
   // chip upgrades the moment its row loads.
-  const focusTrace =
-    focusType === 'agent_trace' ? (focusEntity as AgentTrace | null) : null;
+  const focusTrace = focusType === 'agent_trace' ? (focusEntity as AgentTrace | null) : null;
   const procTypeId = focusTrace?.analyzed_process_id
     ? new TypeId(AgenticProcess.type, focusTrace.analyzed_process_id)
     : null;
@@ -178,8 +189,7 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
   // The displayed name comes from the focused entity, except an agent_trace
   // shows its analyzed process's name instead (resolved reactively above).
   const titleSource = focusType === 'agent_trace' ? focusProcess : focusEntity;
-  const activeAssetTitle =
-    focusVfsFilename ?? (focusEditable ? (titleSource?.displayName?.trim() ?? null) : null);
+  const activeAssetTitle = focusVfsFilename ?? (focusEditable ? (titleSource?.displayName?.trim() ?? null) : null);
 
   return useMemo(
     () =>
@@ -202,8 +212,7 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
               aria-label={`${focusType} tab`}
             />
           );
-          const typeLabel =
-            VIEWER_REGISTRY[ViewType.ASSETS]?.title || humanizeType(focusType);
+          const typeLabel = VIEWER_REGISTRY[ViewType.ASSETS]?.title || humanizeType(focusType);
           item.tooltip = (
             <ContentTabTooltip
               tab={t}

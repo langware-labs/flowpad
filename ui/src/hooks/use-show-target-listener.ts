@@ -1,0 +1,172 @@
+import { AgenticProcess, dataManager, Tab, TypeId, type IEntity } from '@sdk';
+import { useEntityOps } from '@sdk/react/hooks';
+import { useIsVibe } from '@src/components/view-mode';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { dockForDisplayTarget, type DisplayTargetLike } from '@src/navigation/display-target-pointer';
+import { applyAllTabs } from '@src/tabs/all-tabs-store';
+import { useCallback, useEffect, useRef } from 'react';
+
+/**
+ * `flow show` outside vibe — mint the target as a tab beside the calling process.
+ *
+ * The verb is one mode-agnostic address; the PRESENTATION adapts. Vibe pins the
+ * target in its Display pane (`vibe-workspace` / `asset-vibe-workspace`, both
+ * gated on `isVibe`). Every other mode has no display pane, so the target
+ * becomes what it would have been if the user had opened it: a top-level tab,
+ * placed immediately after the process that showed it.
+ *
+ * **It never navigates.** A show is the agent saying "this is ready", not "drop
+ * what you are doing" — and unlike vibe's pane repaint, navigating here would
+ * yank a user who is mid-task in another tab. The intent is carried instead by
+ * the marker `ShownTargetBadge` puts on the process's own chip. Three problems
+ * fall away with the navigation: a background agent cannot interrupt anyone,
+ * `on_show`'s broadcast to EVERY client (browser tabs, `/win` popouts, the
+ * desktop shell) becomes idempotent — minting one deterministic row N times is
+ * still one row and zero navigations — and there is no race with a route loader.
+ */
+/** Stable identity — `useEntityOps` re-subscribes when this changes. */
+const PROCESS_TYPES = [AgenticProcess.type];
+
+/**
+ * Is this persisted show NEWS to a client that mounted at `mountedAt`?
+ *
+ * A tab is durable, so a show stamped before we mounted is already represented
+ * — its tab exists, or the user closed it deliberately — and acting on it would
+ * undo that close on every reload. Only a show newer than the mount is news.
+ *
+ * Pure and exported for the regression test: the first version of this gate
+ * used a "first observation sets a baseline" flag, which is correct for the
+ * per-process vibe surfaces but WRONG here, because this listener serves every
+ * process — whichever unrelated process updated first consumed the baseline and
+ * every stale target sailed through. Verified in the browser: a closed tab came
+ * back on reload.
+ */
+export function isFreshShow(
+  displayStack: ReadonlyArray<{ shown_at?: string }> | undefined,
+  mountedAt: number,
+): boolean {
+  const newestAt = Date.parse(displayStack?.[displayStack.length - 1]?.shown_at ?? '');
+  return Number.isFinite(newestAt) && newestAt >= mountedAt;
+}
+
+export function useShowTargetListener(): void {
+  const isVibe = useIsVibe();
+  // Consecutive-duplicate guard, shared by both delivery channels below: the
+  // live event and the durable entity update carry the SAME payload, so without
+  // it every show is handled twice.
+  const handledKeyRef = useRef('');
+  // Persisted shows older than this are history, not commands (see below).
+  const mountedAtRef = useRef(Date.now());
+
+  const showTarget = useCallback(async (processId: string, target: DisplayTargetLike): Promise<void> => {
+    const dock = dockForDisplayTarget(target);
+    if (!dock) {
+      // A real answer, not a failure: an entity type with no editor and no
+      // path, or an `app` with no dev server, addresses nothing openable. The
+      // target still lives in the process's display history.
+      console.debug('[flow show] target has no dock in this mode', target);
+      return;
+    }
+
+    const tabs = await Tab.listAll();
+    // The anchor is the process's OWN tab. The frontend has no deterministic
+    // tab-id helper (`tab_id_for` is uuid5, backend-only; the FE reconciles by
+    // the `pointer` natural key), so match on the pointer hash. One canonical
+    // process URL family serves every view mode, so this is the same row in
+    // Standard, Advanced and Vibe.
+    const processHash = DockPointer.forShell(`${AgenticProcess.type}-${processId}`).tabHash;
+    const anchor = tabs.find((tab) => tab.dockPointer?.tabHash === processHash) ?? null;
+
+    // Rebase onto the process's project — load-bearing, not cosmetic.
+    //
+    // A bare ASSETS dock is SCOPE-keyed: `tabHash` folds every sub-pointer of a
+    // scope into ONE tab (`DockPointer.ts`, the `scopeKeyed` branch), so showing
+    // a document would hijack that scope's existing Assets tab and rename it
+    // rather than open its own. The project-rebased form (`/dock/project/<id>/
+    // editor/…`) is NOT scope-keyed, so each document keeps its own identity —
+    // the same shape a task/doc opened from a conversation chip gets
+    // (`EntityChip`, `AssetReviewDialog`, `ConversationContextPanel` all rebase
+    // at the call site exactly like this). The project id rides denormalized on
+    // the anchor row, so this costs no extra fetch, and the helper passes
+    // non-ASSETS pointers through untouched.
+    const placed = DockPointer.rebaseAssetsOntoProject(dock, anchor?.project_id ?? null);
+
+    // `getFromDockPointer`, not raw `newTab`: because nothing navigates, no
+    // route loader will ever fill in the chip's denormalized display fields.
+    // This is what resolves the target, icon, name and project scope, so the
+    // chip lands complete instead of as an unlabelled stub.
+    //
+    // Deliberately NOT `setupTab`/`setupTabAndAdopt` — those stamp
+    // `Tab.activateById`, which would mark a tab the user never opened as the
+    // most-recently-active one and poison both scope-entry and the default
+    // placement anchor for the next tab.
+    //
+    // No `parentTabId`: a show is a top-level tab. Standard mode never
+    // registers a workspace parent, so omitting it is already correct — being
+    // explicit keeps it that way if that ever changes.
+    await Tab.getFromDockPointer(placed, { afterTabId: anchor?.id ?? null });
+    // `getFromDockPointer` returns the PROJECT-SCOPED list, which must never be
+    // adopted globally (it would erase every other project's tabs). Re-read the
+    // unscoped list for adoption, exactly as `materializeTab` does.
+    applyAllTabs(await Tab.listAll());
+  }, []);
+
+  const handle = useCallback(
+    (processId: string, target: DisplayTargetLike | null | undefined): void => {
+      if (!target || !processId) return;
+      const key = `${processId}:${JSON.stringify(target)}`;
+      if (handledKeyRef.current === key) return;
+      handledKeyRef.current = key;
+      void showTarget(processId, target);
+    },
+    [showTarget],
+  );
+
+  // Live channel — the transient `on_show` entity event. Manager-level rather
+  // than bound to one process instance: outside vibe there is no "session", and
+  // since nothing steals focus it is safe to serve every process at once.
+  useEffect(() => {
+    if (isVibe) return;
+    // The `dataManager` SINGLETON is the emitter (`FlowSync/store.ts` surfaces
+    // every entity event at manager level). Note `dataContext.dataManager` is
+    // NOT it — that property does not exist, so reading the manager from the
+    // context yields undefined and silently kills the subscription.
+    const onEntityEvent = (typeId: TypeId, event: string, payload: Record<string, unknown>): void => {
+      if (event !== 'on_show' || typeId.type !== AgenticProcess.type) return;
+      handle(typeId.id, payload as DisplayTargetLike);
+    };
+    dataManager.on('on_entity_event', onEntityEvent);
+    return () => dataManager.off('on_entity_event', onEntityEvent);
+  }, [handle, isVibe]);
+
+  // Durable channel — `on_show` persists `context_data.last_shown` BEFORE it
+  // emits the transient event, so any process update carries the newest target
+  // and covers a client that attached while a show was in flight.
+  //
+  // The timestamp gate is what stops it from resurrecting the dead: a tab is
+  // durable, so a show that predates this client is ALREADY represented (its
+  // tab exists, or the user closed it on purpose) and re-minting it would undo
+  // that close on every reload. Only a show stamped after we mounted is news.
+  //
+  // Compared per event, deliberately NOT via a "first observation establishes a
+  // baseline" flag: this listener serves EVERY process, so a single flag gets
+  // consumed by whichever unrelated process updates first and then waves every
+  // stale target through. (The per-process vibe surfaces can use that shape
+  // because each instance watches exactly one process; this one cannot.)
+  const onProcessOp = useCallback(
+    (typeId: TypeId, _op: 'create' | 'update' | 'delete', data: IEntity): void => {
+      if (isVibe) return;
+      const context = (
+        data as IEntity & {
+          context_data?: { last_shown?: DisplayTargetLike; display_stack?: Array<{ shown_at?: string }> };
+        }
+      ).context_data;
+      const shown = context?.last_shown;
+      if (!shown) return;
+      if (!isFreshShow(context?.display_stack, mountedAtRef.current)) return;
+      handle(typeId.id, shown);
+    },
+    [handle, isVibe],
+  );
+  useEntityOps(PROCESS_TYPES, onProcessOp);
+}
