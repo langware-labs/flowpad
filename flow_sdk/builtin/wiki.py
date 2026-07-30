@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from flow_sdk.api.api_types.api_field import APIField, Persist
+from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
@@ -13,7 +13,7 @@ class Wiki(Entity):
 
     type: str = APIField(default=EntityType.WIKI.value, persist=Persist.FALSE)
     name: str = APIField(default="", persist=Persist.FALSE)
-    project_id: str = APIField(default="", persist=Persist.FALSE)
+    project_id: str = APIField(default="", persist=Persist.FALSE, sharing=Sharing.PRIVATE)
 
     async def store(self):
         """Wiki has no filesystem record or content."""

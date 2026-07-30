@@ -1,4 +1,4 @@
-import { ViewType } from '../utils/ui/view-types';
+import { CredentialsSubview, ViewType } from '../utils/ui/view-types';
 
 /**
  * Icon names available for warnings
@@ -71,7 +71,8 @@ export function createCloudDisconnectedWarning(): UserWarning {
     color: 'gray',
     message: 'Cloud Disconnected',
     description: 'Sharing, backup and download are blocked',
-    targetView: ViewType.CONNECTIONS,
+    targetView: ViewType.CREDENTIALS,
+    targetPointer: CredentialsSubview.CONNECTIONS,
     onClick: async () => {
       try {
         const { cloudManager } = await import('../services/cloud_login');
@@ -94,7 +95,8 @@ export function createCloudLoginFailedWarning(description: string): UserWarning 
     color: 'red',
     message: 'Cloud Login Failed',
     description,
-    targetView: ViewType.CONNECTIONS,
+    targetView: ViewType.CREDENTIALS,
+    targetPointer: CredentialsSubview.CONNECTIONS,
   };
 }
 
@@ -109,7 +111,8 @@ export function createCloudConnectionLostWarning(description?: string): UserWarn
     color: 'yellow',
     message: 'Cloud Connection Lost',
     description: description ?? 'Sharing and realtime updates are paused.',
-    targetView: ViewType.CONNECTIONS,
+    targetView: ViewType.CREDENTIALS,
+    targetPointer: CredentialsSubview.CONNECTIONS,
     onClick: async () => {
       try {
         const { cloudManager } = await import('../services/cloud_login');
@@ -133,7 +136,8 @@ export function createCloudConnectionAuthRejectedWarning(description?: string): 
     color: 'red',
     message: 'Hub Rejected Connection',
     description: description ?? 'The hub refused this client. Try reconnect.',
-    targetView: ViewType.CONNECTIONS,
+    targetView: ViewType.CREDENTIALS,
+    targetPointer: CredentialsSubview.CONNECTIONS,
     onClick: async () => {
       try {
         const { cloudManager } = await import('../services/cloud_login');
@@ -166,7 +170,8 @@ export function createHubRequestFailedWarning(detail: {
     color: 'orange',
     message: 'Cloud Request Failed',
     description: `${method} ${path} ${statusCode}: ${message}`.trim(),
-    targetView: ViewType.CONNECTIONS,
+    targetView: ViewType.CREDENTIALS,
+    targetPointer: CredentialsSubview.CONNECTIONS,
     onClick: onDismiss,
   };
 }

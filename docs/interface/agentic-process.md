@@ -28,7 +28,7 @@ The two transport/visibility axes are the load-bearing ones; the rest support li
 | --- | --- | --- |
 | `pty_mode` (:453) | `bool = True`, persisted | **Transport intent** and the routing key. `True` → interactive PTY (live terminal). `False` → headless JSON-stream (`-p`/stream-json, no PTY, no xterm; loader skips the PTY attach). Execution routes on `pty_mode`, not `visible`; `pty_mode` seeds `visible` at launch and the chat⇄terminal toggle keeps them in lock-step in the common case. |
 | `visible` (:445) | `bool = False` | **Tab visibility only** — "is this process shown as a terminal tab". Set `True` on open, `False` on close. NOT a transport selector and NOT a membership flag (the strip's membership is the `Tab` entity). |
-| `cli_config` | `dict` | Vendor CLI options (`ClaudeCliOptions`/`CodexCliOptions`/`CopilotCliOptions` serialized). Holds `resume`, `session_id`, permission mode, etc. Legacy processes may still carry `agents_json`, but new embedded agents are materialized as process assets. |
+| `cli_config` | `dict` | Vendor CLI options (`ClaudeAgentOptions`/`CodexAgentOptions`/`CopilotAgentOptions` serialized). Holds `resume`, `session_id`, permission mode, etc. Legacy processes may still carry `agents_json`, but new embedded agents are materialized as process assets. |
 | `session_id` | `str \| None` | Vendor session/thread id. Once set, `project_id`+`workdir` are **frozen** (see `__setattr__` binding lock, :613) — rebinds to a different value are refused because the on-disk transcript is keyed to them. |
 | `shell_id` | `str \| None` | Linked `Shell` entity (the PTY host). Preserved across `exit()` for restart; `sidecar_shell_id` is the legacy zsh-intermediary companion. Reverse pointer is `Shell.agentic_process_id` (see note below). |
 | `shell_mode` | `bool = False` | AgenticProcess drives this choice. `False` = direct PTY spawn (default) — the worker PID is set via `shell.set_worker_pid_direct(cmd)` (`start_pty` path, :1144); `True` = legacy zsh intermediary. |
@@ -71,7 +71,7 @@ Names + one-liners; no bodies.
 - `on_transcript_change(jsonl_path, entries)` — hook fired when the transcript file changes.
 
 **Config**
-- `cli_options` *(property)* → `WorkerCLIOptions`; `driver` *(property)* → the vendor `WorkerDriver`.
+- `cli_options` *(property)* → `AgentOptions`; `driver` *(property)* → the vendor `WorkerDriver`.
 - `cmd_line` *(property)* — live launch command (disk I/O; never call inside `model_dump`).
 - `save(owner=None, notify=True)` — persist; runs the drift/`restart_required` save-hook.
 
@@ -261,7 +261,7 @@ Class: `AgenticProcess extends APIEntity<AgenticProcess> implements IAgenticProc
 ### Getters
 - `status` → `ProcessStatus`; `workerStatus` → `WorkerStatus | undefined`
   (transcript-derived; `undefined` when the wire reports no transcript status).
-- `cliOptions` (get/set) → `ClaudeCliOptions`.
+- `cliOptions` (get/set) → `ClaudeAgentOptions`.
 - `ptyConnection` → the live `PtyConnection | undefined`; `shellEntity` → `Shell | null`.
 - Dock-pointer family: `dockPointer`, `terminalDockPointer`, `transcriptDockPointer`, `searchDockPointer` (URL-first navigation targets).
 - `completed`, `error`, `historyLoaded`, `isPrompting`, `wasRestoredFromSession`.

@@ -153,3 +153,10 @@ If a backend route can't be called through `apiClient` because it doesn't return
 ## Type icons (non-negotiable)
 
 **Every per-type icon in the UI comes from the backend type registry (`TypeInfo.icon`) — never hardcode a glyph for an entity type at a call site.** Resolve it at render time via `iconForType(type)` (`ui/src/components/graph-view/icons/iconRegistry.ts`), which reads the bootstrap-loaded SchemaRegistry and falls back to a generic document glyph for unknown/icon-less types. If a type's icon is wrong or missing, fix its `TypeInfo` (`flow_sdk/schema/type_info/<type>_*info.py`) so every surface picks it up — don't patch the one component.
+
+## Naming — check the glossary before inventing a noun
+
+**[`docs/glossary.md`](docs/glossary.md) is the cross-walk between our vocabulary, Claude Code's, and OpenClaw's.** Read it before naming a new entity, and keep two rules:
+
+* **Say whether it mirrors a provider or is ours.** `DynamicWorkflow`/`WorkflowRun` mirror Claude Code's Workflow tool; `GraphWorkflow`/`GraphWorkflowRun` are ours. A provider mirror follows the provider's format and lives under its dot-dir; a native asset is `AssetClass.REPO` under `agentic-assets/<family>/`.
+* **Don't reuse an already-taken word.** `Flow` means a chat message (`FlowMessage`) and a bus envelope (`FlowEvent`); `Graph` means the entity graph, `GRAPH_CONTEXT`, and `graph-view`; `Workflow` means the two Claude Code mirrors. That's why ours is the compound `GraphWorkflow` — bare `Graph*` and bare `Workflow*` are both ambiguous.

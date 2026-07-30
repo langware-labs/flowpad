@@ -29,7 +29,7 @@ export interface SessionGroupItem {
   children: ConversationItem[];
   /** Messages carrying a runnable prompt (guest → host turns). */
   promptCount: number;
-  /** Messages carrying a `prompt_result-` attachment (host → guest replies). */
+  /** Messages carrying a `prompt_completion-` attachment (host → guest replies). */
   replyCount: number;
   sortAt: number;
 }
@@ -77,9 +77,9 @@ export function buildConversationItems(
   return items;
 }
 
-function messageHasPromptResult(fm: FlowMessage): boolean {
+function messageHasPromptCompletion(fm: FlowMessage): boolean {
   return (fm.attachment ?? []).some(
-    (a) => a?.attachment_type === 'type_id' && (a.data ?? '').startsWith('prompt_result-'),
+    (a) => a?.attachment_type === 'type_id' && (a.data ?? '').startsWith('prompt_completion-'),
   );
 }
 
@@ -139,7 +139,7 @@ export function groupConversationItems(
     }
     run.children.push(item);
     if (promptAttachmentsOf(fm).length > 0) run.promptCount += 1;
-    if (messageHasPromptResult(fm)) run.replyCount += 1;
+    if (messageHasPromptCompletion(fm)) run.replyCount += 1;
   }
   flush();
   return out;

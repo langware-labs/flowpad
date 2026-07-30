@@ -1,5 +1,6 @@
 ---
 id: b27cd997-c564-573a-bf9c-ac5fa323b555
+ground_truth: true
 ---
 
 # Collaboration

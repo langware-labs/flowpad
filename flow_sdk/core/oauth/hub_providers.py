@@ -62,7 +62,32 @@ def _row_from_hub(item: dict[str, Any]) -> EnvVar | None:
     ref_name = str(item.get("ref_name") or "").strip()
     if not name or not ref_name:
         return None
-    return provider_env_var(name, name, ref_name, item.get("icon"))
+    # The hub runs a real authorization-code grant for everything it defines.
+    # Its manifest holds the scope list and the table does not publish it, so the
+    # scopes stay empty rather than being guessed.
+    from flow_sdk.core.oauth.provider_registry import OAuthFlowKind  # noqa: PLC0415
+
+    return provider_env_var(name, name, ref_name, item.get("icon"), kind=OAuthFlowKind.CODE.value)
+
+
+#: The hub's provider catalogue, cached per cloud user for the life of the
+#: process. It is near-static — it changes when the hub gains a provider
+#: manifest, not while someone is looking at a table — and it was being
+#: re-fetched over the network on every read of the USER env table (every focus,
+#: remount and invalidation) plus once per attach / detach / test.
+#:
+#: No TTL, so there is no window in which the list is knowably stale. Two things
+#: keep it honest: the key is the cloud user id, so signing in as someone else
+#: misses rather than reads the wrong catalogue (and while logged out there is no
+#: id, so nothing is cached at all); and `invalidate_hub_providers()` is called
+#: after a flow completes, which is the one moment the hub's answer changes
+#: because of something we did.
+_PROVIDER_CACHE: dict[str, EntityEnvVars] = {}
+
+
+def invalidate_hub_providers() -> None:
+    """Drop the cached catalogue. Called after a completed OAuth flow."""
+    _PROVIDER_CACHE.clear()
 
 
 async def hub_provider_rows() -> EntityEnvVars:
@@ -73,6 +98,10 @@ async def hub_provider_rows() -> EntityEnvVars:
     if not user_id:
         logger.debug("[oauth] no cloud user id; skipping hub providers")
         return EntityEnvVars(values=[])
+
+    cached = _PROVIDER_CACHE.get(user_id)
+    if cached is not None:
+        return cached
 
     try:
         from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
@@ -98,17 +127,49 @@ async def hub_provider_rows() -> EntityEnvVars:
         row = _row_from_hub(item)
         if row is not None:
             rows.append(row)
-    return EntityEnvVars(values=rows)
+    table = EntityEnvVars(values=rows)
+    _PROVIDER_CACHE[user_id] = table
+    return table
 
 
 def union_providers(local: EntityEnvVars, hub: EntityEnvVars) -> EntityEnvVars:
-    """Local rows first; a hub row with a colliding name is dropped, not merged."""
+    """One row per provider, describing the flow that will ACTUALLY run.
+
+    Local rows win on identity — the credential name has to stay the local one,
+    because `git push` and the `gh` capability read GitHub's token out of local
+    SOD by that name.
+
+    But identity is not the same as the grant. When a local provider only has a
+    DEVICE grant and the hub defines the same provider, the router prefers the
+    hub's authorization-code flow (see `_handle_auth`) — so the row must say
+    `code`, not `device`. A row advertising the grant that lost would be a table
+    telling the user something the button then contradicts.
+
+    Its scopes are cleared with it: the local list described the device app, and
+    the hub's live in a manifest the table does not carry, so anything kept here
+    would be stale.
+    """
+    from flow_sdk.core.oauth.provider_registry import OAuthFlowKind, prefers_hub_flow  # noqa: PLC0415
+
     by_name: dict[str, EnvVar] = {}
     for row in local.values:
         by_name[row.name.lower()] = row
     for row in hub.values:
-        if row.name.lower() in by_name:
-            logger.debug("[oauth] hub provider %r shadowed by the local one", row.name)
+        key = row.name.lower()
+        existing = by_name.get(key)
+        if existing is None:
+            by_name[key] = row
             continue
-        by_name[row.name.lower()] = row
+        if prefers_hub_flow(existing.name):
+            # Same predicate the router uses, so the advertised grant is the one
+            # that will run. Scopes go with it: the local list described the
+            # device app, and the hub's live in a manifest the table does not
+            # carry — but the row is rebuilt per call, so nothing is lost for the
+            # hub-unreachable fallback, which reads the registry directly.
+            logger.debug("[oauth] %r keeps its local credential name but runs the hub's code flow", row.name)
+            by_name[key] = existing.model_copy(
+                update={"oauth_kind": OAuthFlowKind.CODE.value, "oauth_scopes": []}
+            )
+        else:
+            logger.debug("[oauth] hub provider %r shadowed by the local one", row.name)
     return EntityEnvVars(values=[by_name[k] for k in sorted(by_name)])

@@ -138,7 +138,7 @@ EXPECTED = {
     "NOTIFICATION": "notification",
     "INBOX_MANAGER": "inbox_manager",
     "RUN": "run",
-    "PROMPT_RESULT": "prompt_result",
+    "PROMPT_COMPLETION": "prompt_completion",
     "REMOTE_WORKER_SESSION": "remote_worker_session",
     # SemanticLock file targets (5a19f9e6) — additive member; the commit that
     # added it missed this freeze.
@@ -179,8 +179,8 @@ EXPECTED = {
     "TAG": "tag",
     "WIKI": "wiki",
     "WIKI_ENTRY": "wiki_entry",
-    "AGENTIC_FLOW": "agentic_flow", "FLOW_NODE": "flow_node",
-    "AGENTIC_FLOW_RUN": "agentic_flow_run",
+    "GRAPH_WORKFLOW": "graph_workflow", "GRAPH_WORKFLOW_NODE": "graph_workflow_node",
+    "GRAPH_WORKFLOW_RUN": "graph_workflow_run",
     # Journeys (0.2.105): folder-backed guided-onboarding doc + per-user
     # DB-only journal — additive members, no existing value changed.
     "JOURNEY": "journey", "JOURNEY_JOURNAL": "journey_journal",

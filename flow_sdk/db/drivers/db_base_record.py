@@ -6,6 +6,7 @@ from typing import (
     ClassVar,
     Generic,
     List,
+    NamedTuple,
     Optional,
     TypeVar,
     Union,
@@ -14,15 +15,23 @@ from typing import (
     get_origin,
     get_type_hints,
 )
-from flow_sdk._compat import Unpack
-from flow_sdk.schema.types import EntityType
+from weakref import WeakKeyDictionary
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.fields import FieldInfo
 from pydantic.json_schema import DEFAULT_REF_TEMPLATE, GenerateJsonSchema
 
-from flow_sdk.api.api_types.api_field import APIField, is_api_visible_field, is_blob_field, is_db_excluded
+from flow_sdk._compat import Unpack
+from flow_sdk.api.api_types.api_field import (
+    APIField,
+    Sharing,
+    is_api_visible_field,
+    is_blob_field,
+    is_db_excluded,
+    sharing_policy,
+)
 from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.schema.types import EntityType
 from flow_sdk.utils.serialization import iso_to_datetime
 
 from .query import QueryFilter
@@ -30,15 +39,46 @@ from .query import QueryFilter
 RecordType = TypeVar("RecordType", bound="DBBaseRecord")
 RecordRelationshipType = TypeVar("RecordRelationshipType", bound="DBBaseRelationship")
 
+# Resolved {field: Sharing} per class. Weak-keyed so a throwaway model in a
+# test doesn't pin its class forever. See ``_sharing_map``.
+_SHARING_CACHE: "WeakKeyDictionary[type, dict]" = WeakKeyDictionary()
+
+
+class SharingBoundaries(NamedTuple):
+    """The four field sets derived from one class's sharing declarations."""
+
+    not_sent_to_hub: frozenset[str]
+    not_accepted_from_hub: frozenset[str]
+    owned_by_hub: frozenset[str]
+    not_in_bundle: frozenset[str]
+
+
+# The four boundaries per class. They are pure functions of the sharing map, and
+# the accessors sit on per-record and per-message paths (``from_record``, hub
+# merge, bundle egress) — rebuilding a frozenset from a full-field comprehension
+# on every call is what the deleted ClassVar frozensets used to make free.
+_SHARING_SETS_CACHE: "WeakKeyDictionary[type, SharingBoundaries]" = WeakKeyDictionary()
+
+
+# Blob-backed field names per class — same rationale as the sharing map above.
+_BLOB_FIELDS_CACHE: "WeakKeyDictionary[type, list]" = WeakKeyDictionary()
+
+
+def clear_sharing_cache() -> None:
+    """Drop the per-class derived caches — for tests that define models on the fly."""
+    _SHARING_CACHE.clear()
+    _SHARING_SETS_CACHE.clear()
+    _BLOB_FIELDS_CACHE.clear()
+
 
 class DBBaseRecord(BaseModel):
     model_config = ConfigDict(from_attributes=True, arbitrary_types_allowed=True, use_enum_values=True)
     type: str = APIField("", description="The type of the entity")
     id: str = APIField("", description="The id of the entity")
-    created_by: Optional[str] = APIField(None, description="The id of the creator")
-    created_date: Optional[datetime] = APIField(None)
-    updated_by: Optional[str] = APIField(None)
-    updated_date: Optional[datetime] = APIField(None)
+    created_by: Optional[str] = APIField(None, description="The id of the creator", sharing=Sharing.PRIVATE)
+    created_date: Optional[datetime] = APIField(None, sharing=Sharing.HUB_READ)
+    updated_by: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+    updated_date: Optional[datetime] = APIField(None, sharing=Sharing.HUB_READ)
     created_through: Optional[str] = APIField(None, description="TypeID of API key used for creation")
     updated_through: Optional[str] = APIField(None, description="TypeID of API key used for last update")
     schema_version: Optional[str] = APIField(None)
@@ -215,12 +255,92 @@ class DBBaseRecord(BaseModel):
 
     @classmethod
     def get_blob_fields_names(cls) -> List[str]:
-        blob_fields_names = [name for name, field in cls.model_fields.items() if cls.is_blob_field(name)]
-        return blob_fields_names
+        """Blob-backed field names, cached per class.
+
+        It was a full ``model_fields`` scan (each name re-walking the MRO) on
+        every call — ~85µs for a 47-field model — and it sits on hot paths:
+        every save's blob write, every hub merge, the sqlite driver. Cached on
+        the same per-class mechanism as the sharing map.
+        """
+        cached = _BLOB_FIELDS_CACHE.get(cls)
+        if cached is None:
+            cached = [name for name in cls.model_fields if cls.is_blob_field(name)]
+            _BLOB_FIELDS_CACHE[cls] = cached
+        return cached
 
     @classmethod
     def has_blob_fields(cls) -> bool:
         return len(cls.get_blob_fields_names()) > 0
+
+    # ── Field-sharing policy ────────────────────────────────────────────────
+    # Derived from the per-field ``sharing=`` declaration; see
+    # ``flow_sdk.api.api_types.api_field.Sharing``. These four are the boundaries
+    # the six old name-lists governed between them.
+
+    @classmethod
+    def _sharing_map(cls) -> dict:
+        """``{field_name: Sharing}`` for this class, cached.
+
+        Unions ``model_fields`` and ``model_computed_fields``: computed fields
+        live only in the latter, and two of them carry policy — a
+        ``model_fields``-only loop silently lets them travel.
+
+        Cached per class in a module-level dict rather than on the class, because
+        an attribute would be inherited and a subclass would silently read its
+        base's answer. Not built in ``__init_subclass__`` — ``model_fields`` is
+        not final there and ``model_rebuild`` can change it.
+
+        Only the policy is stored: the bundle axis is derived from it (see
+        ``is_portable``), and caching it alongside would be a second copy of the
+        same fact to keep in step.
+        """
+        cached = _SHARING_CACHE.get(cls)
+        if cached is None:
+            cached = {
+                name: sharing_policy(f)
+                for name, f in (*cls.model_fields.items(), *cls.model_computed_fields.items())
+            }
+            _SHARING_CACHE[cls] = cached
+        return cached
+
+    @classmethod
+    def _sharing_boundaries(cls) -> SharingBoundaries:
+        """The four derived field sets for this class, cached — one pass each."""
+        cached = _SHARING_SETS_CACHE.get(cls)
+        if cached is None:
+            policies = cls._sharing_map().items()
+            cached = SharingBoundaries(
+                not_sent_to_hub=frozenset(
+                    n for n, s in policies if s in (Sharing.PRIVATE, Sharing.HUB_READ)
+                ),
+                not_accepted_from_hub=frozenset(
+                    n for n, s in policies if s in (Sharing.PRIVATE, Sharing.HUB_WRITE)
+                ),
+                owned_by_hub=frozenset(n for n, s in policies if s is Sharing.HUB_READ),
+                not_in_bundle=frozenset(n for n, s in policies if s is Sharing.PRIVATE),
+            )
+            _SHARING_SETS_CACHE[cls] = cached
+        return cached
+
+    @classmethod
+    def fields_not_sent_to_hub(cls) -> frozenset[str]:
+        """Fields the hub must never be told (``PRIVATE`` + ``HUB_READ``)."""
+        return cls._sharing_boundaries().not_sent_to_hub
+
+    @classmethod
+    def fields_not_accepted_from_hub(cls) -> frozenset[str]:
+        """Fields a hub payload must never overwrite (``PRIVATE`` + ``HUB_WRITE``)."""
+        return cls._sharing_boundaries().not_accepted_from_hub
+
+    @classmethod
+    def fields_owned_by_hub(cls) -> frozenset[str]:
+        """Fields we must never stamp locally — the hub is authoritative."""
+        return cls._sharing_boundaries().owned_by_hub
+
+    @classmethod
+    def fields_not_in_bundle(cls) -> frozenset[str]:
+        """Fields that must not ride a share bundle — exactly ``PRIVATE``."""
+        return cls._sharing_boundaries().not_in_bundle
 
     def db_json(self, **kwargs):
         keys_to_remove = [key for key, _ in self.__dict__.items() if key.startswith("_")]

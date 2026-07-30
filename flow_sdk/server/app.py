@@ -56,7 +56,6 @@ from flow_sdk.server import FlowServer
 
 from .routes import (
     agent_records_router,
-    agentic_flows_router,
     assets_router,
     auth_router,
     capabilities_router,
@@ -70,6 +69,7 @@ from .routes import (
     docs_graph_router,
     favorites_router,
     git_router,
+    graph_workflows_router,
     hooks_router,
     journeys_router,
     markdown_index_router,
@@ -278,11 +278,11 @@ async def _seed_service_triggers() -> None:
         await set_service_triggers()
         # Seed the system-scope service flows (mini-analyzer, daily-analysis).
         try:
-            from flow_sdk.flow_manager.service_flows import set_service_flows
+            from flow_sdk.graph_workflow_manager.service_graph_workflows import set_service_graph_workflows
 
-            await set_service_flows()
+            await set_service_graph_workflows()
         except Exception:
-            logging.getLogger(__name__).exception("set_service_flows failed")
+            logging.getLogger(__name__).exception("set_service_graph_workflows failed")
         print("  System triggers: upserted")
     except Exception:
         logging.getLogger(__name__).exception("System triggers: failed to seed")
@@ -299,9 +299,9 @@ async def _start_fsop_watcher() -> None:
 
         await start_tag_triggers()
         # Arm graph-level flow subscriptions (flow-events phase 5).
-        from flow_sdk.flow_manager import get_flow_manager
+        from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
-        await get_flow_manager().arm_all_flow_subscriptions()
+        await get_graph_workflow_manager().arm_all_flow_subscriptions()
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")
@@ -529,7 +529,7 @@ server.add_router(docs_graph_router)
 server.add_router(semantic_checker_router)
 server.add_router(capabilities_router)
 server.add_router(toplog_router)
-server.add_router(agentic_flows_router)
+server.add_router(graph_workflows_router)
 server.add_router(journeys_router)
 server.add_router(git_router)
 server.add_router(worldview_router)

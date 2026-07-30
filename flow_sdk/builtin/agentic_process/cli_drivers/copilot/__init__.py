@@ -1,6 +1,6 @@
 """GitHub Copilot CLI driver."""
 
-from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.driver import CopilotDriver
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.event_to_flowdata import (
     convert_event,
@@ -26,7 +26,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot.stream_worker import (
 __all__ = [
     "CANCEL_GRACE_SECONDS",
     "CopilotCLIStreamWorker",
-    "CopilotCliOptions",
+    "CopilotAgentOptions",
     "CopilotDriver",
     "convert_event",
     "convert_line",

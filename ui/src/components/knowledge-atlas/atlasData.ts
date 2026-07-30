@@ -8,7 +8,12 @@
 
 import apiClient from '@sdk/client';
 
-export type NodeStatus = 'fresh' | 'modified' | 'added' | 'removed' | 'stale' | 'unindexed' | 'manual';
+// 'manual' = human-maintained index; 'ground_truth' = hand-written content that is
+// not a generated index at all. Both mean "the generator stays out", so both render
+// like 'fresh' (no stale border, no badge) rather than carrying a warning.
+export type NodeStatus =
+  | 'fresh' | 'modified' | 'added' | 'removed' | 'stale' | 'unindexed'
+  | 'manual' | 'ground_truth';
 
 export type GraphNodeIn = {
   type: string; // "markdown_index" (folder) | "markdown" (file)

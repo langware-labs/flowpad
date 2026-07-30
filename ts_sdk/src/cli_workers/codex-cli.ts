@@ -1,7 +1,7 @@
 import { WorkerCliOptions, shellQuote } from './base'
 import { CODEX_MODEL_TIERS, resolveModelTier } from './model-tiers'
 
-export interface CodexCliOptionsOptions {
+export interface CodexAgentOptionsOptions {
   session_id?: string | null
   resume?: boolean
   model?: string | null
@@ -14,7 +14,7 @@ export interface CodexCliOptionsOptions {
   ephemeral?: boolean
 }
 
-export class CodexCliOptions extends WorkerCliOptions {
+export class CodexAgentOptions extends WorkerCliOptions {
   session_id?: string | null
   resume: boolean
   model?: string | null
@@ -26,7 +26,7 @@ export class CodexCliOptions extends WorkerCliOptions {
 
   static DEFAULT_REASONING_EFFORT = 'low'
 
-  constructor(opts: CodexCliOptionsOptions = {}) {
+  constructor(opts: CodexAgentOptionsOptions = {}) {
     super(opts.workdir ?? undefined, opts.env_vars)
     this.session_id = opts.session_id ?? undefined
     this.resume = opts.resume ?? false
@@ -60,7 +60,7 @@ export class CodexCliOptions extends WorkerCliOptions {
     const head = ['codex', 'exec', '--skip-git-repo-check', ...bypass]
     if (this.ephemeral) head.push('--ephemeral')
     head.push('--json')
-    head.push('-c', `model_reasoning_effort=${CodexCliOptions.DEFAULT_REASONING_EFFORT}`)
+    head.push('-c', `model_reasoning_effort=${CodexAgentOptions.DEFAULT_REASONING_EFFORT}`)
     return [...head, ...this._commonTail(), '-']
   }
 
@@ -79,8 +79,8 @@ export class CodexCliOptions extends WorkerCliOptions {
     }
   }
 
-  static fromJson(data: Record<string, any>): CodexCliOptions {
-    return new CodexCliOptions({
+  static fromJson(data: Record<string, any>): CodexAgentOptions {
+    return new CodexAgentOptions({
       session_id: data['session_id'] ?? undefined,
       resume: Boolean(data['resume'] ?? false),
       model: data['model'] ?? undefined,

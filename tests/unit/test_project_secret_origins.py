@@ -6,7 +6,7 @@ from flow_sdk.api.type_id import TypeId
 from flow_sdk.app.actions.membership_sync import materialize_project_secret_origins
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers import apply_worker_env, apply_worker_secret_env
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.secret_origin import SecretOrigin
 from flow_sdk.cli.auth.secrets import write_secret
@@ -307,7 +307,7 @@ async def test_worker_secret_env_resolves_from_sod_without_mutating_cli_options(
     await apply_worker_secret_env(explicit_env, process)
     assert explicit_env["OPENAI_API_KEY"] == "explicit"
 
-    cmd = WorkerCLIOptions(env_vars={})
+    cmd = AgentOptions(env_vars={})
     apply_worker_env(cmd.env_vars, process)
     transient_env = dict(cmd.env_vars)
     await apply_worker_secret_env(transient_env, process)

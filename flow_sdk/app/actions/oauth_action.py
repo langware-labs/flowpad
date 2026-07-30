@@ -21,6 +21,15 @@ from flow_sdk.app.actions.desktop_oauth import (
     wait_for_desktop_oauth_callback,
 )
 from flow_sdk.app.actions.oauth_attachment import attach_action, detach_action, disconnect_action
+from flow_sdk.core.oauth import resolve_user_credentials_name, unresolved_provider_reason
+from flow_sdk.core.oauth.provider_registry import get_local_provider, prefers_hub_flow
+from flow_sdk.core.oauth.hub_oauth import (
+    hub_credential_value,
+    hub_credentials_name_for,
+    hub_start_auth,
+    poll_hub_credential,
+    redirect_unreachable_reason,
+)
 from flow_sdk.core import action
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -104,6 +113,10 @@ async def oauth_main() -> ApiResponse:
             if not state:
                 return ApiFailResponse(message="State parameter required for wait-callback")
             return await _handle_wait_callback(provider, state)
+
+        # Test — prove the stored token still works, by calling the provider.
+        if oauth_action_str == "test":
+            return await _handle_test(provider)
 
         # Cancel — explicit teardown for device-flow sessions (used by UI Cancel button).
         if oauth_action_str == "cancel":
@@ -257,6 +270,36 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
     elif request_info and hasattr(request_info, "user") and request_info.user:
         user_id = request_info.user.id if hasattr(request_info.user, "id") else str(request_info.user)
 
+    local = get_local_provider(provider)
+
+    # A real authorization-code grant wins. The only local flow that is NOT one
+    # is GitHub's device grant — it makes the user retype a code and is bounded
+    # by what a device-flow app is registered for — so when the hub can run the
+    # code flow for a provider, that is the flow we use. Anthropic's loopback IS
+    # a code grant (code + PKCE, redirected to a port on this machine), so it
+    # stays local and never needs the hub.
+    hub_refusal: str | None = None
+    if prefers_hub_flow(provider):
+        hub_payload = await hub_start_auth(provider)
+        if hub_payload:
+            # Preflight the callback host BEFORE handing the browser a doomed
+            # consent screen. Signing in successfully and then landing nowhere is
+            # indistinguishable from "nothing happened" to the person clicking —
+            # which is exactly how a stale tunnel URL hid for as long as it did.
+            hub_refusal = await redirect_unreachable_reason(str(hub_payload.get("auth_url") or ""))
+            if not hub_refusal:
+                logger.info("OAuth: %s runs the authorization-code flow on the hub", provider)
+                return ApiSuccessResponse(data=hub_payload)
+
+        # The hub cannot carry this flow — unreachable, or its callback host is
+        # not serving. Either way it is "hub unavailable": a provider with a
+        # local grant falls through to it below (a device code beats no
+        # connection), and one without gets the reason rather than the desktop
+        # path's "not supported", which would point at the wrong thing.
+        logger.info("OAuth: hub cannot run %s (%s)", provider, hub_refusal or "unreachable")
+        if hub_refusal and local is None:
+            return ApiFailResponse(message=hub_refusal)
+
     return await get_desktop_oauth_auth_url(provider, user_id)
 
 
@@ -298,12 +341,129 @@ async def _handle_callback(provider: str, request_info) -> ApiResponse:
 
 
 async def _handle_wait_callback(provider: str, state: str) -> ApiResponse:
-    """Wait for desktop OAuth callback via long-polling.
+    """Wait for the OAuth flow to finish.
 
-    Desktop mode: waits for localhost callback server to receive the code,
-    then exchanges it for a token and saves credentials.
+    Desktop grants: the localhost callback server receives the code, exchanges it
+    and saves the credential — ``state`` identifies that session.
+
+    Hub grants: the hub receives the callback, and its completion message goes
+    out on the hub's websocket, which this process is not on. So we poll the
+    hub's own env table until the token lands, then make it usable here.
     """
-    return await wait_for_desktop_oauth_callback(state)
+    if state in _desktop_oauth_sessions:
+        return await wait_for_desktop_oauth_callback(state)
+
+    local_name = await resolve_user_credentials_name(provider)
+    hub_name = hub_credentials_name_for(provider)
+    if not await poll_hub_credential(hub_name):
+        # Not an error: the user may still be at the provider. The client keeps
+        # its popup open and the hub keeps the session.
+        return ApiSuccessResponse(data={"status": "polling"})
+
+    await _adopt_hub_credential(provider, local_name or hub_name, hub_name)
+    return ApiSuccessResponse(data={"status": "success", "provider": provider})
+
+
+async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -> None:
+    """Make a hub-held token usable on this machine.
+
+    Two different needs, so two behaviours:
+
+    * A provider with LOCAL consumers of the raw token — GitHub, whose token is
+      read out of local SOD by ``git push``, the ``gh`` capability and the repo
+      actions — gets the value copied into local SOD under the local name.
+      Without this the Connections tab would say Connected while every one of
+      those kept failing.
+    * A provider with no local consumer — Slack — gets a value-free row only.
+      The token stays on the hub and is resolved when a worker actually needs it,
+      which is the rule the rest of the secret plane follows.
+    """
+    from flow_sdk.core.entity.entity_env.env_types import EnvVar, EnvVarType  # noqa: PLC0415
+    from flow_sdk.core.oauth.provider_registry import get_local_provider  # noqa: PLC0415
+    from flow_sdk.request_context.methods import (  # noqa: PLC0415
+        get_current_request_user_fresh,
+        set_user_credentials,
+    )
+
+    from flow_sdk.core.oauth.hub_providers import invalidate_hub_providers  # noqa: PLC0415
+
+    invalidate_hub_providers()
+
+    user = await get_current_request_user_fresh()
+    if user is None:
+        return
+
+    if get_local_provider(provider) is not None:
+        value = await hub_credential_value(hub_name)
+        if value:
+            await set_user_credentials(user, local_name, value, user.id)
+            logger.info("OAuth: adopted the hub's %s token into local %s", provider, local_name)
+        else:
+            logger.warning("OAuth: hub holds %s but would not release its value", hub_name)
+
+    if user.get_env_var(local_name) is None:
+        user.set_env_var(
+            EnvVar(
+                name=local_name,
+                description=f"OAuth token for {provider}",
+                var_type=EnvVarType.OAUTH_TOKEN,
+                ref_name=local_name,
+            )
+        )
+        await user.update()
+
+
+async def _handle_test(provider: str) -> ApiResponse:
+    """Call the provider with the stored token and report what came back.
+
+    Answers the question the Connected badge cannot: the row says a token exists
+    and a project may use it, which stays true after the token is revoked at the
+    provider. Only a real call can tell the difference.
+
+    The token is looked for where it actually lives — local SOD first, then the
+    hub for providers whose token it holds — so the same button works whichever
+    side ran the flow.
+    """
+    from flow_sdk.core.oauth.provider_probe import (  # noqa: PLC0415
+        identity_from_credential,
+        run_probe,
+        token_from_credential,
+    )
+    from flow_sdk.request_context.methods import (  # noqa: PLC0415
+        get_current_request_user_fresh,
+        get_user_credentials,
+    )
+
+    cred_name = await resolve_user_credentials_name(provider)
+    if not cred_name:
+        return ApiFailResponse(message=unresolved_provider_reason(provider))
+
+    user = await get_current_request_user_fresh()
+    if user is None:
+        return ApiFailResponse(message="No user in request context")
+
+    stored: object = None
+    try:
+        stored = await get_user_credentials(user, cred_name, user.id)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("OAuth test: no local credential for %s: %s", cred_name, e)
+
+    token = token_from_credential(stored)
+    if not token and prefers_hub_flow(provider):
+        # Only the hub can be holding it. A local-only provider (Anthropic's
+        # loopback) has nothing there, so asking would be a wasted round-trip.
+        stored = await hub_credential_value(hub_credentials_name_for(provider))
+        token = token_from_credential(stored)
+
+    result = await run_probe(provider, token or "")
+    # A provider whose probe cannot name the holder may still have shipped one in
+    # the credential itself (Anthropic stores the account email).
+    if result.ok and not result.identity:
+        result.identity = identity_from_credential(stored)
+    logger.info("OAuth test: %s -> ok=%s (%s)", provider, result.ok, result.detail or result.identity)
+    # Always a SUCCESS envelope: "the token is dead" is a successful test, and a
+    # FAIL envelope would make the client show a transport error instead.
+    return ApiSuccessResponse(data=result.as_data())
 
 
 async def _get_github_token_for_current_user() -> tuple[str | None, str | None]:

@@ -384,7 +384,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await resetDb(rq);
     const { projectId } = await bootstrapIds(rq);
     const { id } = await createProcess(rq, projectId, 'claude_code');
-    await page.goto(`/dock/shell/agentic_process-${id}`);
+    await page.goto(withViewMode(`/dock/shell/agentic_process-${id}`, 'advanced'));
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
     await expect(page.locator(`[data-testid="tab-shell|agentic_process-${id}"]`)).toBeVisible({ timeout: 15_000 });
@@ -820,7 +820,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await rq.dispose();
   });
 
-  test('test 24: Popover ordering — current first, count desc, alpha tiebreak', async ({ page }) => {
+  test('test 24: Popover lists every open project in stable alphabetical order', async ({ page }) => {
     const rq = await api();
     await resetDb(rq);
     const a = await createProject(rq, 'Proj-A', '/tmp/regression/proj-a');
@@ -837,13 +837,14 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
     await dismissCleanedSessionsOrSkip(page);
     await page.locator('[data-testid="projects-counter-chip"]').first().click();
-    await page.locator('[data-testid="projects-counter-popover"]').waitFor({ state: 'visible', timeout: 10_000 });
-    const rows = await page.locator('[data-testid="projects-counter-popover"]').getByText(/Proj-[ABCD]/).allTextContents();
+    const popover = page.locator('[data-testid="projects-counter-popover"]');
+    // Reuse the existing popover readiness budget for the last expected row:
+    // the shell-backed project buckets can arrive after the current-project row.
+    await popover.getByRole('button', { name: /Proj-D 1/ }).waitFor({ state: 'visible', timeout: 10_000 });
+    const rows = await popover.getByText(/Proj-[ABCD]/).allTextContents();
     const order = rows.map((t) => (t.match(/Proj-[ABCD]/) ?? [''])[0]).filter(Boolean);
-    // The popover lists every project with open tabs. (The earlier
-    // current-first/count-desc ranking was simplified to a stable alphabetical
-    // order; assert the full set is present in that deterministic order.)
-    expect([...new Set(order)].sort()).toEqual(['Proj-A', 'Proj-B', 'Proj-C', 'Proj-D']);
+    // Ranking is a stable alphabetical order across every project with open tabs.
+    expect([...new Set(order)]).toEqual(['Proj-A', 'Proj-B', 'Proj-C', 'Proj-D']);
     await rq.dispose();
   });
 

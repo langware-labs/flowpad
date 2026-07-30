@@ -652,6 +652,6 @@ execution.
 | `ts_sdk/src/entities/shell.ts` | `Shell` entity and PTY lifecycle: start, attach, input, resize, reconnect, close |
 | `ts_sdk/src/process/agentic-context.ts` | Spawn/context options, including `headless` worker options and `outputFormat` |
 | `ts_sdk/src/process/agentic-types.ts` | `ProcessStatus`, `WorkerStatus`, `hasWorkerStarted`, and interactive vs CLI mode concepts |
-| `ts_sdk/src/cli_workers/claude-cli.ts` | `ClaudeCliOptions` serialization and CLI argument construction |
+| `ts_sdk/src/cli_workers/claude-cli.ts` | `ClaudeAgentOptions` serialization and CLI argument construction |
 | `ts_sdk/src/resource_management/fs_records/claude/claude-session.ts` | Transcript record discovery used by Open Transcript |
 | `ui/src/navigation/useDockNavigation.ts` | Navigation methods used by toolbar actions |

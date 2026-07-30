@@ -1,6 +1,6 @@
-"""Walker + extractor + id mint for AGENT_TRACE records.
+"""Extractor + id mint for AGENT_TRACE records.
 
-Agent traces live at ``<scope>/.claude/agent_traces/<name>/trace.json`` — one
+Agent traces live at ``<scope>/agentic-assets/agent_trace/<name>/trace.json`` — one
 folder per analyzed session, the JSON being the full trace payload written by
 the agent-trace skill (see ``flow_sdk/transcript_analyzer/synthesizers/agent_trace.py``
 for the schema). The extractor reads only the small ``summary`` block into the
@@ -15,32 +15,7 @@ from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
-
-TRACE_JSON = "trace.json"
-
-
-def agent_trace_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        traces_root = Path(node.path) / ".claude" / "agent_traces"
-        if not traces_root.is_dir():
-            continue
-        for trace_dir in sorted(traces_root.iterdir()):
-            doc = trace_dir / TRACE_JSON
-            if not doc.is_file():
-                continue
-            key = str(doc.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(doc, record_type=RecordType.AGENT_TRACE, parent=node))
-    return out
 
 
 def _load_trace(path: Path) -> dict:

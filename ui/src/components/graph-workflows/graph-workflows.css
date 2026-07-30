@@ -1,0 +1,836 @@
+/* Graph Workflows — Atlas design language (port of the hub org-graph atlas.css,
+ * re-scoped under .graph-workflows and adapted to a React Flow canvas).
+ * Surfaces/text inherit the app's shadcn tokens so light/dark follows the
+ * theme toggle for free; graph hues: structure = indigo (--flow), accent /
+ * emits / active = emerald (--rubric). Typography: Newsreader serif titles +
+ * IBM Plex Mono kickers/labels — the atlas editorial look. */
+
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+.graph-workflows {
+  --paper: hsl(var(--background));
+  --paper-2: hsl(var(--muted));
+  --paper-3: color-mix(in oklab, hsl(var(--muted)) 90%, hsl(var(--foreground)));
+  --afl-edge: hsl(var(--border));
+  --edge-soft: hsl(var(--border) / 0.55);
+
+  --ink: hsl(var(--foreground) / 0.88);
+  --ink-strong: hsl(var(--foreground));
+  --ink-soft: hsl(var(--muted-foreground));
+  --ink-faint: hsl(var(--muted-foreground) / 0.72);
+
+  --rubric: rgb(5 150 105);
+  --rubric-dim: rgb(5 150 105 / 0.12);
+  --flow: rgb(67 56 202 / 0.55);
+  --flow-hot: rgb(67 56 202 / 0.9);
+  --sel: rgb(5 150 105 / 0.16);
+  --afl-warn: rgb(180 83 9);
+  --afl-warn-dim: rgb(180 83 9 / 0.14);
+  --afl-err: rgb(220 38 38);
+
+  --serif: 'Newsreader', Georgia, serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: var(--serif);
+  -webkit-font-smoothing: antialiased;
+}
+.dark .graph-workflows {
+  --rubric: rgb(16 185 129);
+  --rubric-dim: rgb(16 185 129 / 0.16);
+  --flow: rgb(99 102 241 / 0.55);
+  --flow-hot: rgb(129 140 248 / 0.95);
+  --sel: rgb(16 185 129 / 0.2);
+  --afl-warn: rgb(245 158 11);
+  --afl-warn-dim: rgb(245 158 11 / 0.18);
+  --afl-err: rgb(248 113 113);
+}
+.graph-workflows * { box-sizing: border-box; }
+.graph-workflows ::selection { background: var(--sel); }
+
+/* React Flow canvas: dotted graph-paper background (atlas) */
+.graph-workflows .react-flow {
+  background:
+    radial-gradient(circle at 1px 1px, hsl(var(--foreground) / 0.12) 1px, transparent 0) 0 0 / 30px 30px,
+    var(--paper);
+}
+.graph-workflows .react-flow__attribution { display: none; }
+.graph-workflows .react-flow__controls {
+  background: var(--paper);
+  border: 1px solid var(--afl-edge);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 6px 20px -10px hsl(0 0% 0% / 0.45);
+}
+.graph-workflows .react-flow__controls-button {
+  background: var(--paper);
+  border-bottom: 1px solid var(--edge-soft);
+  color: var(--ink-soft);
+  fill: var(--ink-soft);
+}
+.graph-workflows .react-flow__controls-button:hover { background: var(--paper-3); }
+
+/* ---- node cards (atlas .card language) ------------------------------- */
+.graph-workflows .afl-node {
+  user-select: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.graph-workflows .afl-node .card {
+  position: relative;
+  width: 216px;
+  background: var(--paper);
+  border: 1px solid var(--afl-edge);
+  border-radius: 12px;
+  padding: 12px 15px;
+  box-shadow:
+    0 1px 0 hsl(var(--border) / 0.55),
+    0 6px 18px -10px hsl(0 0% 0% / 0.35);
+  transition: border-color 0.16s, box-shadow 0.16s, transform 0.16s;
+}
+.graph-workflows .afl-node:hover .card {
+  border-color: var(--ink-faint);
+  box-shadow:
+    0 2px 0 hsl(var(--border) / 0.55),
+    0 12px 28px -12px hsl(0 0% 0% / 0.45);
+  transform: translateY(-1px);
+}
+.graph-workflows .afl-node.selected .card,
+.graph-workflows .afl-node.running .card {
+  border-color: var(--rubric);
+  box-shadow:
+    0 0 0 3px var(--rubric-dim),
+    0 12px 30px -12px hsl(0 0% 0% / 0.45);
+}
+.graph-workflows .afl-node.failed .card {
+  border-color: var(--afl-err);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--afl-err) 18%, transparent);
+}
+@keyframes afl-heartbeat {
+  0%, 100% { box-shadow: 0 0 0 3px var(--rubric-dim), 0 12px 30px -12px hsl(0 0% 0% / 0.45); }
+  50% { box-shadow: 0 0 0 6px var(--rubric-dim), 0 0 22px 0 var(--rubric-dim); }
+}
+.graph-workflows .afl-node.running .card { animation: afl-heartbeat 1.8s ease-in-out infinite; }
+
+.graph-workflows .afl-node .kic {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+.graph-workflows .afl-node .kic .pip {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--rubric);
+  flex: none;
+}
+.graph-workflows .afl-node .kic .pip.function { background: #7c5cff; }
+.graph-workflows .afl-node .kic .pip.skill { background: var(--rubric); }
+.graph-workflows .afl-node .kic .pip.instruction { background: var(--afl-warn); }
+.graph-workflows .afl-node .ttl {
+  font-size: 16px;
+  line-height: 1.18;
+  color: var(--ink-strong);
+  letter-spacing: -0.005em;
+}
+.graph-workflows .afl-node .sub {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 3px;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* live status line (mono, bottom of card) */
+.graph-workflows .afl-node .stl {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--edge-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.graph-workflows .afl-node .stl .lnk {
+  margin-left: auto;
+  color: var(--rubric);
+  cursor: pointer;
+  flex: none;
+}
+/* queue/active badge — atlas .deg, top-right */
+.graph-workflows .afl-node .deg {
+  position: absolute;
+  top: -7px; right: -7px;
+  min-width: 18px; height: 18px;
+  padding: 0 5px;
+  background: var(--rubric);
+  color: hsl(var(--background));
+  border-radius: 9px;
+  font-family: var(--mono);
+  font-size: 10px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 2px 6px -1px hsl(0 0% 0% / 0.4);
+}
+.graph-workflows .afl-node .deg.queued { right: auto; left: -7px; background: var(--afl-warn); }
+
+/* model-size selector (mono micro-buttons) */
+.graph-workflows .afl-node .sizes { display: inline-flex; gap: 2px; margin-left: auto; }
+.graph-workflows .afl-node .sizes button {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--afl-edge);
+  background: var(--paper);
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.graph-workflows .afl-node .sizes button.on {
+  background: var(--ink-strong);
+  color: var(--paper);
+  border-color: var(--ink-strong);
+}
+
+/* ---- tag pills (atlas .section language) --------------------------- */
+.graph-workflows .afl-tag .card {
+  width: 188px;
+  background: var(--paper-2);
+  border: 1px solid var(--afl-edge);
+  padding: 9px 16px;
+  border-radius: 22px;
+  text-align: center;
+  box-shadow: 0 1px 0 hsl(var(--border) / 0.55), 0 6px 18px -10px hsl(0 0% 0% / 0.3);
+  transition: border-color 0.16s, box-shadow 0.16s;
+}
+.graph-workflows .afl-tag:hover .card { border-color: var(--ink-faint); }
+.graph-workflows .afl-tag.selected .card {
+  background: var(--rubric-dim);
+  border-color: var(--rubric);
+}
+.graph-workflows .afl-tag .ttl {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.graph-workflows .afl-tag .ttl .pfx { color: var(--ink-faint); }
+
+/* inline emit popover on a selected tag pill */
+.graph-workflows .afl-emitpop {
+  margin-top: 7px;
+  background: var(--paper);
+  border: 1px solid var(--afl-edge);
+  border-radius: 10px;
+  padding: 8px;
+  box-shadow: 0 12px 28px -12px hsl(0 0% 0% / 0.45);
+  text-align: left;
+}
+
+/* ---- edges ----------------------------------------------------------- */
+.graph-workflows .react-flow__edge-path { transition: stroke 0.2s; }
+
+/* ---- floating chrome (atlas topbar) ---------------------------------- */
+.graph-workflows .topbar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 18px;
+  pointer-events: none;
+  z-index: 10;
+}
+.graph-workflows .topbar > * { pointer-events: auto; }
+.graph-workflows .brand { display: flex; align-items: center; gap: 11px; }
+.graph-workflows .brand .mark {
+  width: 28px; height: 28px;
+  border: 1.5px solid var(--ink-strong);
+  border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--paper);
+}
+.graph-workflows .brand .mark::after {
+  content: '';
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--rubric);
+}
+.graph-workflows .brand b { font-weight: 500; font-size: 16px; color: var(--ink-strong); }
+.graph-workflows .brand span {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: block;
+  margin-top: 2px;
+}
+.graph-workflows .spacer { flex: 1; }
+.graph-workflows .chip {
+  display: flex; align-items: center; gap: 9px;
+  height: 34px; padding: 0 12px;
+  background: var(--paper);
+  border: 1px solid var(--afl-edge);
+  border-radius: 9px;
+  box-shadow: 0 4px 14px -8px hsl(0 0% 0% / 0.4);
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.graph-workflows .chip:hover { border-color: var(--ink-faint); }
+.graph-workflows .chip.on { color: var(--ink-strong); border-color: var(--ink-strong); }
+.graph-workflows .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--afl-err); }
+.graph-workflows .chip .dot.ok { background: var(--rubric); }
+.graph-workflows .hint {
+  position: absolute;
+  bottom: 22px; left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  background: hsl(var(--background) / 0.7);
+  padding: 5px 12px;
+  border-radius: 20px;
+  backdrop-filter: blur(3px);
+  z-index: 10;
+}
+
+/* ---- side panel (emit/journal/chain/wiring) --------------------------- */
+.graph-workflows .side {
+  position: absolute;
+  top: 56px; right: 0; bottom: 0;
+  width: 360px;
+  background: var(--paper);
+  border-left: 1px solid var(--afl-edge);
+  overflow-y: auto;
+  padding: 14px 16px 40px;
+  z-index: 10;
+  font-family: var(--serif);
+}
+.graph-workflows .side h3 {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 14px 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.graph-workflows .side label,
+.graph-workflows .side input,
+.graph-workflows .side textarea,
+.graph-workflows .side select,
+.graph-workflows .side input:focus,
+.graph-workflows .side textarea:focus,
+.graph-workflows .drawer input:focus,
+.graph-workflows .drawer textarea:focus { outline: 1px solid var(--rubric); }
+.graph-workflows .side .row,
+.graph-workflows .side button.primary,
+.graph-workflows .side button.primary:disabled { opacity: 0.4; cursor: default; }
+.graph-workflows .side button.mini,
+.graph-workflows .side .faint,
+.graph-workflows .side .err,
+.graph-workflows .side table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.graph-workflows .side th {
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 400;
+  padding: 3px 6px;
+}
+.graph-workflows .side td {
+  padding: 4px 6px;
+  border-top: 1px solid var(--edge-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--ink);
+}
+.graph-workflows .side tr.dropped td { color: var(--afl-err); }
+.graph-workflows .side tr.errored td { color: var(--afl-warn); }
+.graph-workflows .side code {
+  background: var(--paper-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.graph-workflows .side pre,
+.graph-workflows .side .hop,
+.graph-workflows .side .hop.dropped { border-color: var(--afl-err); }
+.graph-workflows .side .hop.errored { border-color: var(--afl-warn); }
+.graph-workflows .side .chain-chip {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  border-radius: 999px;
+  padding: 2px 9px;
+  text-transform: uppercase;
+}
+.graph-workflows .side .chain-chip.running { background: var(--rubric); color: var(--paper); }
+.graph-workflows .side .chain-chip.complete { background: var(--paper-2); color: var(--ink-soft); }
+.graph-workflows .side .chain-chip.tripped { background: var(--afl-err); color: var(--paper); }
+
+/* ---- node drawer (atlas reading drawer) ------------------------------- */
+.graph-workflows .drawer-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: hsl(0 0% 0% / 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+.graph-workflows .drawer-scrim.open { opacity: 1; pointer-events: auto; }
+.graph-workflows .drawer {
+  position: absolute;
+  top: 0; right: 0; left: auto; bottom: 0;
+  width: min(520px, 52%);
+  z-index: 21;
+  background: var(--paper);
+  border-left: 1px solid var(--afl-edge);
+  box-shadow: -24px 0 60px -24px hsl(0 0% 0% / 0.4);
+  transform: translateX(100%);
+  transition: transform 0.32s cubic-bezier(0.4, 0, 0.1, 1);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--serif);
+}
+.graph-workflows .drawer.open { transform: translateX(0); }
+.graph-workflows .drawer-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 22px 14px;
+  border-bottom: 1px solid var(--afl-edge);
+}
+.graph-workflows .drawer-head .eye {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--rubric);
+}
+.graph-workflows .drawer-head h2 {
+  margin: 6px 0 0;
+  font-size: 26px;
+  line-height: 1.08;
+  font-weight: 500;
+  color: var(--ink-strong);
+  font-family: var(--serif);
+}
+.graph-workflows .drawer-x {
+  margin-left: auto;
+  flex: none;
+  width: 32px; height: 32px;
+  border: 1px solid var(--afl-edge);
+  background: var(--paper-2);
+  border-radius: 8px;
+  display: grid; place-items: center;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+.graph-workflows .drawer-x:hover { color: var(--ink-strong); border-color: var(--ink-faint); }
+.graph-workflows .drawer-body { overflow-y: auto; padding: 18px 22px 60px; }
+.graph-workflows .d-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 22px;
+  margin: 0 0 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--afl-edge);
+}
+.graph-workflows .d-meta .m .k {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.graph-workflows .d-meta .m .v { font-size: 14px; color: var(--ink-strong); margin-top: 2px; }
+.graph-workflows .drawer h3 {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 20px 0 8px;
+  font-weight: 500;
+}
+.graph-workflows .drawer table { width: 100%; border-collapse: collapse; }
+.graph-workflows .drawer td {
+  padding: 4px 6px;
+  border-top: 1px solid var(--edge-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.graph-workflows .drawer .stl { font-family: var(--mono); font-size: 12px; }
+
+/* ==== v2 additions ===================================================== */
+
+/* empty / loading state */
+.graph-workflows .afl-empty {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 6px;
+}
+.graph-workflows .afl-empty .eye {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--rubric);
+}
+.graph-workflows .afl-empty h2 { font-family: var(--serif); font-weight: 500; font-size: 26px; color: var(--ink-strong); margin: 0; }
+.graph-workflows .afl-empty p { color: var(--ink-soft); font-size: 14px; margin: 0; }
+
+/* trigger node — distinct output-only shape (angled leading edge) */
+.graph-workflows .afl-trigger { width: 200px; font-family: var(--serif); }
+.graph-workflows .afl-trigger .card {
+  position: relative;
+  background: var(--paper);
+  border: 1px solid var(--rubric);
+  border-left-width: 4px;
+  border-radius: 4px 16px 16px 4px;
+  padding: 10px 14px 10px 12px;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.graph-workflows .afl-trigger:hover .card,
+.graph-workflows .afl-trigger.selected .card {
+  box-shadow: 0 0 0 3px var(--rubric-dim);
+}
+.graph-workflows .afl-trigger.running .card { animation: afl-heartbeat 1.8s ease-in-out infinite; }
+.graph-workflows .afl-trigger .kic {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rubric);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.graph-workflows .afl-trigger .kic .pip.trigger { width: 7px; height: 7px; border-radius: 50%; background: var(--rubric); }
+.graph-workflows .afl-trigger .ttl { font-size: 15px; font-weight: 500; color: var(--ink-strong); margin-top: 3px; }
+.graph-workflows .afl-trigger .sub {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-faint);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-workflows .afl-trigger .evt {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  text-align: right;
+  margin-top: 4px;
+}
+.graph-workflows .afl-trigger .deg {
+  position: absolute;
+  top: -7px; right: -7px;
+  background: var(--rubric);
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 9px;
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+/* edge event chip (+ inline rename) */
+.graph-workflows .afl-evtchip {
+  background: var(--paper);
+  border: 1px solid var(--afl-edge);
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-family: var(--mono);
+  transition: background 200ms, color 200ms;
+}
+.graph-workflows .afl-evtchip.catchall { border-style: dashed; color: var(--ink-faint); }
+.graph-workflows .afl-evtchip.hot { background: var(--flow-hot); border-color: var(--flow-hot); color: var(--paper); }
+.graph-workflows .afl-evtchip input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--ink-strong);
+  font-size: 10px;
+  font-family: var(--mono);
+  width: auto;
+}
+
+/* shared side-panel body */
+.graph-workflows .afl-panel { display: flex; flex-direction: column; gap: 8px; }
+.graph-workflows .afl-panel .eye {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--rubric);
+}
+.graph-workflows .afl-panel label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-top: 4px;
+}
+.graph-workflows .afl-panel input,
+.graph-workflows .afl-panel textarea,
+.graph-workflows .afl-panel select {
+  width: 100%;
+  background: var(--paper-2);
+  color: var(--ink-strong);
+  border: 1px solid var(--afl-edge);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 11.5px;
+  font-family: var(--mono);
+}
+.graph-workflows .afl-note { font-size: 12px; color: var(--ink-soft); font-style: italic; margin: 0; }
+.graph-workflows .afl-note.warn { color: var(--afl-warn); }
+.graph-workflows .afl-cta {
+  margin-top: 6px;
+  background: var(--rubric);
+  color: var(--paper);
+  border: none;
+  border-radius: 6px;
+  padding: 7px 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.graph-workflows .afl-cta:disabled { opacity: 0.4; cursor: default; }
+.graph-workflows .afl-status {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  word-break: break-all;
+}
+.graph-workflows .afl-status.warn { color: var(--afl-err); }
+
+/* palette */
+.graph-workflows .afl-pal-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--afl-edge);
+  border-radius: 10px;
+  background: var(--paper);
+  padding: 10px 12px;
+  cursor: grab;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.graph-workflows .afl-pal-item:hover { border-color: var(--rubric); box-shadow: 0 0 0 3px var(--rubric-dim); }
+.graph-workflows .afl-pal-item:active { cursor: grabbing; }
+.graph-workflows .afl-pal-item .glyph { font-size: 18px; color: var(--rubric); line-height: 1.2; }
+.graph-workflows .afl-pal-item b { display: block; font-family: var(--serif); font-weight: 500; font-size: 14px; color: var(--ink-strong); }
+.graph-workflows .afl-pal-item span:not(.glyph) { font-size: 11px; color: var(--ink-soft); line-height: 1.35; }
+
+/* runs */
+.graph-workflows .afl-runlist { display: flex; flex-direction: column; gap: 4px; }
+.graph-workflows .afl-runrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--afl-edge);
+  background: var(--paper);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  text-align: left;
+}
+.graph-workflows .afl-runrow:hover { border-color: var(--ink-faint); }
+.graph-workflows .afl-runrow.on { border-color: var(--rubric); box-shadow: 0 0 0 2px var(--rubric-dim); }
+.graph-workflows .afl-runrow .g { flex: none; }
+.graph-workflows .afl-runrow.running .g { color: var(--rubric); }
+.graph-workflows .afl-runrow.tripped .g,
+.graph-workflows .afl-runrow.failed .g { color: var(--afl-err); }
+.graph-workflows .afl-runrow .id { color: var(--ink-strong); }
+.graph-workflows .afl-runrow .meta { color: var(--ink-faint); }
+.graph-workflows .afl-runrow .when { margin-left: auto; color: var(--ink-faint); }
+.graph-workflows .afl-journal {
+  margin-top: 8px;
+  border-top: 1px solid var(--afl-edge);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-y: auto;
+}
+.graph-workflows .afl-jrow {
+  display: flex;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  align-items: baseline;
+}
+.graph-workflows .afl-jrow .k { flex: none; width: 74px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; font-size: 8.5px; }
+.graph-workflows .afl-jrow.node_error .k, .graph-workflows .afl-jrow.tripped .k { color: var(--afl-err); }
+.graph-workflows .afl-jrow .n { color: var(--ink-strong); flex: none; }
+.graph-workflows .afl-jrow .d { color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* inspector */
+.graph-workflows .afl-inspector { display: flex; flex-direction: column; gap: 10px; }
+.graph-workflows .afl-field label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 3px;
+}
+.graph-workflows .afl-field input:not([type='checkbox']),
+.graph-workflows .afl-field textarea,
+.graph-workflows .afl-field select {
+  width: 100%;
+  background: var(--paper-2);
+  color: var(--ink-strong);
+  border: 1px solid var(--afl-edge);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.graph-workflows .afl-stdio pre {
+  background: var(--paper-2);
+  border: 1px solid var(--afl-edge);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 10px;
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.graph-workflows .afl-stdio .err { border-color: var(--afl-err); color: var(--afl-err); }
+.graph-workflows .afl-stdio .eye {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 4px;
+}
+.graph-workflows .afl-danger {
+  margin-top: 14px;
+  background: transparent;
+  border: 1px solid var(--afl-err);
+  color: var(--afl-err);
+  border-radius: 6px;
+  padding: 6px 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.graph-workflows .afl-danger:hover { background: var(--afl-err); color: var(--paper); }
+
+/* navigator (Zone B) — lives OUTSIDE .graph-workflows, so scope by class only */
+.afl-nav-filter { padding: 6px 10px; }
+.afl-nav-filter input {
+  width: 100%;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+.afl-nav-new {
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px dashed hsl(var(--border));
+  border-radius: 6px;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+.afl-nav-new:hover { color: hsl(var(--foreground)); border-color: hsl(var(--foreground) / 0.4); }
+.afl-nav-list { display: flex; flex-direction: column; padding: 4px 6px; gap: 2px; }
+.afl-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: hsl(var(--foreground) / 0.85);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.afl-nav-row:hover { background: hsl(var(--muted)); }
+.afl-nav-row.on { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+.afl-nav-row .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: hsl(var(--muted-foreground) / 0.4); }
+.afl-nav-row .dot.ok { background: rgb(16 185 129); }
+.afl-nav-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.afl-nav-row .sys {
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
+/* runs panel actions + journal row links (v3 GraphWorkflowFunction round) */
+.graph-workflows .afl-runactions { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.graph-workflows .afl-jrow .lnk {
+  color: var(--rubric);
+  cursor: pointer;
+  font-size: 9px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.graph-workflows .afl-jrow .lnk:hover { text-decoration: underline; }

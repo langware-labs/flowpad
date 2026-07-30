@@ -114,9 +114,9 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   // journal-WS-watch gap (updates only reached watch-holding tabs).
   // useOnTag rides the handler on a ref, so refresh's unstable identity
   // cannot churn the subscription (it resubscribes only on target change).
-  useOnTag('flow.step.done', () => {
+  useOnTag('graph_workflow.step.done', () => {
     if (journeyId) void refresh();
-  }, { target: journeyId ? targetOf('agentic_flow', journeyId) : 'agentic_flow:none' });
+  }, { target: journeyId ? targetOf('graph_workflow', journeyId) : 'graph_workflow:none' });
 
   // ── present the current step (once per cursor PER RUN) ──
   // The key includes the JOURNAL id: a restart mints a fresh journal whose
@@ -207,12 +207,12 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
       : null;
   const shellId = shellTypeId?.type === Shell.type ? shellTypeId.id : undefined;
 
-  // The project the JOURNEY ships in: `<root>/.claude/journeys/<name>`. Its
+  // The project the JOURNEY ships in: `<root>/agentic-assets/journey/<name>`. Its
   // try-it steps must run THERE — a tour that says "the repo you're in IS
   // syncmd" was otherwise writing files into whatever project happened to be
   // active (and running `syncmd` outside a git repo, where it cannot work).
   const journeyRoot = useMemo(
-    () => /^(.*)\/\.claude\/journeys\/[^/]+\/?$/.exec(assetRef)?.[1] ?? null,
+    () => /^(.*)\/agentic-assets\/journey\/[^/]+\/?$/.exec(assetRef)?.[1] ?? null,
     [assetRef],
   );
 

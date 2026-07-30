@@ -15,6 +15,43 @@ class FieldFlags(Flag):
     DB_EXCLUDE = auto()  # 4 (binary: 0100)
 
 
+class Sharing(StrEnum):
+    """Which way a field's value may cross the boundary to another machine.
+
+    One declaration replacing six hand-maintained name lists (``_BASE_LOCAL_FIELDS``,
+    ``TypeInfo.local_fields``, ``_hub_body``'s exclude literal, ``LOCAL_ONLY_FIELDS``
+    and its subclass unions, ``HUB_AUTHORITATIVE_FIELDS``, ``_STALE_IGNORE_FIELDS``).
+    Those lists disagreed with each other; a field can only carry one answer.
+
+    Read it as a DIRECTION, not a place:
+
+    - ``SHARED``    — send it, and accept a peer's value. The default, so no
+                      existing declaration changes meaning.
+    - ``HUB_WRITE`` — send it, never accept. Per-device state ABOUT a shared thing:
+                      has this machine downloaded the body, has this user read it.
+                      A hub refresh must not reset those.
+    - ``HUB_READ``  — accept it, never send. The hub owns the value and we never
+                      stamp it (the LWW clock: a local re-stamp runs it ahead and
+                      pins ``is_stale`` False, masking real changes).
+    - ``PRIVATE``   — neither. Never leaves this machine, never accepted from
+                      outside: local placement, local flags, local projections.
+
+    The share-bundle axis is DERIVED, not declared: a bundle strips exactly
+    ``PRIVATE`` — no field needs to say otherwise.
+
+    Deliberately named ``PRIVATE`` rather than ``LOCAL``: "local" already means a
+    privacy switch (``is_local_mode``), a compute node (``@local``), a storage
+    driver, and a member of eight unrelated enums. ``private`` is unused and
+    matches the vocabulary this module already established for
+    ``shared_context_entities`` vs ``private_context_entities_``.
+    """
+
+    SHARED = "shared"
+    HUB_WRITE = "hub_write"
+    HUB_READ = "hub_read"
+    PRIVATE = "private"
+
+
 class Persist(StrEnum):
     """Whether a field is mirrored into the on-disk record metadata.json.
 
@@ -37,6 +74,7 @@ def EntityField(
     db_exclude=False,
     role: str = "*",
     persist: Persist = Persist.DEFAULT,
+    sharing: Sharing = Sharing.SHARED,
     json_schema_extra: dict[str, Any] | None = None,
     **kwargs,
 ):
@@ -45,6 +83,7 @@ def EntityField(
     json_schema_extra.update({"blob": blob})
     json_schema_extra.update({"db_exclude": db_exclude})
     json_schema_extra.update({"persist": str(Persist(persist))})
+    json_schema_extra.update({"sharing": str(Sharing(sharing))})
     return Field(default=default, default_factory=default_factory, json_schema_extra=json_schema_extra, **kwargs)
 
 
@@ -56,6 +95,37 @@ def persist_policy(field_info) -> Persist:
         if raw is not None:
             return Persist(raw)
     return Persist.DEFAULT
+
+
+def _extra(field_info) -> dict:
+    """The ``json_schema_extra`` dict, or empty.
+
+    Works for a pydantic ``FieldInfo`` and a ``ComputedFieldInfo`` alike — computed
+    fields live in ``model_computed_fields``, a separate dict, and two of them
+    (``duplicate_count``, ``private_context_entities``) carry sharing policy.
+    A callable ``json_schema_extra`` is legal pydantic and has no policy to read.
+    """
+    extra = getattr(field_info, "json_schema_extra", None)
+    return extra if isinstance(extra, dict) else {}
+
+
+def sharing_policy(field_info) -> Sharing:
+    """Read the ``sharing`` policy off a field. Defaults to ``Sharing.SHARED``."""
+    raw = _extra(field_info).get("sharing")
+    return Sharing(raw) if raw is not None else Sharing.SHARED
+
+
+def is_portable(field_info) -> bool:
+    """Whether this field rides a SHARE BUNDLE — everything except ``PRIVATE``.
+
+    The bundle axis is DERIVED, with no declaration of its own. That is worth
+    stating because the design initially carried a ``portable=`` override for the
+    fields where the bundle disagrees with the hub direction — and once the
+    policy was resolved field by field, that set turned out to be empty: the two
+    ``HUB_READ`` clocks ride bundles, and everything a bundle strips is
+    ``PRIVATE``. An override with no users is a flag that rots (see ``role``).
+    """
+    return sharing_policy(field_info) is not Sharing.PRIVATE
 
 
 def is_api_visible_field(field_info):

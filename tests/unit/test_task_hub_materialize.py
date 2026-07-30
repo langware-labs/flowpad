@@ -15,8 +15,6 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin.task import Task
-from flow_sdk.db.db_entity import EntityExpansion
-from flow_sdk.flowpad_types.enums import ExpansionType
 
 
 @pytest.mark.asyncio
@@ -80,11 +78,21 @@ async def test_materialize_remote_task_keeps_the_body_when_the_hub_sends_empty(m
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_materialize_remote_task_validates_expand_metadata_before_save(monkeypatch):
-    """A JSON hub projection must not leave ``expand`` as a plain dict."""
+async def test_materialize_remote_task_never_adopts_the_hubs_expand(monkeypatch):
+    """A JSON hub projection must not leave ``expand`` as a plain dict.
+
+    It no longer can: ``expand`` is declared ``Sharing.PRIVATE`` — a local query
+    projection the hub has no say over — so the payload's value is dropped before
+    either the create or the merge branch can adopt it. This test used to assert
+    the incoming dict was VALIDATED into an ``EntityExpansion``; the guarantee is
+    now stronger (it is never adopted at all), so it asserts that instead while
+    keeping the original regression: the accessor that crashed in the live hub
+    bridge must not crash.
+    """
     from flow_sdk.app.actions.task_receive import materialize_remote_task
 
     existing = Task(id="t-1", title="Ship it", remote=True)
+    local_expand = existing.expand
     saved: dict = {}
 
     async def fake_get_one(cls, query):
@@ -110,7 +118,7 @@ async def test_materialize_remote_task_validates_expand_metadata_before_save(mon
         someone_typeid=None,
     )
 
-    assert isinstance(out.expand, EntityExpansion)
-    assert out.expand.expansions == {ExpansionType.Blobs}
-    assert isinstance(saved["expand"], EntityExpansion)
-    assert saved["expanded_blobs"] is True
+    assert out.status == "in_progress", "hub-owned fields still land"
+    assert out.expand is local_expand, "the hub's expand is never adopted"
+    assert not isinstance(saved["expand"], dict), "a raw dict must never reach the accessor"
+    assert saved["expanded_blobs"] in (True, False)  # it did not raise — the original bug

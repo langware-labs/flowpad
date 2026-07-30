@@ -129,7 +129,10 @@ function CapabilityHarnessRow({
 }
 
 export function AskInstallOneOfDialog({ kinds, onClose }: Props) {
-  const defaultHarness = useCapability(CapabilityKinds.Harness);
+  // The controller keeps this dialog mounted while it is closed. Read the
+  // persisted reference only: an executable harness probe belongs to the
+  // launch/setup seam or an explicit row re-check, never cold app startup.
+  const defaultHarness = useCapability(CapabilityKinds.Harness, { autoCheck: false });
   const selectedKind = defaultHarness.resolvedKind;
 
   return (

@@ -599,7 +599,7 @@ launches the worker in one of two ways:
 * Legacy shell path (`shell_mode=True`): starts a shell such as zsh first, then
   injects the Claude command with `shell.launch()`.
 
-In both paths, `ClaudeCliOptions` carries `process.session_id` into the CLI as
+In both paths, `ClaudeAgentOptions` carries `process.session_id` into the CLI as
 `--session-id` or `--resume`, so Claude writes the same JSONL transcript shape
 used by headless mode.
 
@@ -987,7 +987,7 @@ record lookup.
 | `flow_sdk/builtin/agentic_process/cli_drivers/claude/driver.py`          | Claude driver, headless print-mode execution, transcript path/history             |
 | `flow_sdk/builtin/agentic_process/cli_drivers/claude/stream_worker.py`   | `claude -p --output-format stream-json` subprocess worker                         |
 | `flow_sdk/builtin/agentic_process/cli_drivers/claude/session_history.py` | JSONL-to-FlowData history loading                                                 |
-| `flow_sdk/builtin/agentic_process/cli_drivers/claude/cli.py`             | `ClaudeCliOptions`, `--session-id`, `--resume`, `--fork-session` args             |
+| `flow_sdk/builtin/agentic_process/cli_drivers/claude/cli.py`             | `ClaudeAgentOptions`, `--session-id`, `--resume`, `--fork-session` args             |
 | `flow_sdk/builtin/shell.py`                                              | DB-backed `Shell` entity, PTY launch/read/write/runtime checks                    |
 | `flow_sdk/builtin/faas/pty_actions.py`                                   | PTY creation, ShellRecord creation/update, replay/attach routes                   |
 | `flow_sdk/core/entity/entity_model.py`                                   | `Entity.from_record()`, `get_record()`, `store()`, refresh                        |

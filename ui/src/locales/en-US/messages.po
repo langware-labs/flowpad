@@ -180,6 +180,11 @@ msgstr "{0} attachments"
 msgid "{0} bytes"
 msgstr "{0} bytes"
 
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "{0} connection failed"
+msgstr "{0} connection failed"
+
 #. placeholder {0}: summary.current
 #. placeholder {1}: summary.stale
 #. placeholder {2}: summary.partial
@@ -187,6 +192,11 @@ msgstr "{0} bytes"
 #: src/components/machine-overview/service-status-led.tsx
 msgid "{0} current · {1} stale · {2} partial · {3} error"
 msgstr "{0} current · {1} stale · {2} partial · {3} error"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "{0} disconnect failed"
+msgstr "{0} disconnect failed"
 
 #. placeholder {0}: tooBig.length
 #. placeholder {1}: tooBig.join(', ')
@@ -213,15 +223,19 @@ msgstr "{0} garbage · {1} unsure · {2} keep · {3} roots scanned"
 msgid "{0} has been added successfully."
 msgstr "{0} has been added successfully."
 
-#. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
-msgid "{0} icon"
-msgstr "{0} icon"
+#~ msgid "{0} icon"
+#~ msgstr "{0} icon"
 
 #. placeholder {0}: workerLabel(unavailableWorker)
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "{0} is unavailable"
 msgstr "{0} is unavailable"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "{0} is working"
+msgstr "{0} is working"
 
 #. placeholder {0}: frame.issue_count
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -250,6 +264,11 @@ msgstr "{0} msg"
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 msgid "{0} msgs"
 msgstr "{0} msgs"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "{0} not tested"
+msgstr "{0} not tested"
 
 #. placeholder {0}: person.name || person.email
 #. placeholder {1}: task.title
@@ -291,6 +310,12 @@ msgstr "{0} secret{1}"
 #: src/components/terminal/HistoryModal.tsx
 msgid "{0} selected"
 msgstr "{0} selected"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+#: src/components/connections-manager.tsx
+msgid "{0} test failed"
+msgstr "{0} test failed"
 
 #. placeholder {0}: frame.tool_call_count
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -677,6 +702,10 @@ msgstr "Accept"
 msgid "Accepting…"
 msgstr "Accepting…"
 
+#: src/components/connections-manager.tsx
+msgid "Access requested"
+msgstr "Access requested"
+
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Accurate"
 msgstr "Accurate"
@@ -696,6 +725,7 @@ msgstr "Action:"
 #: src/components/account/system-diagnoses.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/connections-manager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -916,6 +946,10 @@ msgstr "Add to the running session"
 msgid "Add Trigger"
 msgstr "Add Trigger"
 
+#: src/components/EnvVarsManager.tsx
+msgid "Add Variable"
+msgstr "Add Variable"
+
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Added vibe agent"
 msgstr "Added vibe agent"
@@ -958,8 +992,8 @@ msgid "Agent not found"
 msgstr "Agent not found"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-msgid "Agentic Flows"
-msgstr "Agentic Flows"
+#~ msgid "Agentic Flows"
+#~ msgstr "Agentic Flows"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "agents"
@@ -1270,27 +1304,27 @@ msgstr "API access test passed (200 OK)"
 msgid "API Key"
 msgstr "API Key"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "API key copied successfully"
 msgstr "API key copied successfully"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API Key Deleted"
 msgstr "API Key Deleted"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API Key Deletion"
 msgstr "API Key Deletion"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API Key Generated"
 msgstr "API Key Generated"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API Key Generation"
 msgstr "API Key Generation"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "API key has been removed successfully"
 msgstr "API key has been removed successfully"
 
@@ -1300,6 +1334,7 @@ msgid "API Key, Backend URL, or Machine ID not configured"
 msgstr "API Key, Backend URL, or Machine ID not configured"
 
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/credentials-view/CredentialsView.tsx
 msgid "API Keys"
 msgstr "API Keys"
 
@@ -1566,9 +1601,22 @@ msgstr "Attachments"
 msgid "Authenticated ✓"
 msgstr "Authenticated ✓"
 
+#. placeholder {0}: result.identity
+#: src/components/connections-manager.tsx
+msgid "Authenticated as {0}"
+msgstr "Authenticated as {0}"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "authentication required"
 #~ msgstr "authentication required"
+
+#: src/components/connections-manager.tsx
+msgid "Authorization code — you approve in the browser and come back"
+msgstr "Authorization code — you approve in the browser and come back"
+
+#: src/components/connections-manager.tsx
+msgid "Authorization code with PKCE, redirected back to this machine"
+msgstr "Authorization code with PKCE, redirected back to this machine"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Authorization failed or was denied. Click Retry to try again."
@@ -1889,6 +1937,11 @@ msgstr "Cache Write"
 msgid "Cache write: {0}"
 msgstr "Cache write: {0}"
 
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "Call {0} with the stored token"
+msgstr "Call {0} with the stored token"
+
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "Call tree"
 msgstr "Call tree"
@@ -1927,6 +1980,7 @@ msgstr "Can't update — showing last synced"
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -2840,13 +2894,17 @@ msgstr "Connected, but still no access to this repo."
 #~ msgid "Connected: {0}"
 #~ msgstr "Connected: {0}"
 
+#: src/components/connections-manager.tsx
+msgid "Connecting"
+msgstr "Connecting"
+
 #: src/components/chat-input.tsx
 #~ msgid "Connecting: {0}..."
 #~ msgstr "Connecting: {0}..."
 
 #: src/components/connections-manager.tsx
-msgid "Connecting..."
-msgstr "Connecting..."
+#~ msgid "Connecting..."
+#~ msgstr "Connecting..."
 
 #: src/components/assets/editor/WikiResolveView.tsx
 #: src/components/assets/editor/WikiResolveView.tsx
@@ -2866,6 +2924,10 @@ msgstr "Connection ID"
 #: src/components/version-popover/version-popover.tsx
 msgid "Connection Info"
 msgstr "Connection Info"
+
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "Connections"
+msgstr "Connections"
 
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Contacts"
@@ -2962,8 +3024,8 @@ msgid "Conversation title"
 msgstr "Conversation title"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-msgid "Conversations"
-msgstr "Conversations"
+#~ msgid "Conversations"
+#~ msgstr "Conversations"
 
 #: src/components/account/database-section.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
@@ -2973,7 +3035,7 @@ msgstr "Conversations"
 msgid "Copied"
 msgstr "Copied"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Copied to Clipboard"
 msgstr "Copied to Clipboard"
 
@@ -2989,7 +3051,7 @@ msgstr "Copilot"
 msgid "Copilot session"
 msgstr "Copilot session"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -3132,6 +3194,11 @@ msgstr "Could not change sign-in method"
 msgid "Could not check sign-in"
 msgstr "Could not check sign-in"
 
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "Could not connect to {0}."
+msgstr "Could not connect to {0}."
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Could not copy the code"
 msgstr "Could not copy the code"
@@ -3143,6 +3210,11 @@ msgstr "Could not declare that key"
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not delete"
 msgstr "Could not delete"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "Could not disconnect from {0}."
+msgstr "Could not disconnect from {0}."
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Could not download"
@@ -3167,6 +3239,10 @@ msgstr "Could not freeze context"
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Could not generate a link"
 msgstr "Could not generate a link"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Could not load environment variables"
+msgstr "Could not load environment variables"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "Could not load source: {error}"
@@ -3196,6 +3272,10 @@ msgstr "Could not resolve home directory from bootstrap info"
 #: src/components/assets/ShareContextFolderButton.tsx
 msgid "Could not resolve this folder"
 msgstr "Could not resolve this folder"
+
+#: src/components/connections-manager.tsx
+msgid "Could not run the connection test."
+msgstr "Could not run the connection test."
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 #~ msgid "Could not save changes"
@@ -3452,6 +3532,10 @@ msgstr "Creating..."
 msgid "Creating…"
 msgstr "Creating…"
 
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "Credentials"
+msgstr "Credentials"
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Cross-link"
 msgstr "Cross-link"
@@ -3692,7 +3776,7 @@ msgstr "Delete all"
 msgid "Delete all failed"
 msgstr "Delete all failed"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Delete API Key"
 msgstr "Delete API Key"
 
@@ -3905,6 +3989,8 @@ msgstr "Describe what you'd like Claude to do…"
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assistance-viewer/TaskDetail.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Description"
@@ -3918,7 +4004,11 @@ msgstr "Description (optional)"
 msgid "Description like prepare my daily brief"
 msgstr "Description like prepare my daily brief"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/EnvVarsManager.tsx
+msgid "Description of this environment variable"
+msgstr "Description of this environment variable"
+
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Description:"
 msgstr "Description:"
 
@@ -3971,6 +4061,10 @@ msgstr "Dev mode ON — click to disable"
 #: src/components/developer-layout/dev-menu.tsx
 msgid "Developer Tools"
 msgstr "Developer Tools"
+
+#: src/components/connections-manager.tsx
+msgid "Device code"
+msgstr "Device code"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Device login"
@@ -4097,7 +4191,6 @@ msgstr "Disconnect"
 
 #: src/components/account/user-info.tsx
 #: src/components/collaboration/SharedSessionView.tsx
-#: src/components/connections-manager.tsx
 msgid "Disconnected"
 msgstr "Disconnected"
 
@@ -4186,7 +4279,6 @@ msgstr "Distance"
 #~ msgid "doc name"
 #~ msgstr "doc name"
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Docs"
 msgstr "Docs"
@@ -4595,6 +4687,10 @@ msgstr "Enter hook name"
 msgid "Enter the code here"
 msgstr "Enter the code here"
 
+#: src/components/EnvVarsManager.tsx
+msgid "Enter the variable value"
+msgstr "Enter the variable value"
+
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Enter trigger description"
 msgstr "Enter trigger description"
@@ -4651,6 +4747,26 @@ msgstr "Env var"
 msgid "ENV_VAR"
 msgstr "ENV_VAR"
 
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "Environment"
+msgstr "Environment"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Environment variable created successfully"
+msgstr "Environment variable created successfully"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Environment variable deleted successfully"
+msgstr "Environment variable deleted successfully"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Environment variable updated successfully"
+msgstr "Environment variable updated successfully"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Environment Variables"
+msgstr "Environment Variables"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "error"
 msgstr "error"
@@ -4668,8 +4784,16 @@ msgstr "error"
 #: src/components/account/system-log.tsx
 #: src/components/account/system-log.tsx
 #: src/components/agent-layout/error-screen/error-screen.tsx
-#: src/components/api-keys-view/api-keys-view.tsx
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/machine-overview/node-secrets.tsx
 #: src/components/project-home/BindSecretDialog.tsx
@@ -5014,9 +5138,13 @@ msgstr "Failed to delete"
 msgid "Failed to Delete"
 msgstr "Failed to Delete"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Failed to delete API key"
 msgstr "Failed to delete API key"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Failed to delete environment variable"
+msgstr "Failed to delete environment variable"
 
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -5061,7 +5189,7 @@ msgstr "Failed to fetch logs"
 msgid "Failed to fetch metrics"
 msgstr "Failed to fetch metrics"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Failed to generate API key"
 msgstr "Failed to generate API key"
 
@@ -5561,7 +5689,7 @@ msgstr "Flow or compute node not available"
 msgid "Flowpad"
 msgstr "Flowpad"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "FlowPad API Key"
 msgstr "FlowPad API Key"
 
@@ -5627,8 +5755,8 @@ msgstr "Flowpad.ai Logo"
 #~ msgstr "flows"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-msgid "Flows"
-msgstr "Flows"
+#~ msgid "Flows"
+#~ msgstr "Flows"
 
 #: src/components/project-list/ProjectList.tsx
 #~ msgid "Flows:"
@@ -5777,11 +5905,11 @@ msgstr "Gateway"
 msgid "GB"
 msgstr "GB"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Generate an API key to authenticate API requests to FlowPad"
 msgstr "Generate an API key to authenticate API requests to FlowPad"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Generate FlowPad API Key"
 msgstr "Generate FlowPad API Key"
 
@@ -5963,6 +6091,10 @@ msgstr "Graph view"
 #: src/components/graph-view/webglSupport.tsx
 msgid "Graph view needs WebGL"
 msgstr "Graph view needs WebGL"
+
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+msgid "Graph Workflows"
+msgstr "Graph Workflows"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Group Events"
@@ -6151,7 +6283,6 @@ msgstr "Highlight changes since the last stamp"
 msgid "History"
 msgstr "History"
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -6389,7 +6520,7 @@ msgstr "Import Failed"
 msgid "Import mermaid → board"
 msgstr "Import mermaid → board"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Important:"
 msgstr "Important:"
 
@@ -6803,8 +6934,8 @@ msgid "just now"
 msgstr "just now"
 
 #: src/components/connections-manager.tsx
-msgid "Just now"
-msgstr "Just now"
+#~ msgid "Just now"
+#~ msgstr "Just now"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Justify"
@@ -6983,6 +7114,10 @@ msgstr "Leave"
 #: src/components/inbox-view/InboxView.tsx
 msgid "Leave conversation"
 msgstr "Leave conversation"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Leave empty to keep current value"
+msgstr "Leave empty to keep current value"
 
 #: src/components/inbox-view/InboxView.tsx
 msgid "Leave this conversation?"
@@ -7245,6 +7380,10 @@ msgstr "Loading diff…"
 msgid "Loading document..."
 msgstr "Loading document..."
 
+#: src/components/EnvVarsManager.tsx
+msgid "Loading environment variables..."
+msgstr "Loading environment variables..."
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Loading errors..."
 msgstr "Loading errors..."
@@ -7314,6 +7453,10 @@ msgstr "Loading project resources..."
 #: src/components/directory-tree/ProjectsDirectoryTree.tsx
 msgid "Loading projects..."
 msgstr "Loading projects..."
+
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "Loading projects…"
+msgstr "Loading projects…"
 
 #: src/components/chats-navigator/ChatPromptsPopover.tsx
 #: src/components/terminal/HistoryModal.tsx
@@ -7474,8 +7617,8 @@ msgstr "Log in"
 msgid "Log mode"
 msgstr "Log mode"
 
+#: src/components/credentials-view/LoginRequiredPanel.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
-#: src/pages/flow-page/content-panel/content-panel.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Login"
 msgstr "Login"
@@ -7496,7 +7639,10 @@ msgstr "Login is required to search Flowpad database"
 msgid "Login required"
 msgstr "Login required"
 
-#: src/pages/flow-page/content-panel/content-panel.tsx
+#: src/components/credentials-view/LoginRequiredPanel.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
 msgid "Login Required"
 msgstr "Login Required"
 
@@ -7905,6 +8051,7 @@ msgstr "N/A"
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -7918,12 +8065,17 @@ msgstr "Name"
 msgid "name (e.g. coding)"
 msgstr "name (e.g. coding)"
 
+#: src/components/EnvVarsManager.tsx
+msgid "Name (uppercase letters, numbers, and underscores only)"
+msgstr "Name (uppercase letters, numbers, and underscores only)"
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Name *"
 msgstr "Name *"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/EnvVarsManager.tsx
 msgid "Name is required"
 msgstr "Name is required"
 
@@ -7936,7 +8088,7 @@ msgid "Name this entity"
 msgstr "Name this entity"
 
 #: src/components/account/user-info.tsx
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Name:"
 msgstr "Name:"
 
@@ -7950,8 +8102,8 @@ msgid "Neighbors (<0>{0}</0>)"
 msgstr "Neighbors (<0>{0}</0>)"
 
 #: src/components/connections-manager.tsx
-msgid "Never connected"
-msgstr "Never connected"
+#~ msgid "Never connected"
+#~ msgstr "Never connected"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "never indexed"
@@ -8151,6 +8303,10 @@ msgstr "New tab"
 msgid "New Terminal"
 msgstr "New Terminal"
 
+#: src/components/EnvVarsManager.tsx
+msgid "New Value (optional, max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
+msgstr "New Value (optional, max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
+
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #~ msgid "New Workflow"
@@ -8332,6 +8488,10 @@ msgstr "No compute node available"
 msgid "No compute node available in this workspace."
 msgstr "No compute node available in this workspace."
 
+#: src/components/connections-manager.tsx
+msgid "No connection test is defined for this provider."
+msgstr "No connection test is defined for this provider."
+
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "No contacts found."
 msgstr "No contacts found."
@@ -8379,8 +8539,8 @@ msgid "No creatable types available"
 msgstr "No creatable types available"
 
 #: src/components/connections-manager.tsx
-msgid "No current project available. Please create a project first before connecting OAuth providers."
-msgstr "No current project available. Please create a project first before connecting OAuth providers."
+#~ msgid "No current project available. Please create a project first before connecting OAuth providers."
+#~ msgstr "No current project available. Please create a project first before connecting OAuth providers."
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No data available"
@@ -8659,8 +8819,12 @@ msgid "No metrics data available"
 msgstr "No metrics data available"
 
 #: src/components/connections-manager.tsx
-msgid "No OAuth connections found"
-msgstr "No OAuth connections found"
+#~ msgid "No OAuth connections found"
+#~ msgstr "No OAuth connections found"
+
+#: src/components/connections-manager.tsx
+msgid "No OAuth providers available"
+msgstr "No OAuth providers available"
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "No Operation (Trace Only)"
@@ -8736,6 +8900,7 @@ msgid "No project open"
 msgstr "No project open"
 
 #: src/components/collaboration/StartRoomDialog.tsx
+#: src/components/connections-manager.tsx
 msgid "No project selected"
 msgstr "No project selected"
 
@@ -8753,10 +8918,13 @@ msgstr "No projects"
 msgid "No projects found"
 msgstr "No projects found"
 
-#: src/components/project-sidebar/ProjectSidebar.tsx
-#: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
-#~ msgid "No projects yet"
-#~ msgstr "No projects yet"
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "No projects yet"
+msgstr "No projects yet"
+
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "No projects yet — create one from the desktop app, then pick it here."
+msgstr "No projects yet — create one from the desktop app, then pick it here."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "No projects."
@@ -9122,6 +9290,10 @@ msgstr "Not checked"
 msgid "Not configured"
 msgstr "Not configured"
 
+#: src/components/connections-manager.tsx
+msgid "Not connected"
+msgstr "Not connected"
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not found"
 msgstr "Not found"
@@ -9141,6 +9313,10 @@ msgstr "not respected"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not runnable here"
 msgstr "Not runnable here"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Not set"
+msgstr "Not set"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not signed in — please re-authenticate"
@@ -9254,6 +9430,14 @@ msgstr "Notify Entity (Increment Counter)"
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Notify people about this push"
 msgstr "Notify people about this push"
+
+#: src/components/connections-manager.tsx
+msgid "OAuth"
+msgstr "OAuth"
+
+#: src/components/connections-manager.tsx
+msgid "OAuth + PKCE"
+msgstr "OAuth + PKCE"
 
 #: src/components/InputSection.tsx
 #~ msgid "OAuth connection established successfully"
@@ -9837,7 +10021,6 @@ msgid "Ordered list"
 msgstr "Ordered list"
 
 #: src/components/account/organization-panel.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Organization"
 msgstr "Organization"
@@ -10093,6 +10276,10 @@ msgstr "Pick a person or type an email"
 msgid "Pick a project"
 msgstr "Pick a project"
 
+#: src/components/connections-manager.tsx
+msgid "Pick a project first — an OAuth token is granted to a project, not to the app."
+msgstr "Pick a project first — an OAuth token is granted to a project, not to the app."
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Pick one to get started — it only takes a few seconds."
 #~ msgstr "Pick one to get started — it only takes a few seconds."
@@ -10205,9 +10392,29 @@ msgstr "Please fill in both fields"
 msgid "Please fix the issue in your repository and try again."
 msgstr "Please fix the issue in your repository and try again."
 
+#: src/components/credentials-view/LoginRequiredPanel.tsx
+msgid "Please log in to manage credentials."
+msgstr "Please log in to manage credentials."
+
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "Please log in to view and manage credentials."
+msgstr "Please log in to view and manage credentials."
+
 #: src/pages/flow-page/content-panel/content-panel.tsx
-msgid "Please log in to view and manage environment variables."
-msgstr "Please log in to view and manage environment variables."
+#~ msgid "Please log in to view and manage environment variables."
+#~ msgstr "Please log in to view and manage environment variables."
+
+#: src/components/EnvVarsManager.tsx
+msgid "Please login in order to add a new variable"
+msgstr "Please login in order to add a new variable"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Please login in order to edit environment variables"
+msgstr "Please login in order to edit environment variables"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Please login in order to save environment variables"
+msgstr "Please login in order to save environment variables"
 
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
 msgid "Please make sure the server is running."
@@ -10761,8 +10968,12 @@ msgid "Ready"
 msgstr "Ready"
 
 #: src/components/connections-manager.tsx
-msgid "Ready to Connect"
-msgstr "Ready to Connect"
+msgid "Ready to connect"
+msgstr "Ready to connect"
+
+#: src/components/connections-manager.tsx
+#~ msgid "Ready to Connect"
+#~ msgstr "Ready to Connect"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Ready to share"
@@ -11665,6 +11876,7 @@ msgstr "Sandbox unavailable"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/cron-view/CronForm.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -11706,7 +11918,7 @@ msgstr "Save failed"
 msgid "Save the current asset changes as a version before running improvement."
 msgstr "Save the current asset changes as a version before running improvement."
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Save this API key now. You won't be able to see it again!"
 msgstr "Save this API key now. You won't be able to see it again!"
 
@@ -12108,6 +12320,7 @@ msgstr "Select a file to preview."
 #~ msgid "Select a file to see connected flows"
 #~ msgstr "Select a file to see connected flows"
 
+#: src/components/credentials-view/CredentialsView.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "Select a project"
@@ -12241,6 +12454,10 @@ msgstr "Select session"
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Select text to add a link"
 msgstr "Select text to add a link"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Select variable type"
+msgstr "Select variable type"
 
 #: src/components/webapp-viewer.tsx
 #~ msgid "Select webapp..."
@@ -12765,6 +12982,10 @@ msgstr "Showing 20 of {0} entries"
 msgid "Showing current configuration only — there is no loaded snapshot until the first successful start."
 msgstr "Showing current configuration only — there is no loaded snapshot until the first successful start."
 
+#: src/components/connections-manager.tsx
+msgid "Shown at approval"
+msgstr "Shown at approval"
+
 #: src/components/ui/sidebar.tsx
 msgid "Sidebar"
 msgstr "Sidebar"
@@ -12809,6 +13030,10 @@ msgstr "Sign in with {account}"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
 msgstr "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
+
+#: src/components/connections-manager.tsx
+msgid "Sign-in"
+msgstr "Sign-in"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Sign-in needed"
@@ -13206,6 +13431,7 @@ msgstr "Stats"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/connections-manager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -13311,6 +13537,12 @@ msgstr "subgraph projection"
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Submit"
 msgstr "Submit"
+
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
+msgid "Success"
+msgstr "Success"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Suggest a prompt for the other user to approve"
@@ -13512,7 +13744,6 @@ msgid "Tasked"
 msgstr "Tasked"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Tasks"
 msgstr "Tasks"
@@ -13558,6 +13789,7 @@ msgstr "Terminal Sessions"
 msgid "test"
 msgstr "test"
 
+#: src/components/connections-manager.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Test"
@@ -13672,6 +13904,14 @@ msgstr "The prompt text…"
 #: src/components/conversation/PromptComposerDialog.tsx
 msgid "The prompt will be attached to your next message. The other user will see an \"Approve & Execute\" chip; once approved, the prompt runs in their forked Claude Code session."
 msgstr "The prompt will be attached to your next message. The other user will see an \"Approve & Execute\" chip; once approved, the prompt runs in their forked Claude Code session."
+
+#: src/components/connections-manager.tsx
+msgid "The provider accepted the token."
+msgstr "The provider accepted the token."
+
+#: src/components/connections-manager.tsx
+msgid "The provider rejected the stored token."
+msgstr "The provider rejected the stored token."
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "The recipient will see a PROMPT to approve."
@@ -14212,6 +14452,8 @@ msgid "Two quick steps in your browser:"
 msgstr "Two quick steps in your browser:"
 
 #: src/components/account/db-stats.tsx
+#: src/components/EnvVarsManager.tsx
+#: src/components/EnvVarsManager.tsx
 #: src/components/graph-view/ui/TopBar.tsx
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -14323,6 +14565,10 @@ msgstr "Unknown error"
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
 #~ msgid "Unknown error loading activation rule"
 #~ msgstr "Unknown error loading activation rule"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Unknown error occurred"
+msgstr "Unknown error occurred"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/account/user-info.tsx
@@ -14537,8 +14783,8 @@ msgstr "User"
 msgid "User ID:"
 msgstr "User ID:"
 
-#: src/components/api-keys-view/api-keys-view.tsx
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "User not found"
 msgstr "User not found"
 
@@ -14582,16 +14828,37 @@ msgstr "Validation error (422) - request format issue or entity not found"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/EnvVarsManager.tsx
 msgid "Value"
 msgstr "Value"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/EnvVarsManager.tsx
+msgid "Value (max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
+msgstr "Value (max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Value is required for new variables"
+msgstr "Value is required for new variables"
+
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Value:"
 msgstr "Value:"
+
+#: src/components/EnvVarsManager.tsx
+msgid "VAR_NAME"
+msgstr "VAR_NAME"
 
 #: src/components/skills-viewer/amd-editor/components/blocks/SetBlock.tsx
 #~ msgid "variable"
 #~ msgstr "variable"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Variable name must contain only uppercase letters, numbers, and underscores"
+msgstr "Variable name must contain only uppercase letters, numbers, and underscores"
+
+#: src/components/EnvVarsManager.tsx
+msgid "Variable type is required"
+msgstr "Variable type is required"
 
 #: src/components/agentic-progress/shared/variables-inspector.tsx
 #~ msgid "Variables"
@@ -14749,6 +15016,10 @@ msgstr "visible"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Waiting for {hostName} to approve the live session…"
 msgstr "Waiting for {hostName} to approve the live session…"
+
+#: src/components/connections-manager.tsx
+msgid "Waiting for approval…"
+msgstr "Waiting for approval…"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "waiting for authorization in your browser…"
@@ -15075,6 +15346,10 @@ msgstr "You don’t belong to an organization yet. Organizations are set up in F
 msgid "You must be logged in"
 msgstr "You must be logged in"
 
+#: src/components/EnvVarsManager.tsx
+msgid "You must be logged in to delete environment variables"
+msgstr "You must be logged in to delete environment variables"
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "You own — delete for everyone"
@@ -15083,6 +15358,10 @@ msgstr "You own — delete for everyone"
 #: src/components/inbox-view/InboxView.tsx
 msgid "You own this conversation — pick how you want to leave."
 msgstr "You own this conversation — pick how you want to leave."
+
+#: src/components/connections-manager.tsx
+msgid "You type a short code into the provider's site"
+msgstr "You type a short code into the provider's site"
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -15111,7 +15390,7 @@ msgstr "You're the only participant in this conversation — no one else will se
 msgid "You've been invited to a conversation"
 msgstr "You've been invited to a conversation"
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Your API key for authenticating API requests to FlowPad"
 msgstr "Your API key for authenticating API requests to FlowPad"
 
@@ -15132,7 +15411,7 @@ msgstr "Your display name"
 msgid "Your markup on this image will be lost."
 msgstr "Your markup on this image will be lost."
 
-#: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Your new API key has been created. Please save it securely."
 msgstr "Your new API key has been created. Please save it securely."
 
@@ -15148,7 +15427,6 @@ msgstr "Your Projects"
 msgid "Your sandbox is ready"
 msgstr "Your sandbox is ready"
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"
 msgstr "Your world"

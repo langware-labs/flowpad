@@ -690,7 +690,7 @@ class HubWsBridge:
             someone_typeid = local_user.typeid if local_user else None
             prev_body_status = getattr(existing, "body_status", None)
             from flow_sdk.builtin.flow_message import delivery_advances  # noqa: PLC0415
-            # ``is_read`` / ``is_archived`` are LOCAL_ONLY_FIELDS (see
+            # ``is_read`` / ``is_archived`` are declared ``Sharing.HUB_WRITE`` (see
             # flow_message.py) — per-machine inbox state the hub must NOT
             # dictate. A body-READY UPDATE fans the full FlowMessage back to
             # every participant *including the sender*, carrying the hub's

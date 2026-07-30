@@ -105,7 +105,7 @@ class TestInstanceSettings(BaseInstanceSettings):
             claude_commands_dir=claude_home / "commands",
             claude_plans_dir=claude_home / "plans",
             claude_workflows_dir=claude_home / "workflows",
-            claude_docs_dir=claude_home / "docs",
+            user_docs_dir=sandbox / "docs",
             claude_tasks_dir=claude_home / "tasks",
             claude_history_path=claude_home / "history.jsonl",
             claude_mcp_json_path=claude_home / "mcp.json",

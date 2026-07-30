@@ -1,10 +1,10 @@
 """RemoteWorkerSession — a host/guest remote-execution session.
 
 Lives **inside** a CollaborationRoom (alongside the room's files and assets): a
-guest sends Prompts and the host's worker runs them and returns PromptResults. The
+guest sends Prompts and the host's worker runs them and returns PromptCompletions. The
 session is asymmetric — the **host** runs the actual worker (its local reused
 headless AgenticProcess), the **guest** requests and watches. Both sides open the
-same shared session id inside the room; the Prompt/PromptResult exchange rides the
+same shared session id inside the room; the Prompt/PromptCompletion exchange rides the
 bound conversation's FlowMessages as attachments (see execute_prompt.py).
 
 Host-only fields (``host_process_id``, ``project_id``) are meaningful only on the
@@ -19,7 +19,7 @@ from typing import Any, ClassVar, Optional
 import logging
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity, action
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -109,7 +109,7 @@ class RemoteWorkerSession(Entity):
     type: str = APIField(default="remote_worker_session")
 
     conversation_id: Optional[str] = APIField(
-        default=None, description="Conversation whose messages carry the Prompt/PromptResult exchange."
+        default=None, description="Conversation whose messages carry the Prompt/PromptCompletion exchange."
     )
     collaboration_room_id: Optional[str] = APIField(
         default=None, description="CollaborationRoom this session lives inside."
@@ -135,6 +135,7 @@ class RemoteWorkerSession(Entity):
         default=None, description="Host-side AgenticProcess that executes prompts (host only)."
     )
     project_id: Optional[str] = APIField(
+        sharing=Sharing.PRIVATE,
         default=None, description="Host project/workdir the worker runs in (host only)."
     )
 

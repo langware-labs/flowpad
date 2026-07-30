@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # The declared-forward allowlist. Phase 2 (flow-boundary emitter) is the first
 # consumer; grow this list per-pattern, never wildcard-everything.
 FORWARDED_TAG_PATTERNS: list[str] = [
-    "flow.*",
+    "graph_workflow.*",
 ]
 
 _started = False

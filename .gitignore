@@ -15,6 +15,11 @@ ui/.swc/
 /.playwright-mcp/
 old_flowpad_repo/
 
+# GraphWorkflowManager run journals — execution output that today lands next to
+# the AUTHORED flow/journey folder (see
+# flow_sdk/graph_workflow_manager/journal.py). Never source; never committed.
+flow_sdk/system_projects/**/runs/
+
 .idea
 # Ignore all .env files
 *.env*

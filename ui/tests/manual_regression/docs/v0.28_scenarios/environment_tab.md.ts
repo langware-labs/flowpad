@@ -31,7 +31,7 @@ async function addVariable(
   return row;
 }
 
-test.describe('Environment tab', () => {
+test.describe('Credentials tabs', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
@@ -49,8 +49,11 @@ test.describe('Environment tab', () => {
   });
 
   test('API key plus confidential and non-confidential variables round-trip', async ({ page }) => {
-    await page.goto('/dock/environment');
-    await expect(page.getByText('Environment Variables', { exact: true })).toBeVisible();
+    await page.goto('/dock/credentials/api-keys');
+    await expect(page).toHaveURL(/\/dock\/credentials\/api-keys(?:[/?]|$)/);
+    await expect(page.getByRole('heading', { name: 'Credentials' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'API Keys' })).toHaveAttribute('data-state', 'active');
+    await expect(page.getByTestId('api-keys-view')).toBeVisible();
 
     await page.getByRole('button', { name: 'Generate FlowPad API Key' }).click();
     const generated = page.locator('textarea[readonly]').first();
@@ -66,6 +69,12 @@ test.describe('Environment tab', () => {
     await expect(page.locator('body')).not.toContainText(rawApiKey);
     await page.getByRole('button', { name: 'Delete API Key' }).click();
     await expect(page.getByRole('button', { name: 'Generate FlowPad API Key' })).toBeVisible();
+
+    await page.goto('/dock/credentials/environment');
+    await expect(page).toHaveURL(/\/dock\/credentials\/environment(?:[/?]|$)/);
+    await expect(page.getByRole('heading', { name: 'Credentials' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Environment' })).toHaveAttribute('data-state', 'active');
+    await expect(page.getByTestId('env-vars-manager')).toBeVisible();
 
     let row = await addVariable(page, 'TEST2', '53', 'Non Confidential');
     await expect(row).toContainText('53');

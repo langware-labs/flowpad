@@ -34,6 +34,7 @@ import pytest
 
 from flow_sdk.builtin.claude_session import ClaudeSession
 from flow_sdk.builtin.project import Project
+from flow_sdk.fs_store.placement import Scope, resolve_destination
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
 from flow_sdk.transcript_analyzer.resolver import (
@@ -80,10 +81,19 @@ async def test_installed_transcript_is_openable_without_a_local_run(tmp_path: Pa
     await proj.save()
 
     # The bytes DID arrive — the install dialog previews them fine — and land at
-    # the placement layer's destination for this type.
+    # the placement layer's destination for this type. ASKED, not hardcoded: this
+    # type is a REPO asset, so its family dir moved out of `.claude/transcripts`
+    # when harness dot-dirs were narrowed to what the harness actually reads back.
     sid = str(uuid.uuid4())
-    installed = receiver_root / ".claude" / "transcripts" / f"{sid}.jsonl"
-    installed.parent.mkdir(parents=True)
+    dest_dir = resolve_destination(
+        RecordType.CLAUDE_SESSION.value,
+        Scope.PROJECT,
+        default_worker="claude",
+        project_mount=receiver_root,
+    )
+    assert dest_dir is not None, "claude_session must have a project-scoped placement"
+    installed = dest_dir / f"{sid}.jsonl"
+    installed.parent.mkdir(parents=True, exist_ok=True)
     installed.write_text(_TRANSCRIPT.format(sid=sid), encoding="utf-8")
 
     from flow_sdk.builtin.flow_message_bundle import _reindex_received_assets

@@ -25,7 +25,7 @@ export interface MarkdownFolderRootDeps {
     options?: { force?: boolean; orphanAction?: 'index' | 'ignore' | 'delete' },
   ) => Promise<{ indexed?: number } | void>;
   /** Called when the root-level "New" toolbar is clicked (falls back to the
-   *  legacy flow which creates under .claude/docs). */
+   *  legacy flow which created under .claude/docs). */
   onNew?: (typeName: string) => void;
   /** Called when a vault/folder wants a new child folder. */
   onCreateFolder?: (target: MarkdownFolderTarget) => void;

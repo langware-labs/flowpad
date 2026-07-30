@@ -16,7 +16,7 @@ ping_results = []
 ping_received = threading.Event()
 
 # Shared state for prompts
-prompt_results = []
+prompt_completions = []
 prompt_received = threading.Event()
 
 # Background Claude sessions

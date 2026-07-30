@@ -11,8 +11,9 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.prompt import (
     _read_prompt_frontmatter_id,
     extract_prompt,
-    prompt_project_fn,
 )
+from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
+from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
@@ -33,15 +34,17 @@ def _write_md(path: Path, body: str, frontmatter: str | None = None) -> Path:
     return path
 
 
-def test_walker_finds_only_prompts_md(tmp_path: Path):
-    _write_md(tmp_path / "prompts" / "a.md", "A")
-    _write_md(tmp_path / "prompts" / "b.md", "B")
-    _write_md(tmp_path / "prompts" / "notes.txt", "not md")
-    _write_md(tmp_path / "docs" / "c.md", "outside prompts/")
-    refs = prompt_project_fn([FSRef(tmp_path)], opts=None)
-    names = sorted(Path(r.path).name for r in refs)
-    assert names == ["a.md", "b.md"]
-    assert all(r.record_type == RecordType.PROMPT for r in refs)
+def test_walker_finds_only_prompt_md(tmp_path: Path):
+    """Prompt is a REPO asset — the generic ``repo_assets_fn`` discovers it at
+    ``agentic-assets/prompt/*.md`` (file-backed leaf, no bespoke walker)."""
+    root = tmp_path / "agentic-assets" / "prompt"
+    _write_md(root / "a.md", "A")
+    _write_md(root / "b.md", "B")
+    _write_md(root / "notes.txt", "not md")
+    _write_md(tmp_path / "docs" / "c.md", "outside the prompt family")
+    refs = repo_assets_fn([FSRef(tmp_path)], IndexerOptions(verbose=False))
+    prompts = [r for r in refs if r.record_type == RecordType.PROMPT]
+    assert sorted(Path(r.path).name for r in prompts) == ["a.md", "b.md"]
 
 
 def test_extract_full_frontmatter(tmp_path: Path):

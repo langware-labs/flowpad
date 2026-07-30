@@ -56,7 +56,7 @@ function promptTextOf(fm: FlowMessage): string {
 
 function resultTextOf(fm: FlowMessage): string | null {
   for (const a of fm.attachment ?? []) {
-    if (a?.attachment_type === 'type_id' && (a.data ?? '').startsWith('prompt_result-')) {
+    if (a?.attachment_type === 'type_id' && (a.data ?? '').startsWith('prompt_completion-')) {
       return a.prompt_preview ?? fm.text ?? '';
     }
   }
@@ -115,7 +115,7 @@ function PermissionToggle({
 }
 
 /**
- * The live-session surface — the same Prompt/PromptResult FlowMessages the
+ * The live-session surface — the same Prompt/PromptCompletion FlowMessages the
  * conversation groups away, rendered as a terminal-style exchange ("I am
  * working on the other side"). The GUEST types prompts and watches; the HOST
  * gets the pinned amber control header (Approve/Decline, Pause/Resume,

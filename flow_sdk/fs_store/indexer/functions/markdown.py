@@ -2,11 +2,13 @@
 
 Walkers:
   markdown_flat_fn
-      rglob <root>/.claude/docs/**/*.md.
-      Register on USER_HOME_FOLDER only — ``~/`` is a huge tree where
-      unrestricted ``docs/`` discovery would pick up unrelated dirs from
-      venvs, npm packages, etc. The narrow ``.claude/docs`` prefix keeps
-      home-dir scanning bounded.
+      rglob <root>/docs/**/*.md — the DOCS family mount.
+      Register on USER_HOME_FOLDER only, and note this walker is what makes
+      user-scope markdown discoverable AT ALL: ``markdown_in_folder_fn`` runs off
+      FOLDER refs, which ``project_folder_walker_fn`` emits for project roots
+      only — ``~/`` is deliberately never content-walked (a huge tree full of
+      venvs and npm packages). One bounded directory is the whole point; do not
+      widen this to a tree walk of home.
 
   markdown_in_folder_fn
       Per-FOLDER emitter. Receives FOLDER refs from
@@ -35,6 +37,7 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     read_frontmatter_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
+from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.fs_store.record_types import RecordType
 
 
@@ -67,34 +70,52 @@ def markdown_flat_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
-    """<root>/.claude/docs/**/*.md — flat, no docs-subdir search."""
+    """``<root>/docs/**/*.md`` — the DOCS family mount, one bounded directory.
+
+    Was ``<root>/.claude/docs`` until markdown became ``AssetClass.DOCS``. That
+    directory was flowpad's own invention, not part of Claude Code's vocabulary,
+    and it split markdown across two homes: created docs went to ``docs/`` while
+    received ones went to ``.claude/docs/``.
+    """
+    from flow_sdk.fs_store.placement import DOCS_FAMILY  # noqa: PLC0415
+
     out: list[FSRef] = []
     seen: set[str] = set()
     for node in nodes:
-        _emit_md_rglob(Path(node.path) / ".claude" / "docs", node, out, seen)
+        _emit_md_rglob(Path(node.path) / DOCS_FAMILY, node, out, seen)
     return out
 
 
-# Folders whose .md children are claimed by typed indexers (skill_fn, agent_fn,
-# workflow_fn, command_fn). Skip emission to avoid double-indexing a SKILL.md
-# as both SKILL and MARKDOWN.
-_TYPED_RECORD_DIRS: frozenset[str] = frozenset(
-    {
-        "skills",
-        "agents",
-        "workflows",
-        "commands",
-        "whiteboards",
-        "task",
-    }
-)
+def _typed_record_dirs() -> frozenset[str]:
+    """Directory names whose ``.md`` children a typed indexer already claims.
+
+    Both halves are DERIVED, never hand-listed:
+      * harness families (``skills``, ``agents``, ``commands``, ``rules``,
+        ``workflows``) from ``SchemaRegistry.harness_scoped_families()``;
+      * ``agentic-assets`` — one segment covering every REPO type at any depth,
+        since ``repo_assets_fn`` claims that whole hierarchy.
+
+    Hand-listing is what rotted this check twice over: the set still named
+    ``whiteboards``/``task`` long after spec, deck, dataset and deck_template had
+    moved, and it never named ``rules`` at all — so those main docs were being
+    double-indexed as both their own type and MARKDOWN. Deriving means a new type
+    enrolls by declaring its ``asset_class``, with no edit here.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    return SchemaRegistry.harness_scoped_families() | {AGENTIC_ASSETS_DIR}
 
 
-def _has_typed_ancestor(folder: Path) -> bool:
-    """True if ``folder`` itself or any ancestor is a typed-record dir."""
+def _has_typed_ancestor(folder: Path, typed_dirs: frozenset[str] | None = None) -> bool:
+    """True if ``folder`` itself or any ancestor is a typed-record dir.
+
+    ``typed_dirs`` is hoisted by the per-scan caller so the registry query runs
+    once per walk rather than once per folder.
+    """
+    typed = _typed_record_dirs() if typed_dirs is None else typed_dirs
     p = folder
     while True:
-        if p.name in _TYPED_RECORD_DIRS:
+        if p.name in typed:
             return True
         if p.parent == p:
             return False
@@ -111,17 +132,17 @@ def markdown_in_folder_fn(
     gitignore + ``_WALK_IGNORED``; this function only emits — no glob
     recursion needed (use ``glob`` not ``rglob``).
 
-    Folders under typed-record dirs (``skills/``, ``agents/``, ``workflows/``,
-    ``commands/``) are skipped so SKILL.md / agent .md / workflow .md aren't
-    double-indexed as MARKDOWN.
+    Folders under a typed-record dir (see ``_typed_record_dirs``) are skipped so
+    a SKILL.md / agent .md / rules .md isn't double-indexed as MARKDOWN.
     """
     out: list[FSRef] = []
     seen: set[str] = set()
+    typed_dirs = _typed_record_dirs()
     for node in nodes:
         if node.record_type != RecordType.FOLDER:
             continue
         folder_path = Path(node.path)
-        if _has_typed_ancestor(folder_path):
+        if _has_typed_ancestor(folder_path, typed_dirs):
             continue
         try:
             entries = sorted(folder_path.glob("*.md"))

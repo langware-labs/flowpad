@@ -3,8 +3,8 @@ id: c21644a8-6efd-5e07-b95e-74834a7371a9
 ---
 
 test 1: FlowPad API Key
-- navigate to {APP_URL}/dock/environment
-- validate environment tab visible
+- navigate to {APP_URL}/dock/credentials/api-keys
+- validate the Credentials view is visible with the API Keys tab active
 - click "generate FlowPad API key"
 - validate API Key visible, click "copy to clipboard"
 - validate clipboard holds the key
@@ -14,7 +14,8 @@ test 1: FlowPad API Key
 - validate FlowPad API Key box dissapeared
 
 test 2: nonconf Variable
-- navigate to {APP_URL}/dock/environment
+- navigate to {APP_URL}/dock/credentials/environment
+- validate the Credentials view is visible with the Environment tab active
 - click "Add Variable"
 - fill variable form:
     Name=TEST2
@@ -30,8 +31,10 @@ test 2: nonconf Variable
 - in table, TEST2 row, click "delete"
 - validate TEST2 not in Variables table
 
-test 2: conf Variable
-- navigate to {APP_URL}/dock/environment
+test 3: conf Variable
+- navigate to {APP_URL}/dock/credentials/environment
+- validate the Credentials view is visible with the Environment tab active
+- click "Add Variable"
 - fill variable form:
     Name=TEST2
     Type=API Key

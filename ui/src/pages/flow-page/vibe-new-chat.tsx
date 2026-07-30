@@ -1,5 +1,6 @@
 import { SessionInput } from '@src/components/session-input/session-input';
 import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/components/home-customization';
+import { EnvironmentBanner } from '@src/components/environment-banner/EnvironmentBanner';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { normalizePath, useProjectOpener } from '@src/components/open-project-component/use-open-project';
 import { NewProjectDialog, NewProjectFromGitDialog, useGitCloneDialogSubmit } from '@src/components/project-selector';
@@ -64,6 +65,12 @@ export function VibeNewChat() {
   return (
     <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4">
       <HomeCustomBackground url={homeBackgroundUrl} />
+      {/* Runtime banner pinned to the top edge: this surface centers its content,
+          so the banner is absolutely positioned rather than a flex child — e2b
+          workspaces boot into vibe mode and land here, not on HomeLanding. */}
+      <div className="absolute inset-x-0 top-0 z-10">
+        <EnvironmentBanner />
+      </div>
       <div aria-hidden className="vibe-hero-gradient pointer-events-none absolute inset-x-0 bottom-0 h-2/3" />
       <div
         className="relative z-10 flex w-full max-w-2xl flex-col items-center gap-4 text-center"

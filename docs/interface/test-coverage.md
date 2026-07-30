@@ -145,7 +145,7 @@ set-env persist/remove/update/special-chars.
 | `compose_prompt` (embedded agents) | ✅ test_cli_driver_contract (passthrough) | — (shared) | — (shared) |
 | System instruction assets | ✅ test_system_instruction_assets + test_cli_options_system_prompt | ✅ same | ✅ same |
 
-Shared: `WorkerCLIOptions` round-trips ✅, system-instruction sink ✅, `build_env`
+Shared: `AgentOptions` round-trips ✅, system-instruction sink ✅, `build_env`
 pin ✅, restart-snapshot golden ✅ (+L restart_required); `restart_required`
 flip-on-config-change / clear-on-revert now unit-pinned
 (test_agentic_process_restart_snapshot). Also pinned in test_cli_driver_contract:
