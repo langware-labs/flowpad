@@ -6,7 +6,12 @@ import { useAuth, useGlobalEvents } from '@sdk/react/hooks';
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { NotificationOutlet, NotificationCommandBridge, DiagnoseErrorModal, initNotificationIngest } from '@src/notifications';
+import {
+  NotificationOutlet,
+  NotificationCommandBridge,
+  DiagnoseErrorModal,
+  initNotificationIngest,
+} from '@src/notifications';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
 import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
 import { FilePreviewRoot } from '@src/components/file-preview/FilePreviewRoot';
@@ -24,6 +29,7 @@ import { SnifferProvider } from '@src/contexts/SnifferContext';
 import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
+import { useShowTargetListener } from '@src/hooks/use-show-target-listener';
 import { useSyncOsBadge } from '@src/hooks/useInboxManager';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
 import { JourneyController } from '@src/journey/JourneyController';
@@ -63,6 +69,10 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
     void useGlobalEvents();
     usePresenceReporter();
     useUiCommandListener();
+    // `flow show` outside vibe — mints the shown target as a tab beside the
+    // calling process (never navigates). Vibe's own display surfaces own the
+    // vibe branch, so this no-ops there.
+    useShowTargetListener();
     // OS dock/launcher badge = the backend-owned InboxManager.unread (state,
     // not a notification event) — mounted once, next to the WS listeners.
     useSyncOsBadge();
@@ -135,9 +145,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <SnifferActiveNotice />
         <HarnessCapabilitiesProvider>
           <SnifferProvider>
-            <FloatingChatProvider>
-              {children}
-            </FloatingChatProvider>
+            <FloatingChatProvider>{children}</FloatingChatProvider>
           </SnifferProvider>
         </HarnessCapabilitiesProvider>
       </TooltipProvider>

@@ -340,7 +340,10 @@ export class Tab extends APIEntity<Tab> implements ITab {
     return { targetTypeId, target, projectId };
   }
 
-  static async getFromDockPointer(dock: IDockPointer, opts: { parentTabId?: string | null } = {}): Promise<Tab[]> {
+  static async getFromDockPointer(
+    dock: IDockPointer,
+    opts: { parentTabId?: string | null; afterTabId?: string | null } = {},
+  ): Promise<Tab[]> {
     const pointerJson = dock.toJSON?.();
     if (!pointerJson) return [];
 
@@ -356,6 +359,12 @@ export class Tab extends APIEntity<Tab> implements ITab {
       iconKey,
       worktree,
       parentTabId: opts.parentTabId ?? null,
+      // Explicit placement anchor. Omitted, the backend appends after the
+      // most-recently-active tab (browser-style opener locality), which is
+      // right for a navigation the user just made. A tab minted WITHOUT
+      // navigating (`flow show` outside vibe) has no such opener, so it names
+      // the tab it belongs beside.
+      afterTabId: opts.afterTabId ?? null,
     });
   }
 
