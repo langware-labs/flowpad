@@ -472,11 +472,7 @@ def try_admit_prompt(process_id: str) -> object | None:
     opaque token makes release owner-safe when an older setup unwinds after a
     newer admission has already been installed.
     """
-    if (
-        process_id in _PROMPT_ADMISSIONS
-        or process_id in _PROMPT_WORKERS
-        or _PROMPT_LOCKS[process_id].locked()
-    ):
+    if process_id in _PROMPT_ADMISSIONS or process_id in _PROMPT_WORKERS or _PROMPT_LOCKS[process_id].locked():
         return None
     token = object()
     _PROMPT_ADMISSIONS[process_id] = token
@@ -2057,6 +2053,7 @@ class AgenticProcess(Entity):
     def _record_dir(self) -> "Path":
         """This process's record folder (deterministic from type+id)."""
         from flow_sdk.fs_store.record_paths import shadow_dir_for
+
         return shadow_dir_for("agentic_process", self.id)
 
     @property
@@ -2350,11 +2347,7 @@ class AgenticProcess(Entity):
         project = await self._resolve_webapp_project()
         source = project.typeid if project is not None else None
         deployments = await Deployment.get_all(QueryFilter.by_type(Deployment.get_type()), source_entity=source)
-        return [
-            deployment
-            for deployment in deployments
-            if kind_matches("local.runtime.web", deployment.kind)
-        ]
+        return [deployment for deployment in deployments if kind_matches("local.runtime.web", deployment.kind)]
 
     @action.post(action_name="webapp-artifacts")
     async def _http_webapp_artifacts(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -2646,14 +2639,22 @@ class AgenticProcess(Entity):
 
         Unlike ``flow navigate`` (which steers the browser tab's URL via a
         ``ui_command``), show is declarative display focus: an ``on_show``
-        entity event to whoever watches this process (the vibe display pane,
-        the standard-mode viewer). Nothing watching → a silent context change;
-        that is the intended semantics, not a failure.
+        entity event to whoever watches this process. Nothing watching → a
+        silent context change; that is the intended semantics, not a failure.
+
+        The payload says WHAT to present, never HOW — so the same verb adapts to
+        the surface the user is on, and the choice is the frontend's (only it
+        knows the live view mode). Vibe pins the target in its display pane;
+        every other mode mints it as a tab beside this process's own tab,
+        WITHOUT navigating (``ui/src/hooks/use-show-target-listener.ts``).
 
         The payload is appended to ``context_data.display_stack`` (the show
         HISTORY, newest last) and mirrored to ``context_data.last_shown`` (the
         newest target) so a display that mounts LATER (page reload, late-opened
         tab) restores the pin AND its history — the entity event has no replay.
+        Consumers of the durable copy must gate on ``shown_at``: a tab is
+        durable, so replaying a show older than the client would resurrect a tab
+        the user deliberately closed.
         """
         shown_at = datetime.now(timezone.utc).isoformat()
         context = self.context_data if isinstance(self.context_data, dict) else {}
@@ -4871,11 +4872,7 @@ class AgenticProcess(Entity):
 
         if transcript is None:
             return []
-        return [
-            e
-            for e in transcript.filter(kind=EntryKind.SKILL_CALL)
-            if (getattr(e, "skill_name", "") or "").strip()
-        ]
+        return [e for e in transcript.filter(kind=EntryKind.SKILL_CALL) if (getattr(e, "skill_name", "") or "").strip()]
 
     @staticmethod
     def _usage_from_file_read(entry: object, read_path: str) -> AssetUsage:
@@ -6857,11 +6854,7 @@ class AgenticProcess(Entity):
                 # tracked on the persisted ``markdown_docs`` list (parallel to
                 # ``plan_path`` + ``plan.create``). Plan files and agent-internal
                 # docs are excluded so they don't double up with the Open-Plan chip.
-                if (
-                    is_markdown
-                    and isinstance(entry, (FileWriteEntry, FileEditEntry))
-                    and self._is_user_doc(path)
-                ):
+                if is_markdown and isinstance(entry, (FileWriteEntry, FileEditEntry)) and self._is_user_doc(path):
                     change = "create" if isinstance(entry, FileWriteEntry) else "update"
                     await self._track_markdown_doc(path, change)
 
@@ -7212,9 +7205,7 @@ class AgenticProcess(Entity):
             # fetching on receipt reads the post-write row).
             from flow_sdk.builtin.agentic_process.agent_on_tag import emit_agent_status
 
-            emit_agent_status(self.id,
-                              current.value if current is not None else "",
-                              self.status, current_busy)
+            emit_agent_status(self.id, current.value if current is not None else "", self.status, current_busy)
             await self.emit_flow_data(
                 {
                     "attributes": {
@@ -7391,9 +7382,7 @@ class AgenticProcess(Entity):
                     proc.sidecar_shell_id = None
                     if exit_code is not None and exit_code < 0:
                         proc.status = ProcessStatus.FAILED.value
-                        proc.start_failure = (
-                            f"Worker terminated by crash signal {-exit_code}."
-                        )
+                        proc.start_failure = f"Worker terminated by crash signal {-exit_code}."
                         logger.warning(
                             "AgenticProcess %s: %s Auto-relaunch paused until user retry.",
                             agentic_process_id,

@@ -13,15 +13,7 @@ import { useViewerStore, useProcessWebApp, useAppDisplay } from '@src/hooks/flow
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, editorForPath, editorForType } from '@src/navigation/asset-doc-types';
 import { DisplayHistoryButton } from './display-history-button';
-import {
-  AgenticProcess,
-  dataContext,
-  type DisplayEntry,
-  FlowData,
-  fsStore,
-  TypeId,
-  ViewType,
-} from '@sdk';
+import { AgenticProcess, dataContext, type DisplayEntry, FlowData, fsStore, TypeId, ViewType } from '@sdk';
 import { resolveProcessInputDir } from '@src/utils/upload-to-input-dir';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
@@ -32,10 +24,7 @@ import { useProcessSurface } from '@src/components/terminal/interactive-terminal
 import { ContentPanel } from './content-panel/content-panel';
 import { launchVibeSessionForProject } from './use-start-vibe-session';
 import { VIBE_STARTER_PROMPTS } from './vibe-starter-prompts';
-import {
-  type VibeWorkspaceSession,
-  useVibeWorkspaceSessionHost,
-} from './use-vibe-workspace-session';
+import { type VibeWorkspaceSession, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
 import { VibeChatPane } from './vibe-chat-pane';
 import {
   buildDisplayAnnotationPrompt,
@@ -58,16 +47,6 @@ interface VibeFocus {
   viewType: ViewType | null;
   path?: string;
   port?: string;
-}
-
-/** The dock pointer a shown target opens as its own tab — the single type/path →
- *  editor rule shared by the current-display render and the history popover. */
-function assetPointerForTarget(target: DisplayShowTarget): AssetDocPointer | null {
-  if (target.kind === 'webapp') return null; // webapps have no dock editor
-  const editor = target.type ? editorForType(target.type) : undefined;
-  if (editor && target.typeid) return AssetDocPointer.forTypeId(editor, new TypeId(target.typeid));
-  if (target.path) return AssetDocPointer.forVfs(editorForPath(target.path), target.path);
-  return null;
 }
 
 /** Mount the right viewer/editor for a raw path — ONE shared extension rule
@@ -108,8 +87,7 @@ function useVibeFocus(items: FlowData[]): VibeFocus {
       if (it.focus) {
         const d = it.data as { path?: string; metadata?: { port?: unknown } } | undefined;
         const port = d?.metadata?.port;
-        const portText =
-          typeof port === 'string' || typeof port === 'number' ? String(port) : undefined;
+        const portText = typeof port === 'string' || typeof port === 'number' ? String(port) : undefined;
         return {
           viewType: it.focus,
           path: d?.path ?? it.attributes?.path,
@@ -157,11 +135,8 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const streamItems = useAgenticProcessStream(activeProcess);
   const focus = useVibeFocus(streamItems);
   const displayStack = persistedProcess?.displayStack ?? [];
-  const lastShown = (
-    persistedProcess?.context_data as { last_shown?: DisplayShowTarget } | undefined
-  )?.last_shown;
-  const persistedShown =
-    lastShown ?? (displayStack.length ? displayStack[displayStack.length - 1] : null);
+  const lastShown = (persistedProcess?.context_data as { last_shown?: DisplayShowTarget } | undefined)?.last_shown;
+  const persistedShown = lastShown ?? (displayStack.length ? displayStack[displayStack.length - 1] : null);
   const persistedShownKey = persistedShown ? JSON.stringify(persistedShown) : '';
 
   // Agent-declared display focus (`flow show` → on_show entity event). The
@@ -212,11 +187,17 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // context_data update even when the SDK mutates the entity in place.
 
   // Open a past display as its OWN standard tab (the reusable behavior): convert
-  // the stored target to its dock pointer and navigate. Webapps have no dock
-  // editor — re-focus the live Display instead.
+  // the stored target to its dock pointer and navigate.
+  //
+  // Port targets are the deliberate exception. `dockForDisplayTarget` maps them
+  // to a WEB_APP dock — right for a tab-based mode, wrong here, because in vibe
+  // the Display pane IS where a running app renders. Sending the user to a
+  // separate tab would walk them out of the workspace to see something the pane
+  // beside them already shows, so a port entry re-focuses the Display instead.
   const onOpenHistoryEntry = useCallback(
     (entry: DisplayEntry) => {
-      const ptr = assetPointerForTarget(entry)?.toDockPointer() ?? null;
+      const isPortTarget = entry.kind === 'webapp' || entry.kind === 'app';
+      const ptr = isPortTarget ? null : dockForDisplayTarget(entry);
       navigation.openDock(ptr ?? session.processDock);
     },
     [navigation, session.processDock],
@@ -262,37 +243,40 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   );
   const appFrameRef = useRef<PersistentIframeHandle>(null);
 
-  const submitAnnotatedDisplay = useCallback(async (file: File, context: DisplayAnnotationContext) => {
-    if (!activeProcess?.id) throw new Error('No active Vibe session');
+  const submitAnnotatedDisplay = useCallback(
+    async (file: File, context: DisplayAnnotationContext) => {
+      if (!activeProcess?.id) throw new Error('No active Vibe session');
 
-    const dir = await resolveProcessInputDir(activeProcess.id);
-    if (!dir) throw new Error('Could not resolve the chat input directory');
+      const dir = await resolveProcessInputDir(activeProcess.id);
+      if (!dir) throw new Error('Could not resolve the chat input directory');
 
-    const uploads = await fsStore.getState().uploadFiles(new TypeId(dir.compute_node_id), dir.abs_path, [file]);
-    await Promise.all(uploads.map((upload) => upload.waitForCompletion()));
+      const uploads = await fsStore.getState().uploadFiles(new TypeId(dir.compute_node_id), dir.abs_path, [file]);
+      await Promise.all(uploads.map((upload) => upload.waitForCompletion()));
 
-    const filePath = `${dir.abs_path}/${file.name}`;
-    await activeProcess.prompt(buildDisplayAnnotationPrompt({ fileName: file.name, filePath, context }));
-  }, [activeProcess]);
+      const filePath = `${dir.abs_path}/${file.name}`;
+      await activeProcess.prompt(buildDisplayAnnotationPrompt({ fileName: file.name, filePath, context }));
+    },
+    [activeProcess],
+  );
 
-  const handleAnnotateDisplay = useCallback(async (
-    target: HTMLElement,
-    context = displayAnnotationContextForDock(currentDock),
-  ) => {
-    try {
-      const file = await captureElementAsImageFile(target, displayAnnotationImageName(context));
-      const submitted = await annotateImage(file, {
-        submitLabel: t`Submit`,
-        onSubmit: (annotated) => submitAnnotatedDisplay(annotated, context),
-      });
-      if (submitted) notify.success({ title: t`Annotation submitted` });
-    } catch (err) {
-      notify.error({
-        title: t`Could not annotate view`,
-        message: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }, [currentDock, submitAnnotatedDisplay, t]);
+  const handleAnnotateDisplay = useCallback(
+    async (target: HTMLElement, context = displayAnnotationContextForDock(currentDock)) => {
+      try {
+        const file = await captureElementAsImageFile(target, displayAnnotationImageName(context));
+        const submitted = await annotateImage(file, {
+          submitLabel: t`Submit`,
+          onSubmit: (annotated) => submitAnnotatedDisplay(annotated, context),
+        });
+        if (submitted) notify.success({ title: t`Annotation submitted` });
+      } catch (err) {
+        notify.error({
+          title: t`Could not annotate view`,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+    [currentDock, submitAnnotatedDisplay, t],
+  );
 
   const submitStarterPrompt = useCallback(
     async (prompt: string) => {
@@ -503,9 +487,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
 
     switch (focus.viewType) {
       case ViewType.EDITOR:
-        return focus.path
-          ? wrapAsset(focus.path, <CodeEditor activePath={focus.path} readOnly />)
-          : preview;
+        return focus.path ? wrapAsset(focus.path, <CodeEditor activePath={focus.path} readOnly />) : preview;
       case ViewType.DIFF: {
         const diffContext: DisplayAnnotationContext = {
           kind: 'diff',
