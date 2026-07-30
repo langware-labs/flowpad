@@ -22,6 +22,7 @@ import {
   type NodeChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { useTheme } from 'next-themes';
 import type { GraphWorkflowDocNode } from '@sdk/services/graph-workflows';
 import { StationCard, TriggerNode } from './nodes';
 import { PulseEdge } from './PulseEdge';
@@ -42,6 +43,7 @@ function CanvasInner() {
   const doc = useStudio((s) => s.doc);
   const mutateDoc = useStudio((s) => s.mutateDoc);
   const { screenToFlowPosition } = useReactFlow();
+  const { resolvedTheme } = useTheme();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 
@@ -185,10 +187,16 @@ function CanvasInner() {
       onDrop={onDrop}
       deleteKeyCode={['Backspace', 'Delete']}
       fitView
-      colorMode="dark"
+      // Follow the app's theme. Pinned to "dark", React Flow painted its dark
+      // canvas under light-mode cards and chrome — black paper with dark ink.
+      colorMode={resolvedTheme === 'light' ? 'light' : 'dark'}
       proOptions={{ hideAttribution: true }}
     >
-      <Background gap={24} color="#262a38" />
+      {/* The dots ride the viewport transform, so they pan/zoom with the nodes
+       * — that's why this owns them and the stylesheet no longer paints a
+       * second, static dot layer. Their color is `--xy-background-pattern-color`
+       * in graph-workflows.css (it was a hardcoded slate). */}
+      <Background gap={24} />
       <Controls />
     </ReactFlow>
   );
