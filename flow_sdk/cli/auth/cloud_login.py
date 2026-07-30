@@ -246,6 +246,15 @@ async def _finalize_login(login_data: LoginData) -> None:
     except Exception:
         pass
 
+    # Restarting the WS only opens the pipe for FUTURE frames — the hub fans out
+    # live and never replays, so anything addressed to this account while we were
+    # logged out (or logged in as someone else) is still missing locally. Pull the
+    # backlog now, exactly as startup does, so the Inbox is correct the moment the
+    # user lands instead of after they find the manual refresh button.
+    from flow_sdk.inbox.catchup import start_hub_catchup
+
+    start_hub_catchup("login")
+
 
 async def _broadcast_oauth(msg: OAuthMessage) -> None:
     try:
