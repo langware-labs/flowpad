@@ -15,7 +15,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.agentic_process import (
     READONLY_ASSET_SOURCES,
@@ -28,6 +27,7 @@ from flow_sdk.builtin.agentic_process.agentic_process import (
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
+from flow_sdk.builtin.subagent import SubAgent
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ async def tree(tmp_path: Path, monkeypatch):
         id=str(uuid.uuid4()), name=f"p_skill_{suffix}",
         asset_ref=canonical_posix_path(paths["p_skill"]),
     ))
-    p_agent_ent = await _save(Agent(
+    p_agent_ent = await _save(SubAgent(
         id=str(uuid.uuid4()), name=f"p_agent_{suffix}",
         asset_ref=canonical_posix_path(paths["p_agent"]),
     ))
@@ -103,7 +103,7 @@ async def tree(tmp_path: Path, monkeypatch):
         id=str(uuid.uuid4()), name=f"w_skill_{suffix}",
         asset_ref=canonical_posix_path(paths["w_skill"]),
     ))
-    e_agent_ent = await _save(Agent(
+    e_agent_ent = await _save(SubAgent(
         id=str(uuid.uuid4()), name=f"e_agent_{suffix}",
         asset_ref=canonical_posix_path(paths["e_agent"]),
     ))
@@ -192,7 +192,7 @@ async def test_descriptor_remote_sentinel_direct_and_batched_hydration():
         posix_path=None,
     )
     named = AssetDescriptor(
-        typeid="agent-@local",
+        typeid="subagent-@local",
         source=AssetSource.INLINE,
         posix_path=None,
     )
@@ -216,7 +216,7 @@ async def test_descriptor_remote_sentinel_direct_and_batched_hydration():
         assert missing.remote is False
         assert named.remote is False
         assert AssetDescriptor(
-            typeid="agent-@local",
+            typeid="subagent-@local",
             source=AssetSource.INLINE,
             posix_path=None,
         ).to_row()["remote"] is False
@@ -373,7 +373,7 @@ async def test_inline_persona_descriptor(tree):
     proc = _make_proc(cli_config={"agents_json": {"inline_helper": {"description": "x"}}})
     descs = await proc.get_asset_descriptors()
     inline = _by_source(descs, AssetSource.INLINE)
-    match = next((d for d in inline if d.typeid == "agent-inline_helper"), None)
+    match = next((d for d in inline if d.typeid == "subagent-inline_helper"), None)
     assert match is not None
     assert match.posix_path is None
     assert AssetUsageKind.INLINE_PERSONA in _usage_kinds(match)
@@ -391,7 +391,7 @@ async def test_executable_assets_filter_excludes_markdown(tree):
 @pytest.mark.asyncio
 async def test_embedded_excludes_inline_duplicate(tree, monkeypatch):
     """If a typeid is both EMBEDDED and INLINE, only EMBEDDED appears."""
-    p_agent_ref = f"agent-{tree['ents']['p_agent'].id}"
+    p_agent_ref = f"subagent-{tree['ents']['p_agent'].id}"
     proc = _make_proc(
         embedded_asset_refs=[],  # filled below
         cli_config={"agents_json": {tree['ents']['p_agent'].id: {"description": "x"}}},
@@ -448,7 +448,7 @@ async def test_inline_fallback_to_embedded_agent_ids(tree):
     proc.embedded_agent_ids = ["legacy_persona"]
     descs = await proc.get_asset_descriptors()
     inline = _by_source(descs, AssetSource.INLINE)
-    assert any(d.typeid == "agent-legacy_persona" for d in inline)
+    assert any(d.typeid == "subagent-legacy_persona" for d in inline)
 
 
 AGENT_MD = """---
@@ -471,7 +471,7 @@ async def test_inline_legacy_name_resolves_to_entity_id(tree):
     """A legacy embedded_agent_ids NAME whose materialized .md exists resolves
     to the real entity uuid (openable typeid) with the materialized path."""
     from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
+    from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
     from flow_sdk.fs_store.record_types import RecordType
 
     proc = _make_proc()
@@ -481,12 +481,12 @@ async def test_inline_legacy_name_resolves_to_entity_id(tree):
 
     descs = await proc.get_asset_descriptors()
     inline = _by_source(descs, AssetSource.INLINE)
-    expected_id = agent_peek_entity_id(FSRef(md, record_type=RecordType.AGENT))
-    match = [d for d in inline if d.typeid == f"agent-{expected_id}"]
+    expected_id = subagent_peek_entity_id(FSRef(md, record_type=RecordType.SUBAGENT))
+    match = [d for d in inline if d.typeid == f"subagent-{expected_id}"]
     assert match, inline
     assert match[0].posix_path == canonical_posix_path(md)
     # The raw name-form must be gone.
-    assert not any(d.typeid == "agent-legacy_vibe" for d in inline)
+    assert not any(d.typeid == "subagent-legacy_vibe" for d in inline)
 
 
 @pytest.mark.asyncio
@@ -495,18 +495,18 @@ async def test_inline_resolved_dedups_against_embedded(tree):
     embedded_asset_refs collapses into the EMBEDDED row (no INLINE dup)."""
     from flow_sdk.api.api_types.type_id import TypeId
     from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
+    from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
     from flow_sdk.fs_store.record_types import RecordType
 
     proc = _make_proc()
     assets_dir = await proc._assets_dir_path()
     md = _write_agent_md(assets_dir / ".claude" / "agents" / "dup_vibe.md", "dup_vibe")
-    entity_id = agent_peek_entity_id(FSRef(md, record_type=RecordType.AGENT))
-    proc.embedded_asset_refs = [TypeId(f"agent-{entity_id}")]
+    entity_id = subagent_peek_entity_id(FSRef(md, record_type=RecordType.SUBAGENT))
+    proc.embedded_asset_refs = [TypeId(f"subagent-{entity_id}")]
     proc.embedded_agent_ids = ["dup_vibe"]
 
     descs = await proc.get_asset_descriptors()
-    matching = [d for d in descs if d.typeid == f"agent-{entity_id}"]
+    matching = [d for d in descs if d.typeid == f"subagent-{entity_id}"]
     sources = {d.source for d in matching}
     assert AssetSource.EMBEDDED in sources
     assert AssetSource.INLINE not in sources
@@ -521,7 +521,7 @@ async def test_load_embedded_agent_action_records_entity_ref(tree, tmp_path):
     import types
 
     from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
+    from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
     from flow_sdk.fs_store.record_types import RecordType
 
     src = _write_agent_md(tmp_path / "src_agents" / "fresh_vibe.md", "fresh_vibe")
@@ -538,49 +538,49 @@ async def test_load_embedded_agent_action_records_entity_ref(tree, tmp_path):
     assert res.status == "SUCCESS", res
     assert saved
 
-    expected_id = agent_peek_entity_id(FSRef(src, record_type=RecordType.AGENT))
+    expected_id = subagent_peek_entity_id(FSRef(src, record_type=RecordType.SUBAGENT))
     refs = [str(r) for r in proc.embedded_asset_refs]
-    assert refs == [f"agent-{expected_id}"]
-    assert res.data["ref"] == f"agent-{expected_id}"
+    assert refs == [f"subagent-{expected_id}"]
+    assert res.data["ref"] == f"subagent-{expected_id}"
     assert proc.embedded_agent_ids == []
 
     assets_dir = await proc._assets_dir_path()
     assert (assets_dir / ".claude" / "agents" / "fresh_vibe.md").is_file()
 
     descs = await proc.get_asset_descriptors()
-    matching = [d for d in descs if d.typeid == f"agent-{expected_id}"]
+    matching = [d for d in descs if d.typeid == f"subagent-{expected_id}"]
     assert matching and all(d.source == AssetSource.EMBEDDED for d in matching)
 
     # Idempotent: re-attach doesn't duplicate the ref.
     await proc.load_embedded_agent_action(asset_ref=str(src))
-    assert [str(r) for r in proc.embedded_asset_refs] == [f"agent-{expected_id}"]
+    assert [str(r) for r in proc.embedded_asset_refs] == [f"subagent-{expected_id}"]
 
 
 def test_agent_peek_entity_id_reads_capsule_without_writing(tmp_path):
-    """agent_peek_entity_id never writes the source file. Under capsule-v4 it
+    """subagent_peek_entity_id never writes the source file. Under capsule-v4 it
     cannot predict a not-yet-minted random v4 (the documented asymmetry), but
     once gen_id has stamped the v4 into the frontmatter capsule, peek reads and
     returns that same id. An already-adopted frontmatter UUID wins on both."""
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.identifier import is_valid_entity_id
-    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
+    from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id
     from flow_sdk.fs_store.record_types import RecordType
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     md = _write_agent_md(tmp_path / "peek_agent.md", "peeky")
     before = md.read_bytes()
-    peeked = agent_peek_entity_id(FSRef(md, record_type=RecordType.AGENT))
+    peeked = subagent_peek_entity_id(FSRef(md, record_type=RecordType.SUBAGENT))
     assert md.read_bytes() == before, "peek must not write"
     assert is_valid_entity_id(peeked)
     # gen_id stamps a fresh v4 into the frontmatter capsule; peek then reads it.
-    minted = SchemaRegistry.get("agent").mint_id(FSRef(md, record_type=RecordType.AGENT))
+    minted = SchemaRegistry.get("subagent").mint_id(FSRef(md, record_type=RecordType.SUBAGENT))
     assert uuid.UUID(minted).version == 4
-    assert agent_peek_entity_id(FSRef(md, record_type=RecordType.AGENT)) == minted
+    assert subagent_peek_entity_id(FSRef(md, record_type=RecordType.SUBAGENT)) == minted
 
     adopted = str(uuid.uuid4())
     md2 = tmp_path / "adopted_agent.md"
     md2.write_text(f"---\nid: {adopted}\nname: adoptee\n---\n\nBody.\n")
-    assert agent_peek_entity_id(FSRef(md2, record_type=RecordType.AGENT)) == adopted
+    assert subagent_peek_entity_id(FSRef(md2, record_type=RecordType.SUBAGENT)) == adopted
 
 
 # ── Missing-coverage tests added per debugMCP-validation review ──────────────
@@ -628,7 +628,7 @@ async def test_embedded_materialized_path_layout(tree, monkeypatch):
 
     # Stub the record fetch so we don't need a real AgentRecord on disk.
     async def _fake_path_for(self, ref, assets_dir):
-        if ref.type == "agent":
+        if ref.type == "subagent":
             return assets_dir / ".claude" / "agents" / "stubby.md"
         if ref.type == "skill":
             return assets_dir / ".claude" / "skills" / "stubby"
@@ -637,7 +637,7 @@ async def test_embedded_materialized_path_layout(tree, monkeypatch):
     monkeypatch.setattr(AgenticProcess, "_materialized_path_for", _fake_path_for)
 
     proc.embedded_asset_refs = [
-        TypeId("agent-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+        TypeId("subagent-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
         TypeId("skill-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
     ]
     descs = await proc.get_asset_descriptors()
@@ -652,7 +652,7 @@ async def test_embedded_materialized_path_layout(tree, monkeypatch):
     )
 
     paths = {d.typeid: d.posix_path for d in embedded}
-    assert paths.get("agent-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa") == expected_agent_path
+    assert paths.get("subagent-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa") == expected_agent_path
     assert paths.get("skill-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb") == expected_skill_path
 
 
@@ -669,7 +669,7 @@ async def test_embedded_descriptor_is_marked_used_without_file_read(tree, monkey
     _stub_transcript(monkeypatch, [])
 
     proc = _make_proc(embedded_asset_refs=[
-        TypeId("agent-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+        TypeId("subagent-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
     ])
     descs = await proc.get_asset_descriptors()
     embedded = _by_source(descs, AssetSource.EMBEDDED)
@@ -685,7 +685,7 @@ async def test_file_read_marks_matching_asset_used(tree, monkeypatch):
     proc = _make_proc(additional_dirs=[str(tree["extra_dir"])])
     descs = await proc.get_asset_descriptors()
     extra = _by_source(descs, AssetSource.ADDITIONAL_DIR)
-    match = next(d for d in extra if d.typeid == f"agent-{tree['ents']['e_agent'].id}")
+    match = next(d for d in extra if d.typeid == f"subagent-{tree['ents']['e_agent'].id}")
 
     assert AssetUsageKind.TRANSCRIPT_FILE_READ in _usage_kinds(match)
     usage = next(u for u in match.usage if u.kind == AssetUsageKind.TRANSCRIPT_FILE_READ)
@@ -825,7 +825,7 @@ async def test_get_assets_action_serializes_usage(tree):
     proc = _make_proc(cli_config={"agents_json": {"inline_helper": {"description": "x"}}})
 
     res = await proc.get_assets_action()
-    inline = next(a for a in res.data["assets"] if a["typeid"] == "agent-inline_helper")
+    inline = next(a for a in res.data["assets"] if a["typeid"] == "subagent-inline_helper")
 
     assert inline["usage"] == [{
         "kind": AssetUsageKind.INLINE_PERSONA.value,
@@ -903,7 +903,6 @@ async def test_source_dir_populated_for_path_discovered(tree):
     EMBEDDED + INLINE descriptors leave source_dir as None — they aren't
     attributed to any source dir.
     """
-    from flow_sdk.api.api_types.type_id import TypeId
     proc = _make_proc(
         workdir=str(tree["workdir_outside"]),
         additional_dirs=[str(tree["extra_dir"])],
@@ -1145,7 +1144,7 @@ async def test_assistant_own_project_still_lists_its_system_skills(tree, system_
         descs = await scan_path_asset_descriptors(
             [(canonical_posix_path(system_root), AssetSource.PROJECT_DIR)],
             own_project_id="",
-            types=["skill", "agent"],
+            types=["skill", "subagent"],
         )
         match = next((d for d in descs if d.typeid.endswith(ent.id)), None)
         assert match is not None, "the assistant project's own skills vanished from its asset list"

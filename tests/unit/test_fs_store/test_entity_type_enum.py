@@ -16,7 +16,7 @@ EXPECTED = {
     "TASK": "task",
     "RULE": "rule",
     "SKILL": "skill",
-    "AGENT": "agent",
+    "SUBAGENT": "subagent",
     "LOG": "log",
     "AGENTIC_PROCESS": "agentic_process",
     "ARTIFACT": "artifact",
@@ -204,4 +204,4 @@ def test_back_compat_aliases_are_the_same_class():
     assert BuiltinEntityType is EntityType
     assert SkillitRecordType is EntityType
     # shared members resolve to the same singleton
-    assert RecordType.AGENT is BuiltinEntityType.AGENT
+    assert RecordType.SUBAGENT is BuiltinEntityType.SUBAGENT

@@ -14,12 +14,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agentic_process.agentic_process import AssetSource
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
 from flow_sdk.builtin.spec import Spec
+from flow_sdk.builtin.subagent import SubAgent
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ async def staging(tmp_path: Path, monkeypatch):
         )),
         # Project-scoped entity of ANOTHER project under the home catchall —
         # must be excluded by the _source_match_for_asset ownership rule.
-        "other_agent": await _save(Agent(
+        "other_agent": await _save(SubAgent(
             id=str(uuid.uuid4()), name=f"other_agent_{suffix}",
             asset_ref=canonical_posix_path(paths["other_agent"]),
             scope="project", project_id=other_project_id,
@@ -205,7 +205,7 @@ async def test_ref_only_remote_hydration_batches_once_per_type(staging):
             posix_path=None,
         ),
         AssetDescriptor(
-            typeid=f"agent-{agent.id}",
+            typeid=f"subagent-{agent.id}",
             source=AssetSource.USER_DIR,
             posix_path=None,
         ),
@@ -217,14 +217,14 @@ async def test_ref_only_remote_hydration_batches_once_per_type(staging):
             new=AsyncMock(return_value=descriptors),
         ),
         patch.object(Skill, "get_all", new=AsyncMock(wraps=Skill.get_all)) as skill_get_all,
-        patch.object(Agent, "get_all", new=AsyncMock(wraps=Agent.get_all)) as agent_get_all,
+        patch.object(SubAgent, "get_all", new=AsyncMock(wraps=SubAgent.get_all)) as agent_get_all,
         patch.object(
             Skill,
             "get_one",
             new=AsyncMock(side_effect=AssertionError("get_one is not allowed")),
         ),
         patch.object(
-            Agent,
+            SubAgent,
             "get_one",
             new=AsyncMock(side_effect=AssertionError("get_one is not allowed")),
         ),
@@ -235,4 +235,4 @@ async def test_ref_only_remote_hydration_batches_once_per_type(staging):
     assert agent_get_all.await_count == 1
     by_typeid = {row["typeid"]: row for row in response.data["assets"]}
     assert by_typeid[f"skill-{skill.id}"]["remote"] is True
-    assert by_typeid[f"agent-{agent.id}"]["remote"] is False
+    assert by_typeid[f"subagent-{agent.id}"]["remote"] is False

@@ -31,7 +31,7 @@ INDEXABLE_TYPES: list[RecordType] = [
     RecordType.CLAUDE_RULES,
     RecordType.SPEC,
     RecordType.SKILL,
-    RecordType.AGENT,
+    RecordType.SUBAGENT,
     RecordType.COMMAND,
     RecordType.CLAUDE_MEMORY,
     RecordType.MARKDOWN,
@@ -83,7 +83,6 @@ def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
     # self-registering on functions-module import, so building the indexer is
     # the chokepoint that guarantees a complete registry. Idempotent.
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
-    from flow_sdk.fs_store.indexer.functions.agent import agent_fn
     from flow_sdk.fs_store.indexer.functions.claude_command import command_fn
     from flow_sdk.fs_store.indexer.functions.claude_hook import (
         claude_hook_files_extras_fn,
@@ -121,6 +120,7 @@ def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.secret_origin import secret_origin_in_folder_fn
     from flow_sdk.fs_store.indexer.functions.skill import skill_fn, skill_in_folder_fn
     from flow_sdk.fs_store.indexer.functions.spreadsheet import spreadsheet_in_folder_fn
+    from flow_sdk.fs_store.indexer.functions.subagent import subagent_fn
     from flow_sdk.fs_store.indexer.functions.todo import todo_fn
     from flow_sdk.fs_store.indexer.functions.workflow_run import workflow_run_fn
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -160,7 +160,7 @@ def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
     idx.add_function(RecordType.USER_HOME_FOLDER, skill_fn, RecordType.SKILL)
     # Workflow run journals live at ~/.claude/projects/<slug>/<sid>/workflows/wf_*.json.
     idx.add_function(RecordType.USER_HOME_FOLDER, workflow_run_fn, RecordType.WORKFLOW_RUN)
-    idx.add_function(RecordType.USER_HOME_FOLDER, agent_fn, RecordType.AGENT)
+    idx.add_function(RecordType.USER_HOME_FOLDER, subagent_fn, RecordType.SUBAGENT)
     # Dynamic workflows (.js) live beside the .md AMD workflows in .claude/workflows/.
     idx.add_function(RecordType.USER_HOME_FOLDER, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)
     idx.add_function(RecordType.USER_HOME_FOLDER, command_fn, RecordType.COMMAND)
@@ -191,7 +191,7 @@ def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
     idx.add_function(RecordType.REAL_PROJECT_CWD, claude_md_in_project_root_fn, RecordType.CLAUDE_MD)
     idx.add_function(RecordType.REAL_PROJECT_CWD, claude_rules_fn, RecordType.CLAUDE_RULES)
     idx.add_function(RecordType.REAL_PROJECT_CWD, skill_fn, RecordType.SKILL)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, agent_fn, RecordType.AGENT)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, subagent_fn, RecordType.SUBAGENT)
     idx.add_function(RecordType.REAL_PROJECT_CWD, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)
     idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn, RecordType.FOLDER)
     idx.add_function(RecordType.REAL_PROJECT_CWD, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
@@ -200,7 +200,7 @@ def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
 
     # SYSTEM_ROOT (flowpad_assistant) expanders
     idx.add_function(RecordType.SYSTEM_ROOT, skill_fn, RecordType.SKILL)
-    idx.add_function(RecordType.SYSTEM_ROOT, agent_fn, RecordType.AGENT)
+    idx.add_function(RecordType.SYSTEM_ROOT, subagent_fn, RecordType.SUBAGENT)
     idx.add_function(RecordType.SYSTEM_ROOT, project_folder_walker_fn, RecordType.FOLDER)
 
     # CWD_ROOT expanders. A cloned repo is scanned as a CWD_ROOT
@@ -209,7 +209,7 @@ def build_default_indexer(scan_mode: "ScanMode | None" = None) -> FSIndexer:
     # auto-launch — because ``repo_assets_fn`` below runs for this root too.
     idx.add_function(RecordType.CWD_ROOT, claude_rules_fn, RecordType.CLAUDE_RULES)
     idx.add_function(RecordType.CWD_ROOT, skill_fn, RecordType.SKILL)
-    idx.add_function(RecordType.CWD_ROOT, agent_fn, RecordType.AGENT)
+    idx.add_function(RecordType.CWD_ROOT, subagent_fn, RecordType.SUBAGENT)
     idx.add_function(RecordType.CWD_ROOT, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)
     idx.add_function(RecordType.CWD_ROOT, command_fn, RecordType.COMMAND)
     idx.add_function(RecordType.CWD_ROOT, project_folder_walker_fn, RecordType.FOLDER)

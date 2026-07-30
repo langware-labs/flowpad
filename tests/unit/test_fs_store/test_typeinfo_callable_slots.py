@@ -56,7 +56,7 @@ def test_builtin_types_have_dispatch_slots_wired():
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect registration
 
     for t in (
-        "skill", "markdown", "plan", "claude_md", "agent", "command", "task",
+        "skill", "markdown", "plan", "claude_md", "subagent", "command", "task",
         "whiteboard", "spec", "claude_session", "codex_session",
         "markdown_index", "project", "claude_memory", "claude_rules",
     ):

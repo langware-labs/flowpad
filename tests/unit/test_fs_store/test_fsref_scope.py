@@ -17,13 +17,12 @@ import pytest
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
 
-
 # Record types whose legacy walkers attach a scope label (user / project /
 # system) to every emitted record. The indexer must be able to propagate
 # scope through FSRef so the index stage can set it correctly on each record.
 _SCOPE_REQUIRING_TYPES = [
     RecordType.SKILL,
-    RecordType.AGENT,
+    RecordType.SUBAGENT,
     RecordType.CLAUDE_MD,
     RecordType.CLAUDE_RULES,
     RecordType.COMMAND,

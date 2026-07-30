@@ -1,7 +1,7 @@
 """Type metadata for AGENT."""
 from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, frontmatter_id
-from flow_sdk.fs_store.indexer.functions.agent import (
-    extract_agent,
+from flow_sdk.fs_store.indexer.functions.subagent import (
+    extract_subagent,
 )
 from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.types import EntityType
@@ -14,7 +14,7 @@ def _agent_default_body(entity) -> str:
     Mirrors Skill/Workflow/Spec: without a default-body writer, create persists
     the entity + asset_ref but never materializes the backing .md, leaving a
     dangling pointer the editor reports as "file not found". Frontmatter shape
-    (name/description) is what ``parse_agent_markdown`` reads back; the body is
+    (name/description) is what ``parse_subagent_markdown`` reads back; the body is
     the agent's system prompt.
     """
     name = (getattr(entity, "name", None) or "Untitled Agent").strip()
@@ -24,9 +24,9 @@ def _agent_default_body(entity) -> str:
 
 
 AGENT = TypeMetadata(
-    type=EntityType.AGENT,
+    type=EntityType.SUBAGENT,
     displayName="Agents",
-    from_disk_fn=extract_agent,
+    from_disk_fn=extract_subagent,
     capsules=(IDENTITY_CAPSULE,),
     identity_backend=capsule_identity(frontmatter_id),
     indexed_by_default=True,

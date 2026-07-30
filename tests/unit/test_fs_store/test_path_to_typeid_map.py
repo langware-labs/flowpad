@@ -26,8 +26,8 @@ from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
-from flow_sdk.fs_store.indexer.functions.agent import agent_fn
 from flow_sdk.fs_store.indexer.functions.skill import skill_fn
+from flow_sdk.fs_store.indexer.functions.subagent import subagent_fn
 from flow_sdk.fs_store.record_types import RecordType
 
 pytestmark = pytest.mark.asyncio
@@ -67,12 +67,12 @@ async def _index(root: Path, scope: str, project_id: str | None = None):
     """Index skills+agents under `root`, with the given scope stamped on the root."""
     drv = get_db_driver()
     await drv.delete_entities_by_type(str(RecordType.SKILL))
-    await drv.delete_entities_by_type(str(RecordType.AGENT))
+    await drv.delete_entities_by_type(str(RecordType.SUBAGENT))
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER, scope=scope, project_id=project_id))
     idx.add_function(RecordType.USER_HOME_FOLDER, skill_fn, RecordType.SKILL)
-    idx.add_function(RecordType.USER_HOME_FOLDER, agent_fn, RecordType.AGENT)
-    return await idx.index(IndexerOptions(verbose=False, types=[RecordType.SKILL, RecordType.AGENT]))
+    idx.add_function(RecordType.USER_HOME_FOLDER, subagent_fn, RecordType.SUBAGENT)
+    return await idx.index(IndexerOptions(verbose=False, types=[RecordType.SKILL, RecordType.SUBAGENT]))
 
 
 @pytest.mark.parametrize("scope,pid", [("user", None), ("project", PROJECT_ID)])
@@ -98,11 +98,11 @@ async def test_agent_file_path_resolves_to_typeid(tmp_path: Path, initialize_tes
     md = _write_agent(tmp_path, "demo_agent", aid)
 
     res = await _index(tmp_path, scope, pid)
-    assert res.per_type[RecordType.AGENT].indexed == 1
+    assert res.per_type[RecordType.SUBAGENT].indexed == 1
 
     e = await Entity.get_by_asset_ref(str(md.resolve()))
     assert e is not None, "agent file path did not map to any entity"
-    assert e.get_type() == str(RecordType.AGENT)
+    assert e.get_type() == str(RecordType.SUBAGENT)
     assert e.id == aid
     assert e.scope == scope
     if pid:

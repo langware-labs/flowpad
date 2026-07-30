@@ -1,7 +1,7 @@
 from enum import Enum
 
 
-class AgentKind(str, Enum):
+class SubAgentKind(str, Enum):
     """Discriminates how an agent asset is used.
 
     - HARNESS: the default — a normal sub-agent that runs under the CLI harness

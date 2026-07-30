@@ -187,7 +187,7 @@ _BUILTIN_DEFAULT_TYPES: list[str] = [
     # AGENTIC_PROCESS, RECORD_ERROR, CLAUDE_ERROR are written to the DB by
     # Record.save and intentionally excluded from this list.
     RecordType.SKILL,
-    RecordType.AGENT,
+    RecordType.SUBAGENT,
     RecordType.TASK,
     RecordType.MARKDOWN,
     RecordType.PLAN,

@@ -3,9 +3,10 @@
 DoF matrix: Ref type (dir, file-direct, file-nested) x State (new, partial, full) x Op (exists, read, write, children, delete)
 Direct disk validation via Path on every mutating op.
 """
+
 import pytest
-from pathlib import Path
-from flow_sdk.fs_store.fs_ref import FSRef, JSONFsRef, TextFsRef, FrontMatterFsRef
+
+from flow_sdk.fs_store.fs_ref import FrontMatterFsRef, FSRef, JSONFsRef, TextFsRef
 
 
 @pytest.fixture
@@ -237,12 +238,12 @@ class TestMainRef:
         pytest.skip("Skill main_ref dispatch moves to entity in a later phase")
 
     def test_agent_record_main_ref_returns_frontmatter_fsref(self, tmp_path):
-        from flow_sdk.fs_store.operations.agent import extract_agent_from_path
+        from flow_sdk.fs_store.operations.subagent import extract_subagent_from_path
         folder = tmp_path / "agent-@myagent"
         folder.mkdir()
         md = folder / "myagent.md"
         md.write_text("---\nname: myagent\n---\nHello\n")
-        rec = extract_agent_from_path(md)
+        rec = extract_subagent_from_path(md)
         rec.path = str(folder)
         mr = rec.main_ref
         assert mr is not None

@@ -6,7 +6,6 @@ side-effects should import this module instead.
 """
 # Walker modules — register TypeInfo + folder walkers.
 # Entity modules — trigger Entity.__init_subclass__ → SchemaRegistry merge of entity_cls.
-import flow_sdk.builtin.agent  # noqa: F401
 import flow_sdk.builtin.claude_memory_entities  # noqa: F401
 import flow_sdk.builtin.claude_session  # noqa: F401
 import flow_sdk.builtin.codex_session  # noqa: F401
@@ -22,9 +21,9 @@ import flow_sdk.builtin.markdown_index  # noqa: F401
 import flow_sdk.builtin.project  # noqa: F401
 import flow_sdk.builtin.skill  # noqa: F401
 import flow_sdk.builtin.spreadsheet  # noqa: F401
+import flow_sdk.builtin.subagent  # noqa: F401
 import flow_sdk.builtin.task  # noqa: F401
 import flow_sdk.builtin.whiteboard  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.agent  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_command  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_hook  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_md  # noqa: F401
@@ -48,6 +47,7 @@ import flow_sdk.fs_store.indexer.functions.secret_origin  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.skill  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.spec  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.spreadsheet  # noqa: F401
+import flow_sdk.fs_store.indexer.functions.subagent  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.task  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.todo  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.whiteboard  # noqa: F401

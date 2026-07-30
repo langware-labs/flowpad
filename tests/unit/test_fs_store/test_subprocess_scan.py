@@ -110,7 +110,7 @@ async def test_subprocess_scan_matches_in_process_scan(project_tree: Path) -> No
     # Guard against a vacuous pass if the fixture ever stops producing records.
     assert in_process, "fixture produced no candidates"
     types = {str(r.record_type) for r in via_child}
-    assert {"skill", "agent", "markdown", "mcp_server"} <= types
+    assert {"skill", "subagent", "markdown", "mcp_server"} <= types
 
 
 @pytest.mark.asyncio

@@ -30,9 +30,10 @@ import time
 import uuid
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
-from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
+
+from flow_sdk._compat import StrEnum
 
 if TYPE_CHECKING:
     from flow_sdk.fs_store.fs_record import FSRecord as AgentRecord
@@ -547,17 +548,16 @@ class ClaudeProjectEnvManager:
 
     # -- Agent management -----------------------------------------------------
 
-    def load_agent(self, agent: "AgentRecord | str | Path") -> None:
+    def load_subagent(self, agent: "AgentRecord | str | Path") -> None:
         """Copy an agent definition into ``.claude/agents/``.
 
         Accepts:
-          - ``Record`` (AGENT type): renders via ``render_agent_markdown`` and writes it
-          - ``str``: treated as agent name, loaded via ``load_agent`` from operations
+          - ``Record`` (AGENT type): renders via ``render_subagent_markdown`` and writes it
+          - ``str``: treated as agent name, loaded via ``load_subagent`` from operations
           - ``Path``: path to a ``.md`` file, copied directly
         """
-        from flow_sdk.fs_store.operations.agent import (  # noqa: PLC0415
-            load_agent as _load_agent,
-            render_agent_markdown,
+        from flow_sdk.fs_store.operations.subagent import (  # noqa: PLC0415
+            load_subagent as _load_agent,
         )
 
         if isinstance(agent, Path):
@@ -572,10 +572,10 @@ class ClaudeProjectEnvManager:
             self._write_agent_md(agent)
 
     def _write_agent_md(self, agent: "AgentRecord") -> None:
-        from flow_sdk.fs_store.operations.agent import render_agent_markdown  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.subagent import render_subagent_markdown  # noqa: PLC0415
         name = agent.name or agent.id or "agent"
         dest = self.agents_dir / f"{name}.md"
-        dest.write_text(render_agent_markdown(agent), encoding="utf-8")
+        dest.write_text(render_subagent_markdown(agent), encoding="utf-8")
 
     # -- System prompt --------------------------------------------------------
 

@@ -29,7 +29,7 @@ from __future__ import annotations
 # silently fails to index would make the repo lie.
 SAMPLE_ASSET_NAMES: dict[str, tuple[str, ...]] = {
     "skill": ("changelog-writer", "commit-splitter", "dep-auditor", "flaky-finder", "perf-profiler", "test-namer"),
-    "agent": ("api-reviewer", "docs-editor", "migration-planner", "release-captain", "schema-checker", "triage-bot"),
+    "subagent": ("api-reviewer", "docs-editor", "migration-planner", "release-captain", "schema-checker", "triage-bot"),
     "markdown": (
         "architecture", "code-review-guide", "data-model", "glossary",
         "onboarding", "release-process", "style-guide", "troubleshooting",
@@ -130,7 +130,7 @@ def readme_text() -> str:
     """The README, with the manifest rendered from the one manifest."""
     labels = {
         "skill": "skills",
-        "agent": "sub-agents",
+        "subagent": "sub-agents",
         "markdown": "documents",
         "task": "tasks",
         "plan": "plans",
