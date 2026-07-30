@@ -8,7 +8,6 @@ from flow_sdk.fs_store.indexer.functions.codex_sessions import (
     codex_session_stable_key,
     extract_codex_session,
 )
-from flow_sdk.fs_store.placement import TRANSCRIPTS_FAMILY
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
 
@@ -21,14 +20,11 @@ CODEX_SESSION = TypeMetadata(
     identity_backend=derived_identity(codex_session_id_from_file),
     id_stable_key_fn=codex_session_stable_key,
     id_namespace=uuid.NAMESPACE_DNS,
-    # Same contract as CLAUDE_SESSION — see the comment there. Only the harness
-    # differs, and nothing downstream branches on the worker. NOTE the value is
-    # ``agents``, not ``codex``: ``_WORKER_NAME_TO_TYPE`` maps codex onto the
-    # ``.agents`` standard, and ``effective_harness`` does NOT coerce — an
-    # unrecognized string silently falls back to ``.claude/``.
-    asset_class="harness",
-    harness="agents",
-    family=TRANSCRIPTS_FAMILY,
+    # Same contract as CLAUDE_SESSION — see the comment there. Codex's own store
+    # (``~/.codex/sessions/``) is globbed by ``codex_sessions_fn``; an installed
+    # transcript lands in the repo hierarchy under its own type name.
+    asset_class="repo",
+    family="codex_session",
     main_layout="file",
     main_ext=".jsonl",
     receive_row_overrides={"remote": False, "received": True},

@@ -10,7 +10,7 @@ import { Trans } from '@lingui/react/macro';
  * via the OSS `MarkdownView` (reuse-first — see [[oss-ontology-hub-api-division]]).
  *
  * Content shows for entities whose body is an entity FIELD (e.g. `task.description`).
- * File-backed types (markdown/agentic_flow store their body as files at
+ * File-backed types (markdown/graph_workflow store their body as files at
  * `asset_ref`) have no field content on the hub → they render metadata only
  * until the OSS content model reads bodies from an entity field.
  *

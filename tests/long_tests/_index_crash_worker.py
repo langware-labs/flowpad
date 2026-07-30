@@ -3,7 +3,7 @@
 Run as ``python -m tests.long_tests._index_crash_worker <db_path> <root>`` with
 ``FS_RECORD_PATH`` pointing at the shared records (shadow ``.hash``) dir. It opens
 the *same* SQLite file and records root the parent uses, then runs one ordinary
-``FSIndexer.index()`` over ``<root>/.claude/docs/**/*.md``.
+``FSIndexer.index()`` over ``<root>/docs/**/*.md``.
 
 Two roles, selected by argv[3]:
   - ``crash``  : index, and let the parent SIGKILL it mid-run (after the first

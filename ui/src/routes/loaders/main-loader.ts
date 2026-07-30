@@ -10,6 +10,7 @@ import { AgenticProcess, cloudManager, ContextEntitiesEnum, dataContext, initSdk
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation';
 import { canonicalProcessDockPath } from '@src/navigation/process-dock-canonicalization';
+import { canonicalCredentialsDockPath } from '@src/navigation/credentials-dock-canonicalization';
 import { canonicalWorldViewDockPath } from '@src/navigation/worldview-dock-canonicalization';
 import { pageRedirectUrl } from '@src/navigation/supported-pages';
 import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
@@ -166,6 +167,16 @@ export async function loadAgentApp(args: LoaderArgs) {
     t.done(slowThresholdSeconds);
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect(canonicalWorldView);
+  }
+
+  // Same shape, for the three retired credential views (environment /
+  // connections / api-keys → credentials/<subview>). Before the pointer is
+  // parsed, so nothing downstream ever sees a retired viewType.
+  const canonicalCredentials = canonicalCredentialsDockPath(requestUrl.pathname, requestUrl.search);
+  if (canonicalCredentials) {
+    t.done(slowThresholdSeconds);
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(canonicalCredentials);
   }
 
   let dockForSetup: DockPointer | null = null;

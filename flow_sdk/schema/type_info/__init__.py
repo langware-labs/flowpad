@@ -47,6 +47,10 @@ class TypeMetadata:
     creatable: bool = False
     indexed_by_default: bool = False
     api_visible: bool = False
+    # True ⇒ this entity type persists only in the database. ``Entity.save``
+    # skips the FSRecord guard + disk mirror entirely; there is no disk→DB adopt
+    # path for the type. Runtime persistence policy, not part of the schema hash.
+    db_only: bool = False
     index_fields: list[str] = field(default_factory=list)
     # Placement axis — the harness-aware replacement for the fused ``.claude/…``
     # subdir. Declare ``asset_class`` + ``family`` (+ ``harness`` for HARNESS
@@ -71,12 +75,6 @@ class TypeMetadata:
     # non-markdown asset (e.g. a ``.js`` dynamic workflow) overrides it so the
     # created file matches the type's indexer glob.
     main_ext: str = ".md"
-    # Per-type ADDITIONS to the base sender-local field set (see
-    # ``entity_model._BASE_LOCAL_FIELDS``). These fields are host-local and never
-    # travel in ``Entity.to_common_json()`` / the hub body — e.g. a
-    # claude_session's ``worker_session_id`` or a task's ``project_root``. The
-    # base set covers the fields common to every type; declare only the extras.
-    local_fields: frozenset = field(default_factory=frozenset)
     # Fields the ASSIGNEE of a shared entity of this type owns. A hub-reflected
     # update written by the assignee carries ONLY these; everything else belongs
     # to whoever handed the work over. Empty ⇒ no scoping. See
@@ -153,6 +151,7 @@ class TypeMetadata:
             creatable=self.creatable,
             indexed_by_default=self.indexed_by_default,
             api_visible=self.api_visible,
+            db_only=self.db_only,
             index_fields=list(self.index_fields),
             asset_class=self.asset_class,
             harness=self.harness,
@@ -161,7 +160,6 @@ class TypeMetadata:
             main_file=self.main_file,
             main_file_is_asset_ref=self.main_file_is_asset_ref,
             main_ext=self.main_ext,
-            local_fields=frozenset(self.local_fields),
             assignee_owned_fields=tuple(self.assignee_owned_fields),
             pack_exclude=tuple(self.pack_exclude),
             parent_type=self.parent_type,

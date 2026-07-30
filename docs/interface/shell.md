@@ -40,7 +40,7 @@ rather than duplicates.
 | `worker_pid` | `int \| None` | OS PID of the running worker process |
 | `worker_name` | `str \| None` | Worker executable name (e.g. `claude`) |
 | `auto_rename` | `bool` | When True, PTY OSC title escapes may update `name`; cleared on first manual rename |
-| `last_launch_cmd` | `dict \| None` | Serialized `WorkerCLIOptions` from the last `launch()` |
+| `last_launch_cmd` | `dict \| None` | Serialized `AgentOptions` from the last `launch()` |
 
 `tab_order` and `last_active_at` are base-`Entity` fields (no per-shell `tabbed` flag — strip
 membership is the `Tab` entity, see [docs/tab-management.md](../tab-management.md)).

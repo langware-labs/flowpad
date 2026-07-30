@@ -1,6 +1,6 @@
-"""Walker + extractor + id mint for USAGE_REPORT records.
+"""Extractor + id mint for USAGE_REPORT records.
 
-Usage reports live at ``<scope>/.claude/usage_reports/<name>/report.json`` — one
+Usage reports live at ``<scope>/agentic-assets/usage_report/<name>/report.json`` — one
 folder per generated report. ``report.json`` carries the full payload (``data``
 aggregates + per-session drill-down + rendered ``markdown``); the extractor reads
 only the small headline fields into the record (the payload is deliberately
@@ -13,14 +13,8 @@ from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions._report_common import (
     load_report,
-    walk_report_dirs,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
-
-
-def usage_report_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
-    return walk_report_dirs(nodes, "usage_reports", RecordType.USAGE_REPORT)
 
 
 def extract_usage_report(ref: FSRef, resolved_id: str) -> list[FSRecord]:

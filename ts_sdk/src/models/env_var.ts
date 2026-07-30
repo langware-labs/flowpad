@@ -42,6 +42,10 @@ export interface EnvVarStatus {
   ref_type?: string;
   ref_name?: string;
   icon?: string;
+  /** OAUTH_PROVIDER_ID rows: which OAuth grant runs ('code' | 'loopback' | 'device'). */
+  oauth_kind?: string;
+  /** OAUTH_PROVIDER_ID rows: the scopes the flow requests, when published. */
+  oauth_scopes?: string[];
   sod_status?: EnvStatusEnum;
   var_status?: EnvStatusEnum;
 }

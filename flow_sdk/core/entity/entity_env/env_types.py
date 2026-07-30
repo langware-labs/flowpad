@@ -43,6 +43,16 @@ class EnvVar(BaseModel):
     # API Key reference
     key_id: Optional[str] = None  # Reference to ApiKey entity ID (connects env_var to its API key in SOD)
 
+    # --- OAUTH_PROVIDER_ID rows only ------------------------------------------
+    # What a user needs to judge a connection before granting it: which OAuth
+    # grant will run, and what it will be allowed to do. Both were invisible,
+    # so "Connect" was a button with undisclosed consequences.
+    #: The OAuth grant this provider uses — see ``OAuthFlowKind``.
+    oauth_kind: Optional[str] = None
+    #: The scopes the flow will request. Empty when the side that owns the flow
+    #: does not publish them (a hub provider's scopes live in its manifest).
+    oauth_scopes: list[str] = []
+
     @property
     def is_ref(self) -> bool:
         return self.ref_type is not None

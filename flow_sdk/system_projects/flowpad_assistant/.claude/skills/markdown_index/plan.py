@@ -65,7 +65,7 @@ def build_plan(root: Path, summaries_dir: Path, force: bool = False) -> dict:
     ]
 
     stale_folders: list[dict] = []
-    for item in idx.stale_indexes():   # post-order, skips manual, honors force
+    for item in idx.stale_indexes():   # post-order, skips protected, honors force
         subfolders_with_index = [
             s for s in item.subfolders if (s.path / INDEX_FILENAME).is_file()
         ]

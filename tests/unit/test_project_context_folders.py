@@ -365,7 +365,7 @@ async def test_links_roundtrip_record_metadata(tmp_path):
 async def test_worker_add_dir_chain(tmp_path):
     """Computed include_dirs → _project_context_dirs → resolved_add_dirs → --add-dir."""
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-    from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 
     project = await _make_project(tmp_path)
     ctx = _ctx_dir(tmp_path)
@@ -379,7 +379,7 @@ async def test_worker_add_dir_chain(tmp_path):
     object.__setattr__(worker, "_project_context_dirs", list(reloaded.include_dirs))
     assert ctx in worker.resolved_add_dirs
 
-    cmd = ClaudeCliOptions(
+    cmd = ClaudeAgentOptions(
         session_id="00000000-0000-4000-8000-000000000042",
         resume=False,
         workdir=str(tmp_path),

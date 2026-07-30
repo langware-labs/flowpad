@@ -3,6 +3,7 @@ import { openHarnessLoginModal } from '@src/components/harness-login/harness-log
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { openWikiModal } from '@src/components/wiki-tip';
 import { useDockNavigation } from '@src/navigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useWarnings } from '@sdk/react/hooks';
 import { runCommand } from '@src/notifications';
 import {
@@ -145,7 +146,13 @@ export function WarningsPopover() {
       } else if (warning.wikiPage) {
         openWikiModal(warning.wikiPage);
       } else {
-        navigation.openTab(warning.targetView);
+        // `openTab` carries no pointer, so a warning that names a subview
+        // (Credentials → Connections) has to go through openDock.
+        if (warning.targetPointer) {
+          navigation.openDock(new DockPointer(warning.targetView, warning.targetPointer));
+        } else {
+          navigation.openTab(warning.targetView);
+        }
       }
       setOpen(false);
     },

@@ -1,9 +1,9 @@
-"""Walker + extractor + id mint for DECK_TEMPLATE records.
+"""Extractor + id mint for DECK_TEMPLATE records.
 
-A deck template is a folder under ``assets/deck-templates/`` containing a
+A deck template is a folder under ``agentic-assets/deck_template/`` containing a
 ``template.json`` manifest (which is also the walker's marker file):
 
-    assets/deck-templates/<slug>/
+    agentic-assets/deck_template/<slug>/
       template.json                # {"metadata": {id?, title, description, page_types, …}, "data": {…}}
       layouts/<layout name>.html   # one isolated <section> component per layout
       common/…                     # tokens.css / theme.css / deck.js shared by all layouts
@@ -15,7 +15,7 @@ A deck template is a folder under ``assets/deck-templates/`` containing a
 fields; ``data`` is a free, use-case-owned object.
 
 Type metadata lives in ``flow_sdk/schema/type_info/deck_template_type_info.py``;
-this module provides the walker + slot functions only. Modeled on
+this module provides the slot functions only. Modeled on
 ``functions/dataset.py``.
 """
 from __future__ import annotations
@@ -31,7 +31,6 @@ from flow_sdk.fs_store.identifier import adopt_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 MANIFEST = "template.json"
@@ -40,34 +39,7 @@ COMMON_DIR = "common"
 MEDIA_DIR = "media"
 
 
-# ── walker ────────────────────────────────────────────────────────────────────
-
-def deck_template_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    """Emit one DECK_TEMPLATE FSRef per ``assets/deck-templates/<slug>/`` folder
-    containing a ``template.json`` manifest."""
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        root = Path(node.path) / "assets" / "deck-templates"
-        if not root.is_dir():
-            continue
-        for entry in sorted(root.iterdir()):
-            if not entry.is_dir():
-                continue
-            if not (entry / MANIFEST).is_file():
-                continue
-            key = str(entry.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(entry, record_type=RecordType.DECK_TEMPLATE, parent=node))
-    return out
-
-
-# ── id helpers ────────────────────────────────────────────────────────────────
+# ── manifest + id helpers ──────────────────────────────────────────────────────
 
 def _load_manifest(template_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     """Read template.json as ``(metadata, data)``; both ``{}`` when absent,

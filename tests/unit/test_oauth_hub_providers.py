@@ -13,6 +13,19 @@ from flow_sdk.core.oauth import hub_providers as hp
 from flow_sdk.core.oauth import oauth_provider_rows
 
 
+@pytest.fixture(autouse=True)
+def _no_cached_catalogue():
+    """The provider catalogue is cached per cloud user in module state.
+
+    Without this, a test that primes ``cloud-user-77`` serves its rows to the
+    NEXT test using that id, which then never reaches its own stubbed hub_get —
+    the hub-failure case passed while asserting nothing.
+    """
+    hp.invalidate_hub_providers()
+    yield
+    hp.invalidate_hub_providers()
+
+
 def _hub_payload(*names: str) -> dict:
     return {
         "data": {

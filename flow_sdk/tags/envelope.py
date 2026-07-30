@@ -5,7 +5,7 @@ the shared contract fixture ``tests/fixtures/flow_event_contract.json`` pins
 both sides to one JSON shape. The bus (``tags/bus.py``) routes on ``tag``
 (+ optional target/scope filters) and never interprets meaning.
 
-Distinct from ``flow_manager.envelope.RunEvent`` — that is the flow ENGINE's
+Distinct from ``graph_workflow_manager.envelope.RunEvent`` — that is the flow ENGINE's
 run-local wiring envelope and never rides the bus.
 """
 from __future__ import annotations
@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
+
 
 def now_iso() -> str:
     """ISO-8601 UTC timestamp. Deliberately local (not imported from

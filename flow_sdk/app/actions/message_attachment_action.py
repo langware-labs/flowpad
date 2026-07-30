@@ -516,20 +516,21 @@ async def handle_attachment_install(
             someone_typeid=someone_typeid,
         )
 
-    # Raw FILE attachments (the OS-file-picker lane) have no TypeInfo/RecordType
-    # and no schema-derived main_subdir — their staged entry dir already carries
-    # the canonical install relpath (``.claude/docs/<name>`` for markdown, else
-    # ``.claude/files/<name>``). They install into either scope; only markdown
-    # gets a follow-up index walk (the docs walker is the sole ``.claude`` file
-    # indexer today — see file_attachment_rel_subdir).
+    # Untyped FILE attachments have no TypeInfo/RecordType and no schema-derived
+    # main_subdir — their staged entry dir already carries the canonical install
+    # relpath (``docs/<name>`` for markdown, ``<name>`` at the project root
+    # otherwise; see ``placement.untyped_rel_subdir``). Only markdown gets a
+    # follow-up index walk — there is still no walker for untyped blobs.
     is_raw_file = ma.asset_type == "file"
 
-    # Resolve the asset class (placement axis) once. Raw ``file`` entries have no
-    # TypeInfo — their staged entry relpath already carries the canonical layout.
-    from flow_sdk.fs_store.placement import user_scope_allowed  # noqa: PLC0415
+    # Resolve the asset class (placement axis) once. An untyped file has no
+    # TypeInfo, so its class comes from the filename via the same fallback the
+    # staged relpath was built from — which is what lets the ONE user-scope
+    # policy below (``user_scope_allowed``) govern it like every other class.
+    from flow_sdk.fs_store.placement import untyped_fallback_class, user_scope_allowed  # noqa: PLC0415
 
     if is_raw_file:
-        asset_class = None
+        asset_class = untyped_fallback_class(ma.name or "")
     else:
         info = SchemaRegistry.get(ma.asset_type)
         asset_class = info._resolved_layout[0] if info else None
@@ -554,11 +555,7 @@ async def handle_attachment_install(
         root = Path(mount)
     else:
         project_id = None
-        if is_raw_file:
-            # Raw files are always user-installable (docs/ or files/ under
-            # ~/.claude); the staged entry relpath is already .claude-anchored.
-            root = _user_scope_root()
-        elif ma.transfer_mode != TransferMode.GIT.value:
+        if ma.transfer_mode != TransferMode.GIT.value:
             # Same policy that stamped `user_scope_allowed` at stage time —
             # the single owner is placement.user_scope_allowed.
             if not user_scope_allowed(asset_class):
@@ -570,9 +567,9 @@ async def handle_attachment_install(
 
     entry_key = record_stem(ma.asset_type, ma.asset_id)
     if is_raw_file:
-        # Markdown → indexed as MARKDOWN by both scopes' docs walker; other
-        # blobs copy without a follow-up walk (no dedicated .claude/files/ walker
-        # yet). record_type=None means "copy, don't reindex".
+        # Markdown → indexed as MARKDOWN wherever it lands; other blobs copy
+        # without a follow-up walk (there is still no walker for untyped bytes).
+        # record_type=None means "copy, don't reindex".
         from flow_sdk.builtin.flow_message_bundle import is_markdown_filename  # noqa: PLC0415
 
         record_type = RecordType.MARKDOWN if is_markdown_filename(ma.name or "") else None

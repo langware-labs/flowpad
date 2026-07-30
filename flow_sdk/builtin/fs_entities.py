@@ -3,7 +3,7 @@ import os
 from io import BytesIO
 from typing import ClassVar
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
 from flow_sdk.api.fs_api import VFSPath
 from flow_sdk.core import Entity, QueryFilter
 from flow_sdk.request_context.methods import get_entity_storage
@@ -19,7 +19,10 @@ class FSItem(Entity):
     display_name: str | None = APIField(None)
     vfs_abs_path: str = APIField()
     offset: int = APIField(0)
-    sod_id: str | None = None
+    # NOTE: a secrets-on-disk reference. Kept SHARED to preserve today's
+    # behaviour; worth a look — a local store id is unlikely to mean
+    # anything on another machine.
+    sod_id: str | None = EntityField(default=None, sharing=Sharing.SHARED)
     upload_progress: int | None = APIField(None)
     symlink_target: str | None = APIField(None)
 

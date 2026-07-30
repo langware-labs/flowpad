@@ -10,6 +10,7 @@ import {
   VFSPath,
   WorldViewProjection,
   isWorldViewProjection,
+  normalizeRetiredDockPointer,
   normalizeWorldViewDockPointer,
   type IDockPointer,
   type WorldViewProjection as WorldViewProjectionName,
@@ -1645,11 +1646,13 @@ export class DockPointer implements IDockPointer {
       };
       const { viewType, pointer, options } = parsed;
       if (!viewType) return null;
-      const normalized = normalizeWorldViewDockPointer({
-        viewType: viewType as ViewType,
-        pointer,
-        options,
-      });
+      const normalized = normalizeWorldViewDockPointer(
+        normalizeRetiredDockPointer({
+          viewType: viewType as ViewType,
+          pointer,
+          options,
+        }),
+      );
       const dp = DockPointer.fromUrl(
         normalized.viewType ?? viewType,
         normalized.pointer || undefined,

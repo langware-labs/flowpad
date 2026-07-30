@@ -44,7 +44,7 @@ a PTY by itself.
 ### AgenticProcess.spawn
 
 `AgenticProcess.spawn(options, workerOptions?)` is the richer process creation
-entry point. It builds `ClaudeCliOptions`, saves a new `AgenticProcess`, then
+entry point. It builds `ClaudeAgentOptions`, saves a new `AgenticProcess`, then
 chooses activation mode:
 
 | Mode | Trigger | Behavior |
@@ -136,7 +136,7 @@ the `AgenticProcess` entity and is finalized into an actual command
 
 | Field | Location | Meaning |
 | --- | --- | --- |
-| `cli_config` | `AgenticProcess` entity (frontend accessor in `agentic-process.ts`, backend field) | Serialized `ClaudeCliOptions`/`WorkerCLIOptions`: `model`, `permission_mode`, `chrome`, `debug`, `env_vars`, etc. The persisted worker launch config. |
+| `cli_config` | `AgenticProcess` entity (frontend accessor in `agentic-process.ts`, backend field) | Serialized `ClaudeAgentOptions`/`AgentOptions`: `model`, `permission_mode`, `chrome`, `debug`, `env_vars`, etc. The persisted worker launch config. |
 | `workdir` | entity field | Injected into the CLI options at read time; **not** stored inside `cli_config`. |
 | `session_id` | entity field | Injected at read time; drives `--resume`. Not stored in `cli_config`. |
 | `additional_dirs` | entity field | Becomes `--add-dir`; injected into `cliOptions.addDirs`. |
@@ -205,7 +205,7 @@ MD5-hashed:
 - **generic** (`_generic_restart_snapshot_payload`): `worker_type`,
   `shell_mode`, `workdir`, `session_id`, `additional_dirs`,
   `embedded_asset_refs`, `embedded_agent_ids`.
-- **worker** (driver `restart_snapshot`): the finalized `WorkerCLIOptions` JSON —
+- **worker** (driver `restart_snapshot`): the finalized `AgentOptions` JSON —
   `model`, `permission_mode`, `chrome`, `debug`, `env_vars`, etc.
 
 **Deliberately excluded** (`restart_payload_from_cli_options`,

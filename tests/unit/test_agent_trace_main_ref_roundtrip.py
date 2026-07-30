@@ -51,12 +51,12 @@ def test_agent_trace_main_ref_roundtrip(tmp_path):
     assert ar is not None, "AGENT_TRACE must declare main_subdir/main_layout"
     object.__setattr__(rec, "_asset_ref", ar)
 
-    # 1. Create writes .claude/agent_traces/<name>/trace.json with the payload
+    # 1. Create writes agentic-assets/agent_trace/<name>/trace.json with the payload
     #    and the entity id injected.
     rec.upsert_main_ref(entity)
     doc = ar._path
     assert doc.name == "trace.json", f"expected inner trace.json, got {doc}"
-    assert doc.parent.parent.name == "agent_traces"
+    assert doc.parent.parent.name == "agent_trace"
     written = json.loads(doc.read_text(encoding="utf-8"))
     assert written["id"] == TRACE_ID
     assert written["summary"]["verdict"] == "mixed"

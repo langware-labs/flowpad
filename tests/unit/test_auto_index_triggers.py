@@ -11,6 +11,7 @@ already cover). The preference reads, the marker, and the trigger logic are all 
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from pathlib import Path
 
@@ -282,6 +283,32 @@ def test_unrecognized_stored_values_fall_back_to_defaults():
     cfg = ai.read_auto_index_config()
     assert cfg.trigger is ai.IndexTrigger.FIRST_SELECTION
     assert cfg.index_type is ai.IndexType.FAST
+
+
+@pytest.mark.asyncio
+async def test_cancel_auto_indexes_joins_detached_work(monkeypatch):
+    """Factory reset can deterministically drain an index from the old graph."""
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def blocking_auto_index(_project_id: str, *, created: bool) -> None:
+        assert created is False
+        started.set()
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    monkeypatch.setattr(ai, "maybe_auto_index", blocking_auto_index)
+
+    task = ai.schedule_auto_index("project-id", created=False)
+    await started.wait()
+    await ai.cancel_auto_indexes()
+
+    assert task.cancelled()
+    assert cancelled.is_set()
+    assert not ai._active_auto_index_tasks
 
 
 @pytest.mark.asyncio

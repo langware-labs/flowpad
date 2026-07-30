@@ -128,7 +128,11 @@ class BaseInstanceSettings:
     claude_commands_dir: Path
     claude_plans_dir: Path
     claude_workflows_dir: Path
-    claude_docs_dir: Path
+    # NOT a Claude Code directory — ``~/.claude/docs`` was flowpad's own
+    # invention. Markdown is ``AssetClass.DOCS``, so the user's docs live at
+    # ``<user_home>/docs``; kept in this dataclass (rather than derived) so the
+    # one owner of the path stays a setting.
+    user_docs_dir: Path
     claude_tasks_dir: Path
     claude_history_path: Path
     claude_mcp_json_path: Path
@@ -267,7 +271,7 @@ class BaseInstanceSettings:
             claude_commands_dir=claude_home / "commands",
             claude_plans_dir=claude_home / "plans",
             claude_workflows_dir=claude_home / "workflows",
-            claude_docs_dir=claude_home / "docs",
+            user_docs_dir=Path.home() / "docs",
             claude_tasks_dir=claude_home / "tasks",
             claude_history_path=claude_home / "history.jsonl",
             claude_mcp_json_path=claude_home / "mcp.json",

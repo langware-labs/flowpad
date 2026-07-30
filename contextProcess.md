@@ -178,7 +178,7 @@ summarize*, and the *grid* query.
 Two design points moved during implementation (this doc's earlier prose lags):
 the context summary lives on **`AgenticProcess`**, not `GraphContext.summary()`
 (only the process has the resolved entities); and delivery rides the **unified
-`WorkerCLIOptions` base** — `system_prompt_append` is a first-class transient
+`AgentOptions` base** — `system_prompt_append` is a first-class transient
 routed per vendor by `SYSTEM_PROMPT_FLAG` — rather than a `_system_prompt_additions`
 accumulator. (That base is the cli_drivers consolidation: 7 per-vendor builders →
 one `_emit_flags()` + spec each.)
@@ -190,7 +190,7 @@ one `_emit_flags()` + spec each.)
       `context_data` since the binding is frozen)
 * [x] Backend: `AgenticProcess.set_graph_context()` — bind + mirror onto
       `shared_context_entities` + pre-launch freeze guard (+ `set-graph-context` action)
-* [x] Backend: `system_prompt_append` on the `WorkerCLIOptions` base, routed per
+* [x] Backend: `system_prompt_append` on the `AgentOptions` base, routed per
       vendor (claude → `--append-system-prompt`; codex/copilot → prepended into
       stdin via the single `stdin_text` sink). Wired on the headless launch path
       for all three vendors.

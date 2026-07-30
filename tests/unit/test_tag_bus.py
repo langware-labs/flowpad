@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 from flow_sdk.tags import FlowEvent, TagEventBus, emit_tag, event_bus, on_tag
-from flow_sdk.tags.bus import target_matches, tag_matches
+from flow_sdk.tags.bus import tag_matches, target_matches
 
 FIXTURE = json.loads(
     (Path(__file__).parent.parent / "fixtures" / "flow_event_contract.json").read_text()
@@ -60,12 +60,12 @@ def test_envelope_mints_id_and_bus_stamps_tier_origin():
 def test_emit_routes_by_pattern_and_target_filter():
     bus = TagEventBus()
     got: list[tuple[str, str]] = []
-    bus.on("flow.*", lambda e: got.append(("flow", e.tag)))
+    bus.on("graph_workflow.*", lambda e: got.append(("graph_workflow", e.tag)))
     bus.on("*", lambda e: got.append(("all", e.tag)), target="agent:*")
-    bus.emit("flow.step.done", "agentic_flow:1")
+    bus.emit("graph_workflow.step.done", "graph_workflow:1")
     bus.emit("agent.status", "agent:9")
     bus.emit("entity.updated", "task:3")
-    assert got == [("flow", "flow.step.done"), ("all", "agent.status")]
+    assert got == [("graph_workflow", "graph_workflow.step.done"), ("all", "agent.status")]
 
 
 def test_zero_subscribers_fast_path_returns_none():
@@ -122,7 +122,7 @@ def test_scope_filter_delivers_only_matching_scope():
 def test_deliver_never_remints_the_envelope():
     bus = TagEventBus()
     seen: list[FlowEvent] = []
-    bus.on("flow.*", seen.append)
+    bus.on("graph_workflow.*", seen.append)
     original = FlowEvent.model_validate(FIXTURE["envelope"])
     bus.deliver(original)
     assert len(seen) == 1

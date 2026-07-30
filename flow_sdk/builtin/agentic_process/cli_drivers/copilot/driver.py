@@ -14,7 +14,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     DeviceLoginSpec,
     AgenticProcessContextKey,
     WorkerAuthResult,
-    WorkerCLIOptions,
+    AgentOptions,
     WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
@@ -22,7 +22,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
     copilot_session_state_root,
     copilot_transcript_path_for_process,
@@ -72,8 +72,8 @@ class CopilotDriver:
     pty_composer_ready_pattern = re.compile(r"Session:[ \t\u00a0]*[0-9.,]+[ \t\u00a0]+AIC used")
     pins_resume_cwd = False  # no transcript-cwd pinning, no fork
 
-    def cli_options(self, process: "AgenticProcess") -> CopilotCliOptions:
-        cmd = CopilotCliOptions.from_json(process.cli_config)
+    def cli_options(self, process: "AgenticProcess") -> CopilotAgentOptions:
+        cmd = CopilotAgentOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
         cmd.add_dirs = process.resolved_add_dirs
@@ -91,7 +91,7 @@ class CopilotDriver:
     def restart_snapshot(
         self,
         process: "AgenticProcess",
-        options: WorkerCLIOptions,
+        options: AgentOptions,
     ) -> dict:
         return restart_payload_from_cli_options(options)
 

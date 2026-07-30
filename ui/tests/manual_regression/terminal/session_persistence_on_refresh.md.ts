@@ -7,16 +7,16 @@
  * terminal/workspace state; a navigation back to the shell root would not pass.
  */
 import { expect, test, type Page } from '@playwright/test';
+import { withViewMode } from '../_shared/view-mode';
 
 async function prepare(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('viewMode', 'advanced');
   });
 }
 
 async function openTerminal(page: Page) {
-  await page.goto('/dock/shell/new_terminal');
+  await page.goto(withViewMode('/dock/shell/new_terminal', 'advanced'));
   await expect(page).toHaveURL(/\/dock\/shell\/shell-/);
   await expect(
     page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows').first(),

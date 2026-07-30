@@ -37,12 +37,12 @@ def local_server(request):
     import threading
     import requests
     from flow_sdk.server.app import start_server
-    from flow_sdk.server.state import ping_results, prompt_results
+    from flow_sdk.server.state import ping_results, prompt_completions
 
     port = getattr(request, 'param', {}).get('port', 9007) if hasattr(request, 'param') else 9007
 
     ping_results.clear()
-    prompt_results.clear()
+    prompt_completions.clear()
 
     server_thread = threading.Thread(
         target=start_server,

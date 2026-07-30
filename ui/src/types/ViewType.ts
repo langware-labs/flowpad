@@ -160,18 +160,6 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'overview',
     canAddAsTab: true,
   },
-  [ViewType.ENVIRONMENT]: {
-    title: 'Environment',
-    iconName: 'KeyRound',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
-  [ViewType.CONNECTIONS]: {
-    title: 'Connections',
-    iconName: 'LogIn',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
   [ViewType.DIFF]: {
     title: 'Diff Viewer',
     iconName: 'GitCompare',
@@ -219,12 +207,6 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'ListChecks',
     tabLocation: 'overview',
     canAddAsTab: false,
-  },
-  [ViewType.API_KEYS]: {
-    title: 'API Keys',
-    iconName: 'Key',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
   },
   [ViewType.HOOKS]: {
     title: 'Hooks',
@@ -286,6 +268,16 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     canAddAsTab: false,
     // <tag> in the pointer is in-view focus navigation — every focused
     // tag folds into one tab chip (PREFERENCES precedent).
+    foldsPointer: true,
+  },
+  [ViewType.CREDENTIALS]: {
+    title: 'Credentials',
+    iconName: 'KeyRound',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    // The pointer is internal tab + project selection, so every combination
+    // folds into one chip rather than spawning a tab per tab (PREFERENCES
+    // precedent).
     foldsPointer: true,
   },
   [ViewType.SUBGRAPH]: {
@@ -358,8 +350,8 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
-  [ViewType.AGENTIC_FLOWS]: {
-    title: 'Agentic Flows',
+  [ViewType.GRAPH_WORKFLOWS]: {
+    title: 'Graph Workflows',
     iconName: 'Workflow',
     tabLocation: 'dedicated',
     canAddAsTab: true,

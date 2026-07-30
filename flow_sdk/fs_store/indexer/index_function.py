@@ -977,169 +977,176 @@ class FSIndexer:
                         notify=True,
                     )
 
-            # Phase marker before the (potentially long) orphan sweep: without
-            # it the last loop snapshot (done==total, no text) is what watchers
-            # and refresh-time activity-status replay see for the whole sweep —
-            # a stalled-looking 100% bar. Any non-complete text works; the
-            # activity stays alive until the terminal emit below.
-            await emit(text="sweeping", force=True)
+        # The writer session ends above, before the potentially long orphan
+        # discovery below. Discovery is read-only and may walk every record
+        # home/type even for an empty project; keeping BEGIN IMMEDIATE open
+        # across it starves unrelated control-plane writes (tab close, process
+        # create) until the whole index finishes. Duplicate/orphan removals
+        # still open their own short writer sessions through the driver.
+        #
+        # Phase marker before the (potentially long) orphan sweep: without
+        # it the last loop snapshot (done==total, no text) is what watchers
+        # and refresh-time activity-status replay see for the whole sweep —
+        # a stalled-looking 100% bar. Any non-complete text works; the
+        # activity stays alive until the terminal emit below.
+        await emit(text="sweeping", force=True)
 
-            # ----- Same-path duplicate sweep -----
-            # Positive-evidence cleanup, independent of ``orphan_action``: each
-            # candidate's path was walked AND parsed this run and resolved to a
-            # different id, so a candidate that nothing else claimed
-            # (``seen_ids`` is global for the run) is an unreachable duplicate
-            # row. Remove row + FTS + records dir via the same machinery as an
-            # orphan DELETE. The source file is never touched — it belongs to
-            # the surviving id.
-            for rt, cands in stale_dupe_candidates.items():
-                stale = sorted(cands - seen_ids.get(rt, set()))
-                if not stale:
-                    continue
-                db_removed, _ = await self._apply_orphan_action(
-                    rt,
-                    stale,
-                    OrphanAction.DELETE,
-                )
-                # rt was necessarily indexed via per_type_counts[rt] when the
-                # parse loop nominated its candidates — always present.
-                per_type_counts[rt]["dupes_removed"] += db_removed
-                logging.info(
-                    "[FSIndexer] removed %d stale same-path duplicate row(s) for %s: %s",
-                    db_removed,
-                    rt,
-                    stale,
-                )
-
-            # ----- Orphan handling -----
-            # DEFINITION: a record is orphan iff its source (Layer 1, e.g.
-            # ~/.claude/skills/<name>/SKILL.md) does not exist. The orphan
-            # condition is independent of which materializations remain — DB
-            # row only, fs_record dir only, or both. We detect by looking at
-            # BOTH known materializations and asking the same question for each:
-            # was this id seen during the scan (meaning Layer 1 still exists)?
-            #
-            #   orphan_ids = (records_dir_ids | db_row_ids) - seen_ids
-            #
-            # ``opts.scope_filter`` is applied on top: orphan-ness is determined
-            # globally (so a cross-scope reference still rescues a record), but
-            # only orphans whose (scope, project_id) match the filter are
-            # reported and acted on. The callers wiring this on top MUST walk
-            # every source — the all-projects root set (USER_HOME + one
-            # REAL_PROJECT_CWD per project), NOT default_roots() — so
-            # ``seen_ids`` is global; otherwise records under a project tree
-            # that wasn't walked would falsely appear orphan. (See the
-            # ``orphan_action != INDEX`` branch in fs_records_actions.index.)
-            #
-            # SAFETY GUARD: a destructive orphan_action with a narrowed walk
-            # (custom roots) and no scope_filter would silently wipe records
-            # referenced from outside the walked subtree. Refuse — fall back
-            # to INDEX (non-destructive) and emit a warning. The caller's
-            # ScopeFilter-aware wrapper is responsible for either widening the
-            # walk to global or supplying a scope_filter.
-            effective_orphan_action = opts.orphan_action
-            if effective_orphan_action != OrphanAction.INDEX and opts.roots is not None and opts.scope_filter is None:
-                logging.warning(
-                    "Refusing destructive orphan_action=%s on narrowed walk without a scope_filter: "
-                    "cross-scope references would be misclassified as orphan. Falling back to INDEX.",
-                    effective_orphan_action,
-                )
-                effective_orphan_action = OrphanAction.INDEX
-            orphan_records: dict[RecordType, list[str]] = {}
-            orphan_sources: dict[RecordType, dict[str, dict[str, bool]]] = {}
-            # Disk walks (records-root iterdir, per-type dir enumeration) run
-            # in the thread pool — same off-loop discipline as the probe chunks.
-            orphan_filter_types = await asyncio.to_thread(
-                self._resolve_orphan_filter_types,
-                opts.types,
+        # ----- Same-path duplicate sweep -----
+        # Positive-evidence cleanup, independent of ``orphan_action``: each
+        # candidate's path was walked AND parsed this run and resolved to a
+        # different id, so a candidate that nothing else claimed
+        # (``seen_ids`` is global for the run) is an unreachable duplicate
+        # row. Remove row + FTS + records dir via the same machinery as an
+        # orphan DELETE. The source file is never touched — it belongs to
+        # the surviving id.
+        for rt, cands in stale_dupe_candidates.items():
+            stale = sorted(cands - seen_ids.get(rt, set()))
+            if not stale:
+                continue
+            db_removed, _ = await self._apply_orphan_action(
+                rt,
+                stale,
+                OrphanAction.DELETE,
             )
-            # Both materializations feed the candidate set (per the DEFINITION
-            # above): record homes on disk, plus DB rows — a row whose shadow
-            # dir was never created (or already removed) would otherwise be
-            # invisible to the sweep forever. One lean SELECT per type.
-            disk_ids_per_type = await asyncio.to_thread(
-                self._discover_records_dir_ids,
-                orphan_filter_types,
+            # rt was necessarily indexed via per_type_counts[rt] when the
+            # parse loop nominated its candidates — always present.
+            per_type_counts[rt]["dupes_removed"] += db_removed
+            logging.info(
+                "[FSIndexer] removed %d stale same-path duplicate row(s) for %s: %s",
+                db_removed,
+                rt,
+                stale,
             )
-            db_rows_known = hasattr(driver, "list_entity_sources_by_type")
-            db_rows_per_type: dict[str, dict[str, tuple]] = {}
-            if db_rows_known:
-                for type_name in orphan_filter_types:
-                    db_rows_per_type[type_name] = await driver.list_entity_sources_by_type(type_name)
 
+        # ----- Orphan handling -----
+        # DEFINITION: a record is orphan iff its source (Layer 1, e.g.
+        # ~/.claude/skills/<name>/SKILL.md) does not exist. The orphan
+        # condition is independent of which materializations remain — DB
+        # row only, fs_record dir only, or both. We detect by looking at
+        # BOTH known materializations and asking the same question for each:
+        # was this id seen during the scan (meaning Layer 1 still exists)?
+        #
+        #   orphan_ids = (records_dir_ids | db_row_ids) - seen_ids
+        #
+        # ``opts.scope_filter`` is applied on top: orphan-ness is determined
+        # globally (so a cross-scope reference still rescues a record), but
+        # only orphans whose (scope, project_id) match the filter are
+        # reported and acted on. The callers wiring this on top MUST walk
+        # every source — the all-projects root set (USER_HOME + one
+        # REAL_PROJECT_CWD per project), NOT default_roots() — so
+        # ``seen_ids`` is global; otherwise records under a project tree
+        # that wasn't walked would falsely appear orphan. (See the
+        # ``orphan_action != INDEX`` branch in fs_records_actions.index.)
+        #
+        # SAFETY GUARD: a destructive orphan_action with a narrowed walk
+        # (custom roots) and no scope_filter would silently wipe records
+        # referenced from outside the walked subtree. Refuse — fall back
+        # to INDEX (non-destructive) and emit a warning. The caller's
+        # ScopeFilter-aware wrapper is responsible for either widening the
+        # walk to global or supplying a scope_filter.
+        effective_orphan_action = opts.orphan_action
+        if effective_orphan_action != OrphanAction.INDEX and opts.roots is not None and opts.scope_filter is None:
+            logging.warning(
+                "Refusing destructive orphan_action=%s on narrowed walk without a scope_filter: "
+                "cross-scope references would be misclassified as orphan. Falling back to INDEX.",
+                effective_orphan_action,
+            )
+            effective_orphan_action = OrphanAction.INDEX
+        orphan_records: dict[RecordType, list[str]] = {}
+        orphan_sources: dict[RecordType, dict[str, dict[str, bool]]] = {}
+        # Disk walks (records-root iterdir, per-type dir enumeration) run
+        # in the thread pool — same off-loop discipline as the probe chunks.
+        orphan_filter_types = await asyncio.to_thread(
+            self._resolve_orphan_filter_types,
+            opts.types,
+        )
+        # Both materializations feed the candidate set (per the DEFINITION
+        # above): record homes on disk, plus DB rows — a row whose shadow
+        # dir was never created (or already removed) would otherwise be
+        # invisible to the sweep forever. One lean SELECT per type.
+        disk_ids_per_type = await asyncio.to_thread(
+            self._discover_records_dir_ids,
+            orphan_filter_types,
+        )
+        db_rows_known = hasattr(driver, "list_entity_sources_by_type")
+        db_rows_per_type: dict[str, dict[str, tuple]] = {}
+        if db_rows_known:
             for type_name in orphan_filter_types:
-                try:
-                    rt = RecordType(type_name)
-                except ValueError:
-                    continue
+                db_rows_per_type[type_name] = await driver.list_entity_sources_by_type(type_name)
 
-                disk_ids = disk_ids_per_type.get(type_name, set())
-                db_rows = db_rows_per_type.get(type_name, {})
-                seen = seen_ids.get(rt, set())
-                # DB-only candidates per ``_db_missing_orphans`` (strict orphan
-                # definition). Stat-per-row work — off the loop with the other
-                # disk probes.
-                db_missing = await asyncio.to_thread(
-                    _db_missing_orphans,
-                    db_rows,
-                    seen,
+        for type_name in orphan_filter_types:
+            try:
+                rt = RecordType(type_name)
+            except ValueError:
+                continue
+
+            disk_ids = disk_ids_per_type.get(type_name, set())
+            db_rows = db_rows_per_type.get(type_name, {})
+            seen = seen_ids.get(rt, set())
+            # DB-only candidates per ``_db_missing_orphans`` (strict orphan
+            # definition). Stat-per-row work — off the loop with the other
+            # disk probes.
+            db_missing = await asyncio.to_thread(
+                _db_missing_orphans,
+                db_rows,
+                seen,
+                disk_ids,
+            )
+            missing = sorted((disk_ids - seen) | db_missing)
+            if not missing:
+                continue
+
+            if opts.scope_filter is not None:
+                # Reads each disk orphan's metadata.json — file I/O, keep
+                # it off the loop.
+                missing = await asyncio.to_thread(
+                    _scope_filtered_orphans,
+                    opts.scope_filter,
+                    type_name,
+                    missing,
                     disk_ids,
+                    db_rows,
                 )
-                missing = sorted((disk_ids - seen) | db_missing)
                 if not missing:
                     continue
 
-                if opts.scope_filter is not None:
-                    # Reads each disk orphan's metadata.json — file I/O, keep
-                    # it off the loop.
-                    missing = await asyncio.to_thread(
-                        _scope_filtered_orphans,
-                        opts.scope_filter,
-                        type_name,
-                        missing,
-                        disk_ids,
-                        db_rows,
-                    )
-                    if not missing:
-                        continue
+            orphan_records[rt] = missing
+            if db_rows_known:
+                orphan_sources[rt] = {eid: {"in_db": eid in db_rows, "on_disk": eid in disk_ids} for eid in missing}
 
-                orphan_records[rt] = missing
-                if db_rows_known:
-                    orphan_sources[rt] = {eid: {"in_db": eid in db_rows, "on_disk": eid in disk_ids} for eid in missing}
-
-            for rt, ids in orphan_records.items():
-                acc = per_type_counts.setdefault(
+        for rt, ids in orphan_records.items():
+            acc = per_type_counts.setdefault(
+                rt,
+                {
+                    "indexed": 0,
+                    "errors": 0,
+                    "duration_ms": 0.0,
+                    "skipped": 0,
+                    "orphans_found": 0,
+                    "orphans_db_removed": 0,
+                    "orphans_disk_removed": 0,
+                    "orphan_ids": [],
+                    "dupes_removed": 0,
+                    "duplicate_groups": 0,
+                    "duplicate_occurrences": 0,
+                },
+            )
+            acc["orphans_found"] = len(ids)
+            acc["orphan_ids"] = list(ids)
+            # Orphan-ness is the dynamic ``FSRecord.orphan`` (source gone) —
+            # nothing to persist. Only an explicit IGNORE/DELETE sweep acts.
+            db_removed = 0
+            disk_removed = 0
+            if effective_orphan_action != OrphanAction.INDEX:
+                db_removed, disk_removed = await self._apply_orphan_action(
                     rt,
-                    {
-                        "indexed": 0,
-                        "errors": 0,
-                        "duration_ms": 0.0,
-                        "skipped": 0,
-                        "orphans_found": 0,
-                        "orphans_db_removed": 0,
-                        "orphans_disk_removed": 0,
-                        "orphan_ids": [],
-                        "dupes_removed": 0,
-                        "duplicate_groups": 0,
-                        "duplicate_occurrences": 0,
-                    },
+                    ids,
+                    effective_orphan_action,
+                    id_sources=orphan_sources.get(rt),
                 )
-                acc["orphans_found"] = len(ids)
-                acc["orphan_ids"] = list(ids)
-                # Orphan-ness is the dynamic ``FSRecord.orphan`` (source gone) —
-                # nothing to persist. Only an explicit IGNORE/DELETE sweep acts.
-                db_removed = 0
-                disk_removed = 0
-                if effective_orphan_action != OrphanAction.INDEX:
-                    db_removed, disk_removed = await self._apply_orphan_action(
-                        rt,
-                        ids,
-                        effective_orphan_action,
-                        id_sources=orphan_sources.get(rt),
-                    )
 
-                acc["orphans_db_removed"] = db_removed
-                acc["orphans_disk_removed"] = disk_removed
+            acc["orphans_db_removed"] = db_removed
+            acc["orphans_disk_removed"] = disk_removed
 
         # Build per-type result for the IndexResult return value.
         per_type: dict[RecordType, PerTypeIndexResult] = {}
