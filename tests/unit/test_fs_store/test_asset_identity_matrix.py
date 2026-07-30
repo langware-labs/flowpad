@@ -23,7 +23,7 @@ V5 = str(uuid.uuid5(uuid.NAMESPACE_URL, "identity-matrix"))
 V7 = "018f0000-0000-7000-8000-000000000000"
 
 INDEXED_TYPES = {
-    "agent_trace", "agent", "graph_workflow", "asset_cleanup_report",
+    "agent_trace", "subagent", "graph_workflow", "asset_cleanup_report",
     "claude_hook", "claude_md", "claude_memory", "claude_rules",
     "claude_session", "codex_session", "command", "copilot_session",
     "dataset", "deck_template", "deck", "dynamic_workflow",
@@ -32,7 +32,7 @@ INDEXED_TYPES = {
     "task", "todo_file", "usage_report", "whiteboard", "workflow_run",
 }
 
-FRONTMATTER_PORTABLE = ("agent", "claude_md", "markdown")
+FRONTMATTER_PORTABLE = ("subagent", "claude_md", "markdown")
 FRONTMATTER_STABLE = ("plan", "claude_memory", "claude_rules", "spec", "prompt")
 FRONTMATTER_ALL = FRONTMATTER_PORTABLE + FRONTMATTER_STABLE + ("command",)
 FOLDER_PORTABLE = (

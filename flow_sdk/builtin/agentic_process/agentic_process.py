@@ -316,7 +316,7 @@ class SystemInstructionAssets:
 # Types treated as executable agent inputs by the asset-management UI.
 # Markdown / spec / plan / claude_rules etc. are intentionally excluded —
 # they're documentation, not things the agent runs.
-EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "agent"]
+EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "subagent"]
 
 
 def add_source_dir(
@@ -4373,21 +4373,24 @@ class AgenticProcess(Entity):
         legacy name list; we no longer write it, and migrate-on-touch any entry
         for this agent so attach/detach stays symmetric on old processes.
         """
-        from flow_sdk.fs_store.operations.agent import extract_agent_from_path, render_agent_markdown  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.subagent import (  # noqa: PLC0415
+            extract_subagent_from_path,
+            render_subagent_markdown,
+        )
 
         if not asset_ref:
             return ApiFailResponse(message="asset_ref is required")
         abs_path = Path("/" + asset_ref.lstrip("/"))
         if not abs_path.exists():
             return ApiFailResponse(message=f"Agent file not found: {abs_path}")
-        agent = extract_agent_from_path(abs_path)
+        agent = extract_subagent_from_path(abs_path)
         if agent is None:
             return ApiFailResponse(message=f"Could not parse agent file: {abs_path}")
         assets = self.ensure_embedded_assets()
         name = agent.name or abs_path.stem
         assets.load_asset(
             Path(".claude") / "agents" / f"{name}.md",
-            content=render_agent_markdown(agent),
+            content=render_subagent_markdown(agent),
         )
         self._ensure_assets_dir_in_add_dirs(assets.os_path)
         ref = self._agent_entity_ref(abs_path)
@@ -4403,10 +4406,13 @@ class AgenticProcess(Entity):
         """Entity ref for an agent .md path — the single ``agent path → TypeId``
         seam (read-only; same uuid the indexer mints for the file)."""
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-        from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.functions.subagent import subagent_peek_entity_id  # noqa: PLC0415
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
-        return TypeId(type="agent", id=agent_peek_entity_id(FSRef(path, record_type=RecordType.AGENT)))
+        return TypeId(
+            type=RecordType.SUBAGENT.value,
+            id=subagent_peek_entity_id(FSRef(path, record_type=RecordType.SUBAGENT)),
+        )
 
     def _drop_legacy_agent_name(self, name: str | None) -> None:
         """Migrate-on-touch: strip a legacy ``embedded_agent_ids`` name entry."""
@@ -4484,12 +4490,12 @@ class AgenticProcess(Entity):
         the agent object in the in-memory _embedded_agents list.
         """
         from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.agent import load_agent as _load_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_agent  # noqa: PLC0415
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
         _agents: list = object.__getattribute__(self, "__dict__").setdefault("_embedded_agents", [])
         if isinstance(agent, str):
-            rec = _load_agent(agent) or FSRecord(type=RecordType.AGENT, name=agent, id=agent)
+            rec = _load_agent(agent) or FSRecord(type=RecordType.SUBAGENT, name=agent, id=agent)
         else:
             # duck-type: Record or anything with name/id
             rec = agent
@@ -4506,14 +4512,14 @@ class AgenticProcess(Entity):
         """
         _agents: list = object.__getattribute__(self, "__dict__").get("_embedded_agents", [])
         if _agents:
-            from flow_sdk.fs_store.operations.agent import agent_to_cli_json  # noqa: PLC0415
+            from flow_sdk.fs_store.operations.subagent import subagent_to_cli_json  # noqa: PLC0415
 
             result: dict = {}
             for rec in _agents:
                 if hasattr(rec, "to_agents_cli_json"):
                     result.update(rec.to_agents_cli_json())
                 else:
-                    result.update(agent_to_cli_json(rec))
+                    result.update(subagent_to_cli_json(rec))
             if result:
                 return result
         persisted = (self.cli_config or {}).get("agents_json") or None
@@ -4626,7 +4632,10 @@ class AgenticProcess(Entity):
         agents_dir = assets_dir / ".claude" / "agents"
         if not agents_dir.is_dir():
             return agents
-        from flow_sdk.fs_store.operations.agent import agent_to_cli_json, extract_agent_from_path  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.subagent import (  # noqa: PLC0415
+            extract_subagent_from_path,
+            subagent_to_cli_json,
+        )
 
         # Emit agents in EMBED order, not filename order. Each agent is
         # materialized by a sequential `load_asset` write, so file mtime tracks
@@ -4644,10 +4653,10 @@ class AgenticProcess(Entity):
 
         for md in sorted(agents_dir.glob("*.md"), key=_sort_key):
             try:
-                rec = extract_agent_from_path(md)
+                rec = extract_subagent_from_path(md)
                 if rec is None:
                     continue
-                agents.update(agent_to_cli_json(rec))
+                agents.update(subagent_to_cli_json(rec))
             except Exception:
                 logger.debug("failed to parse embedded agent %s", md, exc_info=True)
         return agents
@@ -4732,11 +4741,11 @@ class AgenticProcess(Entity):
         Returns the entity's display name on success, ``None`` if the entity
         type is unsupported for embedding. Raises for resolution / IO failures.
         """
-        from flow_sdk.fs_store.operations.agent import get_agent  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.agent import load_agent as _load_agent
         from flow_sdk.fs_store.operations.skill import copy_skill_to, get_skill
+        from flow_sdk.fs_store.operations.subagent import get_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_agent
 
-        if ref.type == "agent":
+        if ref.type == "subagent":
             # Resolve by id (uuid5-derived from the .md path) first, then fall back
             # to name-based lookup for agents the UI knows by name only.
             agent = get_agent(ref.id) or _load_agent(ref.id)
@@ -4767,11 +4776,11 @@ class AgenticProcess(Entity):
         """Best-effort removal of the files laid down by _materialize_entity."""
         import shutil
 
-        from flow_sdk.fs_store.operations.agent import get_agent  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.agent import load_agent as _load_agent
         from flow_sdk.fs_store.operations.skill import get_skill
+        from flow_sdk.fs_store.operations.subagent import get_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_agent
 
-        if ref.type == "agent":
+        if ref.type == "subagent":
             agent = get_agent(ref.id) or _load_agent(ref.id)
             name = agent.name if agent else ref.id
             target = assets_dir / ".claude" / "agents" / f"{name}.md"
@@ -4821,10 +4830,10 @@ class AgenticProcess(Entity):
             await self._unmaterialize_entity(ref, assets_dir)
             refs = [r for r in (self.embedded_asset_refs or []) if not (r.type == ref.type and r.id == ref.id)]
             self.embedded_asset_refs = refs
-            if ref.type == "agent" and self.embedded_agent_ids:
+            if ref.type == "subagent" and self.embedded_agent_ids:
                 # Legacy processes may still carry the agent by NAME — drop it
                 # too, or the persona file is gone while an INLINE row lingers.
-                from flow_sdk.fs_store.operations.agent import get_agent  # noqa: PLC0415
+                from flow_sdk.fs_store.operations.subagent import get_agent  # noqa: PLC0415
 
                 agent = get_agent(ref.id)
                 self._drop_legacy_agent_name(agent.name if agent else None)
@@ -5254,9 +5263,9 @@ class AgenticProcess(Entity):
         owned by the record subclass instead of duplicated here.
         """
         try:
-            if ref.type == "agent":
-                from flow_sdk.fs_store.operations.agent import get_agent  # noqa: PLC0415
-                from flow_sdk.fs_store.operations.agent import load_agent as _load_agent
+            if ref.type == "subagent":
+                from flow_sdk.fs_store.operations.subagent import get_agent  # noqa: PLC0415
+                from flow_sdk.fs_store.operations.subagent import load_subagent as _load_agent
 
                 rec = get_agent(ref.id) or _load_agent(ref.id)
                 if rec is None:
@@ -5285,12 +5294,13 @@ class AgenticProcess(Entity):
         Each name is resolved to its agent ENTITY id (the same uuid the indexer
         mints) so the UI can open the row — the materialized copy under
         ``<assets_dir>/.claude/agents/<name>.md`` first, else
-        ``load_agent(name)`` (project > user > system). A name that resolves
+        ``load_subagent(name)`` (project > user > system). A name that resolves
         nowhere is an entity-less persona: it keeps the legacy
-        ``agent-<name>`` form with no path, and renders non-openable.
+        ``subagent-<name>`` form with no path, and renders non-openable.
         """
-        from flow_sdk.fs_store.operations.agent import load_agent as _load_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.subagent import load_subagent as _load_agent  # noqa: PLC0415
         from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
         cfg = self.cli_config or {}
         agents_json = cfg.get("agents_json") or {}
@@ -5314,7 +5324,7 @@ class AgenticProcess(Entity):
                 if rec_ref is not None and rec_ref._path.is_file():
                     src_path = rec_ref._path
             if src_path is None:
-                pairs.append((f"agent-{name}", None))
+                pairs.append((f"{RecordType.SUBAGENT.value}-{name}", None))
                 continue
             pairs.append((str(self._agent_entity_ref(src_path)), canonical_posix_path(src_path)))
         return pairs

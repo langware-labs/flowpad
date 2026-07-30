@@ -43,6 +43,7 @@ from typing import Any, Optional
 from flow_sdk.builtin.graph_workflow import GraphWorkflow
 from flow_sdk.core.capabilities.models import now_iso
 from flow_sdk.graph_workflow_manager.envelope import EXTERNAL_SOURCE, RunEvent
+from flow_sdk.graph_workflow_manager.function_runner import record_emission
 from flow_sdk.graph_workflow_manager.graph_workflow_doc import (
     AGENT_DONE_EVENT,
     TRIGGER_FIRED_EVENT,
@@ -50,7 +51,6 @@ from flow_sdk.graph_workflow_manager.graph_workflow_doc import (
     GraphWorkflowNodeDef,
     parse_graph_workflow_doc,
 )
-from flow_sdk.graph_workflow_manager.function_runner import record_emission
 from flow_sdk.graph_workflow_manager.journal import RunJournal
 
 logger = logging.getLogger(__name__)
@@ -796,8 +796,8 @@ class GraphWorkflowManager:
                                        rt: _NodeRuntime, seq: int) -> None:
         from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
         from flow_sdk.builtin.process_lifecycle import ProcessStatus
-        from flow_sdk.graph_workflow_manager.function_runner import run_function_subprocess
         from flow_sdk.flowpad_types.enums.process_enums import ProcessKind
+        from flow_sdk.graph_workflow_manager.function_runner import run_function_subprocess
 
         # A real (hidden) process row: driverless — the manager runs the
         # subprocess itself and stamps status/exit_code; the row exists so the
@@ -870,35 +870,35 @@ class GraphWorkflowManager:
     # ── agent execution ───────────────────────────────────────────────────────
 
     async def _resolve_agent_def(self, node: GraphWorkflowNodeDef) -> dict[str, Any]:
-        """The node's Agent DEFINITION, aligned with trigger→Trigger: when
-        ``node_data.typeid`` references an Agent entity, its md (Claude Code
+        """The node's SubAgent DEFINITION, aligned with trigger→Trigger: when
+        ``node_data.typeid`` references a SubAgent entity, its md (Claude Code
         --agents spec: model, system prompt) is the base — node fields
         override. Purely-inline nodes resolve to an empty definition.
 
-        Raises RuntimeError on a dangling reference — a mistyped/deleted Agent
+        Raises RuntimeError on a dangling reference — a mistyped/deleted SubAgent
         must fail the execution loudly, not silently fall back to inline."""
         from flow_sdk.graph_workflow_manager.graph_workflow_doc import agent_ref
 
         agent_id = agent_ref(node)
         if not agent_id:
             return {}
-        from flow_sdk.builtin.agent import Agent
-        from flow_sdk.fs_store.indexer.functions.agent import parse_agent_markdown
+        from flow_sdk.builtin.subagent import SubAgent
+        from flow_sdk.fs_store.indexer.functions.subagent import parse_subagent_markdown
 
-        entity = await Agent.get_by_id(agent_id)
+        entity = await SubAgent.get_by_id(agent_id)
         if entity is None or not entity.asset_ref:
-            raise RuntimeError(f"agent node {node.id}: Agent {agent_id!r} not found")
+            raise RuntimeError(f"agent node {node.id}: SubAgent {agent_id!r} not found")
         try:
-            parsed = parse_agent_markdown(Path(entity.asset_ref).read_text(encoding="utf-8"),
+            parsed = parse_subagent_markdown(Path(entity.asset_ref).read_text(encoding="utf-8"),
                                           name=entity.name)
         except OSError as e:
-            raise RuntimeError(f"agent node {node.id}: Agent md unreadable: {e}") from e
+            raise RuntimeError(f"agent node {node.id}: SubAgent md unreadable: {e}") from e
         parsed["agent_id"] = agent_id
         return parsed
 
     @staticmethod
     def _agent_model(agent_def: dict[str, Any], nd: dict[str, Any]) -> str:
-        """CLI model: node ``model_size`` override wins, else the Agent md's
+        """CLI model: node ``model_size`` override wins, else the SubAgent md's
         ``model`` (already a CLI name), else the sm default."""
         from flow_sdk.builtin.graph_workflow_node import MODEL_SIZE_TO_CLI
 
@@ -955,7 +955,7 @@ class GraphWorkflowManager:
             if nd.get("program_kind") == "skill"
             else f"{nd.get('program_ref') or ''}{prompt}"
         )
-        # A referenced Agent definition's system prompt (md body) leads; the
+        # A referenced SubAgent definition's system prompt (md body) leads; the
         # node's inline program/prompt rides after it as the task addendum.
         definition = str((agent_def or {}).get("prompt") or "")
         if definition:

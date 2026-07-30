@@ -7,12 +7,12 @@ codex, ``.github`` for copilot). The walker scans all of them. YAML frontmatter
 carries the ``--agents`` CLI spec; the markdown body is the system prompt.
 
 Replaces the parse/extract behaviour of the deleted ``AgentRecord`` subclass.
-Operations (``load_agent``, ``load_system_agent``, ``agent_to_cli_json``,
+Operations (``load_subagent``, ``load_system_subagent``, ``subagent_to_cli_json``,
 markdown rendering) live in ``flow_sdk/fs_store/operations/agent.py``.
 
 Public helpers used outside the indexer:
-  - ``parse_agent_markdown(text, name)`` — pure frontmatter+body parse
-  - ``extract_agent(ref, resolved_id)`` — parser_fn entry
+  - ``parse_subagent_markdown(text, name)`` — pure frontmatter+body parse
+  - ``extract_subagent(ref, resolved_id)`` — parser_fn entry
   - ``agent_id(ref)`` — compatibility read helper
   - ``AGENTS_SPEC_FIELDS`` / ``KEY_TO_JSON`` / ``JSON_TO_KEY`` — spec mapping
 """
@@ -65,7 +65,7 @@ JSON_TO_KEY = {v: k for k, v in KEY_TO_JSON.items()}
 # ── Walker ───────────────────────────────────────────────────────────────────
 
 
-def agent_fn(
+def subagent_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
@@ -95,7 +95,7 @@ def agent_fn(
                 if key in seen:
                     continue
                 seen.add(key)
-                out.append(FSRef(md, record_type=RecordType.AGENT, parent=node))
+                out.append(FSRef(md, record_type=RecordType.SUBAGENT, parent=node))
     return out
 
 
@@ -144,7 +144,7 @@ def agent_id(ref: FSRef) -> str:
     return ref._path.stem
 
 
-def agent_peek_entity_id(ref: FSRef) -> str:
+def subagent_peek_entity_id(ref: FSRef) -> str:
     """Entity UUID for an agent .md without writing the source.
 
     Strictly read-only, so it is safe to call from request handlers
@@ -156,7 +156,7 @@ def agent_peek_entity_id(ref: FSRef) -> str:
     """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    info = SchemaRegistry.get(str(RecordType.AGENT))
+    info = SchemaRegistry.get(str(RecordType.SUBAGENT))
     if info is not None:
         existing = info.extract_id(ref)
         if existing is not None:
@@ -175,14 +175,14 @@ def agent_peek_entity_id(ref: FSRef) -> str:
             return adopted
         name = fields.get("name")
         key = name.strip() if isinstance(name, str) and name.strip() else ref._path.stem
-    return mint_uuid(f"{RecordType.AGENT}:{key}", namespace=uuid.NAMESPACE_DNS)
+    return mint_uuid(f"{RecordType.SUBAGENT}:{key}", namespace=uuid.NAMESPACE_DNS)
 
 
 
 # ── Parse + extract ──────────────────────────────────────────────────────────
 
 
-def parse_agent_markdown(text: str, name: str | None = None) -> dict[str, Any]:
+def parse_subagent_markdown(text: str, name: str | None = None) -> dict[str, Any]:
     """Parse YAML frontmatter + markdown body into a fields dict.
 
     Returns id/name/spec fields + 'prompt' (the body). Used by both the
@@ -208,7 +208,7 @@ def parse_agent_markdown(text: str, name: str | None = None) -> dict[str, Any]:
     return data
 
 
-def extract_agent(ref: FSRef, resolved_id: str) -> list[FSRecord]:
+def extract_subagent(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse an agent .md into a Record. Replaces ``AgentRecord._from_fsref_sync``.
 
     Eagerly populates: id, name, description, prompt, content (for FTS body =
@@ -221,9 +221,9 @@ def extract_agent(ref: FSRef, resolved_id: str) -> list[FSRecord]:
         text = path.read_text(encoding="utf-8")
     except OSError:
         return []
-    data = parse_agent_markdown(text, name=path.stem)
+    data = parse_subagent_markdown(text, name=path.stem)
     data["id"] = resolved_id
-    data["type"] = RecordType.AGENT
+    data["type"] = RecordType.SUBAGENT
     data["status"] = "active"
     # prompt is stored under 'prompt_text' on the shim subclass; for parser_fn-
     # built generic Records, we store it under both 'prompt' and 'prompt_text'

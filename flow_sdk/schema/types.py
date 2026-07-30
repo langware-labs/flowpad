@@ -20,7 +20,11 @@ class EntityType(StrEnum):
     TASK = "task"
     RULE = "rule"
     SKILL = "skill"
-    AGENT = "agent"
+    # A Claude Code *subagent* definition — a `.claude/agents/<name>.md` prompt
+    # asset. Named for what the provider calls it; the bare noun `agent` is
+    # reserved for the hub-level launchable principal. The FAMILY stays
+    # "agents" because the directory is provider-owned.
+    SUBAGENT = "subagent"
     LOG = "log"
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"

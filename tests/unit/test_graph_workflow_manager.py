@@ -542,7 +542,7 @@ async def test_agent_process_budget_trips_before_spawn(tmp_path):
     assert run.error and "max_processes" in run.error
 
 
-# ── agent node → Agent entity reference (definition alignment) ────────────────
+# ── agent node → SubAgent entity reference (definition alignment) ────────────────
 
 
 AGENT_MD = """---
@@ -556,19 +556,19 @@ You are the summarizer. Always answer in one line.
 
 @async_context
 async def test_agent_node_resolves_agent_entity_definition(tmp_path):
-    """An agent node referencing an Agent entity (node_data.typeid) resolves
+    """An agent node referencing a SubAgent entity (node_data.typeid) resolves
     the md definition: system prompt leads the instruction, md model applies,
     node model_size overrides it."""
-    from flow_sdk.builtin.agent import Agent
+    from flow_sdk.builtin.subagent import SubAgent
 
     md = tmp_path / "summarizer.md"
     md.write_text(AGENT_MD, encoding="utf-8")
-    agent = Agent(name="summarizer", asset_ref=str(md))
+    agent = SubAgent(name="summarizer", asset_ref=str(md))
     await agent.save()
 
     flow = await _make_flow(tmp_path, "agentref",
         [{"id": "a", "node_type": "agent",
-          "node_data": {"typeid": f"agent-{agent.id}", "prompt": "Summarize the payload."}}],
+          "node_data": {"typeid": f"subagent-{agent.id}", "prompt": "Summarize the payload."}}],
         [_edge("e1", EXTERNAL_SOURCE, "go", "a")])
     fm = GraphWorkflowManager()
     loaded = await fm.load_flow(flow.id)
@@ -598,7 +598,7 @@ async def test_agent_node_resolves_agent_entity_definition(tmp_path):
 async def test_agent_node_dangling_reference_fails_loudly(tmp_path):
     flow = await _make_flow(tmp_path, "agentdangle",
         [{"id": "a", "node_type": "agent",
-          "node_data": {"typeid": "agent-2c9f8e64-3b21-4b4e-9a10-5f37f3d1c111"}}],
+          "node_data": {"typeid": "subagent-2c9f8e64-3b21-4b4e-9a10-5f37f3d1c111"}}],
         [_edge("e1", EXTERNAL_SOURCE, "go", "a")])
     fm = GraphWorkflowManager()
     loaded = await fm.load_flow(flow.id)
@@ -610,7 +610,7 @@ def test_agent_node_without_definition_fails_validation():
     doc = parse_graph_workflow_doc(_doc(
         [{"id": "a", "node_type": "agent", "node_data": {}}], []))
     problems = "\n".join(doc.validate_graph())
-    assert "need an Agent reference" in problems
+    assert "need a SubAgent reference" in problems
     # Any one of typeid / program_ref / prompt satisfies it.
     ok = parse_graph_workflow_doc(_doc(
         [{"id": "a", "node_type": "agent", "node_data": {"prompt": "hi"}}], []))
@@ -915,6 +915,7 @@ async def test_flow_subscription_fanout_enters_every_subscribed_flow(tmp_path):
     dedup is per (flow, envelope), never global (regression: a global id set
     let the first flow consume the envelope for everyone)."""
     import json as _json
+
     from flow_sdk.tags import emit_tag
 
     entered: list[str] = []
@@ -947,6 +948,7 @@ async def test_entry_envelope_id_and_actor_preserved(tmp_path):
     """Phase 7: a run entered from a bus envelope preserves its id + actor —
     into the journal event row AND the example provenance."""
     import json as _json
+
     from flow_sdk.tags import FlowEvent, event_bus
 
     @graph_workflow_functions.register("v2_prov")

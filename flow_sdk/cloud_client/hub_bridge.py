@@ -17,10 +17,9 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-
-from flow_sdk import inbox
 from typing import Any, Callable, Optional
 
+from flow_sdk import inbox
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
 from flow_sdk.preferences import message_status_sharing_enabled
 
@@ -34,7 +33,7 @@ logger = logging.getLogger(__name__)
 # step 404s. We eager-pull the bundle for these and skip the pull for
 # media-only FMs (FILE attachments stay manual).
 _ASSET_TYPEID_TYPES: frozenset[str] = frozenset({
-    "skill", "agent", "markdown", "spec", "whiteboard",
+    "skill", "subagent", "markdown", "spec", "whiteboard",
 })
 
 
@@ -269,7 +268,6 @@ class HubWsBridge:
 
         Returns an unsubscribe callable. Safe to register from any task.
         """
-        from flow_sdk.cloud_client.events import EntityEvent  # noqa: PLC0415
 
         sub = _Subscription(
             callback=callback,
@@ -980,6 +978,7 @@ class HubWsBridge:
         """Walk the ownership chain via HTTP /flow_message/<id>/parents_path
         and return the conversation entry, or None."""
         import httpx
+
         from flow_sdk.cli.auth.credentials import load_credentials
         from flow_sdk.cloud_client.client import ApiConfig
 

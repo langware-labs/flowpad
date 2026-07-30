@@ -281,7 +281,7 @@ async def handle_create_entity(request: Request):
         raise HTTPException(status_code=400, detail=err_msg)
 
     # Reject agent creation without a name
-    if request_info.direct_resource_type == "agent" and not getattr(entity, "name", None):
+    if request_info.direct_resource_type == "subagent" and not getattr(entity, "name", None):
         raise HTTPException(status_code=400, detail="Agent must have a name")
 
     someone_typeid = request_info.someone_typeid

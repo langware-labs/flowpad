@@ -185,7 +185,7 @@ def _extract_wiki_links(body: str) -> list[str]:
 _DIR_TO_ASSET_TYPE: dict[str, str] = {
     "workflows": "workflow",
     "skills": "skill",
-    "agents": "agent",
+    "agents": "subagent",
     "memory": "memory",
     "docs": "doc",
     "templates": "template",

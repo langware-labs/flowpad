@@ -84,7 +84,7 @@ def _get_hub_client(api_key: str) -> "FlowpadClient":
 # are intentionally absent: the hub doesn't host them; they keep riding the
 # message bundle and stay local. (Ideally this becomes a ``hub_hostable`` flag on
 # the type's ``TypeInfo`` so a new type lights up without editing this tuple.)
-_HUB_SHAREABLE_ASSET_TYPES = (EntityType.SKILL.value, EntityType.AGENT.value)
+_HUB_SHAREABLE_ASSET_TYPES = (EntityType.SKILL.value, EntityType.SUBAGENT.value)
 
 
 def _coerce_context_typeid(ref) -> Optional[TypeId]:
@@ -370,6 +370,7 @@ class Conversation(Entity):
         riding the message bundle as before. Best-effort per asset; a failed
         push is logged and that asset simply isn't granted (no membership
         breakage)."""
+        from flow_sdk.core.urls.service_urls import hub_wire_type  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         targets: list[dict] = []
@@ -391,7 +392,11 @@ class Conversation(Entity):
                         await ent.save(None)
                     except Exception as e:  # noqa: BLE001
                         logging.warning("[conv.share] persist remote %s failed (non-fatal): %s", tid, e)
-                targets.append({"typeid": str(tid), "role": "reader"})
+                # The hub resolves this typeid against its OWN registry, so it
+                # needs the wire spelling (subagent → agent until the hub
+                # renames) — same map as build_hub_url.
+                wire = TypeId(type=hub_wire_type(tid.type), id=tid.id)
+                targets.append({"typeid": str(wire), "role": "reader"})
             except Exception as e:  # noqa: BLE001
                 logging.warning("[conv.share] host asset %s failed (non-fatal): %s", tid, e)
         return targets

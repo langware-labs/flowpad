@@ -1,7 +1,7 @@
 """One-shot asset-cleanup run — launch the ``asset_cleanup`` agent headless.
 
 ``run_asset_cleanup()`` loads the ``asset_cleanup`` agent markdown (project >
-user > system resolution via ``load_agent``), appends the scan-root list to
+user > system resolution via ``load_subagent``), appends the scan-root list to
 its prompt, and runs it as a headless :class:`AgenticProcess` on the model the
 agent's frontmatter declares (haiku). The worker's final reply must end with a
 fenced ```json report (see the agent md); this module parses it into
@@ -117,10 +117,10 @@ async def run_asset_cleanup(
     """
     from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.subagent import load_subagent  # noqa: PLC0415
     from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
-    from flow_sdk.fs_store.operations.agent import load_agent  # noqa: PLC0415
 
-    agent = load_agent("asset_cleanup")
+    agent = load_subagent("asset_cleanup")
     if agent is None:
         raise RuntimeError("asset_cleanup agent not found (system agents dir)")
     prompt = agent.data.get("prompt") or agent.data.get("prompt_text") or ""
