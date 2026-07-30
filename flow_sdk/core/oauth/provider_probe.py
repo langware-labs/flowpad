@@ -63,9 +63,11 @@ _PROBES: dict[str, ProviderProbe] = {
         # confirmed against a live claude.ai token. Hence `unverified`: a 401
         # here is reported as "could not verify", not "your token is dead".
         url="https://api.anthropic.com/v1/models",
-        identity=lambda body: (
-            f"{len(body.get('data') or [])} models" if isinstance(body.get("data"), list) else None
-        ),
+        # No identity from this endpoint — it lists models, it does not say who
+        # you are. Returning a model COUNT here would put a number where the UI
+        # shows an account. `identity_from_credential` supplies the real one from
+        # the stored response, which carries the account email.
+        identity=lambda body: None,
         headers=lambda token: {"Authorization": f"Bearer {token}", "anthropic-version": "2023-06-01"},
         unverified=True,
     ),

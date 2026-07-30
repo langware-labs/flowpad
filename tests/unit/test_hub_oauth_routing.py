@@ -212,16 +212,18 @@ async def test_a_dead_callback_host_with_no_local_grant_says_why(monkeypatch):
     assert "not supported" not in result.message
 
 
-def test_a_loopback_redirect_is_never_preflighted():
+@pytest.mark.asyncio
+async def test_a_loopback_redirect_is_never_preflighted():
     """It is this machine's own callback server, which the flow starter has just
     bound — probing it proves nothing and can race the bind."""
-    from flow_sdk.core.oauth.hub_oauth import redirect_host_from, urlparse_is_loopback
+    from flow_sdk.core.oauth.hub_oauth import redirect_host_from, redirect_unreachable_reason
 
-    origin = redirect_host_from("https://claude.ai/x?redirect_uri=http%3A%2F%2Flocalhost%3A51703%2Fcallback")
+    auth_url = "https://claude.ai/x?redirect_uri=http%3A%2F%2Flocalhost%3A51703%2Fcallback"
 
-    assert origin == "http://localhost:51703"
-    assert urlparse_is_loopback(origin) is True
-    assert urlparse_is_loopback("https://enabled-alive-colt.ngrok-free.app") is False
+    assert redirect_host_from(auth_url) == "http://localhost:51703"
+    # Asserted through the public entry point: no request is made, so nothing
+    # can be listening and it still returns "reachable".
+    assert await redirect_unreachable_reason(auth_url) is None
 
 
 @pytest.mark.asyncio
@@ -245,5 +247,3 @@ async def test_an_unresolvable_provider_blames_the_right_thing(monkeypatch):
     monkeypatch.setattr("flow_sdk.core.oauth.hub_providers._hub_reachable", lambda: True)
     assert "Unknown OAuth provider" in unresolved_provider_reason("madeup")
 
-    # A locally-known provider is never "unknown" — the gap is the credential.
-    assert "No credential" in unresolved_provider_reason("github")

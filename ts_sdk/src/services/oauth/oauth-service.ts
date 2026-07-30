@@ -364,30 +364,6 @@ export class OAuthService {
       const oauthFlow = new OauthFlow(oauthRequestInfo, popupWindow, targetEntity, sharedEntityVarName);
       this.oAuthFlows.set(oauthRequestInfo.oauth_request_id, oauthFlow);
 
-      // A DESKTOP loopback flow never completes without this. `OauthFlow` waits
-      // for `on_oauth_msg`, which only a hub-run flow ever sends; the desktop
-      // backend announces its callbacks as an LlmConfigMessage on
-      // `on_llm_config_msg` — the very channel the device branch above listens
-      // to. Without this bridge the token is stored, the popup closes, and the
-      // row spins on "Connecting" forever.
-      const desktopCompletion = (msg: {
-        auth_method?: string;
-        oauth_request_id?: string;
-        status?: string;
-      }) => {
-        if (msg.auth_method !== provider) return;
-        if (msg.oauth_request_id && msg.oauth_request_id !== oauthRequestInfo.oauth_request_id) return;
-        connectionManager.off('on_llm_config_msg', desktopCompletion);
-        this.oAuthFlows.delete(oauthRequestInfo.oauth_request_id);
-        dataManager.emit(OAuthEventType.OAUTH_FLOW_COMPLETE, {
-          ...msg,
-          provider,
-          targetEntity,
-          attachSuccess: null,
-        });
-      };
-      connectionManager.on('on_llm_config_msg', desktopCompletion);
-
       return oauthFlow;
     } catch (error) {
       console.error(`[OAuthService] OAuth connection failed for ${provider}:`, error);

@@ -138,11 +138,10 @@ def unresolved_provider_reason(provider: str) -> str:
     because they need different fixes.
     """
     from flow_sdk.core.oauth.hub_providers import _hub_reachable  # noqa: PLC0415
-    from flow_sdk.core.oauth.provider_registry import get_local_provider  # noqa: PLC0415
 
-    if get_local_provider(provider) is not None:
-        # Locally known, so the failure is about the credential, not the provider.
-        return f"No credential is configured for '{provider}'"
+    # No "locally known" branch: every caller reaches here only when
+    # `resolve_user_credentials_name` returned nothing, and that always yields a
+    # name for a registry provider — so a local provider can never arrive here.
     if not _hub_reachable():
         # Careful with the claim: with the hub down we cannot tell a hub-defined
         # provider from one that does not exist anywhere, so do not assert it IS

@@ -28,7 +28,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:  # pragma: no cover
+    import httpx
 
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
@@ -223,55 +226,62 @@ async def redirect_unreachable_reason(auth_url: str) -> Optional[str]:
         return None
     # A loopback redirect is this machine's own callback server; the flow starter
     # just opened it, so probing it proves nothing and can race the bind.
-    if urlparse_is_loopback(origin):
+    if _is_loopback(origin):
         return None
 
     import httpx  # noqa: PLC0415
 
     try:
         async with httpx.AsyncClient(timeout=REDIRECT_PREFLIGHT_SECONDS, follow_redirects=False) as client:
-            response = await client.get(origin)
+            # HEAD: the verdict is status + one header; the body of a tunnel's
+            # landing page is pure waste on a path that blocks the popup.
+            response = await client.head(origin)
         empty = _nothing_behind_the_proxy(response)
         if empty:
             logger.warning("[oauth] redirect host %s answers but has nothing behind it: %s", origin, empty)
-            return (
-                f"This provider would send you back to {origin}, but nothing is "
-                f"serving that address ({empty}). The flow would complete at the "
-                "provider and then have nowhere to return, so no connection would "
-                "be stored. Check the hub's OAUTH_LOCAL_PROXY and that the "
-                "provider app registers this exact redirect URI."
-            )
+            return _unreachable_message(origin, f"but nothing is serving that address ({empty})")
         return None
     except Exception as e:  # noqa: BLE001
         reason = str(e) or type(e).__name__
         logger.warning("[oauth] redirect host %s is unreachable: %s", origin, reason)
-        return (
-            f"This provider would send you back to {origin}, which is not reachable. "
-            "The flow would complete at the provider and then have nowhere to return, "
-            "so no connection would be stored. Check the hub's OAUTH_LOCAL_PROXY and "
-            "that the provider app registers this exact redirect URI."
-        )
-    return None
+        return _unreachable_message(origin, "which is not reachable")
 
 
-def _nothing_behind_the_proxy(response: Any) -> Optional[str]:
+def _unreachable_message(origin: str, problem: str) -> str:
+    """The one piece of guidance both refusal paths give. Written once so the two
+    do not drift — the consequence and the fix are identical either way; only the
+    symptom differs."""
+    return (
+        f"This provider would send you back to {origin}, {problem}. The flow would "
+        "complete at the provider and then have nowhere to return, so no connection "
+        "would be stored. Check the hub's OAUTH_LOCAL_PROXY and that the provider "
+        "app registers this exact redirect URI."
+    )
+
+
+def _nothing_behind_the_proxy(response: "httpx.Response") -> Optional[str]:
     """A short reason when a reachable host is only an edge with no origin behind it.
 
     A dead ngrok tunnel and a live one BOTH answer 404 at ``/``; the difference is
     the ``ngrok-error-code`` header the edge adds when it has no agent to forward
     to. The 5xx gateway codes are the same situation for any other reverse proxy.
     """
-    headers = getattr(response, "headers", {}) or {}
-    tunnel_error = headers.get("ngrok-error-code")
+    tunnel_error = response.headers.get("ngrok-error-code")
     if tunnel_error:
         return str(tunnel_error)
-    if getattr(response, "status_code", 0) in (502, 503, 504):
+    if response.status_code in (502, 503, 504):
         return f"HTTP {response.status_code}"
     return None
 
 
-def urlparse_is_loopback(origin: str) -> bool:
+def _is_loopback(origin: str) -> bool:
+    """Is this origin a port on THIS machine?
+
+    Deliberately not shared with ``cli/auth/cloud_login._classify_hub``: that one
+    answers "is the configured hub local", and counts ``host.docker.internal`` —
+    correct there, wrong here, because a browser being redirected does not
+    resolve Docker's host alias.
+    """
     from urllib.parse import urlparse  # noqa: PLC0415
 
-    host = (urlparse(origin).hostname or "").lower()
-    return host in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+    return (urlparse(origin).hostname or "").lower() in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
