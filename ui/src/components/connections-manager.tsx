@@ -186,7 +186,10 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // point-in-time answer about a token that can be revoked a second later, and a
   // remembered tick would outlive its truth.
   const [testResults, setTestResults] = React.useState<Record<string, OAuthTestResult>>({});
-  const [testing, setTesting] = React.useState<Record<string, true>>({});
+  // Which rows have a test in flight. A set, not a map: the question is
+  // membership, and more than one row can be testing at once (each row's button
+  // disables only itself).
+  const [testing, setTesting] = React.useState<ReadonlySet<string>>(new Set());
 
   // Labels live here, not in a module-level lookup table: a raw string in a
   // Record escapes lingui extraction entirely, so the redesign had quietly made
@@ -209,7 +212,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         : t`Authorization code — you approve in the browser and come back`;
 
   const handleTest = async (connection: ExtendedOAuthConnection) => {
-    setTesting((prev) => ({ ...prev, [connection.id]: true }));
+    setTesting((prev) => new Set(prev).add(connection.id));
     try {
       const result = await testConnection(connection.providerName);
       setTestResults((prev) => ({ ...prev, [connection.id]: result }));
@@ -238,8 +241,8 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       });
     } finally {
       setTesting((prev) => {
-        const next = { ...prev };
-        delete next[connection.id];
+        const next = new Set(prev);
+        next.delete(connection.id);
         return next;
       });
     }
@@ -410,12 +413,12 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                           variant="ghost"
                           size="sm"
                           onClick={() => void handleTest(connection)}
-                          disabled={!!testing[connection.id]}
+                          disabled={testing.has(connection.id)}
                           className="h-7 gap-1.5 text-muted-foreground hover:text-foreground"
                           data-testid={`connection-test-${connection.id}`}
                           title={t`Call ${connection.provider} with the stored token`}
                         >
-                          {testing[connection.id] ? (
+                          {testing.has(connection.id) ? (
                             <Loader2 className="h-3 w-3 animate-spin" />
                           ) : (
                             <ProbeVerdict result={testResults[connection.id]} />

@@ -434,7 +434,22 @@ async def clear_all_data() -> ClearAllResult:
     # 1. Backup first
     backup = await backup_db()
 
-    # 2. Clear the scan index (FTS + index logs + RecordErrors). Best-effort:
+    # 2. Cancel detached auto-index work while it still belongs to the current
+    # graph. Otherwise a first-selection scan can keep its old writer alive
+    # across the DB swap and race bootstrap with `BEGIN IMMEDIATE`.
+    from flow_sdk.fs_store.indexer.auto_index import cancel_auto_indexes  # noqa: PLC0415
+
+    await cancel_auto_indexes()
+
+    # 3. Tear down every live PTY while its ComputeNode/provider identity is
+    # still queryable. The DB wipe removes those rows, after which registry-only
+    # cleanup can no longer reach the provider-owned OS child and workers leak
+    # across factory resets.
+    from flow_sdk.compute.providers.desktop.pty_session_manager import PtyRegistry  # noqa: PLC0415
+
+    await PtyRegistry.get_instance().close_all_sessions()
+
+    # 4. Clear the scan index (FTS + index logs + RecordErrors). Best-effort:
     # this queries the entity DB, and factory reset is exactly the operation
     # that must still work when that DB is broken (e.g. schema-less after an
     # interrupted clear). Its DB-row deletes are redundant with the wipe
@@ -444,7 +459,7 @@ async def clear_all_data() -> ClearAllResult:
     except Exception as e:  # noqa: BLE001
         logger.warning(f"clear_all_data: clear_index failed (continuing with wipe): {e}")
 
-    # 3. Drop in-memory caches
+    # 5. Drop in-memory caches
     from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache  # noqa: PLC0415
 
     entity_cache.clear()
@@ -455,7 +470,7 @@ async def clear_all_data() -> ClearAllResult:
     # object, and the reinit below constructs a fresh driver — the new DB
     # re-seeds on next access automatically.
 
-    # 4. Close DB, delete file, reinitialize
+    # 6. Close DB, delete file, reinitialize
     from flow_sdk.db.database import close_db, init_db  # noqa: PLC0415
     from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
     from flow_sdk.db.db_relationship import DBRelationship  # noqa: PLC0415

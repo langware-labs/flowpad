@@ -11,6 +11,11 @@ import {
 } from '@sdk';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+/** Stable empty result. A fresh `[]` per render is a new identity, which breaks
+ *  every downstream memo keyed on `projects` — and a disabled hook never has
+ *  data, so that is the permanent case, not the rare one. */
+const NO_PROJECTS: ProjectListItem[] = [];
+
 /** Cache TTL in milliseconds (2 minutes for project list, longer since it changes less often) */
 const PROJECT_LIST_CACHE_TTL = 120000;
 
@@ -125,7 +130,7 @@ export function useProjectList(options: UseProjectListOptions = {}) {
   }, [enabled, fetchData]);
 
   return {
-    projects: data?.projects ?? [],
+    projects: data?.projects ?? NO_PROJECTS,
     totalCount: data?.total_count ?? 0,
     isLoading,
     error,

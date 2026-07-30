@@ -9,11 +9,13 @@ import { CredentialsSubview, ViewType } from './view-types';
  * stays decodable and resolves forward here, at the one seam every persisted
  * pointer passes through.
  *
- * The URL side of the same retirement lives in the root loader
- * (`credentials-dock-canonicalization.ts`), which redirects before anything
- * parses the pointer.
+ * This is the ONE statement of the retirement. The URL side
+ * (`credentials-dock-canonicalization.ts`, which redirects before anything parses
+ * the pointer) derives its matcher from this table rather than restating it —
+ * a ViewType's enum value IS its URL segment, so the keys serve both. Retiring
+ * the next view is one edit here.
  */
-const RETIRED: Partial<Record<ViewType, { viewType: ViewType; pointer: string }>> = {
+export const RETIRED_DOCK_VIEWS: Partial<Record<ViewType, { viewType: ViewType; pointer: string }>> = {
   [ViewType.ENVIRONMENT]: { viewType: ViewType.CREDENTIALS, pointer: CredentialsSubview.ENVIRONMENT },
   [ViewType.CONNECTIONS]: { viewType: ViewType.CREDENTIALS, pointer: CredentialsSubview.CONNECTIONS },
   [ViewType.API_KEYS]: { viewType: ViewType.CREDENTIALS, pointer: CredentialsSubview.API_KEYS },
@@ -24,7 +26,7 @@ const RETIRED: Partial<Record<ViewType, { viewType: ViewType; pointer: string }>
  * names a live view, so callers can apply it unconditionally.
  */
 export function normalizeRetiredDockPointer(pointer: IDockPointer): IDockPointer {
-  const target = pointer.viewType ? RETIRED[pointer.viewType] : undefined;
+  const target = pointer.viewType ? RETIRED_DOCK_VIEWS[pointer.viewType] : undefined;
   if (!target) return pointer;
 
   // The retired trio never carried a pointer of their own, so the subview

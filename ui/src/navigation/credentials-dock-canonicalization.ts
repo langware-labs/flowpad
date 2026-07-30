@@ -1,16 +1,17 @@
-import { CredentialsSubview } from '@sdk';
-
-/** The retired view types, in URL form, mapped to the tab that replaced them. */
-const RETIRED_VIEWS: Record<string, CredentialsSubview> = {
-  environment: CredentialsSubview.ENVIRONMENT,
-  connections: CredentialsSubview.CONNECTIONS,
-  'api-keys': CredentialsSubview.API_KEYS,
-};
-
-const RETIRED_PATH = new RegExp(`^(.*/(?:dock|dev|win))(/hub)?/(${Object.keys(RETIRED_VIEWS).join('|')})(?:/.*)?/?$`);
+import { RETIRED_DOCK_VIEWS, type ViewType } from '@sdk';
 
 /**
- * Collapse the three retired credential view types into the one Credentials
+ * The retired view types in URL form. A ViewType's enum value IS its URL
+ * segment, so the retirement table's own keys are the segments to match — the
+ * mapping is not restated here. `RETIRED_DOCK_VIEWS` (ts_sdk) is the one place
+ * a retirement is declared; this file is only its URL half.
+ */
+const RETIRED_SEGMENTS = Object.keys(RETIRED_DOCK_VIEWS);
+
+const RETIRED_PATH = new RegExp(`^(.*/(?:dock|dev|win))(/hub)?/(${RETIRED_SEGMENTS.join('|')})(?:/.*)?/?$`);
+
+/**
+ * Collapse the retired credential view types into the one Credentials
  * grammar: `/dock[/hub]/credentials/<subview>`.
  *
  * `environment`, `connections`, and `api-keys` used to be sibling view types
@@ -29,5 +30,8 @@ export function canonicalCredentialsDockPath(pathname: string, search: string): 
   if (!match) return null;
 
   const [, prefix, hub = '', retired] = match;
-  return `${prefix}${hub}/credentials/${RETIRED_VIEWS[retired]}${search}`;
+  const target = RETIRED_DOCK_VIEWS[retired as ViewType];
+  if (!target) return null;
+
+  return `${prefix}${hub}/${target.viewType}/${target.pointer}${search}`;
 }

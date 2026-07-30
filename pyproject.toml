@@ -107,6 +107,9 @@ include = ["flow_sdk*"]
     "system_projects/**/ui/dist/**",
     "system_projects/**/package-lock.json",
     "system_projects/**/.vite/**",
+    # Run journals are per-user EXECUTION OUTPUT written next to the authored
+    # flow/journey. They must never ship in the wheel.
+    "system_projects/**/runs/**",
 ]
 
 [tool.ruff]

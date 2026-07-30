@@ -6,6 +6,7 @@ from typing import (
     ClassVar,
     Generic,
     List,
+    NamedTuple,
     Optional,
     TypeVar,
     Union,
@@ -27,7 +28,6 @@ from flow_sdk.api.api_types.api_field import (
     is_api_visible_field,
     is_blob_field,
     is_db_excluded,
-    is_portable,
     sharing_policy,
 )
 from flow_sdk.api.api_types.type_id import TypeId
@@ -39,9 +39,25 @@ from .query import QueryFilter
 RecordType = TypeVar("RecordType", bound="DBBaseRecord")
 RecordRelationshipType = TypeVar("RecordRelationshipType", bound="DBBaseRelationship")
 
-# Resolved {field: (Sharing, portable)} per class. Weak-keyed so a throwaway
-# model in a test doesn't pin its class forever. See ``_sharing_map``.
+# Resolved {field: Sharing} per class. Weak-keyed so a throwaway model in a
+# test doesn't pin its class forever. See ``_sharing_map``.
 _SHARING_CACHE: "WeakKeyDictionary[type, dict]" = WeakKeyDictionary()
+
+
+class SharingBoundaries(NamedTuple):
+    """The four field sets derived from one class's sharing declarations."""
+
+    not_sent_to_hub: frozenset[str]
+    not_accepted_from_hub: frozenset[str]
+    owned_by_hub: frozenset[str]
+    not_in_bundle: frozenset[str]
+
+
+# The four boundaries per class. They are pure functions of the sharing map, and
+# the accessors sit on per-record and per-message paths (``from_record``, hub
+# merge, bundle egress) — rebuilding a frozenset from a full-field comprehension
+# on every call is what the deleted ClassVar frozensets used to make free.
+_SHARING_SETS_CACHE: "WeakKeyDictionary[type, SharingBoundaries]" = WeakKeyDictionary()
 
 
 # Blob-backed field names per class — same rationale as the sharing map above.
@@ -51,6 +67,7 @@ _BLOB_FIELDS_CACHE: "WeakKeyDictionary[type, list]" = WeakKeyDictionary()
 def clear_sharing_cache() -> None:
     """Drop the per-class derived caches — for tests that define models on the fly."""
     _SHARING_CACHE.clear()
+    _SHARING_SETS_CACHE.clear()
     _BLOB_FIELDS_CACHE.clear()
 
 
@@ -262,7 +279,7 @@ class DBBaseRecord(BaseModel):
 
     @classmethod
     def _sharing_map(cls) -> dict:
-        """``{field_name: (Sharing, portable)}`` for this class, cached.
+        """``{field_name: Sharing}`` for this class, cached.
 
         Unions ``model_fields`` and ``model_computed_fields``: computed fields
         live only in the latter, and two of them carry policy — a
@@ -272,39 +289,58 @@ class DBBaseRecord(BaseModel):
         an attribute would be inherited and a subclass would silently read its
         base's answer. Not built in ``__init_subclass__`` — ``model_fields`` is
         not final there and ``model_rebuild`` can change it.
+
+        Only the policy is stored: the bundle axis is derived from it (see
+        ``is_portable``), and caching it alongside would be a second copy of the
+        same fact to keep in step.
         """
         cached = _SHARING_CACHE.get(cls)
         if cached is None:
             cached = {
-                name: (sharing_policy(f), is_portable(f))
+                name: sharing_policy(f)
                 for name, f in (*cls.model_fields.items(), *cls.model_computed_fields.items())
             }
             _SHARING_CACHE[cls] = cached
         return cached
 
     @classmethod
+    def _sharing_boundaries(cls) -> SharingBoundaries:
+        """The four derived field sets for this class, cached — one pass each."""
+        cached = _SHARING_SETS_CACHE.get(cls)
+        if cached is None:
+            policies = cls._sharing_map().items()
+            cached = SharingBoundaries(
+                not_sent_to_hub=frozenset(
+                    n for n, s in policies if s in (Sharing.PRIVATE, Sharing.HUB_READ)
+                ),
+                not_accepted_from_hub=frozenset(
+                    n for n, s in policies if s in (Sharing.PRIVATE, Sharing.HUB_WRITE)
+                ),
+                owned_by_hub=frozenset(n for n, s in policies if s is Sharing.HUB_READ),
+                not_in_bundle=frozenset(n for n, s in policies if s is Sharing.PRIVATE),
+            )
+            _SHARING_SETS_CACHE[cls] = cached
+        return cached
+
+    @classmethod
     def fields_not_sent_to_hub(cls) -> frozenset[str]:
         """Fields the hub must never be told (``PRIVATE`` + ``HUB_READ``)."""
-        return frozenset(
-            n for n, (s, _) in cls._sharing_map().items() if s in (Sharing.PRIVATE, Sharing.HUB_READ)
-        )
+        return cls._sharing_boundaries().not_sent_to_hub
 
     @classmethod
     def fields_not_accepted_from_hub(cls) -> frozenset[str]:
         """Fields a hub payload must never overwrite (``PRIVATE`` + ``HUB_WRITE``)."""
-        return frozenset(
-            n for n, (s, _) in cls._sharing_map().items() if s in (Sharing.PRIVATE, Sharing.HUB_WRITE)
-        )
+        return cls._sharing_boundaries().not_accepted_from_hub
 
     @classmethod
     def fields_owned_by_hub(cls) -> frozenset[str]:
         """Fields we must never stamp locally — the hub is authoritative."""
-        return frozenset(n for n, (s, _) in cls._sharing_map().items() if s is Sharing.HUB_READ)
+        return cls._sharing_boundaries().owned_by_hub
 
     @classmethod
     def fields_not_in_bundle(cls) -> frozenset[str]:
-        """Fields that must not ride a share bundle."""
-        return frozenset(n for n, (_, portable) in cls._sharing_map().items() if not portable)
+        """Fields that must not ride a share bundle — exactly ``PRIVATE``."""
+        return cls._sharing_boundaries().not_in_bundle
 
     def db_json(self, **kwargs):
         keys_to_remove = [key for key, _ in self.__dict__.items() if key.startswith("_")]
