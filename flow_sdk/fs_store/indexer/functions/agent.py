@@ -1,8 +1,10 @@
 """Walker + extractor + helpers for AGENT records.
 
-An agent is a flat ``.md`` file under ``<root>/.claude/agents/`` (or a folder
-of the same shape for legacy installs). YAML frontmatter carries the
-``--agents`` CLI spec; the markdown body is the system prompt.
+An agent is a flat ``.md`` file under ``<root>/<harness-dot-dir>/agents/`` — most
+often ``.claude/agents/``, but the type is ``asset_class="shared"``, so placement
+writes it under whichever dot-dir the machine's harness declares (``.agents`` for
+codex, ``.github`` for copilot). The walker scans all of them. YAML frontmatter
+carries the ``--agents`` CLI spec; the markdown body is the system prompt.
 
 Replaces the parse/extract behaviour of the deleted ``AgentRecord`` subclass.
 Operations (``load_agent``, ``load_system_agent``, ``agent_to_cli_json``,
@@ -67,18 +69,33 @@ def agent_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
+    """Discover agent ``.md`` files under EVERY harness dot-dir, not just ``.claude``.
+
+    AGENT is ``asset_class="shared"``, so ``family_subdir`` picks the dot-dir from
+    the machine's ``default_worker`` (``placement.effective_harness``): the entity
+    save path writes a codex-default machine's agents to ``.agents/agents/``. A
+    walker that only scanned ``.claude/agents`` therefore never indexed them —
+    written, then invisible. Scanning the whole ``WORKER_PREFIX`` set keeps the
+    read side in agreement with wherever placement is allowed to write.
+    """
+    from flow_sdk.fs_store.placement import WORKER_PREFIX  # noqa: PLC0415
+
+    # dict values repeat (github/copilot both map to ``.github``); dedupe and
+    # order them so discovery is deterministic across machines.
+    prefixes = sorted(set(WORKER_PREFIX.values()))
     out: list[FSRef] = []
     seen: set[str] = set()
     for node in nodes:
-        agents = Path(node.path) / ".claude" / "agents"
-        if not agents.is_dir():
-            continue
-        for md in sorted(agents.glob("*.md")):
-            key = str(md.resolve())
-            if key in seen:
+        for prefix in prefixes:
+            agents = Path(node.path) / prefix / "agents"
+            if not agents.is_dir():
                 continue
-            seen.add(key)
-            out.append(FSRef(md, record_type=RecordType.AGENT, parent=node))
+            for md in sorted(agents.glob("*.md")):
+                key = str(md.resolve())
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(FSRef(md, record_type=RecordType.AGENT, parent=node))
     return out
 
 
