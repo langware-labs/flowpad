@@ -67,7 +67,9 @@ async def test_workspace_folders_materialize_as_projects(project_db, tmp_path, m
 
     import flow_sdk.instance_settings as isettings
     records_root = tmp_path / "records"
-    records_root.mkdir()
+    # The autouse records-root fixture redirects live record writers here, so
+    # a background task from the shared test app may create it first.
+    records_root.mkdir(exist_ok=True)
     patched = dataclasses.replace(
         isettings.get_instance_settings(),
         user_home=home,
@@ -243,7 +245,9 @@ async def test_agent_mount_root_entity_is_not_returned(project_db, tmp_path, mon
     ws = home / "Flowpad workspace"
     ws.mkdir(parents=True)
     records_root = tmp_path / "records"
-    records_root.mkdir()
+    # The autouse records-root fixture redirects live record writers here, so
+    # a background task from the shared test app may create it first.
+    records_root.mkdir(exist_ok=True)
 
     patched = dataclasses.replace(
         isettings.get_instance_settings(),

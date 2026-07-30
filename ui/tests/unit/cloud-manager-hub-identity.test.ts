@@ -59,9 +59,21 @@ describe('CloudManager hub identity', () => {
     expect(sdk.dataContext.cloudUserTypeId?.toString()).toBe(`user-${HUB_USER.id}`);
   });
 
-  it('maps an absent bootstrap user to a logged-out cloud identity', async () => {
+  it('maps an absent bootstrap user to a logged-out identity and redirects to hub login', async () => {
     const { sdk } = await createIdentityRealm(`${HUB_ORIGIN}/api/v1`);
     sdk.setSupportedPagesForHubMode(['hub']);
+
+    // The hub surface has no anonymous mode: a session-less bootstrap must
+    // send the browser to the provider login rather than render signed-out.
+    const assign = vi.fn();
+    delete (window as unknown as { location?: Location }).location;
+    (window as unknown as { location: Partial<Location> }).location = {
+      origin: originalLocation.origin,
+      href: originalLocation.href,
+      pathname: '/dock/hub/home',
+      search: '',
+      assign,
+    };
 
     await sdk.cloudManager.bootstrap({
       user: null,
@@ -75,23 +87,33 @@ describe('CloudManager hub identity', () => {
     expect(sdk.dataContext.cloudLoginAvailable).toBe(false);
     expect(sdk.dataContext.cloudUser).toBeNull();
     expect(sdk.dataContext.cloudUserTypeId).toBeNull();
+    // Deep link preserved: target_path returns the browser to the URL it
+    // asked for once the provider round-trip completes.
+    expect(assign).toHaveBeenLastCalledWith('/api/v1/login?target_path=%2Fdock%2Fhub%2Fhome');
   });
 
   it('redirects through hub auth routes without desktop API or secret probes', async () => {
     const { sdk } = await createIdentityRealm(`${HUB_ORIGIN}/api/v1`);
     sdk.setSupportedPagesForHubMode(['hub']);
-    await sdk.cloudManager.bootstrap({
-      user: null,
-      desktop_info: null,
-    });
 
+    // Mocked BEFORE bootstrap: a user-less hub bootstrap itself navigates to
+    // login now, and jsdom's real location.assign is unimplemented.
     const assign = vi.fn();
     delete (window as unknown as { location?: Location }).location;
     (window as unknown as { location: Partial<Location> }).location = {
       origin: originalLocation.origin,
       href: originalLocation.href,
+      pathname: '/',
+      search: '',
       assign,
     };
+
+    await sdk.cloudManager.bootstrap({
+      user: null,
+      desktop_info: null,
+    });
+    expect(assign).toHaveBeenLastCalledWith('/api/v1/login');
+
     const post = vi.mocked(sdk.apiClient.post);
     post.mockClear();
     const secretProbe = vi.spyOn(sdk.secretsService, 'isEnabled');
@@ -101,8 +123,10 @@ describe('CloudManager hub identity', () => {
     expect(post).not.toHaveBeenCalled();
     expect(secretProbe).not.toHaveBeenCalled();
 
+    // Post-logout the hub surface goes straight back to the provider login —
+    // there is no signed-out shell to land on.
     await sdk.cloudManager.logout();
-    expect(assign).toHaveBeenLastCalledWith('/api/v1/logout');
+    expect(assign).toHaveBeenLastCalledWith('/api/v1/login');
     expect(post).not.toHaveBeenCalled();
     expect(secretProbe).not.toHaveBeenCalled();
   });
