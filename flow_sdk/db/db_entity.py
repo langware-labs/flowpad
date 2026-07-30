@@ -34,7 +34,7 @@ from flow_sdk.db.rolerelationship import RoleRelationship
 from flow_sdk.db.tracked_collections import TrackedDict, TrackedList
 
 from flow_sdk import service_log
-from flow_sdk.api.api_types.api_field import NoDBAPIField
+from flow_sdk.api.api_types.api_field import NoDBAPIField, Sharing
 from flow_sdk.db.db_relationship import DBRelationshipType
 from flow_sdk.db.drivers.db_base_record import db_fields_sync
 
@@ -75,7 +75,7 @@ class DBEntity(DBBaseRecord):
     _api_visible: ClassVar[bool] = False
     _observers: List[Callable[[DataOpMessage], None]] = []
     _db: ClassVar[DBDriver] = LazyDBDriver()
-    expand: EntityExpansion | None = NoDBAPIField(None)
+    expand: EntityExpansion | None = NoDBAPIField(None, sharing=Sharing.PRIVATE)
     _dirty: bool = False
 
     def __init__(self, **data):

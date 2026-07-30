@@ -59,6 +59,24 @@ export interface TypeInfo {
   display_name: string | null;
   parent_type: string | null;
   locations: string[];
+  /**
+   * Placement axis — mirrors `flow_sdk/fs_store/placement.py`. The backend is the
+   * ONLY authority on where an asset lands on disk; the client reads these three
+   * rather than keeping its own table of subfolders (which drifts silently the
+   * moment a type is reclassified).
+   *
+   * - `asset_class` — 'shared' | 'harness' → mounts under a harness dot-dir;
+   *   'repo' → `agentic-assets/<family>` (harness-less); 'internal' → bare at the
+   *   scope root (project-only). Null for types with no on-disk layout.
+   * - `harness` — only meaningful for `asset_class === 'harness'`.
+   * - `family` — the family segment, e.g. `skills`, `commands`, `whiteboard`.
+   */
+  asset_class?: 'internal' | 'harness' | 'shared' | 'none' | 'repo' | null;
+  harness?: string | null;
+  family?: string | null;
+  /** Scope-relative subdir for the claude-default mount (e.g. `.claude/skills`,
+   *  `agentic-assets/task`). Derived server-side from the three fields above. */
+  main_subdir?: string | null;
   /** Fixed inner filename for folder-layout assets when one exists, e.g. SKILL.md. */
   main_file?: string | null;
   /** True when a folder-layout type's asset_ref points at the inner main_file. */

@@ -5,9 +5,9 @@ import { ActionInfo } from '../models/ActionInfo';
 /**
  * RemoteWorkerSession — a host/guest remote-execution session living inside a
  * CollaborationRoom (alongside its files/assets). The guest sends Prompts; the
- * host's worker runs them and returns PromptResults. Asymmetric: the host runs
+ * host's worker runs them and returns PromptCompletions. Asymmetric: the host runs
  * the real local AgenticProcess (`host_process_id`), the guest requests and
- * watches — reconstructing the turn stream from the Prompt/PromptResult exchange
+ * watches — reconstructing the turn stream from the Prompt/PromptCompletion exchange
  * that rides `conversation_id`'s messages. `status` is a host-authoritative
  * projection so the guest can render live state without a local worker.
  */

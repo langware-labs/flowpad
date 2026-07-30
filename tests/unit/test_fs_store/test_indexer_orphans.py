@@ -44,7 +44,7 @@ async def _markdown_status() -> tuple[int, int, int]:
 @pytest.mark.asyncio
 async def test_orphan_count_zero_on_fresh_index(tmp_path: Path) -> None:
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     (docs / "a.md").write_text("# a\n", encoding="utf-8")
 
@@ -63,7 +63,7 @@ async def test_orphan_count_zero_on_fresh_index(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_orphan_appears_after_source_delete(tmp_path: Path) -> None:
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "a.md"
     md.write_text("# a\n", encoding="utf-8")
@@ -87,7 +87,7 @@ async def test_orphan_appears_after_source_delete(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_orphan_clears_when_source_returns(tmp_path: Path) -> None:
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "a.md"
     md.write_text("# a\n", encoding="utf-8")
@@ -115,7 +115,7 @@ async def test_orphan_clears_when_source_returns(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_orphan_action_ignore_removes_db_row_keeps_shadow_dir(tmp_path: Path) -> None:
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "a.md"
     md.write_text("# a\n", encoding="utf-8")
@@ -159,7 +159,7 @@ async def test_db_only_orphan_without_shadow_dir_is_swept(tmp_path: Path) -> Non
     import shutil
 
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "a.md"
     md.write_text("# a\n", encoding="utf-8")
@@ -201,7 +201,7 @@ async def test_db_only_row_with_live_source_is_not_swept(tmp_path: Path) -> None
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
 
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "a.md"
     md.write_text("# a\n", encoding="utf-8")
@@ -237,7 +237,7 @@ async def test_db_only_row_with_live_source_is_not_swept(tmp_path: Path) -> None
 @pytest.mark.asyncio
 async def test_orphan_action_delete_removes_db_row_and_shadow_dir(tmp_path: Path) -> None:
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "a.md"
     md.write_text("# a\n", encoding="utf-8")
@@ -287,7 +287,7 @@ async def test_scoped_index_survives_a_db_only_orphan(tmp_path: Path) -> None:
     from flow_sdk.server.search_filters import ScopeFilter
 
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "a.md"
     md.write_text("# a\n", encoding="utf-8")

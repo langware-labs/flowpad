@@ -23,7 +23,7 @@ V5 = str(uuid.uuid5(uuid.NAMESPACE_URL, "identity-matrix"))
 V7 = "018f0000-0000-7000-8000-000000000000"
 
 INDEXED_TYPES = {
-    "agent_trace", "agent", "agentic_flow", "asset_cleanup_report",
+    "agent_trace", "agent", "graph_workflow", "asset_cleanup_report",
     "claude_hook", "claude_md", "claude_memory", "claude_rules",
     "claude_session", "codex_session", "command", "copilot_session",
     "dataset", "deck_template", "deck", "dynamic_workflow",
@@ -36,7 +36,7 @@ FRONTMATTER_PORTABLE = ("agent", "claude_md", "markdown")
 FRONTMATTER_STABLE = ("plan", "claude_memory", "claude_rules", "spec", "prompt")
 FRONTMATTER_ALL = FRONTMATTER_PORTABLE + FRONTMATTER_STABLE + ("command",)
 FOLDER_PORTABLE = (
-    "agentic_flow", "dataset", "deck", "deck_template", "journey", "skill", "task",
+    "graph_workflow", "dataset", "deck", "deck_template", "journey", "skill", "task",
     "whiteboard",
 )
 JSON_STABLE = ("agent_trace", "asset_cleanup_report", "usage_report")
@@ -201,7 +201,7 @@ def _folder_with_legacy(root: Path, type_name: str) -> Path:
         (folder / "deck.json").write_text(json.dumps({"id": V5}))
     elif type_name == "deck_template":
         (folder / "template.json").write_text(json.dumps({"metadata": {"id": V5}, "data": {}}))
-    elif type_name in ("agentic_flow", "journey"):
+    elif type_name in ("graph_workflow", "journey"):
         (folder / "graph.json").write_text(json.dumps({"id": V5, "nodes": [], "edges": []}))
     return folder
 

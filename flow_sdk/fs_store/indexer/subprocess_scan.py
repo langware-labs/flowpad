@@ -9,7 +9,7 @@ of which process issues them, so moving the writes off-process buys no write
 throughput at all — while losing the ``_session_ctx`` contextvar handshake that
 stops nested writes from self-contending, ``record_sync_guard``, the
 ``_COMPUTE_ACTIVITIES`` single-flight gate, and ``_DB_LIFECYCLE_LOCK``. It would
-also break the rule stated at ``flow_manager/function_runner.py``: *a subprocess
+also break the rule stated at ``graph_workflow_manager/function_runner.py``: *a subprocess
 must never open the instance DB directly.* The walk, by contrast, is GIL-bound
 CPU plus filesystem I/O touching no DB — the one part a separate process really
 does parallelize.

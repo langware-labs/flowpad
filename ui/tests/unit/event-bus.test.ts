@@ -151,7 +151,7 @@ describe('FlowEvent contract (shared fixture)', () => {
   it('the golden envelope is accepted verbatim by deliver()', () => {
     const bus = new TagEventBus();
     const seen: FlowEvent[] = [];
-    bus.on('flow.*', (e) => seen.push(e));
+    bus.on('graph_workflow.*', (e) => seen.push(e));
     bus.deliver(contract.envelope as FlowEvent);
     expect(seen).toHaveLength(1);
     expect(seen[0].id).toBe(contract.envelope.id);
@@ -165,13 +165,13 @@ describe('deliver — relay entry (no re-mint)', () => {
   it('routes a pre-built envelope by pattern + target filter', () => {
     const bus = new TagEventBus();
     const got: string[] = [];
-    bus.on('flow.*', (e) => got.push(`flow:${e.id}`));
+    bus.on('graph_workflow.*', (e) => got.push(`graph_workflow:${e.id}`));
     bus.on('*', (e) => got.push(`agent:${e.id}`), { target: 'agent:*' });
     bus.deliver({
-      id: 'fixed-id', timestamp: 't', tag: 'flow.done', target: 'agentic_flow:1',
+      id: 'fixed-id', timestamp: 't', tag: 'graph_workflow.done', target: 'graph_workflow:1',
       data: {}, ctx: { origin: 'local_server' },
     });
-    expect(got).toEqual(['flow:fixed-id']);
+    expect(got).toEqual(['graph_workflow:fixed-id']);
   });
 
   it('a throwing handler never blocks peers on deliver', () => {

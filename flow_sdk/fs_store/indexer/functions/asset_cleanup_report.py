@@ -1,6 +1,6 @@
-"""Walker + extractor + id mint for ASSET_CLEANUP_REPORT records.
+"""Extractor + id mint for ASSET_CLEANUP_REPORT records.
 
-Cleanup reports live at ``<scope>/.claude/cleanup_reports/<name>/report.json``
+Cleanup reports live at ``<scope>/agentic-assets/asset_cleanup_report/<name>/report.json``
 — one folder per generated scan. ``report.json`` carries the full payload
 (per-finding verdicts + rendered ``markdown``); the extractor reads only the
 small headline counts into the record (the payload is deliberately excluded
@@ -13,14 +13,8 @@ from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions._report_common import (
     load_report,
-    walk_report_dirs,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
-
-
-def asset_cleanup_report_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
-    return walk_report_dirs(nodes, "cleanup_reports", RecordType.ASSET_CLEANUP_REPORT)
 
 
 def extract_asset_cleanup_report(ref: FSRef, resolved_id: str) -> list[FSRecord]:

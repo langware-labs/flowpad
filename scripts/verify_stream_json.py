@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Verify that `claude --output-format stream-json` actually streams incrementally.
 
-Spawns Claude CLI using the standard ``ClaudeCliOptions`` abstraction (with the
+Spawns Claude CLI using the standard ``ClaudeAgentOptions`` abstraction (with the
 newly-added ``output_format`` + ``verbose`` fields), pipes stdout, and prints
 each JSON event the moment it arrives — prefixed with its elapsed time since
 spawn.
@@ -31,7 +31,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions  # noqa: E402
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions  # noqa: E402
 
 
 PROMPT = (
@@ -47,7 +47,7 @@ PROMPT = (
 
 def main() -> int:
     workdir = sys.argv[1] if len(sys.argv) > 1 else str(ROOT)
-    opts = ClaudeCliOptions(
+    opts = ClaudeAgentOptions(
         workdir=workdir,
         output_format="stream-json",
         print_mode=True,

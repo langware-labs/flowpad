@@ -1,5 +1,6 @@
 export { defineGlobal } from './globals';
 export * from './skill-labels';
+export * from './ui/retired-views';
 export * from './ui/view-types';
 export * from './hub-runtime';
 export * from './utils';

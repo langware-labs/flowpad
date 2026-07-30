@@ -139,6 +139,55 @@ async def test_oauth_attach_without_a_credential_says_so(bootstrapped_client, us
 
 
 @pytest.mark.asyncio
+async def test_oauth_attach_sees_a_credential_written_after_the_request_user_was_cached(
+    bootstrapped_client,
+):
+    """Attach must re-read the user, not trust the process-wide cached one.
+
+    ``request_transaction_middleware`` resolves the local user ONCE per process
+    into ``_LOCAL_USER_CACHE`` and reuses that object for every later request.
+    Every OAuth flow stores its token through its own freshly-fetched user, so
+    from that moment the cached object's ``env_vars`` is behind. Reading it made
+    attach answer "SOD for provider 'github_credentials' not found" for a
+    credential sitting in the database.
+
+    The cache is primed with a snapshot taken BEFORE the credential is written,
+    which is exactly the production sequence.
+
+    Uses its OWN user: the shared `user` fixture is session-scoped, so writing a
+    credential onto it leaks into every other test's view of it.
+    """
+    from flow_sdk.builtin.user import User
+    from flow_sdk.core.entity.entity_env.env_types import EnvVar, EnvVarType
+    from flow_sdk.server.middleware import request_transaction_middleware as mw
+
+    client = bootstrapped_client
+
+    owner = User(name="oauth-stale-cache-user")
+    await owner.save()
+
+    stale = await User.get_by_id(owner.id)  # snapshot with no credential yet
+    assert stale.get_env_var("github_credentials") is None
+
+    # A different instance stores the token — the "OAuth flow just finished" shape.
+    writer = await User.get_by_id(owner.id)
+    writer.set_env_var(
+        EnvVar(name="github_credentials", var_type=EnvVarType.OAUTH_TOKEN, ref_name="github_credentials")
+    )
+    await writer.update()
+
+    previous_cache = mw._LOCAL_USER_CACHE
+    mw._LOCAL_USER_CACHE = stale
+    try:
+        response = await client.post(f"/api/v1/graph/user/{owner.id}/oauth/github/attach")
+    finally:
+        mw._LOCAL_USER_CACHE = previous_cache
+
+    res = response.json()
+    assert res["status"] == ApiResponseStatus.SUCCESS.value, res
+
+
+@pytest.mark.asyncio
 async def test_oauth_detach_is_idempotent_and_reports_a_real_count(bootstrapped_client, user):
     """Detaching something never attached is a success with 0 remaining — not a
     500, and not the hardcoded 0 the stub always returned regardless of state."""

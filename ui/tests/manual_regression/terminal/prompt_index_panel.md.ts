@@ -27,6 +27,7 @@
 import { test, expect } from '@playwright/test';
 import { activePanel, dismissSetupModal, ensureAdvancedView, ensureSideTabClosed, ensureSideTabOpen, getSideWindow, skipIfPtyExhausted, startClaudeSession } from './helpers';
 import { apiBase } from '../_shared/api';
+import { withViewMode } from '../_shared/view-mode';
 
 const API_URL = apiBase();
 
@@ -47,7 +48,7 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
 
   // Fast path: reuse the URL from the first successful navigation in this run.
   if (cachedAgenticUrl) {
-    await page.goto(cachedAgenticUrl);
+    await page.goto(withViewMode(cachedAgenticUrl, 'advanced'));
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 15_000 });
     await ensureAdvancedView(page);
     const visible = await ribbon.isVisible({ timeout: 10_000 }).catch(() => false);
@@ -55,7 +56,7 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
     // Cached process is gone — fall through to full navigation.
   }
 
-  await page.goto('/dock/shell/new_terminal');
+  await page.goto(withViewMode('/dock/shell/new_terminal', 'advanced'));
 
   const skip = page.getByRole('button', { name: 'Skip' });
   if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();

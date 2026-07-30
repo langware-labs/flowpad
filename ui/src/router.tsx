@@ -147,7 +147,14 @@ export const router = createBrowserRouter(
       <Route path="dev" element={<DeveloperLayout />} loader={loadAgentApp}>
         <Route index element={<SessionsView />} />
         <Route path="main" element={<SessionsView />} />
-        <Route path="main/api-keys" element={<ApiKeysView />} />
+        <Route
+          path="main/api-keys"
+          element={
+            <div className="h-full overflow-auto p-4">
+              <ApiKeysView className="max-w-4xl" />
+            </div>
+          }
+        />
         {/* Connections route hidden until OAuth flow is fully implemented */}
         <Route path="hooks" element={<HooksView />} />
         <Route path="*" element={<DevToDockRedirect />} />

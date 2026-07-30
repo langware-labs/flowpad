@@ -52,7 +52,7 @@ describe('resolveRail — modes are strictly additive', () => {
     expect(idsFor(ViewMode.Advanced)).toContain('triggers');
     expect(idsFor(ViewMode.Advanced)).toContain('hooks');
     expect(idsFor(ViewMode.Standard)).not.toContain('triggers');
-    expect(idsFor(ViewMode.Dev)).toEqual(expect.arrayContaining(['discover', 'agentic-flows', 'capabilities']));
+    expect(idsFor(ViewMode.Dev)).toEqual(expect.arrayContaining(['discover', 'graph-workflows', 'capabilities']));
     expect(idsFor(ViewMode.Advanced)).not.toContain('discover');
   });
 });

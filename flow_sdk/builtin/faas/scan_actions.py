@@ -265,9 +265,9 @@ class ScanActionsMixin:
             AgenticProcess entity data
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
-        from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
-        from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions
         from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
 
         try:
@@ -365,7 +365,7 @@ class ScanActionsMixin:
             if output_format == "stream-json":
                 pty_mode = False
             if worker_type == WorkerType.CODEX:
-                cli_opts = CodexCliOptions(
+                cli_opts = CodexAgentOptions(
                     model=model,
                     permission_mode=permission_mode,
                     env_vars=env_vars,
@@ -379,7 +379,7 @@ class ScanActionsMixin:
                 context_data.pop("debug", None)
                 context_data.pop("worktree", None)
             elif worker_type == WorkerType.COPILOT:
-                cli_opts = CopilotCliOptions(
+                cli_opts = CopilotAgentOptions(
                     model=model,
                     permission_mode=permission_mode,
                     effort=context_data.pop("effort", None),
@@ -389,7 +389,7 @@ class ScanActionsMixin:
                 context_data.pop("debug", None)
                 context_data.pop("worktree", None)
             else:
-                cli_opts = ClaudeCliOptions(
+                cli_opts = ClaudeAgentOptions(
                     model=model,
                     permission_mode=permission_mode,
                     agents_json=agents_json,

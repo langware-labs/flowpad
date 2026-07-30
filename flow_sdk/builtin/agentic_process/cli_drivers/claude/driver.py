@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
     load_session_history as _claude_load_session_history,
 )
@@ -24,9 +24,9 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
+    AgentOptions,
     DeviceLoginSpec,
     WorkerAuthResult,
-    WorkerCLIOptions,
     WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
@@ -72,7 +72,7 @@ class ClaudeDriver:
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
-    def cli_options(self, process: "AgenticProcess") -> ClaudeCliOptions:
+    def cli_options(self, process: "AgenticProcess") -> ClaudeAgentOptions:
         """Build a Claude CLI command for ``process``.
 
         Injects ``--add-dir`` for the Flowpad Assistant project (so SDK-shipped
@@ -86,7 +86,7 @@ class ClaudeDriver:
         ``process.enable_assistant()``) to override per process; ``None`` keeps
         the global default.
         """
-        cmd = ClaudeCliOptions.from_json(process.cli_config)
+        cmd = ClaudeAgentOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
         if cmd.session_id and self.transcript_path(process) is not None:
@@ -103,7 +103,7 @@ class ClaudeDriver:
     def restart_snapshot(
         self,
         process: "AgenticProcess",
-        options: WorkerCLIOptions,
+        options: AgentOptions,
     ) -> dict:
         return restart_payload_from_cli_options(options)
 

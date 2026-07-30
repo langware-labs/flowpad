@@ -34,11 +34,7 @@ test('C01/C03/C09/C10: a new headless Codex opens as chat and reload preserves t
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
     });
-    await page.goto(withViewMode('/dock/home', 'standard'));
-    await page.evaluate((id) => {
-      (window as unknown as { navigation: { openShellProcess: (processId: string) => void } })
-        .navigation.openShellProcess(id);
-    }, processId);
+    await page.goto(withViewMode(`/dock/shell/agentic_process-${processId}`, 'standard'));
 
     await expect(page).toHaveURL(new RegExp(`/dock/shell/agentic_process-${processId}`));
     const active = page.locator('[data-testid="terminal-panel"][data-active="true"]');

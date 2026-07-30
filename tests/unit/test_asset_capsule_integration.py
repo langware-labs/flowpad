@@ -120,7 +120,7 @@ def test_production_has_no_alternate_identity_writers() -> None:
             "app/actions/message_attachment_action.py",
             "builtin/flow_message_bundle.py",
             "core/entity/entity_model.py",
-            "flow_manager/service_flows.py",
+            "graph_workflow_manager/service_graph_workflows.py",
         )
     )
 

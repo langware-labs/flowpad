@@ -18,9 +18,8 @@ WHITEBOARD = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     index_fields=["description"],
-    asset_class="harness",
-    harness="claude",
-    family="whiteboards",
+    asset_class="repo",
+    family="whiteboard",
     main_layout="folder",
     # The folder's main doc — drives the share id-pin (TypeInfo.main_file) and
     # stabilizes asset_ref/hash (without it asset_ref was the bare folder and the

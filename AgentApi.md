@@ -244,7 +244,7 @@ A `Shell` is a PTY session with a database-backed identity. It adds:
 
 * **Worker tracking**: knows the PID and name of the CLI process running inside.
 
-* **Worker launching**: `launch()` injects a `WorkerCLIOptions` command and
+* **Worker launching**: `launch()` injects a `AgentOptions` command and
   tracks the child PID.
 
 * **Environment management**: persists env vars and injects live `export` commands.
@@ -270,7 +270,7 @@ and is redundant — it exists for historical reasons.
 
 ```python
 from flow_sdk.builtin.shell import Shell
-from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
 
 # Simple shell with context manager
 async with Shell(workdir="/project") as shell:
@@ -280,7 +280,7 @@ async with Shell(workdir="/project") as shell:
 
 # Launch a worker and track it
 shell = await Shell.open(workdir="/project")
-cmd = ClaudeCliOptions(session_id="abc-123")
+cmd = ClaudeAgentOptions(session_id="abc-123")
 info = await shell.launch(cmd, instruction="fix the failing tests")
 print(f"Worker PID: {info.pid}")
 while await shell.worker_alive():
@@ -368,7 +368,7 @@ class Shell:
 
     async def launch(
         self,
-        cmd:         WorkerCLIOptions,
+        cmd:         AgentOptions,
         instruction: str | None = None,
     ) -> WorkerInfo
     # Inject cmd.to_shell_string(instruction) into the PTY via write().
@@ -435,8 +435,8 @@ if shell.pty:
     chunks = shell.pty.snapshot(since=0)
 
 @property
-def last_launch_cmd(self) -> "WorkerCLIOptions | None"
-# The WorkerCLIOptions last passed to launch(). Stored on the entity.
+def last_launch_cmd(self) -> "AgentOptions | None"
+# The AgentOptions last passed to launch(). Stored on the entity.
 # Use to inspect current worker flags or build a modified command for restart.
 ```
 
@@ -490,7 +490,7 @@ class WorkerInfo:
 ### What it is
 
 An `AgenticProcess` is a Claude Code CLI execution run. It wraps Shell +
-ClaudeCliOptions and adds:
+ClaudeAgentOptions and adds:
 
 * **Session management**: assigns a `session_id` (Claude JSONL session file),
   handles resume and fork automatically.
@@ -764,8 +764,8 @@ if s:
         await s.pty.attach("ws-conn-id")
 
 @property
-def cli_options(self) -> ClaudeCliOptions
-# Live ClaudeCliOptions derived from stored cli_config + entity fields.
+def cli_options(self) -> ClaudeAgentOptions
+# Live ClaudeAgentOptions derived from stored cli_config + entity fields.
 # Read-only view — inspect what flags will be used on the next start().
 
 async def add_dir(self, path: str | Path) -> None
@@ -785,13 +785,13 @@ async def set_session_id(self, session_id: str) -> None
 
 ***
 
-### WorkerCLIOptions — command builder
+### AgentOptions — command builder
 
 Used by `Shell.launch()` to produce the shell command string. Use directly when
 launching non-Claude workers or when you need precise flag control.
 
 ```python
-class WorkerCLIOptions:
+class AgentOptions:
     def __init__(
         self,
         workdir:  str | None = None,
@@ -808,10 +808,10 @@ class WorkerCLIOptions:
 
     def to_json(self) -> dict
     @classmethod
-    def from_json(cls, d: dict) -> "WorkerCLIOptions"
+    def from_json(cls, d: dict) -> "AgentOptions"
 
 # Claude Code subclass — flags map 1-to-1 to claude CLI switches:
-class ClaudeCliOptions(WorkerCLIOptions):
+class ClaudeAgentOptions(AgentOptions):
     def __init__(
         self,
         session_id:      str | None = None,          # --session-id
@@ -887,7 +887,7 @@ if s and s.pty:
 
 # Use Shell standalone
 shell = await Shell.open(workdir="/tmp")
-cmd = ClaudeCliOptions(permission_mode="default")
+cmd = ClaudeAgentOptions(permission_mode="default")
 await shell.launch(cmd, instruction="summarise README.md")
 while await shell.worker_alive():
     await asyncio.sleep(1)

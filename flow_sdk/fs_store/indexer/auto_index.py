@@ -24,6 +24,7 @@ effective default for upgraders. It must stay identical to the registry's.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from enum import Enum
@@ -32,6 +33,8 @@ from typing import Any
 from flow_sdk.preferences import read_instance_prefs
 
 log = logging.getLogger(__name__)
+
+_active_auto_index_tasks: set[asyncio.Task[None]] = set()
 
 # ── Preference keys + defaults (mirror prefRegistry.ts / default_prefs) ──────
 PREF_AUTO_INDEX_ENABLED = "preferences.auto_index.enabled"
@@ -114,6 +117,28 @@ class AutoIndexConfig:
     def force(self) -> bool:
         """Whether the run bypasses skip-fresh (``IndexerOptions.force``)."""
         return self.index_type is IndexType.FULL
+
+
+def schedule_auto_index(project_id: str, *, created: bool) -> asyncio.Task[None]:
+    """Start and own one detached auto-index task.
+
+    Factory reset cancels this owned set before swapping the database, so an
+    index launched by the previous graph cannot keep writing through the wipe.
+    """
+    task = asyncio.create_task(maybe_auto_index(project_id, created=created))
+    _active_auto_index_tasks.add(task)
+    task.add_done_callback(_active_auto_index_tasks.discard)
+    return task
+
+
+async def cancel_auto_indexes() -> None:
+    """Cancel and join detached auto-index work before destructive DB reset."""
+    current = asyncio.current_task()
+    tasks = [task for task in _active_auto_index_tasks if task is not current and not task.done()]
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 _DEFAULTS = {

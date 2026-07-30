@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 
 
@@ -36,4 +36,4 @@ class Prompt(Entity):
     last_used_at: Optional[str] = APIField(
         None, description="ISO timestamp of the last library enqueue."
     )
-    asset_ref: Optional[str] = APIField(None)
+    asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)

@@ -75,7 +75,7 @@ def test_record_orphan_dynamic(tmp_path: Path) -> None:
 async def test_indexer_skips_fresh_on_second_run(tmp_path: Path) -> None:
     """First run indexes, second run skips by hash, a mutated file re-indexes."""
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     (docs / "a.md").write_text("# a\n", encoding="utf-8")
     (docs / "b.md").write_text("# b\n", encoding="utf-8")
@@ -119,7 +119,7 @@ async def test_stale_sentinel_without_db_row_reindexes(tmp_path: Path) -> None:
     skips re-creating the row forever and the records stay invisible.
     """
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     (docs / "a.md").write_text("# a\n", encoding="utf-8")
     (docs / "b.md").write_text("# b\n", encoding="utf-8")
@@ -158,7 +158,7 @@ async def test_stale_sentinel_without_db_row_reindexes(tmp_path: Path) -> None:
 async def test_force_reindexes_everything(tmp_path: Path) -> None:
     """`force` (Full mode) bypasses the sentinel and re-indexes unchanged files."""
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     (docs / "a.md").write_text("# a\n", encoding="utf-8")
     (docs / "b.md").write_text("# b\n", encoding="utf-8")

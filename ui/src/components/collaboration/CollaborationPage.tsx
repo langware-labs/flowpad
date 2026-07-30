@@ -41,7 +41,7 @@ function EmptyState() {
  * The collaboration room. Its core content is its **Shared Sessions**
  * (RemoteWorkerSession) — a guest driving work on a host's machine — NOT an
  * asset browser. Left: the room's sessions. Right: the selected session (a chat
- * of the prompt/PromptResult exchange; the host also gets a Disconnect control).
+ * of the prompt/PromptCompletion exchange; the host also gets a Disconnect control).
  */
 export function CollaborationPage() {
   const { currentDock } = useDockNavigation();

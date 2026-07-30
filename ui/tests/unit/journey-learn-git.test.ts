@@ -28,7 +28,7 @@ import type { JourneyActSpec } from '@src/journey/use-journey';
 
 const GRAPH_PATH = path.resolve(
   __dirname,
-  '../../../flow_sdk/system_projects/flowpad_assistant/.claude/journeys/learn-git/graph.json',
+  '../../../flow_sdk/system_projects/flowpad_assistant/agentic-assets/journey/learn-git/graph.json',
 );
 
 const graphText = readFileSync(GRAPH_PATH, 'utf-8');

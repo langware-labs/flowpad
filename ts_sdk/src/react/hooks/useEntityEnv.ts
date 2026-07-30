@@ -73,12 +73,23 @@ export interface UseEntityEnvReturn {
  * const { table, isLoading, refetch } = useEntityEnv({ entityTypeId: projectTypeId });
  * const envVars = table?.values || [];
  */
+/**
+ * The react-query key for an entity's env table.
+ *
+ * Every module that reads, writes, or invalidates that cache entry goes
+ * through here — `useEntityEnv` (reader), `useEntityEnvMutations` (writer),
+ * and `useOAuthConnection`, which invalidates it after an attach or detach.
+ * The key was hand-written in a dozen places, so a rename could only ever be
+ * done by grep.
+ */
+export const entityEnvQueryKey = (entityTypeId?: TypeId) => ['entity-env-table', entityTypeId?.toString()] as const;
+
 export const useEntityEnv = (options: UseEntityEnvOptions = {}): UseEntityEnvReturn => {
   const { entityTypeId, enabled = true, refetchInterval } = options;
   const queryClient = useQueryClient();
 
   const query = useQuery<EntityEnvVars>({
-    queryKey: ['entity-env-table', entityTypeId?.toString()],
+    queryKey: entityEnvQueryKey(entityTypeId),
     queryFn: async () => {
       if (!entityTypeId) {
         throw new Error('Entity TypeId is required');
@@ -100,7 +111,7 @@ export const useEntityEnv = (options: UseEntityEnvOptions = {}): UseEntityEnvRet
     retry: 1, // Retry once on failure
     // Return cached data if available to prevent empty state flash
     initialData: () => {
-      const cached = queryClient.getQueryData<EntityEnvVars>(['entity-env-table', entityTypeId?.toString()]);
+      const cached = queryClient.getQueryData<EntityEnvVars>(entityEnvQueryKey(entityTypeId));
       return cached;
     },
   });

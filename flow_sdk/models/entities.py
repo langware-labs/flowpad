@@ -111,9 +111,9 @@ except ImportError as e:
     print(f"[WARN] Failed to import RemoteWorkerSession: {e}")
 
 try:
-    from flow_sdk.builtin.prompt_result import PromptResult  # noqa: F401
+    from flow_sdk.builtin.prompt_completion import PromptCompletion  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import PromptResult: {e}")
+    print(f"[WARN] Failed to import PromptCompletion: {e}")
 
 try:
     from flow_sdk.builtin.cron_event import CronEvent  # noqa: F401
@@ -176,19 +176,19 @@ except ImportError as e:
     print(f"[WARN] Failed to import FeedEntry: {e}")
 
 try:
-    from flow_sdk.builtin.flow_node import FlowNode  # noqa: F401
+    from flow_sdk.builtin.graph_workflow_node import GraphWorkflowNode  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import FlowNode: {e}")
+    print(f"[WARN] Failed to import GraphWorkflowNode: {e}")
 
 try:
-    from flow_sdk.builtin.agentic_flow import AgenticFlow  # noqa: F401
+    from flow_sdk.builtin.graph_workflow import GraphWorkflow  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import AgenticFlow: {e}")
+    print(f"[WARN] Failed to import GraphWorkflow: {e}")
 
 try:
-    from flow_sdk.builtin.agentic_flow_run import AgenticFlowRun  # noqa: F401
+    from flow_sdk.builtin.graph_workflow_run import GraphWorkflowRun  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import AgenticFlowRun: {e}")
+    print(f"[WARN] Failed to import GraphWorkflowRun: {e}")
 
 try:
     from flow_sdk.builtin.message_attachment import MessageAttachment  # noqa: F401

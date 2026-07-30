@@ -12,6 +12,7 @@ import {
   useEnsureProject,
   useGitCloneDialogSubmit,
 } from '@src/components/project-selector';
+import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,7 +29,6 @@ import { openNewChat } from '@src/navigation/open-new-chat';
 import { FolderOpen, FolderPlus, GitBranch } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
-import { projectRecencyMs } from '@src/lib/project-recency';
 import { QUICK_CREATE_REGISTRY } from './registry';
 
 interface QuickCreateMenuProps {
@@ -87,17 +87,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
     [ensureProject],
   );
 
-  const projectItems = useMemo(
-    () =>
-      (projects ?? []).map((p) => ({
-        id: p.id,
-        name: p.displayName,
-        path: p.fs_storage_mount_path ?? '',
-        modifiedAt: p.updated_date ?? null,
-        recencyMs: projectRecencyMs({ last_active_at: p.last_active_at, modified_at: p.updated_date }),
-      })),
-    [projects],
-  );
+  const projectItems = useMemo(() => projectEntitiesToSelectorItems(projects), [projects]);
 
   // Coding-agent sessions aren't "assets" with a name/folder — they launch a
   // live AgenticProcess immediately. Create the process, then navigate to its

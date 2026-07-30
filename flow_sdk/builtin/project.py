@@ -21,7 +21,7 @@ from pydantic import (
 from pydantic.alias_generators import to_camel
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
-from flow_sdk.api.api_types.api_field import APIField, Persist
+from flow_sdk.api.api_types.api_field import APIField, EntityField, Persist, Sharing
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
@@ -117,12 +117,13 @@ class Project(Entity):
         description="Last UI view mode used in this project (vibe|standard|advanced|dev). "
         "Applied on project load so the mode is remembered per project.",
     )
-    fs_storage_provider: StorageProvider | None = StorageProvider.SANDBOX
-    fs_storage_mount_path: str | None = APIField(default=None, description="Full path to the project folder")
+    fs_storage_provider: StorageProvider | None = EntityField(default=StorageProvider.SANDBOX, sharing=Sharing.PRIVATE)
+    fs_storage_mount_path: str | None = APIField(default=None, description="Full path to the project folder", sharing=Sharing.PRIVATE)
     # Portable repository identity for a project shared through the hub. This
     # is never the sender's local worktree path; the recipient uses it to
     # clone/materialize its own checkout.
     git_origin: GitOrigin | None = APIField(
+        sharing=Sharing.PRIVATE,
         default=None,
         description="Portable Git repository origin used to materialize a shared project.",
     )
@@ -673,8 +674,8 @@ class Project(Entity):
         """
         body = super()._hub_body()
         for local_only in (
-            "fs_storage_mount_path",
-            "fs_storage_provider",
+            # `fs_storage_mount_path` / `fs_storage_provider` are withheld by
+            # their declarations now.
             "last_mode",
             "session_code",
             "host_member_id",
@@ -1611,9 +1612,9 @@ class Project(Entity):
             # Auto-index trigger "Project Create". Detached: a project create must
             # never wait on (or fail because of) a filesystem walk. The hook
             # itself no-ops unless the preference selects that trigger.
-            from flow_sdk.fs_store.indexer.auto_index import maybe_auto_index
+            from flow_sdk.fs_store.indexer.auto_index import schedule_auto_index
 
-            asyncio.create_task(maybe_auto_index(str(self.id), created=True))
+            schedule_auto_index(str(self.id), created=True)
         # Every Project owns one deterministic DB-only Wiki. This idempotent
         # repair also converges Projects created before Wiki existed.
         from flow_sdk.wiki.service import ensure_default_wiki
@@ -1650,11 +1651,11 @@ class Project(Entity):
         slow walk can never reach the activation response.
         """
         from flow_sdk.core.entity.entity_model import _http_activate
-        from flow_sdk.fs_store.indexer.auto_index import maybe_auto_index
+        from flow_sdk.fs_store.indexer.auto_index import schedule_auto_index
 
         resp = await _http_activate(self)
         if isinstance(resp, ApiSuccessResponse):
-            asyncio.create_task(maybe_auto_index(str(self.id), created=False))
+            schedule_auto_index(str(self.id), created=False)
         return resp
 
     @action.post(action_name="add-context-dir")
