@@ -138,7 +138,7 @@ export function StationCard({ data, selected }: NodeProps) {
         <div className="sub" title={nd.prompt || sub}>
           {sub}
         </div>
-        <div className="stl" style={{ color: statusLine.color }} title={live?.error || statusLine.text}>
+        <div className={`stl stl-${statusLine.tone}`} title={live?.error || statusLine.text}>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{statusLine.text}</span>
           {live?.processId && running && (
             <a
