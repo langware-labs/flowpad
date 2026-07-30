@@ -1,4 +1,4 @@
-"""Walker + extractor + id mint + asset-hash for WHITEBOARD records.
+"""Extractor + id mint + asset-hash for WHITEBOARD records.
 
 A whiteboard is a folder containing ``WHITE_BOARD.md`` (with YAML frontmatter)
 and ``board.json`` (Excalidraw scene). Replaces the deleted
@@ -24,35 +24,10 @@ from flow_sdk.fs_store.indexer._frontmatter import (
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 WHITE_BOARD_MD = "WHITE_BOARD.md"
 BOARD_JSON = "board.json"
-
-def whiteboard_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        wb_dir = Path(node.path) / ".claude" / "whiteboards"
-        if not wb_dir.is_dir():
-            continue
-        for entry in sorted(wb_dir.iterdir()):
-            if not entry.is_dir():
-                continue
-            if not (entry / WHITE_BOARD_MD).exists():
-                continue
-            key = str(entry.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(entry, record_type=RecordType.WHITEBOARD, parent=node))
-    return out
-
-# ── id helpers ───────────────────────────────────────────────────────────────
 
 def _read_frontmatter_id_from_yaml(yaml_fields: dict) -> str | None:
     """Pick ``id`` (or legacy ``asset_id``) from a parsed frontmatter dict."""

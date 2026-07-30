@@ -47,6 +47,25 @@ export interface OAuthProvider {
   name: string;
   display_name: string;
   icon?: string;
+  /** Which OAuth grant this provider's flow uses. */
+  kind?: OAuthFlowKind;
+  /** Scopes the flow will request; empty when the owning side does not publish them. */
+  scopes?: string[];
+}
+
+/** The OAuth grants a provider's flow can use. Mirrors the backend's
+ *  `OAuthFlowKind` — shown to the user because the three differ in what they
+ *  ask of them and in what the resulting token can do. */
+export type OAuthFlowKind = 'code' | 'loopback' | 'device';
+
+/** What a connection test found. */
+export interface OAuthTestResult {
+  /** true = the provider accepted the token; false = it rejected it;
+   *  null = not checked (no probe, or the provider could not be reached). */
+  ok: boolean | null;
+  /** Who the token belongs to, when the provider says. */
+  identity?: string | null;
+  detail?: string | null;
 }
 
 export interface OAuthConnection {
@@ -72,6 +91,18 @@ export interface OAuthClientRequestInfo {
 
 export interface OAuthCallbackResponse {
   installed_plugins: any[];
+}
+
+/** The backend's own message for a failed OAuth call.
+ *
+ * These paths fail for reasons the user can act on ("no token yet", "this
+ * instance cannot complete a flow for that provider"), and all of that lives in
+ * the `{status:'FAIL', message}` envelope. Re-throwing only Axios's
+ * "Request failed with status code 500" throws that away, so the toast ends up
+ * saying nothing at all. */
+function oauthErrorText(error: unknown, fallback: string): string {
+  const envelope = (error as { response?: { data?: { message?: string; detail?: string } } })?.response?.data;
+  return envelope?.message || envelope?.detail || (error instanceof Error ? error.message : fallback);
 }
 
 export class OauthFlow extends EventEmitter {
@@ -332,6 +363,7 @@ export class OAuthService {
       }
       const oauthFlow = new OauthFlow(oauthRequestInfo, popupWindow, targetEntity, sharedEntityVarName);
       this.oAuthFlows.set(oauthRequestInfo.oauth_request_id, oauthFlow);
+
       return oauthFlow;
     } catch (error) {
       console.error(`[OAuthService] OAuth connection failed for ${provider}:`, error);
@@ -383,6 +415,19 @@ export class OAuthService {
     }
   }
 
+  /** Result of calling the provider with the stored token.
+   *
+   *  `ok` is three-valued: true/false are answers, null means the question was
+   *  never asked (no probe for this provider, or the provider was unreachable) —
+   *  which must not be shown as a pass. */
+  public async test(provider: string, targetEntity?: TypeId): Promise<OAuthTestResult> {
+    const actionInfo = new ActionInfo('oauth');
+    if (targetEntity) actionInfo.targetEntity = targetEntity;
+    actionInfo.subpath = [provider, 'test'];
+    const raw = await dataManager.callAction<unknown, OAuthTestResult>(actionInfo);
+    return raw ?? { ok: null, detail: 'No response from the connection test' };
+  }
+
   public async attach(provider: string, targetEntity: TypeId, sharedEntityVarName?: string): Promise<void> {
     try {
       const actionInfo = new ActionInfo('oauth');
@@ -398,9 +443,7 @@ export class OAuthService {
       await dataManager.callAction<unknown, void>(actionInfo);
     } catch (error) {
       console.error(`[OAuthService] OAuth attach failed for ${provider}:`, error);
-      throw new Error(
-        `Failed to attach ${provider} to entity: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
+      throw new Error(oauthErrorText(error, `Failed to attach ${provider} to entity`));
     }
   }
 
@@ -415,9 +458,7 @@ export class OAuthService {
       return response;
     } catch (error) {
       console.error(`[OAuthService] OAuth detach failed for ${provider}:`, error);
-      throw new Error(
-        `Failed to detach ${provider} from entity: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
+      throw new Error(oauthErrorText(error, `Failed to detach ${provider} from entity`));
     }
   }
 

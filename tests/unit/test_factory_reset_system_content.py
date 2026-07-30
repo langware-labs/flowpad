@@ -1,9 +1,15 @@
+import sys
+import uuid
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from flow_sdk import system_tools
+from flow_sdk.builtin.faas.compute_node import ComputeNode
+from flow_sdk.compute.providers import get_compute_provider
+from flow_sdk.compute.providers.desktop.pty_session_manager import PtyRegistry
+from flow_sdk.config import ComputeProviderType
 from flow_sdk.db import database
 from flow_sdk.db.db_entity import DBEntity
 from flow_sdk.db.db_relationship import DBRelationship
@@ -138,6 +144,9 @@ async def test_factory_reset_awaits_canonical_system_content_pass(
         events.append("clear_index")
         return system_tools.ClearIndexResult(fts_cleared=0, entities_cleared=0)
 
+    async def cancel_auto_indexes() -> None:
+        events.append("cancel_auto_indexes")
+
     @asynccontextmanager
     async def lifecycle_guard():
         events.append("lifecycle_enter")
@@ -159,6 +168,13 @@ async def test_factory_reset_awaits_canonical_system_content_pass(
     monkeypatch.setattr(system_tools, "get_db_path", lambda: db_path)
     monkeypatch.setattr(system_tools, "backup_db", AsyncMock(side_effect=backup))
     monkeypatch.setattr(system_tools, "clear_index", AsyncMock(side_effect=clear_index))
+    from flow_sdk.fs_store.indexer import auto_index
+
+    monkeypatch.setattr(
+        auto_index,
+        "cancel_auto_indexes",
+        AsyncMock(side_effect=cancel_auto_indexes),
+    )
     monkeypatch.setattr(database, "close_db", AsyncMock(side_effect=close_db))
     monkeypatch.setattr(database, "init_db", AsyncMock(side_effect=init_db))
     monkeypatch.setattr(db_driver, "_driver_instances", {})
@@ -188,4 +204,82 @@ async def test_factory_reset_awaits_canonical_system_content_pass(
 
     system_content_mock.assert_awaited_once_with()
     assert result.backup_path == str(tmp_path / "backup")
+    assert events.index("cancel_auto_indexes") < events.index("clear_index")
     assert events.index("system_content") > events.index("bootstrap")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="real child regression uses /bin/sh")
+@pytest.mark.asyncio
+async def test_factory_reset_terminates_live_pty_children_before_db_wipe(
+    initialize_test_db,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Factory reset must not leave provider-owned OS children behind."""
+    PtyRegistry.reset_instance()
+    manager = PtyRegistry.get_instance()
+    compute_node = await ComputeNode.get_local()
+    assert compute_node is not None
+    provider = get_compute_provider(ComputeProviderType.LOCAL_MACHINE)
+    provider_node_id = compute_node.verified_node_provider_id
+    shell_id = str(uuid.uuid4())
+    pty_key = (compute_node.id, provider_node_id, shell_id)
+
+    await provider.get_or_create_pty_session(
+        provider_node_id,
+        shell_id,
+        on_output=lambda _data: None,
+        rows=24,
+        cols=80,
+        working_dir=str(tmp_path),
+        spawn_args=["/bin/sh"],
+    )
+    await manager.generate_session(pty_key, compute_node.id, "test-connection")
+    child_pid = provider.get_pty_shell_pid(provider_node_id, shell_id)
+    assert child_pid is not None
+    assert provider.is_pty_alive(provider_node_id, shell_id)
+
+    db_path = tmp_path / "reset-target.db"
+    db_path.write_bytes(b"test-db")
+
+    async def backup() -> system_tools.BackupResult:
+        return system_tools.BackupResult(
+            backup_path=str(tmp_path / "backup"),
+            message="backed up",
+        )
+
+    @asynccontextmanager
+    async def lifecycle_guard():
+        yield
+
+    monkeypatch.setattr(system_tools, "get_db_path", lambda: db_path)
+    monkeypatch.setattr(system_tools, "backup_db", backup)
+    monkeypatch.setattr(
+        system_tools,
+        "clear_index",
+        AsyncMock(
+            return_value=system_tools.ClearIndexResult(
+                fts_cleared=0,
+                entities_cleared=0,
+            )
+        ),
+    )
+    monkeypatch.setattr(database, "close_db", AsyncMock())
+    monkeypatch.setattr(database, "init_db", AsyncMock())
+    monkeypatch.setattr(db_driver, "_driver_instances", {})
+    monkeypatch.setattr(db_driver, "db_lifecycle_guard", lifecycle_guard)
+    monkeypatch.setattr(db_driver, "get_db_driver", lambda: initialize_test_db)
+    monkeypatch.setattr(db_driver, "remove_db_sidecars", Mock())
+    monkeypatch.setattr(bootstrap_module, "invalidate_bootstrap_cache", lambda: None)
+    monkeypatch.setattr(bootstrap_module, "bootstrap", AsyncMock())
+    monkeypatch.setattr(bootstrap_module, "index_system_content", AsyncMock())
+
+    try:
+        await system_tools.clear_all_data()
+
+        assert manager.states == {}
+        assert provider.get_pty_shell_pid(provider_node_id, shell_id) is None
+        assert not provider._is_process_alive(child_pid)
+    finally:
+        await provider.close_pty_session(provider_node_id, shell_id)
+        PtyRegistry.reset_instance()

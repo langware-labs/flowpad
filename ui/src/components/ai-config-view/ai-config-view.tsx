@@ -87,7 +87,8 @@ export const AIConfigView: React.FC = () => {
         </div>
 
         <TabsContent value={AIConfigSubview.LLM_APIS} className="mt-0 h-[calc(100%-40px)] overflow-auto p-4">
-          <ApiKeysView />
+          {/* The TabsContent above already scrolls and pads. */}
+          <ApiKeysView className="max-w-4xl" />
         </TabsContent>
 
         <TabsContent value={AIConfigSubview.CLIS} className="mt-0 h-[calc(100%-40px)] overflow-auto">

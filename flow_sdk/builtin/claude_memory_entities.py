@@ -13,7 +13,7 @@ from typing import ClassVar, List, Optional, Type
 
 from pydantic import BaseModel
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.context_data_schemas import (
     ClaudeMdContextData,
@@ -55,7 +55,7 @@ class Markdown(Entity):
     _abstract: ClassVar[bool] = True
     name: str = APIField(default="")
     asset_type: str = APIField(default="")
-    asset_ref: str = APIField(default="")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
     status: str = APIField(default="")
     # Folder-containment fields (populated at index time by MarkdownRecord.from_markdown).
     # parent_path is the immediate containing directory; vault_root is the scan root.
@@ -86,7 +86,7 @@ class Docs(Markdown):
     # OKF-compatible metadata. Values are preserved as authored for
     # storage/search; the tag binding readers independently select and
     # normalize the grammar-valid dot paths used by the taxonomy.
-    tags: List[str] = APIField(default_factory=list)
+    tags: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
     links: List[str] = APIField(default_factory=list)
 
 

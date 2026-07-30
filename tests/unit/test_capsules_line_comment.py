@@ -40,7 +40,7 @@ def test_replace_in_place_and_remove(tmp_path):
     path.write_text("x = 1\n")
     capsule = AssetCapsule.from_path(path)
     capsule.write("tag", PAYLOAD)
-    updated = CapsuleData(1, {"tags": {"flow.runs": "changed", "flow.done": "added"}})
+    updated = CapsuleData(1, {"tags": {"flow.runs": "changed", "graph_workflow.done": "added"}})
     capsule.write("tag", updated)
 
     text = path.read_text()

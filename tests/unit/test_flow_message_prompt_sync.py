@@ -40,7 +40,7 @@ def _hub_payload() -> dict:
 
 
 def test_prompt_auto_handled_is_local_only():
-    assert "prompt_auto_handled" in FlowMessage.LOCAL_ONLY_FIELDS
+    assert "prompt_auto_handled" in FlowMessage.fields_not_accepted_from_hub()
 
 
 def test_merge_preserves_local_marker():

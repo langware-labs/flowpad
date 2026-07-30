@@ -14,7 +14,7 @@ from typing import Any, AsyncIterator, Literal, overload
 from fastapi import BackgroundTasks
 from pydantic import Field
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
 from flow_sdk.builtin.faas.desktop_actions import DesktopActionsMixin
@@ -98,8 +98,8 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
     # empty list means none.
     attached_secrets: dict[str, list[str]] = APIField(default_factory=dict)
     # Override Entity's fs_storage fields with compute node defaults
-    fs_storage_provider: StorageProvider | None = Field(default=StorageProvider.SANDBOX)
-    fs_storage_mount_path: str | None = APIField(default=None)
+    fs_storage_provider: StorageProvider | None = EntityField(default=StorageProvider.SANDBOX, sharing=Sharing.PRIVATE)
+    fs_storage_mount_path: str | None = APIField(default=None, sharing=Sharing.PRIVATE)
     home_dir: str | None = APIField(default=None)
 
     def _start_activity(self, job_name: str, timeout_seconds: int = 600):
@@ -1409,7 +1409,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     async def fix_all_cloud_errors_action(self) -> ApiResponse:
         """Spawn an AgenticProcess for each error with a saved cloud fix instruction."""
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
         from flow_sdk.fs_store.operations.claude_error import Fix, get_by_fingerprint
 
         request_info = get_current_request_info()
@@ -1427,7 +1427,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 spawned.append({"fingerprint": fp, "status": "skipped"})
                 continue
             try:
-                cmd = ClaudeCliOptions(permission_mode="bypassPermissions")
+                cmd = ClaudeAgentOptions(permission_mode="bypassPermissions")
                 rec_label = (getattr(rec, "name", None) or "").strip()
                 agentic_process = AgenticProcess(
                     cli_config=cmd.to_json(),

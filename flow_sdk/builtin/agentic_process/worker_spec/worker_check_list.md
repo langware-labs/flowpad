@@ -320,7 +320,7 @@ Exit criteria:
 
 - [ ] Headless argv shape is known.
 - [ ] Interactive argv shape is known or marked unsupported.
-- [ ] Serialization requirements for `WorkerCLIOptions` are known.
+- [ ] Serialization requirements for `AgentOptions` are known.
 
 ## 8. FlowData Parser Feasibility
 

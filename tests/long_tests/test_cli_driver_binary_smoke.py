@@ -31,8 +31,8 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
-from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions
 from flow_sdk.transcript_analyzer import AgentTranscriptFile
 from flow_sdk.transcript_analyzer.entries import UnknownEntry
 from tests.long_tests._model_tier import small_model_for
@@ -127,12 +127,12 @@ def _run_turn_and_parse(worker: str, options, tmp_path: Path, *, success_types: 
 # ``shutil.which`` skip so an uninstalled binary is skipped, not failed — this
 # stacks on the module-level DEEP_TESTING gate.
 _codex = pytest.param(
-    "codex", CodexCliOptions, {"turn.completed"},
+    "codex", CodexAgentOptions, {"turn.completed"},
     marks=pytest.mark.skipif(shutil.which("codex") is None, reason="codex CLI not installed"),
     id="codex",
 )
 _copilot = pytest.param(
-    "copilot", CopilotCliOptions, {"result"},
+    "copilot", CopilotAgentOptions, {"result"},
     marks=pytest.mark.skipif(shutil.which("copilot") is None, reason="copilot CLI not installed"),
     id="copilot",
 )

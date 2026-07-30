@@ -88,10 +88,16 @@ test('thinking expansion is retained when switching between two chat tabs', asyn
     ),
   );
 
-  // Select Chat through the real control so the transcript preference mirrors
-  // the URL. A deep-link override alone is intentionally ephemeral and would
-  // fall back to the pre-existing preference when this tab is revisited.
-  await page.getByTestId('transcript-mode-chip-chat').click();
+  // The persisted mode can be either Chat or Trace after earlier scenarios.
+  // Selecting the already-active chip is intentionally a no-op, so switch away
+  // only when Chat is active, then select Chat through the real control. This
+  // makes the preference and URL deterministic before the tab is revisited.
+  const chatChip = page.getByTestId('transcript-mode-chip-chat');
+  if ((await chatChip.getAttribute('data-mode-active')) === 'true') {
+    await page.getByTestId('transcript-mode-chip-trace').click();
+    await expect(page).toHaveURL(/transcriptMode=trace/);
+  }
+  await chatChip.click();
   await expect(page).toHaveURL(/transcriptMode=chat/);
 
   const thinking = page.getByText(LONG_THINKING, { exact: true });

@@ -1,7 +1,15 @@
-import { dataContext, ExecutionEnvironmentStatus, MachineSubview, PageId, ViewType, WorldViewProjection } from '@sdk';
+import {
+  CredentialsSubview,
+  dataContext,
+  ExecutionEnvironmentStatus,
+  PageId,
+  ViewType,
+  WorldViewProjection,
+} from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { credentialsPointer } from '@src/components/credentials-view/credentials-pointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
@@ -107,14 +115,18 @@ export function HubHome() {
   const { currentUser } = useAuth();
   const { navigation } = useDockNavigation();
 
-  /** Open the machine dock's Secrets tab.
+  /** Open the Credentials view on its Environment tab.
    *
    *  Navigation and nothing else — no context writes, per the URL-first rule.
+   *  `openPage` and not `openDock`: this card lives on the hub page, and a
+   *  page-less pointer is redirected straight back to /dock/hub/home by
+   *  `pageRedirectUrl` on a hub-only server.
+   *
    *  Deliberately does NOT attach anything inline: these cards drive a HUB
    *  backend, which does not have the attach actions, so the panel shows its
    *  own empty state there rather than this button pretending to work. */
   const openDesktopSecrets = () => {
-    navigation.openDock(new DockPointer(ViewType.MACHINE, MachineSubview.SECRETS));
+    navigation.openPage(PageId.HUB, ViewType.CREDENTIALS, credentialsPointer(CredentialsSubview.ENVIRONMENT));
   };
   // Current project is the same source the footer's StatusBar reads
   // (dataContext.project), so the highlighted card and the footer always agree.

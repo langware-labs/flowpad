@@ -94,8 +94,15 @@ export function useHooksSniffer() {
   const globalIndexOffsetRef = useRef(0);
 
   const { flowData, clear: clearEntityData } = useEntityData(hookId ? new TypeId(AgentHook.type, hookId) : null);
-  const { projects } = useProjectList();
   const { computeNode, snifferEnabled, isBootstrapping } = useContext();
+  // Project discovery scans provider history and can be expensive on a large
+  // machine. The global SnifferProvider is mounted on every page, but project
+  // mapping is only needed once a live event actually carries a cwd.
+  // Memoized: `extractOsPath` parses each event's JSON, and a buffer that never
+  // carries a cwd never short-circuits — that is a full re-parse per render.
+  const hasOsPath = useMemo(() => flowData.some((item) => extractOsPath(item) !== null), [flowData]);
+  const needsProjectMapping = snifferEnabled && hasOsPath;
+  const { projects } = useProjectList({ enabled: needsProjectMapping });
   const isLoading = isBootstrapping;
   const status: HooksSnifferStatus = { enabled: snifferEnabled, hook_id: hookId };
 

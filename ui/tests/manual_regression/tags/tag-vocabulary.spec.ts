@@ -225,7 +225,7 @@ test('hard-cut tag vocabulary works across API, graph, taxonomy UI, and identity
 test('tag journey advances through UI and backend WebSocket events', async ({ page, request }) => {
   const stamp = Date.now().toString(36);
   const boundTag = `qa.e2e.journey.${stamp}`;
-  // Backend→app forwarding is deliberately allowlisted to ``flow.*``.
+  // Backend→app forwarding is deliberately allowlisted to ``graph_workflow.*``.
   const backendTag = `flow.qa.browser.${stamp}`;
   const clickTarget = 'ProjectPage';
   const journeyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowpad-tag-journey-'));

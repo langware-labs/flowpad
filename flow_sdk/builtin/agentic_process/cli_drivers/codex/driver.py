@@ -20,7 +20,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     DeviceLoginSpec,
     AgenticProcessContextKey,
     WorkerAuthResult,
-    WorkerCLIOptions,
+    AgentOptions,
     WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
@@ -28,7 +28,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
     codex_transcript_path_for_process,
     find_codex_session_jsonl,
@@ -81,7 +81,7 @@ class CodexDriver:
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
-    def cli_options(self, process: "AgenticProcess") -> CodexCliOptions:
+    def cli_options(self, process: "AgenticProcess") -> CodexAgentOptions:
         """Build a Codex CLI command for ``process``.
 
         Codex doesn't accept inline ``--agents`` like Claude. We surface the
@@ -89,7 +89,7 @@ class CodexDriver:
         (some tests assert on this); the instruction bodies are delivered via
         generated process instruction assets.
         """
-        cmd = CodexCliOptions.from_json(process.cli_config)
+        cmd = CodexAgentOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
         cmd.add_dirs = process.resolved_add_dirs
@@ -110,7 +110,7 @@ class CodexDriver:
     def restart_snapshot(
         self,
         process: "AgenticProcess",
-        options: WorkerCLIOptions,
+        options: AgentOptions,
     ) -> dict:
         return restart_payload_from_cli_options(options)
 

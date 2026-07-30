@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import ClassVar, Optional
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -20,8 +20,8 @@ class ClaudeSession(Entity):
     """
 
     type: str = APIField(default=RecordType.CLAUDE_SESSION)
-    message_count: int = APIField(default=0)
-    cwd: str | None = APIField(default=None)
+    message_count: int = APIField(default=0, sharing=Sharing.PRIVATE)
+    cwd: str | None = APIField(default=None, sharing=Sharing.PRIVATE)
     slug: str | None = APIField(default=None)
     worker_session_id: str | None = APIField(default=None)
     # The transcript JSONL itself — a session's entire substance is this file, so
@@ -32,18 +32,17 @@ class ClaudeSession(Entity):
     # asset_ref and made the type look file-LESS to the bundle packer. That one
     # gap is what forced the transcript to travel as a separately-named raw file
     # and be re-paired by content sniffing on the receiver.
-    asset_ref: Optional[str] = APIField(None)
+    asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     # True when this session's transcript arrived via a shared message. Such a
     # session NEVER ran on this machine, so it cannot be ``claude --resume``-d
     # locally — the UI hides the resume affordance and offers an
     # analyze-transcript worker instead. Stamped at install through the generic
     # ``TypeInfo.receive_row_overrides`` slot; locally-indexed sessions never set
     # it, so they default ``False``.
-    received: bool = APIField(default=False)
+    received: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
 
     # Local copy state — a received session is local-authoritative and has no hub
     # twin, so a (hypothetical) hub refresh must never clear ``received``.
-    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = Entity.LOCAL_ONLY_FIELDS | frozenset({"received"})
 
     _api_visible: ClassVar[bool] = False
 

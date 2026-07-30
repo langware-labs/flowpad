@@ -12,7 +12,7 @@ ProgressCallback = Callable[[int, int], Awaitable[None]]
 
 from pydantic import BaseModel, SerializerFunctionWrapHandler, model_serializer
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -322,36 +322,12 @@ class Attachment(BaseModel):
 
 
 class FlowMessage(Entity):
-    # Beyond the base local flags, a FlowMessage owns its body/download and
-    # read state locally. A hub metadata refresh must not reset these:
-    #   * body_status  — download/delivery lifecycle on THIS machine; reset
-    #     would re-trigger an already-completed body download.
-    #   * is_read / is_archived — local inbox state, not the hub's to dictate.
-    #   * received_at  — when THIS device received it.
-    #   * is_draft     — a local draft has no hub twin; never let a refresh flip it.
-    #   * prompt_auto_handled — the receiver's "I already auto-ran this prompt"
-    #     marker. A LOCAL decision the hub never learns of, so it must survive
-    #     every hub refresh; it's the auto-run idempotency guard (a re-delivered
-    #     op finds it True and skips) and is sync-proof, unlike the attachment's
-    #     ``approved_by`` which a refresh can revert.
-    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = Entity.LOCAL_ONLY_FIELDS | frozenset(
-        {
-            "body_status",
-            "is_read",
-            "is_archived",
-            "received_at",
-            "is_draft",
-            "prompt_auto_handled",
-        }
-    )
-    # Fields ignored when deciding real-change-vs-touch in ``is_stale``: the
-    # local-only state plus the clocks themselves.
-    _STALE_IGNORE_FIELDS: ClassVar[frozenset[str]] = LOCAL_ONLY_FIELDS | frozenset(
-        {
-            "updated_date",
-            "updated_by",
-        }
-    )
+    # A FlowMessage owns its body/download and read state locally — see the
+    # ``Sharing.HUB_WRITE`` declarations on those fields below (`body_status`,
+    # `is_read`, `is_archived`, `received_at`, `is_draft`, `prompt_auto_handled`):
+    # they travel outward, but a hub metadata refresh must never reset them.
+    # This used to be a ``LOCAL_ONLY_FIELDS`` union of the base set, which a
+    # subclass could silently drop by forgetting to union.
 
     type: str = APIField(default="flow_message")
     text: str = APIField(...)
@@ -374,15 +350,15 @@ class FlowMessage(Entity):
     )
     cloned_from_sender_id: Optional[str] = APIField(None, description="Original sender of the source message")
     # Live-session grouping key. Stamped at send time by the guest (who mints
-    # the session id) and on PromptResult replies by the host. The hub drops
+    # the session id) and on PromptCompletion replies by the host. The hub drops
     # unknown header fields until its schema mirrors this one, so the
     # ``remote_worker_session-<id>`` TYPE_ID attachment is the authoritative
     # wire carrier — ``derive_session_fields`` refills this on receive.
     remote_worker_session_id: Optional[str] = APIField(
         None, description="Live session this message belongs to (grouping key)"
     )
-    is_read: bool = APIField(default=False)
-    is_archived: bool = APIField(default=False)
+    is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
+    is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     # Receipt state — mirrors the hub-side schema. Monotonic:
     # created → sent → delivered → received.
     #   created  — local only; the hub has NOT accepted it (no add_message ACK).
@@ -393,11 +369,11 @@ class FlowMessage(Entity):
     # guarded so a lower-ranked status can never downgrade a higher one.
     delivery_status: str = APIField(default=DeliveryStatus.CREATED.value)
     delivered_at: Optional[datetime] = APIField(default=None)
-    received_at: Optional[datetime] = APIField(default=None)
+    received_at: Optional[datetime] = APIField(default=None, sharing=Sharing.HUB_WRITE)
     # NOTE: ``context`` (list[TypeId]) was renamed and consolidated into the
     # unified ``context_entities`` on the base ``Entity``. Read via
     # ``msg.context_entities`` / ``msg.first_context_of_type('task')``.
-    is_draft: bool = APIField(default=False)
+    is_draft: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     # Discriminator for special message kinds. "user" is a normal message
     # (the default for everything the user or hub produces). "invitation"
     # marks a local-only placeholder FlowMessage that represents a pending
@@ -410,10 +386,10 @@ class FlowMessage(Entity):
     # stamped at hub-side add_message time when the incoming FM's attachments
     # require a packed body; the sender flips it to READY after the body is
     # uploaded. Receivers gate on this before issuing a download.
-    body_status: BodyStatus = APIField(default=BodyStatus.NA)
+    body_status: BodyStatus = APIField(default=BodyStatus.NA, sharing=Sharing.HUB_WRITE)
     # Local-only: set once the receiver has auto-run this message's prompt (see
     # process_inbound_message). Sync-proof idempotency guard.
-    prompt_auto_handled: bool = APIField(default=False)
+    prompt_auto_handled: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     _api_visible: ClassVar[bool] = True
 
     @classmethod
@@ -469,8 +445,12 @@ class FlowMessage(Entity):
         except Exception:  # noqa: BLE001
             return True  # can't prove it's a touch → fail safe to "stale"
         ctx = {"skip_api_serializer": True}
-        before = local.model_dump(mode="json", exclude=cls._STALE_IGNORE_FIELDS, context=ctx)
-        after = candidate.model_dump(mode="json", exclude=cls._STALE_IGNORE_FIELDS, context=ctx)
+        # Ignore the fields the hub may not dictate, plus the clocks themselves
+        # (a touch is not a change). Derived, so a new HUB_WRITE/PRIVATE field is
+        # covered without editing a second list.
+        stale_ignore = cls.fields_not_accepted_from_hub() | {"updated_date", "updated_by"}
+        before = local.model_dump(mode="json", exclude=stale_ignore, context=ctx)
+        after = candidate.model_dump(mode="json", exclude=stale_ignore, context=ctx)
         return before != after
 
     @model_serializer(mode="wrap")

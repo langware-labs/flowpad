@@ -1,12 +1,18 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as path from 'path';
 
 import { apiBase } from '../_shared/api';
 
 const API = apiBase();
-// User-scope whiteboards live under the home dir's .claude/whiteboards/.
-const USER_WHITEBOARDS = `${os.homedir()}/.claude/whiteboards/`;
+// Whiteboard is a REPO asset, so user scope uses the same registry-owned
+// agentic-assets/<type> layout as project scope, rooted at the user's home.
+const USER_WHITEBOARDS = path.join(os.homedir(), 'agentic-assets', 'whiteboard');
+
+function projectWhiteboards(mount: string): string {
+  return path.join(mount, 'agentic-assets', 'whiteboard');
+}
 
 async function pickProject(request: APIRequestContext): Promise<{ id: string; mount: string }> {
   const res = await request.get(`${API}/api/v1/graph/project`);
@@ -55,11 +61,11 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
     });
     expect(res.status()).toBe(200);
     const { id, asset_ref } = (await res.json()).data;
-    // asset_ref must live under the project mount (project-scoped boards live
-    // at <project>/.claude/whiteboards/<name>), NOT under the user home's
-    // ~/.claude/whiteboards/.
-    expect(asset_ref.startsWith(mount), `asset_ref ${asset_ref} under project mount ${mount}`).toBe(true);
-    expect(asset_ref.startsWith(USER_WHITEBOARDS), `asset_ref ${asset_ref} must NOT be user-scope`).toBe(false);
+    // Both scopes use agentic-assets/whiteboard; the scope root is what differs.
+    expect(path.dirname(asset_ref), `asset_ref ${asset_ref} under project mount ${mount}`).toBe(
+      projectWhiteboards(mount),
+    );
+    expect(path.dirname(asset_ref), `asset_ref ${asset_ref} must NOT be user-scope`).not.toBe(USER_WHITEBOARDS);
 
     await materialize(page, id, asset_ref);
     expect(fs.existsSync(asset_ref), 'project-scoped folder exists after mount').toBe(true);
@@ -82,8 +88,8 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
     const proj = (await projRes.json()).data;
 
     expect(user.id).not.toBe(proj.id);
-    expect(user.asset_ref).toContain('/.claude/whiteboards/');
-    expect(proj.asset_ref.startsWith(mount)).toBe(true);
+    expect(path.dirname(user.asset_ref)).toBe(USER_WHITEBOARDS);
+    expect(path.dirname(proj.asset_ref)).toBe(projectWhiteboards(mount));
 
     await materialize(page, user.id, user.asset_ref);
     await materialize(page, proj.id, proj.asset_ref);

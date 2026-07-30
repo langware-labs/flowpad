@@ -22,7 +22,7 @@ def test_allowlisted_tag_forwards_exact_envelope(monkeypatch):
         ws_forward.start_tag_forwarding()
 
         event = ws_forward.event_bus.emit(
-            "flow.step.done", "agentic_flow:f-1", {"run_id": "r-1"})
+            "graph_workflow.step.done", "graph_workflow:f-1", {"run_id": "r-1"})
         assert event is not None
         await asyncio.sleep(0.01)  # async forward handler runs as a loop task
 

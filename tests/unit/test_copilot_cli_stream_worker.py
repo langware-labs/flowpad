@@ -28,7 +28,7 @@ from tests.utils.fake_cli import (
 
 # ``_build_spawn`` takes ``(context, prompt)`` and returns a 3-tuple
 # ``(argv, env, stdin)`` — copilot delivers the prompt over the child's stdin
-# (commit 85ec7bb6, unified WorkerCLIOptions). ``patch_build_spawn(..., stdin="")``
+# (commit 85ec7bb6, unified AgentOptions). ``patch_build_spawn(..., stdin="")``
 # reproduces that 3-tuple shape; the stdin body is ignored by the bash fake.
 
 

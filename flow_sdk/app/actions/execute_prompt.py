@@ -301,7 +301,7 @@ async def redrive_session_prompts(session: "RemoteWorkerSession") -> None:
         )
 
 
-# ── RemoteWorkerSession binding + PromptResult emission ─────────────────────
+# ── RemoteWorkerSession binding + PromptCompletion emission ─────────────────────
 
 def _first_prompt_id(fm: "FlowMessage") -> Optional[str]:
     """Id of the first entity-backed (``prompt-<id>``) prompt attachment, if any.
@@ -430,17 +430,17 @@ async def _reuse_or_create_room(
         return None
 
 
-async def _emit_prompt_result(
+async def _emit_prompt_completion(
     reply: str, *, prompt_id: Optional[str], session_id: str, host_process_id: str,
     source_session_id: Optional[str],
 ) -> dict:
-    """Mint a PromptResult entity for this turn and return the TYPE_ID attachment
-    dict (``prompt_result-<id>`` + inline ``result_preview``) to ride the reply."""
+    """Mint a PromptCompletion entity for this turn and return the TYPE_ID attachment
+    dict (``prompt_completion-<id>`` + inline ``result_preview``) to ride the reply."""
     from flow_sdk.builtin.flow_message import AttachmentType
-    from flow_sdk.builtin.prompt_result import PromptResult
+    from flow_sdk.builtin.prompt_completion import PromptCompletion
     from flow_sdk.schema.types import EntityType
 
-    pr = PromptResult(
+    pr = PromptCompletion(
         prompt_id=prompt_id,
         remote_worker_session_id=session_id,
         text=reply,
@@ -451,7 +451,7 @@ async def _emit_prompt_result(
     await pr.save()
     return {
         "attachment_type": AttachmentType.TYPE_ID.value,
-        "data": str(TypeId(type=EntityType.PROMPT_RESULT.value, id=pr.id)),
+        "data": str(TypeId(type=EntityType.PROMPT_COMPLETION.value, id=pr.id)),
         "prompt_preview": reply,
     }
 
@@ -709,14 +709,14 @@ async def execute_prompt_from_message(
         if not reply:
             return ApiSuccessResponse(data={"executed": True, "reply": None, "process_id": ap.id, "session_id": rws.id, "collaboration_room_id": (room.id if room else None)})
 
-        # The reply carries a structured PromptResult attachment (text + preview,
+        # The reply carries a structured PromptCompletion attachment (text + preview,
         # extensible to produced files/assets) — the turn-grained result the
         # RemoteWorkerSession viewer reconstructs. The wrapped-quote text stays as
-        # the human-readable body. A prompt_result attachment never re-triggers a
+        # the human-readable body. A prompt_completion attachment never re-triggers a
         # run (the inbound gate matches only `prompt-<id>`), so no Claude↔Claude loop.
         from flow_sdk.app.actions.flow_message_action import _wrap_as_claude_quote
         from flow_sdk.app.actions.notification_action import handle_add_message
-        result_att = await _emit_prompt_result(
+        result_att = await _emit_prompt_completion(
             reply,
             prompt_id=_first_prompt_id(fm),
             session_id=rws.id,

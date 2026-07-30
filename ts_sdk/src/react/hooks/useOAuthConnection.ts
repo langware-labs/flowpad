@@ -11,13 +11,14 @@ import {
   type EnvVarStatus,
   type OAuthDetachResult,
   type OAuthProvider,
+  type OAuthTestResult,
 } from '@sdk';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useEntityEnv } from './useEntityEnv';
+import { entityEnvQueryKey, useEntityEnv } from './useEntityEnv';
 
 interface UseOAuthConnectionOptions {
-  currentProject?: TypeId;
+  projectTypeId?: TypeId;
   onConnectionConnect?: (connectionId: string) => void; // For backward compatibility
   onConnectionDisconnect?: (connectionId: string, detachResult?: OAuthDetachResult) => void;
   // New specific callbacks for different operations
@@ -34,6 +35,9 @@ interface UseOAuthConnectionReturn {
   connect: (connectionId: string, provider: string, sharedEntityVarName?: string) => Promise<void>;
   attach: (connectionId: string, provider: string, sharedEntityVarName?: string) => Promise<void>;
   detach: (connectionId: string, provider: string) => Promise<void>;
+  /** Call the provider with the stored token — the only way to tell a live
+   *  connection from one revoked at the provider. */
+  testConnection: (provider: string) => Promise<OAuthTestResult>;
   disconnect: (connectionId: string, provider: string) => Promise<void>;
   delete: (connectionId: string, provider: string) => Promise<void>;
   getConnectionStatus: (provider: string) => Promise<ConnectionStatus>;
@@ -41,7 +45,7 @@ interface UseOAuthConnectionReturn {
 }
 
 export const useOAuthConnection = ({
-  currentProject,
+  projectTypeId,
   onConnectionConnect,
   onConnectionDisconnect,
   onOAuthAuthSuccess,
@@ -60,7 +64,7 @@ export const useOAuthConnection = ({
 
   // Use the unified hook to get project's env vars table data for status determination
   const { table: projectTable } = useEntityEnv({
-    entityTypeId: currentProject || undefined,
+    entityTypeId: projectTypeId || undefined,
     enabled: !!userTypeId,
   });
 
@@ -87,6 +91,8 @@ export const useOAuthConnection = ({
           display_name: displayName,
           // Icon is stored in icon field
           icon: envVar.icon || undefined,
+          kind: (envVar.oauth_kind as OAuthProvider['kind']) || undefined,
+          scopes: envVar.oauth_scopes?.length ? envVar.oauth_scopes : undefined,
         });
       });
 
@@ -227,7 +233,7 @@ export const useOAuthConnection = ({
 
         // Invalidate queries to get updated statuses
         void queryClient.invalidateQueries({
-          queryKey: ['entity-env-table', currentProject?.toString()],
+          queryKey: entityEnvQueryKey(projectTypeId),
         });
 
         // Call the appropriate callback based on the operation result
@@ -253,7 +259,7 @@ export const useOAuthConnection = ({
     return () => {
       dataManager.off(OAuthEventType.OAUTH_FLOW_COMPLETE, handleOAuthFlowComplete);
     };
-  }, [currentOAuthFlow, onConnectionConnect, onOAuthAuthSuccess, onAttachSuccess, queryClient, currentProject]);
+  }, [currentOAuthFlow, onConnectionConnect, onOAuthAuthSuccess, onAttachSuccess, queryClient, projectTypeId]);
 
   const getProviderName = useCallback(
     (provider: string): string => {
@@ -276,7 +282,7 @@ export const useOAuthConnection = ({
         setCurrentOAuthFlow({ connectionId, provider });
 
         // Use OAuth service to connect - this starts the OAuth flow
-        await oauthService.connect(providerName, currentProject, sharedEntityVarName);
+        await oauthService.connect(providerName, projectTypeId, sharedEntityVarName);
 
         // Note: Don't call onConnectionConnect here - it will be called when OAuth completes
       } catch (error) {
@@ -288,7 +294,12 @@ export const useOAuthConnection = ({
         throw error;
       }
     },
-    [currentProject, getProviderName],
+    [projectTypeId, getProviderName],
+  );
+
+  const testConnection = useCallback(
+    async (provider: string) => oauthService.test(getProviderName(provider), projectTypeId),
+    [projectTypeId, getProviderName],
   );
 
   const attach = useCallback(
@@ -300,17 +311,17 @@ export const useOAuthConnection = ({
         // Find the provider in available providers to get the correct name
         const providerName = getProviderName(provider);
 
-        if (!currentProject) {
+        if (!projectTypeId) {
           console.error('[useOAuthConnection] ERROR - No current project available for attach operation');
           throw new Error('No current project available for attach operation');
         }
 
         // Use OAuth service to attach current project to existing token
-        await oauthService.attach(providerName, currentProject, sharedEntityVarName);
+        await oauthService.attach(providerName, projectTypeId, sharedEntityVarName);
 
         // Invalidate queries to get updated statuses
         await queryClient.invalidateQueries({
-          queryKey: ['entity-env-table', currentProject?.toString()],
+          queryKey: entityEnvQueryKey(projectTypeId),
         });
 
         // Call the attach success callback (status: CONNECTED)
@@ -323,7 +334,7 @@ export const useOAuthConnection = ({
         setConnectingConnectionId(null);
       }
     },
-    [currentProject, getProviderName, queryClient, onAttachSuccess],
+    [projectTypeId, getProviderName, queryClient, onAttachSuccess],
   );
 
   const detach = useCallback(
@@ -332,16 +343,16 @@ export const useOAuthConnection = ({
         // Find the provider in available providers to get the correct name
         const providerName = getProviderName(provider);
 
-        if (!currentProject) {
+        if (!projectTypeId) {
           throw new Error('No current project available for detach operation');
         }
 
         // Use OAuth service to detach current project
-        const detachResult = await oauthService.detach(providerName, currentProject);
+        const detachResult = await oauthService.detach(providerName, projectTypeId);
 
         // Invalidate queries to get updated statuses
         await queryClient.invalidateQueries({
-          queryKey: ['entity-env-table', currentProject?.toString()],
+          queryKey: entityEnvQueryKey(projectTypeId),
         });
 
         // If no more attachments remain, automatically disconnect to remove OAuth credentials
@@ -352,10 +363,10 @@ export const useOAuthConnection = ({
             // Invalidate both user and project queries after disconnect
             await Promise.all([
               queryClient.invalidateQueries({
-                queryKey: ['entity-env-table', currentProject?.toString()],
+                queryKey: entityEnvQueryKey(projectTypeId),
               }),
               queryClient.invalidateQueries({
-                queryKey: ['entity-env-table', userTypeId?.toString()],
+                queryKey: entityEnvQueryKey(userTypeId),
               }),
             ]);
 
@@ -381,7 +392,7 @@ export const useOAuthConnection = ({
         throw error;
       }
     },
-    [currentProject, getProviderName, onConnectionDisconnect, queryClient, userTypeId],
+    [projectTypeId, getProviderName, onConnectionDisconnect, queryClient, userTypeId],
   );
 
   const disconnect = useCallback(
@@ -396,10 +407,10 @@ export const useOAuthConnection = ({
         // Invalidate both user and project queries to get updated statuses
         await Promise.all([
           queryClient.invalidateQueries({
-            queryKey: ['entity-env-table', currentProject?.toString()],
+            queryKey: entityEnvQueryKey(projectTypeId),
           }),
           queryClient.invalidateQueries({
-            queryKey: ['entity-env-table', userTypeId?.toString()],
+            queryKey: entityEnvQueryKey(userTypeId),
           }),
         ]);
 
@@ -411,7 +422,7 @@ export const useOAuthConnection = ({
         throw error;
       }
     },
-    [getProviderName, onConnectionDisconnect, queryClient, currentProject, userTypeId],
+    [getProviderName, onConnectionDisconnect, queryClient, projectTypeId, userTypeId],
   );
 
   const deleteConnection = useCallback(
@@ -420,12 +431,12 @@ export const useOAuthConnection = ({
         // Find the provider in available providers to get the correct name
         const providerName = getProviderName(provider);
 
-        if (!currentProject) {
+        if (!projectTypeId) {
           throw new Error('No current project available for delete operation');
         }
 
         // Use OAuth service to delete the connection entirely
-        await oauthService.delete(providerName, currentProject);
+        await oauthService.delete(providerName, projectTypeId);
 
         // Call the callback to update the connection status
         onConnectionDisconnect?.(connectionId);
@@ -434,7 +445,7 @@ export const useOAuthConnection = ({
         throw error;
       }
     },
-    [currentProject, getProviderName, onConnectionDisconnect],
+    [projectTypeId, getProviderName, onConnectionDisconnect],
   );
 
   const getConnectionStatus = useCallback(
@@ -443,20 +454,20 @@ export const useOAuthConnection = ({
         // Find the provider in available providers to get the correct name
         const providerName = getProviderName(provider);
 
-        if (!currentProject) {
+        if (!projectTypeId) {
           console.warn('No current project available for getConnectionStatus operation');
           return ConnectionStatus.DISCONNECTED;
         }
 
         // Use OAuth service to get connection status
-        return await oauthService.getConnectionStatus(providerName, currentProject);
+        return await oauthService.getConnectionStatus(providerName, projectTypeId);
       } catch (error) {
         console.error(`Failed to get connection status for ${provider}:`, error);
         // Return DISCONNECTED as fallback
         return ConnectionStatus.DISCONNECTED;
       }
     },
-    [currentProject, getProviderName],
+    [projectTypeId, getProviderName],
   );
 
   return {
@@ -468,6 +479,7 @@ export const useOAuthConnection = ({
     connect,
     attach,
     detach,
+    testConnection,
     disconnect,
     delete: deleteConnection,
     getConnectionStatus,

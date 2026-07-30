@@ -67,8 +67,8 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
     the first fire dispatches.
     """
     from flow_sdk.server import system_heartbeat as _heartbeat  # noqa: F401  decorator side-effect
-    from flow_sdk.usage_report import callback as _usage_report_cb  # noqa: F401  decorator side-effect
     from flow_sdk.transcript_streamer.triggers import transcript_watcher_trigger_specs
+    from flow_sdk.usage_report import callback as _usage_report_cb  # noqa: F401  decorator side-effect
 
     settings = get_instance_settings()
     specs: list[dict[str, Any]] = [
@@ -94,7 +94,7 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
             trigger_type=TriggerType.SCHEDULE,
             sched_trigger_type="cron",
             expr="0 7 * * *",
-            # No direct action: the daily-analysis AgenticFlow (service_flows)
+            # No direct action: the daily-analysis GraphWorkflow (service_graph_workflows)
             # routes this trigger's `fired` through analyze → publish —
             # a direct action here would double-fire the report.
             actions=[],

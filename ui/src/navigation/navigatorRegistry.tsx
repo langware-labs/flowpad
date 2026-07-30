@@ -5,7 +5,7 @@ import { AssetsNavigator } from '@src/components/assets/AssetsNavigator';
 import { TriggersNavigator } from '@src/components/triggers-view/TriggersNavigator';
 import { ChatsNavigator } from '@src/components/chats-navigator/ChatsNavigator';
 import { ExplorerNavigator } from '@src/components/explorer-view/ExplorerNavigator';
-import { AgenticFlowsNavigator } from '@src/components/agentic-flows/AgenticFlowsNavigator';
+import { GraphWorkflowsNavigator } from '@src/components/graph-workflows/GraphWorkflowsNavigator';
 
 /**
  * Navigator registry — maps a ViewType to the component that fills the shared
@@ -25,5 +25,5 @@ export const NAVIGATOR_REGISTRY: Partial<Record<ViewType, ComponentType>> = {
   [ViewType.CRON]: TriggersNavigator,
   [ViewType.SHELL]: ChatsNavigator,
   [ViewType.EXPLORER]: ExplorerNavigator,
-  [ViewType.AGENTIC_FLOWS]: AgenticFlowsNavigator,
+  [ViewType.GRAPH_WORKFLOWS]: GraphWorkflowsNavigator,
 };

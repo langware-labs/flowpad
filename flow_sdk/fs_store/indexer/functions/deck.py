@@ -1,11 +1,11 @@
-"""Walker + extractor + id mint for DECK records.
+"""Extractor + id mint for DECK records.
 
-A deck is a generated presentation — a folder under ``assets/decks/`` containing
+A deck is a generated presentation — a folder under ``agentic-assets/deck/`` containing
 a ``deck.json`` build record (the walker's marker file) and the assembled,
 self-contained ``<name>.html``:
 
-    assets/decks/<slug>/
-      deck.json          # {"title", "template": "../../deck-templates/<name>", "slides": [...]}
+    agentic-assets/deck/<slug>/
+      deck.json          # {"title", "template": "../../deck_template/<name>", "slides": [...]}
       <name>.html        # self-contained Reveal deck (inlined CSS/JS + base64 media)
 
 Provenance: the deck records which ``deck_template`` it was built from. The
@@ -15,14 +15,14 @@ filesystem identity (read-only) — so a deck carries a ``template_ref`` edge to
 its template once an identity exists (else ``None``).
 
 Type metadata lives in ``flow_sdk/schema/type_info/deck_type_info.py``; this
-module provides the walker + slot functions only. Modeled on
+module provides the slot functions only. Modeled on
 ``functions/deck_template.py``.
 """
 from __future__ import annotations
 
 import json
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from flow_sdk.fs_store.fs_record import FSRecord
@@ -31,40 +31,12 @@ from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
 )
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 MANIFEST = "deck.json"
 
 
-# ── walker ────────────────────────────────────────────────────────────────────
-
-def deck_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    """Emit one DECK FSRef per ``assets/decks/<slug>/`` folder containing a
-    ``deck.json`` build record."""
-    out: list[FSRef] = []
-    seen: set[str] = set()
-    for node in nodes:
-        root = Path(node.path) / "assets" / "decks"
-        if not root.is_dir():
-            continue
-        for entry in sorted(root.iterdir()):
-            if not entry.is_dir():
-                continue
-            if not (entry / MANIFEST).is_file():
-                continue
-            key = str(entry.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(entry, record_type=RecordType.DECK, parent=node))
-    return out
-
-
-# ── id helpers ────────────────────────────────────────────────────────────────
+# ── manifest + id helpers ──────────────────────────────────────────────────────
 
 def _load_manifest(deck_dir: Path) -> dict[str, Any]:
     """Read deck.json as a flat dict; ``{}`` when absent, malformed, or non-dict.
@@ -125,11 +97,8 @@ def _resolve_template_ref(deck_dir: Path, manifest: dict[str, Any]) -> str | Non
     rel = manifest.get("template")
     if not isinstance(rel, str) or not rel:
         return None
-    try:
-        tpl_dir = (deck_dir / rel).resolve()
-    except OSError:
-        return None
-    if not tpl_dir.is_dir():
+    tpl_dir = _resolve_template_dir(deck_dir, rel)
+    if tpl_dir is None:
         return None
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
@@ -140,6 +109,49 @@ def _resolve_template_ref(deck_dir: Path, manifest: dict[str, Any]) -> str | Non
         return info.extract_id(FSRef(tpl_dir, record_type=RecordType.DECK_TEMPLATE))
     except Exception:
         return None
+
+
+def _resolve_template_dir(deck_dir: Path, rel: str) -> Path | None:
+    """The template folder ``rel`` points at, by relative path then by NAME.
+
+    ``deck.json``'s ``template`` is a path relative to the deck folder, which made
+    the provenance edge brittle: the repo-assets move retargeted decks from
+    ``assets/decks/<slug>/`` to ``agentic-assets/deck/<slug>/``, so every existing
+    deck's ``../../deck-templates/<name>`` now resolves to nothing and the edge
+    would silently vanish.
+
+    So: try the literal relative path, then fall back to the template family's
+    canonical mount plus the ref's leaf name. Migrated decks self-heal without a
+    manifest rewrite, and a hand-moved template keeps its edge.
+    """
+    try:
+        literal = (deck_dir / rel).resolve()
+        if literal.is_dir():
+            return literal
+    except OSError:
+        pass
+
+    from flow_sdk.fs_store.placement import AGENTIC_ASSETS_DIR  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    leaf = PurePosixPath(rel.replace("\\", "/")).name
+    if not leaf or leaf in (".", ".."):
+        return None
+    # The template's mount comes from ITS OWN registered layout, so a change to
+    # deck_template's asset_class/family is picked up here instead of drifting.
+    tpl_info = SchemaRegistry.get(str(RecordType.DECK_TEMPLATE))
+    subdir = getattr(tpl_info, "main_subdir", None) if tpl_info else None
+    if not subdir:
+        return None
+    # Find the scope root by walking UP to the agentic-assets container rather
+    # than indexing a fixed number of parents: ``parents[2]`` silently encodes
+    # "<root>/agentic-assets/deck/<slug>" and breaks the moment nesting changes
+    # (repo assets nest recursively — see repo_assets_fn).
+    root = next((p.parent for p in deck_dir.parents if p.name == AGENTIC_ASSETS_DIR), None)
+    if root is None:
+        return None
+    candidate = root / subdir / leaf
+    return candidate if candidate.is_dir() else None
 
 
 def _slide_text(manifest: dict[str, Any]) -> str:

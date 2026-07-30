@@ -65,8 +65,8 @@ PROMPT = TypeMetadata(
     icon="BookMarked",
     api_visible=True,
     index_fields=["name", "group_id"],
-    asset_class="internal",
-    family="prompts",
+    asset_class="repo",
+    family="prompt",
     default_body_fn=_prompt_default_body,
     # The edit dialog is the prompt's only editor in v1 — entity saves
     # re-render the .md so frontmatter/body never diverge from the entity.

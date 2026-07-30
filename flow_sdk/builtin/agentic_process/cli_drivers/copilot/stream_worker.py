@@ -19,7 +19,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     terminate_asyncio_process_tree,
     wait_for_asyncio_process_or_kill_tree,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.event_to_flowdata import (
     CopilotEventConverter,
     final_end_frame,
@@ -212,7 +212,7 @@ class CopilotCLIStreamWorker(AgenticWorker):
         harness capability discovered) or its executable can't be resolved on
         the spawn PATH.
         """
-        opts = CopilotCliOptions(
+        opts = CopilotAgentOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
             model=context.model,
