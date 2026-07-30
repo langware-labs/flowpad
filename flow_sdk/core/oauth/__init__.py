@@ -126,3 +126,30 @@ async def resolve_user_credentials_name(provider: str) -> Optional[str]:
         if row.name.strip().lower() == wanted:
             return row.ref_name or None
     return None
+
+
+def unresolved_provider_reason(provider: str) -> str:
+    """Why a provider could not be resolved — in terms the user can act on.
+
+    "Unknown OAuth provider 'slack'" is true only in the narrow sense that we
+    could not find it. When the hub is down, every hub-defined provider vanishes
+    from the union and reports as unknown, which sends the reader looking for a
+    typo instead of at a service that is offline. The two need different words
+    because they need different fixes.
+    """
+    from flow_sdk.core.oauth.hub_providers import _hub_reachable  # noqa: PLC0415
+    from flow_sdk.core.oauth.provider_registry import get_local_provider  # noqa: PLC0415
+
+    if get_local_provider(provider) is not None:
+        # Locally known, so the failure is about the credential, not the provider.
+        return f"No credential is configured for '{provider}'"
+    if not _hub_reachable():
+        # Careful with the claim: with the hub down we cannot tell a hub-defined
+        # provider from one that does not exist anywhere, so do not assert it IS
+        # hub-defined. Say what is certainly true — the catalogue is unavailable
+        # — and let it return when the hub does.
+        return (
+            f"'{provider}' cannot be resolved while the hub is unreachable. "
+            "Providers the hub defines are unavailable until it is back."
+        )
+    return f"Unknown OAuth provider '{provider}'"

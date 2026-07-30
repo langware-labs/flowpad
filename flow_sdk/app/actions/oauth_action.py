@@ -21,7 +21,7 @@ from flow_sdk.app.actions.desktop_oauth import (
     wait_for_desktop_oauth_callback,
 )
 from flow_sdk.app.actions.oauth_attachment import attach_action, detach_action, disconnect_action
-from flow_sdk.core.oauth import resolve_user_credentials_name
+from flow_sdk.core.oauth import resolve_user_credentials_name, unresolved_provider_reason
 from flow_sdk.core.oauth.provider_registry import get_local_provider, prefers_hub_flow
 from flow_sdk.core.oauth.hub_oauth import (
     hub_credential_value,
@@ -445,7 +445,7 @@ async def _handle_test(provider: str) -> ApiResponse:
 
     cred_name = await resolve_user_credentials_name(provider)
     if not cred_name:
-        return ApiFailResponse(message=f"Unknown OAuth provider '{provider}'")
+        return ApiFailResponse(message=unresolved_provider_reason(provider))
 
     user = await get_current_request_user_fresh()
     if user is None:

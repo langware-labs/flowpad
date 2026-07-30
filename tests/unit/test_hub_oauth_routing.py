@@ -222,3 +222,28 @@ def test_a_loopback_redirect_is_never_preflighted():
     assert origin == "http://localhost:51703"
     assert urlparse_is_loopback(origin) is True
     assert urlparse_is_loopback("https://enabled-alive-colt.ngrok-free.app") is False
+
+
+@pytest.mark.asyncio
+async def test_an_unresolvable_provider_blames_the_right_thing(monkeypatch):
+    """"Unknown OAuth provider 'slack'" sends the reader hunting for a typo.
+
+    Every hub-defined provider drops out of the union when the hub is down, so
+    that message appears for a provider that is perfectly real and will come
+    back on its own. And with the hub down we cannot tell a hub provider from a
+    nonexistent one — so the message must not claim it IS hub-defined either.
+    """
+    from flow_sdk.core.oauth import unresolved_provider_reason
+
+    monkeypatch.setattr("flow_sdk.core.oauth.hub_providers._hub_reachable", lambda: False)
+    offline = unresolved_provider_reason("slack")
+    assert "hub is unreachable" in offline
+    assert "Unknown OAuth provider" not in offline
+    # Does not assert what it cannot know.
+    assert "is defined by the hub" not in offline
+
+    monkeypatch.setattr("flow_sdk.core.oauth.hub_providers._hub_reachable", lambda: True)
+    assert "Unknown OAuth provider" in unresolved_provider_reason("madeup")
+
+    # A locally-known provider is never "unknown" — the gap is the credential.
+    assert "No credential" in unresolved_provider_reason("github")
