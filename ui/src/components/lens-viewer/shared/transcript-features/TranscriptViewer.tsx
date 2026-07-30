@@ -8,6 +8,7 @@ import {
   FileText,
   Info,
   Loader2,
+  MessageSquareDashed,
 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -18,7 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/component
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useTranscript, type WorkerType } from '@src/hooks/use-transcript';
+import { useTranscript, TranscriptFetchError, type WorkerType } from '@src/hooks/use-transcript';
 import { useSyncTranscriptTabName } from '@src/tabs/useTabs';
 
 import { WorkerToolbar, WORKER_ICON_BUTTON_CLASS } from '@src/components/workers/WorkerToolbar';
@@ -34,7 +35,15 @@ import { TranscriptEntryItem } from './TranscriptEntryItem';
 import { TranscriptStats } from './TranscriptStats';
 import { WorkflowRunSummary } from './WorkflowRunSummary';
 import { groupEntriesByTurn } from './group-entries';
-import { collectToolKeys, formatAgo, formatDuration, operationFilterKey, resolveEntryTimestamp, workerIcon, workerLabel } from './transcript-utils';
+import {
+  collectToolKeys,
+  formatAgo,
+  formatDuration,
+  operationFilterKey,
+  resolveEntryTimestamp,
+  workerIcon,
+  workerLabel,
+} from './transcript-utils';
 import type { UnifiedEntry } from './types';
 
 interface Props {
@@ -62,7 +71,13 @@ interface Props {
  *   - Per-entry expand / collapse + JSON info dialog.
  *   - Path bar with copy-to-clipboard.
  */
-export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, selectedEntryId, selectedTimestamp }: Props) {
+export function TranscriptViewer({
+  workerType,
+  path,
+  sessionId: sessionIdProp,
+  selectedEntryId,
+  selectedTimestamp,
+}: Props) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
   const [, setSearchParams] = useSearchParams();
@@ -98,12 +113,21 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   useEffect(() => {
     // A workflow run has no backing AgenticProcess (its id is a runId, not a
     // worker session) — skip the lookup so it doesn't 404.
-    if (!sessionId || workerType === 'workflow') { setStatusProcessId(null); return; }
+    if (!sessionId || workerType === 'workflow') {
+      setStatusProcessId(null);
+      return;
+    }
     let cancelled = false;
     void AgenticProcess.getByWorkerId(sessionId)
-      .then((p) => { if (!cancelled) setStatusProcessId(p?.id ?? null); })
-      .catch(() => { if (!cancelled) setStatusProcessId(null); });
-    return () => { cancelled = true; };
+      .then((p) => {
+        if (!cancelled) setStatusProcessId(p?.id ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setStatusProcessId(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId, workerType]);
 
   const { data: statusProcess } = useEntity<AgenticProcess>(
@@ -158,7 +182,9 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
     initializedForRef.current = entries;
 
     const initial: Record<string, boolean> = {};
-    collectToolKeys(entries).forEach((n) => { initial[n] = true; });
+    collectToolKeys(entries).forEach((n) => {
+      initial[n] = true;
+    });
     setToolFilters(initial);
 
     for (const entry of entries) {
@@ -219,7 +245,10 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
         const ts = resolveEntryTimestamp(entry);
         if (!ts) continue;
         const diff = Math.abs(new Date(ts).getTime() - targetMs);
-        if (diff < bestDiff) { bestDiff = diff; best = entry; }
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = entry;
+        }
       }
       return best?.id;
     }
@@ -234,8 +263,8 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
         return;
       }
       setPendingScrollId(resolvedEntryId);
-      setExpandedEntries((prev) => prev.has(resolvedEntryId) ? prev : new Set([...prev, resolvedEntryId]));
-      setChatExpandedEntries((prev) => prev.has(resolvedEntryId) ? prev : new Set([...prev, resolvedEntryId]));
+      setExpandedEntries((prev) => (prev.has(resolvedEntryId) ? prev : new Set([...prev, resolvedEntryId])));
+      setChatExpandedEntries((prev) => (prev.has(resolvedEntryId) ? prev : new Set([...prev, resolvedEntryId])));
     }
   }, [resolvedEntryId]);
 
@@ -291,7 +320,10 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
         const rect = el.getBoundingClientRect();
         if (rect.bottom < containerTop) continue;
         const dist = rect.top - containerTop;
-        if (dist >= 0 && dist < bestDist) { bestDist = dist; bestEl = el; }
+        if (dist >= 0 && dist < bestDist) {
+          bestDist = dist;
+          bestEl = el;
+        }
       }
       if (bestEl) {
         const ts = bestEl.getAttribute('data-entry-ts');
@@ -304,7 +336,13 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
             if (id) {
               setCurrentEntryId(id);
               urlUpdatedByScrollRef.current = true;
-              setSearchParams((prev) => { prev.set('transcript_entry_id', id); return prev; }, { replace: true });
+              setSearchParams(
+                (prev) => {
+                  prev.set('transcript_entry_id', id);
+                  return prev;
+                },
+                { replace: true },
+              );
             }
           }, 150);
         }
@@ -324,25 +362,33 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
       return;
     }
     isProgrammaticScrollRef.current = true;
-    const anchorEntry = currentEntryId ? entries.find((e) => e.id === currentEntryId) ?? null : null;
+    const anchorEntry = currentEntryId ? (entries.find((e) => e.id === currentEntryId) ?? null) : null;
     const anchorTs = anchorEntry ? resolveEntryTimestamp(anchorEntry) : internalTimestampRef.current;
     if (anchorTs) {
       const targetMs = new Date(anchorTs).getTime();
       if (!Number.isNaN(targetMs)) {
-        const candidates = newMode === 'chat'
-          ? entries.filter((e) => e.role === 'user' || e.role === 'assistant')
-          : entries;
+        const candidates =
+          newMode === 'chat' ? entries.filter((e) => e.role === 'user' || e.role === 'assistant') : entries;
         let best: UnifiedEntry | null = null;
         let bestDiff = Infinity;
         for (const entry of candidates) {
           const ts = resolveEntryTimestamp(entry);
           if (!ts) continue;
           const diff = Math.abs(new Date(ts).getTime() - targetMs);
-          if (diff < bestDiff) { bestDiff = diff; best = entry; }
+          if (diff < bestDiff) {
+            bestDiff = diff;
+            best = entry;
+          }
         }
         if (best) {
           setPendingScrollId(best.id);
-          setSearchParams((prev) => { prev.set('transcript_entry_id', best!.id); return prev; }, { replace: true });
+          setSearchParams(
+            (prev) => {
+              prev.set('transcript_entry_id', best.id);
+              return prev;
+            },
+            { replace: true },
+          );
         }
       }
     }
@@ -378,15 +424,16 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   // Chat mode is a quick agent ↔ user view. Operations (tool calls / file
   // writes / shell commands) live in trace mode only — chat stays simple.
   const chatEntries = useMemo(
-    () => filteredEntries.filter((e) => {
-      if (e.role === 'assistant') {
-        return !!(e.text || e.thinking);
-      }
-      if (e.role === 'user') {
-        return !!(e.text && e.text.trim().length);
-      }
-      return false;
-    }),
+    () =>
+      filteredEntries.filter((e) => {
+        if (e.role === 'assistant') {
+          return !!(e.text || e.thinking);
+        }
+        if (e.role === 'user') {
+          return !!(e.text && e.text.trim().length);
+        }
+        return false;
+      }),
     [filteredEntries],
   );
 
@@ -431,7 +478,13 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
       else next.add(id);
       return next;
     });
-    setSearchParams((prev) => { prev.set('transcript_entry_id', id); return prev; }, { replace: true });
+    setSearchParams(
+      (prev) => {
+        prev.set('transcript_entry_id', id);
+        return prev;
+      },
+      { replace: true },
+    );
   };
   const toggleChatEntry = (id: string) => {
     setChatExpandedEntries((prev) => {
@@ -442,13 +495,18 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
     });
   };
   const expandAllChat = () => {
-    setChatExpandedEntries(new Set(entries.filter((e) => e.role === 'user' || e.role === 'assistant').map((e) => e.id)));
+    setChatExpandedEntries(
+      new Set(entries.filter((e) => e.role === 'user' || e.role === 'assistant').map((e) => e.id)),
+    );
   };
   const collapseAllChat = () => setChatExpandedEntries(new Set());
 
   // Info modal helpers
   const openInfo = (entry: UnifiedEntry) => {
-    if (infoHoverTimerRef.current) { window.clearTimeout(infoHoverTimerRef.current); infoHoverTimerRef.current = null; }
+    if (infoHoverTimerRef.current) {
+      window.clearTimeout(infoHoverTimerRef.current);
+      infoHoverTimerRef.current = null;
+    }
     setInfoEntry(entry);
     setInfoOpen(true);
   };
@@ -474,11 +532,32 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
       </div>
     );
   }
+  // No JSONL on disk is a normal state, not a failure: the CLI writes the
+  // transcript on the session's FIRST turn, so a session that never took one
+  // (a fresh fork, a process stopped at the prompt) has nothing to show yet.
+  // Rendering that as a red error made an empty session look broken.
+  if (error instanceof TranscriptFetchError && error.code === 'NOT_FOUND') {
+    return (
+      <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
+        <div className="text-center">
+          <MessageSquareDashed className="mx-auto h-8 w-8 opacity-50" />
+          <p className="mt-2 font-medium">
+            <Trans>No messages yet</Trans>
+          </p>
+          <p className="mt-1 text-sm">
+            <Trans>This session has not recorded any messages — its transcript is written on the first reply.</Trans>
+          </p>
+        </div>
+      </div>
+    );
+  }
   if (error) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-destructive">
         <div className="text-center">
-          <p className="font-medium"><Trans>Error Loading Transcript</Trans></p>
+          <p className="font-medium">
+            <Trans>Error Loading Transcript</Trans>
+          </p>
           <p className="mt-1 text-sm">{error.message}</p>
           <p className="mt-2 font-mono text-xs text-muted-foreground">{path}</p>
         </div>
@@ -488,7 +567,9 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   if (!data) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
-        <p><Trans>No transcript data</Trans></p>
+        <p>
+          <Trans>No transcript data</Trans>
+        </p>
       </div>
     );
   }
@@ -508,7 +589,9 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
               <button
                 type="button"
                 className="rounded border border-border px-2 py-1 text-xs hover:bg-muted"
-                onClick={() => { void navigator.clipboard.writeText(JSON.stringify(infoEntry, null, 2)); }}
+                onClick={() => {
+                  void navigator.clipboard.writeText(JSON.stringify(infoEntry, null, 2));
+                }}
               >
                 <Trans>Copy entry</Trans>
               </button>
@@ -516,12 +599,23 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
                 type="button"
                 className="rounded border border-border px-2 py-1 text-xs hover:bg-muted"
                 onClick={() => {
-                  void navigator.clipboard.writeText(JSON.stringify({
-                    path,
-                    session_id: sessionId,
-                    entry: infoEntry,
-                    filters: { show_user: showUser, show_assistant: showAssistant, tool_filters: toolFilters, search_query: searchQuery },
-                  }, null, 2));
+                  void navigator.clipboard.writeText(
+                    JSON.stringify(
+                      {
+                        path,
+                        session_id: sessionId,
+                        entry: infoEntry,
+                        filters: {
+                          show_user: showUser,
+                          show_assistant: showAssistant,
+                          tool_filters: toolFilters,
+                          search_query: searchQuery,
+                        },
+                      },
+                      null,
+                      2,
+                    ),
+                  );
                 }}
               >
                 <Trans>Copy all</Trans>
@@ -538,211 +632,138 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
 
   return (
     <div className="flex h-full bg-background">
-    <div className="flex h-full min-w-0 flex-1 flex-col">
-      {/* Top bar */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2">
-        {isAdvanced && <ViewModeToggle mode={viewMode} onChange={switchMode} />}
+      <div className="flex h-full min-w-0 flex-1 flex-col">
+        {/* Top bar */}
+        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2">
+          {isAdvanced && <ViewModeToggle mode={viewMode} onChange={switchMode} />}
 
-        {indicatorProcess && (
-          <span
-            title={getStatusLabel(indicatorProcess)}
-            className="flex shrink-0 items-center"
-            data-testid="transcript-process-status"
-          >
-            <ProcessStatusIndicator
-              process={indicatorProcess}
-              showLabel
-              size="sm"
-              className="px-1 text-muted-foreground"
-            />
-          </span>
-        )}
-
-        {/* Scroll-position clock — Advanced/Dev only; Standard keeps a plain spacer. */}
-        {isAdvanced ? (
-        <div className="flex flex-1 items-center justify-center gap-0 text-[11px] tabular-nums">
-          {transcriptStartTs && (
+          {indicatorProcess && (
             <span
-              className="text-muted-foreground/50 text-[10px]"
-              title={`Session start\n${new Date(transcriptStartTs).toLocaleString()}\n${formatAgo(transcriptStartTs)}`}
+              title={getStatusLabel(indicatorProcess)}
+              className="flex shrink-0 items-center"
+              data-testid="transcript-process-status"
             >
-              {new Date(transcriptStartTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          )}
-          {transcriptStartTs && <span className="mx-2 text-border">·····</span>}
-          {displayTimestamp ? (
-            <span
-              className="flex items-center gap-1.5"
-              title={`${new Date(displayTimestamp).toLocaleString()}\n${formatAgo(displayTimestamp)}`}
-            >
-              <span className="font-medium text-foreground">{new Date(displayTimestamp).toLocaleTimeString()}</span>
-              <span className="text-border/60">·</span>
-              <span className="text-muted-foreground">{formatAgo(displayTimestamp)}</span>
-              {transcriptStartTs && (() => {
-                const diff = new Date(displayTimestamp).getTime() - new Date(transcriptStartTs).getTime();
-                return diff > 0 ? (
-                  <>
-                    <span className="text-border/60">·</span>
-                    <span className="text-muted-foreground/70">+{formatDuration(diff)}</span>
-                  </>
-                ) : null;
-              })()}
-            </span>
-          ) : (
-            <span className="text-muted-foreground/30 text-[10px]"><Trans>scroll to navigate</Trans></span>
-          )}
-          {transcriptEndTs && <span className="mx-2 text-border">·····</span>}
-          {transcriptEndTs && (
-            <span
-              className="text-muted-foreground/50 text-[10px]"
-              title={`Session end\n${new Date(transcriptEndTs).toLocaleString()}\n${formatAgo(transcriptEndTs)}`}
-            >
-              {new Date(transcriptEndTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          )}
-        </div>
-        ) : (
-          <div className="flex-1" />
-        )}
-
-        {sessionId && (
-          <div
-            className="flex items-center gap-1"
-            data-testid={received ? 'transcript-analyze-toolbar' : 'transcript-viewer-toolbar'}
-          >
-            {received ? (
-              <WorkerToolbar
-                hasProcess={!!transcriptSession.process}
-                starting={transcriptSession.starting}
-                onOpen={transcriptSession.open}
-                onLaunch={transcriptSession.launch}
-                openTitle={t`Open the transcript analysis session`}
-                testIdPrefix="transcript-analyze"
+              <ProcessStatusIndicator
+                process={indicatorProcess}
+                showLabel
+                size="sm"
+                className="px-1 text-muted-foreground"
               />
-            ) : (
-              // Own (resumable) session: open its live terminal. Presented as the
-              // worker's vendor icon — matching the WorkerToolbar icon-row on the
-              // received branch — rather than a dedicated labelled button.
+            </span>
+          )}
+
+          {/* Scroll-position clock — Advanced/Dev only; Standard keeps a plain spacer. */}
+          {isAdvanced ? (
+            <div className="flex flex-1 items-center justify-center gap-0 text-[11px] tabular-nums">
+              {transcriptStartTs && (
+                <span
+                  className="text-[10px] text-muted-foreground/50"
+                  title={`Session start\n${new Date(transcriptStartTs).toLocaleString()}\n${formatAgo(transcriptStartTs)}`}
+                >
+                  {new Date(transcriptStartTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+              {transcriptStartTs && <span className="mx-2 text-border">·····</span>}
+              {displayTimestamp ? (
+                <span
+                  className="flex items-center gap-1.5"
+                  title={`${new Date(displayTimestamp).toLocaleString()}\n${formatAgo(displayTimestamp)}`}
+                >
+                  <span className="font-medium text-foreground">{new Date(displayTimestamp).toLocaleTimeString()}</span>
+                  <span className="text-border/60">·</span>
+                  <span className="text-muted-foreground">{formatAgo(displayTimestamp)}</span>
+                  {transcriptStartTs &&
+                    (() => {
+                      const diff = new Date(displayTimestamp).getTime() - new Date(transcriptStartTs).getTime();
+                      return diff > 0 ? (
+                        <>
+                          <span className="text-border/60">·</span>
+                          <span className="text-muted-foreground/70">+{formatDuration(diff)}</span>
+                        </>
+                      ) : null;
+                    })()}
+                </span>
+              ) : (
+                <span className="text-[10px] text-muted-foreground/30">
+                  <Trans>scroll to navigate</Trans>
+                </span>
+              )}
+              {transcriptEndTs && <span className="mx-2 text-border">·····</span>}
+              {transcriptEndTs && (
+                <span
+                  className="text-[10px] text-muted-foreground/50"
+                  title={`Session end\n${new Date(transcriptEndTs).toLocaleString()}\n${formatAgo(transcriptEndTs)}`}
+                >
+                  {new Date(transcriptEndTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="flex-1" />
+          )}
+
+          {sessionId && (
+            <div
+              className="flex items-center gap-1"
+              data-testid={received ? 'transcript-analyze-toolbar' : 'transcript-viewer-toolbar'}
+            >
+              {received ? (
+                <WorkerToolbar
+                  hasProcess={!!transcriptSession.process}
+                  starting={transcriptSession.starting}
+                  onOpen={transcriptSession.open}
+                  onLaunch={transcriptSession.launch}
+                  openTitle={t`Open the transcript analysis session`}
+                  testIdPrefix="transcript-analyze"
+                />
+              ) : (
+                // Own (resumable) session: open its live terminal. Presented as the
+                // worker's vendor icon — matching the WorkerToolbar icon-row on the
+                // received branch — rather than a dedicated labelled button.
+                <button
+                  type="button"
+                  onClick={handleOpenInTerminal}
+                  className={WORKER_ICON_BUTTON_CLASS}
+                  title={`Open ${workerLabel(workerType)} in terminal`}
+                  data-testid="transcript-open-in-terminal"
+                >
+                  <VendorIcon className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+
+          {viewMode === 'chat' && (
+            <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={handleOpenInTerminal}
-                className={WORKER_ICON_BUTTON_CLASS}
-                title={`Open ${workerLabel(workerType)} in terminal`}
-                data-testid="transcript-open-in-terminal"
+                onClick={expandAllChat}
+                className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
               >
-                <VendorIcon className="h-3.5 w-3.5" />
+                <ChevronsUpDown className="h-3 w-3" />
+                <Trans>Expand all</Trans>
               </button>
-            )}
-          </div>
-        )}
-
-        {viewMode === 'chat' && (
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={expandAllChat}
-              className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <ChevronsUpDown className="h-3 w-3" />
-              <Trans>Expand all</Trans>
-            </button>
-            <button
-              type="button"
-              onClick={collapseAllChat}
-              className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <ChevronsDownUp className="h-3 w-3" />
-              <Trans>Collapse all</Trans>
-            </button>
-          </div>
-        )}
-      </div>
-
-      {workflowMeta && (
-        <WorkflowRunSummary payload={workflowMeta.payload ?? {}} label={workerLabel(workerType)} />
-      )}
-
-      {effectiveMode === 'callstack' ? (
-        <CallStackView workerType={workerType} sessionId={sessionId} />
-      ) : effectiveMode === 'execution' ? (
-        <ExecutionView controls={analysisControls} workerType={workerType} sessionId={sessionId} />
-      ) : effectiveMode === 'chat' ? (
-        <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
-          {chatEntries.map((entry, idx) => {
-            const ts = resolveEntryTimestamp(entry);
-            const isSelected = entry.id === resolvedEntryId;
-            const isCurrent = entry.id === currentEntryId && !isSelected;
-            return (
-              <div
-                key={`${entry.id}:${idx}`}
-                ref={entry.id === pendingScrollId ? scrollTargetRef : undefined}
-                data-entry-ts={ts ?? undefined}
-                data-entry-uuid={entry.id}
-                className={
-                  isSelected ? 'bg-primary/5 ring-1 ring-inset ring-primary/30'
-                  : isCurrent ? 'border-l-[3px] border-primary/40 bg-muted/20'
-                  : undefined
-                }
-                onClick={() => {
-                  if (!ts) return;
-                  internalTimestampRef.current = ts;
-                  setDisplayTimestamp(ts);
-                  setCurrentEntryId(entry.id);
-                  urlUpdatedByScrollRef.current = true;
-                  setSearchParams((prev) => { prev.set('transcript_entry_id', entry.id); return prev; }, { replace: true });
-                }}
+              <button
+                type="button"
+                onClick={collapseAllChat}
+                className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
               >
-                <ChatEntryItem
-                  entry={entry}
-                  isExpanded={chatExpandedEntries.has(entry.id)}
-                  onToggle={() => toggleChatEntry(entry.id)}
-                  isAdvanced={isAdvanced}
-                />
-              </div>
-            );
-          })}
+                <ChevronsDownUp className="h-3 w-3" />
+                <Trans>Collapse all</Trans>
+              </button>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <TranscriptStats
-            entries={entries}
-            sessionId={sessionId}
-            header={header}
-            showUser={showUser}
-            showAssistant={showAssistant}
-            toolFilters={toolFilters}
-            onToggleUser={() => setShowUser((p) => !p)}
-            onToggleAssistant={() => setShowAssistant((p) => !p)}
-            onToggleTool={toggleToolFilter}
-            onClearFilters={clearAllFilters}
-            onDisableAll={disableAllFilters}
-            onOpenTasks={handleOpenTasksOverview}
-          />
 
-          <div className="flex shrink-0 items-center gap-1.5 border-b border-border bg-muted/30 px-3 py-1">
-            <FileText className="h-3 w-3 shrink-0 text-muted-foreground/60" />
-            <span className="truncate font-mono text-[10px] text-muted-foreground" title={path}>{path}</span>
-            <button
-              className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              onClick={handleCopyPath}
-              title={t`Copy transcript path`}
-            >
-              {copiedPath ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-            </button>
-          </div>
+        {workflowMeta && <WorkflowRunSummary payload={workflowMeta.payload ?? {}} label={workerLabel(workerType)} />}
 
-          <div className="flex shrink-0 items-center border-b border-border bg-card px-3 py-2">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t`Search transcript…`}
-              className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
-            />
-          </div>
-
+        {effectiveMode === 'callstack' ? (
+          <CallStackView workerType={workerType} sessionId={sessionId} />
+        ) : effectiveMode === 'execution' ? (
+          <ExecutionView controls={analysisControls} workerType={workerType} sessionId={sessionId} />
+        ) : effectiveMode === 'chat' ? (
           <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
-            {filteredEntries.map((entry, idx) => {
+            {chatEntries.map((entry, idx) => {
               const ts = resolveEntryTimestamp(entry);
               const isSelected = entry.id === resolvedEntryId;
               const isCurrent = entry.id === currentEntryId && !isSelected;
@@ -753,9 +774,11 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
                   data-entry-ts={ts ?? undefined}
                   data-entry-uuid={entry.id}
                   className={
-                    isSelected ? 'rounded bg-primary/10 ring-1 ring-primary'
-                    : isCurrent ? 'border-l-[3px] border-primary/40 bg-muted/20'
-                    : undefined
+                    isSelected
+                      ? 'bg-primary/5 ring-1 ring-inset ring-primary/30'
+                      : isCurrent
+                        ? 'border-l-[3px] border-primary/40 bg-muted/20'
+                        : undefined
                   }
                   onClick={() => {
                     if (!ts) return;
@@ -763,28 +786,118 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
                     setDisplayTimestamp(ts);
                     setCurrentEntryId(entry.id);
                     urlUpdatedByScrollRef.current = true;
-                    setSearchParams((prev) => { prev.set('transcript_entry_id', entry.id); return prev; }, { replace: true });
+                    setSearchParams(
+                      (prev) => {
+                        prev.set('transcript_entry_id', entry.id);
+                        return prev;
+                      },
+                      { replace: true },
+                    );
                   }}
                 >
-                  <TranscriptEntryItem
+                  <ChatEntryItem
                     entry={entry}
-                    isExpanded={expandedEntries.has(entry.id)}
-                    onToggle={() => toggleEntry(entry.id)}
-                    toolFilters={toolFilters}
-                    onInfo={() => openInfo(entry)}
-                    onInfoHover={() => scheduleInfoOpen(entry)}
-                    onInfoHoverEnd={cancelInfoOpen}
+                    isExpanded={chatExpandedEntries.has(entry.id)}
+                    onToggle={() => toggleChatEntry(entry.id)}
+                    isAdvanced={isAdvanced}
                   />
                 </div>
               );
             })}
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <TranscriptStats
+              entries={entries}
+              sessionId={sessionId}
+              header={header}
+              showUser={showUser}
+              showAssistant={showAssistant}
+              toolFilters={toolFilters}
+              onToggleUser={() => setShowUser((p) => !p)}
+              onToggleAssistant={() => setShowAssistant((p) => !p)}
+              onToggleTool={toggleToolFilter}
+              onClearFilters={clearAllFilters}
+              onDisableAll={disableAllFilters}
+              onOpenTasks={handleOpenTasksOverview}
+            />
 
-      {infoDialog}
-    </div>
-    <AnalysisSidePanel controls={analysisControls} />
+            <div className="flex shrink-0 items-center gap-1.5 border-b border-border bg-muted/30 px-3 py-1">
+              <FileText className="h-3 w-3 shrink-0 text-muted-foreground/60" />
+              <span className="truncate font-mono text-[10px] text-muted-foreground" title={path}>
+                {path}
+              </span>
+              <button
+                className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={handleCopyPath}
+                title={t`Copy transcript path`}
+              >
+                {copiedPath ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+              </button>
+            </div>
+
+            <div className="flex shrink-0 items-center border-b border-border bg-card px-3 py-2">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t`Search transcript…`}
+                className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
+              />
+            </div>
+
+            <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
+              {filteredEntries.map((entry, idx) => {
+                const ts = resolveEntryTimestamp(entry);
+                const isSelected = entry.id === resolvedEntryId;
+                const isCurrent = entry.id === currentEntryId && !isSelected;
+                return (
+                  <div
+                    key={`${entry.id}:${idx}`}
+                    ref={entry.id === pendingScrollId ? scrollTargetRef : undefined}
+                    data-entry-ts={ts ?? undefined}
+                    data-entry-uuid={entry.id}
+                    className={
+                      isSelected
+                        ? 'rounded bg-primary/10 ring-1 ring-primary'
+                        : isCurrent
+                          ? 'border-l-[3px] border-primary/40 bg-muted/20'
+                          : undefined
+                    }
+                    onClick={() => {
+                      if (!ts) return;
+                      internalTimestampRef.current = ts;
+                      setDisplayTimestamp(ts);
+                      setCurrentEntryId(entry.id);
+                      urlUpdatedByScrollRef.current = true;
+                      setSearchParams(
+                        (prev) => {
+                          prev.set('transcript_entry_id', entry.id);
+                          return prev;
+                        },
+                        { replace: true },
+                      );
+                    }}
+                  >
+                    <TranscriptEntryItem
+                      entry={entry}
+                      isExpanded={expandedEntries.has(entry.id)}
+                      onToggle={() => toggleEntry(entry.id)}
+                      toolFilters={toolFilters}
+                      onInfo={() => openInfo(entry)}
+                      onInfoHover={() => scheduleInfoOpen(entry)}
+                      onInfoHoverEnd={cancelInfoOpen}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {infoDialog}
+      </div>
+      <AnalysisSidePanel controls={analysisControls} />
     </div>
   );
 }

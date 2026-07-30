@@ -74,12 +74,20 @@ query time, so a moved file or renamed doc can't leave a dangling edge.
 | `tags:` in SKILL.md frontmatter | rides `skill.metadata` generically | a skill to its subjects |
 | `[[dot.tag.name]]` | any wiki body | a mention (blessed tags resolve by canonical name) |
 
+A source file carries one `tag` capsule **per annotated position** (the name is
+repeatable — see `docs/data-management/asset-capsules.md`), so a test module
+points each of its tests at its own subject and every block reports its own line.
+
 `flow tag <name> get [--mode line|block|full]` assembles that join for an agent:
 blessed header plus ancestors, bound docs, capsule-carrying code sites, and wiki
 mentions. The three modes are LLMIndex's summary tiers (`flow_sdk/llm_index/sizes.py`),
 resolved without an LLM call. The `tag-context` skill teaches agents the trigger (a
 capsule or `tags:` in a file you are about to change) and the line → block → full
 escalation. Asking for a tag includes its descendants (`tag_is_within`).
+`flow tag create <name>` blesses a name from the CLI (generic `POST /graph/tag`;
+idempotent by uuid5-of-name), and the `tagit` skill is the writer that produces
+both carriers at once — a rules doc plus a `breadcrumb.test.*` capsule on the
+failing test it explains.
 
 The same derivation renders as a graph: the `tag` subgraph projection
 (`flow_sdk/tags/graph.py`) emits taxonomy `child` edges (hierarchy) plus `bound` edges
