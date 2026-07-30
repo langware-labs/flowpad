@@ -81,8 +81,10 @@ async def validate_request_context() -> RequestValidation:
 
 
 def _unknown_provider(provider: str) -> OAuthAttachmentResult:
+    from flow_sdk.core.oauth import unresolved_provider_reason  # noqa: PLC0415
+
     return OAuthAttachmentResult(
-        success=False, message=f"Unknown OAuth provider '{provider}'", error=OAuthErrorCode.NO_SOD_FOUND
+        success=False, message=unresolved_provider_reason(provider), error=OAuthErrorCode.NO_SOD_FOUND
     )
 
 
