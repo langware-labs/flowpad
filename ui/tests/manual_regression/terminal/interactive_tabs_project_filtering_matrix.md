@@ -283,10 +283,10 @@ test 23: Selecting current project = no-op
 - validate URL unchanged, no flicker, no `terminal-panel` re-mount
 - run common validation block
 
-test 24: Popover ordering — current first, count desc, alpha tiebreak
+test 24: Popover lists every open project in stable alphabetical order
 - via REST: create `Proj-A`(5), `Proj-B`(3), `Proj-C`(5), `Proj-D`(1); set current = `Proj-B` via chip
 - click chip
-- validate row order: `Proj-B` (current), `Proj-A`, `Proj-C` (count tie, alpha), `Proj-D`
+- validate row order: `Proj-A`, `Proj-B`, `Proj-C`, `Proj-D`
 - validate `Proj-B` row has aria-current="true"
 - run common validation block
 

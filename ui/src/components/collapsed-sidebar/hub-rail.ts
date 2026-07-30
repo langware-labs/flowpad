@@ -1,6 +1,8 @@
 import { ViewType, WorldViewProjection } from '@sdk';
-import { Building2, CheckSquare, FileText, Globe, Home, KeyRound, MessageCircle, Workflow } from 'lucide-react';
+import { Building2, Globe, Home, KeyRound } from 'lucide-react';
 import type React from 'react';
+
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 
 import type { HubRailItemId } from './rail-visibility';
 
@@ -27,6 +29,12 @@ export type HubItem = {
  * into `RAIL_ITEMS` where it would render a silent `null`.
  *
  * `t` is passed in so the caller's `useLingui` owns re-translation on locale change.
+ *
+ * The record-browser entries take their glyph from the backend type registry via
+ * `iconForType(pointer)` — their pointer IS the entity type, and the view each
+ * one opens resolves its icon the same way, so a hardcoded glyph here could
+ * disagree with the destination it leads to. The remaining four are views, not
+ * entity types, and have no registry entry to read.
  */
 export function buildHubRailItems(t: (s: TemplateStringsArray) => string): readonly HubItem[] {
   return [
@@ -34,13 +42,19 @@ export function buildHubRailItems(t: (s: TemplateStringsArray) => string): reado
     {
       id: 'conversations',
       title: t`Conversations`,
-      icon: MessageCircle,
+      icon: iconForType('conversation'),
       viewType: ViewType.HUB_RECORDS,
       pointer: 'conversation',
     },
-    { id: 'tasks', title: t`Tasks`, icon: CheckSquare, viewType: ViewType.HUB_RECORDS, pointer: 'task' },
-    { id: 'docs', title: t`Docs`, icon: FileText, viewType: ViewType.HUB_RECORDS, pointer: 'markdown' },
-    { id: 'flows', title: t`Flows`, icon: Workflow, viewType: ViewType.HUB_RECORDS, pointer: 'graph_workflow' },
+    { id: 'tasks', title: t`Tasks`, icon: iconForType('task'), viewType: ViewType.HUB_RECORDS, pointer: 'task' },
+    { id: 'docs', title: t`Docs`, icon: iconForType('markdown'), viewType: ViewType.HUB_RECORDS, pointer: 'markdown' },
+    {
+      id: 'flows',
+      title: t`Flows`,
+      icon: iconForType('graph_workflow'),
+      viewType: ViewType.HUB_RECORDS,
+      pointer: 'graph_workflow',
+    },
     {
       id: 'world',
       title: t`Your world`,

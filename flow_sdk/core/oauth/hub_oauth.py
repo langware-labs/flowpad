@@ -48,6 +48,38 @@ from flow_sdk.app.actions.desktop_oauth import OAUTH_CALLBACK_TIMEOUT  # noqa: E
 POLL_INTERVAL_SECONDS = 3
 
 
+async def _hub_data(
+    user_id: str,
+    *,
+    action: str,
+    sub_path: str,
+    on_error: str,
+    level: int = logging.WARNING,
+) -> Optional[dict[str, Any]]:
+    """One hub GET on the user, unwrapped to its data dict.
+
+    Every read below shares the same response-shape contract — the hub may answer
+    with the envelope ``{"data": {...}}`` or with the bare dict — and the same
+    "a hub outage is a None, not a traceback" handling. Kept in one place so that
+    contract cannot drift between callers; each caller is left with only its own
+    field read.
+
+    ``on_error`` is logged with the exception appended, at ``level``.
+    """
+    try:
+        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+
+        payload = await hub_get(BuiltinEntityType.USER, user_id, action=action, sub_path=sub_path)
+    except Exception as e:  # noqa: BLE001
+        logger.log(level, "%s: %s", on_error, e)
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+    data = payload.get("data")
+    return data if isinstance(data, dict) else payload
+
+
 async def hub_start_auth(provider: str) -> Optional[dict[str, Any]]:
     """Ask the hub to open an OAuth session for ``provider``.
 
@@ -65,18 +97,15 @@ async def hub_start_auth(provider: str) -> Optional[dict[str, Any]]:
     if not user_id:
         return None
 
-    try:
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
-
-        payload = await hub_get(BuiltinEntityType.USER, user_id, action="oauth", sub_path=f"{provider}/auth")
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[oauth] hub refused to start a flow for %r: %s", provider, e)
-        return None
-
-    if not isinstance(payload, dict):
-        return None
-    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
-    if not isinstance(data, dict) or not data.get("auth_url"):
+    data = await _hub_data(
+        user_id,
+        action="oauth",
+        sub_path=f"{provider}/auth",
+        on_error=f"[oauth] hub refused to start a flow for {provider!r}",
+    )
+    if data is None:
+        return None  # already logged by _hub_data
+    if not data.get("auth_url"):
         logger.warning("[oauth] hub returned no auth_url for %r", provider)
         return None
     return data
@@ -94,18 +123,14 @@ async def hub_holds_credential(credentials_name: str) -> bool:
     user_id = _cloud_user_id()
     if not user_id:
         return False
-    try:
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
-
-        payload = await hub_get(BuiltinEntityType.USER, user_id, action="env-var", sub_path="table")
-    except Exception as e:  # noqa: BLE001
-        logger.debug("[oauth] hub credential check failed: %s", e)
-        return False
-
-    if not isinstance(payload, dict):
-        return False
-    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
-    values = data.get("values") if isinstance(data, dict) else None
+    data = await _hub_data(
+        user_id,
+        action="env-var",
+        sub_path="table",
+        on_error="[oauth] hub credential check failed",
+        level=logging.DEBUG,
+    )
+    values = data.get("values") if data is not None else None
     if not isinstance(values, list):
         return False
     return any(isinstance(v, dict) and v.get("name") == credentials_name for v in values)
@@ -152,20 +177,13 @@ async def hub_credential_value(credentials_name: str) -> Optional[str]:
         logger.debug("[oauth] hub does not hold %r; not asking for its value", credentials_name)
         return None
 
-    try:
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
-
-        payload = await hub_get(
-            BuiltinEntityType.USER, user_id, action="env-var", sub_path=f"{credentials_name}/value"
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[oauth] could not read %r from the hub: %s", credentials_name, e)
-        return None
-
-    if not isinstance(payload, dict):
-        return None
-    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
-    if not isinstance(data, dict):
+    data = await _hub_data(
+        user_id,
+        action="env-var",
+        sub_path=f"{credentials_name}/value",
+        on_error=f"[oauth] could not read {credentials_name!r} from the hub",
+    )
+    if data is None:
         return None
     value = data.get("value")
     return str(value) if value else None

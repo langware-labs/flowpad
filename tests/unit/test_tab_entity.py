@@ -819,6 +819,34 @@ async def test_rename_reflects_onto_target_generically() -> None:
     assert reloaded is not None and reloaded.name == "my pinned name"
 
 
+@pytest.mark.asyncio
+async def test_agentic_process_rename_reflects_without_tab_fs_shadow() -> None:
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.flowpad_types.enums import WorkerType
+    from flow_sdk.fs_store.record_paths import shadow_dir_for
+
+    process = AgenticProcess(
+        name="original",
+        auto_rename=True,
+        worker_type=WorkerType.CLAUDE_CODE,
+    )
+    await process.save()
+    tab = await ensure_tab(
+        f"shell/agentic_process-{process.id}",
+        target_type=AgenticProcess.get_type(),
+        target_id=process.id,
+    )
+
+    await tab.rename("my pinned process")
+
+    reloaded_tab = await Tab.get_one({"id": tab.id})
+    reloaded_process = await AgenticProcess.get_one({"id": process.id})
+    assert reloaded_tab is not None and reloaded_tab.name == "my pinned process"
+    assert reloaded_process is not None and reloaded_process.name == "my pinned process"
+    assert reloaded_process.auto_rename is False
+    assert not shadow_dir_for(Tab.get_type(), tab.id).exists()
+
+
 # ── Scope-keyed identity (assets/explorer): tabHash drives the uuid5 ─────────
 #
 # A scope-keyed dock normalizes its sub-pointer to '' and carries its identity

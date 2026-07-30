@@ -355,6 +355,24 @@ class PtyRegistry:
 
         logger.info(f"PTY session closed: pty_key={pty_key} total_sessions={len(self.states)}")
 
+    async def close_all_sessions(self) -> int:
+        """Close every live PTY tracked by this backend.
+
+        Factory reset must run this while the current ComputeNode rows still
+        exist: ``close_session`` resolves each row to the provider that owns the
+        OS child. Clearing the registry without going through that provider
+        would orphan the worker processes.
+
+        Returns:
+            Number of sessions present when teardown began.
+        """
+        pty_keys = list(self.states)
+        for pty_key in pty_keys:
+            await self.close_session(pty_key)
+        if pty_keys:
+            logger.info("[PtyRegistry] Closed all sessions: count=%d", len(pty_keys))
+        return len(pty_keys)
+
     def is_expired(self, session: PtyState, ttl_seconds: int) -> bool:
         """Check if session has been detached for longer than TTL.
 

@@ -7579,7 +7579,7 @@ msgstr "מזהה מכונה"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Machine secrets"
-msgstr ""
+msgstr "סודות המכונה"
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "Manage API keys"
