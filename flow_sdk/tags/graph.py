@@ -129,18 +129,30 @@ async def build_tag_graph(
             )
             for tag_name in skill["tags"]:
                 edges.append(edge("skill", skill["id"], "tag", tag_name, kind="bound", topology="association"))
+        # One ghost node per FILE, not per capsule block: `tag` is repeatable,
+        # so a test module reports one site per annotated test and those must
+        # coalesce or the payload carries duplicate `file-<path>` keys.
+        by_path: dict[str, dict[str, Any]] = {}
         for site in code_bindings:
+            carrier = by_path.setdefault(site["path"], {"lines": [], "tags": {}})
+            carrier["lines"].append(site["line"])
+            carrier["tags"].update(site["tags"])
+        for path_key, carrier in sorted(by_path.items()):
             nodes.append(
                 node(
                     "file",
-                    site["path"],
-                    label=site["path"],
+                    path_key,
+                    label=path_key,
                     is_ghost=True,
-                    properties={"path": site["path"], "line": site["line"], "tags": site["tags"]},
+                    properties={
+                        "path": path_key,
+                        "lines": sorted(carrier["lines"]),
+                        "tags": carrier["tags"],
+                    },
                 )
             )
-            for tag_name in site["tags"]:
-                edges.append(edge("file", site["path"], "tag", tag_name, kind="bound", topology="association"))
+            for tag_name in carrier["tags"]:
+                edges.append(edge("file", path_key, "tag", tag_name, kind="bound", topology="association"))
 
     # ── edges: wiki mentions (weak, blessed only, best-effort) ──────────────
     if mentions and not tree_only:
