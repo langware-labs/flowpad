@@ -2797,7 +2797,7 @@ msgstr "אישור"
 #: src/journey/JourneyTray.tsx
 #: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Connect"
-msgstr "חבר"
+msgstr "התחבר"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Connect a harness"
@@ -4819,7 +4819,7 @@ msgstr "כל מי שהפרויקט משותף איתו יקבל אותו"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Everything you can reach, as a live graph."
-msgstr "כל מה שניתן להגיע אליו, כגרף חי"
+msgstr "כל מה שניתן להגיע אליו, כגרף חי."
 
 #: src/components/conversation/ExecutePromptDialog.tsx
 #~ msgid "Execute"
@@ -4927,7 +4927,7 @@ msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Explore your organization and everything you can reach."
-msgstr "חקרו את הארגון שלך וכל מה שניתן להגיע אליו"
+msgstr "יש לחקור את הארגון שלך וכל מה שניתן להגיע אליו."
 
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Explorer"
@@ -11229,7 +11229,7 @@ msgstr "מאגר"
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Repo is not public — connect GitHub to continue."
-msgstr "המאגר אינו ציבורי — יש לחבר את GitHub כדי להמשיך."
+msgstr "המאגר אינו ציבורי — יש להתחבר ל-GitHub כדי להמשיך."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -11740,7 +11740,7 @@ msgstr "מדדי Sandbox"
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sandbox unavailable"
-msgstr ""
+msgstr "סביבה לא זמינה"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
@@ -12873,7 +12873,7 @@ msgstr "היכנסו"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sign in to create desktops"
-msgstr ""
+msgstr "יש להתחבר לצורך יצירת שולחנות עבודה"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Sign in to see who's a member"
@@ -13623,7 +13623,7 @@ msgstr "צוותים"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Teams and people across your org."
-msgstr "צוותים ואנשים ברחבי הארגון"
+msgstr "צוותים ואנשים ברחבי הארגון שלך."
 
 #: src/pages/flow-page/vibe-workspace.tsx
 #~ msgid "Tell the assistant what to build."
