@@ -292,21 +292,12 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
                 return ApiSuccessResponse(data=hub_payload)
 
         # The hub cannot carry this flow — unreachable, or its callback host is
-        # not serving. Either way it is "hub unavailable", so a provider with a
-        # local grant uses it rather than being refused: a device code beats no
-        # connection at all.
-        if local is not None:
-            logger.info(
-                "OAuth: hub cannot run %s (%s); falling back to the local %s flow",
-                provider,
-                hub_refusal or "unreachable",
-                local.kind.value,
-            )
-            return await get_desktop_oauth_auth_url(provider, user_id)
-
-        # Nothing local to fall back to. Say precisely why rather than letting
-        # the desktop path answer "not supported", which would be misleading.
-        if hub_refusal:
+        # not serving. Either way it is "hub unavailable": a provider with a
+        # local grant falls through to it below (a device code beats no
+        # connection), and one without gets the reason rather than the desktop
+        # path's "not supported", which would point at the wrong thing.
+        logger.info("OAuth: hub cannot run %s (%s)", provider, hub_refusal or "unreachable")
+        if hub_refusal and local is None:
             return ApiFailResponse(message=hub_refusal)
 
     return await get_desktop_oauth_auth_url(provider, user_id)

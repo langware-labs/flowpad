@@ -247,6 +247,26 @@ async def _broadcast_llm_config_msg(
         logger.error(f"Failed to broadcast LlmConfigMessage: {e}")
 
 
+async def _broadcast_oauth_msg(oauth_request_id: str, status: OAuthMessageStatus) -> None:
+    """Announce that an OAuth FLOW ended, on the channel built for exactly that.
+
+    ``LlmConfigMessage`` says "this user's LLM config changed" and grew
+    ``oauth_request_id``/``status`` only because nobody was emitting this. The
+    client's ``OAuthService.onOAuthMessage`` is the completion state machine —
+    it closes the popup AND runs the auto-attach to the flow's target entity.
+    Without this broadcast a desktop popup flow never reached it, so its token
+    was stored and then never attached to the project that asked for it.
+    """
+    try:
+        from flow_sdk.api.messages import OAuthMessage  # noqa: PLC0415
+        from flow_sdk.server.routes.websocket import broadcast  # noqa: PLC0415
+
+        msg = OAuthMessage(oauth_request_id=oauth_request_id, status=status)
+        await broadcast(json.dumps(msg.model_dump(mode="json"), default=str))
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Failed to broadcast OAuthMessage: {e}")
+
+
 def _build_anthropic_auth_url(
     client_id: str,
     redirect_uri: str,
@@ -875,7 +895,8 @@ async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
                     )
                 )
 
-            # Send WebSocket notification that OAuth completed successfully
+            # Two messages, two meanings: the config change, and the flow ending.
+            # The second is what closes the popup and triggers the attach.
             try:
                 await _broadcast_llm_config_msg(
                     is_configured=True,
@@ -883,6 +904,7 @@ async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
                     oauth_request_id=state,
                     status=OAuthMessageStatus.SUCCESS,
                 )
+                await _broadcast_oauth_msg(state, OAuthMessageStatus.SUCCESS)
             except Exception as e:
                 logger.error(f"Failed to send WebSocket success notification: {e}")
 
