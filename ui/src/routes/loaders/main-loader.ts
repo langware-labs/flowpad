@@ -6,7 +6,8 @@
  * Shell/process loading lives in `./load-shell` and `./load-process`.
  */
 
-import { AgenticProcess, ContextEntitiesEnum, dataContext, initSdk, Project, systemTools, TypeId } from '@sdk';
+import { AgenticProcess, cloudManager, ContextEntitiesEnum, dataContext, initSdk, Project, systemTools, TypeId } from '@sdk';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation';
 import { canonicalProcessDockPath } from '@src/navigation/process-dock-canonicalization';
 import { canonicalCredentialsDockPath } from '@src/navigation/credentials-dock-canonicalization';
@@ -132,6 +133,19 @@ export async function loadAgentApp(args: LoaderArgs) {
   if (bootstrapError?.isServiceUnavailable || bootstrapError?.type === 'network') {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw dataContext.bootstrapError;
+  }
+
+  // Hub server + anonymous visitor: the hub app is account-scoped, so an
+  // unauthenticated open goes to the login flow instead of the visitor home
+  // (custom-JWT hubs auto-sign-in the local dev user; Auth0 shows the
+  // universal login). Full browser navigation — the login route lives on the
+  // backend, not in the SPA. Entry routes (/entry/* invite & landing pages)
+  // run their own loaders and stay reachable anonymously.
+  if (isHubOnly() && !dataContext.bootstrapInfo?.user) {
+    t.done(slowThresholdSeconds);
+    void cloudManager.login();
+    // Halt this load — the browser is navigating away.
+    return await new Promise<never>(() => {});
   }
 
   const { processId, viewType } = params;

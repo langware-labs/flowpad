@@ -785,7 +785,7 @@ function useAttachedParentTaskIds(entities: TypeId[]): Set<string> {
   return parentIds;
 }
 
-function MessageEntityChip({
+export function MessageEntityChip({
   typeId,
   conversationId,
   projectId,

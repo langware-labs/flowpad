@@ -48,6 +48,7 @@ vi.mock('@src/pages/hub-home/NewDesktopDialog', () => ({ NewDesktopDialog: () =>
 
 import { PageId, ViewType } from '@sdk';
 
+import { TooltipProvider } from '@src/components/ui/tooltip';
 import { HubHome } from '@src/pages/hub-home/HubHome';
 
 describe('HubHome desktop secrets button', () => {
@@ -55,7 +56,14 @@ describe('HubHome desktop secrets button', () => {
   afterEach(() => cleanup());
 
   it('opens Credentials on the hub page, never a page-less dock', async () => {
-    render(<HubHome />);
+    // The New Desktop button is wrapped in a Tooltip (it explains why creating
+    // is disabled), and radix Tooltip throws outside a provider. The real app
+    // gets one from the page shell; this test renders HubHome alone.
+    render(
+      <TooltipProvider>
+        <HubHome />
+      </TooltipProvider>,
+    );
 
     await userEvent.click(screen.getByTestId('desktop-secrets'));
 
