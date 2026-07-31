@@ -147,7 +147,21 @@ async def test_capability_install_process_uses_default_harness_worker(monkeypatc
     async def fake_resolve_default_harness_kind():
         return CapabilityKind.CODEX_CLI.value
 
-    monkeypatch.setattr(instance_settings_pkg, "get_instance_settings", lambda: SimpleNamespace(flow_home=str(tmp_path)))
+    # Only `flow_home` is being redirected; everything else must stay real,
+    # because the install now launches through the named `capability-installer`
+    # Agent, and upserting its deployment reads settings this test never
+    # thought about (instance_name, records_root, …). Delegating beats
+    # enumerating — a substituted namespace goes stale the moment a new
+    # setting is read.
+    _real_settings = instance_settings_pkg.get_instance_settings()
+
+    class _FlowHomeOverride:
+        flow_home = str(tmp_path)
+
+        def __getattr__(self, item):
+            return getattr(_real_settings, item)
+
+    monkeypatch.setattr(instance_settings_pkg, "get_instance_settings", _FlowHomeOverride)
     monkeypatch.setattr(agentic_process_pkg, "AgenticProcess", FakeAgenticProcess)
     monkeypatch.setattr(registry_mod, "resolve_default_harness_kind", fake_resolve_default_harness_kind)
     monkeypatch.setattr(registry_mod, "_schedule_install_monitor", lambda process_id, kind: scheduled.append((process_id, kind)))

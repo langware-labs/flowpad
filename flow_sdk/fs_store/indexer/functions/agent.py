@@ -36,6 +36,7 @@ AGENT_SPEC_FIELDS = (
     "subagents",
     "additional_dirs",
     "load_flowpad_assistant",
+    "cli_options",
     "enabled",
 )
 

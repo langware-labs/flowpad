@@ -45,7 +45,48 @@ async def get_agent(ref: AgentRef) -> Optional["Agent"]:
         found = await Agent.get_by_id(text)
         if found is not None:
             return found
-    return await Agent.get_one({"name": text})
+    found = await Agent.get_one({"name": text})
+    return found if found is not None else _shipped_agent(text)
+
+
+def _shipped_agent(name: str) -> Optional["Agent"]:
+    """Read a shipped agent straight off disk when the DB has no row for it.
+
+    The internal agents ship inside the package, next to the code that launches
+    them — so resolving one must not depend on the indexer having walked the
+    assistant project yet. Without this, every converted launch site breaks on a
+    cold instance (and in any test with an empty DB) even though the agent.md is
+    right there. The DB row still wins whenever it exists: that is the copy a
+    user can edit.
+
+    Returned UNSAVED and deliberately so — persisting here would run the
+    ``owns_main_ref`` render and rewrite the shipped file from a partial row.
+    """
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+    from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.functions.agent import parse_agent_markdown  # noqa: PLC0415
+
+    path = flowpad_assistant_project_root() / "agentic-assets" / "agent" / name / "agent.md"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    parsed = parse_agent_markdown(text, name)
+    # A shipped agent.md carries an identity capsule, so read the id from there
+    # rather than minting one: the fallback Agent must be the SAME entity the
+    # indexer will produce, or its deployment id would change the moment the
+    # walk lands and `runs()` would split across two deployments.
+    from flow_sdk.capsules import CodeCommentCapsule  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE  # noqa: PLC0415
+
+    agent_id = None
+    try:
+        capsule = CodeCommentCapsule(path).read(IDENTITY_CAPSULE.name)
+        if capsule is not None:
+            agent_id = (capsule.data or {}).get("id")
+    except Exception:
+        agent_id = None
+    return Agent(**({"id": str(agent_id)} if agent_id else {}), **parsed)
 
 
 async def get_agent_local_deployment(ref: AgentRef) -> "AgentDeployment":
