@@ -61,6 +61,39 @@ def _generate_session_code() -> str:
     return f"{left}-{right}"
 
 
+def _detach_git_history(repo_root: Path) -> None:
+    """Replace a template checkout's history with an empty one, in place.
+
+    Blocking (rmtree + subprocess) — call via ``asyncio.to_thread``.
+
+    Deliberately narrow about what it will delete. It removes exactly one path,
+    ``<repo_root>/.git``, and only when that is a real directory INSIDE the
+    directory we just cloned into: a template repo controls its own contents,
+    and a ``.git`` symlink pointing at somebody else's repository is the one
+    way this could be turned into a delete-arbitrary-directory primitive. A
+    checkout with no ``.git`` (already detached, re-entered) is fine — this is
+    idempotent by design, since setup may be retried.
+    """
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    root = Path(repo_root).resolve()
+    git_dir = root / ".git"
+    if git_dir.is_symlink():
+        raise RuntimeError(f"refusing to detach: {git_dir} is a symlink")
+    if git_dir.is_dir():
+        # Confirm it really is under the root we resolved, not reached via one.
+        if git_dir.resolve().parent != root:
+            raise RuntimeError(f"refusing to detach: {git_dir} resolves outside {root}")
+        shutil.rmtree(git_dir)
+    # A fresh empty repo so the customer's first commit is theirs. No commit is
+    # made — that needs a configured identity, and failing setup on a missing
+    # ``user.email`` would be absurd.
+    subprocess.run(
+        ["git", "init", "-q"], cwd=root, capture_output=True, timeout=30, check=False
+    )
+
+
 class ProjectInitializeOptions(ComputeSourceControlInitializeOptions):
     model_config = ConfigDict(alias_generator=to_camel, validate_by_name=True)
 
@@ -935,6 +968,94 @@ class Project(Entity):
         except Exception as exc:  # noqa: BLE001
             return ApiFailResponse(message=str(exc), status_code=400)
 
+    @action.post(action_name="setup-from-bootstrap-git")
+    async def setup_from_bootstrap_git(self, url: str, branch: str = "") -> ApiResponse:
+        """Seed this project from a TEMPLATE repo — files, not history.
+
+        The sibling of ``setup_from_git``, and deliberately its opposite in the
+        one way that matters. ``setup_from_git`` binds a project to a repo it
+        keeps tracking; this SEVERS the link: the checkout's ``.git`` is removed
+        and a fresh empty repo initialized in its place, so the customer's first
+        commit is their own and the vendor's history is not theirs to carry.
+        The template is a starting point, not an upstream.
+
+        Which leaves the obvious question — how does a template improve after it
+        is cloned? It doesn't. That is what ``.flowpad/bootstrap.json``'s
+        ``helpdesks`` are for: they are attached as ordinary context folders,
+        stay linked to the vendor's repo, and so keep updating in every
+        engagement long after the template that named them went stale. Anything
+        meant to keep improving belongs in a declared help desk, not in the
+        template body.
+
+        Not re-committed after init: an initial commit needs a git identity this
+        machine may not have configured, and failing setup on that would be
+        absurd. The customer gets their files staged for a first commit they
+        author.
+        """
+        if not url or not url.strip():
+            return ApiFailResponse(message="url is required")
+
+        origin = GitOrigin.from_url(url.strip(), branch=branch.strip(), rel_path=".")
+        if origin is None:
+            return ApiFailResponse(message=f"Not a recognizable git URL: {url}")
+
+        from flow_sdk.app.actions.oauth_action import (  # noqa: PLC0415
+            _get_github_token_for_current_user,
+        )
+        from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
+            _index_additional_dir,
+        )
+        from flow_sdk.builtin.bootstrap_manifest import read_bootstrap_manifest  # noqa: PLC0415
+
+        # A fresh slot every time: reusing an existing checkout is right for
+        # ``setup_from_git`` (same project, same repo) and wrong here — two
+        # engagements from one template are two independent working copies.
+        target_dir = str(await asyncio.to_thread(origin.next_clone_target))
+        token, _ = await _get_github_token_for_current_user()
+        ok, message = await git_clone(
+            origin.clone_url(), target_dir, branch=origin.branch or None, token=token
+        )
+        if not ok:
+            return ApiFailResponse(message=message, status_code=502)
+
+        target = Path(target_dir)
+        # Read the manifest BEFORE severing history — the file itself stays, it
+        # is only the vendor's `.git` that goes.
+        manifest = read_bootstrap_manifest(target)
+        await asyncio.to_thread(_detach_git_history, target)
+
+        self.fs_storage_mount_path = canonical_posix_path(target_dir)
+        if not self.name:
+            self.name = os.path.basename(target_dir.rstrip(os.sep))
+        await self.save()
+        await self.setup_for_desktop()
+        await _index_additional_dir(target_dir)
+
+        attached: list[dict] = []
+        failed: list[dict] = []
+        for desk_url in manifest.helpdesks:
+            response = await self.add_context_dir_from_git(desk_url, scope="private")
+            record = {"url": desk_url}
+            if isinstance(response, ApiSuccessResponse):
+                record.update(response.data or {})
+                attached.append(record)
+            else:
+                # One unreachable desk must not undo a project that is already
+                # set up — report it and let the caller offer a retry.
+                record["error"] = getattr(response, "message", "attach failed")
+                failed.append(record)
+
+        return ApiSuccessResponse(
+            data={
+                "project_id": self.id,
+                "path": self.fs_storage_mount_path,
+                "template_url": origin.clone_url(),
+                "helpdesks": attached,
+                "helpdesks_failed": failed,
+                "autolaunch_journey": manifest.autolaunch_journey,
+            }
+        )
+
     @property
     def main_ref(self):
         """FSRef pointing to the project working directory."""
@@ -1723,6 +1844,70 @@ class Project(Entity):
         if isinstance(resp, ApiSuccessResponse):
             schedule_auto_index(str(self.id), created=False)
         return resp
+
+    @action.post(action_name="add-context-dir-from-git")
+    async def add_context_dir_from_git(
+        self,
+        url: str,
+        branch: str = "",
+        scope: str = "private",
+        *,
+        preferred_root=None,
+    ) -> "ApiResponse":
+        """Clone a git repo and attach it to this project as a context folder.
+
+        The deterministic form of what the ``git-context-folder`` wizard does in
+        prose for its ``existing`` mode. It composes pieces that already exist
+        rather than reimplementing them:
+
+        * ``Folder.mint_for_origin`` keys the folder by ``origin.key()``, so the
+          SAME repo attached to a second project reuses one Folder and one
+          checkout — the second attach costs no download.
+        * ``Folder.resolve_location`` owns clone/reuse/pull and the post-clone
+          index, including the read-only guard that keeps the checkout pullable.
+        * ``add_context_dir`` owns the link, so ``already_linked`` / ``is_new``
+          and the legacy migration stay in exactly one place.
+
+        ``rel_path="."`` is deliberate: the whole repo is the context folder, and
+        a subfolder-scoped origin would never see a manifest at the repo root.
+
+        ``branch`` is pinned when given because ``_resolve_git_checkout`` only
+        pulls when the origin names a branch — an unpinned folder would freeze
+        at whatever it first cloned.
+        """
+        if not url or not url.strip():
+            return ApiFailResponse(message="url is required")
+        if scope not in ("private", "shared"):
+            return ApiFailResponse(message="scope must be 'private' or 'shared'")
+
+        origin = GitOrigin.from_url(url.strip(), branch=branch.strip(), rel_path=".")
+        if origin is None:
+            return ApiFailResponse(message=f"Not a recognizable git URL: {url}")
+
+        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
+
+        folder = await Folder.mint_for_origin(origin)
+        resolved = await folder.resolve_location(preferred_root=preferred_root)
+        data = getattr(resolved, "data", None) or {}
+        if data.get("kind") != "ready" or not folder.path:
+            # Surface the driver's own message — it names the actual failure
+            # (auth, unreachable host, unsafe rel_path) far better than we could.
+            return ApiFailResponse(
+                message=data.get("message") or "Could not materialize the repository",
+                status_code=502,
+            )
+
+        linked = await self.add_context_dir(folder.path, scope=scope)
+        if not isinstance(linked, ApiSuccessResponse):
+            return linked
+        return ApiSuccessResponse(
+            data={
+                "folder_id": folder.id,
+                "path": folder.path,
+                "scope": scope,
+                "cloned_url": origin.clone_url(),
+            }
+        )
 
     @action.post(action_name="add-context-dir")
     async def add_context_dir(self, path: str, scope: str = "private") -> "ApiResponse":

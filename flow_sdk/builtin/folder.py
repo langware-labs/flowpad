@@ -179,8 +179,13 @@ class Folder(Entity):
     # ── Materialize ──────────────────────────────────────────────────────────
 
     @action.post(action_name="resolve-location")
-    async def resolve_location(self) -> "object":
+    async def resolve_location(self, *, preferred_root=None) -> "object":
         """Materialize this folder's origin into a local path on THIS machine.
+
+        ``preferred_root`` directs where a fresh checkout lands. Callers that
+        manage a folder on the user's behalf (a helpdesk portal, say) pass a
+        root outside the visible workspace; ordinary context folders pass
+        nothing and take the driver's default placement.
 
         For a ``local`` origin: verify base+rel exist, set ``path``. For a
         transportable origin (git/…): clone/pull via the kind's driver, join the
@@ -201,7 +206,9 @@ class Folder(Entity):
         if rel and not is_safe_rel_path(rel):
             return ApiSuccessResponse(data={"kind": "error", "message": "origin has an unsafe rel_path"})
         try:
-            local_root, _project_id = await get_origin_driver(origin.kind).materialize(origin)
+            local_root, _project_id = await get_origin_driver(origin.kind).materialize(
+                origin, preferred_root=preferred_root
+            )
         except FileNotFoundError as exc:
             return ApiSuccessResponse(data={"kind": "error", "message": f"not present: {exc}"})
         except Exception as exc:  # driver/materialize failure (clone error, etc.)
