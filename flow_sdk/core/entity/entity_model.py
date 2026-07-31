@@ -1449,7 +1449,7 @@ class Entity(DBEntity):
             prompt = f"Use the {skill_name} skill to set up {typeid_str}."
             # ``project_id``/``workdir`` are binding-frozen — set in the ctor
             # only, which is why they ride the launch call rather than being
-            # assigned after. ``start=False``: the first turn is scheduled
+            # assigned after. The first turn is scheduled
             # separately so this returns a DisplayTarget immediately.
             deployment = await get_agent_local_deployment("artifact-setup")
             ap = await deployment.build(

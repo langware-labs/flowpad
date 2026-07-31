@@ -688,7 +688,7 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
     # Identity (permissions, model, system prompt) comes from the named
     # `capability-installer` Agent; only the WORKER is decided here, because it
     # follows whichever harness the `harness` capability resolved — which the
-    # agent cannot know in advance. start=False keeps the two-step shape below:
+    # agent cannot know in advance. build() keeps the two-step shape below:
     # save with notify, then prompt, so the caller can report either failure
     # separately and hand back process_id even when the start fails.
     deployment = await get_agent_local_deployment("capability-installer")

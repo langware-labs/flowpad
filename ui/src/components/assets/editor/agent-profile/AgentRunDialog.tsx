@@ -19,7 +19,6 @@ interface AgentRunDialogProps {
   agent: Agent;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onRunningChange?: (running: boolean) => void;
 }
 
 /**
@@ -32,7 +31,7 @@ interface AgentRunDialogProps {
  * it on; a deployment we cannot reach fails loudly here rather than silently
  * executing on the server, so the error is worth surfacing verbatim.
  */
-export function AgentRunDialog({ agent, open, onOpenChange, onRunningChange }: AgentRunDialogProps) {
+export function AgentRunDialog({ agent, open, onOpenChange }: AgentRunDialogProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [prompt, setPrompt] = useState('');
@@ -41,8 +40,6 @@ export function AgentRunDialog({ agent, open, onOpenChange, onRunningChange }: A
   useEffect(() => {
     if (open) setPrompt('');
   }, [open]);
-
-  useEffect(() => onRunningChange?.(running), [running, onRunningChange]);
 
   const run = async () => {
     const text = prompt.trim();

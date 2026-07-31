@@ -1,5 +1,4 @@
 import { ReactNode, useEffect, useState } from 'react';
-import { Trans } from '@lingui/react/macro';
 
 import { Input } from '@src/components/ui/input';
 
@@ -22,35 +21,6 @@ export function AgentSection({
   );
 }
 
-/** Labelled free-text field that commits on blur. */
-export function AgentField({
-  label,
-  value,
-  placeholder,
-  onCommit,
-}: {
-  label: string;
-  value: string;
-  placeholder?: string;
-  onCommit: (value: string) => void;
-}) {
-  const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
-  return (
-    <label className="block space-y-1.5">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <Input
-        value={draft}
-        placeholder={placeholder}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => {
-          if (draft !== value) onCommit(draft);
-        }}
-      />
-    </label>
-  );
-}
-
 /**
  * A suggestion-backed text field: the vocabulary is advisory, so the control
  * stays a free-text input with a datalist rather than a hard `<select>`.
@@ -62,13 +32,13 @@ export function AgentField({
 export function AgentSelectField({
   label,
   value,
-  options,
+  options = [],
   placeholder,
   onCommit,
 }: {
   label: string;
   value?: string | null;
-  options: readonly string[];
+  options?: readonly string[];
   placeholder?: string;
   onCommit: (value: string | undefined) => void;
 }) {
@@ -99,74 +69,42 @@ export function AgentSelectField({
 }
 
 /**
- * Comma-separated list editor.
+ * Comma-separated list editor for a DECLARED-ONLY field.
  *
- * `triState` is set ONLY for the two fields that are genuinely `Optional` in
- * the backend — `tools` and `disallowed_tools` (`Optional[list[str]] = None`).
- * For those, unset means "inherit everything the harness allows" and `[]` means
- * "revoke", and `agent_default_body` preserves the difference, so the UI must
- * too: an empty input means unset, and revoking is an explicit action.
- *
- * The other list fields (`skills`, `mcp_servers`, `subagents`,
- * `additional_dirs`) are `default_factory=list` — always `[]`, never null — so
- * showing them as "revoked" would be a lie about what the agent is configured
- * to do. They get a plain input.
+ * `tools`, `disallowed_tools`, `skills`, `mcp_servers` and `subagents`
+ * round-trip through `agent.md` and show on the agent's card, but nothing
+ * projects them into the worker yet — no `AgentOptions` subclass has a field
+ * to carry them. An earlier version of this control offered
+ * "inherited / revoke all", which claimed a gate the system does not apply.
+ * It says what is true instead, and the affordance returns with enforcement.
  */
 export function AgentListField({
   label,
   value,
-  triState = false,
   onCommit,
 }: {
   label: string;
   value?: string[] | null;
-  triState?: boolean;
-  onCommit: (value: string[] | null | undefined) => void;
+  onCommit: (value: string[] | undefined) => void;
 }) {
   const text = (value ?? []).join(', ');
   const [draft, setDraft] = useState(text);
   useEffect(() => setDraft(text), [text]);
 
-  const isUnset = value == null;
-  const isRevoked = Array.isArray(value) && value.length === 0;
-
-  const commit = () => {
-    if (draft === text) return;
-    const items = draft
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (items.length) return onCommit(items);
-    // Empty input: "unset" for a tri-state field (revoking is explicit),
-    // plain [] for a field that has no unset state.
-    onCommit(triState ? undefined : []);
-  };
-
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">{label}</span>
-        {triState ? (
-          <span className="text-[11px] text-muted-foreground">
-            {isUnset ? (
-              <Trans>inherited</Trans>
-            ) : isRevoked ? (
-              <button type="button" className="underline" onClick={() => onCommit(undefined)}>
-                <Trans>revoked — inherit instead</Trans>
-              </button>
-            ) : (
-              <button type="button" className="underline" onClick={() => onCommit([])}>
-                <Trans>revoke all</Trans>
-              </button>
-            )}
-          </span>
-        ) : null}
-      </div>
+      <span className="text-xs text-muted-foreground">{label}</span>
       <Input
         value={draft}
-        placeholder={triState && isUnset ? '—' : ''}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
+        onBlur={() => {
+          if (draft === text) return;
+          const items = draft
+            .split(',')
+            .map((v) => v.trim())
+            .filter(Boolean);
+          onCommit(items.length ? items : undefined);
+        }}
       />
     </div>
   );

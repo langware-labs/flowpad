@@ -4754,13 +4754,13 @@ class AgenticProcess(Entity):
         type is unsupported for embedding. Raises for resolution / IO failures.
         """
         from flow_sdk.fs_store.operations.skill import copy_skill_to, get_skill
-        from flow_sdk.fs_store.operations.subagent import get_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
         from flow_sdk.fs_store.operations.subagent import load_subagent as _load_agent
 
         if ref.type == "subagent":
             # Resolve by id (uuid5-derived from the .md path) first, then fall back
             # to name-based lookup for agents the UI knows by name only.
-            agent = get_agent(ref.id) or _load_agent(ref.id)
+            agent = get_subagent(ref.id) or _load_agent(ref.id)
             if agent is None:
                 raise FileNotFoundError(f"Agent not found: {ref.id}")
             target_dir = assets_dir / ".claude" / "agents"
@@ -4789,11 +4789,11 @@ class AgenticProcess(Entity):
         import shutil
 
         from flow_sdk.fs_store.operations.skill import get_skill
-        from flow_sdk.fs_store.operations.subagent import get_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
         from flow_sdk.fs_store.operations.subagent import load_subagent as _load_agent
 
         if ref.type == "subagent":
-            agent = get_agent(ref.id) or _load_agent(ref.id)
+            agent = get_subagent(ref.id) or _load_agent(ref.id)
             name = agent.name if agent else ref.id
             target = assets_dir / ".claude" / "agents" / f"{name}.md"
             if target.exists():
@@ -4845,9 +4845,9 @@ class AgenticProcess(Entity):
             if ref.type == "subagent" and self.embedded_agent_ids:
                 # Legacy processes may still carry the agent by NAME — drop it
                 # too, or the persona file is gone while an INLINE row lingers.
-                from flow_sdk.fs_store.operations.subagent import get_agent  # noqa: PLC0415
+                from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
 
-                agent = get_agent(ref.id)
+                agent = get_subagent(ref.id)
                 self._drop_legacy_agent_name(agent.name if agent else None)
             await self.save()
             return ApiSuccessResponse(data={"ok": True, "ref": entity_ref})
@@ -5276,10 +5276,10 @@ class AgenticProcess(Entity):
         """
         try:
             if ref.type == "subagent":
-                from flow_sdk.fs_store.operations.subagent import get_agent  # noqa: PLC0415
+                from flow_sdk.fs_store.operations.subagent import get_subagent  # noqa: PLC0415
                 from flow_sdk.fs_store.operations.subagent import load_subagent as _load_agent
 
-                rec = get_agent(ref.id) or _load_agent(ref.id)
+                rec = get_subagent(ref.id) or _load_agent(ref.id)
                 if rec is None:
                     return None
                 name = rec.name or ref.id
