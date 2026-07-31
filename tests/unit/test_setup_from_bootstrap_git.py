@@ -239,11 +239,39 @@ async def test_the_checkout_is_named_after_the_engagement_not_the_template(
 
     leaf = Path(response.data["path"]).name
     assert "bootstrap" not in leaf, "the template's name must not become the customer's"
-    # Exactly the name, with no ``-2``: a Project reserves ``<workspace>/<name>``
-    # when constructed, and treating that empty reservation as a collision both
-    # renamed the engagement and stranded an empty directory the workspace scan
-    # then minted a second, empty project for.
-    assert leaf == "northwind-support", leaf
+    # ``startswith``, not equality: the test workspace is shared across runs, so
+    # earlier engagements leave real (non-empty) directories behind and a
+    # suffix here is legitimate. The empty-reservation rule that made EVERY
+    # engagement suffix is pinned hermetically in
+    # ``test_an_empty_reservation_is_not_a_collision``.
+    assert leaf.startswith("northwind-support"), leaf
+
+
+def test_an_empty_reservation_is_not_a_collision(tmp_path: Path, monkeypatch) -> None:
+    """A Project reserves ``<workspace>/<name>`` when it is constructed.
+
+    Treating that empty reservation as taken renamed every engagement to
+    ``<name>-2`` AND stranded the reservation, which the workspace scan then
+    minted a second, empty project for — two identically-named projects in the
+    picker, with the customer's work in the suffixed one.
+    """
+    from flow_sdk.builtin import project as project_module
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setattr(project_module, "AGENT_MOUNT_FOLDER", str(workspace))
+
+    # Nothing there yet → the plain name.
+    assert project_module._fresh_clone_slot("acme").name == "acme"
+
+    # An EMPTY directory is not a collision: nothing can be lost, and
+    # ``git clone`` writes into one happily.
+    (workspace / "acme").mkdir()
+    assert project_module._fresh_clone_slot("acme").name == "acme"
+
+    # A directory with contents IS a collision — that is somebody's work.
+    (workspace / "acme" / "README.md").write_text("theirs", encoding="utf-8")
+    assert project_module._fresh_clone_slot("acme").name == "acme-2"
 
 
 @pytest.mark.asyncio

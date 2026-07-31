@@ -38,6 +38,7 @@ import pytest
 from flow_sdk.builtin.folder import Folder
 from flow_sdk.builtin.helpdesk import Helpdesk
 from flow_sdk.builtin.project import Project
+from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.schema.type_info import register_all
 
 register_all()
@@ -166,6 +167,42 @@ async def test_attaching_leaves_the_vendors_checkout_pullable(
         f"attaching a repo must leave it pullable; these tracked files were "
         f"modified: {tracked}"
     )
+
+
+@pytest.mark.asyncio
+async def test_a_borrowed_checkout_is_known_to_be_unwritable(
+    tmp_path: Path, vendor_repo: str
+) -> None:
+    """The rule the ATTACH path cannot express on its own.
+
+    A Project can own a vendor checkout without ever having attached it: the
+    workspace walk mints a Project for any directory in the workspace, and a
+    context-folder clone lands right beside the user's own projects. That walk
+    indexes writably and has no call-site flag to inherit, so it stamps
+    identity capsules into the vendor's tracked files and breaks their next
+    pull — the same regression as before, reached a third way.
+
+    Passing ``read_only`` at each call site could not fix that (there is no
+    call site — the walk found the directory by itself). The Folder row is what
+    knows the bytes came from elsewhere, so the rule is derived from it.
+    """
+    project = await _project(tmp_path, "customer-a")
+    response = await project.add_context_dir_from_git(vendor_repo, scope="private")
+    assert response.status == "SUCCESS", response
+    checkout = canonical_posix_path(response.data["path"])
+
+    borrowed = await Folder.borrowed_checkout_paths()
+    assert checkout in borrowed, (
+        "a checkout materialized from a transportable origin must be reported "
+        "as borrowed, or the project walk will write into it"
+    )
+
+    # A directory the user actually owns must NOT be reported — flagging every
+    # folder read-only would stop the user's own assets from ever minting ids.
+    own = tmp_path / "my-own-notes"
+    own.mkdir()
+    await project.add_context_dir(str(own), scope="private")
+    assert canonical_posix_path(str(own)) not in await Folder.borrowed_checkout_paths()
 
 
 @pytest.mark.asyncio

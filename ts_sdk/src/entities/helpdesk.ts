@@ -31,13 +31,28 @@ export interface HelpdeskEnsureResult {
   mount_path: string | null;
   /** True when this call performed the clone (false = already present, or no portal). */
   cloned: boolean;
+  /**
+   * True when this desk came from the project's OWN context folders rather
+   * than from the hub. Such a checkout is a context folder the project already
+   * resolved and indexed, so the caller must skip fetch/index — those steps
+   * operate on the app-managed portal slot, which this is not.
+   */
+  adopted?: boolean;
 }
 
-/** Step A — the checkout exists, cloning it first if it doesn't. Idempotent. */
-export async function helpdeskEnsure(): Promise<HelpdeskEnsureResult> {
+/**
+ * Step A — the checkout exists, cloning it first if it doesn't. Idempotent.
+ *
+ * `projectId` is the project the user is working in. A project that has
+ * adopted a desk of its own (a vendor's help desk attached as a context
+ * folder) reaches THAT desk; only a project with none falls through to the
+ * instance-wide desk the hub advertises. Omitting it always resolves to the
+ * hub's — correct for surfaces with no project in scope.
+ */
+export async function helpdeskEnsure(projectId?: string | null): Promise<HelpdeskEnsureResult> {
   const action = new ActionInfo('helpdesk-ensure', null, null, 'POST');
-  action.bodyParameters = {};
-  const res = await dataManager.callAction<Record<string, never>, HelpdeskEnsureResult>(action);
+  action.bodyParameters = projectId ? { project_id: projectId } : {};
+  const res = await dataManager.callAction<Record<string, string>, HelpdeskEnsureResult>(action);
   return res!;
 }
 

@@ -104,8 +104,19 @@ class FsRecordsActionsMixin:
                 IndexDecision,
                 gate_root,
             )
+            from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
+            from flow_sdk.fs_store.path_utils import (  # noqa: PLC0415
+                canonical_posix_path as _canonical,
+            )
             from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
             _home = get_instance_settings().user_home
+            # Checkouts of somebody else's repo. A Project can own one without
+            # ever having attached it — the workspace walk mints a Project for
+            # any directory in the workspace, including a context-folder clone
+            # sitting beside the user's own projects. Writing identity capsules
+            # into one breaks the vendor's next pull, so the walk has to know.
+            # Fetched ONCE per scan, not per root.
+            _borrowed = await Folder.borrowed_checkout_paths()
             for pid in sf.projects:
                 mount = project_root_by_id.get(str(pid))
                 if mount is None:
@@ -165,6 +176,10 @@ class FsRecordsActionsMixin:
                         record_type=RecordType.REAL_PROJECT_CWD,
                         scope="project",
                         project_id=pid,
+                        # Read-only propagates to children, so flagging the root
+                        # suppresses the write for the whole tree and `mint_id`
+                        # falls back to its deterministic key.
+                        read_only=_canonical(str(mount_path)) in _borrowed,
                     )
                 )
 
