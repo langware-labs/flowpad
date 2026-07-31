@@ -115,10 +115,8 @@ async def run_asset_cleanup(
     projects unless ``projects`` is also given. Raises RuntimeError when the
     agent asset is missing or the worker reply carries no parseable report.
     """
-    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
     from flow_sdk.fs_store.operations.subagent import load_subagent  # noqa: PLC0415
-    from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
 
     agent = load_subagent("asset_cleanup")
     if agent is None:
@@ -126,7 +124,8 @@ async def run_asset_cleanup(
     prompt = agent.data.get("prompt") or agent.data.get("prompt_text") or ""
     if not prompt:
         raise RuntimeError("asset_cleanup agent has an empty prompt body")
-    model = agent.data.get("model") or "haiku"
+    # The model is no longer read here: the `asset-cleanup` Agent declares it
+    # (haiku), and the deployment projects it into the launch options.
 
     if roots is None:
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
@@ -169,20 +168,20 @@ async def run_asset_cleanup(
     if worker_path_env("claude") is None:
         raise RuntimeError("claude CLI not discovered — cannot run asset_cleanup")
 
-    # Headless one-shot: prompt() routes pty_mode=False to the print-mode
-    # driver (no PTY/Shell), wait() polls the transcript to a terminal state.
-    proc = AgenticProcess(
+    # Launch through the named agent: worker, model and system prompt come from
+    # the `asset-cleanup` Agent, so what runs here is the same thing the user
+    # can inspect under the flowpad_assistant project. Headless one-shot —
+    # pty=False routes prompt() to the print-mode driver (no PTY/Shell) and
+    # wait=True polls the transcript to a terminal state.
+    from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
+
+    deployment = await get_agent_local_deployment("asset-cleanup")
+    proc = await deployment.launch(
+        instruction,
+        wait=True,
         name="Asset cleanup scan",
-        workdir=workdir or root_strs[0],
-        pty_mode=False,
-        visible=False,
-        cli_config={"model": model},
+        workdir=workdir or str(root_strs[0]),
     )
-    await proc.save()
-    resp = await proc.prompt(instruction)
-    if isinstance(resp, ApiFailResponse):
-        raise RuntimeError(f"asset_cleanup launch failed: {resp.message}")
-    await proc.wait()
     result = _build_run_result(proc)
     if not result.ok:
         raise RuntimeError(
