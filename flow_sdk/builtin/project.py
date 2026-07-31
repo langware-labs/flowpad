@@ -1026,7 +1026,7 @@ class Project(Entity):
             if types
             else [
                 "skill",
-                "agent",
+                "subagent",
                 "markdown",
                 "spec",
             ]

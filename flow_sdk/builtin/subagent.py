@@ -1,4 +1,4 @@
-"""SubAgent entity — graph/HTTP surface for FSRecord(type='agent').
+"""SubAgent entity — graph/HTTP surface for FSRecord(type='subagent').
 
 On-disk parsing lives in ``fs_store/indexer/functions/agent.py`` and is wired
 to the indexer via ``TypeInfo`` callable slots, not classmethods here.
