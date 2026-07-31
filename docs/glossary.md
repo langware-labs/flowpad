@@ -71,6 +71,14 @@ a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
   (`fs_store/placement.py`) picks the dot-directory; `WorkerType` is the runtime driver.
   They're deliberately distinct and bridged by `_WORKER_NAME_TO_TYPE`, but the industry word
   for both is *provider*.
+- **`DataSource` is the ingestion entity, not the trace enum.** `DataSource`
+  (`flow_sdk/builtin/data_source.py`) is a configured remote system of record we sync from —
+  a feed, later a mailbox. It is unrelated to `FlowDataSource`, the History/Stream/Sniffer
+  enum in `docs/trace-gutter.md`, and to `Connector`
+  (`flow_sdk/core/capabilities/connectors.py`), which is an intent→install-prompt catalog
+  entry, not a configured feed. The record a DataSource produces is a `SourceItem`, generic
+  and discriminated by `kind` (`content.feed.item`), deliberately not one entity type per
+  provider. Provider-specific knowledge lives only in `flow_sdk/ingest/drivers/`.
 
 ## Known gap: no profile
 

@@ -140,6 +140,7 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
     ("app.entity.deleted", "Entity deleted (app)", "App-tier mirror of entity.deleted"),
     ("app.journey.act.done", "Journey act done", "A journey act completed"),
     ("app.journey.act.failed", "Journey act failed", "A journey act failed"),
+    ("ingest", "Ingestion events", "Data-source ingestion (ingest.<provider>.<layer>.<verb>)"),
     # ── kind ontology ──
     ("application", "Applications", "Deployable application compositions"),
     ("application.web", "Web application", "A web app (folder or checkout that serves)"),
@@ -158,6 +159,10 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
     ("content.file.text", "Text file", "A text file artifact"),
     ("content.data", "Data", "A structured-data artifact"),
     ("content.web.page", "Web page", "A static web page artifact"),
+    ("content.feed.item", "Feed item", "One entry ingested from a feed or API data source"),
+    ("datasource", "Data sources", "External systems of record synced from (datasource.<modality>.<provider>)"),
+    ("datasource.feed.rss", "RSS/Atom feed", "A syndication feed polled on a schedule"),
+    ("datasource.api.hackernews", "Hacker News", "The Hacker News Firebase API"),
     ("gcp", "GCP", "Provider-minted GCP resource kinds (gcp.<service>.<resource>)"),
     ("local", "Local runtime", "Locally-hosted runtime placements"),
     ("local.runtime.web", "Local web runtime", "A locally-served web app deployment"),

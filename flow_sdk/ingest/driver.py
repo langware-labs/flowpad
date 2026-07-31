@@ -1,0 +1,102 @@
+"""The driver contract — the only place provider knowledge is allowed to live.
+
+A driver answers two questions and nothing else: *which streams does this source
+have*, and *what has changed in one stream since we last looked*. It never
+writes an entity, never emits an event, never advances a cursor.
+
+**The cursor state it receives is its own.** ``StreamCursorView.state`` is an
+opaque dict the sync loop carries but never reads. That is what lets one loop
+serve two genuinely different sync shapes:
+
+* **conditional GET** (RSS/Atom) — the driver keeps ``{etag, last_modified}``
+  and answers ``unchanged=True`` on a 304;
+* **changed-ids / high-water** (Hacker News) — the driver keeps
+  ``{last_update_ptr}``, asks the API what moved, and answers ``unchanged=True``
+  when nothing did.
+
+If the sync loop ever needs to look inside ``state``, the abstraction has leaked
+and the next provider will need a special case. ``test_cursor_state_is_opaque``
+greps for exactly that.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Optional, Protocol
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.ingest.models import IngestItem
+
+
+@dataclass(frozen=True)
+class StreamRef:
+    """One syncable unit within a source — a feed URL, a channel."""
+
+    key: str
+    label: str = ""
+
+
+@dataclass(frozen=True)
+class StreamCursorView:
+    """What a driver is told about where it left off.
+
+    ``window_start`` is the "since last pull" floor, already resolved. Drivers
+    apply it as a filter on what they fetched; they do not compute it.
+    """
+
+    stream_key: str
+    state: dict = field(default_factory=dict)
+    window_start: Optional[str] = None
+    first_run: bool = True
+
+
+@dataclass(frozen=True)
+class FetchResult:
+    """What a driver found, plus the state it wants carried to next time."""
+
+    items: list["IngestItem"] = field(default_factory=list)
+    next_state: dict = field(default_factory=dict)
+    #: Greatest ordinal covered, recorded on the cursor for operators. Purely
+    #: observability — resumption is driven by ``state``, so a driver must not
+    #: treat this as a floor it can read back.
+    high_water: Optional[str] = None
+    #: True when the provider said "nothing changed" (a 304, an empty update
+    #: set). Distinct from an empty ``items`` list, which can also mean
+    #: "changed, but everything fell outside the window".
+    unchanged: bool = False
+
+
+class IngestDriver(Protocol):
+    """Implemented once per provider, in ``flow_sdk/ingest/drivers/``.
+
+    Structural, never subclassed — it documents the contract and types the
+    registry. Deliberately not ``runtime_checkable``: that would only compare
+    method *names*, which almost anything passes, and would read as a
+    validation guarantee that registration does not actually make.
+    """
+
+    provider: str
+    #: The ontology kind a DataSource using this driver carries. Stamped onto
+    #: the row by ``sync_source`` so the driver is the single owner.
+    kind: str
+    record_kind: str
+
+    def streams(self, source: "DataSource") -> list[StreamRef]:
+        """The syncable units of ``source``, derived from its config."""
+        ...
+
+    async def fetch(self, source: "DataSource", cursor: StreamCursorView) -> FetchResult:
+        """Fetch one stream. Raise ``SourceError`` to classify a failure."""
+        ...
+
+
+_REGISTRY: dict[str, IngestDriver] = {}
+
+
+def register_driver(driver: IngestDriver) -> IngestDriver:
+    _REGISTRY[driver.provider] = driver
+    return driver
+
+
+def get_driver(provider: str) -> Optional[IngestDriver]:
+    return _REGISTRY.get(provider)

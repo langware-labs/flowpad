@@ -12,6 +12,8 @@ import flow_sdk.builtin.claude_session  # noqa: F401
 import flow_sdk.builtin.codex_session  # noqa: F401
 import flow_sdk.builtin.command  # noqa: F401
 import flow_sdk.builtin.copilot_session  # noqa: F401
+import flow_sdk.builtin.data_source  # noqa: F401
+import flow_sdk.builtin.data_source_cursor  # noqa: F401
 import flow_sdk.builtin.dataset  # noqa: F401
 import flow_sdk.builtin.deck  # noqa: F401
 import flow_sdk.builtin.deck_template  # noqa: F401
@@ -21,6 +23,7 @@ import flow_sdk.builtin.graph_workflow_run  # noqa: F401
 import flow_sdk.builtin.markdown_index  # noqa: F401
 import flow_sdk.builtin.project  # noqa: F401
 import flow_sdk.builtin.skill  # noqa: F401
+import flow_sdk.builtin.source_item  # noqa: F401
 import flow_sdk.builtin.spreadsheet  # noqa: F401
 import flow_sdk.builtin.task  # noqa: F401
 import flow_sdk.builtin.whiteboard  # noqa: F401
