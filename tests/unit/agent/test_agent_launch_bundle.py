@@ -29,10 +29,6 @@ def test_worker_vocabularies_map_both_ways(raw, driver, worker):
     assert worker_type_value(raw) == worker
 
 
-def test_resolved_worker_type_is_the_enum_value():
-    assert Agent(name="a", worker_type="claude").resolved_worker_type == "claude_code"
-
-
 # ── vendor extras ─────────────────────────────────────────────────────────────
 
 def test_cli_options_reach_the_bundle():

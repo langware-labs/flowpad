@@ -57,9 +57,8 @@ class AgentDeployment:
     def __getattr__(self, item):  # id / kind / target / status / … from the row
         return getattr(self.deployment, item)
 
-    @property
-    def typeid(self):
-        return self.deployment.typeid
+    # `typeid` is NOT redeclared — __getattr__ forwards it, since this class
+    # defines no attribute of that name for normal lookup to find.
 
     # ── construction ──────────────────────────────────────────────────────
 
@@ -80,11 +79,7 @@ class AgentDeployment:
                 "full_resource_name": f"local://{machine}/agent/{agent.name or agent.id}",
                 "asset_type": "flowpad.local/Agent",
             },
-            "status": {
-                "sync_state": "current",
-                "provider_state": "configured",
-                "observed_at": datetime.now(UTC).isoformat(),
-            },
+            "status": {"sync_state": "current", "provider_state": "configured"},
             "provider_labels": {
                 "flowpad.agent.name": str(agent.name or ""),
                 "flowpad.agent.worker": str(agent.worker_type or ""),
@@ -94,12 +89,22 @@ class AgentDeployment:
             "parent_type_id": str(agent.typeid),
         }
         if existing is None:
+            payload["status"]["observed_at"] = datetime.now(UTC).isoformat()
             dep = Deployment(id=dep_id, **payload)
-        else:
-            dep = existing
-            dep.apply_field_updates(payload)
-        await dep.save()
-        return cls(dep, agent)
+            await dep.save()
+            return cls(dep, agent)
+
+        # Resolving an agent happens on EVERY launch, so this must be a real
+        # no-op when nothing changed. It previously stamped `observed_at` into
+        # the payload unconditionally, which made the row dirty every time —
+        # costing a SQL UPDATE, a WS broadcast to every client, and three
+        # metadata.json touches per launch for a timestamp nobody reads.
+        # `observed_at` belongs to whatever actually OBSERVES the deployment
+        # (reconcile), not to looking one up.
+        if any(getattr(existing, field, None) != value for field, value in payload.items()):
+            existing.apply_field_updates(payload)
+            await existing.save()
+        return cls(existing, agent)
 
     @classmethod
     async def for_agent(cls, agent: "Agent") -> list["AgentDeployment"]:
@@ -119,40 +124,20 @@ class AgentDeployment:
 
     # ── the one launch verb ───────────────────────────────────────────────
 
-    async def launch(
-        self,
-        prompt: str,
-        *,
-        pty: bool = False,
-        wait: bool = False,
-        start: bool = True,
-        save: bool = True,
-        **options,
-    ) -> "AgenticProcess":
-        """Run this agent once. Returns the process that records the run.
+    async def build(self, prompt: str = "", **options) -> "AgenticProcess":
+        """Project this agent onto an AgenticProcess. Not saved, not started.
 
-        Every field the agent declares (worker, model, permissions, dirs,
-        system prompt) comes from the Agent; only per-run concerns
+        The primitive. Every field the agent declares (worker, model,
+        permissions, system prompt) comes from the Agent; only per-run concerns
         (``visible``, ``process_type``, ``target_typeid_str``, ``context_data``,
-        ``workdir``, …) are accepted here.
+        ``workdir``, ``pty_mode``, …) are accepted here and passed through.
 
-        Three start shapes, because the call sites genuinely differ:
-
-        * ``pty=False`` (default) — headless one-shot: ``pty_mode=False`` routes
-          ``prompt()`` to the print-mode driver, no PTY or Shell. This is what
-          every internal agent wants.
-        * ``pty=True`` — interactive: spawns the PTY worker, for a run a human
-          will attach to.
-        * ``start=False`` — create the row and stop, for callers that schedule
-          the first turn themselves.
-
-        ``wait=True`` polls to a terminal state and is only meaningful headless.
-
-        ``save=False`` skips persisting the row. Two callers need this
-        deliberately -- the migration runner and `flow diagnose` both spawn
-        without a pre-saved record (the exist_in_db gate was dropped for
-        visible=False precisely so they could), so persisting would change
-        documented behaviour.
+        This is a separate verb rather than a pair of ``launch`` flags because
+        most callers genuinely want only this half: they own the save (to add
+        ``notify``/``owner``), or the start (to attach a Shell, schedule the
+        first turn, or drive the turns themselves), or neither -- `flow diagnose`
+        and the migration runner both spawn from a process that is never
+        persisted at all.
         """
         from flow_sdk.builtin.agent import worker_type_value  # noqa: PLC0415
         from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
@@ -187,15 +172,16 @@ class AgentDeployment:
             )
         context_data.setdefault("launched_by_agent", agent.name)
 
-        proc = AgenticProcess(
+        return AgenticProcess(
             name=options.pop("name", None) or f"{agent.name}: {prompt[:40]}",
             workdir=options.pop("workdir", None),
             visible=bool(options.pop("visible", False)),
-            pty_mode=options.pop("pty_mode", pty),
+            # Headless by default: pty_mode=False routes prompt() to the
+            # print-mode driver, no PTY or Shell. Callers wanting the
+            # interactive worker pass pty_mode=True and start it themselves.
+            pty_mode=options.pop("pty_mode", False),
             process_type=options.pop("process_type", ProcessKind.EXECUTION.value),
-            worker_type=(
-                worker_type_value(worker_override) if worker_override else agent.resolved_worker_type
-            ),
+            worker_type=worker_type_value(worker_override or agent.worker_type),
             project_id=options.pop("project_id", None) or agent.project_id,
             load_flowpad_assistant=agent.load_flowpad_assistant,
             additional_dirs=list(agent.additional_dirs or []),
@@ -205,30 +191,35 @@ class AgentDeployment:
             deployment_id=self.id,
             **options,
         )
-        if save:
-            await proc.save()
-        if not start:
-            return proc
-        if pty:
-            await proc.start_pty(instruction=prompt)
-            return proc
 
+    async def launch(self, prompt: str, *, wait: bool = False, **options) -> "AgenticProcess":
+        """``build`` + save + run the first turn. The convenience shape.
+
+        ``wait=True`` polls to a terminal state.
+        """
         from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
 
+        proc = await self.build(prompt, **options)
+        await proc.save()
         resp = await proc.prompt(prompt)
         if isinstance(resp, ApiFailResponse):
-            raise RuntimeError(f"{agent.name}: launch failed — {resp.message}")
+            raise RuntimeError(f"launch failed — {resp.message}")
         if wait:
             await proc.wait()
         return proc
 
-    async def run(self, event: dict, **options) -> "AgenticProcess":
-        """Event-shaped alias for graph nodes and triggers."""
-        prompt = str(event.get("prompt") or event.get("instruction") or "")
-        return await self.launch(prompt, context_data={"event": event}, **options)
-
     async def runs(self, limit: int = 50) -> list["AgenticProcess"]:
         from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
 
-        rows = await AgenticProcess.get_all({"deployment_id": self.id})
-        return rows[:limit]
+        # Bound and ordering go into the query, not a Python slice: a long-lived
+        # deployment would otherwise hydrate every process it ever produced to
+        # hand back `limit` of them — in arbitrary order.
+        #
+        # `match` must be explicit. QueryFilter.parse wraps a bare dict entirely
+        # into `match`, so passing order_by/limit as top-level keys would turn
+        # them into field predicates that match nothing.
+        return await AgenticProcess.get_all({
+            "match": {"deployment_id": self.id},
+            "order_by": {"created_date": "desc"},
+            "limit": limit,
+        })

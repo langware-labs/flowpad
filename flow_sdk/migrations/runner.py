@@ -267,18 +267,19 @@ async def _drive_migration(
     )
 
     # The `migration-runner` Agent owns the bundle (bypassPermissions, model);
-    # only the compute node and workdir are per-run. `save=False` is deliberate
-    # and load-bearing: the exist_in_db gate at agentic_process.py:1088-1097 was
-    # dropped for visible=False precisely so the migration runner can spawn
-    # without a pre-saved record.
+    # only the compute node and workdir are per-run.
     deployment = await get_agent_local_deployment("migration-runner")
-    ap = await deployment.launch(
+    ap = await deployment.build(
         prompt_text,
-        save=False,
         compute_node_id=f"compute_node-{cn.id}",
         workdir=str(Path.cwd()),
         name=f"Migration: {version}",
     )
+    # NOT saved: the exist_in_db gate at agentic_process.py:1088-1097 was
+    # dropped for visible=False precisely so the migration runner can spawn
+    # without a pre-saved record.
+
+    await ap.prompt(prompt_text)
 
     # Wait for Claude to write its first transcript line. The driver
     # pre-assigns ``ap.session_id`` so that alone is unreliable;

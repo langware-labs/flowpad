@@ -1452,15 +1452,15 @@ class Entity(DBEntity):
             # assigned after. ``start=False``: the first turn is scheduled
             # separately so this returns a DisplayTarget immediately.
             deployment = await get_agent_local_deployment("artifact-setup")
-            ap = await deployment.launch(
+            ap = await deployment.build(
                 prompt,
-                start=False,
                 workdir=workdir,
                 project_id=project_id,
                 target_typeid_str=(f"project-{project_id}" if project_id else typeid_str),
                 process_type=ProcessKind.CHAT,
                 context_data={"source_artifact_id": self.id, "launched_from": "artifact_setup"},
             )
+            await ap.save()
             _schedule_setup_prompt(ap, prompt)
             return _entity_payload(ap)
         except Exception:

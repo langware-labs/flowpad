@@ -1417,6 +1417,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         if not fingerprints:
             return ApiFailResponse(message="fingerprints is required")
 
+        # Loop-invariant: resolving the agent costs a lookup and a deployment
+        # upsert, so it happens once rather than once per fingerprint.
+        deployment = await get_agent_local_deployment("cloud-error-fixer")
         spawned = []
         for fp in fingerprints:
             rec = get_by_fingerprint(fp)
@@ -1430,11 +1433,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 # Identity from the named `cloud-error-fixer` Agent; the run
                 # itself still goes through .open(), which is what attaches the
                 # Shell the caller reports back as shell_id.
-                deployment = await get_agent_local_deployment("cloud-error-fixer")
-                agentic_process = await deployment.launch(
+                agentic_process = await deployment.build(
                     fix_instruction,
-                    start=False,
-                    save=False,
                     name=f"Fix: {rec_label}" if rec_label else "Cloud fix",
                 )
                 await agentic_process.save(owner=request_info.someone_typeid if request_info else None)
