@@ -23,7 +23,7 @@ V5 = str(uuid.uuid5(uuid.NAMESPACE_URL, "identity-matrix"))
 V7 = "018f0000-0000-7000-8000-000000000000"
 
 INDEXED_TYPES = {
-    "agent_trace", "subagent", "graph_workflow", "asset_cleanup_report",
+    "agent_trace", "subagent", "agent", "graph_workflow", "asset_cleanup_report",
     "claude_hook", "claude_md", "claude_memory", "claude_rules",
     "claude_session", "codex_session", "command", "copilot_session",
     "dataset", "deck_template", "deck", "dynamic_workflow",
@@ -32,7 +32,7 @@ INDEXED_TYPES = {
     "task", "todo_file", "usage_report", "whiteboard", "workflow_run",
 }
 
-FRONTMATTER_PORTABLE = ("subagent", "claude_md", "markdown")
+FRONTMATTER_PORTABLE = ("subagent", "agent", "claude_md", "markdown")
 FRONTMATTER_STABLE = ("plan", "claude_memory", "claude_rules", "spec", "prompt")
 FRONTMATTER_ALL = FRONTMATTER_PORTABLE + FRONTMATTER_STABLE + ("command",)
 FOLDER_PORTABLE = (
@@ -78,7 +78,7 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     capsule_types = set(FRONTMATTER_ALL) | set(FOLDER_PORTABLE)
     native_types = set(JSON_STABLE)
     derived_types = INDEXED_TYPES - capsule_types - native_types
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (17, 3, 13)
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (18, 3, 13)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)

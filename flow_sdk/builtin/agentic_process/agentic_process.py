@@ -704,6 +704,10 @@ class AgenticProcess(Entity):
     type: str = APIField(default="agentic_process")
 
     instruction_content: str | None = APIField(default=None)
+    #: The AgentDeployment this run came from, when it was launched through one.
+    #: Provenance, NOT launch config — deliberately absent from
+    #: ``_generic_restart_snapshot_payload`` so it can never move the restart hash.
+    deployment_id: str | None = APIField(default=None)
     asset_ref: str | None = APIField(default=None, sharing=Sharing.PRIVATE)
     context_data: dict[str, Any] = APIField(default_factory=dict)
     cli_config: dict[str, Any] = APIField(default_factory=dict)
