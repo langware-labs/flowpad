@@ -91,7 +91,7 @@ SKILL_TYPE_INFO = TypeInfo(
 )
 ```
 
-`index_fields` is now a field on the per-type `TypeInfo` (`flow_sdk/schema/type_info/*_info.py`), **not** a `ClassVar` on a `Record` subclass. It is stored on the `SchemaRegistry` entry (`schema_registry.py:205`) and consumed by the indexer / agent-records route. Current declarations include: `agent`/`skill`/`whiteboard` → `["description"]`, `workflow` → `["name","description"]`, `task` → `["description","objective"]`, `markdown` → `["title","tags","links"]`, `spec` → `["name","spec_type"]`, `claude_rules`/`claude_memory`/`plan` → `["name"]`.
+`index_fields` is now a field on the per-type `TypeInfo` (`flow_sdk/schema/type_info/*_info.py`), **not** a `ClassVar` on a `Record` subclass. It is stored on the `SchemaRegistry` entry (`schema_registry.py:205`) and consumed by the indexer / agent-records route. Current declarations include: `subagent`/`skill`/`whiteboard` → `["description"]`, `workflow` → `["name","description"]`, `task` → `["description","objective"]`, `markdown` → `["title","tags","links"]`, `spec` → `["name","spec_type"]`, `claude_rules`/`claude_memory`/`plan` → `["name"]`.
 
 ---
 
@@ -190,7 +190,7 @@ Returns all record types with `browseable=True` in their `TypeInfo`, plus a hard
 }
 ```
 
-To surface a Record type in the user-facing browser, set `browseable=True` on its `TypeInfo` (in `flow_sdk/schema/type_info/<type>_info.py`) — there is no `_browseable` ClassVar on the Record class. Currently set on the `TypeInfo` for: `skill`, `agent`, `workflow`, `markdown`, `spec`, `claude_rules`, `claude_memory`, `plan`, `whiteboard`. Note: this flag is about UI visibility — it does **not** mean the record is an agent-consumable asset (see `main_subdir` in `TypeInfo` for that).
+To surface a Record type in the user-facing browser, set `browseable=True` on its `TypeInfo` (in `flow_sdk/schema/type_info/<type>_info.py`) — there is no `_browseable` ClassVar on the Record class. Currently set on the `TypeInfo` for: `skill`, `subagent`, `workflow`, `markdown`, `spec`, `claude_rules`, `claude_memory`, `plan`, `whiteboard`. Note: this flag is about UI visibility — it does **not** mean the record is an agent-consumable asset (see `main_subdir` in `TypeInfo` for that).
 
 ### Reindex (FaaS index endpoint)
 
