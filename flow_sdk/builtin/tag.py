@@ -124,6 +124,8 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
     ("node.disconnected", "Node disconnected", "The cloud connection dropped"),
     ("agent", "Agent events", "Agentic-process lifecycle events"),
     ("agent.status", "Agent status", "An agentic process changed status"),
+    ("agent.launch_failed", "Agent launch failed",
+     "A worker could not be spawned (code names why; health says whether to retry)"),
     ("graph_workflow", "Graph workflow lifecycle", "Graph-workflow run boundary events"),
     ("graph_workflow.started", "Graph workflow started", "A graph-workflow run started"),
     ("graph_workflow.step.done", "Graph workflow step done", "A graph-workflow node finished"),

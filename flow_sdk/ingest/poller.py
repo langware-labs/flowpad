@@ -62,8 +62,11 @@ async def dispatch_due_sources(
             continue
         if not source.is_due(now):
             continue
-        if not await source.capabilities_ready():
-            continue
+        # Dispatch even when a capability is missing: `sync_source` records it
+        # as `capability_unavailable` / config_error, which is what surfaces the
+        # "Parked — needs attention" banner. Skipping silently here left a
+        # gated source sitting at `never_synced`, looking healthy, never
+        # polling, with nothing anywhere explaining why.
         _inflight.add(source.id)
         dispatched.append(source.id)
         spawn(_run_poll(source, now))

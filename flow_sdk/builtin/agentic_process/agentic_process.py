@@ -575,13 +575,21 @@ def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
     p.write_text(new_content, encoding="utf-8")
 
 
-async def _index_additional_dir(path: str) -> None:
+async def _index_additional_dir(path: str, *, read_only: bool = False) -> None:
     """Run a one-shot indexer scan over ``path`` so its skills/agents become
     discoverable via ``Entity.assets_by_path``.
 
     Best-effort and silent: if the path doesn't exist or the indexer raises,
     we log and continue — adding the dir to ``additional_dirs`` already
     succeeded.
+
+    ``read_only=True`` for a directory we do not own — a checkout cloned from
+    someone else's repo. Identity backends normally COMMIT the id they mint
+    back into the source (markdown gets a ``flowpad:capsule`` comment appended,
+    for instance), which dirties every indexed file; the next ``git pull`` then
+    fails with "local changes would be overwritten". ``FSRef.read_only``
+    propagates to children, so setting it on the root suppresses that write for
+    the whole tree and ``mint_id`` falls back to its deterministic key.
     """
     try:
         from pathlib import Path as _Path
@@ -593,7 +601,7 @@ async def _index_additional_dir(path: str) -> None:
         p = _Path(path)
         if not p.is_dir():
             return
-        new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope="user")
+        new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope="user", read_only=read_only)
         # include_temp=True so /tmp / /var/folders paths aren't filtered out —
         # the user explicitly added this dir, so honor it regardless of location.
         await get_shared_indexer().index(IndexerOptions(roots=(new_root,), verbose=False, include_temp=True))

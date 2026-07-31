@@ -8,7 +8,7 @@ clone locally; the two are configured separately and either may be absent.
 
 POST /api/v1/graph/helpdesk-status    — where things stand; changes nothing
 POST /api/v1/graph/helpdesk-ensure    — checkout exists (clone if missing)
-POST /api/v1/graph/helpdesk-refresh   — pull the portal repo
+POST /api/v1/graph/helpdesk-refresh   — hard-sync the portal repo to its remote
 POST /api/v1/graph/helpdesk-reset     — dev: drop the local checkout entirely
 
 ``ensure``/``refresh``/``reset`` map 1:1 onto the steps of the UI load flow, so
@@ -28,7 +28,7 @@ from flow_sdk.config import HELPDESK_PORTAL_UNAME, StorageProvider, helpdesk_pro
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
-from flow_sdk.utils.git import git_clone, git_pull
+from flow_sdk.utils.git import git_clone, git_sync_mirror
 
 logger = logging.getLogger(__name__)
 
@@ -191,21 +191,29 @@ async def helpdesk_ensure() -> ApiResponse:
 
 @action.post(action_name="helpdesk-refresh", types=None)
 async def helpdesk_refresh() -> ApiResponse:
-    """Pull the portal repo so local help content matches the remote."""
+    """Make the local portal match the remote.
+
+    A hard sync, not a pull. Indexing STAMPS every markdown file in the
+    checkout with its entity id, so the working tree is dirty the moment the
+    portal is first indexed and a plain pull aborts on "local changes would be
+    overwritten" — the desk would silently stop receiving content updates after
+    its first open. Nothing here is the user's work: the portal is a mirror of a
+    repo they do not edit, and the stamps are re-applied by the next index.
+    """
     try:
         target = await _resolve_target()
         if not target:
             return ApiFailResponse(message="Help desk is unavailable on this hub", status_code=502)
 
-        mount = str(helpdesk_project_dir(target.project_id))
+        mount_path = helpdesk_project_dir(target.project_id)
         if not _is_checkout(mount_path):
             return ApiFailResponse(message="Help desk files are not set up yet", status_code=409)
 
-        ok, message = await git_pull(mount)
+        ok, message = await git_sync_mirror(str(mount_path))
         if not ok:
             return ApiFailResponse(message=message, status_code=502)
-        # git says "Already up to date." when the pull was a no-op; anything
-        # else means refs moved.
+        # `git_sync_mirror` reports "Already up to date." when HEAD did not
+        # move; anything else means new content landed and a re-index is due.
         return ApiSuccessResponse(data={"updated": "up to date" not in message.lower(), "message": message})
     except Exception as e:
         logger.error("[helpdesk_action] helpdesk-refresh error: %s", e, exc_info=True)

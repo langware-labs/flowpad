@@ -263,23 +263,26 @@ class Project(Entity):
     @computed_field
     @property
     def customization(self) -> dict[str, Any]:
-        """Optional per-project home branding, read from ``.flow/customization/``.
+        """Optional per-project branding, read from ``.flow/customization/``.
 
-        A project (e.g. a launched template) can ship a ``.flow/customization/``
-        folder to brand the desktop home when it is the active project:
+        A project (e.g. a launched template, or a cloned helpdesk portal) can
+        ship a ``.flow/customization/`` folder to brand surfaces that render it:
         * ``string.json`` → ``{"home_title": "..."}`` overrides the greeting.
         * ``home.png`` present → the home renders it as a background.
+        * ``string.json`` → ``{"brand": {...}}`` names the project's identity —
+          see ``_read_brand``. Used by the helpdesk portal, ignored elsewhere.
 
         Strictly sync + best-effort (missing mount / dir / file / bad JSON →
         defaults), like ``include_dirs`` — it serializes into the Project
         payload the UI already receives, so no route or bootstrap change.
-        The image bytes are served on demand via the generic ``fs`` download
-        action; here we only surface a boolean so the UI knows to ask.
+        Image BYTES are served on demand via the generic ``fs`` download action;
+        here we surface only a flag (home background) or a repo-relative path
+        (brand logos) so the UI knows what to ask for.
         """
         import json  # noqa: PLC0415
         from pathlib import Path  # noqa: PLC0415
 
-        default = {"home_title": None, "has_home_background": False}
+        default = {"home_title": None, "has_home_background": False, "brand": None}
         root = self.fs_storage_mount_path
         if not root:
             return default
@@ -292,20 +295,72 @@ class Project(Entity):
         except OSError:
             return default
         home_title: str | None = None
+        brand: dict[str, Any] | None = None
         try:
             string_path = cust_dir / "string.json"
             if string_path.is_file():
                 data = json.loads(string_path.read_text(encoding="utf-8"))
-                raw = data.get("home_title") if isinstance(data, dict) else None
-                if isinstance(raw, str) and raw.strip():
-                    home_title = raw.strip()
+                if isinstance(data, dict):
+                    raw = data.get("home_title")
+                    if isinstance(raw, str) and raw.strip():
+                        home_title = raw.strip()
+                    brand = self._read_brand(data.get("brand"), Path(root))
         except (OSError, ValueError):
             pass
         try:
             has_bg = (cust_dir / "home.png").is_file()
         except OSError:
             has_bg = False
-        return {"home_title": home_title, "has_home_background": has_bg}
+        return {"home_title": home_title, "has_home_background": has_bg, "brand": brand}
+
+    @staticmethod
+    def _read_brand(raw: Any, root: "Path") -> dict[str, Any] | None:
+        """Validate a ``brand`` block from ``string.json``, or ``None``.
+
+        Shape (every key optional)::
+
+            {"name", "tagline", "accent", "logo", "logo_dark"}
+
+        ``logo`` / ``logo_dark`` are REPO-RELATIVE paths (e.g. ``brand/mark.svg``)
+        and are surfaced only when the file actually exists, so a consumer can
+        hand the path straight to the ``fs`` download action without a probe.
+        Unlike ``home.png`` this accepts any extension — the desk names the file,
+        which is what lets a portal ship an SVG.
+
+        Paths that escape the project root are dropped: this data comes from a
+        cloned third-party repo, and the download action would happily serve
+        ``../../.ssh/id_rsa``. Returns ``None`` when nothing usable survives, so
+        "has a brand" is a single truthiness check at every call site.
+        """
+        if not isinstance(raw, dict):
+            return None
+
+        def _text(key: str) -> str | None:
+            value = raw.get(key)
+            return value.strip() if isinstance(value, str) and value.strip() else None
+
+        def _asset(key: str) -> str | None:
+            rel = _text(key)
+            if not rel:
+                return None
+            candidate = (root / rel).resolve()
+            try:
+                # `is_relative_to` is the containment check; `resolve()` above
+                # collapses any `..` first so a traversal cannot slip past it.
+                if not candidate.is_relative_to(root.resolve()) or not candidate.is_file():
+                    return None
+            except OSError:
+                return None
+            return rel.lstrip("/")
+
+        brand = {
+            "name": _text("name"),
+            "tagline": _text("tagline"),
+            "accent": _text("accent"),
+            "logo": _asset("logo"),
+            "logo_dark": _asset("logo_dark"),
+        }
+        return brand if any(brand.values()) else None
 
     @computed_field
     @property
