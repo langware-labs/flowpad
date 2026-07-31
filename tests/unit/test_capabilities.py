@@ -156,7 +156,9 @@ async def test_capability_install_process_uses_default_harness_worker(monkeypatc
     _real_settings = instance_settings_pkg.get_instance_settings()
 
     class _FlowHomeOverride:
-        flow_home = str(tmp_path)
+        # A Path, matching the real `InstanceSettings.flow_home: Path` — callers
+        # do Path arithmetic on it (`local_entity_id` does `home / "global"`).
+        flow_home = tmp_path
 
         def __getattr__(self, item):
             return getattr(_real_settings, item)
