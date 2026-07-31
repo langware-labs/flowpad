@@ -225,7 +225,15 @@ class Folder(Entity):
                 _index_additional_dir,
             )
 
-            await _index_additional_dir(self.path)
+            # A transportable origin means these bytes came from somewhere else
+            # — a repo we clone but do not author. Indexing normally COMMITS the
+            # id it mints back into the source (markdown gets a
+            # ``flowpad:capsule`` block appended), which dirties the whole
+            # checkout and makes the next ``git pull`` abort on "local changes
+            # would be overwritten". Owning the distinction here, at the one
+            # place that knows the origin, keeps every caller of
+            # ``resolve_location`` from having to remember it.
+            await _index_additional_dir(self.path, read_only=origin.transportable)
         except Exception:
             pass
         return ApiSuccessResponse(data={"kind": "ready", "path": self.path})

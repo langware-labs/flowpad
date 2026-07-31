@@ -2,9 +2,12 @@ import { ISiteConfig } from '@sdk';
 import { useEffect, useState } from 'react';
 
 /**
- * Convert hex color to HSL values using modern approach
+ * Convert a hex color to the `H S% L%` triple `hsl(var(--x))` expects.
+ *
+ * Exported because more than one surface needs the conversion without the
+ * palette hook's `documentElement` side effect (see `accentToHslTriple`).
  */
-function hexToHsl(hex: string): string {
+export function hexToHsl(hex: string): string {
   // Remove # if present and ensure 6 characters
   hex = hex.replace('#', '');
   if (hex.length === 3) {

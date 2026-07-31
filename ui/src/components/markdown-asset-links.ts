@@ -56,9 +56,14 @@ export function resolveDocRelativePath(docPath: string, rel: string): string | n
   return out.length ? out.join('/') : null;
 }
 
-/** Split a link into its path and the `#fragment`/`?query` tail, which must
- *  survive resolution — `[x](./setup.md#step-2)` keeps the anchor. */
-export function splitHrefTail(href: string): { path: string; tail: string } {
+/** The path half of a link, with any `#fragment` / `?query` stripped.
+ *
+ *  The tail is deliberately DROPPED rather than plumbed through: nothing
+ *  downstream consumes it (the portal has no in-article anchor scrolling), and
+ *  threading a value no caller reads cost a two-field return type and a
+ *  two-argument callback for nothing. If anchors become navigable, reinstate
+ *  the tail here and at `onNavigate` together. */
+export function hrefPath(href: string): string {
   const cut = href.search(/[#?]/);
-  return cut === -1 ? { path: href, tail: '' } : { path: href.slice(0, cut), tail: href.slice(cut) };
+  return cut === -1 ? href : href.slice(0, cut);
 }

@@ -205,8 +205,6 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full flex-col gap-6 px-4 py-6">
-          {/* Only on the helpdesk portal checkout — carries "Ask for help"
-              and the dev-only reset. No-op on every other project. */}
           {createOnly ? (
             createTab
           ) : (

@@ -324,8 +324,8 @@ async def test_resolve_context_folders_stamps_receiver_sidecar(tmp_path, monkeyp
     async def _materialize(_self, _origin, **_kwargs):
         return repo, None
 
-    async def _index(path):
-        indexed.append(path)
+    async def _index(path, **kwargs):
+        indexed.append((path, kwargs.get("read_only")))
 
     monkeypatch.setattr(GitOriginDriver, "materialize", _materialize)
     monkeypatch.setattr(agentic_process, "_index_additional_dir", _index)
@@ -336,7 +336,10 @@ async def test_resolve_context_folders_stamps_receiver_sidecar(tmp_path, monkeyp
     assert resp.status == "SUCCESS"
     assert project.include_dirs == [resolved]
     assert (project.get_context_entry_data(folder.typeid) or {}).get("path") == resolved
-    assert indexed == [resolved]
+    # read_only=True because the origin is a git checkout we clone but do not
+    # author: indexing would otherwise commit capsule ids into the working tree
+    # and the next `git pull` would abort on "local changes would be overwritten".
+    assert indexed == [(resolved, True)]
     assert resp.data["include_dirs"] == [resolved]
 
 

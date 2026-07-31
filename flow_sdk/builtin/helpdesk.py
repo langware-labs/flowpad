@@ -24,7 +24,7 @@ contract as ``Journey.auto_launch_enabled``): the manifest is the single source
 of truth, so a ``git pull`` that changes the desk takes effect immediately, with
 no re-index and no stale copy to reconcile.
 """
-from typing import Any, ClassVar, Optional
+from typing import ClassVar, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
@@ -43,18 +43,23 @@ class Helpdesk(Entity):
         """Local path of the portal folder — where the guides live."""
         return self.asset_ref or None
 
-    def _manifest(self) -> dict[str, Any]:
+    def _manifest_str(self, key: str) -> Optional[str]:
+        """Read one manifest field, through to disk.
+
+        Re-read per access rather than cached: the manifest is the source of
+        truth, and a desk is read a handful of times per open — a stale brand
+        after a ``git pull`` would be worse than the file read.
+        """
         if not self.asset_ref:
-            return {}
+            return None
         from pathlib import Path  # noqa: PLC0415
 
-        from flow_sdk.fs_store.indexer.functions.helpdesk import read_manifest  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.functions.helpdesk import (  # noqa: PLC0415
+            manifest_str,
+            read_manifest,
+        )
 
-        return read_manifest(Path(self.asset_ref))
-
-    def _manifest_str(self, key: str) -> Optional[str]:
-        value = str(self._manifest().get(key) or "").strip()
-        return value or None
+        return manifest_str(read_manifest(Path(self.asset_ref)), key)
 
     @property
     def display_name(self) -> Optional[str]:

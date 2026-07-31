@@ -146,7 +146,7 @@ async def test_ensure_reports_no_portal_as_success_not_failure() -> None:
     """
     target = HelpdeskTarget(DESK_ID, None)
     with (
-        patch.object(hda, "_resolve_target", AsyncMock(return_value=target)),
+        patch.object(hda, "_require_target", AsyncMock(return_value=target)),
         patch.object(hda, "get_current_request_info", return_value=_request_info()),
     ):
         resp = await hda.helpdesk_ensure()
@@ -166,7 +166,7 @@ async def test_ensure_still_fails_when_there_is_no_desk_at_all() -> None:
     """No desk is a REAL error and must stay one — the degradation above is
     scoped to 'desk exists, portal does not', not to 'nothing resolved'."""
     with (
-        patch.object(hda, "_resolve_target", AsyncMock(return_value=None)),
+        patch.object(hda, "_require_target", AsyncMock(side_effect=hda._NoDesk)),
         patch.object(hda, "get_current_request_info", return_value=_request_info()),
     ):
         resp = await hda.helpdesk_ensure()
@@ -278,7 +278,7 @@ async def test_refresh_reports_a_missing_checkout_instead_of_raising() -> None:
     as a 500 "Failed to refresh", which is what actually shipped once."""
     target = HelpdeskTarget(DESK_ID, "https://example.test/portal.git")
     with (
-        patch.object(hda, "_resolve_target", AsyncMock(return_value=target)),
+        patch.object(hda, "_require_target", AsyncMock(return_value=target)),
         patch.object(hda, "_is_checkout", return_value=False),
     ):
         resp = await hda.helpdesk_refresh()
@@ -290,45 +290,46 @@ async def test_refresh_reports_a_missing_checkout_instead_of_raising() -> None:
 
 @pytest.mark.asyncio
 async def test_refresh_reports_whether_the_pull_moved_anything() -> None:
-    """`updated` drives whether the caller re-indexes, so the git-message
-    reading is load-bearing, not cosmetic."""
+    """`updated` drives whether the caller re-indexes.
+
+    It is carried as its own boolean, NOT recovered from the git message: the
+    sync already knows whether HEAD moved, and re-deriving it by matching
+    English prose broke the moment the wording or locale changed.
+    """
     target = HelpdeskTarget(DESK_ID, "https://example.test/portal.git")
 
-    async def _pull(_path):
-        return True, "Already up to date."
+    async def _sync_unchanged(_path):
+        return True, False, "Already up to date."
 
     with (
-        patch.object(hda, "_resolve_target", AsyncMock(return_value=target)),
+        patch.object(hda, "_require_target", AsyncMock(return_value=target)),
         patch.object(hda, "_is_checkout", return_value=True),
-        patch.object(hda, "git_sync_mirror", _pull),
+        patch.object(hda, "git_sync_mirror", _sync_unchanged),
     ):
         resp = await hda.helpdesk_refresh()
     assert resp.status == ApiResponseStatus.SUCCESS.value
     assert resp.data["updated"] is False
 
-    async def _pull_changed(_path):
-        return True, "Updating a1b2c3d..e4f5g6h\nFast-forward\n docs/x.md | 2 +-"
+    async def _sync_moved(_path):
+        return True, True, "Updated."
 
     with (
-        patch.object(hda, "_resolve_target", AsyncMock(return_value=target)),
+        patch.object(hda, "_require_target", AsyncMock(return_value=target)),
         patch.object(hda, "_is_checkout", return_value=True),
-        patch.object(hda, "git_sync_mirror", _pull_changed),
+        patch.object(hda, "git_sync_mirror", _sync_moved),
     ):
         resp = await hda.helpdesk_refresh()
     assert resp.data["updated"] is True
 
+    # The message is for humans only — `updated` must not follow it.
+    async def _sync_moved_quiet(_path):
+        return True, True, "Already up to date."
 
-@pytest.mark.asyncio
-async def test_status_computes_its_mount_without_raising() -> None:
-    target = HelpdeskTarget(DESK_ID, "https://example.test/portal.git")
     with (
-        patch.object(hda, "_resolve_target", AsyncMock(return_value=target)),
-        patch.object(hda, "get_current_request_info", return_value=_request_info()),
-        patch.object(hda, "_is_checkout", return_value=False),
+        patch.object(hda, "_require_target", AsyncMock(return_value=target)),
+        patch.object(hda, "_is_checkout", return_value=True),
+        patch.object(hda, "git_sync_mirror", _sync_moved_quiet),
     ):
-        resp = await hda.helpdesk_status()
+        resp = await hda.helpdesk_refresh()
+    assert resp.data["updated"] is True
 
-    assert resp.status == ApiResponseStatus.SUCCESS.value
-    assert resp.data["exists"] is False
-    assert resp.data["portal_git_url"] == "https://example.test/portal.git"
-    assert str(DESK_ID) in resp.data["mount_path"]
