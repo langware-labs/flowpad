@@ -80,6 +80,28 @@ def extract_agent(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     return [rec]
 
 
+def _plain(value: Any) -> Any:
+    """Strip a value down to plain YAML-representable Python.
+
+    Entity fields arrive as `TrackedList`/`TrackedDict` — mutation-tracking
+    collections that hold a `_parent` backref to the entity. PyYAML has no
+    representer for those, so it falls back to `!!python/object/new:` and, via
+    `_parent`, serializes the ENTIRE Agent into the frontmatter (absolute paths,
+    pydantic internals, the lot). Recursing to plain `list`/`dict` is what keeps
+    `agent.md` a document rather than a pickle.
+
+    Lists are additionally stringified: their members are ids/names, and a
+    `TypeId` would otherwise round-trip as an object too.
+    """
+    if isinstance(value, dict):
+        return {str(k): _plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
 def agent_default_body(entity) -> str:
     """Render frontmatter + system prompt. Called on EVERY save (owns_main_ref)."""
     from flow_sdk.schema.type_info import render_entity_frontmatter  # noqa: PLC0415
@@ -91,8 +113,6 @@ def agent_default_body(entity) -> str:
         # so only None is dropped.
         if value is None:
             continue
-        if isinstance(value, list):
-            value = [str(v) for v in value]
-        fm[key] = value
+        fm[key] = _plain(value)
     body = (getattr(entity, "system_prompt", "") or "").strip()
     return render_entity_frontmatter(entity, fm) + f"\n\n{body}\n"

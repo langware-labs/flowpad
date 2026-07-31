@@ -82,3 +82,51 @@ def test_shipped_agent_reads_vendor_extras():
 
 def test_unknown_shipped_agent_is_none_not_an_error():
     assert _shipped_agent("no-such-agent") is None
+
+
+# ── frontmatter rendering ─────────────────────────────────────────────────────
+
+def test_rendered_frontmatter_is_plain_yaml_not_a_pickle():
+    """`agent.md` must stay a document, not a Python object graph.
+
+    Entity fields arrive as TrackedList/TrackedDict, which carry a `_parent`
+    backref to the entity. PyYAML has no representer for them, so without the
+    plain-value coercion it emits `!!python/object/new:` and drags the WHOLE
+    Agent — absolute paths, pydantic internals — into the frontmatter. A live
+    UI edit produced exactly that.
+    """
+    from flow_sdk.fs_store.indexer.functions.agent import agent_default_body
+
+    agent = Agent(
+        name="probe",
+        avatar="Wrench",
+        cli_options={"chrome": True, "nested": {"a": 1}},
+        subagents=["helper"],
+    )
+    rendered = agent_default_body(agent)
+
+    assert "python/object" not in rendered
+    assert "TrackedDict" not in rendered and "TrackedList" not in rendered
+    # and the values still survive, nested shape intact
+    assert "chrome: true" in rendered
+    assert "nested:" in rendered
+    assert "- helper" in rendered
+
+
+def test_rendered_frontmatter_round_trips_through_the_parser():
+    """Whatever we render must parse back to the same values."""
+    from flow_sdk.fs_store.indexer.functions.agent import agent_default_body, parse_agent_markdown
+
+    agent = Agent(
+        name="probe",
+        avatar="🌐",
+        worker_type="claude",
+        model="haiku",
+        cli_options={"chrome": True},
+        subagents=["a", "b"],
+    )
+    parsed = parse_agent_markdown(agent_default_body(agent), "probe")
+
+    assert parsed["avatar"] == "🌐"
+    assert parsed["cli_options"] == {"chrome": True}
+    assert parsed["subagents"] == ["a", "b"]

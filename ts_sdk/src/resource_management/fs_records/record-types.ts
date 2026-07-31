@@ -69,6 +69,9 @@ export enum RecordType {
   HOOK = 'hook',
   MCP_SERVER = 'mcp_server',
   SUBAGENT = 'subagent',
+  /** The launchable agent (agentic-assets/agent/<name>/agent.md).
+   *  Distinct from SUBAGENT, the provider-owned .claude/agents/<name>.md. */
+  AGENT = 'agent',
   COMMAND = 'command',
   CLAUDE_MD = 'claude_md',
   CLAUDE_MEMORY = 'claude_memory',

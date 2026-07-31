@@ -15,8 +15,8 @@ import { createVibeProcessForProject } from '@src/pages/flow-page/use-start-vibe
 import { notify } from '@src/notifications';
 import { tagAttrs } from '@src/tags/tag-attrs';
 
-interface AgentAssetEditorProps {
-  /** FSRef to the agent .md file. */
+interface SubAgentAssetEditorProps {
+  /** FSRef to the subagent .md file. */
   fsRef: FSRef;
   /**
    * Pre-resolved agent entity. Passed by `<EntityResolutionGate>` from
@@ -34,11 +34,11 @@ interface AgentAssetEditorProps {
  * `fsRef.vpath` (the file's compute-node-rooted VFS path) — the same surface
  * every other doc gets.
  */
-export function AgentAssetEditor({
+export function SubAgentAssetEditor({
   fsRef,
   agent: providedAgent,
   wikiLinkTarget,
-}: AgentAssetEditorProps) {
+}: SubAgentAssetEditorProps) {
   const { entity: discoveredAgent } = useEntityByPath<SubAgent>(
     providedAgent ? null : SubAgent.type,
     providedAgent ? null : fsRef,
