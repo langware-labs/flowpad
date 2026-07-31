@@ -1,4 +1,4 @@
-import { Agent, apiClient, dataManager, Skill } from '@sdk';
+import { SubAgent, apiClient, dataManager, Skill } from '@sdk';
 import { isAgentSpawn, isSkillCall } from '@sdk/utils/agent-transcript';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -9,7 +9,7 @@ import { Bot, Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
-/** Entity shape this panel resolves names against — both Skill and Agent fit. */
+/** Entity shape this panel resolves names against — both Skill and SubAgent fit. */
 type NamedAsset = { name?: string; asset_ref?: string };
 
 /**
@@ -18,7 +18,7 @@ type NamedAsset = { name?: string; asset_ref?: string };
  * the raw graph route with include_system=true — useEntitiesQuery omits that
  * flag, dropping SDK-shipped system skills/agents (mirrors SkillsCategory).
  */
-function useAssetsByName<T extends NamedAsset>(type: 'skill' | 'agent'): Map<string, T> | undefined {
+function useAssetsByName<T extends NamedAsset>(type: 'skill' | 'subagent'): Map<string, T> | undefined {
   return useQuery<Map<string, T>>({
     queryKey: ['skills-agents-panel', type],
     queryFn: async () => {
@@ -89,7 +89,7 @@ export function SkillsAgentsPanel({ workerType, sessionId }: Props) {
   });
 
   const skillByName = useAssetsByName<Skill>('skill');
-  const agentByName = useAssetsByName<Agent>('agent');
+  const agentByName = useAssetsByName<SubAgent>('subagent');
 
   const skills = useMemo<UsedItem[]>(() => {
     if (!data) return [];
@@ -103,7 +103,7 @@ export function SkillsAgentsPanel({ workerType, sessionId }: Props) {
     return dedupeByName(names, (n) => agentByName?.get(n)?.asset_ref);
   }, [data, agentByName]);
 
-  const open = (type: 'skill' | 'agent', assetRef?: string) => {
+  const open = (type: 'skill' | 'subagent', assetRef?: string) => {
     if (!assetRef) return; // unresolved → non-clickable
     navigation.openDock(DockPointer.forAssetEditor(type, assetRef));
   };
@@ -133,7 +133,7 @@ export function SkillsAgentsPanel({ workerType, sessionId }: Props) {
         title={t`Sub-agents`}
         icon={Bot}
         items={agents}
-        onOpen={(ref) => open('agent', ref)}
+        onOpen={(ref) => open('subagent', ref)}
       />
     </div>
   );

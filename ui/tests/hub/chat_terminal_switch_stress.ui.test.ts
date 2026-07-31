@@ -269,7 +269,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
    *  (`role !== 'user'`): both the `prompt` action's transcript poll AND
    *  `proc.prompt()`'s optimistic user echo replay the USER turn — which contains
    *  the token verbatim (it's the instruction) — so an unfiltered match would
-   *  false-positive on the prompt itself, never proving the agent replied. Agent
+   *  false-positive on the prompt itself, never proving the agent replied. SubAgent
    *  output is tagged `role: 'assistant'` (or carries no role on the headless
    *  print-stream); the user turn is tagged `role: 'user'` on both sides.
    *  We do NOT `loadHistory({force})` on every poll — a full transcript re-read

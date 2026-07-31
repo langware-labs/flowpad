@@ -97,8 +97,8 @@ export function StationCard({ data, selected }: NodeProps) {
     });
   };
 
-  const agentRef = !isFunction && typeof nd.typeid === 'string' && nd.typeid.startsWith('agent-')
-    ? nd.typeid.slice('agent-'.length)
+  const agentRef = !isFunction && typeof nd.typeid === 'string' && nd.typeid.startsWith('subagent-')
+    ? nd.typeid.slice('subagent-'.length)
     : '';
   const sub = isFunction
     ? nd.function || 'no function'

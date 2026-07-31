@@ -207,7 +207,7 @@ export function LiveStatus() {
     { id: 'sessions', label: t`Sessions`, icon: Clock, badge: historyEntries.length },
     { id: 'skills', label: t`Skills`, icon: Sparkles, badge: filteredData?.skills.length },
     { id: 'commands', label: t`Commands`, icon: Command, badge: filteredData?.commands.length },
-    { id: 'agents', label: t`Agents`, icon: Bot, badge: filteredData?.agents.length },
+    { id: 'agents', label: t`Sub-agents`, icon: Bot, badge: filteredData?.agents.length },
     { id: 'plugins', label: t`Plugins`, icon: Plug, badge: filteredData?.plugins.length },
     { id: 'hooks', label: t`Hooks`, icon: Settings, badge: filteredData?.hooks.length },
     { id: 'directories', label: t`Directories`, icon: FolderOpen },

@@ -108,7 +108,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     ],
   },
   agent: {
-    dockPointer: (r) => assetEditorPointer('agent', r),
+    dockPointer: (r) => assetEditorPointer('subagent', r),
   },
   annotation: {
     primaryAction: async (r, navigation) => {

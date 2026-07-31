@@ -3,7 +3,7 @@ import { dataManager } from './APIEntity';
 import apiClient, { getErrorMessages } from './client';
 import config from './config';
 import { sdkConfig } from './config/index';
-import { Agent, ComputeNode, Project, User, Visitor, Workspace } from './entities';
+import { SubAgent, ComputeNode, Project, User, Visitor, Workspace } from './entities';
 import { AgentHook } from './entities/agent-hook';
 import { authManager, dataContext, isTypeId, TypeId } from './FlowSync';
 import { snifferManager } from './services/snifferManager';
@@ -127,7 +127,7 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         console.log('[initSdk] Using agentId from params:', params.agentId);
         await dataContext.setContextEntityTypeId(
           ContextEntitiesEnum.CurrentAgentTypeId,
-          new TypeId(Agent.type, params.agentId),
+          new TypeId(SubAgent.type, params.agentId),
         );
       }
 

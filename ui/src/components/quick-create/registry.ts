@@ -1,4 +1,4 @@
-import { Agent, dataManager, DynamicWorkflow, Layout, Markdown, Project, Prompt, Skill, Task, Whiteboard } from '@sdk';
+import { SubAgent, dataManager, DynamicWorkflow, Layout, Markdown, Project, Prompt, Skill, Task, Whiteboard } from '@sdk';
 import { PromptEditDialog } from '@src/components/prompt-library/PromptEditDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { BookMarked, Bot, Boxes, CheckSquare, FileText, Palette, Sparkles, type LucideIcon } from 'lucide-react';
@@ -129,20 +129,20 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     },
   },
   {
-    type: 'agent',
+    type: 'subagent',
     label: 'Sub agent',
     wikiword: 'Sub agents',
     Icon: Bot,
     fallbackSubFolder: '.claude/agents',
     create: async ({ project, name, folderVfsPath }) => {
-      const saved = await Agent.createInProject(project, name, folderVfsPath);
+      const saved = await SubAgent.createInProject(project, name, folderVfsPath);
       return {
         // Open a freshly-created agent ready to type into: edit mode, caret at the
         // start of the (empty) system-prompt body, right after the headline.
         pointer: saved.asset_ref
-          ? DockPointer.forAssetEditor('agent', saved.asset_ref, Layout.DOCK, { editorMode: 'editor', initialLine: '2' })
+          ? DockPointer.forAssetEditor('subagent', saved.asset_ref, Layout.DOCK, { editorMode: 'editor', initialLine: '2' })
           : undefined,
-        toastTitle: 'Agent created',
+        toastTitle: 'SubAgent created',
       };
     },
   },

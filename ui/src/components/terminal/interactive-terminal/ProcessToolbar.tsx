@@ -145,7 +145,7 @@ export function ProcessToolbar({
   useEffect(() => {
     if (process.workerStatus === WorkerStatus.API_TIMEOUT) {
       console.warn(
-        `[ProcessToolbar] Agent ${String(process.typeId)} is taking a long time to respond — the Anthropic API may be slow or unresponsive.`,
+        `[ProcessToolbar] SubAgent ${String(process.typeId)} is taking a long time to respond — the Anthropic API may be slow or unresponsive.`,
       );
     }
   }, [process.workerStatus, process.typeId]);

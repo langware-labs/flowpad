@@ -151,7 +151,7 @@ const ASSETS: AssetSpec[] = [
     type: 'agent',
     mainSubdir: '.claude/agents',
     create: async (sdk) => {
-      const a = trackForCleanup(await sdk.Agent.createInProject(null, testEntityName('agent')));
+      const a = trackForCleanup(await sdk.SubAgent.createInProject(null, testEntityName('agent')));
       return { id: a.id!, name: a.name ?? a.title };
     },
   },

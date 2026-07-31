@@ -22,7 +22,7 @@ vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sdk')>();
   return {
     ...actual,
-    Agent: {
+    SubAgent: {
       type: 'agent',
       query: vi.fn().mockResolvedValue([]),
     },

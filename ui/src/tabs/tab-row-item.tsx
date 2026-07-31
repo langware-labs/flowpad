@@ -163,7 +163,7 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
     : null;
   // An agent_trace's chip shows the ORIGINAL analyzed-process name (e.g.
   // "deferred-save-background-sweeper") — the Route icon already reads as
-  // "analysis", so the prefixed "Agent analysis: …" title (which the header
+  // "analysis", so the prefixed "SubAgent analysis: …" title (which the header
   // carries) would only waste the narrow tab. Subscribe to that process so the
   // chip upgrades the moment its row loads.
   const focusTrace =

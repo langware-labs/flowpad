@@ -164,7 +164,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     lastShown ?? (displayStack.length ? displayStack[displayStack.length - 1] : null);
   const persistedShownKey = persistedShown ? JSON.stringify(persistedShown) : '';
 
-  // Agent-declared display focus (`flow show` → on_show entity event). The
+  // SubAgent-declared display focus (`flow show` → on_show entity event). The
   // last shown target PINS the display: it outranks the involuntary per-file
   // write focus noise from the stream. A new show replaces the pin; switching
   // to another process clears it.

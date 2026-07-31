@@ -68,7 +68,7 @@ export enum RecordType {
   MARKETPLACE = 'marketplace',
   HOOK = 'hook',
   MCP_SERVER = 'mcp_server',
-  AGENT = 'agent',
+  SUBAGENT = 'subagent',
   COMMAND = 'command',
   CLAUDE_MD = 'claude_md',
   CLAUDE_MEMORY = 'claude_memory',

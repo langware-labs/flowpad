@@ -31,7 +31,7 @@ import { useProjectSnapshot } from './useProjectSnapshot';
 interface QuickCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Descriptor `type` (e.g. 'skill', 'agent'). Ignored when null. */
+  /** Descriptor `type` (e.g. 'skill', 'subagent'). Ignored when null. */
   type: string | null;
 }
 

@@ -180,6 +180,11 @@ msgstr "{0} קבצים מצורפים"
 msgid "{0} bytes"
 msgstr "{0} בתים"
 
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "{0} connection failed"
+msgstr ""
+
 #. placeholder {0}: summary.current
 #. placeholder {1}: summary.stale
 #. placeholder {2}: summary.partial
@@ -187,6 +192,11 @@ msgstr "{0} בתים"
 #: src/components/machine-overview/service-status-led.tsx
 msgid "{0} current · {1} stale · {2} partial · {3} error"
 msgstr "{0} עדכני · {1} מיושן · {2} חלקי · {3} שגיאה"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "{0} disconnect failed"
+msgstr ""
 
 #. placeholder {0}: tooBig.length
 #. placeholder {1}: tooBig.join(', ')
@@ -213,14 +223,18 @@ msgstr "{0} אשפה · {1} לא ודאי · {2} לשמור · {3} שורשים 
 msgid "{0} has been added successfully."
 msgstr "{0} נוסף בהצלחה."
 
-#. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
-msgid "{0} icon"
-msgstr "סמל {0}"
+#~ msgid "{0} icon"
+#~ msgstr "סמל {0}"
 
 #. placeholder {0}: workerLabel(unavailableWorker)
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "{0} is unavailable"
+msgstr ""
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "{0} is working"
 msgstr ""
 
 #. placeholder {0}: frame.issue_count
@@ -250,6 +264,11 @@ msgstr "{0} הודעה"
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 msgid "{0} msgs"
 msgstr "{0} הודעות"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "{0} not tested"
+msgstr ""
 
 #. placeholder {0}: person.name || person.email
 #. placeholder {1}: task.title
@@ -291,6 +310,12 @@ msgstr "{0} סוד{1}"
 #: src/components/terminal/HistoryModal.tsx
 msgid "{0} selected"
 msgstr "{0} נבחרו"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+#: src/components/connections-manager.tsx
+msgid "{0} test failed"
+msgstr ""
 
 #. placeholder {0}: frame.tool_call_count
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -677,6 +702,10 @@ msgstr "קבל"
 msgid "Accepting…"
 msgstr "מקבל..."
 
+#: src/components/connections-manager.tsx
+msgid "Access requested"
+msgstr ""
+
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Accurate"
 msgstr "מדויק"
@@ -951,16 +980,16 @@ msgid "agent"
 msgstr "סוכן"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
-msgid "Agent"
-msgstr "סוכן"
+#~ msgid "Agent"
+#~ msgstr "סוכן"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "Agent is taking a long time to respond"
 #~ msgstr "הסוכן לוקח זמן רב מדי להשיב"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
-msgid "Agent not found"
-msgstr "סוכן לא נמצא"
+#~ msgid "Agent not found"
+#~ msgstr "סוכן לא נמצא"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #~ msgid "Agentic Flows"
@@ -971,7 +1000,6 @@ msgid "agents"
 msgstr "סוכנים"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
-#: src/pages/live-status/LiveStatus.tsx
 msgid "Agents"
 msgstr "סוכנים"
 
@@ -1305,6 +1333,7 @@ msgid "API Key, Backend URL, or Machine ID not configured"
 msgstr "מפתח API, URL של Backend, או מזהה מכונה לא מוגדרים"
 
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/credentials-view/CredentialsView.tsx
 msgid "API Keys"
 msgstr "מפתחות API"
 
@@ -1571,9 +1600,22 @@ msgstr "קבצים מצורפים"
 msgid "Authenticated ✓"
 msgstr "ההזדהות אומתה ✓"
 
+#. placeholder {0}: result.identity
+#: src/components/connections-manager.tsx
+msgid "Authenticated as {0}"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "authentication required"
 #~ msgstr ""
+
+#: src/components/connections-manager.tsx
+msgid "Authorization code — you approve in the browser and come back"
+msgstr ""
+
+#: src/components/connections-manager.tsx
+msgid "Authorization code with PKCE, redirected back to this machine"
+msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Authorization failed or was denied. Click Retry to try again."
@@ -1893,6 +1935,11 @@ msgstr "כתיבה למטמון"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "Cache write: {0}"
 msgstr "כתיבה לזיכרון: {0}"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "Call {0} with the stored token"
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "Call tree"
@@ -2846,13 +2893,17 @@ msgstr "החיבור הצליח, אך עדיין אין גישה למאגר הז
 #~ msgid "Connected: {0}"
 #~ msgstr "מחובר: {0}"
 
+#: src/components/connections-manager.tsx
+msgid "Connecting"
+msgstr ""
+
 #: src/components/chat-input.tsx
 #~ msgid "Connecting: {0}..."
 #~ msgstr "מתחבר: {0}..."
 
 #: src/components/connections-manager.tsx
-msgid "Connecting..."
-msgstr "מתחבר..."
+#~ msgid "Connecting..."
+#~ msgstr "מתחבר..."
 
 #: src/components/assets/editor/WikiResolveView.tsx
 #: src/components/assets/editor/WikiResolveView.tsx
@@ -2872,6 +2923,10 @@ msgstr "מזהה חיבור"
 #: src/components/version-popover/version-popover.tsx
 msgid "Connection Info"
 msgstr "מידע חיבור"
+
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "Connections"
+msgstr ""
 
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Contacts"
@@ -2968,8 +3023,8 @@ msgid "Conversation title"
 msgstr "כותרת שיחה"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-msgid "Conversations"
-msgstr "שיחות"
+#~ msgid "Conversations"
+#~ msgstr "שיחות"
 
 #: src/components/account/database-section.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
@@ -3138,6 +3193,11 @@ msgstr "לא ניתן היה לשנות את שיטת ההתחברות"
 msgid "Could not check sign-in"
 msgstr "לא ניתן היה לבדוק את מצב ההתחברות"
 
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "Could not connect to {0}."
+msgstr ""
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Could not copy the code"
 msgstr "לא היה ניתן להעתיק את הקוד"
@@ -3149,6 +3209,11 @@ msgstr ""
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not delete"
 msgstr "לא היה ניתן למחוק"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "Could not disconnect from {0}."
+msgstr ""
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Could not download"
@@ -3206,6 +3271,10 @@ msgstr "לא ניתן לפתור את ספריית הבית מתוך מידע bo
 #: src/components/assets/ShareContextFolderButton.tsx
 msgid "Could not resolve this folder"
 msgstr "לא ניתן לפתור את התיקייה"
+
+#: src/components/connections-manager.tsx
+msgid "Could not run the connection test."
+msgstr ""
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 #~ msgid "Could not save changes"
@@ -3349,8 +3418,8 @@ msgstr "צור {0} חדש."
 #~ msgstr "צור ארטיפקט חדש בפרויקט זה."
 
 #: src/components/hooks-manager/HookForm.tsx
-msgid "Create Agent Hook"
-msgstr "צור Agent Hook"
+#~ msgid "Create Agent Hook"
+#~ msgstr "צור Agent Hook"
 
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Create apps and tools by chatting with AI"
@@ -3406,6 +3475,10 @@ msgstr "צור אחד על ידי שמיטת <0>index.md</0> עם frontmatter מ
 msgid "Create Project"
 msgstr "צור פרויקט"
 
+#: src/components/hooks-manager/HookForm.tsx
+msgid "Create SubAgent Hook"
+msgstr ""
+
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Create Trigger"
 msgstr "יצירת טריגר"
@@ -3457,6 +3530,10 @@ msgstr "יוצר..."
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Creating…"
 msgstr "יוצר..."
+
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "Credentials"
+msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Cross-link"
@@ -3984,6 +4061,10 @@ msgstr "מצב פיתוח פעיל — לחץ כדי להשבית"
 msgid "Developer Tools"
 msgstr "כלים למפתחים"
 
+#: src/components/connections-manager.tsx
+msgid "Device code"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Device login"
 msgstr "התחברות דרך מכשיר"
@@ -4109,7 +4190,6 @@ msgstr "התנתק"
 
 #: src/components/account/user-info.tsx
 #: src/components/collaboration/SharedSessionView.tsx
-#: src/components/connections-manager.tsx
 msgid "Disconnected"
 msgstr "התנתק"
 
@@ -4198,7 +4278,6 @@ msgstr "מרחק"
 #~ msgid "doc name"
 #~ msgstr "שם המסמך"
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Docs"
 msgstr "מסמכים"
@@ -4386,8 +4465,8 @@ msgid "Edit a system trigger?"
 msgstr "ערוך Trigger של מערכת?"
 
 #: src/components/hooks-manager/HookForm.tsx
-msgid "Edit Agent Hook"
-msgstr "ערוך Agent Hook"
+#~ msgid "Edit Agent Hook"
+#~ msgstr "ערוך Agent Hook"
 
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Edit anyway"
@@ -4439,6 +4518,10 @@ msgstr "ערוך prompt"
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Edit sender name"
 msgstr "עריכת שם המשדר"
+
+#: src/components/hooks-manager/HookForm.tsx
+msgid "Edit SubAgent Hook"
+msgstr ""
 
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Edit system trigger"
@@ -4666,6 +4749,10 @@ msgstr "משתנה סביבה"
 #: src/components/project-home/SecretsCard.tsx
 msgid "ENV_VAR"
 msgstr "משתנה_סביבה"
+
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "Environment"
+msgstr ""
 
 #: src/components/EnvVarsManager.tsx
 msgid "Environment variable created successfully"
@@ -5671,8 +5758,8 @@ msgstr "לוגו Flowpad.ai"
 #~ msgstr "זרימות"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-msgid "Flows"
-msgstr "זרימות"
+#~ msgid "Flows"
+#~ msgstr "זרימות"
 
 #: src/components/project-list/ProjectList.tsx
 #~ msgid "Flows:"
@@ -6004,13 +6091,13 @@ msgstr "אופן הצגת הגרף"
 msgid "Graph view"
 msgstr "תצוגת גרף"
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-msgid "Graph Workflows"
-msgstr "זרימות עבודה גרפיות"
-
 #: src/components/graph-view/webglSupport.tsx
 msgid "Graph view needs WebGL"
 msgstr ""
+
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+msgid "Graph Workflows"
+msgstr "זרימות עבודה גרפיות"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Group Events"
@@ -6199,7 +6286,6 @@ msgstr "הדגש שינויים מאז הלהט האחרון"
 msgid "History"
 msgstr "היסטוריה"
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -6851,8 +6937,8 @@ msgid "just now"
 msgstr "הרגע"
 
 #: src/components/connections-manager.tsx
-msgid "Just now"
-msgstr "זה עתה"
+#~ msgid "Just now"
+#~ msgstr "זה עתה"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Justify"
@@ -7371,6 +7457,10 @@ msgstr "טעינת משאבי הפרויקט..."
 msgid "Loading projects..."
 msgstr "טוען פרויקטים..."
 
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "Loading projects…"
+msgstr ""
+
 #: src/components/chats-navigator/ChatPromptsPopover.tsx
 #: src/components/terminal/HistoryModal.tsx
 msgid "Loading prompts…"
@@ -7530,8 +7620,8 @@ msgstr "התחברות"
 msgid "Log mode"
 msgstr "מצב רישום"
 
+#: src/components/credentials-view/LoginRequiredPanel.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
-#: src/pages/flow-page/content-panel/content-panel.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Login"
 msgstr "כניסה"
@@ -7552,10 +7642,10 @@ msgstr "נדרשת כניסה לחיפוש בבסיס נתונים של Flowpad"
 msgid "Login required"
 msgstr "נדרשת כניסה"
 
+#: src/components/credentials-view/LoginRequiredPanel.tsx
 #: src/components/EnvVarsManager.tsx
 #: src/components/EnvVarsManager.tsx
 #: src/components/EnvVarsManager.tsx
-#: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "Login Required"
 msgstr "נדרש כניסה"
 
@@ -8015,8 +8105,8 @@ msgid "Neighbors (<0>{0}</0>)"
 msgstr "שכנים (<0>{0}</0>)"
 
 #: src/components/connections-manager.tsx
-msgid "Never connected"
-msgstr "לא התחבר אף פעם"
+#~ msgid "Never connected"
+#~ msgstr "לא התחבר אף פעם"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "never indexed"
@@ -8401,6 +8491,10 @@ msgstr "אין צומת חישוב זמין"
 msgid "No compute node available in this workspace."
 msgstr "אין צומת חישוב זמין בסביבת העבודה הזו."
 
+#: src/components/connections-manager.tsx
+msgid "No connection test is defined for this provider."
+msgstr ""
+
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "No contacts found."
 msgstr "לא נמצאו אנשי קשר."
@@ -8448,8 +8542,8 @@ msgid "No creatable types available"
 msgstr "אין סוגים שניתן ליצור"
 
 #: src/components/connections-manager.tsx
-msgid "No current project available. Please create a project first before connecting OAuth providers."
-msgstr "אין פרויקט זמין. אנא צור פרויקט לפני שתחבר ספקי OAuth."
+#~ msgid "No current project available. Please create a project first before connecting OAuth providers."
+#~ msgstr "אין פרויקט זמין. אנא צור פרויקט לפני שתחבר ספקי OAuth."
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No data available"
@@ -8724,8 +8818,12 @@ msgid "No metrics data available"
 msgstr "אין נתוני מדדים זמינים"
 
 #: src/components/connections-manager.tsx
-msgid "No OAuth connections found"
-msgstr "לא נמצאו חיבורי OAuth"
+#~ msgid "No OAuth connections found"
+#~ msgstr "לא נמצאו חיבורי OAuth"
+
+#: src/components/connections-manager.tsx
+msgid "No OAuth providers available"
+msgstr ""
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "No Operation (Trace Only)"
@@ -8801,6 +8899,7 @@ msgid "No project open"
 msgstr "אין פרויקט פתוח"
 
 #: src/components/collaboration/StartRoomDialog.tsx
+#: src/components/connections-manager.tsx
 msgid "No project selected"
 msgstr "לא נבחר פרויקט"
 
@@ -8818,10 +8917,13 @@ msgstr "אין פרויקטים"
 msgid "No projects found"
 msgstr "לא נמצאו פרויקטים"
 
-#: src/components/project-sidebar/ProjectSidebar.tsx
-#: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
-#~ msgid "No projects yet"
-#~ msgstr "אין פרויקטים עדיין"
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "No projects yet"
+msgstr "אין פרויקטים עדיין"
+
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "No projects yet — create one from the desktop app, then pick it here."
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "No projects."
@@ -9187,6 +9289,10 @@ msgstr "לא בדוק"
 msgid "Not configured"
 msgstr "לא מוגדר"
 
+#: src/components/connections-manager.tsx
+msgid "Not connected"
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not found"
 msgstr "לא נמצא"
@@ -9323,6 +9429,14 @@ msgstr "הודע לישות (הגדל מונה)"
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Notify people about this push"
 msgstr "להודיע לאנשים על הדחיפה הזו"
+
+#: src/components/connections-manager.tsx
+msgid "OAuth"
+msgstr ""
+
+#: src/components/connections-manager.tsx
+msgid "OAuth + PKCE"
+msgstr ""
 
 #: src/components/InputSection.tsx
 #~ msgid "OAuth connection established successfully"
@@ -9906,7 +10020,6 @@ msgid "Ordered list"
 msgstr "רשימה ממוספרת"
 
 #: src/components/account/organization-panel.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Organization"
 msgstr "ארגון"
@@ -10162,6 +10275,10 @@ msgstr "בחרו אדם או הקלידו כתובת דוא״ל"
 msgid "Pick a project"
 msgstr "בחר פרויקט"
 
+#: src/components/connections-manager.tsx
+msgid "Pick a project first — an OAuth token is granted to a project, not to the app."
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Pick one to get started — it only takes a few seconds."
 #~ msgstr ""
@@ -10274,9 +10391,17 @@ msgstr "אנא מלא את שני השדות"
 msgid "Please fix the issue in your repository and try again."
 msgstr "אנא תקן את הבעיה במאגר שלך ונסה שוב."
 
+#: src/components/credentials-view/LoginRequiredPanel.tsx
+msgid "Please log in to manage credentials."
+msgstr ""
+
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "Please log in to view and manage credentials."
+msgstr ""
+
 #: src/pages/flow-page/content-panel/content-panel.tsx
-msgid "Please log in to view and manage environment variables."
-msgstr "בואו להתחבר כדי להציג ולנהל משתנים סביבה."
+#~ msgid "Please log in to view and manage environment variables."
+#~ msgstr "בואו להתחבר כדי להציג ולנהל משתנים סביבה."
 
 #: src/components/EnvVarsManager.tsx
 msgid "Please login in order to add a new variable"
@@ -10842,8 +10967,12 @@ msgid "Ready"
 msgstr "מוכן"
 
 #: src/components/connections-manager.tsx
-msgid "Ready to Connect"
-msgstr "מוכן להתחברות"
+msgid "Ready to connect"
+msgstr ""
+
+#: src/components/connections-manager.tsx
+#~ msgid "Ready to Connect"
+#~ msgstr "מוכן להתחברות"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Ready to share"
@@ -12190,6 +12319,7 @@ msgstr "יש לבחור קובץ לתצוגה מקדימה"
 #~ msgid "Select a file to see connected flows"
 #~ msgstr "בחר קובץ כדי לראות זרימות מחוברות"
 
+#: src/components/credentials-view/CredentialsView.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "Select a project"
@@ -12850,6 +12980,10 @@ msgstr "מציג 20 מתוך {0} ערכים"
 msgid "Showing current configuration only — there is no loaded snapshot until the first successful start."
 msgstr "מציג את התצורה הנוכחית בלבד — אין תמונת מצב טעונה עד ההתחלה המוצלחת הראשונה."
 
+#: src/components/connections-manager.tsx
+msgid "Shown at approval"
+msgstr ""
+
 #: src/components/ui/sidebar.tsx
 msgid "Sidebar"
 msgstr "סרגל צדדי"
@@ -12894,6 +13028,10 @@ msgstr "התחברו עם {account}"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
 msgstr "יש להתחבר דרך {account} שלך כדי לאפשר ל{name} לכתוב ולהריץ קוד בשבילך. חלון דפדפן נפתח להזדהות — FlowPad אף פעם לא רואה את הסיסמה שלך."
+
+#: src/components/connections-manager.tsx
+msgid "Sign-in"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Sign-in needed"
@@ -13382,8 +13520,17 @@ msgid "sub-agent"
 msgstr "תת-סוכן"
 
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
+#: src/pages/live-status/LiveStatus.tsx
 msgid "Sub-agents"
 msgstr "סוכנים משנה"
+
+#: src/components/asset-manager/EntityTypeBar.tsx
+msgid "SubAgent"
+msgstr ""
+
+#: src/components/agent-layout/error-screen/error-screen.tsx
+msgid "SubAgent not found"
+msgstr ""
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -13604,7 +13751,6 @@ msgid "Tasked"
 msgstr "בעל משימה"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Tasks"
 msgstr "משימות"
@@ -13650,6 +13796,7 @@ msgstr "מושבות הטרמינל"
 msgid "test"
 msgstr "בדיקה"
 
+#: src/components/connections-manager.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Test"
@@ -13764,6 +13911,14 @@ msgstr "טקסט הנושא..."
 #: src/components/conversation/PromptComposerDialog.tsx
 msgid "The prompt will be attached to your next message. The other user will see an \"Approve & Execute\" chip; once approved, the prompt runs in their forked Claude Code session."
 msgstr "ההנחיה תצורף להודעה הבאה שלך. המשתמש השני יראה צ'יפ \"אישור והפעלה\"; ברגע שאושר, ההנחיה תרוץ בסשן Claude Code שלהם."
+
+#: src/components/connections-manager.tsx
+msgid "The provider accepted the token."
+msgstr ""
+
+#: src/components/connections-manager.tsx
+msgid "The provider rejected the stored token."
+msgstr ""
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "The recipient will see a PROMPT to approve."
@@ -14865,6 +15020,10 @@ msgstr "נראה"
 msgid "Waiting for {hostName} to approve the live session…"
 msgstr "בהמתנה לאישור של {hostName} להפעלה החיה…"
 
+#: src/components/connections-manager.tsx
+msgid "Waiting for approval…"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "waiting for authorization in your browser…"
 #~ msgstr ""
@@ -15203,6 +15362,10 @@ msgstr "אתה בעלים — מחוק לכל אחד"
 msgid "You own this conversation — pick how you want to leave."
 msgstr "אתה בעלים של שיחה זו — בחר איך אתה רוצה לעזוב."
 
+#: src/components/connections-manager.tsx
+msgid "You type a short code into the provider's site"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "You will leave"
@@ -15267,7 +15430,6 @@ msgstr "הפרויקטים שלך"
 msgid "Your sandbox is ready"
 msgstr "ארגז החול שלך מוכן"
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"
 msgstr "עולמך"

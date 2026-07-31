@@ -8,7 +8,7 @@ import { ProcessKind } from '../process/process-types';
 
 /**
  * DynamicWorkflow entity — an authored dynamic-workflow script asset (the
- * Workflow-tool JS definition), like an Agent or a Skill. Creatable/editable;
+ * Workflow-tool JS definition), like a SubAgent or a Skill. Creatable/editable;
  * running it spawns a worker that executes the script and produces a
  * WorkflowRun. Mirrors a backend `Entity` of the same type — a cache, never the
  * origin (slick P3).
@@ -61,7 +61,7 @@ export class DynamicWorkflow extends APIEntity<DynamicWorkflow> {
    * launch action) and tags the process with `target_typeid_str = this.typeId`
    * + `process_type = Execution`, so the run shows up in this workflow's
    * `EntityExecutionPanel` (`useProcessesForTarget`) — the same "runs of this
-   * entity" surface the Agent/Skill/Workflow editors use. `ptyMode:true` opens a
+   * entity" surface the SubAgent/Skill/Workflow editors use. `ptyMode:true` opens a
    * visible terminal; `ptyMode:false` runs headlessly. The execution produces a
    * WorkflowRun once its journal lands on disk.
    */

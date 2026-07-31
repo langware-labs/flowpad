@@ -84,7 +84,7 @@ export function HookForm({ hook, onSave, onCancel }: HookFormProps) {
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
       <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle>{hook ? t`Edit Agent Hook` : t`Create Agent Hook`}</DialogTitle>
+          <DialogTitle>{hook ? t`Edit SubAgent Hook` : t`Create SubAgent Hook`}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">

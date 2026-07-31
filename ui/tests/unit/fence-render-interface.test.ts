@@ -44,7 +44,7 @@ describe('parseInterfaceBlock', () => {
   });
 
   it('parses class properties and methods without conflating their value shapes', () => {
-    const spec = parseInterfaceBlock(`name: Agent
+    const spec = parseInterfaceBlock(`name: SubAgent
 properties:
   status:
     type: ProcessStatus?
@@ -179,7 +179,7 @@ describe('interface renderer', () => {
     const host = document.createElement('div');
     const commit = vi.fn();
     await interfaceRenderer.render(
-      'name: Agent\nproperties:\n  status: ProcessStatus\nmethods:\n  start: "async () -> void"\n',
+      'name: SubAgent\nproperties:\n  status: ProcessStatus\nmethods:\n  start: "async () -> void"\n',
       host,
       { theme: 'light', blockId: 'b-tabs', editable: true, host: { openFile: () => {}, previewFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null }, commit },
     );
@@ -205,7 +205,7 @@ describe('interface renderer', () => {
   it('keeps both tabs available when one member collection is empty', async () => {
     const host = document.createElement('div');
     await interfaceRenderer.render(
-      'name: Agent\nproperties:\n  status: ProcessStatus\n',
+      'name: SubAgent\nproperties:\n  status: ProcessStatus\n',
       host,
       { theme: 'light', blockId: 'b-empty', editable: false, host: { openFile: () => {}, previewFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null }, commit: () => {} },
     );

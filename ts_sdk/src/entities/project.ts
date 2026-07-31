@@ -6,7 +6,7 @@ import { DockPointerData } from '../models/DockPointer';
 import type { AssetDescriptor, AssetSource } from '../process/asset-descriptor';
 import { isHubOnly } from '../utils/hub-runtime';
 import { ViewType } from '../utils/ui/view-types';
-import { Agent } from './agent';
+import { SubAgent } from './subagent';
 import { Artifact, IArtifact } from './artifact';
 import { type ConversationParticipant } from './conversation';
 import { ComputeNode } from './compute_node';
@@ -673,7 +673,7 @@ export class Project extends APIEntity<Project> {
    */
   async setupForDesktop(): Promise<{
     workspace: Workspace | null;
-    agent: Agent | null;
+    agent: SubAgent | null;
     compute_node: ComputeNode | null;
   }> {
     const actionInfo = new ActionInfo('setup-for-desktop', Project.type, this.typeId.id, 'POST');
@@ -681,7 +681,7 @@ export class Project extends APIEntity<Project> {
       void,
       {
         workspace: Workspace | null;
-        agent: Agent | null;
+        agent: SubAgent | null;
         compute_node: ComputeNode | null;
       }
     >(actionInfo);
