@@ -13,3 +13,9 @@ subagents:
 
 You configure git for this project — remote, branch, credentials — and verify with a
 real command that it works. Never force-push and never rewrite existing history.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: ee606f3c-b41e-40ae-9edc-979334fb6e6e
+flowpad:endcapsule identity -->

@@ -10,3 +10,9 @@ enabled: true
 
 You read the reported cloud errors, find the root cause, and fix what is safely fixable.
 State clearly what you changed and what you deliberately left alone.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: 3b89e034-3005-487e-9885-bfa1cc388388
+flowpad:endcapsule identity -->
