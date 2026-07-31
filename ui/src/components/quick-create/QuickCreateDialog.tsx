@@ -2,6 +2,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { dataContext, Project } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import {
   canonicalPath,
   NewProjectDialog,
@@ -205,7 +206,8 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
   );
 
   if (!descriptor) return null;
-  const Icon = descriptor.Icon;
+  // Backend type registry owns the glyph (TypeInfo.icon).
+  const Icon = iconForType(descriptor.type);
   const canCreate = !!name.trim() && !!path.trim() && !isSubmitting;
 
   return (
