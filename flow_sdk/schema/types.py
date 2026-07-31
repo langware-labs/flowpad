@@ -21,9 +21,8 @@ class EntityType(StrEnum):
     RULE = "rule"
     SKILL = "skill"
     # A Claude Code *subagent* definition — a `.claude/agents/<name>.md` prompt
-    # asset. Named for what the provider calls it; the bare noun `agent` is
-    # reserved for the hub-level launchable principal. The FAMILY stays
-    # "agents" because the directory is provider-owned.
+    # asset. Named for what the provider calls it. The FAMILY stays "agents"
+    # because the directory is provider-owned.
     SUBAGENT = "subagent"
     # The launchable agent: identity (name/avatar/system prompt) + the launch
     # bundle, deployed via a Deployment and run as an AgenticProcess. Distinct

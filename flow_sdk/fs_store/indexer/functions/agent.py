@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from flow_sdk.capsules import strip_capsule_blocks
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _extract_frontmatter, _yaml_load
@@ -49,7 +50,12 @@ def parse_agent_markdown(text: str, name: str) -> dict[str, Any]:
     for key in AGENT_SPEC_FIELDS:
         if key in fields and fields[key] is not None:
             out[key] = fields[key]
-    out["system_prompt"] = (_extract_body(text) or "").strip()
+    # Strip capsules as well as frontmatter, like every sibling extractor
+    # (spec, subagent, prompt, markdown…). The body IS the system prompt and is
+    # shipped to the worker as context_data.instructions, so a leftover
+    # `<!-- flowpad:capsule identity … -->` block would be re-rendered on every
+    # owns_main_ref save AND sent to the model on every run.
+    out["system_prompt"] = strip_capsule_blocks(_extract_body(text) or "").strip()
     return out
 
 

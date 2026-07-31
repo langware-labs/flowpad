@@ -24,6 +24,11 @@ from typing import TYPE_CHECKING, ClassVar, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.type_id import TypeId
+
+#: The only deployment kind phase 1 ships — run it on this machine. Owned by
+#: agent_deployment (which mints the deployment id from it); two literals that
+#: must match are one too many.
+from flow_sdk.builtin.agent_deployment import LOCAL_DEPLOYMENT_KIND
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
 
@@ -31,32 +36,41 @@ if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent_deployment import AgentDeployment
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 
-#: The only deployment kind phase 1 ships — run it on this machine.
-LOCAL_DEPLOYMENT_KIND = "local.runtime.agent"
-
-#: The two vocabularies for "which CLI", and the map between them.
+#: The two vocabularies for "which CLI".
 #:
 #: An agent.md declares the DRIVER short-id — that is what a human writes, what
 #: the CLI is called, and the key ``cli_drivers.factory`` dispatches on. But
 #: ``AgenticProcess.worker_type`` is a ``WorkerType``, whose Claude member is
 #: ``claude_code``. Feed one where the other is expected and the process fails
-#: pydantic validation (or the factory raises "Unknown worker_type"), which is
-#: exactly what a real launch found. Both directions live here so no call site
-#: has to re-derive them; the long-test factory keeps the same mapping.
+#: pydantic validation, which is exactly what a real launch found.
+#:
+#: The forward direction is NOT redefined here: ``get_driver`` already owns that
+#: alias table, and owns it better — it also handles ``claude_code_cli``, a
+#: ``WorkerType`` object, casing, and the ``FLOWPAD_DEFAULT_WORKER`` default.
+#: A private copy would be the fourth in the tree and would silently ignore that
+#: env override.
 _DRIVER_TO_WORKER = {"claude": "claude_code", "codex": "codex", "copilot": "copilot"}
-_WORKER_TO_DRIVER = {v: k for k, v in _DRIVER_TO_WORKER.items()}
 
 
 def driver_key(worker: str | None) -> str:
-    """The ``cli_drivers.factory`` key for either vocabulary. Default: claude."""
-    raw = (worker or "claude").strip()
-    return _WORKER_TO_DRIVER.get(raw, raw)
+    """The ``cli_drivers.factory`` key for either vocabulary."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+        get_driver,
+    )
+
+    # A blank `worker_type:` in an agent.md means "unset", but get_driver only
+    # treats None as unset and would raise on "". Normalize before handing over.
+    return get_driver((worker or "").strip() or None).name
 
 
 def worker_type_value(worker: str | None) -> str:
-    """The ``AgenticProcess.worker_type`` enum value for either vocabulary."""
-    raw = (worker or "claude").strip()
-    return _DRIVER_TO_WORKER.get(raw, raw)
+    """The ``AgenticProcess.worker_type`` enum value for either vocabulary.
+
+    No production helper does this direction — only test-local copies — so it
+    lives here, derived from ``driver_key`` so the two can't disagree.
+    """
+    key = driver_key(worker)
+    return _DRIVER_TO_WORKER.get(key, key)
 
 
 class Agent(Entity):
@@ -89,10 +103,10 @@ class Agent(Entity):
     mcp_servers: list[TypeId] = APIField(default_factory=list)
     subagents: list[str] = APIField(
         default_factory=list,
-        description="SubAgent NAMES this agent may delegate to, resolved at launch and rendered "
-        "into --agents. Names, not TypeIds, because a shipped agent.md is authored before the "
-        "SubAgent it references has ever been indexed — and name is already the addressable "
-        "identity (get_agent_local_deployment('asset-cleanup')).",
+        description="SubAgent NAMES this agent may delegate to. Names, not TypeIds, because a "
+        "shipped agent.md is authored before the SubAgent it references has ever been indexed. "
+        "DECLARED ONLY — nothing projects these into --agents yet; wire through "
+        "AgenticProcess.load_embedded_agent(name) when a caller needs it.",
     )
     additional_dirs: list[str] = APIField(default_factory=list)
     load_flowpad_assistant: bool = APIField(default=False)
@@ -132,12 +146,7 @@ class Agent(Entity):
 
     # ── projection into the launch bundle ─────────────────────────────────
 
-    @property
-    def resolved_worker_type(self) -> str:
-        """This agent's ``worker_type`` as the enum value AgenticProcess stores."""
-        return worker_type_value(self.worker_type)
-
-    def to_agent_options(self, **overrides) -> "AgentOptions":
+    def to_agent_options(self, worker_type: Optional[str] = None) -> "AgentOptions":
         """Build the vendor options object this agent launches with.
 
         Only ever sets keys that already exist in ``to_json()`` — the serialized
@@ -145,10 +154,14 @@ class Agent(Entity):
         over it and any new/renamed key would flip ``restart_required`` on every
         running process. ``system_prompt`` deliberately does NOT appear here: it
         travels via ``context_data.instructions`` (see ``AgentDeployment.launch``).
+
+        ``additional_dirs`` is deliberately absent too: both drivers overwrite
+        ``cmd.add_dirs`` with ``AgenticProcess.resolved_add_dirs`` at spawn, so a
+        copy here would be dead on arrival AND would perturb the very hash this
+        docstring is protecting. The process field is the single source.
         """
         from flow_sdk.builtin.agentic_process.cli_drivers import factory  # noqa: PLC0415
 
-        worker = driver_key(overrides.pop("worker_type", None) or self.worker_type)
         # Vendor extras first, so a named field always wins over a free-form key
         # of the same name.
         cli_json: dict = dict(self.cli_options or {})
@@ -156,10 +169,8 @@ class Agent(Entity):
             ("model", self.model),
             ("permission_mode", self.permission_mode),
             ("effort", self.effort),
-            ("add_dirs", list(self.additional_dirs or []) or None),
         ):
             if value is not None:
                 cli_json[key] = value
-        cli_json.update({k: v for k, v in overrides.items() if v is not None})
 
-        return factory(cli_json, worker)
+        return factory(cli_json, driver_key(worker_type or self.worker_type))

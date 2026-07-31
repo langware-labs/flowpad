@@ -572,24 +572,25 @@ async def resolve_default_worker_type() -> str:
     return worker_type
 
 
-def build_install_worker_config(harness_kind: str) -> tuple[str, dict[str, Any]]:
-    """Return AgenticProcess worker_type + cli_config for a harness leaf kind."""
-    if harness_kind == CapabilityKind.CLAUDE_CLI.value:
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
-        from flow_sdk.flowpad_types.enums import WorkerType
+def install_worker_type(harness_kind: str) -> str:
+    """The AgenticProcess ``worker_type`` for a harness leaf kind.
 
-        return WorkerType.CLAUDE_CODE.value, ClaudeAgentOptions(permission_mode="bypassPermissions").to_json()
-    if harness_kind == CapabilityKind.CODEX_CLI.value:
-        from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexAgentOptions
-        from flow_sdk.flowpad_types.enums import WorkerType
+    Only the worker is decided here. The rest of the install bundle
+    (permissions, model, system prompt) belongs to the `capability-installer`
+    Agent — this used to also build a whole vendor options object whose only
+    content was ``permission_mode``, which the Agent now declares.
+    """
+    from flow_sdk.flowpad_types.enums import WorkerType  # noqa: PLC0415
 
-        return WorkerType.CODEX.value, CodexAgentOptions(permission_mode="bypassPermissions").to_json()
-    if harness_kind == CapabilityKind.COPILOT_CLI.value:
-        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
-        from flow_sdk.flowpad_types.enums import WorkerType
-
-        return WorkerType.COPILOT.value, CopilotAgentOptions(permission_mode="bypassPermissions").to_json()
-    raise RuntimeError(f"Unsupported install harness kind: {harness_kind}")
+    by_kind = {
+        CapabilityKind.CLAUDE_CLI.value: WorkerType.CLAUDE_CODE.value,
+        CapabilityKind.CODEX_CLI.value: WorkerType.CODEX.value,
+        CapabilityKind.COPILOT_CLI.value: WorkerType.COPILOT.value,
+    }
+    worker = by_kind.get(harness_kind)
+    if worker is None:
+        raise RuntimeError(f"Unsupported install harness kind: {harness_kind}")
+    return worker
 
 
 def _schedule_install_monitor(process_id: str, kind: str) -> None:
@@ -674,7 +675,7 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
 
     try:
         harness_kind = await resolve_default_harness_kind()
-        worker_type, _ = build_install_worker_config(harness_kind)
+        worker_type = install_worker_type(harness_kind)
     except Exception as exc:
         return CapabilityResult(
             ok=False,
@@ -691,10 +692,8 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
     # save with notify, then prompt, so the caller can report either failure
     # separately and hand back process_id even when the start fails.
     deployment = await get_agent_local_deployment("capability-installer")
-    process = await deployment.launch(
+    process = await deployment.build(
         prompt,
-        start=False,
-        save=False,
         worker_type=worker_type,
         name=f"Install {spec.name}",
         workdir=str(workdir),
@@ -771,10 +770,8 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
     # to exercise. Built here but run through AgenticProcess.run below, which is
     # what returns the reply text the nonce check needs.
     deployment = await get_agent_local_deployment("chrome-auth")
-    process = await deployment.launch(
+    process = await deployment.build(
         prompt,
-        start=False,
-        save=False,
         name="Chrome authenticated browsing capability probe",
         workdir=str(probe_dir),
         context_data={

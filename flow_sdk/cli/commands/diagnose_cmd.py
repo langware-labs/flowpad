@@ -249,10 +249,7 @@ async def _build_diagnose_process():
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment
 
     deployment = await get_agent_local_deployment("diagnose")
-    return await deployment.launch(
-        "",
-        save=False,
-        start=False,
+    return await deployment.build(
         workdir=str(Path.cwd()),
         name="flow diagnose",
     )
