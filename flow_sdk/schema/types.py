@@ -25,6 +25,11 @@ class EntityType(StrEnum):
     # reserved for the hub-level launchable principal. The FAMILY stays
     # "agents" because the directory is provider-owned.
     SUBAGENT = "subagent"
+    # The launchable agent: identity (name/avatar/system prompt) + the launch
+    # bundle, deployed via a Deployment and run as an AgenticProcess. Distinct
+    # from SUBAGENT, which is the provider's `.claude/agents/*.md` prompt asset
+    # this may delegate to.
+    AGENT = "agent"
     LOG = "log"
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"

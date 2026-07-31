@@ -17,6 +17,9 @@ EXPECTED = {
     "RULE": "rule",
     "SKILL": "skill",
     "SUBAGENT": "subagent",
+    # Launchable agent (identity + launch bundle) — additive member; the
+    # subagent rename freed the noun, no existing value changed.
+    "AGENT": "agent",
     "LOG": "log",
     "AGENTIC_PROCESS": "agentic_process",
     "ARTIFACT": "artifact",
