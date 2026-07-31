@@ -78,7 +78,13 @@ def _fresh_clone_slot(preferred_leaf: str) -> Path:
     ).strip("-. ") or "project"
     candidate = base / leaf
     n = 2
-    while candidate.exists():
+    # An EMPTY directory is not a collision — nothing there can be lost, and
+    # ``git clone`` is happy to write into one. This matters because a Project
+    # reserves ``<workspace>/<name>`` when it is constructed, so treating that
+    # as taken would push every engagement to ``<name>-2`` and strand the
+    # reserved directory as an empty stray (which the workspace scan then mints
+    # a second, empty project for).
+    while candidate.exists() and any(candidate.iterdir()):
         candidate = base / f"{leaf}-{n}"
         n += 1
     return candidate
