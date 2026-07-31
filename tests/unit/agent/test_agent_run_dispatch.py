@@ -82,3 +82,38 @@ async def test_launch_failure_is_reported_and_reraised(captured):
 
     assert [t for t, _n, _d in captured] == [TAG_RUN_REQUESTED, TAG_RUN_FAILED]
     assert captured[-1][2]["error"] == "worker died"
+
+
+# ── deployment upsert ─────────────────────────────────────────────────────────
+
+def test_upsert_change_detection_compares_like_for_like():
+    """The guard that decides whether resolving an agent writes to the DB.
+
+    Regression: the first version compared `getattr(existing, field)` against
+    the raw payload, but `target`/`resource`/`status` are pydantic models and
+    the payload supplies dicts — `BaseModel.__eq__(dict)` is NotImplemented, so
+    it reported "changed" on every call and every agent resolve wrote a row,
+    broadcast to every client, and touched metadata.json. The comparison must
+    be on a normalized shape.
+    """
+    from flow_sdk.builtin.deployment import Deployment
+
+    payload = {
+        "name": "probe (local)",
+        "kind": "local.runtime.agent",
+        "target": {"provider": "local", "scope": "s", "location": "l"},
+        "resource": {"full_resource_name": "r", "asset_type": "a"},
+        "status": {"sync_state": "current", "provider_state": "configured"},
+        "provider_labels": {"flowpad.compute.node_id": "n"},
+    }
+    dep_id = "11111111-1111-4111-8111-111111111111"
+    existing = Deployment(id=dep_id, **payload)
+    candidate = Deployment(id=dep_id, **payload)
+    keys = set(payload)
+
+    # identical payload -> no write
+    assert existing.model_dump(mode="json", include=keys) == candidate.model_dump(mode="json", include=keys)
+
+    # a real change -> write
+    changed = Deployment(id=dep_id, **{**payload, "kind": "e2b.runtime.agent"})
+    assert existing.model_dump(mode="json", include=keys) != changed.model_dump(mode="json", include=keys)

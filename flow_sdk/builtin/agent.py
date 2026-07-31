@@ -49,8 +49,6 @@ if TYPE_CHECKING:  # pragma: no cover
 #: ``WorkerType`` object, casing, and the ``FLOWPAD_DEFAULT_WORKER`` default.
 #: A private copy would be the fourth in the tree and would silently ignore that
 #: env override.
-_DRIVER_TO_WORKER = {"claude": "claude_code", "codex": "codex", "copilot": "copilot"}
-
 
 def driver_key(worker: str | None) -> str:
     """The ``cli_drivers.factory`` key for either vocabulary."""
@@ -69,8 +67,10 @@ def worker_type_value(worker: str | None) -> str:
     No production helper does this direction — only test-local copies — so it
     lives here, derived from ``driver_key`` so the two can't disagree.
     """
+    # `driver_key` can only return claude/codex/copilot (get_driver raises on
+    # anything else), and only claude's names differ between the two vocabularies.
     key = driver_key(worker)
-    return _DRIVER_TO_WORKER.get(key, key)
+    return "claude_code" if key == "claude" else key
 
 
 class Agent(Entity):
@@ -93,10 +93,12 @@ class Agent(Entity):
     model: Optional[str] = APIField(default=None, description="Tier (sm/md/lg) or a concrete model id.")
     permission_mode: Optional[str] = APIField(default=None)
     effort: Optional[str] = APIField(default=None)
+    # ── DECLARED ONLY, not yet enforced ───────────────────────────────────
+    # These round-trip through agent.md and are visible on the agent's card,
+    # but `to_agent_options` cannot project them: no AgentOptions subclass has
+    # a field to carry them, so nothing reaches the worker. Do not present them
+    # in a UI as if they gated anything until that lands.
     max_turns: Optional[int] = APIField(default=None)
-    # None is NOT [] — an omitted list inherits everything the harness allows,
-    # an empty list revokes it. Normalizing one to the other silently changes
-    # what the agent may do.
     tools: Optional[list[str]] = APIField(default=None)
     disallowed_tools: Optional[list[str]] = APIField(default=None)
     skills: list[TypeId] = APIField(default_factory=list)

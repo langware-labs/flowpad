@@ -115,15 +115,17 @@ async def run_asset_cleanup(
     projects unless ``projects`` is also given. Raises RuntimeError when the
     agent asset is missing or the worker reply carries no parseable report.
     """
+    from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
-    from flow_sdk.fs_store.operations.subagent import load_subagent  # noqa: PLC0415
 
-    agent = load_subagent("asset_cleanup")
-    if agent is None:
-        raise RuntimeError("asset_cleanup agent not found (system agents dir)")
-    prompt = agent.data.get("prompt") or agent.data.get("prompt_text") or ""
+    # ONE identity source. This used to read the prompt from the `.claude/agents`
+    # SubAgent md while taking worker/model from the Agent — two asset families
+    # describing one run. The Agent's system_prompt is the prompt.
+    deployment = await get_agent_local_deployment("asset-cleanup")
+    agent_entity = await deployment.agent()
+    prompt = (getattr(agent_entity, "system_prompt", "") or "").strip()
     if not prompt:
-        raise RuntimeError("asset_cleanup agent has an empty prompt body")
+        raise RuntimeError("asset-cleanup agent has an empty system prompt")
     # The model is no longer read here: the `asset-cleanup` Agent declares it
     # (haiku), and the deployment projects it into the launch options.
 
@@ -173,9 +175,6 @@ async def run_asset_cleanup(
     # can inspect under the flowpad_assistant project. Headless one-shot —
     # pty=False routes prompt() to the print-mode driver (no PTY/Shell) and
     # wait=True polls the transcript to a terminal state.
-    from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
-
-    deployment = await get_agent_local_deployment("asset-cleanup")
     proc = await deployment.launch(
         instruction,
         wait=True,

@@ -160,7 +160,7 @@ def render_subagent_markdown(rec: FSRecord) -> str:
     return f"{fm}\n"
 
 
-def get_agent(uid: str) -> FSRecord | None:
+def get_subagent(uid: str) -> FSRecord | None:
     """Look up an agent Record by id.
 
     Replaces ``AgentRecord.get``. Resolution order:

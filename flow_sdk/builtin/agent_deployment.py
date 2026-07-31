@@ -15,6 +15,7 @@ The Agent is the deployment's ``parent_type_id`` (``Deployment``'s documented
 Local deployments never leave the machine: they describe THIS host, so they are
 not hub-shareable.
 """
+from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from flow_sdk._compat import UTC
@@ -69,8 +70,6 @@ class AgentDeployment:
 
     @classmethod
     async def upsert_for(cls, agent: "Agent", *, kind: str = LOCAL_DEPLOYMENT_KIND) -> "AgentDeployment":
-        from datetime import datetime  # noqa: PLC0415
-
         from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
@@ -105,13 +104,18 @@ class AgentDeployment:
             return cls(dep, agent)
 
         # Resolving an agent happens on EVERY launch, so this must be a real
-        # no-op when nothing changed. It previously stamped `observed_at` into
-        # the payload unconditionally, which made the row dirty every time —
-        # costing a SQL UPDATE, a WS broadcast to every client, and three
-        # metadata.json touches per launch for a timestamp nobody reads.
-        # `observed_at` belongs to whatever actually OBSERVES the deployment
-        # (reconcile), not to looking one up.
-        if any(getattr(existing, field, None) != value for field, value in payload.items()):
+        # no-op when nothing changed: a save costs a SQL UPDATE, a WS broadcast
+        # to every connected client, and a metadata.json read+write.
+        #
+        # Compare on ONE normalized shape. A per-field `getattr(existing, f) != v`
+        # walk looks right and is not: `target`/`resource`/`status` are declared
+        # as pydantic models, the payload supplies plain dicts, and
+        # `BaseModel.__eq__` against a dict returns NotImplemented — so the guard
+        # was True on 100% of calls and every resolve wrote. Dumping both sides
+        # compares like for like.
+        keys = set(payload)
+        candidate = Deployment(id=dep_id, **payload)
+        if existing.model_dump(mode="json", include=keys) != candidate.model_dump(mode="json", include=keys):
             existing.apply_field_updates(payload)
             await existing.save()
         return cls(existing, agent)
@@ -156,7 +160,10 @@ class AgentDeployment:
         if not self.parent_type_id:
             return None
         # TypeId has no .parse — the constructor does the parsing.
-        return await Agent.get_by_id(TypeId(str(self.parent_type_id)).id)
+        # Memoized: `for_agent()` builds wrappers without an agent, so without
+        # this every agent() call re-issues the same lookup.
+        self._agent = await Agent.get_by_id(TypeId(str(self.parent_type_id)).id)
+        return self._agent
 
     # ── the one launch verb ───────────────────────────────────────────────
 
@@ -208,7 +215,7 @@ class AgentDeployment:
             )
         context_data.setdefault("launched_by_agent", agent.name)
 
-        return AgenticProcess(
+        process = AgenticProcess(
             name=options.pop("name", None) or f"{agent.name}: {prompt[:40]}",
             workdir=options.pop("workdir", None),
             visible=bool(options.pop("visible", False)),
@@ -227,6 +234,8 @@ class AgentDeployment:
             deployment_id=self.id,
             **options,
         )
+        _prepare_output_folder(process)
+        return process
 
     async def launch(self, prompt: str, *, wait: bool = False, **options) -> "AgenticProcess":
         """``build`` + save + run the first turn. The convenience shape.
@@ -259,3 +268,29 @@ class AgentDeployment:
             "order_by": {"created_date": "desc"},
             "limit": limit,
         })
+
+
+def _prepare_output_folder(process: "AgenticProcess") -> None:
+    """Give a non-flow run the same output convention a flow node gets.
+
+    The FOLDER is already universal — every process serializes
+    ``<record>/execution/{input,output,assets}``. What was flow-only is the
+    CONVENTION: only ``_agent_instruction`` ever told an agent that an output
+    folder exists, so a run launched from an Agent produced artifacts nowhere
+    and the runs UI showed "no files" for it.
+
+    Two lines, mirroring the flow engine: materialize the folder before the run
+    (the id is minted at construction, so the path is known pre-save), and say
+    where it is. Best-effort — a read-only disk must not fail the launch.
+    """
+    try:
+        output = process._record_dir() / "execution" / "output"
+        output.mkdir(parents=True, exist_ok=True)
+    except Exception:  # noqa: BLE001
+        return
+    existing = str(process.context_data.get("instructions") or "").strip()
+    line = (
+        f"Write any files you produce to: `{output}/`\n"
+        "Anything left there is collected as this run's output and shown in the UI."
+    )
+    process.context_data["instructions"] = "\n\n".join(p for p in (existing, line) if p)

@@ -238,8 +238,7 @@ async def _build_diagnose_process():
     literals buried here. A single construction point so tests can exercise the
     real thing.
 
-    ``save=False`` / ``start=False`` are both deliberate: the process is never
-    persisted (the exist_in_db gate was dropped for visible=False precisely so
+    Deliberately neither saved nor started here: the process is never persisted (the exist_in_db gate was dropped for visible=False precisely so
     this could spawn without a record), and the caller drives the turns itself
     with ``ap.prompt``. Never persisted also means it MUST select the headless
     transport — ``prompt()`` routes on ``pty_mode`` and the PTY branch would

@@ -275,7 +275,7 @@ export function AssetEditorRouter({
           resolvedEntity={typeIdEntity as Agent | undefined}
           render={(agent) => (
             <AssetCollisionShell entity={agent}>
-              <AgentProfileEditor fsRef={fsRef} agent={agent} />
+              <AgentProfileEditor agent={agent} />
             </AssetCollisionShell>
           )}
         />

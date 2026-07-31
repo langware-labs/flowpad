@@ -1,9 +1,8 @@
-import { Agent, FSRef } from '@sdk';
+import { Agent } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bot, Loader2, Play } from 'lucide-react';
+import { Bot, Play } from 'lucide-react';
 
-import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { renderIconValue } from '@src/lib/icon-value';
@@ -15,7 +14,7 @@ import { Switch } from '@src/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
 
-import { AgentField, AgentListField, AgentSection, AgentSelectField } from './AgentProfileFields';
+import { AgentListField, AgentSection, AgentSelectField } from './AgentProfileFields';
 import { AgentRunDialog } from './AgentRunDialog';
 import {
   AGENT_EFFORTS,
@@ -25,10 +24,9 @@ import {
 } from './agent-vocabularies';
 
 interface AgentProfileEditorProps {
-  /** FSRef to the agent folder / `agent.md`. */
-  fsRef: FSRef;
-  /** Pre-resolved agent when the router already has it. */
-  agent?: Agent;
+  /** Always resolved — AssetEditorRouter renders this inside an
+   *  EntityResolutionGate, which only calls render() with a non-null entity. */
+  agent: Agent;
 }
 
 /**
@@ -49,13 +47,8 @@ interface AgentProfileEditorProps {
  *
  * Going through the entity is what makes those fields safe to edit at all.
  */
-export function AgentProfileEditor({ fsRef, agent: providedAgent }: AgentProfileEditorProps) {
+export function AgentProfileEditor({ agent }: AgentProfileEditorProps) {
   const { t } = useLingui();
-  const { entity: discoveredAgent } = useEntityByPath<Agent>(
-    providedAgent ? null : Agent.type,
-    providedAgent ? null : fsRef,
-  );
-  const agent = providedAgent ?? discoveredAgent;
 
   // Keyed on the STABLE typeId so a save() (which hands back a fresh ref)
   // doesn't churn local field state — same reason TaskAssetEditor does it.
@@ -68,7 +61,6 @@ export function AgentProfileEditor({ fsRef, agent: providedAgent }: AgentProfile
   const [description, setDescription] = useState(agent?.description ?? '');
   const [prompt, setPrompt] = useState(agent?.system_prompt ?? '');
   const [runOpen, setRunOpen] = useState(false);
-  const [running, setRunning] = useState(false);
 
   useEffect(() => {
     setTitle(agent?.title ?? '');
@@ -101,14 +93,6 @@ export function AgentProfileEditor({ fsRef, agent: providedAgent }: AgentProfile
     },
     [save],
   );
-
-  if (!agent) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        <Trans>Loading…</Trans>
-      </div>
-    );
-  }
 
   const identityKey = agent.name || agent.id;
   const ringColor = colorForIdentityKey(identityKey);
@@ -181,19 +165,14 @@ export function AgentProfileEditor({ fsRef, agent: providedAgent }: AgentProfile
                 aria-label={t`Enabled`}
               />
             </div>
-            <Button size="sm" disabled={!agent.enabled || running} onClick={() => setRunOpen(true)}>
-              {running ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1.5 h-3.5 w-3.5" />}
+            <Button size="sm" disabled={!agent.enabled} onClick={() => setRunOpen(true)}>
+              <Play className="mr-1.5 h-3.5 w-3.5" />
               <Trans>Run</Trans>
             </Button>
           </div>
         </div>
 
-        <AgentRunDialog
-          agent={agent}
-          open={runOpen}
-          onOpenChange={setRunOpen}
-          onRunningChange={setRunning}
-        />
+        <AgentRunDialog agent={agent} open={runOpen} onOpenChange={setRunOpen} />
 
         {/* ── behaviour ───────────────────────────────────────────────── */}
         <AgentSection title={t`Behaviour`} hint={t`Who this agent is. Becomes its system prompt.`}>
@@ -236,12 +215,12 @@ export function AgentProfileEditor({ fsRef, agent: providedAgent }: AgentProfile
               options={AGENT_EFFORTS}
               onCommit={(v) => void save({ effort: v })}
             />
-            <AgentField
+            <AgentSelectField
               label={t`Max turns`}
               value={agent.max_turns == null ? '' : String(agent.max_turns)}
               placeholder={t`unlimited`}
               onCommit={(v) => {
-                const n = v.trim() === '' ? undefined : Number(v);
+                const n = v == null ? undefined : Number(v);
                 if (n !== undefined && Number.isNaN(n)) return;
                 void save({ max_turns: n });
               }}
@@ -252,14 +231,13 @@ export function AgentProfileEditor({ fsRef, agent: providedAgent }: AgentProfile
         {/* ── capabilities ────────────────────────────────────────────── */}
         <AgentSection
           title={t`Capabilities`}
-          hint={t`Leave a list unset to inherit everything the harness allows. An empty list revokes it.`}
+          hint={t`Declared on the agent's card. Not yet applied to the worker.`}
         >
           <div className="space-y-4">
-            <AgentListField label={t`Tools`} value={agent.tools} triState onCommit={(v) => void save({ tools: v })} />
+            <AgentListField label={t`Tools`} value={agent.tools} onCommit={(v) => void save({ tools: v })} />
             <AgentListField
               label={t`Disallowed tools`}
               value={agent.disallowed_tools}
-              triState
               onCommit={(v) => void save({ disallowed_tools: v })}
             />
             <AgentListField
