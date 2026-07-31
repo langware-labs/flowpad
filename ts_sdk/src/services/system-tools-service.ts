@@ -15,6 +15,11 @@ import { hubModeReady, isHubOnly } from '../utils/hub-runtime';
 const ACTION = 'desktop-db';
 const FS_RECORDS_BASE = '/graph/compute_node/@local/fs-records';
 
+/** The canonical ScopeFilter encoding for a single project. One spelling, so
+ *  the three scoped fs-records calls in this file cannot drift. */
+const projectScopeQs = (projectId: string): string =>
+  new URLSearchParams({ user: 'false', projects: projectId }).toString();
+
 export interface IndexTypeResult {
   indexed: number;
 }
@@ -594,9 +599,8 @@ export class SystemToolsService extends EventEmitter {
   async projectNeverIndexed(projectId: string): Promise<boolean> {
     if (isHubOnly()) return false;
     try {
-      const qs = new URLSearchParams({ user: 'false', projects: projectId });
       const res = await apiClient.get<{ never_indexed?: boolean }>(
-        `${FS_RECORDS_BASE}/index-status?${qs.toString()}`,
+        `${FS_RECORDS_BASE}/index-status?${projectScopeQs(projectId)}`,
       );
       return res?.never_indexed !== false;
     } catch {

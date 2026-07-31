@@ -449,7 +449,12 @@ def is_helpdesk_portal_path(cwd: str | Path) -> bool:
     from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
 
     try:
-        return is_path_under(canonical_posix_path(cwd), canonical_posix_path(helpdesk_root()))
+        # The ROOT goes through the cached canonicalizer, like `is_agent_mount_root`
+        # does: `is_hidden_project` calls this once per project in a list, and
+        # `helpdesk_root()` reaches instance settings, so re-resolving it per
+        # project made an almost-always-false check the expensive arm of the chain.
+        roots = _canonical_mount_roots(str(helpdesk_root()))
+        return any(is_path_under(canonical_posix_path(cwd), root) for root in roots)
     except (OSError, ValueError):
         return False
 
