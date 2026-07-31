@@ -63,8 +63,12 @@ class Agent(Entity):
     disallowed_tools: Optional[list[str]] = APIField(default=None)
     skills: list[TypeId] = APIField(default_factory=list)
     mcp_servers: list[TypeId] = APIField(default_factory=list)
-    subagents: list[TypeId] = APIField(
-        default_factory=list, description="SubAgent refs rendered into --agents at launch."
+    subagents: list[str] = APIField(
+        default_factory=list,
+        description="SubAgent NAMES this agent may delegate to, resolved at launch and rendered "
+        "into --agents. Names, not TypeIds, because a shipped agent.md is authored before the "
+        "SubAgent it references has ever been indexed — and name is already the addressable "
+        "identity (get_agent_local_deployment('asset-cleanup')).",
     )
     additional_dirs: list[str] = APIField(default_factory=list)
     load_flowpad_assistant: bool = APIField(default=False)
