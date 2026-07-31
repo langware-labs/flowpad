@@ -22,6 +22,12 @@ export interface IApiKey extends IEntity {
   is_active: boolean;
 }
 
+/** The hub's `ApiKeyCreateOut` (app/actions/api_keys.py) — the wire row for a mint. */
+export interface ApiKeyCreateOut extends Omit<ApiKeyCredentials, 'var_name' | 'description'> {
+  id: string;
+  description?: string;
+}
+
 /**
  * API key credentials returned from backend on creation.
  * Contains the full API key which is only shown once.
@@ -73,25 +79,24 @@ export class ApiKey extends APIEntity<ApiKey> implements IApiKey {
       description: ApiKey.SELF_KEY_DESCRIPTION,
       bind_typeid: userTypeId.toString(),
     };
-    const result = await dataManager.callAction<
-      unknown,
-      { id: string; key: string; name: string; bind_typeid: string }
-    >(info);
-    return {
-      api_key: result.key,
-      var_name: result.name,
-      name: result.name,
-      description: ApiKey.SELF_KEY_DESCRIPTION,
-      visible_value: `****${result.key.slice(-4)}`,
-      target_typeid: result.bind_typeid,
-      is_active: true,
-    };
+    // `visible_value` arrives already masked, so it is taken rather than recomputed.
+    const result = await dataManager.callAction<unknown, ApiKeyCreateOut>(info);
+    return { ...result, var_name: result.name, description: result.description ?? ApiKey.SELF_KEY_DESCRIPTION };
   }
 
-  /** DELETE /graph/<user>/api-keys {id} — keys are addressed by id, not name. */
-  static async deleteById(userTypeId: TypeId, keyId: string): Promise<void> {
+  /**
+   * DELETE /graph/<user>/api-keys/<name> — the hub addresses keys by name on the
+   * request sub-path, never by id.
+   *
+   * Names are unique among *active* keys per bound entity, so this resolves to one
+   * key in the steady state. The exception is desktop-login rotation, which mints a
+   * same-named grace key with `allow_duplicate_name=True`; during that window the
+   * hub's lookup picks the first active match. Addressing by id would close that,
+   * but that is the hub's API to change.
+   */
+  static async deleteByName(userTypeId: TypeId, name: string): Promise<void> {
     const info = new ActionInfo('api-keys', userTypeId.type, userTypeId.id, 'DELETE');
-    info.bodyParameters = { id: keyId };
+    info.subpath = name;
     await dataManager.callAction(info);
   }
 }
