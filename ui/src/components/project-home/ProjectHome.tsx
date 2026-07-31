@@ -17,6 +17,7 @@ import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import { Project, TypeId } from '@sdk';
 import { tagAttrs } from '@src/tags/tag-attrs';
+import { HelpdeskBanner, isHelpdeskProject } from '@src/components/helpdesk/HelpdeskBanner';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -205,6 +206,9 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full flex-col gap-6 px-4 py-6">
+          {/* Only on the helpdesk portal checkout — carries "Ask for help"
+              and the dev-only reset. No-op on every other project. */}
+          {isHelpdeskProject(project) && <HelpdeskBanner />}
           {createOnly ? (
             createTab
           ) : (

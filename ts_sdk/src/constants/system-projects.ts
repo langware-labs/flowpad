@@ -8,3 +8,11 @@
 
 export const FLOWPAD_ASSISTANT_PROJECT_UNAME = 'flowpad_assistant';
 export const FLOWPAD_ASSISTANT_PROJECT_NAME = 'Flowpad Assistant';
+
+/**
+ * The local helpdesk PORTAL checkout — not SDK-shipped, but app-managed the
+ * same way: minted by `helpdesk-ensure`, hidden from project pickers, and
+ * recognisable from the entity alone. Mirrors `HELPDESK_PORTAL_UNAME` in
+ * flow_sdk/config.py.
+ */
+export const HELPDESK_PORTAL_UNAME = 'helpdesk_portal';

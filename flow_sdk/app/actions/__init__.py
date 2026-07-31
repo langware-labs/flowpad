@@ -12,6 +12,7 @@ from . import (  # noqa: F401
     git_share_preflight_action,
     graph_crud_actions,
     group_task_action,
+    helpdesk_action,
     members_action,
     message_attachment_action,
     notification_action,

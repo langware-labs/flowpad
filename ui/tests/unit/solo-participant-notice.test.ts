@@ -33,7 +33,7 @@ const draftItem: ConversationItem = {
 function params(overrides: Partial<SoloSendNoticeParams> = {}): SoloSendNoticeParams {
   return {
     remote: true,
-    community: false,
+    helpdesk: false,
     rosterReady: true,
     participants: [{ user_id: ME }],
     cloudUserId: ME,
@@ -68,8 +68,8 @@ describe('shouldShowSoloSendNotice', () => {
     expect(shouldShowSoloSendNotice(params({ remote: false }))).toBe(false);
   });
 
-  it('false: community conversation (roster masks responders)', () => {
-    expect(shouldShowSoloSendNotice(params({ community: true }))).toBe(false);
+  it('false: helpdesk conversation (roster masks responders)', () => {
+    expect(shouldShowSoloSendNotice(params({ helpdesk: true }))).toBe(false);
   });
 
   it('false: roster not fetched yet', () => {

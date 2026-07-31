@@ -25,17 +25,18 @@ from flow_sdk.schema.types import EntityType
 class ConversationKind(StrEnum):
     """How a conversation should be interpreted across the UI/hub.
 
-    ``DIRECT`` is the default 1:1 / group conversation. ``COMMUNITY`` marks a
-    support-center "ticket": a guest opens it against the canonical community
-    project, staff pick it up from a shared pool, and replies are displayed
-    under the project's single ``community.display_name`` identity rather than
-    the individual responder (see ``Project.community``). This field is
-    **hub-authoritative** — it is stamped by ``Project.start_guest_conversation``
-    and must never be honored from a client-supplied payload (anti-spoof).
+    ``DIRECT`` is the default 1:1 / group conversation. ``HELPDESK`` marks a
+    support "ticket": a guest opens it against a helpdesk project, staff pick
+    it up from a shared pool, and replies are displayed under the project's
+    single ``helpdesk.display_name`` identity rather than the individual
+    responder (see ``Project.helpdesk``). This field is **hub-authoritative**
+    — it is stamped by ``Project.start_guest_conversation`` and must never be
+    honored from a client-supplied payload (anti-spoof).
     """
 
     DIRECT = "direct"
-    COMMUNITY = "community"
+    HELPDESK = "helpdesk"
+
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.cloud_client.client import FlowpadClient
@@ -120,8 +121,8 @@ class Conversation(Entity):
     type: str = APIField(default="conversation")
     title: Optional[str] = APIField(default=None)
     # Conversation interpretation. ``direct`` (default) is a normal 1:1/group
-    # conversation; ``community`` marks a support-center ticket whose responder
-    # identity is masked behind ``Project.community.display_name``. Stamped by
+    # conversation; ``helpdesk`` marks a support ticket whose responder
+    # identity is masked behind ``Project.helpdesk.display_name``. Stamped by
     # the hub's ``Project.start_guest_conversation`` — never trusted from a
     # client payload. See ``ConversationKind``.
     kind: ConversationKind = APIField(default=ConversationKind.DIRECT)

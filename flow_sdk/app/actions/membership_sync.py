@@ -35,6 +35,7 @@ _MIRRORED_FIELDS = (
     "name",
     "title",
     "git_origin",
+    "helpdesk",
     "account",
     "domain",
     "icon",

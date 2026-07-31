@@ -185,11 +185,11 @@ interface FlowMessageBubbleProps {
    *  to the soft cushions (sender_name, creator, 'unknown') so legitimate
    *  load windows don't flash the alert glyph. */
   rosterReady?: boolean;
-  /** True when the parent conversation is a community (support-center) ticket.
+  /** True when the parent conversation is a helpdesk (support) ticket.
    *  Staff replies are masked to a single brand identity and the real
    *  responder's `sender_id` is intentionally absent from the guest's roster,
    *  so we suppress the unresolved-sender alert and its telemetry. */
-  isCommunity?: boolean;
+  isHelpdesk?: boolean;
   /** Project shell to use when opening asset entity attachments. */
   attachmentProjectId?: string | null;
   /** Staged MessageAttachment rows for THIS message (parent-resolved via the
@@ -221,7 +221,7 @@ export function FlowMessageBubble({
   onDeleteMessage,
   participants,
   rosterReady = false,
-  isCommunity = false,
+  isHelpdesk = false,
   attachmentProjectId,
   messageAttachments,
 }: FlowMessageBubbleProps) {
@@ -311,7 +311,7 @@ export function FlowMessageBubble({
   const unresolvedSenderId =
     fm &&
     !isDraft &&
-    !isCommunity &&
+    !isHelpdesk &&
     fm.sender_id &&
     rosterReady &&
     !participantLabelByUserId(participants, fm.sender_id) &&
@@ -385,7 +385,7 @@ export function FlowMessageBubble({
     displayName = wireSenderName;
   } else if (creatorLabel) {
     displayName = creatorLabel;
-  } else if (fm.sender_id && rosterReady && !isCommunity) {
+  } else if (fm.sender_id && rosterReady && !isHelpdesk) {
     displayName = UNRESOLVED_SENDER_LABEL;
   } else {
     displayName = t('unknown');
