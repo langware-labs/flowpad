@@ -1,18 +1,18 @@
 /**
- * Community / support-center end-to-end, two real SDK clients in one process
+ * Help desk end-to-end, two real SDK clients in one process
  * (realm per instance — see `_instances.ts`):
  *
  *   dev-1 = GUEST (opens a support ticket)   dev-2 = STAFF (answers it)
  *
  * Proves the v1 contract AND the authorization hardening:
- *   1. The guest opens a ticket via `startCommunityTicket` — routed through the
- *      hub community project, landing locally as a `kind=community`, remote
+ *   1. The guest opens a ticket via `startHelpdeskTicket` — routed through the
+ *      hub help desk project, landing locally as a `kind=helpdesk`, remote
  *      conversation. The guest gets only a minimal `guest` role on it.
- *   2. A guest CANNOT enumerate the staff queue (`community_conversations`) or
+ *   2. A guest CANNOT enumerate the staff queue (`helpdesk_conversations`) or
  *      resolve anyone via the `members` lookup — the `guest` role grants neither.
  *      (This is the exposure that the old `authenticated_role` broadcast opened;
  *      these assertions need only the guest and always run.)
- *   3. Staff (a real member of the community project — see COMMUNITY_STAFF_EMAILS)
+ *   3. Staff (a real member of the help desk project — see HELPDESK_STAFF_EMAILS)
  *      discover the ticket in the queue, pick it up, and reply.
  *   4. The guest receives the reply under the single BRAND identity
  *      (`sender_name === "Flowpad Support"`), NOT the staffer's name — while the
@@ -21,8 +21,8 @@
  *
  * Requires the explicit SHARE_INST_1/SHARE_INST_2 pair and cycle hub. The staff
  * happy-path additionally requires the hub to have been started with the staff
- * instance's email in `COMMUNITY_STAFF_EMAILS` (granted `editor` on the
- * community project at seed); missing staff authorization is a real failure.
+ * instance's email in `HELPDESK_STAFF_EMAILS` (granted `editor` on the
+ * help desk project at seed); missing staff authorization is a real failure.
  */
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { getAliceCreds, getBobCreds, hubAvailable, hubLogin, HUB_URL } from './_hub';
@@ -35,22 +35,22 @@ import {
   type ResolvedInstance,
 } from './_instances';
 
-// Must equal the hub's COMMUNITY_DISPLAY_NAME (flowpad/config.py).
-const COMMUNITY_DISPLAY_NAME = 'Flowpad Support';
+// Must equal the hub's HELPDESK_DISPLAY_NAME (flowpad/config.py).
+const HELPDESK_DISPLAY_NAME = 'Flowpad Support';
 
 let skipReason: string | null = null;
 let guest: ResolvedInstance;
 let staff: ResolvedInstance;
 let guestPassword = '';
 let staffPassword = '';
-let communityProjectId: string | null = null;
+let helpdeskProjectId: string | null = null;
 
-async function fetchCommunityProjectId(): Promise<string | null> {
+async function fetchHelpdeskProjectId(): Promise<string | null> {
   try {
     const r = await fetch(`${HUB_URL}/api/v1/health/version`);
     if (!r.ok) return null;
-    const body = (await r.json()) as { data?: { community_project_id?: string } };
-    return body.data?.community_project_id ?? null;
+    const body = (await r.json()) as { data?: { helpdesk_project_id?: string } };
+    return body.data?.helpdesk_project_id ?? null;
   } catch {
     return null;
   }
@@ -69,31 +69,31 @@ beforeAll(async () => {
   guest = await getInstance(GUEST_INSTANCE);
   staff = await getInstance(STAFF_INSTANCE);
   if (guest.email !== guestCreds.email || staff.email !== staffCreds.email) {
-    throw new Error('community instance identities do not match canonical ALICE_EMAIL/BOB_EMAIL');
+    throw new Error('help desk instance identities do not match canonical ALICE_EMAIL/BOB_EMAIL');
   }
   guestPassword = guestCreds.password;
   staffPassword = staffCreds.password;
-  communityProjectId = await fetchCommunityProjectId();
-  if (!communityProjectId) {
-    skipReason = 'hub /version did not return community_project_id (restart hub from source)';
+  helpdeskProjectId = await fetchHelpdeskProjectId();
+  if (!helpdeskProjectId) {
+    skipReason = 'hub /version did not return helpdesk_project_id (restart hub from source)';
     return;
   }
   // /version advertising an id is NOT enough: the hub can name a
-  // community_project_id whose project entity isn't actually seeded/reachable
-  // (no COMMUNITY_STAFF_EMAILS at hub launch → start_guest_conversation 401s
+  // helpdesk_project_id whose project entity isn't actually seeded/reachable
+  // (no HELPDESK_STAFF_EMAILS at hub launch → start_guest_conversation 401s
   // "Entity project-<id> not found"). Probe that a guest can genuinely open a
-  // ticket; if not, the community feature isn't usable on this hub — skip the
+  // ticket; if not, the help desk feature isn't usable on this hub — skip the
   // whole suite cleanly rather than hard-fail every setup. (The security
-  // contract these tests assert requires a real, working community project.)
+  // contract these tests assert requires a real, working help desk project.)
   try {
-    const probe = await guest.sdk.startCommunityTicket(`community-availability-probe ${Date.now()}`);
+    const probe = await guest.sdk.startHelpdeskTicket(`helpdesk-availability-probe ${Date.now()}`);
     if (!probe?.conversation_id) {
-      skipReason = 'community project advertised but a guest could not open a ticket';
+      skipReason = 'help desk project advertised but a guest could not open a ticket';
     }
   } catch {
     skipReason =
-      'community project not usable on this hub (start_guest_conversation failed) — ' +
-      'restart the hub from source with COMMUNITY_STAFF_EMAILS to run the community suite';
+      'help desk project not usable on this hub (start_guest_conversation failed) — ' +
+      'restart the hub from source with HELPDESK_STAFF_EMAILS to run the help desk suite';
   }
 }, 30_000);
 
@@ -101,10 +101,10 @@ beforeEach((context: any) => {
   if (skipReason) context.skip();
 });
 
-describe('community support center — authorization', () => {
+describe('help desk — authorization', () => {
   it('a ticket guest cannot enumerate the queue or resolve members (exposure closed)', async () => {
     const ts = Date.now();
-    const started = await guest.sdk.startCommunityTicket(`negative-probe ${ts}`);
+    const started = await guest.sdk.startHelpdeskTicket(`negative-probe ${ts}`);
     const convId = started.conversation_id;
     expect(convId).toBeTruthy();
 
@@ -112,13 +112,13 @@ describe('community support center — authorization', () => {
     const authHeader = { Authorization: `Bearer ${guestAuth.token}` };
 
     // The guest holds only the `guest` conversation role (read + add_message +
-    // leave). It does NOT allow `community_conversations` on the project, so the
+    // leave). It does NOT allow `helpdesk_conversations` on the project, so the
     // guest — an authenticated non-member — must be denied the staff queue.
     // Denials surface as 401/403 (this hub returns 401 for "no authorizing
     // role on target"); either is a hard deny.
     const denied = [401, 403];
     const queueResp = await fetch(
-      `${HUB_URL}/api/v1/graph/project/${communityProjectId}/community_conversations`,
+      `${HUB_URL}/api/v1/graph/project/${helpdeskProjectId}/helpdesk_conversations`,
       { headers: authHeader },
     );
     expect(queueResp.ok).toBe(false);
@@ -142,15 +142,15 @@ describe('community support center — authorization', () => {
   });
 
   it('guest opens a ticket; staff discovers + picks up; reply is masked to the brand', async () => {
-    // Staff happy-path needs instance 2 to be a real member of the community project
-    // (granted via COMMUNITY_STAFF_EMAILS at hub seed). If not onboarded, the
+    // Staff happy-path needs instance 2 to be a real member of the help desk project
+    // (granted via HELPDESK_STAFF_EMAILS at hub seed). If not onboarded, the
     // queue read fails loudly; returning here would falsely pass the staff path.
     try {
-      await staff.sdk.listCommunityTickets();
+      await staff.sdk.listHelpdeskTickets();
     } catch (error) {
       throw new Error(
-        `[community test] staff '${staff.email}' cannot read the community queue; ` +
-          `the hub must include COMMUNITY_STAFF_EMAILS=${staff.email}`,
+        `[help desk test] staff '${staff.email}' cannot read the help desk queue; ` +
+          `the hub must include HELPDESK_STAFF_EMAILS=${staff.email}`,
         { cause: error },
       );
     }
@@ -158,29 +158,29 @@ describe('community support center — authorization', () => {
     const ts = Date.now();
     const ticketText = `my printer is broken ${ts}`;
 
-    // 1. Guest opens a support ticket — routes through the hub community project.
-    const started = await guest.sdk.startCommunityTicket(ticketText);
+    // 1. Guest opens a support ticket — routes through the hub help desk project.
+    const started = await guest.sdk.startHelpdeskTicket(ticketText);
     const convId = started.conversation_id;
     expect(convId).toBeTruthy();
 
-    // It lands locally as a hub-mirrored community ticket.
+    // It lands locally as a hub-mirrored helpdesk ticket.
     const guestConv: any = await pollUntil(
       () => guest.sdk.Conversation.getById(convId),
       3_000,
-      'guest local community conversation',
+      'guest local helpdesk conversation',
     );
-    expect(guestConv.kind).toBe('community');
+    expect(guestConv.kind).toBe('helpdesk');
     expect(guestConv.remote).toBe(true);
     const guestHubId: string = guestConv.created_by; // guest's hub id (initiated_by)
 
-    // 2. Staff discover it in the community queue — unpicked, with a preview.
+    // 2. Staff discover it in the help desk queue — unpicked, with a preview.
     const queued = await pollUntil(
       async () => {
-        const res = await staff.sdk.listCommunityTickets();
+        const res = await staff.sdk.listHelpdeskTickets();
         return res.tickets.find((t) => t.conversation_id === convId) ?? null;
       },
       10_000,
-      'ticket visible in staff community queue',
+      'ticket visible in staff help desk queue',
     );
     expect(queued.picked_up).toBe(false);
     expect(queued.preview).toContain(ticketText);
@@ -189,7 +189,7 @@ describe('community support center — authorization', () => {
     await staff.sdk.pickupConversation(convId);
     const afterPickup = await pollUntil(
       async () => {
-        const res = await staff.sdk.listCommunityTickets();
+        const res = await staff.sdk.listHelpdeskTickets();
         const row = res.tickets.find((t) => t.conversation_id === convId);
         return row?.picked_up ? row : null;
       },
@@ -210,10 +210,10 @@ describe('community support center — authorization', () => {
     const reply: any = replyResp.data;
     expect(reply?.id).toBeTruthy();
 
-    // 5. The reply is masked to the single community brand — NOT the staffer's
+    // 5. The reply is masked to the single helpdesk brand — NOT the staffer's
     //    real name — while the real responder sender_id is kept on the wire
     //    (the staffer, not the guest), and the body survived.
-    expect(reply.sender_name).toBe(COMMUNITY_DISPLAY_NAME);
+    expect(reply.sender_name).toBe(HELPDESK_DISPLAY_NAME);
     expect(reply.sender_id).toBe(staffAuth.user.id);
     expect(reply.sender_id).not.toBe(guestHubId);
     expect(reply.text).toBe(replyText);

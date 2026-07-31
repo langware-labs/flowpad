@@ -67,8 +67,8 @@ class ProjectInitializeOptions(ComputeSourceControlInitializeOptions):
     mcp_connector_init: bool = Field(default=True)
 
 
-class CommunityMode(StrEnum):
-    """Who answers community (support-center) conversations on this project.
+class HelpdeskMode(StrEnum):
+    """Who answers helpdesk (support) conversations on this project.
 
     Only ``HUMAN`` is wired in v1: staff pick tickets up from a shared pool and
     reply under the masked ``display_name``. ``AI`` / ``HYBRID`` are reserved
@@ -80,21 +80,26 @@ class CommunityMode(StrEnum):
     HYBRID = "hybrid"
 
 
-class CommunityConfig(BaseModel):
-    """Per-project "support center" configuration.
+class HelpdeskConfig(BaseModel):
+    """Per-project helpdesk (support center) configuration.
 
-    When ``enabled``, the project accepts guest-opened community conversations
+    When ``enabled``, the project accepts guest-opened helpdesk conversations
     (support tickets). All staff replies in those conversations are displayed
     under the single ``display_name`` identity regardless of which member
     actually replied — the responder's real ``sender_id`` is preserved on the
     wire, only the displayed ``sender_name`` is masked to ``display_name``.
+
+    ``portal_git_url`` is the desk's PORTAL repository — the help content a
+    requester clones and browses locally. Independent of the ticket queue: a
+    desk may have a queue and no portal, and the two are configured separately.
     """
 
     enabled: bool = False
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
     welcome_message: Optional[str] = None
-    mode: CommunityMode = CommunityMode.HUMAN
+    mode: HelpdeskMode = HelpdeskMode.HUMAN
+    portal_git_url: Optional[str] = None
 
 
 class Project(Entity):
@@ -104,13 +109,13 @@ class Project(Entity):
         default_factory=list,
         description="List of artifact IDs belonging to this project",
     )
-    # Support-center / community config. None on ordinary projects. Persisted
+    # Help-desk (support center) config. None on ordinary projects. Persisted
     # (persist=TRUE) so it round-trips FS<->DB and is readable on the hub at
-    # message-write time to mask responder identity. See ``CommunityConfig``.
-    community: Optional[CommunityConfig] = APIField(
+    # message-write time to mask responder identity. See ``HelpdeskConfig``.
+    helpdesk: Optional[HelpdeskConfig] = APIField(
         default=None,
         persist=Persist.TRUE,
-        description="Support-center configuration; set on the canonical community project.",
+        description="Help-desk configuration; set on a project that answers support tickets.",
     )
     last_mode: str | None = APIField(
         default=None,
@@ -2028,7 +2033,11 @@ class Project(Entity):
             await _destroy(meta)
 
         # 3. Delete the project's own source folder on disk (the user's files),
-        #    unless the dynamic path policy marks it as protected.
+        #    unless the dynamic path policy marks it as protected. That policy
+        #    also covers SDK-shipped system projects, so deleting the Flowpad
+        #    Assistant cannot rmtree the shipped docs/skills/agents out of the
+        #    install. Portal checkouts live under the workspace and stay
+        #    deletable.
         mount = self.fs_storage_mount_path
         if mount and not self.protected_path:
             try:

@@ -15,7 +15,7 @@ import {
 } from '@sdk';
 import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
-import { ConversationKind } from '@sdk/entities/conversation';
+import { isHelpdeskKind } from '@sdk/entities/conversation';
 import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
@@ -318,7 +318,7 @@ export function ConversationView({
           onSelect={onSelectMessage ? () => onSelectMessage(id) : undefined}
           isConversationOwner={isConversationOwner}
           onDeleteMessage={handleDeleteMessage}
-          isCommunity={isCommunityConversation}
+          isHelpdesk={isHelpdeskConversation}
           attachmentProjectId={attachmentProjectId}
           messageAttachments={attachmentsByMessage.get(id)}
         />
@@ -422,11 +422,11 @@ export function ConversationView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pointers.map((p) => p.id).join(',')]);
 
-  // Community (support-center) ticket: replies are masked to a single brand
+  // Help-desk (support) ticket: replies are masked to a single brand
   // identity, and the real responder's sender_id is intentionally absent from
   // the guest's (redacted) roster — so the bubble must not flag it as an
-  // unknown sender. See CommunityConfig / the hub sender_name masking.
-  const isCommunityConversation = conversation?.kind === ConversationKind.COMMUNITY;
+  // unknown sender. See HelpdeskConfig / the hub sender_name masking.
+  const isHelpdeskConversation = isHelpdeskKind(conversation?.kind);
   const { project: currentProject } = useProject();
   const attachmentProjectId = resolveAttachmentProjectId(task, conversation, currentProject?.id);
   // Staged bundle attachments (one query for the whole panel). Drives the
@@ -501,17 +501,17 @@ export function ConversationView({
     }
   }, [refetch, refreshMembers, conversationId]);
 
-  // Staff "pick up" affordance for a community ticket: shown only on a
-  // community conversation the local cloud user hasn't joined and didn't open
+  // Staff "pick up" affordance for a helpdesk ticket: shown only on a
+  // helpdesk conversation the local cloud user hasn't joined and didn't open
   // (the guest initiator is the owner). Joining adds them to the roster so they
   // receive messages and can reply. See pickupConversation / hub Conversation.pickup.
   const [pickingUp, setPickingUp] = useState(false);
   const isParticipant = !!cloudUserId && (participants ?? []).some((p) => p.user_id === cloudUserId);
-  const canPickup = isCommunityConversation && !!cloudUserId && !isConversationOwner && !isParticipant;
+  const canPickup = isHelpdeskConversation && !!cloudUserId && !isConversationOwner && !isParticipant;
 
   const showSoloNotice = shouldShowSoloSendNotice({
     remote: conversation?.remote === true,
-    community: isCommunityConversation,
+    helpdesk: isHelpdeskConversation,
     rosterReady,
     participants: participants ?? [],
     cloudUserId,

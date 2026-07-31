@@ -10,7 +10,8 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { useDesktops } from '@src/hooks/use-desktops';
-import { AlertTriangle, Check, ExternalLink, GitBranch, Loader2 } from 'lucide-react';
+import { StepList } from '@src/components/ui/step-list';
+import { ExternalLink, GitBranch } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -67,27 +68,7 @@ export default function LaunchLanding() {
                 <Trans>Preparing your sandbox…</Trans>
               )}
             </p>
-            <ul className="flex flex-col gap-1.5">
-              {steps.map((s) => (
-                <li key={s.id} className="flex items-start gap-2 text-xs" data-testid={`launch-step-${s.id}`}>
-                  <span className="mt-0.5 shrink-0">
-                    {s.status === 'success' ? (
-                      <Check className="h-3.5 w-3.5 text-primary" />
-                    ) : s.status === 'loading' ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                    ) : s.status === 'error' ? (
-                      <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
-                    ) : (
-                      <span className="block h-3.5 w-3.5 rounded-full border border-muted-foreground/40" />
-                    )}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className={s.status === 'idle' ? 'text-muted-foreground' : ''}>{s.label}</span>
-                    {s.detail && <span className="block text-[11px] text-muted-foreground">{s.detail}</span>}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <StepList steps={steps} testIdPrefix="launch" className="flex flex-col gap-1.5" />
             {launchUrl && (
               <Button asChild size="sm" className="mt-4 w-full gap-1.5">
                 <a href={launchUrl} target="_blank" rel="noreferrer" data-testid="launch-open">

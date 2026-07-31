@@ -1,5 +1,6 @@
-import { startCommunityTicket } from '@sdk';
+import { startHelpdeskTicket } from '@sdk';
 import { Button } from '@src/components/ui/button';
+import { errorMessage } from '@src/lib/error-message';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
@@ -8,7 +9,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-interface CommunityAssistanceDialogProps {
+interface HelpdeskRequestDialogProps {
   open: boolean;
   onClose: () => void;
 }
@@ -31,7 +32,7 @@ const PLACEHOLDER =
   'Describe what you want done — what should the agent automate, ' +
   'research, summarize, or fix? The more context the better.';
 
-export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistanceDialogProps) {
+export function HelpdeskRequestDialog({ open, onClose }: HelpdeskRequestDialogProps) {
   const { navigation } = useDockNavigation();
   const ensureCloudLogin = useCloudLoginGate();
   const [message, setMessage] = useState('');
@@ -54,25 +55,25 @@ export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistance
     setBusy(true);
     try {
       // Opening a support ticket routes through the hub (the backend resolves
-      // the fixed community project from /version and calls
+      // the helpdesk project from /version and calls
       // start_guest_conversation), which requires cloud login. Run the OAuth
       // flow first so a logged-out user is taken through sign-in and the send
       // resumes on the same click.
       const gate = await ensureCloudLogin();
       if (!gate.ok) {
-        console.warn('[CommunityAssistanceDialog] sign in required:', gate.error);
+        console.warn('[HelpdeskRequestDialog] sign in required:', gate.error);
         return;
       }
 
       let conversationId: string;
       try {
-        const res = await startCommunityTicket(message.trim());
+        const res = await startHelpdeskTicket(message.trim());
         conversationId = res.conversation_id;
       } catch (err) {
-        console.error('[CommunityAssistanceDialog] failed to open support ticket', err);
+        console.error('[HelpdeskRequestDialog] failed to open support ticket', err);
         notify.error({
           title: 'Could not reach support',
-          message: err instanceof Error ? err.message : 'Community support is unavailable right now. Please try again.',
+          message: errorMessage(err, 'The help desk is unavailable right now. Please try again.'),
         });
         return;
       }
@@ -93,7 +94,7 @@ export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistance
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-lg" data-testid="community-assistance-dialog">
+      <DialogContent className="sm:max-w-lg" data-testid="helpdesk-request-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-violet-600 dark:text-violet-400" />
@@ -103,8 +104,7 @@ export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistance
 
         <div className="flex flex-col gap-3 text-sm">
           <p className="text-muted-foreground">
-            Send a question to the Flowpad Assistant project. A new conversation will open with your message as the
-            starting point.
+            Send a question to the help desk. A new conversation will open with your message as the starting point.
           </p>
 
           <div className="flex flex-wrap gap-1.5">
@@ -130,7 +130,7 @@ export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistance
             rows={6}
             disabled={busy}
             className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/50 disabled:cursor-not-allowed disabled:opacity-60"
-            data-testid="community-assistance-input"
+            data-testid="helpdesk-request-input"
           />
           <p className="text-[11px] text-muted-foreground/80">⌘/Ctrl + Enter to send</p>
         </div>

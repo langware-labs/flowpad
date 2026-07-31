@@ -149,9 +149,9 @@ export interface SoloSendNoticeParams {
   /** ``conversation.remote === true`` — shared / hub-backed. A local-only
    *  conversation always has exactly one participant; no notice there. */
   remote: boolean;
-  /** COMMUNITY rosters intentionally mask responders (a guest sees only
+  /** HELPDESK rosters intentionally mask responders (a guest sees only
    *  themselves), so "1 participant" would false-positive — never notice. */
-  community: boolean;
+  helpdesk: boolean;
   /** ``useMembers().ready`` — the hub answered at least once. Gates the
    *  initial-load window where the roster is still unknown. */
   rosterReady: boolean;
@@ -172,7 +172,7 @@ export interface SoloSendNoticeParams {
 export function shouldShowSoloSendNotice(p: SoloSendNoticeParams): boolean {
   return (
     p.remote &&
-    !p.community &&
+    !p.helpdesk &&
     p.rosterReady &&
     !!p.cloudUserId &&
     p.participants.length === 1 &&

@@ -88,13 +88,23 @@ def is_protected_path(path: Path | str | None) -> bool:
 
     Protected paths are filesystem roots, the configured user home and its
     ancestors, the agent workspace container itself, exact temporary roots,
-    and instance/legacy record stores. Descendant project folders remain
-    unprotected.
+    instance/legacy record stores, and SDK-shipped system projects. Descendant
+    project folders remain unprotected.
     """
     if path is None:
         return True
     keyed = _path_policy_key(path)
     if keyed is None:
+        return True
+    # SDK-shipped system projects live inside the INSTALLED package
+    # (<site-packages>/flow_sdk/system_projects/<name>), which none of the
+    # roots below cover — so without this, deleting the Flowpad Assistant
+    # rmtree's the shipped docs/skills/agents out of the user's own install.
+    # It belongs here rather than at one deleter so EVERY destructive path
+    # that consults this policy is covered.
+    from flow_sdk.config import is_system_project_path  # noqa: PLC0415
+
+    if is_system_project_path(path):
         return True
     flavour, candidate, filesystem_root = keyed
     if candidate == filesystem_root:
