@@ -238,8 +238,12 @@ async def test_the_checkout_is_named_after_the_engagement_not_the_template(
     response = await project.setup_from_bootstrap_git(bootstrap_repo)
 
     leaf = Path(response.data["path"]).name
-    assert leaf.startswith("northwind-support"), leaf
     assert "bootstrap" not in leaf, "the template's name must not become the customer's"
+    # Exactly the name, with no ``-2``: a Project reserves ``<workspace>/<name>``
+    # when constructed, and treating that empty reservation as a collision both
+    # renamed the engagement and stranded an empty directory the workspace scan
+    # then minted a second, empty project for.
+    assert leaf == "northwind-support", leaf
 
 
 @pytest.mark.asyncio
