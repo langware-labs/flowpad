@@ -63,7 +63,7 @@ def list_schema() -> None:
 def info_schema(
     type_name: Annotated[
         str,
-        typer.Argument(help="Type name (e.g. 'task', 'skill', 'agent')."),
+        typer.Argument(help="Type name (e.g. 'task', 'skill', 'subagent')."),
     ],
 ) -> None:
     if not type_name:
