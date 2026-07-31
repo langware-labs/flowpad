@@ -124,6 +124,7 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
     ("node.disconnected", "Node disconnected", "The cloud connection dropped"),
     ("agent", "Agent events", "Agentic-process lifecycle events"),
     ("agent.status", "Agent status", "An agentic process changed status"),
+    ("agent.run", "Agent run", "Lifecycle of one agent run, targeted at its compute node"),
     ("graph_workflow", "Graph workflow lifecycle", "Graph-workflow run boundary events"),
     ("graph_workflow.started", "Graph workflow started", "A graph-workflow run started"),
     ("graph_workflow.step.done", "Graph workflow step done", "A graph-workflow node finished"),
@@ -161,6 +162,7 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
     ("gcp", "GCP", "Provider-minted GCP resource kinds (gcp.<service>.<resource>)"),
     ("local", "Local runtime", "Locally-hosted runtime placements"),
     ("local.runtime.web", "Local web runtime", "A locally-served web app deployment"),
+    ("local.runtime.agent", "Local agent runtime", "An agent deployment placed on this machine"),
 )
 
 # System-owned first segments — the our-world / user-world boundary, DERIVED

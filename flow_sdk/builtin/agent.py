@@ -29,7 +29,7 @@ from flow_sdk.api.type_id import TypeId
 #: agent_deployment (which mints the deployment id from it); two literals that
 #: must match are one too many.
 from flow_sdk.builtin.agent_deployment import LOCAL_DEPLOYMENT_KIND
-from flow_sdk.core import Entity
+from flow_sdk.core import Entity, action
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -143,6 +143,48 @@ class Agent(Entity):
         from flow_sdk.builtin.agent_deployment import AgentDeployment  # noqa: PLC0415
 
         return await AgentDeployment.for_agent(self)
+
+    # ── the run verb (HTTP) ───────────────────────────────────────────────
+
+    @action.post(action_name="run")
+    async def run_action(self):
+        """Run this agent once. `POST /agent/<id>/run  {"prompt": "..."}`
+
+        The UI's entry point. Deliberately a command that ACKNOWLEDGES rather
+        than a bare bus emission: the caller needs the process id to navigate
+        to the run, and a fire-and-forget emit with no registered handler would
+        be a silent no-op. The lifecycle is emitted as node-addressed events
+        alongside — see ``agent_run.dispatch_agent_run``, which owns the
+        local/remote routing.
+        """
+        from flow_sdk.builtin.agent_run import dispatch_agent_run  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        prompt = str((body or {}).get("prompt") or "").strip()
+        if not prompt:
+            return ApiFailResponse(message="prompt is required")
+        if not self.enabled:
+            return ApiFailResponse(message=f"agent {self.name!r} is disabled")
+
+        deployment = await self.local_deployment()
+        try:
+            process = await dispatch_agent_run(deployment, prompt)
+        except NotImplementedError as exc:
+            return ApiFailResponse(message=str(exc))
+        except Exception as exc:
+            return ApiFailResponse(message=f"run failed: {exc}")
+
+        return ApiSuccessResponse(
+            data={
+                "process_id": process.id,
+                "process_typeid": str(process.typeid),
+                "deployment_id": deployment.id,
+                "compute_node_id": deployment.compute_node_id,
+            }
+        )
 
     # ── projection into the launch bundle ─────────────────────────────────
 

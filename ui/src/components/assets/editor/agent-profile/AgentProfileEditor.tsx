@@ -1,7 +1,7 @@
 import { Agent, FSRef } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bot } from 'lucide-react';
+import { Bot, Loader2, Play } from 'lucide-react';
 
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { notify } from '@src/notifications';
@@ -13,8 +13,10 @@ import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
 import { Switch } from '@src/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { Button } from '@src/components/ui/button';
 
 import { AgentField, AgentListField, AgentSection, AgentSelectField } from './AgentProfileFields';
+import { AgentRunDialog } from './AgentRunDialog';
 import {
   AGENT_EFFORTS,
   AGENT_MODEL_TIERS,
@@ -65,6 +67,8 @@ export function AgentProfileEditor({ fsRef, agent: providedAgent }: AgentProfile
   const [name, setName] = useState(agent?.name ?? '');
   const [description, setDescription] = useState(agent?.description ?? '');
   const [prompt, setPrompt] = useState(agent?.system_prompt ?? '');
+  const [runOpen, setRunOpen] = useState(false);
+  const [running, setRunning] = useState(false);
 
   useEffect(() => {
     setTitle(agent?.title ?? '');
@@ -166,17 +170,30 @@ export function AgentProfileEditor({ fsRef, agent: providedAgent }: AgentProfile
             />
           </div>
 
-          <div className="flex shrink-0 items-center gap-2 pt-2">
-            <span className="text-xs text-muted-foreground">
-              {agent.enabled ? <Trans>Enabled</Trans> : <Trans>Disabled</Trans>}
-            </span>
-            <Switch
-              checked={agent.enabled}
-              onCheckedChange={(v) => void save({ enabled: v })}
-              aria-label={t`Enabled`}
-            />
+          <div className="flex shrink-0 items-center gap-3 pt-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                {agent.enabled ? <Trans>Enabled</Trans> : <Trans>Disabled</Trans>}
+              </span>
+              <Switch
+                checked={agent.enabled}
+                onCheckedChange={(v) => void save({ enabled: v })}
+                aria-label={t`Enabled`}
+              />
+            </div>
+            <Button size="sm" disabled={!agent.enabled || running} onClick={() => setRunOpen(true)}>
+              {running ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1.5 h-3.5 w-3.5" />}
+              <Trans>Run</Trans>
+            </Button>
           </div>
         </div>
+
+        <AgentRunDialog
+          agent={agent}
+          open={runOpen}
+          onOpenChange={setRunOpen}
+          onRunningChange={setRunning}
+        />
 
         {/* ── behaviour ───────────────────────────────────────────────── */}
         <AgentSection title={t`Behaviour`} hint={t`Who this agent is. Becomes its system prompt.`}>

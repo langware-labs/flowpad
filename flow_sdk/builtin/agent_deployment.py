@@ -27,6 +27,11 @@ if TYPE_CHECKING:  # pragma: no cover
 
 LOCAL_DEPLOYMENT_KIND = "local.runtime.agent"
 
+#: Which machine the deployment places the agent on. A provider label rather
+#: than a field, matching how the shipped webapp deployment carries
+#: `flowpad.runtime.port` — Deployment stays provider-neutral.
+COMPUTE_NODE_LABEL = "flowpad.compute.node_id"
+
 
 def _deployment_id_for(agent_id: str, kind: str) -> str:
     """Deterministic id so deploy() is idempotent per (agent, kind).
@@ -66,8 +71,12 @@ class AgentDeployment:
     async def upsert_for(cls, agent: "Agent", *, kind: str = LOCAL_DEPLOYMENT_KIND) -> "AgentDeployment":
         from datetime import datetime  # noqa: PLC0415
 
+        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
+        # The local kind is, by definition, this machine. Other kinds will pass
+        # their own node when they land; the label is the seam either way.
+        node_id = ComputeNode._local_id()
         dep_id = _deployment_id_for(agent.id, kind)
         existing = await Deployment.get_by_id(dep_id)
         machine = get_instance_settings().instance_name
@@ -81,6 +90,7 @@ class AgentDeployment:
             },
             "status": {"sync_state": "current", "provider_state": "configured"},
             "provider_labels": {
+                COMPUTE_NODE_LABEL: node_id,
                 "flowpad.agent.name": str(agent.name or ""),
                 "flowpad.agent.worker": str(agent.worker_type or ""),
                 "flowpad.agent.model": str(agent.model or ""),
@@ -110,6 +120,32 @@ class AgentDeployment:
     async def for_agent(cls, agent: "Agent") -> list["AgentDeployment"]:
         rows = await Deployment.get_all({"parent_type_id": str(agent.typeid)})
         return [cls(r) for r in rows if str(r.kind or "").endswith(".agent")]
+
+    @property
+    def compute_node_id(self) -> str:
+        """The machine this deployment places the agent on.
+
+        THE addressing seam. A run is not "execute here" — it is "execute on
+        the node this deployment is placed on", which is what lets the same
+        call mean a local spawn today and a message to a remote node's event
+        bus later. Carried in ``provider_labels`` the way the shipped webapp
+        deployment carries ``flowpad.runtime.port``.
+
+        Falls back to the deterministic ``@local`` id (pure — no DB read, no
+        mint side-effect, same reason ``node_on_tag`` uses it) so an older row
+        written before the label existed still resolves.
+        """
+        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+
+        label = (self.provider_labels or {}).get(COMPUTE_NODE_LABEL)
+        return str(label) if label else ComputeNode._local_id()
+
+    @property
+    def is_local(self) -> bool:
+        """Whether this deployment runs on the machine we are executing on."""
+        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+
+        return self.compute_node_id == ComputeNode._local_id()
 
     async def agent(self) -> Optional["Agent"]:
         from flow_sdk.api.type_id import TypeId  # noqa: PLC0415

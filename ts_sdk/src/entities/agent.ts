@@ -1,4 +1,5 @@
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { ActionInfo } from '../models';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 import { dataContext } from '../FlowSync/context';
@@ -126,4 +127,27 @@ export class Agent extends APIEntity<Agent> {
     if (!typeId || !this.asset_ref) return null;
     return new FrontMatterFsRef(this.asset_ref, typeId);
   }
+
+  /**
+   * Run this agent once, returning the process that records the run.
+   *
+   * An ActionInfo rather than a field write — this is a command, not CRUD
+   * (the `set-kind` action on SubAgent is the same pattern). The backend
+   * routes it to the compute node this agent's deployment places it on, so a
+   * remote deployment fails loudly here rather than quietly running on the
+   * server.
+   */
+  async run(prompt: string): Promise<AgentRunResult> {
+    const action = new ActionInfo('run', Agent.type, this.id, 'POST');
+    action.bodyParameters = { prompt };
+    return (await dataManager.callAction(action)) as AgentRunResult;
+  }
+}
+
+/** What `POST /agent/<id>/run` hands back. */
+export interface AgentRunResult {
+  process_id: string;
+  process_typeid: string;
+  deployment_id: string;
+  compute_node_id: string;
 }
