@@ -91,7 +91,7 @@ async def test_get_builtin_all_schema(bootstrapped_client):
     print(f"Retrieved {len(schemas)} schemas")
 
 
-async def test_bootstrap_includes_agent_and_skill_schemas(bootstrapped_client):
+async def test_bootstrap_includes_subagent_and_skill_schemas(bootstrapped_client):
     client = bootstrapped_client
 
     response = await client.get("/api/v1/graph/bootstrap")
@@ -104,5 +104,5 @@ async def test_bootstrap_includes_agent_and_skill_schemas(bootstrapped_client):
         schema.get("properties", {}).get("type", {}).get("const")
         for schema in schemas
     }
-    assert "agent" in schema_types
+    assert "subagent" in schema_types
     assert "skill" in schema_types
