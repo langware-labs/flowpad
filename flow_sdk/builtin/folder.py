@@ -176,6 +176,34 @@ class Folder(Entity):
         origin = await cls.detect_origin(canonical)
         return await cls.mint_for_origin(origin, local_path=canonical)
 
+    @classmethod
+    async def borrowed_checkout_paths(cls) -> set:
+        """Canonical paths of every directory we materialized from a TRANSPORTABLE
+        origin — i.e. every checkout of somebody else's repo.
+
+        These are bytes we clone but do not author, and indexing must never
+        write into them: identity backends normally COMMIT the id they mint
+        back into the source (markdown gets a ``flowpad:capsule`` block
+        appended), which dirties every tracked file and makes the vendor's next
+        ``git pull`` abort on "local changes would be overwritten" — silently,
+        until somebody tries to update the folder.
+
+        Answered from the Folder rows rather than by a per-path probe because
+        the Folder IS the record of "this directory came from elsewhere". A
+        caller that has a root and wants to know whether it may write asks
+        here; it does not need to know how the directory was attached, which is
+        the whole reason this lives on the entity and not at the call sites
+        (there are at least three: context-folder add, folder resolve, and the
+        project walk that owns a checkout it did not attach).
+        """
+        paths = set()
+        for folder in await cls.get_all():
+            origin = folder.origin
+            if origin is None or not origin.transportable or not folder.path:
+                continue
+            paths.add(canonical_posix_path(folder.path))
+        return paths
+
     # ── Materialize ──────────────────────────────────────────────────────────
 
     @action.post(action_name="resolve-location")

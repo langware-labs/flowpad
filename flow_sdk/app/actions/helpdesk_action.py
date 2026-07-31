@@ -46,9 +46,9 @@ def _helpdesk_action(failure: str):
 
     def decorate(fn):
         @wraps(fn)
-        async def wrapper() -> ApiResponse:
+        async def wrapper(*args, **kwargs) -> ApiResponse:
             try:
-                return await fn()
+                return await fn(*args, **kwargs)
             except _NoDesk:
                 # Upstream has no desk; our backend is healthy, hence 502.
                 return ApiFailResponse(message="Help desk is unavailable on this hub", status_code=502)
@@ -91,6 +91,57 @@ def _portal_paths(target) -> tuple[Path, str]:
     return mount_path, canonical_posix_path(str(mount_path))
 
 
+async def _adopted_desk_payload(project_id: str) -> dict | None:
+    """The desk THIS project adopted, or ``None`` to fall back to the hub's.
+
+    A project can carry a vendor's help desk as an ordinary context folder: the
+    folder is a repo the vendor publishes, and indexing it discovers the
+    ``Helpdesk`` inside (see ``builtin/helpdesk.py``). That desk is the one the
+    project's own people should reach — a customer working in an engagement
+    wants their vendor's desk, not ours. Only when a project has adopted
+    nothing do we fall through to the instance-wide desk the hub advertises.
+
+    Nothing is cloned or minted here. The context folder is already on disk
+    (attaching it is what put it there) and the workspace walk has already
+    minted the Project that owns that directory, so this is pure resolution —
+    which is also why it is safe to run on every open.
+    """
+    from flow_sdk.builtin.helpdesk import Helpdesk  # noqa: PLC0415
+
+    project = await Project.get_by_id(project_id)
+    if project is None:
+        return None
+    roots = [canonical_posix_path(d) for d in (project.include_dirs or [])]
+    if not roots:
+        return None
+
+    for desk in await Helpdesk.get_all():
+        if not desk.asset_ref:
+            continue
+        ref = canonical_posix_path(desk.asset_ref)
+        root = next((r for r in roots if ref == r or ref.startswith(r.rstrip("/") + "/")), None)
+        if root is None:
+            continue
+        portal = await Project.find_by_cwd(root)
+        if portal is None:
+            # The directory is attached but no Project owns it yet (the walk
+            # has not caught up). Fall back rather than minting one here —
+            # ``helpdesk-ensure`` is on the open path and must stay cheap.
+            continue
+        return {
+            "project_id": portal.id,
+            "helpdesk_project_id": desk.desk_project_id,
+            "mount_path": root,
+            "cloned": False,
+            "has_portal": True,
+            # Lets the caller skip the fetch/index steps: this checkout is a
+            # context folder the project already resolved and indexed, not a
+            # portal slot this action owns.
+            "adopted": True,
+        }
+    return None
+
+
 def _ensure_payload(target, *, project_id=None, mount_path=None, cloned=False) -> dict:
     """The ``helpdesk-ensure`` response. One builder so the has-portal and
     no-portal shapes cannot drift apart."""
@@ -105,18 +156,32 @@ def _ensure_payload(target, *, project_id=None, mount_path=None, cloned=False) -
 
 @action.post(action_name="helpdesk-ensure", types=None)
 @_helpdesk_action("Failed to prepare the help desk")
-async def helpdesk_ensure() -> ApiResponse:
+async def helpdesk_ensure(project_id: str = "") -> ApiResponse:
     """The portal checkout exists, cloning it on first run. Idempotent.
 
-    Placement is the fixed per-desk slot ``helpdesk_project_dir`` — NOT
-    ``GitOrigin.next_clone_target``. The portal is app-managed infrastructure
-    keyed by desk id, not a user project the recipient chose to take, so it must
-    land in the same deterministic spot every time (which is also what lets
-    ``helpdesk-reset`` know exactly what to remove).
+    ``project_id`` is the project the user is working in. If that project has
+    adopted a desk of its own — a vendor's help desk attached as a context
+    folder — that desk wins, and nothing here clones anything: the folder is
+    already on disk. Only a project with no desk of its own falls through to
+    the instance-wide desk the hub advertises. That is what makes support tiers
+    chain: A's desk serves A's own projects while B, working inside a project
+    A set up, reaches A.
+
+    For that fall-through case, placement is the fixed per-desk slot
+    ``helpdesk_project_dir`` — NOT ``GitOrigin.next_clone_target``. The portal
+    is app-managed infrastructure keyed by desk id, not a user project the
+    recipient chose to take, so it must land in the same deterministic spot
+    every time (which is also what lets ``helpdesk-reset`` know exactly what to
+    remove).
     """
     request_info = get_current_request_info()
     if not request_info or not request_info.someone_typeid:
         return ApiFailResponse(message="No authenticated user in request context")
+
+    if project_id:
+        adopted = await _adopted_desk_payload(project_id)
+        if adopted is not None:
+            return ApiSuccessResponse(data=adopted)
 
     target = await _require_target()
     if not target.portal_git_url:

@@ -5,6 +5,7 @@ import { StepList } from '@src/components/ui/step-list';
 import { useStepFlow } from '@src/hooks/use-step-flow';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useContext } from '@src/hooks/useContext';
 import { errorMessage, errorStatus } from '@src/lib/error-message';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { LifeBuoy } from 'lucide-react';
@@ -43,6 +44,10 @@ interface HelpdeskLoadDialogProps {
 export function HelpdeskLoadDialog({ open, onClose, onNoPortal }: HelpdeskLoadDialogProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
+  // Which project's desk to open. A project that adopted a vendor's help desk
+  // as a context folder reaches THAT desk; with none, the backend falls
+  // through to the instance-wide desk the hub advertises.
+  const activeProjectId = useContext().project?.id ?? null;
 
   const labels: Record<HelpdeskStepId, string> = useMemo(() => ({
     check: t`Checking the help desk files`,
@@ -60,9 +65,18 @@ export function HelpdeskLoadDialog({ open, onClose, onNoPortal }: HelpdeskLoadDi
       // A — the checkout exists (clone on first run). Idempotent, so a repeat
       // open is cheap and reports "already present".
       const ensured = await run('check', async () => {
-        const res = await helpdeskEnsure();
+        // Scoped to the active project: one that has adopted a desk of its own
+        // — a vendor's help desk attached as a context folder — reaches THAT
+        // desk. Only a project with none falls through to the hub's.
+        const res = await helpdeskEnsure(activeProjectId);
         patch('check', {
-          detail: !res.has_portal ? t`no guides published` : res.cloned ? t`cloned` : t`already present`,
+          detail: !res.has_portal
+            ? t`no guides published`
+            : res.adopted
+              ? t`this project's own desk`
+              : res.cloned
+                ? t`cloned`
+                : t`already present`,
         });
         return res;
       });
@@ -81,6 +95,23 @@ export function HelpdeskLoadDialog({ open, onClose, onNoPortal }: HelpdeskLoadDi
         return 'handed-off';
       }
       const portalProjectId = ensured.project_id;
+
+      // An adopted desk is a CONTEXT FOLDER, not the app-managed portal slot.
+      // `helpdesk-refresh` / the portal index both operate on that slot, so
+      // running them here would sync the wrong checkout. The folder was pulled
+      // and indexed when it was attached, and stays current through the
+      // ordinary context-folder path — so there is nothing left to do but open.
+      if (ensured.adopted) {
+        // `status` explicitly: `patch` merges a partial and does not mark a
+        // step done — only `run` does, and there is no work here to run.
+        patch('fetch', { status: 'success', detail: t`kept current as a context folder` });
+        patch('index', { status: 'success', detail: t`indexed with the project` });
+        await run('open', () => {
+          navigation.openDock(DockPointer.forHelpdesk(portalProjectId));
+          return Promise.resolve();
+        });
+        return 'opened';
+      }
 
       // B — pull. Non-fatal by design: stale-but-present help content still
       // beats refusing to open the desk because the network is down.
@@ -148,7 +179,7 @@ export function HelpdeskLoadDialog({ open, onClose, onNoPortal }: HelpdeskLoadDi
     // re-deriving it from `steps` in a second effect. A failed pass stays on
     // screen with its Retry; a hand-off already opened the ticket dialog.
     if (ok && value === 'opened') onClose();
-  }, [navigation, onClose, onNoPortal, patch, reset, run, runAll, t]);
+  }, [activeProjectId, navigation, onClose, onNoPortal, patch, reset, run, runAll, t]);
 
   // Auto-start on open.
   // Intentionally keyed on `open` alone: re-running on every `load` identity
