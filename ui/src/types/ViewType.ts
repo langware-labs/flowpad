@@ -356,6 +356,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
+  [ViewType.SIGNALS]: {
+    title: 'Signals',
+    iconName: 'RadioTower',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.PLAN]: {
     title: 'Plan',
     iconName: 'FileText',

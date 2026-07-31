@@ -255,6 +255,29 @@
   text-overflow: ellipsis;
 }
 .graph-workflows .afl-tag .ttl .pfx { color: var(--ink-faint); }
+/* The subscription's target filter, when it has one. */
+.graph-workflows .afl-tag .tgt {
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The injection door reads as a dashed opening, not a wired-up source. */
+.graph-workflows .afl-tag.external .card { border-style: dashed; }
+/* Lit while a matching event is entering — the flow's doorbell. */
+.graph-workflows .afl-tag.hot .card {
+  border-color: var(--rubric);
+  box-shadow: 0 0 0 1px var(--rubric), 0 6px 20px -8px var(--rubric);
+  animation: afl-inlet-hit 0.5s ease-out;
+}
+@keyframes afl-inlet-hit {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.045); }
+  100% { transform: scale(1); }
+}
 
 /* inline emit popover on a selected tag pill */
 .graph-workflows .afl-emitpop {
@@ -845,3 +868,60 @@
   text-decoration: none;
 }
 .graph-workflows .afl-jrow .lnk:hover { text-decoration: underline; }
+
+/* ---- execution artifacts (runs panel) ------------------------------- */
+.graph-workflows .afl-artifacts { margin-top: 12px; }
+.graph-workflows .afl-exec { margin-bottom: 8px; }
+.graph-workflows .afl-exechead {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  padding: 2px 0;
+}
+.graph-workflows .afl-exechead .n { color: var(--ink-strong); font-weight: 600; }
+.graph-workflows .afl-exechead .tagpill {
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--afl-edge);
+  border-radius: 7px;
+  padding: 0 4px;
+}
+.graph-workflows .afl-filerow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 4px;
+  background: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.graph-workflows .afl-filerow:hover:not(:disabled) { background: var(--paper-2); }
+.graph-workflows .afl-filerow:disabled { opacity: 0.45; cursor: default; }
+.graph-workflows .afl-filerow.on { border-left-color: var(--rubric); background: var(--paper-2); }
+/* Direction is the useful distinction: what came in vs what this made. */
+.graph-workflows .afl-filerow.output .fn { color: var(--ink-strong); }
+.graph-workflows .afl-filerow .dir { color: var(--ink-faint); }
+.graph-workflows .afl-filerow .fn { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.graph-workflows .afl-filerow .sz { color: var(--ink-faint); font-size: 9.5px; }
+.graph-workflows .afl-filebody {
+  margin: 2px 0 6px 10px;
+  padding: 6px 8px;
+  max-height: 260px;
+  overflow: auto;
+  font-size: 10px;
+  line-height: 1.45;
+  background: var(--paper-2);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

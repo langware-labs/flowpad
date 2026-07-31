@@ -23,6 +23,8 @@ export * from './label';
 export * from './bookmark';
 export * from './graph_context';
 export * from './capability';
+export * from './data-source';
+export * from './data-source-cursor';
 export * from './mention';
 export * from './page';
 export * from './plugin';

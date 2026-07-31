@@ -84,6 +84,9 @@ const GenericSubgraphView = lazy(() =>
 const GraphWorkflowsView = lazy(() =>
   import('@src/components/graph-workflows/GraphWorkflowsView').then((m) => ({ default: m.GraphWorkflowsView })),
 );
+const SignalsView = lazy(() =>
+  import('@src/components/signals/SignalsView').then((m) => ({ default: m.SignalsView })),
+);
 const SurveyView = lazy(() =>
   import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })),
 );
@@ -383,6 +386,12 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return (
           <Suspense fallback={null}>
             <GraphWorkflowsView />
+          </Suspense>
+        );
+      case ViewType.SIGNALS:
+        return (
+          <Suspense fallback={null}>
+            <SignalsView />
           </Suspense>
         );
       case ViewType.K_BROWSER:

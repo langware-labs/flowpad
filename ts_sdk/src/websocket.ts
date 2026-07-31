@@ -27,9 +27,7 @@ type MessageType =
   | 'cloud_connection_status_msg'
   | 'privacy_mode_msg'
   | 'toplog_state_msg'
-  | 'flow_run_event_msg'
   | 'tag_msg'
-  | 'flow_node_status_msg'
   | 'ui_command'
   | 'recovered_msg'
   | 'broadcast';
@@ -70,14 +68,6 @@ type ITypeId = string | { type: string; id: string };
 interface EntityMessage extends BaseMessage {
   from_entity?: ITypeId;
   to_entity: ITypeId;
-}
-
-export interface IStreamMessage extends BaseMessage {
-  stream_id: number;
-}
-
-export interface TranscriptMessage extends IStreamMessage {
-  text: string;
 }
 
 export interface ControlMessage extends BaseMessage {
@@ -129,46 +119,10 @@ export interface ToplogStateMessage extends BaseMessage {
   filter: Record<string, boolean>;
 }
 
-/**
- * Broadcast for every event/lifecycle beat of an GraphWorkflow run — the live
- * run stream. Backend mirror: GraphWorkflowRunEventMessage in flow_sdk/api/messages.py.
- */
 /** The unified event-bus frame — one serialized FlowEvent (docs/flow-events.md). */
 export interface TagMsg extends BaseMessage {
   message_type: 'tag_msg';
   event: import('./tags/EventBus').FlowEvent;
-}
-
-export interface GraphWorkflowRunEventMessage extends BaseMessage {
-  message_type: 'flow_run_event_msg';
-  flow_id: string;
-  run_id: string;
-  /** run_start | event | run_end */
-  kind: string;
-  event: string;
-  data: Record<string, unknown>;
-  node: string;
-  status: string;
-  ts: string;
-}
-
-/**
- * Broadcast on every GraphWorkflowManager scheduler transition for a flow node — the
- * push feed for live queue/active counters and node status lines.
- * Backend mirror: GraphWorkflowNodeStatusMessage in flow_sdk/api/messages.py.
- */
-export interface GraphWorkflowNodeStatusMessage extends BaseMessage {
-  message_type: 'flow_node_status_msg';
-  flow_id: string;
-  run_id: string;
-  node_id: string;
-  phase: 'queued' | 'merged' | 'started' | 'finished' | 'failed';
-  /** Node runtime counts AFTER this transition. */
-  queued: number;
-  active: number;
-  /** started → {program_kind, process_id?}; finished → {duration_ms, stdout?...}; failed → {error}. */
-  detail: Record<string, unknown>;
-  ts: string;
 }
 
 /**
@@ -627,12 +581,6 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'tag_msg') {
       return this.onTagMessage(data as TagMsg);
     }
-    if (data.message_type === 'flow_run_event_msg') {
-      return this.onGraphWorkflowRunEventMessage(data as GraphWorkflowRunEventMessage);
-    }
-    if (data.message_type === 'flow_node_status_msg') {
-      return this.onGraphWorkflowNodeStatusMessage(data as GraphWorkflowNodeStatusMessage);
-    }
     if (data.message_type === 'toplog_state_msg') {
       return this.onToplogStateMessage(data as ToplogStateMessage);
     }
@@ -687,14 +635,6 @@ export class ConnectionManager extends EventEmitter {
   /** Unified event bus frame → the ws-bridge feeds it into the app EventBus. */
   onTagMessage(data: TagMsg) {
     this.emit('on_tag_msg', data);
-  }
-
-  onGraphWorkflowRunEventMessage(data: GraphWorkflowRunEventMessage) {
-    this.emit('on_flow_run_event_msg', data);
-  }
-
-  onGraphWorkflowNodeStatusMessage(data: GraphWorkflowNodeStatusMessage) {
-    this.emit('on_flow_node_status_msg', data);
   }
 
   onUiCommandMessage(data: UiCommandMessage) {
