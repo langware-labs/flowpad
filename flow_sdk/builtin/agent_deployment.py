@@ -181,7 +181,7 @@ class AgentDeployment:
             visible=bool(options.pop("visible", False)),
             pty_mode=options.pop("pty_mode", pty),
             process_type=options.pop("process_type", ProcessKind.EXECUTION.value),
-            worker_type=agent.worker_type,
+            worker_type=agent.resolved_worker_type,
             project_id=options.pop("project_id", None) or agent.project_id,
             load_flowpad_assistant=agent.load_flowpad_assistant,
             additional_dirs=list(agent.additional_dirs or []),
@@ -199,7 +199,7 @@ class AgentDeployment:
             await proc.start_pty(instruction=prompt)
             return proc
 
-        from flow_sdk.api.messages import ApiFailResponse  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
 
         resp = await proc.prompt(prompt)
         if isinstance(resp, ApiFailResponse):

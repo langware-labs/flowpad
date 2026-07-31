@@ -102,6 +102,27 @@ class Agent(Entity):
 
     # ── projection into the launch bundle ─────────────────────────────────
 
+    @property
+    def resolved_worker_type(self) -> str:
+        """``worker_type`` as the enum value AgenticProcess stores.
+
+        An agent.md declares the DRIVER short-id (``claude`` / ``codex`` /
+        ``copilot``) because that is what a human writes and what the CLI is
+        called; ``AgenticProcess.worker_type`` is a ``WorkerType`` whose Claude
+        member is ``claude_code``. Same mapping the long-test factory keeps
+        (``tests/long_tests/conftest.py``), applied here so every launch site
+        gets it rather than each re-deriving it.
+        """
+        from flow_sdk.flowpad_types.enums import WorkerType  # noqa: PLC0415
+
+        raw = (self.worker_type or "claude").strip()
+        alias = {
+            "claude": WorkerType.CLAUDE_CODE.value,
+            "codex": WorkerType.CODEX.value,
+            "copilot": WorkerType.COPILOT.value,
+        }
+        return alias.get(raw, raw)
+
     def to_agent_options(self, **overrides) -> "AgentOptions":
         """Build the vendor options object this agent launches with.
 
