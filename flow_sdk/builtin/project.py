@@ -61,6 +61,29 @@ def _generate_session_code() -> str:
     return f"{left}-{right}"
 
 
+def _fresh_clone_slot(preferred_leaf: str) -> Path:
+    """An unused workspace directory named after ``preferred_leaf``.
+
+    Blocking (stats the workspace) — call via ``asyncio.to_thread``.
+
+    Deliberately NOT ``GitOrigin.next_clone_target``: that one reuses an
+    existing checkout when the origin matches, which is right when the repo IS
+    the project's identity and wrong when it is a template being instantiated
+    for the Nth time. This one always suffixes past a collision.
+    """
+    base = Path(AGENT_MOUNT_FOLDER)
+    base.mkdir(parents=True, exist_ok=True)
+    leaf = "".join(
+        c if c.isalnum() or c in ("-", "_", ".") else "-" for c in (preferred_leaf or "")
+    ).strip("-. ") or "project"
+    candidate = base / leaf
+    n = 2
+    while candidate.exists():
+        candidate = base / f"{leaf}-{n}"
+        n += 1
+    return candidate
+
+
 def _detach_git_history(repo_root: Path) -> None:
     """Replace a template checkout's history with an empty one, in place.
 
@@ -1007,10 +1030,14 @@ class Project(Entity):
         )
         from flow_sdk.builtin.bootstrap_manifest import read_bootstrap_manifest  # noqa: PLC0415
 
-        # A fresh slot every time: reusing an existing checkout is right for
-        # ``setup_from_git`` (same project, same repo) and wrong here — two
-        # engagements from one template are two independent working copies.
-        target_dir = str(await asyncio.to_thread(origin.next_clone_target))
+        # A fresh slot every time, named after the ENGAGEMENT rather than the
+        # template. ``origin.next_clone_target`` is right for ``setup_from_git``
+        # (the repo is the project's identity, and reusing a matching checkout
+        # is correct) and wrong on both counts here: two engagements from one
+        # template are two independent working copies, and a customer whose
+        # folder is called ``cloudnsite-bootstrap`` has been handed the vendor's
+        # name for their own work.
+        target_dir = str(await asyncio.to_thread(_fresh_clone_slot, self.name or origin.name))
         token, _ = await _get_github_token_for_current_user()
         ok, message = await git_clone(
             origin.clone_url(), target_dir, branch=origin.branch or None, token=token
@@ -1962,7 +1989,16 @@ class Project(Entity):
                 _index_additional_dir,
             )
 
-            await _index_additional_dir(canonical)
+            # A transportable origin means these bytes came from a repo we clone
+            # but do not author. Indexing normally COMMITS the id it mints back
+            # into the source (markdown gets a ``flowpad:capsule`` block
+            # appended), which dirties every tracked file and makes the next
+            # ``git pull`` abort on "local changes would be overwritten" —
+            # silently, until someone tries to update the folder.
+            # ``Folder.resolve_location`` makes the same call for the same
+            # reason; both are needed, because a folder can be attached here
+            # without ever going through resolve (an already-local checkout).
+            await _index_additional_dir(canonical, read_only=origin.transportable)
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
     @action.post(action_name="folder-for-path")

@@ -112,11 +112,16 @@ async def test_attaching_a_url_clones_links_and_discovers_the_desk(
     # produces, so the two flows stay exchangeable.
     assert data["path"] in project.include_dirs
 
-    desk = await Helpdesk.get_by_id(data.get("helpdesk_id") or "") if data.get("helpdesk_id") else None
-    if desk is None:
-        desks = [d for d in await Helpdesk.get_all() if d.display_name == MANIFEST["display_name"]]
-        assert desks, "indexing the clone should have discovered the portal"
-        desk = desks[0]
+    # Select by PATH, not display name: the test workspace is shared across
+    # runs and fixtures, so several clones can carry the same brand — and
+    # ``display_name`` is repo-controlled anyway, never an identity.
+    desks = [
+        d for d in await Helpdesk.get_all()
+        if d.asset_ref and Path(d.asset_ref).is_relative_to(cloned)
+    ]
+    assert desks, "indexing the clone should have discovered the portal"
+    desk = desks[0]
+    assert desk.display_name == MANIFEST["display_name"]
 
     # Read THROUGH to the manifest — a denormalized copy would go stale on pull.
     assert desk.desk_project_id == MANIFEST["desk_project_id"]
@@ -124,6 +129,42 @@ async def test_attaching_a_url_clones_links_and_discovers_the_desk(
     assert Path(desk.asset_ref).is_dir(), (
         "asset_ref must point at the portal folder; an empty ref means the "
         "Helpdesk class was not registered and from_record fell back to Entity"
+    )
+
+
+@pytest.mark.asyncio
+async def test_attaching_leaves_the_vendors_checkout_pullable(
+    tmp_path: Path, vendor_repo: str
+) -> None:
+    """THE regression. A dirtied checkout cannot ``git pull``.
+
+    Indexing normally commits the id it mints back into the source — markdown
+    gets a ``flowpad:capsule`` block appended. In a vendor repo that dirties
+    every tracked file and the next pull aborts on "local changes would be
+    overwritten", which silently ends the one property the whole design rests
+    on: that a vendor-side improvement reaches every live engagement.
+
+    ``test_helpdesk_repo_asset.py`` pins this for ``_index_additional_dir``
+    directly. This pins it for the path a USER actually takes — which went
+    through a SECOND, un-flagged scan inside ``add_context_dir`` and dirtied
+    the checkout despite the helper being called correctly.
+    """
+    project = await _project(tmp_path, "customer-a")
+    response = await project.add_context_dir_from_git(vendor_repo, scope="private")
+    assert response.status == "SUCCESS", response
+
+    checkout = Path(response.data["path"])
+    tracked = [
+        line
+        for line in subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=checkout, capture_output=True, text=True, timeout=20,
+        ).stdout.splitlines()
+        if not line.startswith("??")  # untracked: the test-only shadow store
+    ]
+    assert tracked == [], (
+        f"attaching a repo must leave it pullable; these tracked files were "
+        f"modified: {tracked}"
     )
 
 
