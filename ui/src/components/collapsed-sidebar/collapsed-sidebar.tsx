@@ -57,6 +57,7 @@ import {
   FolderOpen,
   Home,
   Mail,
+  History,
   MessageCircle,
   RadioTower,
   Search,
@@ -152,6 +153,7 @@ export function CollapsedSidebar() {
     capabilities: { title: t`Capabilities`, icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
     'graph-workflows': { title: t`Graph Workflows`, icon: Workflow, viewType: ViewType.GRAPH_WORKFLOWS },
     signals: { title: t`Signals`, icon: RadioTower, viewType: ViewType.SIGNALS },
+    runs: { title: t`Runs`, icon: History, viewType: ViewType.RUNS },
   };
 
   // Hub page has its own minimal rail — Home + the browse entries. It bypasses

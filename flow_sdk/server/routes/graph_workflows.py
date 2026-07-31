@@ -17,13 +17,20 @@ surface — no bespoke graph REST here.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import APIRouter, Request
 
 from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.server.routes.artifacts import (
+    MAX_ARTIFACT_PREVIEW_BYTES,
+    RENDERABLE_SUFFIXES,
+    ArtifactRoot,
+    as_executions,
+    resolve_artifact,
+    roots_under,
+)
 
 router = APIRouter(prefix="/api/v1/graph-workflows")
 
@@ -124,57 +131,22 @@ async def run_journal(flow_id: str, run_id: str):
 # not the run's, so listing the run folder alone would miss exactly the outputs
 # people care about most. The journal is what links the two.
 
-#: Never inline a file larger than this — the panel previews, it does not host.
-MAX_ARTIFACT_PREVIEW_BYTES = 256 * 1024
-
-#: The two subfolders `prepare_execution_io` materializes per execution.
-_DIRECTIONS = ("input", "output")
-
-
-@dataclass(frozen=True)
-class _ArtifactRoot:
-    """One execution's record folder. `dir` never crosses the wire."""
-    key: str
-    label: str
-    seq: int
-    node: str
-    dir: Path
-    process_id: str | None = None
+# The generic half — roots, listing, containment-checked reads — lives in
+# `routes/artifacts.py` and is path-only, so it serves a bare AgenticProcess
+# just as well. What stays here is the one genuinely flow-shaped thing: an
+# agent node's artifacts live under the AGENTIC PROCESS's record dir, and only
+# the run journal links the two.
 
 
-def _artifact_roots(flow_asset_ref: str, run_id: str) -> dict[str, _ArtifactRoot]:
-    """Enumerate every readable execution folder for a run, keyed.
+def _artifact_roots(flow_asset_ref: str, run_id: str) -> dict[str, ArtifactRoot]:
+    """Every readable execution folder for a run, keyed — including the
+    processes its agent nodes spawned."""
+    from flow_sdk.fs_store.record_paths import shadow_dir_for  # noqa: PLC0415
+    from flow_sdk.graph_workflow_manager.journal import read_run_journal  # noqa: PLC0415
+    from flow_sdk.graph_workflow_manager.manager import run_record_dir  # noqa: PLC0415
 
-    This is the ONLY place a path is derived, and the read route resolves its
-    key through here rather than accepting a path — so a client can only ever
-    reach a folder this listing already offered.
-    """
-    from flow_sdk.fs_store.record_paths import shadow_dir_for
-    from flow_sdk.graph_workflow_manager.journal import read_run_journal
-    from flow_sdk.graph_workflow_manager.manager import run_record_dir
+    roots = roots_under(run_record_dir(run_id))
 
-    roots: dict[str, _ArtifactRoot] = {}
-    base = run_record_dir(run_id)
-    if (base / "execution").is_dir():
-        roots["run"] = _ArtifactRoot("run", "run", 0, "", base / "execution")
-
-    exec_root = base / "executions"
-    if exec_root.is_dir():
-        for child in sorted(exec_root.iterdir()):
-            if not child.is_dir():
-                continue
-            seq_str, _, node = child.name.partition("-")
-            roots[child.name] = _ArtifactRoot(
-                key=child.name,
-                label=node or child.name,
-                seq=int(seq_str) if seq_str.isdigit() else 0,
-                node=node,
-                dir=child,
-            )
-
-    # Agent executions are the reason this route exists: their artifacts live
-    # under the AGENTIC PROCESS's record dir, not the run's, and only the
-    # journal links the two.
     seen: set[str] = set()
     for entry in read_run_journal(Path(flow_asset_ref), run_id):
         process_id = entry.get("process_id")
@@ -185,7 +157,7 @@ def _artifact_roots(flow_asset_ref: str, run_id: str) -> dict[str, _ArtifactRoot
         if not proc_dir.is_dir():
             continue
         execution = entry.get("execution")
-        roots[f"proc:{process_id}"] = _ArtifactRoot(
+        roots[f"proc:{process_id}"] = ArtifactRoot(
             key=f"proc:{process_id}",
             label=str(entry.get("node") or "agent"),
             seq=int(execution.get("seq") or 0) if isinstance(execution, dict) else 0,
@@ -194,47 +166,6 @@ def _artifact_roots(flow_asset_ref: str, run_id: str) -> dict[str, _ArtifactRoot
             process_id=process_id,
         )
     return roots
-
-
-def _list_files(folder: Path) -> list[dict]:
-    out: list[dict] = []
-    for direction in _DIRECTIONS:
-        sub = folder / direction
-        if not sub.is_dir():
-            continue
-        for path in sorted(sub.rglob("*")):
-            if not path.is_file():
-                continue
-            try:
-                size = path.stat().st_size
-            except OSError:
-                continue
-            out.append({
-                "name": str(path.relative_to(sub)),
-                "direction": direction,
-                "size": size,
-                "previewable": size <= MAX_ARTIFACT_PREVIEW_BYTES,
-                "path": str(path),
-            })
-    return out
-
-
-def _resolve_artifact(root: _ArtifactRoot, name: str) -> Path | None:
-    """`(root, name)` → path, without re-walking the tree.
-
-    Containment is checked on the resolved path rather than trusted from the
-    listing, so a crafted `name` cannot climb out of the execution folder even
-    though every legitimate `name` came from `_list_files`.
-    """
-    for direction in _DIRECTIONS:
-        base = (root.dir / direction).resolve()
-        try:
-            candidate = (base / name).resolve()
-        except OSError:
-            continue
-        if candidate.is_relative_to(base) and candidate.is_file():
-            return candidate
-    return None
 
 
 @router.get("/{flow_id}/runs/{run_id}/artifacts")
@@ -246,16 +177,8 @@ async def run_artifacts(flow_id: str, run_id: str):
     if flow is None or not flow.asset_ref:
         return ApiFailResponse(message=f"Unknown flow: {flow_id}")
 
-    executions = [
-        {
-            "key": root.key, "label": root.label, "seq": root.seq,
-            "node": root.node, "process_id": root.process_id,
-            "files": _list_files(root.dir),
-        }
-        for root in _artifact_roots(flow.asset_ref, run_id).values()
-    ]
-    executions.sort(key=lambda e: (e["seq"], e["key"]))
-    return ApiSuccessResponse(data={"executions": executions})
+    roots = _artifact_roots(flow.asset_ref, run_id)
+    return ApiSuccessResponse(data={"executions": as_executions(roots)})
 
 
 @router.get("/{flow_id}/runs/{run_id}/artifact")
@@ -271,7 +194,7 @@ async def run_artifact(flow_id: str, run_id: str, key: str, name: str):
     if root is None:
         return ApiFailResponse(message=f"Unknown execution: {key}")
 
-    path = _resolve_artifact(root, name)
+    path = resolve_artifact(root, name)
     if path is None:
         return ApiFailResponse(message=f"No such artifact: {name}")
 
@@ -284,4 +207,5 @@ async def run_artifact(flow_id: str, run_id: str, key: str, name: str):
         return ApiFailResponse(message=f"unreadable: {e}")
     return ApiSuccessResponse(data={
         "name": name, "size": size, "path": str(path), "text": text,
+        "renderable": path.suffix.lower() in RENDERABLE_SUFFIXES,
     })

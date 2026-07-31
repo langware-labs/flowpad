@@ -77,6 +77,7 @@ from .routes import (
     privacy_router,
     project_router,
     pty_stream_router,
+    runs_router,
     search_router,
     semantic_checker_router,
     subgraph_router,
@@ -541,6 +542,7 @@ server.add_router(project_router, prefix="/api/v1")
 server.add_router(compute_register_router)
 server.add_router(debug_router)
 server.add_router(ingest_router)
+server.add_router(runs_router)
 server.add_router(tags_router)
 server.add_router(subgraph_router)
 server.add_router(navigate_router)

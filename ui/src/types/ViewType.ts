@@ -73,7 +73,8 @@ export interface ViewerMeta {
     | 'BrainCircuit'
     | 'Users'
     | 'Mail'
-    | 'Stethoscope';
+    | 'Stethoscope'
+    | 'History';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
   /** Can this viewer be manually added as a tab? */
@@ -370,6 +371,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   [ViewType.SIGNALS]: {
     title: 'Signals',
     iconName: 'RadioTower',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  [ViewType.RUNS]: {
+    title: 'Runs',
+    iconName: 'History',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
