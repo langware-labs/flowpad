@@ -5,6 +5,8 @@ avatar: 🌐
 worker_type: claude
 model: haiku
 permission_mode: bypassPermissions
+cli_options:
+  chrome: true
 enabled: true
 ---
 

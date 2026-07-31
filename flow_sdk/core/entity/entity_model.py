@@ -1443,22 +1443,25 @@ class Entity(DBEntity):
         # own skill; else run the declared built-in (e.g. "artifact-setup").
         skill_name = (getattr(self, "name", None) or self.id) if skill == self.get_type() else skill
         try:
-            from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+            from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
             from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
 
-            # ``project_id``/``workdir`` are binding-frozen — set in the ctor only.
-            ap = AgenticProcess(
+            prompt = f"Use the {skill_name} skill to set up {typeid_str}."
+            # ``project_id``/``workdir`` are binding-frozen — set in the ctor
+            # only, which is why they ride the launch call rather than being
+            # assigned after. ``start=False``: the first turn is scheduled
+            # separately so this returns a DisplayTarget immediately.
+            deployment = await get_agent_local_deployment("artifact-setup")
+            ap = await deployment.launch(
+                prompt,
+                start=False,
                 workdir=workdir,
                 project_id=project_id,
                 target_typeid_str=(f"project-{project_id}" if project_id else typeid_str),
-                visible=False,
-                pty_mode=False,
                 process_type=ProcessKind.CHAT,
-                load_flowpad_assistant=True,
                 context_data={"source_artifact_id": self.id, "launched_from": "artifact_setup"},
             )
-            await ap.save()
-            _schedule_setup_prompt(ap, f"Use the {skill_name} skill to set up {typeid_str}.")
+            _schedule_setup_prompt(ap, prompt)
             return _entity_payload(ap)
         except Exception:
             service_log.warn(

@@ -34,6 +34,30 @@ if TYPE_CHECKING:  # pragma: no cover
 #: The only deployment kind phase 1 ships — run it on this machine.
 LOCAL_DEPLOYMENT_KIND = "local.runtime.agent"
 
+#: The two vocabularies for "which CLI", and the map between them.
+#:
+#: An agent.md declares the DRIVER short-id — that is what a human writes, what
+#: the CLI is called, and the key ``cli_drivers.factory`` dispatches on. But
+#: ``AgenticProcess.worker_type`` is a ``WorkerType``, whose Claude member is
+#: ``claude_code``. Feed one where the other is expected and the process fails
+#: pydantic validation (or the factory raises "Unknown worker_type"), which is
+#: exactly what a real launch found. Both directions live here so no call site
+#: has to re-derive them; the long-test factory keeps the same mapping.
+_DRIVER_TO_WORKER = {"claude": "claude_code", "codex": "codex", "copilot": "copilot"}
+_WORKER_TO_DRIVER = {v: k for k, v in _DRIVER_TO_WORKER.items()}
+
+
+def driver_key(worker: str | None) -> str:
+    """The ``cli_drivers.factory`` key for either vocabulary. Default: claude."""
+    raw = (worker or "claude").strip()
+    return _WORKER_TO_DRIVER.get(raw, raw)
+
+
+def worker_type_value(worker: str | None) -> str:
+    """The ``AgenticProcess.worker_type`` enum value for either vocabulary."""
+    raw = (worker or "claude").strip()
+    return _DRIVER_TO_WORKER.get(raw, raw)
+
 
 class Agent(Entity):
     type: str = APIField(default=EntityType.AGENT.value)
@@ -72,6 +96,12 @@ class Agent(Entity):
     )
     additional_dirs: list[str] = APIField(default_factory=list)
     load_flowpad_assistant: bool = APIField(default=False)
+    cli_options: dict = APIField(
+        default_factory=dict,
+        description="Vendor-specific launch keys the schema does not enumerate (e.g. Claude's "
+        "`chrome: true`). Merged into the options bundle under the named fields, so a "
+        "capability an agent needs stays visible on its card instead of living at a call site.",
+    )
 
     # ── lifecycle ─────────────────────────────────────────────────────────
     enabled: bool = APIField(default=True, description="Kill switch — a disabled agent refuses to launch.")
@@ -104,24 +134,8 @@ class Agent(Entity):
 
     @property
     def resolved_worker_type(self) -> str:
-        """``worker_type`` as the enum value AgenticProcess stores.
-
-        An agent.md declares the DRIVER short-id (``claude`` / ``codex`` /
-        ``copilot``) because that is what a human writes and what the CLI is
-        called; ``AgenticProcess.worker_type`` is a ``WorkerType`` whose Claude
-        member is ``claude_code``. Same mapping the long-test factory keeps
-        (``tests/long_tests/conftest.py``), applied here so every launch site
-        gets it rather than each re-deriving it.
-        """
-        from flow_sdk.flowpad_types.enums import WorkerType  # noqa: PLC0415
-
-        raw = (self.worker_type or "claude").strip()
-        alias = {
-            "claude": WorkerType.CLAUDE_CODE.value,
-            "codex": WorkerType.CODEX.value,
-            "copilot": WorkerType.COPILOT.value,
-        }
-        return alias.get(raw, raw)
+        """This agent's ``worker_type`` as the enum value AgenticProcess stores."""
+        return worker_type_value(self.worker_type)
 
     def to_agent_options(self, **overrides) -> "AgentOptions":
         """Build the vendor options object this agent launches with.
@@ -134,8 +148,10 @@ class Agent(Entity):
         """
         from flow_sdk.builtin.agentic_process.cli_drivers import factory  # noqa: PLC0415
 
-        worker = overrides.pop("worker_type", None) or self.worker_type or "claude"
-        cli_json: dict = {}
+        worker = driver_key(overrides.pop("worker_type", None) or self.worker_type)
+        # Vendor extras first, so a named field always wins over a free-form key
+        # of the same name.
+        cli_json: dict = dict(self.cli_options or {})
         for key, value in (
             ("model", self.model),
             ("permission_mode", self.permission_mode),

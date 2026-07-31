@@ -47,8 +47,12 @@ class AgentDeployment:
     a home. Attribute reads fall through to the row.
     """
 
-    def __init__(self, deployment: Deployment) -> None:
+    def __init__(self, deployment: Deployment, agent: Optional["Agent"] = None) -> None:
         self.deployment = deployment
+        # The Agent this was built from, when we already have it. Not just a
+        # cache: a shipped agent resolved off disk on a cold instance is never
+        # persisted, so re-reading it back by parent_type_id would find nothing.
+        self._agent = agent
 
     def __getattr__(self, item):  # id / kind / target / status / … from the row
         return getattr(self.deployment, item)
@@ -95,7 +99,7 @@ class AgentDeployment:
             dep = existing
             dep.apply_field_updates(payload)
         await dep.save()
-        return cls(dep)
+        return cls(dep, agent)
 
     @classmethod
     async def for_agent(cls, agent: "Agent") -> list["AgentDeployment"]:
@@ -106,6 +110,8 @@ class AgentDeployment:
         from flow_sdk.api.type_id import TypeId  # noqa: PLC0415
         from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
 
+        if self._agent is not None:
+            return self._agent
         if not self.parent_type_id:
             return None
         # TypeId has no .parse — the constructor does the parsing.
@@ -148,6 +154,7 @@ class AgentDeployment:
         visible=False precisely so they could), so persisting would change
         documented behaviour.
         """
+        from flow_sdk.builtin.agent import worker_type_value  # noqa: PLC0415
         from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
         from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
 
@@ -157,7 +164,12 @@ class AgentDeployment:
         if not agent.enabled:
             raise RuntimeError(f"agent {agent.name!r} is disabled")
 
-        opts = agent.to_agent_options(worker_type=options.pop("worker_type", None))
+        # A per-run worker override has to reach BOTH sides — the options object
+        # (dispatched on the driver key) and the process field (a WorkerType
+        # enum value). Applying it to only one is how you get a codex-flavoured
+        # options bundle handed to a claude process.
+        worker_override = options.pop("worker_type", None)
+        opts = agent.to_agent_options(worker_type=worker_override)
 
         # The agent's system prompt goes in via ``context_data.instructions`` —
         # the ONE channel ``resolve_system_instructions`` reads, which
@@ -181,7 +193,9 @@ class AgentDeployment:
             visible=bool(options.pop("visible", False)),
             pty_mode=options.pop("pty_mode", pty),
             process_type=options.pop("process_type", ProcessKind.EXECUTION.value),
-            worker_type=agent.resolved_worker_type,
+            worker_type=(
+                worker_type_value(worker_override) if worker_override else agent.resolved_worker_type
+            ),
             project_id=options.pop("project_id", None) or agent.project_id,
             load_flowpad_assistant=agent.load_flowpad_assistant,
             additional_dirs=list(agent.additional_dirs or []),

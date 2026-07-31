@@ -1408,8 +1408,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.post(action_name="fix-all-cloud-errors")
     async def fix_all_cloud_errors_action(self) -> ApiResponse:
         """Spawn an AgenticProcess for each error with a saved cloud fix instruction."""
-        from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
+        from flow_sdk.builtin.agent_registry import get_agent_local_deployment
         from flow_sdk.fs_store.operations.claude_error import Fix, get_by_fingerprint
 
         request_info = get_current_request_info()
@@ -1427,10 +1426,15 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 spawned.append({"fingerprint": fp, "status": "skipped"})
                 continue
             try:
-                cmd = ClaudeAgentOptions(permission_mode="bypassPermissions")
                 rec_label = (getattr(rec, "name", None) or "").strip()
-                agentic_process = AgenticProcess(
-                    cli_config=cmd.to_json(),
+                # Identity from the named `cloud-error-fixer` Agent; the run
+                # itself still goes through .open(), which is what attaches the
+                # Shell the caller reports back as shell_id.
+                deployment = await get_agent_local_deployment("cloud-error-fixer")
+                agentic_process = await deployment.launch(
+                    fix_instruction,
+                    start=False,
+                    save=False,
                     name=f"Fix: {rec_label}" if rec_label else "Cloud fix",
                 )
                 await agentic_process.save(owner=request_info.someone_typeid if request_info else None)

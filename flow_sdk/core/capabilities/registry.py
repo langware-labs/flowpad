@@ -663,7 +663,7 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
     """
     from pathlib import Path
 
-    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agent_registry import get_agent_local_deployment
     from flow_sdk.builtin.capability import capability_id_for_kind
     from flow_sdk.instance_settings import get_instance_settings
     from flow_sdk.responses.response import ApiFailResponse
@@ -674,7 +674,7 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
 
     try:
         harness_kind = await resolve_default_harness_kind()
-        worker_type, cli_config = build_install_worker_config(harness_kind)
+        worker_type, _ = build_install_worker_config(harness_kind)
     except Exception as exc:
         return CapabilityResult(
             ok=False,
@@ -684,12 +684,20 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
         )
 
     target_typeid_str = f"capability-{capability_id_for_kind(spec.kind)}"
-    process = AgenticProcess(
+    # Identity (permissions, model, system prompt) comes from the named
+    # `capability-installer` Agent; only the WORKER is decided here, because it
+    # follows whichever harness the `harness` capability resolved — which the
+    # agent cannot know in advance. start=False keeps the two-step shape below:
+    # save with notify, then prompt, so the caller can report either failure
+    # separately and hand back process_id even when the start fails.
+    deployment = await get_agent_local_deployment("capability-installer")
+    process = await deployment.launch(
+        prompt,
+        start=False,
+        save=False,
+        worker_type=worker_type,
         name=f"Install {spec.name}",
         workdir=str(workdir),
-        visible=False,
-        worker_type=worker_type,
-        cli_config=cli_config,
         context_data={
             "capability_kind": spec.kind,
             "install_prompt": prompt,
@@ -736,8 +744,8 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
     import secrets
     from pathlib import Path
 
+    from flow_sdk.builtin.agent_registry import get_agent_local_deployment
     from flow_sdk.builtin.agentic_process import AgenticProcess
-    from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
     from flow_sdk.builtin.capability import capability_id_for_kind
     from flow_sdk.instance_settings import get_instance_settings
 
@@ -752,16 +760,23 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
         encoding="utf-8",
     )
 
-    cli_options = ClaudeAgentOptions(
-        chrome=True,
-        permission_mode="bypassPermissions",
-    )
     target_typeid_str = f"capability-{capability_id_for_kind(CapabilityKind.CHROME_AUTHENTICATED.value)}"
-    process = AgenticProcess(
+    prompt = (
+        "Use Chrome browsing to open this URL and read the exact text inside "
+        f"#flowpad-capability-probe: {probe_file.as_uri()}\n"
+        f"Return only the exact text. Expected value: {nonce}"
+    )
+    # The `chrome-auth` Agent declares the whole bundle — including
+    # `cli_options: {chrome: true}`, the Claude-specific flag this probe exists
+    # to exercise. Built here but run through AgenticProcess.run below, which is
+    # what returns the reply text the nonce check needs.
+    deployment = await get_agent_local_deployment("chrome-auth")
+    process = await deployment.launch(
+        prompt,
+        start=False,
+        save=False,
         name="Chrome authenticated browsing capability probe",
         workdir=str(probe_dir),
-        visible=False,
-        cli_config=cli_options.to_json(),
         context_data={
             "capability_kind": CapabilityKind.CHROME_AUTHENTICATED.value,
             "probe_url": probe_file.as_uri(),
@@ -770,18 +785,13 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
         target_typeid_str=target_typeid_str,
     )
     await process.save(notify=True)
-    prompt = (
-        "Use Chrome browsing to open this URL and read the exact text inside "
-        f"#flowpad-capability-probe: {probe_file.as_uri()}\n"
-        f"Return only the exact text. Expected value: {nonce}"
-    )
     try:
         result = await AgenticProcess.run(
             prompt,
             id=process.id,
             name=process.name,
             workdir=str(probe_dir),
-            cli_config=cli_options.to_json(),
+            cli_config=process.cli_config,
             context_data=process.context_data,
             target_typeid_str=target_typeid_str,
             visible=False,

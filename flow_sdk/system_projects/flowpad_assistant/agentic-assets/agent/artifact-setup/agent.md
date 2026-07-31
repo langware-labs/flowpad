@@ -5,6 +5,7 @@ avatar: 📦
 worker_type: claude
 model: haiku
 permission_mode: bypassPermissions
+load_flowpad_assistant: true
 enabled: true
 ---
 
