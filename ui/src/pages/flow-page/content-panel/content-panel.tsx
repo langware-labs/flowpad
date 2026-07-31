@@ -42,6 +42,7 @@ import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { Tab } from '@sdk';
 import { useTerminalTabs } from '@src/tabs/useTabs';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { HelpdeskPortalPage } from '@src/components/helpdesk/HelpdeskPortalPage';
 import { NavigatorSlot } from '@src/navigation/NavigatorSlot';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
@@ -83,6 +84,9 @@ const GenericSubgraphView = lazy(() =>
 // Lazy like GRAPH — keeps @xyflow/react out of app bootstrap.
 const GraphWorkflowsView = lazy(() =>
   import('@src/components/graph-workflows/GraphWorkflowsView').then((m) => ({ default: m.GraphWorkflowsView })),
+);
+const SignalsView = lazy(() =>
+  import('@src/components/signals/SignalsView').then((m) => ({ default: m.SignalsView })),
 );
 const SurveyView = lazy(() =>
   import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })),
@@ -385,6 +389,12 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
             <GraphWorkflowsView />
           </Suspense>
         );
+      case ViewType.SIGNALS:
+        return (
+          <Suspense fallback={null}>
+            <SignalsView />
+          </Suspense>
+        );
       case ViewType.K_BROWSER:
         return (
           <Suspense fallback={null}>
@@ -423,6 +433,8 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         );
       case ViewType.ASSETS:
         return <AssetsPage />;
+      case ViewType.HELPDESK:
+        return <HelpdeskPortalPage />;
       case ViewType.PROJECT: {
         // A project dock scoped to a collaboration_room (…/collaboration_room/<id>)
         // renders the collaboration room; a bare project dock is the assets

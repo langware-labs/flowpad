@@ -7,7 +7,7 @@
  * `slot_freed` → tear down.
  */
 import { AgenticProcess } from '@sdk/process/agentic-process';
-import type { GraphWorkflowNodeStatusMessage } from '@sdk/services/graph-workflows';
+import type { NodeStatusPayload } from '@sdk/services/graph-workflows';
 import { useStudio } from './store';
 
 interface WatchEntry {
@@ -57,7 +57,7 @@ function stopWatch(processId: string): void {
 }
 
 /** Wire into the flowManager 'node_status' stream. Call once at boot. */
-export function handleNodeStatusForProcWatch(msg: GraphWorkflowNodeStatusMessage): void {
+export function handleNodeStatusForProcWatch(msg: NodeStatusPayload): void {
   const pid = msg.detail?.process_id;
   if (msg.phase === 'started' && typeof pid === 'string') void startWatch(pid);
   if ((msg.phase === 'finished' || msg.phase === 'failed') && typeof pid === 'string') {

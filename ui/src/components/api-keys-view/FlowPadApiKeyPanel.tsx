@@ -26,7 +26,10 @@ export const FlowPadApiKeyPanel: React.FC<FlowPadApiKeyPanelProps> = ({ keys, cl
   const existing = keys.flowpadKey;
 
   return (
-    <div className={cn('rounded-lg border border-border bg-transparent p-6', className)} data-testid="flowpad-api-key-panel">
+    <div
+      className={cn('rounded-lg border border-border bg-transparent p-6', className)}
+      data-testid="flowpad-api-key-panel"
+    >
       <div className="mb-4">
         <h3 className="text-base font-semibold text-foreground">
           <Trans>FlowPad API Key</Trans>
@@ -67,7 +70,7 @@ export const FlowPadApiKeyPanel: React.FC<FlowPadApiKeyPanelProps> = ({ keys, cl
           <Button
             variant="destructive"
             size="sm"
-            onClick={() => void keys.remove(existing.id)}
+            onClick={() => void keys.remove(existing)}
             className="flex items-center gap-2"
             data-testid="flowpad-api-key-delete"
           >

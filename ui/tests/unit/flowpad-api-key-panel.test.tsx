@@ -48,7 +48,7 @@ describe('FlowPadApiKeyPanel', () => {
     expect(screen.queryByTestId('flowpad-api-key-delete')).toBeNull();
   });
 
-  it('shows the existing key and deletes it by id', async () => {
+  it('shows the existing key and hands the whole row to remove', async () => {
     const remove = vi.fn().mockResolvedValue(undefined);
     render(<FlowPadApiKeyPanel keys={keys({ flowpadKey: ACTIVE, remove })} />);
 
@@ -57,7 +57,10 @@ describe('FlowPadApiKeyPanel', () => {
 
     await userEvent.click(screen.getByTestId('flowpad-api-key-delete'));
 
-    expect(remove).toHaveBeenCalledWith('k1');
+    // `remove` takes the row, not an identifier: the hub revokes by NAME, and
+    // a bare id failed silently. Passing the row makes that a type error.
+    expect(remove).toHaveBeenCalledWith(ACTIVE);
+    expect(remove).not.toHaveBeenCalledWith('k1');
   });
 
   it('never renders the full secret — only the masked value', () => {

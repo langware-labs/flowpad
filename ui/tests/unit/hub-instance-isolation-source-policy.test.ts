@@ -36,7 +36,7 @@ const INBOX_VIEW = repoSource('ui/src/components/inbox-view/InboxView.tsx');
 
 const TWO_INSTANCE_FILES = [
   'asset_share_index_matrix.test.ts',
-  'community_two_client.test.ts',
+  'helpdesk_two_client.test.ts',
   'doc_comment_sync.test.ts',
   'git_artifact_bookmark_two_client.test.ts',
   'group_task_attachments_two_client.test.ts',
@@ -219,14 +219,14 @@ describe('hub launched-instance isolation source policy', () => {
     }
   });
 
-  it('keeps the community staff path failing loudly when authorization is absent', () => {
-    const source = hubSource('community_two_client.test.ts');
+  it('keeps the helpdesk staff path failing loudly when authorization is absent', () => {
+    const source = hubSource('helpdesk_two_client.test.ts');
     expect(source).toContain('getAliceCreds');
     expect(source).toContain('getBobCreds');
     expect(source).toContain('hubLogin(guest.email, guestPassword)');
     expect(source).toContain('hubLogin(staff.email, staffPassword)');
     expect(source).toContain(
-      "throw new Error(\n        `[community test] staff '${staff.email}' cannot read the community queue;",
+      "throw new Error(\n        `[help desk test] staff '${staff.email}' cannot read the help desk queue;",
     );
     expect(source).not.toContain('`${staff.name}-pw-1234`');
   });

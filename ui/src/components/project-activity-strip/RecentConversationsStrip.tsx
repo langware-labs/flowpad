@@ -438,7 +438,7 @@ function ConversationRow({
   const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
 
   // Shared category classifier — single source of truth for invitation /
-  // community / archived (replacing the per-strip copies). Invitation is
+  // helpdesk / archived (replacing the per-strip copies). Invitation is
   // viewer-relative: matched on the Invitation's ``recipient_email`` so "I was
   // invited" stays distinct from "I sent this". Archived compares the latest
   // pointer ``ts`` so it auto-revives without racing the async FlowMessage fetch.

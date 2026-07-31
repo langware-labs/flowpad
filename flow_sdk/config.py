@@ -398,6 +398,62 @@ def agent_workspace_root() -> Path:
     return get_instance_settings().user_home / "Flowpad workspace"
 
 
+# ---------------------------------------------------------------------------
+# Help-desk portal checkouts
+# ---------------------------------------------------------------------------
+
+# Dot-dir INSIDE the workspace, deliberately: it inherits the workspace's
+# per-instance home (so dev-1 and dev-2 never share a checkout), stays out of
+# the user's visible project area, and — being a DESCENDANT of the mount root
+# rather than the root itself — is not `is_protected_path`, which is what lets
+# the dev reset delete it. See `helpdesk_project_dir`.
+HELPDESK_DIRNAME = "helpdesk"
+
+# Stable uname for the local portal Project. Lets any surface answer "is this
+# the helpdesk portal?" from the entity already in hand — no request, the same
+# `@uname` convention the Flowpad Assistant uses.
+HELPDESK_PORTAL_UNAME = "helpdesk_portal"
+
+
+def helpdesk_root() -> Path:
+    """Root holding every helpdesk portal checkout on this instance.
+
+    ``<agent workspace>/.flow/helpdesk``. Built with ``pathlib`` so it is
+    correct on Windows as well as POSIX; callers that STORE the result (e.g.
+    ``Project.fs_storage_mount_path``) must pass it through
+    ``canonical_posix_path`` first, like every other stored path.
+    """
+    return agent_workspace_root() / ".flow" / HELPDESK_DIRNAME
+
+
+def helpdesk_project_dir(helpdesk_project_id: str) -> Path:
+    """Checkout slot for one desk's portal, keyed by its HUB project id.
+
+    Keying on the desk's hub id (not the local Project id) makes the path
+    deterministic before the local entity exists, and gives each tier of a
+    support chain its own slot without collision.
+    """
+    return helpdesk_root() / f"project-{helpdesk_project_id}"
+
+
+def is_helpdesk_portal_path(cwd: str | Path) -> bool:
+    """True when ``cwd`` is a helpdesk portal checkout.
+
+    A LOCATION test, matching ``is_system_project_path`` / ``is_agent_mount_root``:
+    the portal is app-managed infrastructure rather than one of the user's
+    projects, and that is a property of where it lives. Deriving hiddenness from
+    the path (instead of stamping ``system=True`` on the entity, which means
+    "SDK-shipped" and would be a lie here) also covers rows minted by the
+    per-cwd project walk, which never sets that flag.
+    """
+    from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
+
+    try:
+        return is_path_under(canonical_posix_path(cwd), canonical_posix_path(helpdesk_root()))
+    except (OSError, ValueError):
+        return False
+
+
 @lru_cache(maxsize=8)
 def _canonical_mount_roots(*raw_roots: str) -> frozenset[str]:
     """Canonical forms of the agent mount roots, cached per distinct value pair.
@@ -438,13 +494,19 @@ def is_agent_mount_root(path: str | Path) -> bool:
 def is_hidden_project(cwd: str | Path, system_flag: bool = False) -> bool:
     """True when a project should be hidden from the default project lists.
 
-    A project is hidden when it is an SDK-shipped system project OR the agent
-    mount ROOT (``~/Flowpad workspace``). The path checks route through the
-    workspace consts (``is_system_project_path`` / ``is_agent_mount_root``) —
-    never a hardcoded literal. Hidden projects are still revealable via the
-    "Show system projects" preference, which flips the ``system`` filter off.
+    A project is hidden when it is an SDK-shipped system project, the agent
+    mount ROOT (``~/Flowpad workspace``), or a helpdesk portal checkout. The
+    path checks route through the workspace consts (``is_system_project_path``
+    / ``is_agent_mount_root`` / ``is_helpdesk_portal_path``) — never a
+    hardcoded literal. Hidden projects are still revealable via the "Show
+    system projects" preference, which flips the ``system`` filter off.
     """
-    return system_flag or is_system_project_path(cwd) or is_agent_mount_root(cwd)
+    return (
+        system_flag
+        or is_system_project_path(cwd)
+        or is_agent_mount_root(cwd)
+        or is_helpdesk_portal_path(cwd)
+    )
 
 
 # ---------------------------------------------------------------------------

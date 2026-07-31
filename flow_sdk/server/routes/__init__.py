@@ -19,6 +19,7 @@ from .graph import graph_router
 from .graph_workflows import router as graph_workflows_router
 from .health import health_router
 from .hooks import router as hooks_router
+from .ingest import router as ingest_router
 from .journeys import router as journeys_router
 from .markdown_index import router as markdown_index_router
 from .navigate import router as navigate_router
@@ -63,6 +64,7 @@ __all__ = [
     "project_router",
     "compute_register_router",
     "debug_router",
+    "ingest_router",
     "subgraph_router",
     "tags_router",
     "navigate_router",

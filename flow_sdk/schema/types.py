@@ -202,6 +202,11 @@ class EntityType(StrEnum):
     JOURNEY = "journey"
     # A user's private progress through a Journey (DB-only, one per user+journey).
     JOURNEY_JOURNAL = "journey_journal"
+    # A folder-backed support desk PORTAL: guides plus a helpdesk.json naming the
+    # hub project that owns the ticket queue. A repo declares itself a help desk
+    # by shipping one, so cloning it as a context folder is what gives a project
+    # a help desk — there is no separate "add help desk" flow.
+    HELPDESK = "helpdesk"
     # A received, staged bundle attachment awaiting explicit install
     # (DB-only entity — no TypeInfo/RecordType; see builtin/message_attachment.py).
     MESSAGE_ATTACHMENT = "message_attachment"
@@ -216,6 +221,15 @@ class EntityType(StrEnum):
     # A content-panel tab — DB-only placement record keyed by a DockPointer
     # hash (docs/tab-management.md). Minted on demand (Tab.ensure_for).
     TAB = "tab"
+    # One record ingested from a cloud DataSource (a feed entry, a chat
+    # message). Generic and discriminated by `kind`, NOT one type per provider
+    # — the inbox projection has to be one queryable table.
+    SOURCE_ITEM = "source_item"
+    # A configured remote system of record we sync from (flow_sdk/ingest).
+    DATA_SOURCE = "data_source"
+    # One independently-checkpointed stream within a DataSource — a feed URL, a
+    # channel. DB-only: written every poll, so it must never touch disk.
+    DATA_SOURCE_CURSOR = "data_source_cursor"
     # Entity types that previously had no enum member (string-literal `type`).
     # Retired: Artifact composition now uses canonical parent_type_id. Keep the
     # persisted value parseable, but do not register a public entity surface.

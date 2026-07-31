@@ -68,6 +68,26 @@
       "pattern": "entity.updated",
       "tag": "entity.updated.deep",
       "matches": false
+    },
+    {
+      "pattern": "ingest.*",
+      "tag": "ingest.rss.item.created",
+      "matches": true
+    },
+    {
+      "pattern": "ingest",
+      "tag": "ingest.rss.item.created",
+      "matches": false
+    },
+    {
+      "pattern": "ingest.*.item.created",
+      "tag": "ingest.rss.item.created",
+      "matches": true
+    },
+    {
+      "pattern": "ingest.*.item.created",
+      "tag": "ingest.rss.sync.completed",
+      "matches": false
     }
   ],
   "target_cases": [
@@ -257,10 +277,12 @@
       "app",
       "application",
       "content",
+      "datasource",
       "entity",
       "gcp",
       "graph_workflow",
       "hub",
+      "ingest",
       "local",
       "node",
       "resource",

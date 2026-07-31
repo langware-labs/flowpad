@@ -244,6 +244,31 @@ async def handle_record_action():
     return ApiSuccessResponse(data={"record_folder_ref": record_folder_ref_dict, "main_ref": main_ref_dict})
 
 
+#: Types whose birth path is not "POST the fields". The value is the verb that
+#: IS correct, so the refusal tells the caller where to go instead of just no.
+_ALTERNATE_BIRTH_PATH: dict[str, str] = {
+    "source_item": "POST /api/v1/ingest/items (or `flow record create source_item`) — "
+                   "the ingestor owns this type's deterministic id and content digest",
+}
+
+
+def _uncreatable_reason(type_name: str | None) -> str | None:
+    """``None`` when the generic create may proceed, else why it may not.
+
+    Deliberately keyed on an explicit map rather than ``TypeInfo.creatable``:
+    77 of 93 shipped types are ``creatable=False``, including ``agentic_process``,
+    ``comment``, ``project`` and ``shell``, all of which are created through this
+    route in normal operation. ``creatable`` is a UI affordance hint ("offer a
+    New button"), not an API authorization flag — reading it here would break
+    most of the app. Only types with a genuinely different birth path belong in
+    the map above.
+    """
+    if not type_name:
+        return None
+    alternate = _ALTERNATE_BIRTH_PATH.get(type_name)
+    return f"{type_name} cannot be created directly — use {alternate}" if alternate else None
+
+
 @action.all(action_name="create", methods="post", types="all")
 async def handle_create_entity(request: Request):
     request_info = get_current_request_info()
@@ -259,6 +284,15 @@ async def handle_create_entity(request: Request):
         err_msg = f"Invalid request data: {e}"
         service_log.highlighted_error(err_msg)
         raise HTTPException(status_code=400, detail=err_msg)
+
+    # `creatable=False` means the type has a different birth path — SourceItem
+    # is minted by the ingestor, which owns its deterministic id and digest.
+    # Without this gate a caller can POST one here and get a random uuid4 with
+    # an empty digest: a row that looks real, is FTS-indexed, and can never
+    # converge with what the poller writes. Permanent duplicates.
+    problem = _uncreatable_reason(request_info.direct_resource_type)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
 
     # Get the entity model using the new helper function
     entity_model = get_entity_model_from_registry(request_info.direct_resource_type)

@@ -1,9 +1,10 @@
 /**
  * `ApiKeysView` — user-scoped, and now frameless.
  *
- * Pins the delete-by-id fix: the table's button used to pass the key NAME to a
- * handler that keys on id, so it silently did nothing while the panel above it
- * worked.
+ * Pins the delete contract: the hub revokes an API key BY NAME, and `remove`
+ * takes the whole row rather than an identifier so that handing it a bare id —
+ * which the hub cannot act on, and which failed silently — is a type error.
+ * The row is what the button must pass.
  */
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -41,12 +42,16 @@ describe('ApiKeysView', () => {
   });
   afterEach(() => cleanup());
 
-  it('deletes by id, not by name', async () => {
+  it('hands the whole key row to remove, not a bare identifier', async () => {
     render(<ApiKeysView />);
 
+    // The row is addressed by id in the DOM…
     await userEvent.click(screen.getByTestId('api-key-delete-key-id-1'));
 
-    expect(h.remove).toHaveBeenCalledWith('key-id-1');
+    // …but what reaches `remove` is the row itself, carrying the `name` the hub
+    // actually revokes by. Passing either bare string is the bug this pins.
+    expect(h.remove).toHaveBeenCalledWith(KEY);
+    expect(h.remove).not.toHaveBeenCalledWith('key-id-1');
     expect(h.remove).not.toHaveBeenCalledWith('FLOWPAD_API_KEY');
   });
 

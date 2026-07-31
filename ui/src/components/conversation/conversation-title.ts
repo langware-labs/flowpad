@@ -7,7 +7,7 @@ import { participantLabel } from './participant-display';
  *
  * Order of preference:
  *   1. Entity's `title` (user-set in NewConversationDialog, shipped via bundle)
- *   2. Entity's own `name` (legacy / set by Community Assistance)
+ *   2. Entity's own `name` (legacy / set by the helpdesk request dialog)
  *   3. Comma-joined participant names/emails
  *   4. "Conversation <short-id>" so each row stays visually distinguishable
  */

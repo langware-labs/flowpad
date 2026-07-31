@@ -187,6 +187,15 @@ EXPECTED = {
     # Journeys (0.2.105): folder-backed guided-onboarding doc + per-user
     # DB-only journal — additive members, no existing value changed.
     "JOURNEY": "journey", "JOURNEY_JOURNAL": "journey_journal",
+    # Help desk (0.2.114): folder-backed support portal discovered by indexing a
+    # cloned repo that ships agentic-assets/helpdesk/<name>/helpdesk.json —
+    # additive member, no existing value changed.
+    "HELPDESK": "helpdesk",
+    # Cloud data-source ingestion (flow_sdk/ingest): the configured remote
+    # source, its per-stream cursor, and the records it produces — additive
+    # members, no existing value changed.
+    "DATA_SOURCE": "data_source", "DATA_SOURCE_CURSOR": "data_source_cursor",
+    "SOURCE_ITEM": "source_item",
 }
 
 
