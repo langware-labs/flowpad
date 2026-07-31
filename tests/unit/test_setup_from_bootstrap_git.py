@@ -229,6 +229,20 @@ async def test_a_template_with_no_manifest_is_an_ordinary_template(tmp_path: Pat
 
 
 @pytest.mark.asyncio
+async def test_the_checkout_is_named_after_the_engagement_not_the_template(
+    bootstrap_repo: str,
+) -> None:
+    """A customer whose working folder is called ``vendor-bootstrap`` has been
+    handed the vendor's name for their own work."""
+    project = await _project("northwind-support")
+    response = await project.setup_from_bootstrap_git(bootstrap_repo)
+
+    leaf = Path(response.data["path"]).name
+    assert leaf.startswith("northwind-support"), leaf
+    assert "bootstrap" not in leaf, "the template's name must not become the customer's"
+
+
+@pytest.mark.asyncio
 async def test_two_engagements_from_one_template_are_independent(bootstrap_repo: str) -> None:
     """Two customers, two working copies. Reusing a checkout is right for
     ``setup_from_git`` (same project, same repo) and wrong here."""
