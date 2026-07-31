@@ -108,7 +108,8 @@ class AgentDeployment:
 
         if not self.parent_type_id:
             return None
-        return await Agent.get_by_id(TypeId.parse(self.parent_type_id).id)
+        # TypeId has no .parse — the constructor does the parsing.
+        return await Agent.get_by_id(TypeId(str(self.parent_type_id)).id)
 
     # ── the one launch verb ───────────────────────────────────────────────
 
