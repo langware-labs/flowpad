@@ -76,14 +76,15 @@ export interface StudioState {
   /** Injected by the view: persistence + navigation. */
   persistDoc?: (doc: GraphWorkflowDoc) => void;
   persistDisplay?: (display: DisplayDoc) => void;
-  openProcess?: (processId: string) => void;
+  /** Preview the runs of one node/execution — see RunPreviewRoot. */
+  previewRuns?: (target: { scope: Record<string, string>; runId?: string | null; title: string }) => void;
 
   reset: (flowId: string | null) => void;
   setFlow: (opts: { flowId: string; name: string; enabled: boolean; doc: GraphWorkflowDoc; display: DisplayDoc }) => void;
   setWriters: (w: {
     persistDoc: (doc: GraphWorkflowDoc) => void;
     persistDisplay: (display: DisplayDoc) => void;
-    openProcess: (processId: string) => void;
+    previewRuns: (target: { scope: Record<string, string>; runId?: string | null; title: string }) => void;
   }) => void;
   mutateDoc: (fn: (doc: GraphWorkflowDoc) => GraphWorkflowDoc) => void;
   moveNode: (nodeId: string, x: number, y: number) => void;

@@ -642,6 +642,18 @@
   text-transform: uppercase;
   color: var(--rubric);
 }
+/* A rubric that carries an action (runs → "all ⬈") is a row, not a word: the
+   0.18em tracking above otherwise runs the label straight into the link. */
+.graph-workflows .afl-panel .eye:has(> .lnk) {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.graph-workflows .afl-panel .eye > .lnk {
+  letter-spacing: normal;
+  text-transform: none;
+}
 /* field labels — one type spec for the side panel and the node inspector. */
 .graph-workflows .afl-panel label,
 .graph-workflows .afl-field label {

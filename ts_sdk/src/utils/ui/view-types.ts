@@ -92,7 +92,7 @@ export enum ViewType {
   CAPABILITIES = 'capabilities', // System capability checks/install/test
   GRAPH_WORKFLOWS = 'graph-workflows', // Flow-graph editor/observatory (GraphWorkflowManager) — dev mode
   SIGNALS = 'signals', // Global event-bus monitor + injector + data sources — dev mode
-  RUNS = 'runs', // Every agent/flow run and what it produced — /dock/runs[/<processId>]
+  PROCESS_RUNS = 'process-runs', // AgenticProcess execution history — /dock/process-runs[/<processId>]
   PLAN = 'plan', // Plan viewer with Milkdown editor
   CRON = 'cron', // Scheduled cron jobs manager
   ASSETS = 'assets', // Assets - unified docs/skills/workflows tree

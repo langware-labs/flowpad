@@ -1,6 +1,7 @@
 import {
   AgenticProcess,
   ClaudeSession,
+  GraphWorkflow,
   Layout,
   PageId,
   Project,
@@ -49,6 +50,38 @@ import { DEFAULT_GRAPH_PRESENTATION, type GraphPresentation } from '@src/types/G
  * / `withHighlight()` (dock surfaces) and `useHighlight()` (the home root `/`,
  * which is not a dock URL).
  */
+/**
+ * URL query-param keys shared by the two run-history surfaces —
+ * `/dock/process-runs` and the graph-workflow studio's runs panel. Kept
+ * together (and used by both) so "which run is open" means one thing across
+ * the app, and so a deep link can move between the scoped and unscoped views
+ * without a key translation in the middle.
+ */
+export const RUN_PARAM = 'run';
+export const NODE_PARAM = 'node';
+export const PANEL_PARAM = 'panel';
+
+/** The graph-workflow studio's panel tabs, as they appear in the URL. */
+export type GraphWorkflowPanel = 'palette' | 'inject' | 'runs';
+
+/**
+ * How a runs list may be narrowed. These key names are the BACKEND's
+ * (`flow_sdk/server/routes/runs.py:SCOPES`) verbatim — the view forwards them
+ * to `GET /api/v1/runs` untranslated, so adding a scope is one entry at each
+ * end and no mapping table in between.
+ */
+export const PROCESS_RUN_SCOPE_KEYS = [
+  'project_id',
+  'deployment_id',
+  'flow_id',
+  'flow_run_id',
+  'node_id',
+  'agent',
+] as const;
+
+export type ProcessRunScope = Partial<Record<(typeof PROCESS_RUN_SCOPE_KEYS)[number], string>>;
+export type ProcessRunsPointerOptions = ProcessRunScope & { run?: string | null };
+
 export const HIGHLIGHT_PARAM = 'highlight';
 export const VIEW_MODE_PARAM = 'viewMode';
 
@@ -459,6 +492,91 @@ export class DockPointer implements IDockPointer {
     if (triggerId) options.trigger = triggerId;
     if (opts?.creating) options.creating = opts.creating;
     return new DockPointer(ViewType.TRIGGERS, undefined, options, layout);
+  }
+
+  /**
+   * Run history — `AgenticProcess` executions, the thing that actually runs.
+   *
+   * **On the name.** `runs` alone was un-namespaced, and `workflow_runs` is not
+   * available: `workflow_run` is already a record type (Claude Code's
+   * `wf_<runId>.json` mirror — see RECORD_TYPE_NAV), and docs/glossary.md bans
+   * bare `Workflow*` for exactly that collision. This surface also lists runs
+   * belonging to no flow at all — an ingest driver's worker, an agent launched
+   * from its profile — so naming it after workflows would be a lie. It is
+   * named for the entity it lists.
+   *
+   * URL shapes:
+   *   /dock/process-runs                            every run
+   *   /dock/process-runs?run=<processId>            one run, expanded
+   *   /dock/process-runs?flow_id=…&node_id=…        narrowed
+   *
+   * Everything rides OPTIONS and the pointer stays empty — the same call
+   * {@link forTriggers} makes, and for the same reason: `tabHash` folds to
+   * `process-runs|`, so selecting a run is addressable and reload-safe without
+   * minting a tab per run. The scope keys are the backend's `SCOPES`
+   * vocabulary verbatim, so a new scope is one entry on each side.
+   */
+  static forProcessRuns(opts?: ProcessRunsPointerOptions, layout: Layout = Layout.DOCK): DockPointer {
+    const options: Record<string, string> = {};
+    if (opts?.run) options[RUN_PARAM] = opts.run;
+    for (const key of PROCESS_RUN_SCOPE_KEYS) {
+      const value = opts?.[key];
+      if (value) options[key] = value;
+    }
+    return new DockPointer(ViewType.PROCESS_RUNS, undefined, options, layout);
+  }
+
+  /** The scope this runs dock is narrowed to — `{}` when it shows everything. */
+  get processRunScope(): ProcessRunScope {
+    const scope: ProcessRunScope = {};
+    for (const key of PROCESS_RUN_SCOPE_KEYS) {
+      const value = this.options?.[key];
+      if (value) scope[key] = value;
+    }
+    return scope;
+  }
+
+  /** The run this dock has expanded, or null. */
+  get selectedRunId(): string | null {
+    return this.options?.[RUN_PARAM] ?? null;
+  }
+
+  /**
+   * A graph workflow's canvas — and, since the studio's own state now rides
+   * the URL, which panel is open and what is selected inside it.
+   *
+   * URL shapes:
+   *   /dock/graph-workflows                                       the list
+   *   /dock/graph-workflows/graph_workflow-<id>                    the canvas
+   *   /dock/graph-workflows/graph_workflow-<id>?panel=runs         its history
+   *   /dock/graph-workflows/graph_workflow-<id>?panel=runs&run=<runId>
+   *   /dock/graph-workflows/graph_workflow-<id>?node=<nodeId>      one station
+   *
+   * The flow identity is the POINTER (one tab per flow); panel/run/node are
+   * OPTIONS, so `tabHash` stays `graph-workflows|graph_workflow-<id>` however
+   * deep you are inside it. Before this, all three lived only in the zustand
+   * studio store — a flow's run was unlinkable and did not survive a reload.
+   *
+   * There is deliberately NO nested `…/runs` path segment: that would key a
+   * second tab off the same flow, and the flow's runs are also reachable as
+   * `forProcessRuns({ flow_id })` — one list under two scopes, not two lists.
+   */
+  static forGraphWorkflow(
+    flowId?: string | null,
+    sub?: { panel?: GraphWorkflowPanel; run?: string | null; node?: string | null },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    if (!flowId) return new DockPointer(ViewType.GRAPH_WORKFLOWS, undefined, undefined, layout);
+    const options: Record<string, string> = {};
+    if (sub?.panel) options[PANEL_PARAM] = sub.panel;
+    if (sub?.run) options[RUN_PARAM] = sub.run;
+    if (sub?.node) options[NODE_PARAM] = sub.node;
+    return new DockPointer(
+      ViewType.GRAPH_WORKFLOWS,
+      new TypeId(GraphWorkflow.type, DockPointer.tryTypeId(flowId)?.id ?? flowId).toString(),
+      options,
+      layout,
+    );
   }
 
   /**

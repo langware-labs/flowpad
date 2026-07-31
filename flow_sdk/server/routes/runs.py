@@ -20,9 +20,9 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
@@ -84,26 +84,42 @@ def _row(process) -> dict[str, Any]:
     }
 
 
+#: Query params that narrow the list, mapped to the match key each one means.
+#: A dict rather than a chain of ifs because every one of them is the same
+#: operation — and because the frontend's scope pills are generated from the
+#: same vocabulary, so a new scope is one entry here, not a new endpoint.
+SCOPES: dict[str, str] = {
+    "project_id": "project_id",
+    "deployment_id": "deployment_id",
+    "flow_id": "context_data.flow_id",
+    "flow_run_id": "context_data.flow_run_id",
+    "node_id": "context_data.node_id",
+    "agent": "context_data.launched_by_agent",
+}
+
+
 @router.get("")
-async def list_runs(limit: int = DEFAULT_LIMIT, offset: int = 0,
-                    agent: Optional[str] = None, flow_run_id: Optional[str] = None,
-                    project_id: Optional[str] = None):
-    """Recent runs, newest first.
+async def list_runs(request: Request, limit: int = DEFAULT_LIMIT, offset: int = 0):
+    """Recent runs, newest first, narrowed by any of {@link SCOPES}.
 
     Ordered by ``created_date`` — a real column, so ORDER BY and LIMIT are
     pushed to SQL. Ordering on a JSON field instead would load every process
     row into Python before slicing.
+
+    Deliberately NOT a status filter. `badge` is derived from three fields
+    (`start_failure`, `status`, `exit_code`), so a server-side status filter
+    would either be a wrong approximation or a nested boolean query — while the
+    scopes above are exact single-key matches. Status is a client-side facet
+    over the page, which is honest about being one.
     """
     from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
 
     bounded = max(1, min(int(limit or DEFAULT_LIMIT), MAX_LIMIT))
-    match: dict[str, Any] = {}
-    if project_id:
-        match["project_id"] = project_id
-    if flow_run_id:
-        match["context_data.flow_run_id"] = flow_run_id
-    if agent:
-        match["context_data.launched_by_agent"] = agent
+    match: dict[str, Any] = {
+        key: value
+        for param, key in SCOPES.items()
+        if (value := (request.query_params.get(param) or "").strip())
+    }
 
     try:
         rows = await AgenticProcess.get_all({
@@ -120,6 +136,10 @@ async def list_runs(limit: int = DEFAULT_LIMIT, offset: int = 0,
         "runs": [_row(r) for r in rows],
         "limit": bounded,
         "offset": max(0, int(offset or 0)),
+        # Echoed so the view can render "scoped to <flow>" from the response
+        # rather than re-parsing the URL it just asked with.
+        "scope": {p: request.query_params.get(p) for p in SCOPES
+                  if request.query_params.get(p)},
     })
 
 

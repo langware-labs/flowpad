@@ -400,7 +400,7 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
             <SignalsView />
           </Suspense>
         );
-      case ViewType.RUNS:
+      case ViewType.PROCESS_RUNS:
         return (
           <Suspense fallback={null}>
             <RunsView />
