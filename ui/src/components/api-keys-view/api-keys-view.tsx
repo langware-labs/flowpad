@@ -86,9 +86,7 @@ export const ApiKeysView: React.FC<ApiKeysViewProps> = ({ className, header = tr
                     <Button
                       variant="ghost"
                       size="sm"
-                      // The id, not the name. The endpoint keys on id, so this
-                      // row's delete button previously did nothing.
-                      onClick={() => void keys.remove(apiKey.id)}
+                      onClick={() => void keys.remove(apiKey)}
                       disabled={!apiKey.is_active}
                       className="flex items-center gap-1"
                       data-testid={`api-key-delete-${apiKey.id}`}
