@@ -38,9 +38,17 @@ logger = logging.getLogger(__name__)
 # for `entity.*`. The sync lane is exactly 2 frames per source per cycle
 # regardless of item volume and already carries `changed_ids`, so the UI can
 # hydrate the items on demand instead.
+#
+# `agent.status` is safe on the same test: it is emitted from the CHANGE-GATED
+# status-report seam (agent_on_tag.py), so a running worker costs one frame per
+# actual lifecycle transition — not one per turn and certainly not one per
+# token. The Runs view needs it because a run launched outside a flow (an
+# ingest driver's worker, an agent started from its profile) produces no
+# `graph_workflow.*` at all.
 FORWARDED_TAG_PATTERNS: list[str] = [
     "graph_workflow.*",
     "ingest.*.sync.*",
+    "agent.status",
 ]
 
 #: Envelopes retained for the Signals feed's initial paint. Bounded because the

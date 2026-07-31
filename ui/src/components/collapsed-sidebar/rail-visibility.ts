@@ -39,7 +39,8 @@ export type RailItemId =
   | 'files'
   | 'capabilities'
   | 'graph-workflows'
-  | 'signals';
+  | 'signals'
+  | 'runs';
 
 /**
  * Hub-page rail ids (page=hub). A SEPARATE union, not more members of
@@ -118,6 +119,10 @@ export const RAIL_ITEMS: readonly RailSpec[] = [
   { id: 'discover', from: ViewMode.Dev, placement: 'top' },
   { id: 'graph-workflows', from: ViewMode.Dev, placement: 'top' },
   { id: 'signals', from: ViewMode.Dev, placement: 'top' },
+  // Advanced, not Dev: 'what did my agent produce' is an ordinary question,
+  // and the answer was previously unreachable for any run without a
+  // spawning entity to browse to.
+  { id: 'runs', from: ViewMode.Advanced, placement: 'top' },
   { id: 'files', from: ViewMode.Vibe, placement: 'overflow' },
   { id: 'triggers', from: ViewMode.Advanced, placement: 'overflow' },
   { id: 'hooks', from: ViewMode.Advanced, placement: 'overflow' },
