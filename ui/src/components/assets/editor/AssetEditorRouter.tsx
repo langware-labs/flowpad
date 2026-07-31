@@ -1,4 +1,4 @@
-import { SubAgent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard } from '@sdk';
+import { Agent, SubAgent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { lazy, Suspense, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -16,7 +16,8 @@ import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import type { WikiLinkTarget } from './markdown/MarkdownEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { TaskAssetEditor } from './task/TaskAssetEditor';
-import { AgentAssetEditor } from './agent/AgentAssetEditor';
+import { AgentProfileEditor } from './agent-profile/AgentProfileEditor';
+import { SubAgentAssetEditor } from './subagent/SubAgentAssetEditor';
 import { AgentTraceAssetEditor } from './agent-trace/AgentTraceAssetEditor';
 import { DynamicWorkflowAssetEditor } from './dynamic-workflow/DynamicWorkflowAssetEditor';
 import { UsageReportAssetEditor } from './usage-report/UsageReportAssetEditor';
@@ -256,12 +257,26 @@ export function AssetEditorRouter({
         <EntityResolutionGate<SubAgent>
           type={SubAgent.type}
           fsRef={fsRef}
-          typeLabel="agent"
+          typeLabel="sub-agent"
           resolvedEntity={typeIdEntity as SubAgent | undefined}
-          render={(agent) => (
-            <AssetCollisionProvider entity={agent}>
-              <AgentAssetEditor fsRef={fsRef!} agent={agent} wikiLinkTarget={wikiLinkTarget} />
+          render={(subagent) => (
+            <AssetCollisionProvider entity={subagent}>
+              <SubAgentAssetEditor fsRef={fsRef!} agent={subagent} wikiLinkTarget={wikiLinkTarget} />
             </AssetCollisionProvider>
+          )}
+        />
+      );
+    case AssetEditor.AGENT:
+      return (
+        <EntityResolutionGate<Agent>
+          type={Agent.type}
+          fsRef={fsRef}
+          typeLabel="agent"
+          resolvedEntity={typeIdEntity as Agent | undefined}
+          render={(agent) => (
+            <AssetCollisionShell entity={agent}>
+              <AgentProfileEditor fsRef={fsRef} agent={agent} />
+            </AssetCollisionShell>
           )}
         />
       );

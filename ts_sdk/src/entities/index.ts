@@ -1,5 +1,6 @@
 export * from './annotation';
 export * from './subagent';
+export * from './agent';
 export * from './AgentConfig';
 export * from './api_key';
 export * from './artifact';

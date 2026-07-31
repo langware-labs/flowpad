@@ -1,6 +1,7 @@
 export const EntityTypes = {
   AgenticProcess: 'agentic_process',
   SubAgent: 'subagent',
+  Agent: 'agent',
   Annotation: 'annotation',
   ApiKey: 'api_key',
   Artifact: 'artifact',
