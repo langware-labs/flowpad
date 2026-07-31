@@ -25,7 +25,8 @@ export interface HelpdeskEnsureResult {
   has_portal: boolean;
   /** Local Project id bound to the portal checkout. Null when `!has_portal`. */
   project_id: string | null;
-  /** Hub project that owns the ticket queue for this desk. Always present. */
+  /** Hub project that owns the ticket queue for this desk. Always present.
+   *  Informational — the load flow keys off `project_id`. */
   helpdesk_project_id: string;
   mount_path: string | null;
   /** True when this call performed the clone (false = already present, or no portal). */
@@ -72,20 +73,3 @@ export async function helpdeskReset(): Promise<HelpdeskResetResult> {
   return res!;
 }
 
-export interface HelpdeskStatusResult {
-  /** Null when the hub advertises no desk (or is unreachable). */
-  helpdesk_project_id: string | null;
-  portal_git_url: string | null;
-  /** Local portal Project id, when the checkout has been materialized. */
-  project_id: string | null;
-  mount_path: string | null;
-  exists: boolean;
-}
-
-/** Where things stand without changing anything — drives the banner + dev UI. */
-export async function helpdeskStatus(): Promise<HelpdeskStatusResult> {
-  const action = new ActionInfo('helpdesk-status', null, null, 'POST');
-  action.bodyParameters = {};
-  const res = await dataManager.callAction<Record<string, never>, HelpdeskStatusResult>(action);
-  return res!;
-}
