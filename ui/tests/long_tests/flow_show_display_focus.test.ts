@@ -1,5 +1,5 @@
 /**
- * Agent → `flow show` → AgenticProcess.on_show → entity_event('on_show') → TS 'show' event.
+ * SubAgent → `flow show` → AgenticProcess.on_show → entity_event('on_show') → TS 'show' event.
  *
  * End-to-end, no mocks: a real Claude worker is created with standing
  * instructions (context_data.instructions → system-prompt append) telling it to

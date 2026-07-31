@@ -25,7 +25,7 @@ def _agent_default_body(entity) -> str:
 
 AGENT = TypeMetadata(
     type=EntityType.SUBAGENT,
-    displayName="Agents",
+    displayName="Sub-agents",
     from_disk_fn=extract_subagent,
     capsules=(IDENTITY_CAPSULE,),
     identity_backend=capsule_identity(frontmatter_id),

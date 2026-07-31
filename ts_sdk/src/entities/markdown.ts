@@ -84,7 +84,7 @@ export class Markdown extends APIEntity<Markdown> implements IMarkdown {
 
   /**
    * Create a markdown doc scoped to the given project. Mirrors
-   * ``Skill.createInProject`` / ``Agent.createInProject`` — the file is
+   * ``Skill.createInProject`` / ``SubAgent.createInProject`` — the file is
    * written by the backend's ``MarkdownRecord.upsert_main_ref`` inside
    * ``Entity.save()``, so the resulting entity is in the cache immediately.
    */

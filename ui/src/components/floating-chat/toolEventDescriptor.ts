@@ -136,7 +136,7 @@ export function describeEvent(fd: FlowData): EventDescriptor {
       return {
         kind,
         icon: Bot,
-        label: 'Agent',
+        label: 'SubAgent',
         detail: str(entry?.agent_type) || str(entry?.description),
         target: null,
       };

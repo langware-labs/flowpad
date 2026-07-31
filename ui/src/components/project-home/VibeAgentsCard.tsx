@@ -1,4 +1,4 @@
-import { Agent, AgentKind, Project, type AssetDescriptor } from '@sdk';
+import { SubAgent, AgentKind, Project, type AssetDescriptor } from '@sdk';
 import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
 import { parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
 import { Button } from '@src/components/ui/button';
@@ -21,7 +21,7 @@ export const VIBE_AGENTS_TAG = 'VibeAgents';
  * Project "Vibe agents" — the agents layered on top of the standard vibe agent
  * on vibe process start (all `kind==vibe`, embedded in created-date order after
  * it). The standard vibe agent is pinned first and non-removable. The picker
- * marks an existing agent `kind=vibe` (via `Agent.setKind`); the row X unmarks
+ * marks an existing agent `kind=vibe` (via `SubAgent.setKind`); the row X unmarks
  * it (`kind=harness`). This is a live query, NOT a process's embedded-asset list.
  */
 export const VibeAgentsCard: React.FC<VibeAgentsCardProps> = ({ project }) => {
@@ -31,14 +31,14 @@ export const VibeAgentsCard: React.FC<VibeAgentsCardProps> = ({ project }) => {
 
   // Hide agents already in the set from the add-picker.
   const alreadyVibe = useMemo(() => new Set(agents.map((a) => `agent-${a.id}`)), [agents]);
-  const pickerFilter = (d: AssetDescriptor) => d.typeid.startsWith('agent-') && !alreadyVibe.has(d.typeid);
+  const pickerFilter = (d: AssetDescriptor) => d.typeid.startsWith('subagent-') && !alreadyVibe.has(d.typeid);
 
   const addVibe = async (d: AssetDescriptor) => {
     const id = parseTypeid(d.typeid).id;
     if (!id || busyId) return;
     setBusyId(id);
     try {
-      await Agent.setKindById(id, AgentKind.Vibe);
+      await SubAgent.setKindById(id, AgentKind.Vibe);
       await refetch();
       notify.success({ title: t`Added vibe agent` });
     } catch (err) {
@@ -48,7 +48,7 @@ export const VibeAgentsCard: React.FC<VibeAgentsCardProps> = ({ project }) => {
     }
   };
 
-  const removeVibe = async (agent: Agent) => {
+  const removeVibe = async (agent: SubAgent) => {
     if (busyId) return;
     setBusyId(agent.id);
     try {

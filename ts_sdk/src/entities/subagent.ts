@@ -76,7 +76,7 @@ export interface IAgentRecord {
 }
 
 /**
- * Agent entity — backed by a filesystem AgentRecord (.md file).
+ * SubAgent entity — backed by a filesystem AgentRecord (.md file).
  *
  * Navigation is entity-centric: searchDockPointer is derived from asset_ref,
  * the canonical on-disk path to the agent's .md file.
@@ -85,15 +85,15 @@ export interface IAgentRecord {
  * only for backward compatibility with legacy UI components.
  */
 @registerEntity
-export class Agent extends APIEntity<Agent> {
-  static type: string = 'agent';
+export class SubAgent extends APIEntity<SubAgent> {
+  static type: string = 'subagent';
   name?: string;
   description?: string;
 
   /** Absolute on-disk path to the agent .md file. */
   asset_ref?: string;
 
-  /** How the agent is used (mirror of backend `Agent.kind`). Defaults to
+  /** How the agent is used (mirror of backend `SubAgent.kind`). Defaults to
    *  `harness`; `vibe` agents layer onto the standard vibe agent. */
   kind?: AgentKind;
 
@@ -103,7 +103,7 @@ export class Agent extends APIEntity<Agent> {
   histogram: Record<string, Record<string, number>>;
   enabled: boolean;
 
-  constructor(entity: Partial<Agent> = {}) {
+  constructor(entity: Partial<SubAgent> = {}) {
     super(entity);
     this.name = entity.name;
     this.description = entity.description;
@@ -117,11 +117,11 @@ export class Agent extends APIEntity<Agent> {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('agent') ?? super.dockPointer;
+    return this.assetEditorPointer('subagent') ?? super.dockPointer;
   }
 
   override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('agent') ?? this.dockPointer;
+    return this.assetEditorPointer('subagent') ?? this.dockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
@@ -143,9 +143,9 @@ export class Agent extends APIEntity<Agent> {
     project: { typeId?: import('../models/TypeId').TypeId } | null,
     name: string,
     _folderVfsPath?: string,
-  ): Promise<Agent> {
+  ): Promise<SubAgent> {
     const scopeIds = project?.typeId ? [project.typeId] : [];
-    const agent = new Agent({ name: name.trim() });
+    const agent = new SubAgent({ name: name.trim() });
     return agent.save(scopeIds);
   }
 
@@ -156,13 +156,13 @@ export class Agent extends APIEntity<Agent> {
    * entity save/FrontMatterFsRef for this (they'd drop other frontmatter).
    */
   async setKind(kind: AgentKind): Promise<void> {
-    await Agent.setKindById(this.id, kind);
+    await SubAgent.setKindById(this.id, kind);
   }
 
   /** Set `kind` for an agent by id — for callers that only hold a picked
    *  descriptor's id (e.g. the vibe-agents picker) rather than the entity. */
   static async setKindById(id: string, kind: AgentKind): Promise<void> {
-    const action = new ActionInfo('set-kind', Agent.type, id, 'POST');
+    const action = new ActionInfo('set-kind', SubAgent.type, id, 'POST');
     action.bodyParameters = { kind };
     await dataManager.callAction(action);
   }

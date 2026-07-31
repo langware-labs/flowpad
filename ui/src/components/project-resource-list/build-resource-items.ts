@@ -122,7 +122,7 @@ export function buildResourceItems(
       id: `agent:${agent.id}`,
       itemId: agent.id,
       name: agent.name,
-      type: 'agent',
+      type: 'subagent',
       subtitle: `${getScopeLabel(agent.scope)} agent`,
       path: agent.path || agent.source_file || undefined,
       modifiedAt: agent.modified_at,

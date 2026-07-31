@@ -131,7 +131,7 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
         />
       </div>
 
-      {/* "Runs of this workflow" — the same EntityExecutionPanel the Agent/Skill
+      {/* "Runs of this workflow" — the same EntityExecutionPanel the SubAgent/Skill
           editors mount, keyed by this workflow's typeId. Runs launched via the
           Run buttons are tagged target_typeid_str=Execution, so they appear here. */}
       <div className="h-[280px] flex-shrink-0 border-t" data-testid="dw-runs">

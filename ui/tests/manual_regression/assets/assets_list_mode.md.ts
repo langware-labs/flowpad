@@ -69,7 +69,7 @@ test.describe('Assets Page — BrowseableTree + AssetListView', () => {
     await expect(page.getByRole('tree')).toBeVisible({ timeout: 15_000 });
     // The asset tree renders a curated root set (agent/skill/markdown/spec);
     // assert the stable creatable core. (Workflow is no longer an asset-tree root.)
-    for (const name of ['Agent', 'Skill', 'Markdown']) {
+    for (const name of ['SubAgent', 'Skill', 'Markdown']) {
       await expect(
         page.getByRole('treeitem', { name: new RegExp(name, 'i') }).first(),
         `treeitem ${name} present`,

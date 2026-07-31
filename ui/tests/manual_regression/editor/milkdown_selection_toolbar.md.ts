@@ -137,8 +137,8 @@ test.describe('Milkdown selection toolbar', () => {
     await page.waitForTimeout(200);
 
     // The selected substring is now wrapped in <strong>. A markdown strong mark
-    // cannot include leading/trailing whitespace (`**Agent **` is not valid emphasis),
-    // so when the 6-char selection ends in a space ("Agent ") ProseMirror applies the
+    // cannot include leading/trailing whitespace (`**SubAgent **` is not valid emphasis),
+    // so when the 6-char selection ends in a space ("SubAgent ") ProseMirror applies the
     // mark to the trimmed run and pushes the space outside — the resulting
     // <strong> textContent is the selection with boundary whitespace removed.
     const expectedBold = selected.trim();

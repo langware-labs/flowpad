@@ -16,7 +16,7 @@ import { AccountInfo } from '@src/components/account/account-info';
 
 import { trackEvent } from '@src/utils/analytics';
 import { redirectToConsole } from '@src/utils/navigation';
-import { Agent, cloudManager, dataContext, ExpansionRequest, HubConnectionStatus, HubLoginStatus, navigator, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
+import { SubAgent, cloudManager, dataContext, ExpansionRequest, HubConnectionStatus, HubLoginStatus, navigator, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
 import { useAuth, useCloudStatus, useConnectionStatus, useContext, useEntitiesQuery, useEntity, useWatch } from '@sdk/react/hooks';
 import { usePrivacyMode } from '@src/hooks/use-privacy-mode';
 import { guardCloudAction } from '@src/services/privacy-guard';
@@ -184,8 +184,8 @@ export function UserDropdown() {
         .toUpperCase()
         .slice(0, 2)
     : null;
-  const agentTypeId = useMemo(() => (agentId ? new TypeId(Agent.type, agentId) : null), [agentId]);
-  const { data: agent } = useEntity<Agent>(agentTypeId, {
+  const agentTypeId = useMemo(() => (agentId ? new TypeId(SubAgent.type, agentId) : null), [agentId]);
+  const { data: agent } = useEntity<SubAgent>(agentTypeId, {
     query: user ? agentQuery : new ExpansionRequest({}),
   });
   const isOwner = useMemo(() => agent?.ImOwner || false, [agent]);

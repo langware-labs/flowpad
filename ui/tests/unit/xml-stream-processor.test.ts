@@ -713,7 +713,7 @@ describe('XML Stream Processor', () => {
     it('tag_chunk_boundary test: should validate exact element count with chunk boundaries breaking tags', () => {
       // Test XML with chunk boundary breaking within tag name
       const xmlContent =
-        '<flow-state key="current_mode" data-type="object">{"mode":"Agent"}</flow-||state>||<flow-text>Hello world</flow-text>||<flow-text>Second message</flow-text>';
+        '<flow-state key="current_mode" data-type="object">{"mode":"SubAgent"}</flow-||state>||<flow-text>Hello world</flow-text>||<flow-text>Second message</flow-text>';
 
       // Create mock streamer with chunk markers
       const streamer = createMockStreamer(xmlContent);
@@ -760,7 +760,7 @@ describe('XML Stream Processor', () => {
       expect(textElements).toHaveLength(2); // Should have exactly 2 text elements
 
       // Validate element contents
-      expect(stateElements[0].data).toEqual({ mode: 'Agent' });
+      expect(stateElements[0].data).toEqual({ mode: 'SubAgent' });
       expect(textElements[0].content).toBe('Hello world');
       expect(textElements[1].content).toBe('Second message');
 

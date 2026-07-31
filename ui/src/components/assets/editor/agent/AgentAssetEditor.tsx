@@ -5,7 +5,7 @@ import {
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { Agent, AgentKind, FSRef } from '@sdk';
+import { SubAgent, AgentKind, FSRef } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useCallback, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
@@ -23,13 +23,13 @@ interface AgentAssetEditorProps {
    * `AssetEditorRouter`. When omitted, the editor falls back to
    * `useEntityByPath` for backwards compatibility with direct-mount callers.
    */
-  agent?: Agent;
+  agent?: SubAgent;
   /** Wiki page/namespace to retain for links when this asset is Wiki-rendered. */
   wikiLinkTarget?: WikiLinkTarget;
 }
 
 /**
- * Agent files render the standard markdown editor plus a "Use agent" action.
+ * SubAgent files render the standard markdown editor plus a "Use agent" action.
  * The side-drawer editor process is generic (no agent embed), keyed on
  * `fsRef.vpath` (the file's compute-node-rooted VFS path) — the same surface
  * every other doc gets.
@@ -39,8 +39,8 @@ export function AgentAssetEditor({
   agent: providedAgent,
   wikiLinkTarget,
 }: AgentAssetEditorProps) {
-  const { entity: discoveredAgent } = useEntityByPath<Agent>(
-    providedAgent ? null : Agent.type,
+  const { entity: discoveredAgent } = useEntityByPath<SubAgent>(
+    providedAgent ? null : SubAgent.type,
     providedAgent ? null : fsRef,
   );
   const agent = providedAgent ?? discoveredAgent;
@@ -57,7 +57,7 @@ export function AgentAssetEditor({
   const onDelete = useCallback(async () => {
     if (!agent) return;
     await agent.delete();
-    navigation.openDock(DockPointer.forAssetList(Agent.type));
+    navigation.openDock(DockPointer.forAssetList(SubAgent.type));
   }, [agent, navigation]);
 
   // "Use agent": mark it a vibe agent (the vibe layer embeds every kind==vibe

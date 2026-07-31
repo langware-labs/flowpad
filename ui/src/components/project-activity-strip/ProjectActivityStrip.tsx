@@ -43,7 +43,7 @@ const RESOURCE_META: Record<ProjectResourceType, ResourceMeta> = {
   plugin: { label: 'Plugin', icon: Settings },
   hook: { label: 'Hook', icon: Terminal },
   command: { label: 'Command', icon: Command },
-  agent: { label: 'Agent', icon: Bot },
+  agent: { label: 'SubAgent', icon: Bot },
   session: { label: 'Session', icon: FolderOpen },
   collaboration_room: { label: 'Collaboration Room', icon: FolderOpen },
   todo: { label: 'Todo', icon: CheckSquare },

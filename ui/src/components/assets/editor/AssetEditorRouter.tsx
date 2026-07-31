@@ -1,4 +1,4 @@
-import { Agent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard } from '@sdk';
+import { SubAgent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { lazy, Suspense, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -251,13 +251,13 @@ export function AssetEditorRouter({
           )}
         />
       );
-    case AssetEditor.AGENT:
+    case AssetEditor.SUBAGENT:
       return (
-        <EntityResolutionGate<Agent>
-          type={Agent.type}
+        <EntityResolutionGate<SubAgent>
+          type={SubAgent.type}
           fsRef={fsRef}
           typeLabel="agent"
-          resolvedEntity={typeIdEntity as Agent | undefined}
+          resolvedEntity={typeIdEntity as SubAgent | undefined}
           render={(agent) => (
             <AssetCollisionProvider entity={agent}>
               <AgentAssetEditor fsRef={fsRef!} agent={agent} wikiLinkTarget={wikiLinkTarget} />

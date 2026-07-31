@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import apiClient from '../client';
 import {
   ActionInfo,
-  Agent,
+  SubAgent,
   ExpansionRequest,
   Plugin,
   PluginManifest,
@@ -680,7 +680,7 @@ class DataContext extends EventEmitter {
         return ContextEntitiesEnum.CurrentProjectTypeId;
       case ComputeNode.type:
         return ContextEntitiesEnum.CurrentComputeNodeTypeId;
-      case Agent.type:
+      case SubAgent.type:
         return ContextEntitiesEnum.CurrentAgentTypeId;
       case AgenticProcess.type:
         return ContextEntitiesEnum.CurrentProcessTypeId;
