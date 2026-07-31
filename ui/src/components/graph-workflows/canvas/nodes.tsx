@@ -123,7 +123,8 @@ export function StationCard({ data, selected }: NodeProps) {
   const isAgent = !isFunction;
 
   const { live, proc, running, now } = useLive(def.id);
-  const openProcess = useStudio((s) => s.openProcess);
+  const previewRuns = useStudio((s) => s.previewRuns);
+  const flowId = useStudio((s) => s.flowId);
   const mutateDoc = useStudio((s) => s.mutateDoc);
 
   const failed = !running && !!live?.error;
@@ -185,13 +186,17 @@ export function StationCard({ data, selected }: NodeProps) {
           {live?.processId && running && (
             <a
               className="lnk nodrag"
-              title={`open process ${live.processId}`}
+              title="show this station's runs"
               onClick={(e) => {
                 e.stopPropagation();
-                openProcess?.(live.processId!);
+                previewRuns?.({
+                  scope: flowId ? { flow_id: flowId, node_id: def.id } : { node_id: def.id },
+                  runId: live.processId,
+                  title: def.name || def.id,
+                });
               }}
             >
-              proc ⬈
+              runs ⬈
             </a>
           )}
         </div>

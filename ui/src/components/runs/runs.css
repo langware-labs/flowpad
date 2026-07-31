@@ -21,12 +21,60 @@
 }
 .runs-bar {
   display: flex;
+  flex-direction: column;
   gap: 6px;
-  align-items: center;
   padding: 8px 10px;
   border-bottom: 1px solid var(--border-color, #2a2a2a);
   flex: 0 0 auto;
 }
+.runs-bar-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+/* Facets are a triage row, not a form — they read as counts you can click. */
+.runs .facet {
+  font: inherit;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 9px;
+  border: 1px solid var(--border-color, #2a2a2a);
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.runs .facet:hover { opacity: 0.9; }
+.runs .facet.on { opacity: 1; border-color: currentColor; }
+.runs .facet b { font-weight: 600; opacity: 0.7; margin-left: 2px; }
+.runs .facet.b-failed.on { color: #f87171; }
+.runs .facet.b-running.on { color: #60a5fa; }
+.runs .facet.b-done.on { color: #4ade80; }
+.runs .facet.b-queued.on { color: #94a3b8; }
+.runs .facet.select { opacity: 0.75; max-width: 160px; }
+.runs .chip.scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #38bdf8;
+  border-color: currentColor;
+  opacity: 1;
+}
+.runs .chip-x {
+  display: inline-flex;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.7;
+}
+.runs .chip-x:hover { opacity: 1; }
+/* Dialog-hosted: no room for a 62vh viewer or a 340px master column. */
+.runs.compact { grid-template-columns: 260px minmax(0, 1fr); font-size: 11px; }
+.runs.compact .viewer-frame,
+.runs.compact .viewer-src { height: 34vh; max-height: 34vh; }
 .runs-filter {
   flex: 1 1 auto;
   min-width: 0;

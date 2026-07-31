@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NotificationOutlet, NotificationCommandBridge, DiagnoseErrorModal, initNotificationIngest } from '@src/notifications';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
 import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
+import { RunPreviewRoot } from '@src/components/runs/RunPreviewRoot';
 import { FilePreviewRoot } from '@src/components/file-preview/FilePreviewRoot';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
@@ -125,6 +126,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <IncomingDeepLink />
         <ActivityProgressModalRoot />
         <WikiModalRoot />
+        <RunPreviewRoot />
         <FilePreviewRoot />
         <GlobalEvents />
         <GitHubDeviceFlowModal />

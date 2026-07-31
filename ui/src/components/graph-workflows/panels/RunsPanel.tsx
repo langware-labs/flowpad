@@ -144,12 +144,11 @@ function JournalTimeline({
   );
 }
 
-export function RunsPanel() {
+export function RunsPanel({ onSelectRun }: { onSelectRun: (runId: string | null) => void }) {
   const flowId = useStudio((s) => s.flowId);
   const runs = useStudio((s) => s.runs);
   const selectedRunId = useStudio((s) => s.selectedRunId);
-  const selectRun = useStudio((s) => s.selectRun);
-  const openProcess = useStudio((s) => s.openProcess);
+  const previewRuns = useStudio((s) => s.previewRuns);
   const [entries, setEntries] = useState<RunJournalEntry[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactExecution[]>([]);
   const [actionStatus, setActionStatus] = useState<string | null>(null);
@@ -210,14 +209,27 @@ export function RunsPanel() {
 
   return (
     <div className="afl-panel afl-runs">
-      <div className="eye">runs</div>
+      <div className="eye">
+        runs
+        {flowId && (
+          <button
+            className="lnk"
+            title="open this flow's full run history"
+            onClick={() =>
+              previewRuns?.({ scope: { flow_id: flowId }, title: 'Runs of this flow' })
+            }
+          >
+            all ⬈
+          </button>
+        )}
+      </div>
       {!runs.length && <p className="afl-note">No runs yet — inject an event or fire the trigger.</p>}
       <div className="afl-runlist">
         {runs.map((r) => (
           <button
             key={r.id}
             className={`afl-runrow ${r.status} ${selectedRunId === r.id ? 'on' : ''}`}
-            onClick={() => selectRun(selectedRunId === r.id ? null : r.id)}
+            onClick={() => onSelectRun(selectedRunId === r.id ? null : r.id)}
           >
             <span className="g">{STATUS_GLYPH[r.status] ?? '·'}</span>
             <span className="id">{r.id.slice(0, 8)}</span>
@@ -240,7 +252,13 @@ export function RunsPanel() {
           <JournalTimeline
             entries={entries}
             onReexecute={reexecute}
-            onOpenProcess={(pid) => openProcess?.(pid)}
+            onOpenProcess={(pid) =>
+              previewRuns?.({
+                scope: selectedRunId ? { flow_run_id: selectedRunId } : {},
+                runId: pid,
+                title: `Run ${selectedRunId?.slice(0, 8) ?? ''}`,
+              })
+            }
           />
           {flowId && (
             <ArtifactList flowId={flowId} runId={selectedRunId} executions={artifacts} />

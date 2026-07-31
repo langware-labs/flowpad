@@ -374,7 +374,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
-  [ViewType.RUNS]: {
+  [ViewType.PROCESS_RUNS]: {
     title: 'Runs',
     iconName: 'History',
     tabLocation: 'dedicated',
