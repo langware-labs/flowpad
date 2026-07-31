@@ -141,7 +141,7 @@ export function HelpdeskLoadDialog({ open, onClose, onNoPortal }: HelpdeskLoadDi
 
       // D — URL-first: navigate and let the project loader do the rest.
       await run('open', () => {
-        navigation.openDock(DockPointer.forProject(portalProjectId));
+        navigation.openDock(DockPointer.forHelpdesk(portalProjectId));
         return Promise.resolve();
       });
     });

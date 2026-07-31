@@ -76,6 +76,7 @@ async def set_service_graph_workflows() -> None:
         ("mini-analyzer", _seed_mini_analyzer),
         ("daily-analysis", _seed_daily_analysis),
         ("hn-radar", _seed_hn_radar),
+        ("gmail-radar", _seed_gmail_radar),
     ):
         try:
             await seed()
@@ -367,3 +368,70 @@ async def _seed_hn_radar() -> None:
         return  # user's flow now — never overwrite an existing graph
     (folder / "graph.json").write_text(_hn_radar_graph(flow.id), encoding="utf-8")
     logger.info("set_service_graph_workflows: seeded hn-radar (%s)", flow.id)
+
+
+# ── gmail-radar ──────────────────────────────────────────────────────────────
+
+GMAIL_REPORT_PROMPT = """\
+Write a "Gmail — last 24 hours" inbox summary as a single self-contained HTML file.
+
+The event data you were given contains `items_file`: an absolute path to a JSON
+file with `{generated_at, window_hours, total_in_window, included, items[]}`,
+already filtered to the window. Each item has title (the subject), author
+(the sender), occurred_at, url and link. Read that file first — do not query
+the API and do not open the mailbox yourself.
+
+Produce `gmail_inbox_summary.html` in your output folder (the path is given
+below). Requirements:
+- One self-contained file: inline CSS, no external requests of any kind.
+- Lead with a short prose read of the day: who wanted what, what looks like it
+  needs a reply, what is clearly noise.
+- Then the messages, newest first, grouped by sender where that helps.
+- Show the window and generation time, and state `total_in_window` honestly.
+- If `empty` is true, say plainly that no mail landed in the window and that
+  the source may not have polled yet. Never invent a message, a sender or a
+  subject.
+"""
+
+
+def _gmail_radar_graph(flow_id: str) -> str:
+    """The same two-lane shape as hn-radar, over a different provider — which
+    is the point: the ingestion spine does not care what fetched the records."""
+    nodes = [
+        {"id": "tick", "node_type": "function", "name": "Mail pulse",
+         "node_data": {"function": "hn_radar_tick", "runtime": "inline"}},
+        {"id": "collect", "node_type": "function", "name": "Collect last 24h",
+         "node_data": {"function": "hn_radar_collect", "runtime": "inline"}},
+        {"id": "report", "node_type": "agent", "name": "Write the summary",
+         "node_data": {"prompt": GMAIL_REPORT_PROMPT, "model_size": "sm"}},
+    ]
+    edges = [
+        {"id": "e1", "from": {"node": "$external", "event": "report"},
+         "to": {"node": "collect"}},
+        {"id": "e2", "from": {"node": "collect", "event": "done"},
+         "to": {"node": "report"}},
+    ]
+    return _doc(
+        flow_id, "gmail-radar", nodes, edges,
+        description=(
+            "Gmail ingested by an agent transport, watched live; produces a "
+            "last-24h HTML inbox summary on demand. Inject `report` to run it."
+        ),
+        config={"retention_runs": HN_RADAR_RETENTION_RUNS},
+        subscriptions=[{
+            "id": "s1",
+            "pattern": "ingest.agent.sync.completed",
+            "node": "tick",
+        }],
+    )
+
+
+async def _seed_gmail_radar() -> None:
+    flow, created = await _get_or_create_flow("gmail-radar")
+    folder = flow.folder if flow else None
+    if flow is None or folder is None:
+        return
+    if not created:
+        return  # the user's flow now — never overwrite an existing graph
+    (folder / "graph.json").write_text(_gmail_radar_graph(flow.id), encoding="utf-8")
+    logger.info("set_service_graph_workflows: seeded gmail-radar (%s)", flow.id)

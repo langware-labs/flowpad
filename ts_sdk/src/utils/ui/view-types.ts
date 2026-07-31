@@ -103,6 +103,7 @@ export enum ViewType {
   DIAGNOSIS = 'diagnosis', // Single FlowpadDiagnosis viewer - /dock/diagnosis/<id>
   DESKTOP = 'desktop', // Full-page favorites desktop (BrowseableGrid) - /dock/desktop
   LIVE_SESSION = 'live_session', // Live remote-worker session (terminal chat) - /dock/live_session/<id>
+  HELPDESK = 'helpdesk', // Helpdesk portal — guides + ask + my tickets - /dock/helpdesk/<projectId>[/article/<path>]
   ATLAS = 'atlas', // Retired decode-only alias; loader redirects to /dock/hub/worldview/…
   HUB_RECORDS = 'records', // Hub entity list by type (page=hub) - /dock/hub/records/<type>
   HUB_ENTITY = 'entity', // Hub single-entity viewer (page=hub) - /dock/hub/entity/<type>/<id>

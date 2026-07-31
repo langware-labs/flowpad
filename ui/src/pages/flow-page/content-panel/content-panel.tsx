@@ -42,6 +42,7 @@ import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { Tab } from '@sdk';
 import { useTerminalTabs } from '@src/tabs/useTabs';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { HelpdeskPortalPage } from '@src/components/helpdesk/HelpdeskPortalPage';
 import { NavigatorSlot } from '@src/navigation/NavigatorSlot';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
@@ -432,6 +433,8 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         );
       case ViewType.ASSETS:
         return <AssetsPage />;
+      case ViewType.HELPDESK:
+        return <HelpdeskPortalPage />;
       case ViewType.PROJECT: {
         // A project dock scoped to a collaboration_room (…/collaboration_room/<id>)
         // renders the collaboration room; a bare project dock is the assets

@@ -154,14 +154,34 @@ export interface ProjectContextDirInfo {
   typeid?: string;
 }
 
-/** Optional per-project home branding read from `.flow/customization/`.
- *  Mirrors the backend `Project.customization` computed field. `home.png` bytes
- *  are fetched on demand via the `fs` download action; here only the flag. */
+/** A project's visual identity, from the `brand` block of
+ *  `.flow/customization/string.json`. Every field is optional; the block itself
+ *  is null unless at least one survived validation.
+ *
+ *  `logo` / `logo_dark` are REPO-RELATIVE paths the backend has already
+ *  confirmed exist and are inside the project root — hand them straight to
+ *  `useFS(projectTypeId).getDownloadUrl(path)`, no probe needed. */
+export interface ProjectBrand {
+  name?: string | null;
+  tagline?: string | null;
+  /** CSS colour for the accent. Apply it SCOPED to the branded container, never
+   *  to `documentElement` — see `useHelpdeskBrand`. */
+  accent?: string | null;
+  logo?: string | null;
+  logo_dark?: string | null;
+}
+
+/** Optional per-project branding read from `.flow/customization/`.
+ *  Mirrors the backend `Project.customization` computed field. Image bytes are
+ *  fetched on demand via the `fs` download action; here only a flag (home
+ *  background) or a relative path (brand logos). */
 export interface ProjectCustomization {
   /** From `.flow/customization/string.json` — overrides the home greeting. */
   home_title?: string | null;
   /** True when `.flow/customization/home.png` exists → render it as background. */
   has_home_background?: boolean;
+  /** Null when the project ships no usable brand block. */
+  brand?: ProjectBrand | null;
 }
 
 // ---------------------------------------------------------------------------

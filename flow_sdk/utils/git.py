@@ -183,6 +183,56 @@ def find_local_repo_for_url(clone_url: str) -> Optional[str]:
     return None
 
 
+async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, str]:
+    """Force a checkout to match its remote, discarding local changes.
+
+    For a MIRROR — a checkout the app manages and the user never edits — as
+    opposed to ``git_pull``, which is for a working tree whose local changes
+    must be preserved. Use it only where local modifications are known to be
+    machine-made and disposable; it throws away uncommitted work.
+
+    This exists because indexing a mirrored repo MUTATES it: markdown files get
+    a ``flowpad:capsule identity`` block appended so their entity ids are
+    stable. Every file is therefore dirty after the first index, and a plain
+    ``git pull`` then aborts with "local changes would be overwritten" — so the
+    mirror would silently stop receiving updates after its first index.
+
+    Returns (success, message); the message says whether anything moved.
+    """
+    try:
+        def _run(args, cwd):
+            return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=60)
+
+        if not branch:
+            r = await asyncio.to_thread(_run, ["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_path)
+            branch = r.stdout.strip() if r.returncode == 0 else ""
+        if not branch or branch == "HEAD":
+            return False, "Skipped sync (detached HEAD)."
+
+        before = await asyncio.to_thread(_run, ["git", "rev-parse", "HEAD"], repo_path)
+        fetch = await asyncio.to_thread(_run, ["git", "fetch", "origin", branch], repo_path)
+        if fetch.returncode != 0:
+            err = (fetch.stderr or fetch.stdout or "").strip()
+            logger.warning("[git] fetch origin %s FAILED: %s", branch, err)
+            return False, f"Git fetch failed: {err}"
+
+        reset = await asyncio.to_thread(
+            _run, ["git", "reset", "--hard", f"origin/{branch}"], repo_path
+        )
+        if reset.returncode != 0:
+            err = (reset.stderr or reset.stdout or "").strip()
+            logger.warning("[git] reset --hard origin/%s FAILED: %s", branch, err)
+            return False, f"Git reset failed: {err}"
+
+        after = await asyncio.to_thread(_run, ["git", "rev-parse", "HEAD"], repo_path)
+        moved = before.stdout.strip() != after.stdout.strip()
+        logger.info("[git] mirror synced to origin/%s (moved=%s)", branch, moved)
+        return True, "Updated." if moved else "Already up to date."
+    except Exception as e:
+        logger.warning("[git] mirror sync error: %s", e)
+        return False, f"Git sync error: {e}"
+
+
 async def git_pull(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, str]:
     """Pull latest from origin for the given branch, or the current branch if not specified.
 

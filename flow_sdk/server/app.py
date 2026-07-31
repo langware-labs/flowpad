@@ -70,6 +70,7 @@ from .routes import (
     git_router,
     graph_workflows_router,
     hooks_router,
+    ingest_router,
     journeys_router,
     markdown_index_router,
     navigate_router,
@@ -539,6 +540,7 @@ server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
 server.add_router(compute_register_router)
 server.add_router(debug_router)
+server.add_router(ingest_router)
 server.add_router(tags_router)
 server.add_router(subgraph_router)
 server.add_router(navigate_router)

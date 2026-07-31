@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+from pathlib import Path
 from typing import Any, Optional
 
 import requests
@@ -344,6 +346,85 @@ def _post_action(action_name: str, typeid_raw: str, payload: Optional[dict] = No
     port = _discover_port()
     url = f"http://127.0.0.1:{port}/api/v1/graph/{entity_type}/{entity_id}/{action_name}"
     return _post_json(url, payload, timeout=15, not_found_hint=f"Entity not found: {typeid_raw}")
+
+
+#: Types whose birth path is NOT "materialize a file, then index it".
+#: ``source_item`` is minted by the ingestor, which owns its deterministic v5
+#: id and its content digest — so creating one means posting it through the
+#: ingest route, and re-creating the same item is an idempotent upsert rather
+#: than a duplicate. Data, not an ``if``: the second such type just adds a row.
+_INGESTED_TYPES: dict[str, str] = {
+    "source_item": "/api/v1/ingest/items",
+}
+
+
+@record_app.command(
+    "create",
+    help=(
+        "Create a record from JSON. Types the ingestor owns (source_item) go "
+        "through the ingest chokepoint, so re-creating the same item updates it "
+        "in place instead of duplicating. Other types are file-backed — "
+        "materialize the file and use `flow record index` instead."
+    ),
+)
+def create_record(
+    type_name: Annotated[
+        str,
+        typer.Argument(metavar="TYPE", help="Entity type, e.g. 'source_item'."),
+    ],
+    json_path: Annotated[
+        Optional[str],
+        typer.Option(
+            "--json",
+            "-j",
+            help="Path to a JSON file, or '-' for stdin. One object, or an array to batch.",
+        ),
+    ] = None,
+    first_run: Annotated[
+        bool,
+        typer.Option(
+            "--first-run",
+            help="Declare this a backfill: saves quietly and emits one summary "
+                 "event instead of one per item (the storm caps make that the "
+                 "only safe shape for a large first sync).",
+        ),
+    ] = False,
+) -> None:
+    type_name = (type_name or "").strip()
+    route = _INGESTED_TYPES.get(type_name)
+    if not route:
+        _fail(
+            EXIT_INVALID_ARG,
+            "INVALID_ARG",
+            f"'{type_name}' is not an ingested type. File-backed records are created by "
+            f"writing the file and running `flow record index <path> --types {type_name}`.",
+        )
+
+    if not json_path:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "--json is required (a file path, or '-' for stdin)")
+    try:
+        raw = sys.stdin.read() if json_path == "-" else Path(json_path).read_text(encoding="utf-8")
+    except OSError as e:
+        _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"Cannot read {json_path}: {e}")
+    try:
+        parsed = json.loads(raw)
+    except ValueError as e:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Not valid JSON: {e}")
+
+    items = parsed if isinstance(parsed, list) else [parsed]
+    if not items:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "No items to create")
+
+    url = f"http://127.0.0.1:{_discover_port()}{route}"
+
+    def _on_error(status_code: int, body: dict) -> None:
+        _fail(EXIT_ACTION_FAILED, "ACTION_FAILED",
+              body.get("message") or f"Create failed (HTTP {status_code})")
+
+    data = _post_graph_json(
+        url, {"items": items, "first_run": first_run}, on_error=_on_error
+    )
+    _ok({"type": type_name, **data})
 
 
 @record_app.command(

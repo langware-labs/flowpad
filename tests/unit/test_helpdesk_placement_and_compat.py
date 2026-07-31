@@ -174,3 +174,161 @@ async def test_ensure_still_fails_when_there_is_no_desk_at_all() -> None:
     assert resp.status == ApiResponseStatus.FAIL.value
     # 502: the upstream hub advertises no desk; our backend is healthy.
     assert resp.status_code == 502
+
+
+# ── portal branding ─────────────────────────────────────────────────────────
+#
+# `Project.customization` is a COMPUTED field serialized into every Project
+# payload, so this parser runs on every project the UI loads and its input is a
+# file from a cloned third-party repo. It must never throw and never hand back a
+# path outside the project root.
+
+
+def _portal(tmp_path, brand=None, home_title=None) -> Project:
+    """A project whose `.flow/customization/string.json` carries `brand`."""
+    import json
+
+    root = tmp_path / "portal"
+    (root / ".flow" / "customization").mkdir(parents=True)
+    (root / "brand").mkdir()
+    (root / "brand" / "mark.svg").write_text("<svg/>")
+    payload = {}
+    if home_title is not None:
+        payload["home_title"] = home_title
+    if brand is not None:
+        payload["brand"] = brand
+    (root / ".flow" / "customization" / "string.json").write_text(json.dumps(payload))
+    return Project(type="project", name="portal", fs_storage_mount_path=str(root))
+
+
+def test_brand_block_is_parsed_with_existing_assets_only(tmp_path) -> None:
+    """A named asset is surfaced ONLY when the file is really there, so the UI
+    can hand the path to the download action without probing first."""
+    cz = _portal(
+        tmp_path,
+        home_title="Hi",
+        brand={
+            "name": "Langware Support",
+            "tagline": "Guides and a person when you need one.",
+            "accent": "#0974F1",
+            "logo": "brand/mark.svg",
+            "logo_dark": "brand/absent.svg",
+        },
+    ).customization
+
+    assert cz["home_title"] == "Hi"  # the pre-existing key still works
+    assert cz["brand"]["name"] == "Langware Support"
+    assert cz["brand"]["accent"] == "#0974F1"
+    assert cz["brand"]["logo"] == "brand/mark.svg"
+    # Named but absent → None, not the unusable path.
+    assert cz["brand"]["logo_dark"] is None
+
+
+def test_brand_accepts_any_extension(tmp_path) -> None:
+    """Unlike the fixed `home.png`, a desk names its own logo file — which is
+    what lets a portal ship an SVG."""
+    proj = _portal(tmp_path, brand={"logo": "brand/mark.svg"})
+    assert proj.customization["brand"]["logo"].endswith(".svg")
+
+
+@pytest.mark.parametrize(
+    "brand",
+    [
+        None,           # key absent
+        {},             # present but empty
+        "not-a-dict",   # wrong type
+        {"name": "   "},  # whitespace-only
+        {"logo": "brand/absent.svg"},  # only an asset, and it does not exist
+    ],
+)
+def test_brand_is_none_when_nothing_usable_survives(tmp_path, brand) -> None:
+    """`None` rather than a dict of nulls, so "has a brand" stays one check."""
+    assert _portal(tmp_path, brand=brand).customization["brand"] is None
+
+
+@pytest.mark.parametrize("escape", ["../../../etc/passwd", "/etc/passwd", "brand/../../secret"])
+def test_brand_assets_cannot_escape_the_project_root(tmp_path, escape) -> None:
+    """The block comes from a CLONED repo and the path is fed to the download
+    action, so a traversal here would serve arbitrary files off the machine."""
+    assert _portal(tmp_path, brand={"logo": escape}).customization["brand"] is None
+
+
+def test_customization_never_throws_on_bad_input(tmp_path) -> None:
+    """It runs during serialization of every project; raising would take out
+    the whole payload, not just the branding."""
+    proj = _portal(tmp_path, brand={"name": "x"})
+    (tmp_path / "portal" / ".flow" / "customization" / "string.json").write_text("{ not json")
+    assert proj.customization["brand"] is None
+
+    # No mount path at all — the other way in.
+    assert Project(type="project", name="p").customization["brand"] is None
+
+
+# ── the actions resolve their own paths ─────────────────────────────────────
+#
+# Each action recomputes the checkout path from the desk id. A refactor once
+# left `helpdesk_refresh` referencing an undefined local, and nothing caught it:
+# the UI skips the fetch step right after a clone, so the broken path only ran
+# on a REPEAT open. These call each action far enough to execute that code.
+
+
+@pytest.mark.asyncio
+async def test_refresh_reports_a_missing_checkout_instead_of_raising() -> None:
+    """The 409 path proves the mount was computed — a NameError here surfaces
+    as a 500 "Failed to refresh", which is what actually shipped once."""
+    target = HelpdeskTarget(DESK_ID, "https://example.test/portal.git")
+    with (
+        patch.object(hda, "_resolve_target", AsyncMock(return_value=target)),
+        patch.object(hda, "_is_checkout", return_value=False),
+    ):
+        resp = await hda.helpdesk_refresh()
+
+    assert resp.status == ApiResponseStatus.FAIL.value
+    assert resp.status_code == 409  # "not set up yet", NOT an internal error
+    assert "not set up" in (resp.message or "")
+
+
+@pytest.mark.asyncio
+async def test_refresh_reports_whether_the_pull_moved_anything() -> None:
+    """`updated` drives whether the caller re-indexes, so the git-message
+    reading is load-bearing, not cosmetic."""
+    target = HelpdeskTarget(DESK_ID, "https://example.test/portal.git")
+
+    async def _pull(_path):
+        return True, "Already up to date."
+
+    with (
+        patch.object(hda, "_resolve_target", AsyncMock(return_value=target)),
+        patch.object(hda, "_is_checkout", return_value=True),
+        patch.object(hda, "git_sync_mirror", _pull),
+    ):
+        resp = await hda.helpdesk_refresh()
+    assert resp.status == ApiResponseStatus.SUCCESS.value
+    assert resp.data["updated"] is False
+
+    async def _pull_changed(_path):
+        return True, "Updating a1b2c3d..e4f5g6h\nFast-forward\n docs/x.md | 2 +-"
+
+    with (
+        patch.object(hda, "_resolve_target", AsyncMock(return_value=target)),
+        patch.object(hda, "_is_checkout", return_value=True),
+        patch.object(hda, "git_sync_mirror", _pull_changed),
+    ):
+        resp = await hda.helpdesk_refresh()
+    assert resp.data["updated"] is True
+
+
+@pytest.mark.asyncio
+async def test_status_computes_its_mount_without_raising() -> None:
+    target = HelpdeskTarget(DESK_ID, "https://example.test/portal.git")
+    with (
+        patch.object(hda, "_resolve_target", AsyncMock(return_value=target)),
+        patch.object(hda, "get_current_request_info", return_value=_request_info()),
+        patch.object(hda, "_is_checkout", return_value=False),
+    ):
+        resp = await hda.helpdesk_status()
+
+    assert resp.status == ApiResponseStatus.SUCCESS.value
+    assert resp.data["exists"] is False
+    assert resp.data["portal_git_url"] == "https://example.test/portal.git"
+    assert str(DESK_ID) in resp.data["mount_path"]
