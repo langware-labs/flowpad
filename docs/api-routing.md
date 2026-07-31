@@ -55,9 +55,9 @@ When no explicit action appears in the URL, the HTTP method determines the actio
 
 | URL (after `/api/v1/graph`) | Scope | Target | Resource Type | Action | Sub-path |
 |------------------------------|-------|--------|---------------|--------|----------|
-| `/agent` | — | — | `agent` | `read` (implicit GET) | — |
+| `/subagent` | — | — | `subagent` | `read` (implicit GET) | — |
 | `/agent/@local` | — | `agent/@local` | — | `read` (implicit GET) | — |
-| `/workspace/@local/agent` | — | `workspace/@local` | `agent` | `read` (implicit GET) | — |
+| `/workspace/@local/subagent` | — | `workspace/@local` | `subagent` | `read` (implicit GET) | — |
 | `/agent/@local/fs/browse/Users/alice` | — | `agent/@local` | — | `fs` | `browse/Users/alice` |
 | `/compute_node/@local/terminal-command` | — | `compute_node/@local` | — | `terminal-command` | — |
 | `/workspace/@local/agent/@local/control` | `workspace/@local` | `agent/@local` | — | `control` | — |
@@ -411,8 +411,8 @@ What `ApiUrl.toString()` produces:
 
 | Operation | ActionInfo setup | Generated URL |
 |-----------|-----------------|---------------|
-| List agents | `name='read', resourceType='agent'` | `/graph/agent` |
-| Get agent | `name='read', resourceType='agent', resourceId='@local'` | `/graph/agent/@local` |
+| List subagents | `name='read', resourceType='subagent'` | `/graph/subagent` |
+| Get subagent | `name='read', resourceType='subagent', resourceId='@local'` | `/graph/subagent/@local` |
 | Create task under workspace | `name='create', resourceType='task', scope=[ws.typeId]` | `/graph/workspace/@local/task` |
 | Browse files | `name='fs', target=cn.typeId, subpath='browse/Users/alice'` | `/graph/compute_node/@local/fs/browse/Users/alice` |
 | Terminal command | `name='terminal-command', target=cn.typeId, method='POST'` | `/graph/compute_node/@local/terminal-command` |

@@ -8,9 +8,10 @@ Names should make that obvious.
 
 | Flowpad | Claude Code | OpenClaw |
 |---|---|---|
-| `Agent` (a `.md` prompt asset) | agent / subagent | — |
+| `SubAgent` (a `.md` prompt asset) | **subagent** | — |
 | `AgentOptions` | options | — |
-| `Agent` + `AgentOptions` together | — | **`agent`** |
+| `SubAgent` + `AgentOptions` together | — | **`agent`** |
+| `Agent` | — | — (**reserved**, not yet built) |
 | `AgenticProcess` (one run) | session | session |
 | `ClaudeSession` / `CodexSession` / `CopilotSession` | transcript | — |
 | `Skill` (`SKILL.md`) | skill | skill |
@@ -21,18 +22,25 @@ Names should make that obvious.
 
 ## The three rows that are not clean matches
 
-**OpenClaw's `agent` is not our `Agent`.** Theirs is a persistent tenant —
+**OpenClaw's `agent` is not our `SubAgent`.** Theirs is a persistent tenant —
 `agents.entries.*` with `id`, `workspace`, `model`, `identity`, skill visibility, its own
 auth profile and session store, with channel bindings routing to it; many live in one
 Gateway process, and it has no subagent concept. Ours is a prompt asset. The real
-equivalent is our **`Agent` + `AgentOptions` pair**: `workspace`↔`workdir`,
+equivalent is our **`SubAgent` + `AgentOptions` pair**: `workspace`↔`workdir`,
 `model`↔`model`, `skills`↔`skill_names`/`agents_json`, session store↔`session_id`, auth
 profile↔`env_vars` + `cli_drivers/api_auth.py`.
 
-We keep our spelling because `.claude/agents/` is a **provider-owned path** — Claude Code
-reads it directly, so renaming the class would only make the entity and its directory
-disagree. And the mismatch is structural rather than lexical: OpenClaw fuses definition and
-launch config into one persistent noun; we split them and bind them only at spawn.
+That is why the entity is spelled `SubAgent` and the bare noun `Agent` is **reserved**:
+Claude Code calls these subagents, our entity is a thin wrapper over its
+`.claude/agents/*.md` contract, and `Agent` is being held for the hub-level launchable
+principal — the thing that actually corresponds to OpenClaw's `agent`. The mismatch is
+structural rather than lexical: OpenClaw fuses definition and launch config into one
+persistent noun; we split them and bind them only at spawn.
+
+**The type renamed; the directory did not.** `.claude/agents/` is a **provider-owned path**
+— Claude Code reads it directly — so `family` stays `"agents"` and the frontmatter spec
+(`AGENTS_SPEC_FIELDS`) still mirrors its `--agents` JSON verbatim. Entity `subagent`,
+directory `agents`: that disagreement is deliberate, and the code says so at both ends.
 
 **We have no `Tool` noun.** `EntityType` has no `TOOL` member — the concept is split across
 `MCP_SERVER` and `COMMAND`. Both Claude Code and OpenClaw make `tool` first-class.
@@ -51,7 +59,7 @@ Keep these apart when naming anything new:
 | `DynamicWorkflow` (`.claude/workflows/*.js`) | `GraphWorkflow` (`agentic-assets/graph_workflow/`) |
 | `WorkflowRun` (`wf_<runId>.json`, read-only) | `GraphWorkflowRun` |
 | `ClaudeSession` / `CodexSession` / `CopilotSession` | `AgenticProcess` |
-| `Agent` (`.claude/agents/`), `Skill`, `Command`, `ClaudeMd` | `Project`, `Task`, `Spec`, `Journey`, `Deck` |
+| `SubAgent` (`.claude/agents/`), `Skill`, `Command`, `ClaudeMd` | `Project`, `Task`, `Spec`, `Journey`, `Deck` |
 
 A provider mirror is read-only-ish and its format is not ours to change. A native asset is
 a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
