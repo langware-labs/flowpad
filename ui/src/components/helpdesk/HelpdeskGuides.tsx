@@ -52,8 +52,11 @@ export function HelpdeskGuides({ projectId, mountPath }: { projectId: string; mo
 
     return [...byCategory.entries()]
       .map(([name, articles]) => ({ name, articles: articles.sort((a, b) => a.title.localeCompare(b.title)) }))
-      // Ungrouped articles last — they read as loose ends next to named sections.
-      .sort((a, b) => (a.name === '' ? 1 : b.name === '' ? -1 : a.name.localeCompare(b.name)));
+      // Ungrouped articles last — they read as loose ends next to named
+      // sections. Two-key sort rather than a nested ternary.
+      .sort(
+        (a, b) => Number(a.name === '') - Number(b.name === '') || a.name.localeCompare(b.name),
+      );
   }, [results, mountPath]);
 
   if (isLoading || categories.length === 0) return null;

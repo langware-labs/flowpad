@@ -1,12 +1,8 @@
 import type { Components } from 'react-markdown';
 import { useMemo } from 'react';
 import type { TypeId } from '@sdk';
-import { useFS } from '@src/hooks/useFS';
-import {
-  isExternalHref,
-  resolveDocRelativePath,
-  splitHrefTail,
-} from './markdown-asset-links';
+import { fsStore } from '@sdk/stores/fsStore';
+import { hrefPath, isExternalHref, resolveDocRelativePath } from './markdown-asset-links';
 
 /**
  * `MarkdownView` overrides for markdown that lives inside a project folder.
@@ -38,16 +34,18 @@ export function useMarkdownAssetComponents({
   docPath: string;
   /** In-repo link click. Omit to render such links as plain text — better than
    *  a link that navigates nowhere. */
-  onNavigate?: (resolvedPath: string, tail: string) => void;
+  onNavigate?: (resolvedPath: string) => void;
 }): Partial<Components> {
-  const fs = useFS(projectTypeId ?? undefined);
-
+  // `fsStore.getState().getDownloadUrl` rather than `useFS(...)`: `useFS`
+  // returns a fresh object literal every render, so putting it in the dep array
+  // means this memo NEVER hits — and `react-markdown` compares `components` by
+  // identity, so a new object re-renders the whole article tree on every
+  // render. The store method is the same pure delegate `useFS` wraps.
   return useMemo<Partial<Components>>(() => {
-    const resolve = (raw?: string): { path: string; tail: string } | null => {
+    /** The repo-relative path a target resolves to, or null to leave it be. */
+    const resolve = (raw?: string): string | null => {
       if (!raw || !projectTypeId || isExternalHref(raw)) return null;
-      const { path, tail } = splitHrefTail(raw);
-      const resolved = resolveDocRelativePath(docPath, path);
-      return resolved ? { path: resolved, tail } : null;
+      return resolveDocRelativePath(docPath, hrefPath(raw));
     };
 
     return {
@@ -55,7 +53,7 @@ export function useMarkdownAssetComponents({
         const hit = typeof src === 'string' ? resolve(src) : null;
         return (
           <img
-            src={hit ? fs.getDownloadUrl(hit.path) : src}
+            src={hit ? fsStore.getState().getDownloadUrl(projectTypeId!, hit) : src}
             alt={alt ?? ''}
             title={title}
             // Articles are authored without knowing the pane size. Cap BOTH
@@ -69,32 +67,26 @@ export function useMarkdownAssetComponents({
 
       a: ({ href, children }) => {
         const hit = resolve(href);
-        if (!hit) {
-          return (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
-            >
-              {children}
-            </a>
-          );
-        }
-        if (!onNavigate) return <>{children}</>;
+        // An in-repo link with nowhere to send it renders as plain text — a
+        // link that navigates nowhere is worse than no link.
+        if (hit && !onNavigate) return <>{children}</>;
         return (
           <a
             href={href}
-            onClick={(e) => {
-              e.preventDefault();
-              onNavigate(hit.path, hit.tail);
-            }}
             className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
+            {...(hit
+              ? {
+                  onClick: (e: React.MouseEvent) => {
+                    e.preventDefault();
+                    onNavigate?.(hit);
+                  },
+                }
+              : { target: '_blank', rel: 'noopener noreferrer' })}
           >
             {children}
           </a>
         );
       },
     };
-  }, [fs, projectTypeId, docPath, onNavigate]);
+  }, [projectTypeId, docPath, onNavigate]);
 }

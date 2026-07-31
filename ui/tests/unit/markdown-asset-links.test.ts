@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  isExternalHref,
-  resolveDocRelativePath,
-  splitHrefTail,
-} from '@src/components/markdown-asset-links';
+import { hrefPath, isExternalHref, resolveDocRelativePath } from '@src/components/markdown-asset-links';
 
 // Markdown rendered from a project folder carries document-relative targets.
 // Getting these wrong is silent: a broken image, or a link that opens a blank
@@ -75,14 +71,15 @@ describe('resolveDocRelativePath', () => {
   });
 });
 
-describe('splitHrefTail', () => {
-  it('keeps a fragment or query out of the resolved path', () => {
-    expect(splitHrefTail('./setup.md#step-2')).toEqual({ path: './setup.md', tail: '#step-2' });
-    expect(splitHrefTail('./a.png?v=2')).toEqual({ path: './a.png', tail: '?v=2' });
-    expect(splitHrefTail('./plain.md')).toEqual({ path: './plain.md', tail: '' });
+describe('hrefPath', () => {
+  it('strips a fragment or query so it never reaches path resolution', () => {
+    expect(hrefPath('./setup.md#step-2')).toBe('./setup.md');
+    expect(hrefPath('./a.png?v=2')).toBe('./a.png');
+    expect(hrefPath('./plain.md')).toBe('./plain.md');
   });
 
-  it('survives a bare fragment', () => {
-    expect(splitHrefTail('#top')).toEqual({ path: '', tail: '#top' });
+  it('reduces a bare fragment to nothing, which resolution then rejects', () => {
+    expect(hrefPath('#top')).toBe('');
+    expect(resolveDocRelativePath('docs/a.md', hrefPath('#top'))).toBeNull();
   });
 });

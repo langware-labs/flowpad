@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Agent, AgenticProcess, Project, ProcessKind, TypeId } from '@sdk';
+import { AgenticProcess, Project, ProcessKind, SubAgent, TypeId } from '@sdk';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { Button } from '@src/components/ui/button';
 import { Skeleton } from '@src/components/ui/skeleton';
@@ -52,10 +52,10 @@ export function HelpdeskAsk({ project }: { project: Project }) {
     return (
       <div className="h-[320px] overflow-hidden rounded-lg border border-border bg-card/40">
         <EntityExecutionPanel
-          // Target the AGENT, not the project: `project-<id>` is what vibe chat
-          // uses (`vibeChatTargetForProject`), and sharing it would braid the
-          // help desk's history into the user's vibe sessions.
-          target={new TypeId(Agent.type, agent.id).toString()}
+          // Target the SUBAGENT, not the project: `project-<id>` is what vibe
+          // chat uses (`vibeChatTargetForProject`), and sharing it would braid
+          // the help desk's history into the user's vibe sessions.
+          target={new TypeId(SubAgent.type, agent.id).toString()}
           processType={ProcessKind.Chat}
           dense
           defaultProjectId={project.id}

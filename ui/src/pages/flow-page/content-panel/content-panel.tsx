@@ -42,7 +42,6 @@ import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { Tab } from '@sdk';
 import { useTerminalTabs } from '@src/tabs/useTabs';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { HelpdeskPortalPage } from '@src/components/helpdesk/HelpdeskPortalPage';
 import { NavigatorSlot } from '@src/navigation/NavigatorSlot';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
@@ -69,6 +68,11 @@ const GraphView = lazy(() =>
   isWebglAvailable()
     ? import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView }))
     : Promise.resolve({ default: WebglUnavailableView }),
+);
+// Lazy like its neighbours: the portal drags react-markdown + the article
+// renderer, which no user who never opens a help desk should pay for.
+const HelpdeskPortalPage = lazy(() =>
+  import('@src/components/helpdesk/HelpdeskPortalPage').then((m) => ({ default: m.HelpdeskPortalPage })),
 );
 const WorldView = lazy(() =>
   isWebglAvailable()

@@ -339,6 +339,12 @@ class Project(Entity):
             value = raw.get(key)
             return value.strip() if isinstance(value, str) and value.strip() else None
 
+        # Resolved once, not per key: both logo lookups compare against it.
+        try:
+            root_resolved = root.resolve()
+        except OSError:
+            return None
+
         def _asset(key: str) -> str | None:
             rel = _text(key)
             if not rel:
@@ -347,7 +353,7 @@ class Project(Entity):
             try:
                 # `is_relative_to` is the containment check; `resolve()` above
                 # collapses any `..` first so a traversal cannot slip past it.
-                if not candidate.is_relative_to(root.resolve()) or not candidate.is_file():
+                if not candidate.is_relative_to(root_resolved) or not candidate.is_file():
                     return None
             except OSError:
                 return None

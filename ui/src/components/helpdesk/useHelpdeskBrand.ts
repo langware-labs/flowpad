@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Project, TypeId, type ProjectBrand } from '@sdk';
-import { useFS } from '@src/hooks/useFS';
+import { fsStore } from '@sdk/stores/fsStore';
+import { hexToHsl } from '@src/hooks/useColorPalette';
 
 /**
  * A desk's visual identity, resolved from the portal project.
@@ -30,38 +31,17 @@ export interface HelpdeskBrand {
   accentStyle: React.CSSProperties | undefined;
 }
 
-const EMPTY: HelpdeskBrand = {
-  name: null,
-  tagline: null,
-  logoUrl: null,
-  logoDarkUrl: null,
-  accentStyle: undefined,
-};
-
 /** `#rrggbb` / `#rgb` → the `H S% L%` triple Tailwind's `hsl(var(--brand))`
- *  expects. Returns null for anything unparseable so a typo'd accent falls back
- *  to the app default instead of painting the container transparent. */
+ *  expects, or null when unparseable. The conversion itself is `hexToHsl` —
+ *  this only adds validation. */
 export function accentToHslTriple(accent: string): string | null {
-  const hex = accent.trim().replace(/^#/, '');
-  const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
-  if (!/^[0-9a-f]{6}$/i.test(full)) return null;
-
-  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255);
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  const d = max - min;
-
-  let h = 0;
-  if (d !== 0) {
-    if (max === r) h = ((g - b) / d) % 6;
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    h *= 60;
-    if (h < 0) h += 360;
-  }
-  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
-  return `${Math.round(h)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
+  const raw = accent.trim();
+  // Validate only — `hexToHsl` already owns `#`-stripping and 3→6 expansion, so
+  // re-normalizing here would put that rule in two places. Validation belongs
+  // on this side because an unparseable accent must fall back to the app
+  // default rather than paint the container transparent via NaN.
+  if (!/^#?(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)) return null;
+  return hexToHsl(raw);
 }
 
 export function useHelpdeskBrand(project?: Project | null): HelpdeskBrand {
@@ -69,20 +49,24 @@ export function useHelpdeskBrand(project?: Project | null): HelpdeskBrand {
     () => (project?.id ? new TypeId(Project.type, project.id) : undefined),
     [project?.id],
   );
-  const fs = useFS(projectTypeId);
   const brand: ProjectBrand | null | undefined = project?.customization?.brand;
 
+  // Computed unconditionally — the memo already gives the unbranded case a
+  // stable identity, so a separate EMPTY sentinel and its guard bought nothing.
   return useMemo(() => {
-    if (!brand || !projectTypeId) return EMPTY;
-    const triple = brand.accent ? accentToHslTriple(brand.accent) : null;
+    const triple = brand?.accent ? accentToHslTriple(brand.accent) : null;
     return {
-      name: brand.name ?? null,
-      tagline: brand.tagline ?? null,
-      logoUrl: brand.logo ? fs.getDownloadUrl(brand.logo) : null,
-      logoDarkUrl: brand.logo_dark ? fs.getDownloadUrl(brand.logo_dark) : null,
+      name: brand?.name ?? null,
+      tagline: brand?.tagline ?? null,
+      logoUrl:
+        brand?.logo && projectTypeId ? fsStore.getState().getDownloadUrl(projectTypeId, brand.logo) : null,
+      logoDarkUrl:
+        brand?.logo_dark && projectTypeId
+          ? fsStore.getState().getDownloadUrl(projectTypeId, brand.logo_dark)
+          : null,
       accentStyle: triple
         ? ({ '--brand': triple, '--brand-foreground': '0 0% 100%' } as React.CSSProperties)
         : undefined,
     };
-  }, [brand, fs, projectTypeId]);
+  }, [brand, projectTypeId]);
 }

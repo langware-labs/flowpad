@@ -183,7 +183,31 @@ def find_local_repo_for_url(clone_url: str) -> Optional[str]:
     return None
 
 
-async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, str]:
+async def _git(args: list[str], cwd: str, timeout: int = 60) -> subprocess.CompletedProcess:
+    """One git invocation, off the event loop. The async sibling of ``_run_git``."""
+    return await asyncio.to_thread(_run_git, args, cwd, timeout)
+
+
+async def _checked_out_branch(repo_path: str) -> Optional[str]:
+    """The branch a checkout is on, or ``None`` when detached.
+
+    Shared by ``git_pull`` and ``git_sync_mirror``: both must refuse to act on a
+    detached HEAD, and that rule should not live in two places.
+    """
+    r = await _git(["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_path)
+    branch = r.stdout.strip() if r.returncode == 0 else ""
+    return None if branch in ("", "HEAD") else branch
+
+
+def _git_err(result: subprocess.CompletedProcess, verb: str) -> str:
+    """One phrasing for a failed invocation. `stderr or stdout` in one place, so
+    the fallback order cannot drift between call sites."""
+    err = (result.stderr or result.stdout or "").strip()
+    logger.warning("[git] %s FAILED: %s", verb, err)
+    return f"Git {verb} failed: {err}"
+
+
+async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, bool, str]:
     """Force a checkout to match its remote, discarding local changes.
 
     For a MIRROR — a checkout the app manages and the user never edits — as
@@ -191,75 +215,75 @@ async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> Tuple
     must be preserved. Use it only where local modifications are known to be
     machine-made and disposable; it throws away uncommitted work.
 
-    This exists because indexing a mirrored repo MUTATES it: markdown files get
-    a ``flowpad:capsule identity`` block appended so their entity ids are
-    stable. Every file is therefore dirty after the first index, and a plain
-    ``git pull`` then aborts with "local changes would be overwritten" — so the
-    mirror would silently stop receiving updates after its first index.
+    Returns ``(ok, changed, message)``. ``changed`` means **the working tree is
+    not what it was**, which is the question a caller actually asks (do I need
+    to re-index?) — NOT merely "did HEAD move". Those differ in exactly the case
+    this function exists for: when the remote has not moved but the tree is
+    dirty with index stamps, the reset rewrites those files, and reporting
+    "nothing changed" there would tell the caller to skip an index that the
+    reset just invalidated.
 
-    Returns (success, message); the message says whether anything moved.
+    It is reported explicitly rather than encoded into ``message``: recovering
+    it by substring-matching English prose breaks the moment the wording or the
+    locale changes.
     """
     try:
-        def _run(args, cwd):
-            return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=60)
-
+        branch = branch or await _checked_out_branch(repo_path)
         if not branch:
-            r = await asyncio.to_thread(_run, ["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_path)
-            branch = r.stdout.strip() if r.returncode == 0 else ""
-        if not branch or branch == "HEAD":
-            return False, "Skipped sync (detached HEAD)."
+            return False, False, "Skipped sync (detached HEAD)."
 
-        before = await asyncio.to_thread(_run, ["git", "rev-parse", "HEAD"], repo_path)
-        fetch = await asyncio.to_thread(_run, ["git", "fetch", "origin", branch], repo_path)
+        # Dirty BEFORE the reset: the reset is about to revert these, so they
+        # count as a change even when no new commit arrives.
+        status = await _git(["git", "status", "--porcelain"], repo_path)
+        was_dirty = bool(status.stdout.strip()) if status.returncode == 0 else False
+
+        before = await _git(["git", "rev-parse", "HEAD"], repo_path)
+        fetch = await _git(["git", "fetch", "origin", branch], repo_path)
         if fetch.returncode != 0:
-            err = (fetch.stderr or fetch.stdout or "").strip()
-            logger.warning("[git] fetch origin %s FAILED: %s", branch, err)
-            return False, f"Git fetch failed: {err}"
+            return False, False, _git_err(fetch, f"fetch origin {branch}")
 
-        reset = await asyncio.to_thread(
-            _run, ["git", "reset", "--hard", f"origin/{branch}"], repo_path
-        )
+        # Compare against the ref we just fetched rather than re-reading HEAD
+        # after the reset — same answer, one subprocess fewer.
+        remote = await _git(["git", "rev-parse", f"origin/{branch}"], repo_path)
+        moved = before.stdout.strip() != remote.stdout.strip()
+
+        reset = await _git(["git", "reset", "--hard", f"origin/{branch}"], repo_path)
         if reset.returncode != 0:
-            err = (reset.stderr or reset.stdout or "").strip()
-            logger.warning("[git] reset --hard origin/%s FAILED: %s", branch, err)
-            return False, f"Git reset failed: {err}"
+            return False, False, _git_err(reset, f"reset --hard origin/{branch}")
 
-        after = await asyncio.to_thread(_run, ["git", "rev-parse", "HEAD"], repo_path)
-        moved = before.stdout.strip() != after.stdout.strip()
-        logger.info("[git] mirror synced to origin/%s (moved=%s)", branch, moved)
-        return True, "Updated." if moved else "Already up to date."
+        # Indexing also CREATES files (folder capsules, sidecars); `reset --hard`
+        # leaves untracked ones behind, so a mirror has to clean them too or it
+        # is only half a mirror.
+        await _git(["git", "clean", "-fd"], repo_path)
+
+        changed = moved or was_dirty
+        logger.info("[git] mirror synced to origin/%s (moved=%s dirty=%s)", branch, moved, was_dirty)
+        return True, changed, "Updated." if moved else ("Restored." if was_dirty else "Already up to date.")
     except Exception as e:
         logger.warning("[git] mirror sync error: %s", e)
-        return False, f"Git sync error: {e}"
+        return False, False, f"Git mirror sync error: {e}"
 
 
 async def git_pull(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, str]:
     """Pull latest from origin for the given branch, or the current branch if not specified.
 
+    For a WORKING TREE whose local changes must be preserved — the opposite of
+    ``git_sync_mirror``, which discards them.
+
     Returns (success, message).
     """
     try:
-        def _run(args, cwd):
-            return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=60)
-
+        branch = branch or await _checked_out_branch(repo_path)
         if not branch:
-            branch_result = await asyncio.to_thread(
-                _run, ["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_path
-            )
-            branch = branch_result.stdout.strip() if branch_result.returncode == 0 else ""
-        if not branch or branch == "HEAD":
             logger.warning("[git] Detached HEAD at %s — skipping pull", repo_path)
             return False, "Skipped git pull (detached HEAD). Files may not be up to date."
 
-        result = await asyncio.to_thread(_run, ["git", "pull", "origin", branch], repo_path)
+        result = await _git(["git", "pull", "origin", branch], repo_path)
         if result.returncode == 0:
             out = (result.stdout or "").strip()
             logger.info("[git] pull origin %s succeeded: %s", branch, out)
             return True, out or "Already up to date."
-        else:
-            err = (result.stderr or result.stdout or "").strip()
-            logger.warning("[git] pull origin %s FAILED: %s", branch, err)
-            return False, f"Git pull failed: {err}"
+        return False, _git_err(result, f"pull origin {branch}")
     except Exception as e:
         logger.warning("[git] pull error: %s", e)
         return False, f"Git pull error: {e}"

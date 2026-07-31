@@ -1,21 +1,28 @@
 import { useMemo } from 'react';
-import { Agent, QueryFilter, QueryRequest } from '@sdk';
+import { QueryFilter, QueryRequest, SubAgent } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 
 /**
  * The support agent a portal repo ships, if it ships one.
  *
- * A cloned repo's `.claude/agents/*.md` is walked into `Agent` entities scoped
- * to that project by the indexer's `REAL_PROJECT_CWD` registration — so a desk
+ * A cloned repo's `.claude/agents/*.md` is walked into a `SubAgent` scoped to
+ * that project by the indexer's `REAL_PROJECT_CWD` registration — so a desk
  * gets an agent by committing a markdown file, with no backend work and no
- * schema change. We match on NAME rather than a new `AgentKind`, because
- * `AgentKind` only has HARNESS/VIBE today and adding a member is a wire change
- * for something a convention already answers.
+ * schema change.
+ *
+ * `SubAgent`, not `Agent`: per the glossary rule, `Agent` is reserved for the
+ * hub-level launchable principal, and the `.claude/agents/*.md` prompt asset is
+ * `SubAgent` (type value `subagent`). The DIRECTORY keeps the name `agents`
+ * because Claude Code owns that path.
+ *
+ * Matched on NAME rather than a new `AgentKind`: that enum has only
+ * HARNESS/VIBE, and adding a member is a wire change for something a
+ * convention already answers.
  */
 export const HELPDESK_AGENT_NAME = 'support';
 
 export interface HelpdeskAgentState {
-  agent: Agent | null;
+  agent: SubAgent | null;
   /**
    * False until the query has answered. **Callers must not render the chat
    * before this flips**: `onProcessCreated` fires once, at creation, and the
@@ -35,7 +42,7 @@ export function useHelpdeskAgent(projectId?: string | null): HelpdeskAgentState 
   const request = useMemo(
     () =>
       new QueryRequest({
-        type: Agent.type,
+        type: SubAgent.type,
         name: `helpdeskAgent:${projectId ?? 'none'}`,
         query: new QueryFilter({
           match: { name: HELPDESK_AGENT_NAME, project_id: projectId ?? '' },
@@ -44,16 +51,11 @@ export function useHelpdeskAgent(projectId?: string | null): HelpdeskAgentState 
     [projectId],
   );
 
-  const { data: agents = [], isLoading } = useEntitiesQuery<Agent>(request, {
-    enabled: !!projectId,
-  });
+  // No `= []` default: that is a fresh array whenever data is undefined, which
+  // would re-run the memo for the whole loading window.
+  const { data, isLoading } = useEntitiesQuery<SubAgent>(request, { enabled: !!projectId });
 
-  return useMemo(
-    () => ({
-      agent: agents[0] ?? null,
-      // No project means nothing to wait for — settled, with no agent.
-      ready: !projectId ? true : !isLoading,
-    }),
-    [agents, isLoading, projectId],
-  );
+  // `isLoading` already seeds to `enabled`, so with no project it is false and
+  // the state is settled-with-no-agent without a special case.
+  return useMemo(() => ({ agent: data?.[0] ?? null, ready: !isLoading }), [data, isLoading]);
 }

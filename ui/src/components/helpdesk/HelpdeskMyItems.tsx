@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
-import { Conversation, FlowMessage, QueryRequest, TypeId, isHelpdeskKind } from '@sdk';
+import { Conversation, FlowMessage, TypeId, isHelpdeskKind } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
-import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
+import { useEntity } from '@src/hooks/entity-hooks';
+import { useRecentConversations } from '@src/hooks/use-recent-conversations';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
-import { compareConversationsByRecency } from '@src/components/conversation/conversation-category';
+import { conversationFacets } from '@src/components/conversation/conversation-category';
+import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { Trans } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
 
@@ -20,19 +22,20 @@ import { MessageSquare } from 'lucide-react';
  * staff queue (`listHelpdeskTickets`), which is a hub call gated on project
  * membership and would 502 for the very requesters this list is for.
  */
-export function HelpdeskMyItems({ limit = 5 }: { limit?: number }) {
-  const { navigation } = useDockNavigation();
-  const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
-  const { data: conversations = [] } = useEntitiesQuery<Conversation>(request);
+/** How many of the requester's questions the portal previews. */
+const LIMIT = 5;
 
-  const mine = useMemo(
-    () =>
-      conversations
-        .filter((c) => isHelpdeskKind(c.kind) && !c.archived_at)
-        .sort(compareConversationsByRecency)
-        .slice(0, limit),
-    [conversations, limit],
-  );
+/** Hoisted: an inline arrow is a new identity every render and is a dep of the
+ *  shared hook's memo, so the filter/sort/slice over every conversation would
+ *  re-run on each render of the portal. */
+const HELPDESK_ONLY = (c: Conversation) => isHelpdeskKind(c.kind);
+
+export function HelpdeskMyItems() {
+  const { navigation } = useDockNavigation();
+  // The shared hook owns "recent, not dismissed, not archived" — this only adds
+  // the helpdesk narrowing. Re-deriving the query here had already lost the
+  // dismissed_at rule, so a ticket dismissed elsewhere reappeared.
+  const mine = useRecentConversations(true, { limit: LIMIT, filter: HELPDESK_ONLY });
 
   if (mine.length === 0) return null;
 
@@ -62,11 +65,23 @@ function HelpdeskItemRow({ conv, onOpen }: { conv: Conversation; onOpen: () => v
     [last?.id],
   );
   const { data: latest } = useEntity<FlowMessage>(latestTypeId);
-  const { cloudUser } = useAuth();
+  const { cloudUser, currentUser } = useAuth();
 
-  // "Answered" means the newest message is not the requester's own — the one
-  // fact that makes this list worth scanning.
-  const answered = !!latest?.sender_id && !!cloudUser?.id && latest.sender_id !== cloudUser.id;
+  // The shared facet, not a local "is the newest message mine?" test. It is
+  // viewer-relative and checks BOTH identities — a reply's `sender_id` carries
+  // the cloud user id when signed in and the local desktop id otherwise, so a
+  // cloud-only comparison misses locally-stamped replies and shows nothing at
+  // all to a signed-out requester.
+  const facets = conversationFacets({
+    conv,
+    latestMessage: latest,
+    latestPtrTs: last?.ts ?? null,
+    viewer: {
+      email: (cloudUser?.email || currentUser?.email || '').trim().toLowerCase(),
+      cloudUserId: cloudUser?.id ?? null,
+      localUserId: currentUser?.id ?? null,
+    },
+  });
 
   return (
     <li>
@@ -78,14 +93,18 @@ function HelpdeskItemRow({ conv, onOpen }: { conv: Conversation; onOpen: () => v
       >
         <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm">{conv.title || <Trans>Untitled question</Trans>}</span>
+          {/* The shared rule, not `conv.title` — a ticket opened from this very
+              portal carries its label on `name`, which only this helper reads.
+              Without it these rows read "Untitled" while the same conversation
+              is titled everywhere else in the app. */}
+          <span className="block truncate text-sm">{deriveConversationTitle(conv)}</span>
           {latest?.message && (
             <span className="block truncate text-xs text-muted-foreground">{latest.message}</span>
           )}
         </span>
-        {answered && (
+        {facets.isUnread && (
           <span className="shrink-0 rounded-full border border-[hsl(var(--brand))]/40 bg-[hsl(var(--brand))]/10 px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--brand))]">
-            <Trans>Replied</Trans>
+            <Trans>New reply</Trans>
           </span>
         )}
         <span className="shrink-0 text-[11px] text-muted-foreground/70">

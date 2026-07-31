@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActionInfo, dataManager, Project, TypeId } from '@sdk';
+import { useCallback, useEffect, useState } from 'react';
+import type { TypeId } from '@sdk';
+import { useFS } from '@src/hooks/useFS';
 import { MarkdownView } from '@src/components/markdown-view';
 import { useMarkdownAssetComponents } from '@src/components/use-markdown-asset-components';
 import { Button } from '@src/components/ui/button';
@@ -22,22 +23,27 @@ import { ChevronLeft } from 'lucide-react';
  * `useMarkdownAssetComponents`; without it a screenshot 404s and a link opens a
  * blank tab.
  */
-export function HelpdeskArticle({ project, articlePath }: { project: Project; articlePath: string }) {
+export function HelpdeskArticle({
+  projectId,
+  projectTypeId,
+  articlePath,
+}: {
+  projectId: string;
+  /** Passed in rather than re-derived: the page already holds it. */
+  projectTypeId: TypeId | null;
+  articlePath: string;
+}) {
   const { navigation } = useDockNavigation();
   const [body, setBody] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const projectTypeId = useMemo(
-    () => (project.id ? new TypeId(Project.type, project.id) : null),
-    [project.id],
-  );
+  const fs = useFS(projectTypeId ?? undefined);
 
   const onNavigate = useCallback(
     (resolvedPath: string) => {
       // In-repo links stay in the portal, URL-first.
-      navigation.openDock(DockPointer.forHelpdesk(project.id, resolvedPath));
+      navigation.openDock(DockPointer.forHelpdesk(projectId, resolvedPath));
     },
-    [navigation, project.id],
+    [navigation, projectId],
   );
 
   const components = useMarkdownAssetComponents({
@@ -54,13 +60,12 @@ export function HelpdeskArticle({ project, articlePath }: { project: Project; ar
 
     void (async () => {
       try {
-        const action = new ActionInfo('fs', projectTypeId.type, projectTypeId.id, 'GET');
-        action.subpath = ['download', articlePath];
-        action.isRawResponse = true;
-        action.responseType = 'blob';
-        const blob = await dataManager.callAction<unknown, Blob>(action);
-        const text = await blob.text();
-        if (!cancelled) setBody(text);
+        // `fs.download` rather than a hand-built fs ActionInfo: it routes
+        // through fsStore, so the content is cached and WS-invalidated — a
+        // hand-rolled call bypasses both, and an open article would not refresh
+        // after the load dialog's pull.
+        const text = await fs.download(articlePath);
+        if (!cancelled) setBody(typeof text === 'string' ? text : await text.text());
       } catch (err) {
         if (!cancelled) setError(errorMessage(err, 'This guide could not be loaded.'));
       }
@@ -69,6 +74,8 @@ export function HelpdeskArticle({ project, articlePath }: { project: Project; ar
     return () => {
       cancelled = true;
     };
+    // `fs` is a fresh object each render; the identity that matters is the path pair.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectTypeId, articlePath]);
 
   return (
@@ -77,7 +84,7 @@ export function HelpdeskArticle({ project, articlePath }: { project: Project; ar
         variant="ghost"
         size="sm"
         className="-ml-2 w-fit gap-1 text-muted-foreground"
-        onClick={() => navigation.openDock(DockPointer.forHelpdesk(project.id))}
+        onClick={() => navigation.openDock(DockPointer.forHelpdesk(projectId))}
         data-testid="helpdesk-article-back"
       >
         <ChevronLeft className="h-3.5 w-3.5" />

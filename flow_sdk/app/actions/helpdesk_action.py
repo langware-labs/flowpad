@@ -6,20 +6,18 @@ Distinct from the ticket queue (``flow_message_action``'s
 A desk answers tickets on the hub AND publishes a portal repo that requesters
 clone locally; the two are configured separately and either may be absent.
 
-POST /api/v1/graph/helpdesk-status    — where things stand; changes nothing
 POST /api/v1/graph/helpdesk-ensure    — checkout exists (clone if missing)
 POST /api/v1/graph/helpdesk-refresh   — hard-sync the portal repo to its remote
 POST /api/v1/graph/helpdesk-reset     — dev: drop the local checkout entirely
 
-``ensure``/``refresh``/``reset`` map 1:1 onto the steps of the UI load flow, so
-each renders as one checklist row.
+The three actions map onto the steps of the UI load flow, so each renders as
+one checklist row.
 """
 
 import logging
-import os
 import shutil
+from functools import wraps
 from pathlib import Path
-from typing import Optional
 
 from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.git_origin import GitOrigin
@@ -33,15 +31,47 @@ from flow_sdk.utils.git import git_clone, git_sync_mirror
 logger = logging.getLogger(__name__)
 
 
-async def _resolve_target():
-    """The desk this instance points at, or ``None`` when the hub has no desk.
+class _NoDesk(Exception):
+    """No desk is configured — the one failure every action here shares."""
 
-    Thin wrapper so every action in this module resolves identically; the real
-    chain logic lives in ``flow_message_action.resolve_helpdesk``.
+
+def _helpdesk_action(failure: str):
+    """Wrap an action body with the try/except every action in this module needs.
+
+    Each one has the same shape: resolve the desk, do its work, and turn an
+    unexpected exception into a FAIL carrying its own verb. Factored so the
+    three bodies contain only their distinct work, and so the "unavailable"
+    message exists once instead of being three literals that must agree.
+    """
+
+    def decorate(fn):
+        @wraps(fn)
+        async def wrapper() -> ApiResponse:
+            try:
+                return await fn()
+            except _NoDesk:
+                # Upstream has no desk; our backend is healthy, hence 502.
+                return ApiFailResponse(message="Help desk is unavailable on this hub", status_code=502)
+            except Exception as e:  # noqa: BLE001
+                logger.error("[helpdesk_action] %s: %s", fn.__name__, e, exc_info=True)
+                return ApiFailResponse(message=f"{failure}: {str(e)}")
+
+        return wrapper
+
+    return decorate
+
+
+async def _require_target():
+    """The desk this instance points at; raises ``_NoDesk`` when there is none.
+
+    The chain logic lives in ``flow_message_action.resolve_helpdesk``.
     """
     from flow_sdk.app.actions.flow_message_action import resolve_helpdesk  # noqa: PLC0415
 
-    return await resolve_helpdesk()
+    target = await resolve_helpdesk()
+    if not target:
+        raise _NoDesk
+    return target
 
 
 def _is_checkout(mount_path: Path) -> bool:
@@ -50,45 +80,31 @@ def _is_checkout(mount_path: Path) -> bool:
     return (mount_path / ".git").is_dir()
 
 
-async def _find_portal_project(mount: str) -> Optional[Project]:
-    """The local Project bound to ``mount``, if it has been materialized."""
-    return await Project.find_by_cwd(canonical_posix_path(mount))
+def _portal_paths(target) -> tuple[Path, str]:
+    """``(mount_path, canonical)`` for a desk's checkout slot.
+
+    Both forms are needed at nearly every call site — ``Path`` for filesystem
+    work, the canonical posix string for storing and for entity lookup — and
+    deriving them separately in each action was how they drifted.
+    """
+    mount_path = helpdesk_project_dir(target.project_id)
+    return mount_path, canonical_posix_path(str(mount_path))
 
 
-@action.post(action_name="helpdesk-status", types=None)
-async def helpdesk_status() -> ApiResponse:
-    """Read-only view of the desk + its local checkout. Never mutates."""
-    try:
-        target = await _resolve_target()
-        if not target:
-            return ApiSuccessResponse(
-                data={
-                    "helpdesk_project_id": None,
-                    "portal_git_url": None,
-                    "project_id": None,
-                    "mount_path": None,
-                    "exists": False,
-                }
-            )
-        mount_path = helpdesk_project_dir(target.project_id)
-        mount = str(mount_path)
-        exists = _is_checkout(mount_path)
-        proj = await _find_portal_project(mount) if exists else None
-        return ApiSuccessResponse(
-            data={
-                "helpdesk_project_id": target.project_id,
-                "portal_git_url": target.portal_git_url,
-                "project_id": proj.id if proj else None,
-                "mount_path": canonical_posix_path(mount),
-                "exists": exists,
-            }
-        )
-    except Exception as e:
-        logger.error("[helpdesk_action] helpdesk-status error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed to read help desk status: {str(e)}")
+def _ensure_payload(target, *, project_id=None, mount_path=None, cloned=False) -> dict:
+    """The ``helpdesk-ensure`` response. One builder so the has-portal and
+    no-portal shapes cannot drift apart."""
+    return {
+        "project_id": project_id,
+        "helpdesk_project_id": target.project_id,
+        "mount_path": mount_path,
+        "cloned": cloned,
+        "has_portal": project_id is not None,
+    }
 
 
 @action.post(action_name="helpdesk-ensure", types=None)
+@_helpdesk_action("Failed to prepare the help desk")
 async def helpdesk_ensure() -> ApiResponse:
     """The portal checkout exists, cloning it on first run. Idempotent.
 
@@ -98,98 +114,74 @@ async def helpdesk_ensure() -> ApiResponse:
     land in the same deterministic spot every time (which is also what lets
     ``helpdesk-reset`` know exactly what to remove).
     """
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.someone_typeid:
-            return ApiFailResponse(message="No authenticated user in request context")
+    request_info = get_current_request_info()
+    if not request_info or not request_info.someone_typeid:
+        return ApiFailResponse(message="No authenticated user in request context")
 
-        target = await _resolve_target()
-        if not target:
-            # No desk at all — genuinely an error, and the only one here.
-            return ApiFailResponse(message="Help desk is unavailable on this hub", status_code=502)
-        if not target.portal_git_url:
-            # A desk with a ticket queue and NO portal is a valid configuration
-            # (see HelpdeskConfig) — and it is also what an older hub looks like,
-            # since it advertises no portal url at all. Report it as a SUCCESS
-            # carrying ``has_portal: false`` so the caller can degrade to the
-            # ticket flow; failing here would make the whole help desk
-            # unreachable on any hub that predates the portal field.
-            return ApiSuccessResponse(
-                data={
-                    "project_id": None,
-                    "helpdesk_project_id": target.project_id,
-                    "mount_path": None,
-                    "cloned": False,
-                    "has_portal": False,
-                }
+    target = await _require_target()
+    if not target.portal_git_url:
+        # A desk with a ticket queue and NO portal is a valid configuration (see
+        # HelpdeskConfig) — and it is also what an older hub looks like, since it
+        # advertises no portal url at all. Report it as a SUCCESS carrying
+        # ``has_portal: false`` so the caller can degrade to the ticket flow;
+        # failing here would make the help desk unreachable on any hub that
+        # predates the portal field.
+        return ApiSuccessResponse(data=_ensure_payload(target))
+
+    mount_path, canonical = _portal_paths(target)
+    cloned = False
+
+    if not _is_checkout(mount_path):
+        # A leftover non-repo dir (interrupted clone) would make git refuse to
+        # clone into it, and would keep failing on every retry.
+        if mount_path.exists():
+            shutil.rmtree(mount_path, ignore_errors=True)
+        mount_path.parent.mkdir(parents=True, exist_ok=True)
+
+        token = None
+        try:
+            from flow_sdk.app.actions.oauth_action import (  # noqa: PLC0415
+                _get_github_token_for_current_user,
             )
 
-        mount_path = helpdesk_project_dir(target.project_id)
-        mount = str(mount_path)
-        cloned = False
-
-        if not _is_checkout(mount_path):
-            # A leftover non-repo dir (interrupted clone) would make git refuse
-            # to clone into it, and would keep failing on every retry.
-            if mount_path.exists():
-                shutil.rmtree(mount, ignore_errors=True)
-            mount_path.parent.mkdir(parents=True, exist_ok=True)
-
+            token, _ = await _get_github_token_for_current_user()
+        except Exception:  # noqa: BLE001
+            # The portal is expected to be public; a missing token is normal.
             token = None
-            try:
-                from flow_sdk.app.actions.oauth_action import (  # noqa: PLC0415
-                    _get_github_token_for_current_user,
-                )
 
-                token, _ = await _get_github_token_for_current_user()
-            except Exception:  # noqa: BLE001
-                # The portal is expected to be public; a missing token is normal.
-                token = None
+        ok, message = await git_clone(target.portal_git_url, str(mount_path), token=token)
+        if not ok:
+            return ApiFailResponse(message=message, status_code=502)
+        cloned = True
 
-            ok, message = await git_clone(target.portal_git_url, mount, token=token)
-            if not ok:
-                return ApiFailResponse(message=message, status_code=502)
-            cloned = True
-
-        canonical = canonical_posix_path(mount)
-        proj = await _find_portal_project(mount)
-        if proj is None:
-            origin = GitOrigin.from_url(target.portal_git_url, rel_path=".")
-            proj = Project(
-                type="project",
-                # Stable uname so any surface can recognise the portal from the
-                # entity it already holds — no probe. Hiddenness is NOT stamped
-                # here: `is_hidden_project` derives it from the location
-                # (`is_helpdesk_portal_path`), which also covers rows minted by
-                # the per-cwd project walk.
-                uname=HELPDESK_PORTAL_UNAME,
-                name="Help Desk",
-                fs_storage_mount_path=canonical,
-                fs_storage_provider=StorageProvider.LOCAL.value,
-                visitor_role="owner",
-                git_origin=origin,
-            )
-            await proj.save(request_info.someone_typeid)
-            # Mirrors `_ensure_system_projects`: the field alone does not
-            # establish the role, so the app-managed-project recipe saves AND
-            # then applies it.
-            await proj.set_visitor_role("owner")
-
-        return ApiSuccessResponse(
-            data={
-                "project_id": proj.id,
-                "helpdesk_project_id": target.project_id,
-                "mount_path": canonical,
-                "cloned": cloned,
-                "has_portal": True,
-            }
+    proj = await Project.find_by_cwd(canonical)
+    if proj is None:
+        proj = Project(
+            type="project",
+            # Stable uname so any surface can recognise the portal from the
+            # entity it already holds — no probe. Hiddenness is NOT stamped
+            # here: `is_hidden_project` derives it from the location
+            # (`is_helpdesk_portal_path`), which also covers rows minted by the
+            # per-cwd project walk.
+            uname=HELPDESK_PORTAL_UNAME,
+            name="Help Desk",
+            fs_storage_mount_path=canonical,
+            fs_storage_provider=StorageProvider.LOCAL.value,
+            visitor_role="owner",
+            git_origin=GitOrigin.from_url(target.portal_git_url, rel_path="."),
         )
-    except Exception as e:
-        logger.error("[helpdesk_action] helpdesk-ensure error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed to prepare the help desk: {str(e)}")
+        await proj.save(request_info.someone_typeid)
+        # Mirrors `_ensure_system_projects`: the field alone does not establish
+        # the role, so the app-managed-project recipe saves AND then applies it.
+        await proj.set_visitor_role("owner")
+
+    return ApiSuccessResponse(
+        data=_ensure_payload(target, project_id=proj.id, mount_path=canonical, cloned=cloned)
+    )
 
 
 @action.post(action_name="helpdesk-refresh", types=None)
+@_helpdesk_action("Failed to refresh the help desk")
 async def helpdesk_refresh() -> ApiResponse:
     """Make the local portal match the remote.
 
@@ -200,27 +192,21 @@ async def helpdesk_refresh() -> ApiResponse:
     its first open. Nothing here is the user's work: the portal is a mirror of a
     repo they do not edit, and the stamps are re-applied by the next index.
     """
-    try:
-        target = await _resolve_target()
-        if not target:
-            return ApiFailResponse(message="Help desk is unavailable on this hub", status_code=502)
+    target = await _require_target()
+    mount_path, _ = _portal_paths(target)
+    if not _is_checkout(mount_path):
+        return ApiFailResponse(message="Help desk files are not set up yet", status_code=409)
 
-        mount_path = helpdesk_project_dir(target.project_id)
-        if not _is_checkout(mount_path):
-            return ApiFailResponse(message="Help desk files are not set up yet", status_code=409)
-
-        ok, message = await git_sync_mirror(str(mount_path))
-        if not ok:
-            return ApiFailResponse(message=message, status_code=502)
-        # `git_sync_mirror` reports "Already up to date." when HEAD did not
-        # move; anything else means new content landed and a re-index is due.
-        return ApiSuccessResponse(data={"updated": "up to date" not in message.lower(), "message": message})
-    except Exception as e:
-        logger.error("[helpdesk_action] helpdesk-refresh error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed to refresh the help desk: {str(e)}")
+    ok, changed, message = await git_sync_mirror(str(mount_path))
+    if not ok:
+        return ApiFailResponse(message=message, status_code=502)
+    # ``changed`` comes back explicitly — the caller must not re-derive "is a
+    # re-index due?" by matching English in ``message``.
+    return ApiSuccessResponse(data={"updated": changed, "message": message})
 
 
 @action.post(action_name="helpdesk-reset", types=None)
+@_helpdesk_action("Failed to reset the help desk")
 async def helpdesk_reset() -> ApiResponse:
     """Drop the local portal entirely so the next open re-clones from scratch.
 
@@ -230,28 +216,21 @@ async def helpdesk_reset() -> ApiResponse:
     it is neither protected nor SDK-shipped and really is removed. Exposed in
     the UI behind a dev-mode gate.
     """
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.someone_typeid:
-            return ApiFailResponse(message="No authenticated user in request context")
+    request_info = get_current_request_info()
+    if not request_info or not request_info.someone_typeid:
+        return ApiFailResponse(message="No authenticated user in request context")
 
-        target = await _resolve_target()
-        if not target:
-            return ApiFailResponse(message="Help desk is unavailable on this hub", status_code=502)
+    target = await _require_target()
+    mount_path, canonical = _portal_paths(target)
 
-        mount = str(helpdesk_project_dir(target.project_id))
-        canonical = canonical_posix_path(mount)
-        proj = await _find_portal_project(mount)
-        if proj is not None:
-            await proj._delete_with_children()
+    proj = await Project.find_by_cwd(canonical)
+    if proj is not None:
+        await proj._delete_with_children()
 
-        # Belt to the entity delete's braces: with no Project row (e.g. a clone
-        # that failed before the entity was saved) nothing above touches disk,
-        # and the stale folder would make the next `ensure` skip its clone.
-        if os.path.isdir(mount):
-            shutil.rmtree(mount, ignore_errors=True)
+    # Belt to the entity delete's braces: with no Project row (e.g. a clone that
+    # failed before the entity was saved) nothing above touches disk, and the
+    # stale folder would make the next `ensure` skip its clone.
+    if mount_path.is_dir():
+        shutil.rmtree(mount_path, ignore_errors=True)
 
-        return ApiSuccessResponse(data={"deleted": True, "mount_path": canonical})
-    except Exception as e:
-        logger.error("[helpdesk_action] helpdesk-reset error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed to reset the help desk: {str(e)}")
+    return ApiSuccessResponse(data={"deleted": True, "mount_path": canonical})

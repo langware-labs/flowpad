@@ -8,7 +8,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { errorMessage, errorStatus } from '@src/lib/error-message';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { LifeBuoy } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
 /**
  * Opens the help desk, showing the work as a checked-steps list.
@@ -44,20 +44,19 @@ export function HelpdeskLoadDialog({ open, onClose, onNoPortal }: HelpdeskLoadDi
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
 
-  const labels: Record<HelpdeskStepId, string> = {
+  const labels: Record<HelpdeskStepId, string> = useMemo(() => ({
     check: t`Checking the help desk files`,
     fetch: t`Fetching the latest`,
     index: t`Indexing`,
     open: t`Opening the help desk`,
-  };
+  }), [t]);
 
   const { steps, busy, run, patch, reset, runAll } = useStepFlow<HelpdeskStepId>(STEP_IDS, labels);
   const failed = steps.some((s) => s.status === 'error');
 
   const load = useCallback(async () => {
     reset();
-    let handedOff = false;
-    const ok = await runAll(async () => {
+    const { ok, value } = await runAll<'handed-off' | 'opened'>(async () => {
       // A — the checkout exists (clone on first run). Idempotent, so a repeat
       // open is cheap and reports "already present".
       const ensured = await run('check', async () => {
@@ -78,9 +77,8 @@ export function HelpdeskLoadDialog({ open, onClose, onNoPortal }: HelpdeskLoadDi
       // an explicit false means no portal; `project_id` (which old backends do
       // send) carries the rest.
       if (ensured.has_portal === false || !ensured.project_id) {
-        handedOff = true;
         onNoPortal();
-        return;
+        return 'handed-off';
       }
       const portalProjectId = ensured.project_id;
 
@@ -144,11 +142,12 @@ export function HelpdeskLoadDialog({ open, onClose, onNoPortal }: HelpdeskLoadDi
         navigation.openDock(DockPointer.forHelpdesk(portalProjectId));
         return Promise.resolve();
       });
+      return 'opened';
     });
     // `runAll` already knows how the pass ended, so read it here rather than
     // re-deriving it from `steps` in a second effect. A failed pass stays on
     // screen with its Retry; a hand-off already opened the ticket dialog.
-    if (ok && !handedOff) onClose();
+    if (ok && value === 'opened') onClose();
   }, [navigation, onClose, onNoPortal, patch, reset, run, runAll, t]);
 
   // Auto-start on open.

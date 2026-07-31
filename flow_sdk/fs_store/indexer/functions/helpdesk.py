@@ -22,9 +22,22 @@ from typing import Any
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.utils.git import find_project_root, git_remote_url
+from flow_sdk.utils.git_identity import canonical_git_origin_repo_key, parse_git_origin_url
 
 HELPDESK_JSON = "helpdesk.json"
+
+
+def manifest_str(manifest: dict[str, Any], key: str) -> str | None:
+    """One normalization for manifest text: coerce, strip, empty → ``None``.
+
+    Shared with the ``Helpdesk`` entity so the two readers cannot drift on what
+    counts as "absent".
+    """
+    value = str(manifest.get(key) or "").strip()
+    return value or None
 
 
 def read_manifest(helpdesk_dir: Path) -> dict[str, Any]:
@@ -42,6 +55,26 @@ def read_manifest(helpdesk_dir: Path) -> dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
+def _repo_key(path: Path) -> str | None:
+    """``git:<provider>:<owner>/<name>`` for the repo containing ``path``.
+
+    Deliberately NOT ``GitOrigin.for_asset_path``: that also resolves the branch
+    and HEAD commit — three subprocesses where the key needs one — and this runs
+    on the indexer's hot path (see ``helpdesk_stable_key``). The ``try`` covers
+    only the probe, so a bug in key construction surfaces instead of silently
+    demoting the desk to a machine-local id.
+    """
+    try:
+        root = find_project_root(str(path))
+        parsed = parse_git_origin_url(git_remote_url(root)) if root else None
+    except Exception:  # noqa: BLE001 — a git probe must never fail an index run
+        return None
+    if not parsed:
+        return None
+    provider, owner, name = parsed
+    return canonical_git_origin_repo_key(provider, owner, name)
+
+
 def helpdesk_stable_key(ref: FSRef | Path) -> str:
     """Deterministic v5 key for a portal folder.
 
@@ -51,20 +84,15 @@ def helpdesk_stable_key(ref: FSRef | Path) -> str:
 
     Never returns ``None``: ``mint_uuid(None)`` is a random v4, which would mint
     a fresh id on every scan and defeat skip-fresh.
+
+    Called from ``mint_id`` BEFORE the skip-fresh check, i.e. once per candidate
+    folder on every pass — which is why the probe above is kept to one
+    subprocess.
     """
-    path = Path(getattr(ref, "_path", ref))
-    try:
-        from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
-        from flow_sdk.utils.git_identity import canonical_git_origin_repo_key  # noqa: PLC0415
-
-        origin = GitOrigin.for_asset_path(str(path))
-        if origin is not None:
-            repo = canonical_git_origin_repo_key(origin.provider, origin.owner, origin.name)
-            return f"helpdesk:{repo}:{path.name}"
-    except Exception:  # noqa: BLE001 — a git probe must never fail an index run
-        pass
-    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
-
+    path = ref._path if isinstance(ref, FSRef) else Path(ref)
+    repo = _repo_key(path)
+    if repo:
+        return f"helpdesk:{repo}:{path.name}"
     return f"helpdesk:path:{canonical_posix_path(path)}"
 
 
@@ -86,8 +114,8 @@ def extract_helpdesk(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     path = ref._path
     manifest = read_manifest(path) if path.is_dir() else {}
 
-    display_name = str(manifest.get("display_name") or "").strip() or path.name
-    welcome = str(manifest.get("welcome_message") or "").strip() or None
+    display_name = manifest_str(manifest, "display_name") or path.name
+    welcome = manifest_str(manifest, "welcome_message")
 
     rec_kwargs: dict = {
         "type": RecordType.HELPDESK,

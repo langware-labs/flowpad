@@ -58,7 +58,7 @@ export function HelpdeskPortalPage() {
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 pb-12 pt-6">
           {articlePath ? (
-            <HelpdeskArticle project={project} articlePath={articlePath} />
+            <HelpdeskArticle projectId={projectId} projectTypeId={projectTypeId} articlePath={articlePath} />
           ) : (
             <>
               <HelpdeskAsk project={project} />
