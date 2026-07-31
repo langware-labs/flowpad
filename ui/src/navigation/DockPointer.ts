@@ -864,6 +864,39 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * The helpdesk portal for `projectId`, optionally showing one guide.
+   *
+   * URL shapes:
+   *   /dock/helpdesk/<projectId>
+   *   /dock/helpdesk/<projectId>/article/<repo-relative path>
+   *
+   * `articlePath` keeps its slashes — `buildDockUrl` encodes segments
+   * individually, and `parseHelpdeskPointer` re-joins the tail, so
+   * `docs/Getting Started/Welcome.md` survives the round trip intact.
+   */
+  static forHelpdesk(projectId?: string, articlePath?: string | null, layout: Layout = Layout.DOCK): DockPointer {
+    if (!projectId) return new DockPointer(ViewType.HELPDESK, undefined, undefined, layout);
+    const pointer = articlePath ? `${projectId}/article/${articlePath}` : projectId;
+    return new DockPointer(ViewType.HELPDESK, pointer, undefined, layout);
+  }
+
+  /**
+   * Parse a helpdesk pointer. Returns nulls for anything absent or malformed —
+   * never throws, so a hand-edited URL renders the portal root rather than
+   * blowing up the shell.
+   */
+  static parseHelpdeskPointer(pointer?: string | null): {
+    projectId: string | null;
+    articlePath: string | null;
+  } {
+    const segments = (pointer ?? '').split('/').filter(Boolean);
+    if (segments.length === 0) return { projectId: null, articlePath: null };
+    const [projectId, marker, ...rest] = segments;
+    const articlePath = marker === 'article' && rest.length ? rest.join('/') : null;
+    return { projectId, articlePath };
+  }
+
+  /**
    * Parse a project pointer string.
    *
    * Accepted shapes:
@@ -1721,6 +1754,16 @@ export class DockPointer implements IDockPointer {
     // title (host/guest) and the loader its project.
     if (this.viewType === ViewType.LIVE_SESSION) {
       return DockPointer.tryTypeId(RemoteWorkerSession.type, pointer);
+    }
+    // A helpdesk dock targets the portal PROJECT it renders. Same reason as
+    // live_session above: the viewType string ('helpdesk') is not an entity
+    // type, so the generic fallback would mint the tab against a non-existent
+    // 'helpdesk' target — untitled and projectless. The article sub-pointer is
+    // deliberately dropped: every article belongs to the one portal project, so
+    // the tab stays on the portal (see `foldsPointer` in the viewer registry).
+    if (this.viewType === ViewType.HELPDESK) {
+      const { projectId } = DockPointer.parseHelpdeskPointer(pointer);
+      return projectId ? DockPointer.tryTypeId(Project.type, projectId) : null;
     }
     // A PROJECT-rebased asset dock (`/dock/project/<id>/<assetSubPointer>`, the
     // output of `rebaseAssetsOntoProject`) carries its target in the asset

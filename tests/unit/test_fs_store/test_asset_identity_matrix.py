@@ -27,7 +27,7 @@ INDEXED_TYPES = {
     "claude_hook", "claude_md", "claude_memory", "claude_rules",
     "claude_session", "codex_session", "command", "copilot_session",
     "dataset", "deck_template", "deck", "dynamic_workflow",
-    "journey", "markdown_index", "markdown", "mcp_server", "plan", "plugin",
+    "helpdesk", "journey", "markdown_index", "markdown", "mcp_server", "plan", "plugin",
     "project", "prompt", "secret_origin", "skill", "spec", "spreadsheet",
     "task", "todo_file", "usage_report", "whiteboard", "workflow_run",
 }
@@ -78,7 +78,8 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     capsule_types = set(FRONTMATTER_ALL) | set(FOLDER_PORTABLE)
     native_types = set(JSON_STABLE)
     derived_types = INDEXED_TYPES - capsule_types - native_types
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (18, 3, 13)
+    # 18 capsule: base's 17 + `agent`. 14 derived: base's addition, untouched here.
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (18, 3, 14)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)

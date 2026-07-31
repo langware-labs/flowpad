@@ -58,6 +58,7 @@ import {
   Home,
   Mail,
   MessageCircle,
+  RadioTower,
   Search,
   Workflow,
   Webhook,
@@ -150,6 +151,7 @@ export function CollapsedSidebar() {
     files: { title: t`Files`, icon: FolderOpen, viewType: ViewType.EXPLORER },
     capabilities: { title: t`Capabilities`, icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
     'graph-workflows': { title: t`Graph Workflows`, icon: Workflow, viewType: ViewType.GRAPH_WORKFLOWS },
+    signals: { title: t`Signals`, icon: RadioTower, viewType: ViewType.SIGNALS },
   };
 
   // Hub page has its own minimal rail — Home + the browse entries. It bypasses

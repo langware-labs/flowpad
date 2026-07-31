@@ -37,25 +37,32 @@ interface LiveLike {
   lastFinishedAt?: number;
 }
 
+/** What a status line MEANS — the color for each tone lives in
+ * graph-workflows.css (`.stl-<tone>`), so the formatter stays theme-blind.
+ * It used to hand back hex literals, and a fixed hex can only be legible
+ * against one background: the old `#4a5065` idle grey read at ~2.5:1 on the
+ * dark canvas, the `#8a93ab` done-grey at ~2.7:1 on the light one. */
+export type StatusTone = 'running' | 'failed' | 'queued' | 'done' | 'idle';
+
 /** One-line live status for a node — the "running > failed > queued >
  * last-run > idle" ladder, in one place so surfaces can't drift. */
 export function nodeStatusLine(
   live: LiveLike | undefined,
   workerStatus: string | undefined,
   now: number,
-): { text: string; color: string } {
+): { text: string; tone: StatusTone } {
   if ((live?.active ?? 0) > 0) {
     const worker = workerStatus ? workerStatus.replace(/_/g, ' ') : 'running';
     const elapsed = live?.startedAt ? ` · ${fmtElapsed(live.startedAt, now)}` : '';
-    return { text: `▶ ${worker}${elapsed}`, color: '#2ea043' };
+    return { text: `▶ ${worker}${elapsed}`, tone: 'running' };
   }
-  if (live?.error) return { text: `✗ ${live.error}`, color: '#ff6b63' };
-  if ((live?.queued ?? 0) > 0) return { text: `⏳ ${live?.queued} queued`, color: '#d3b136' };
+  if (live?.error) return { text: `✗ ${live.error}`, tone: 'failed' };
+  if ((live?.queued ?? 0) > 0) return { text: `⏳ ${live?.queued} queued`, tone: 'queued' };
   if (live?.lastFinishedAt) {
     const dur = live.lastDurationMs ? `${fmtDuration(live.lastDurationMs)} · ` : '';
-    return { text: `✓ ${dur}${fmtRelative(live.lastFinishedAt, now)}`, color: '#8a93ab' };
+    return { text: `✓ ${dur}${fmtRelative(live.lastFinishedAt, now)}`, tone: 'done' };
   }
-  return { text: 'idle', color: '#4a5065' };
+  return { text: 'idle', tone: 'idle' };
 }
 
 /** Coerce an unknown (node_data / journal) value to a display string —

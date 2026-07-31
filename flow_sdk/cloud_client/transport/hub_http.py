@@ -132,14 +132,20 @@ async def get_info() -> Optional[dict[str, Any]]:
                 version = data.get("version")
                 deployed_at = data.get("deployed_at")
                 generated_at = data.get("generated_at")
-                # Fixed community/support project id — the app opens support
-                # tickets against this project. Returned by newer hubs only.
-                community_project_id = data.get("community_project_id")
+                # Default helpdesk project id — the app opens support tickets
+                # against this project when no nearer desk is configured.
+                # Returned by newer hubs only.
+                helpdesk_project_id = data.get("helpdesk_project_id")
+                # Portal repo for that desk (help content cloned locally).
+                helpdesk_portal_git_url = data.get("helpdesk_portal_git_url")
                 return {
                     "version": version if isinstance(version, str) else None,
                     "deployed_at": deployed_at if isinstance(deployed_at, str) else None,
                     "generated_at": generated_at if isinstance(generated_at, str) else None,
-                    "community_project_id": (community_project_id if isinstance(community_project_id, str) else None),
+                    "helpdesk_project_id": (helpdesk_project_id if isinstance(helpdesk_project_id, str) else None),
+                    "helpdesk_portal_git_url": (
+                        helpdesk_portal_git_url if isinstance(helpdesk_portal_git_url, str) else None
+                    ),
                 }
             return {"version": None}
     except Exception as e:  # noqa: BLE001

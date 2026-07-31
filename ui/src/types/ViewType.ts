@@ -37,6 +37,7 @@ export interface ViewerMeta {
   title: string;
   /** Icon component name (string to avoid JSX in shared package) */
   iconName:
+    | 'LifeBuoy'
     | 'Code'
     | 'Terminal'
     | 'Globe'
@@ -332,6 +333,16 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  [ViewType.HELPDESK]: {
+    title: 'Help desk',
+    iconName: 'LifeBuoy',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+    // Reading a guide must not mint a tab per article — the portal is one
+    // destination. NOT `chrome: 'fullbleed'`, which would drop the tab chip
+    // entirely (DockPointer.tabHash returns null for it).
+    foldsPointer: true,
+  },
   [ViewType.SEARCH]: {
     title: 'Search',
     iconName: 'SearchIcon',
@@ -353,6 +364,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   [ViewType.GRAPH_WORKFLOWS]: {
     title: 'Graph Workflows',
     iconName: 'Workflow',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  [ViewType.SIGNALS]: {
+    title: 'Signals',
+    iconName: 'RadioTower',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },

@@ -3,18 +3,33 @@
  *
  * Semantic truth is the flow folder's graph.json (doc); layout truth is
  * display.json. Both load/persist through the folder FSRef injected by the
- * view (whiteboard pattern). Live run/node state is push-driven from the
- * graphWorkflows service streams.
+ * view (whiteboard pattern). Live run/node state is push-driven off the
+ * unified event bus (docs/flow-events.md phase 8 Tier B).
  */
 import { create } from 'zustand';
+import { targetMatches } from '@sdk/tags/EventBus';
+import { tagMatches } from '@sdk/tags/grammar';
 import type {
   GraphWorkflowDoc,
   GraphWorkflowDocEdge,
   GraphWorkflowDocNode,
-  GraphWorkflowNodeStatusMessage,
-  GraphWorkflowRunEventMessage,
+  NodeStatusPayload,
+  RunEventPayload,
   RunSummary,
 } from '@sdk/services/graph-workflows';
+
+/** How long a flashed edge or inlet stays lit. */
+const FLASH_MS = 1800;
+
+/** Live dim-timers, keyed by flashed id. Module-level rather than store state:
+ *  they are cleanup handles, never rendered. */
+const _flashTimers = new Map<string, number>();
+
+/** Canvas id for a subscription inlet. `id` is optional in the doc schema, so
+ *  position is the fallback — the canvas and this store must agree. */
+export function inletIdFor(subId: string | undefined, index: number): string {
+  return `sub:${subId || index}`;
+}
 
 export interface DisplayDoc {
   version: number;
@@ -22,7 +37,7 @@ export interface DisplayDoc {
 }
 
 export interface NodeLiveStatus {
-  phase: GraphWorkflowNodeStatusMessage['phase'] | 'idle';
+  phase: NodeStatusPayload['phase'] | 'idle';
   queued: number;
   active: number;
   startedAt?: number;
@@ -51,7 +66,8 @@ export interface StudioState {
   runs: RunSummary[];
   nodeStatus: Record<string, NodeLiveStatus>;
   procStatus: Record<string, ProcLiveStatus>;
-  pulsingEdges: Set<string>;
+  /** Edge ids and inlet ids currently lit — one set, one mechanism. */
+  hot: Set<string>;
   selectedNodeId: string | null;
   selectedRunId: string | null;
   panelTab: 'inject' | 'runs' | 'palette';
@@ -72,11 +88,14 @@ export interface StudioState {
   mutateDoc: (fn: (doc: GraphWorkflowDoc) => GraphWorkflowDoc) => void;
   moveNode: (nodeId: string, x: number, y: number) => void;
   setRuns: (runs: RunSummary[]) => void;
-  applyRunEvent: (msg: GraphWorkflowRunEventMessage) => void;
-  applyNodeStatus: (msg: GraphWorkflowNodeStatusMessage) => void;
+  applyRunEvent: (msg: RunEventPayload) => void;
+  applyNodeStatus: (msg: NodeStatusPayload) => void;
   setProcStatus: (processId: string, st: ProcLiveStatus) => void;
   clearProcStatus: (processId: string) => void;
-  pulseEdge: (edgeId: string) => void;
+  /** Light these ids (edges or inlets) briefly. */
+  flash: (ids: string[]) => void;
+  /** A bus event arrived: light every subscription inlet that would have matched. */
+  noteBusEvent: (tag: string, target: string, scope?: string[]) => void;
   selectNode: (id: string | null) => void;
   selectRun: (id: string | null) => void;
   setPanelTab: (t: StudioState['panelTab']) => void;
@@ -101,7 +120,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   runs: [],
   nodeStatus: {},
   procStatus: {},
-  pulsingEdges: new Set(),
+  hot: new Set(),
   selectedNodeId: null,
   selectedRunId: null,
   panelTab: 'palette',
@@ -146,8 +165,9 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   setRuns: (runs) => set({ runs }),
 
+  // The subscription filters by target, so anything reaching these reducers is
+  // already this flow's — no flow_id re-check.
   applyRunEvent: (msg) => {
-    if (msg.flow_id !== get().flowId) return;
     if ((msg.kind === 'run_start' || msg.kind === 'run_end') && !get().selectedRunId) {
       // Auto-focus the live run so the Runs panel follows without a click.
       set({ selectedRunId: msg.run_id });
@@ -158,7 +178,7 @@ export const useStudio = create<StudioState>((set, get) => ({
       if (doc) {
         for (const e of doc.edges) {
           if (e.from.node === msg.node && (e.from.event === msg.event || e.from.event === '*')) {
-            get().pulseEdge(e.id);
+            get().flash([e.id]);
           }
         }
       }
@@ -166,7 +186,6 @@ export const useStudio = create<StudioState>((set, get) => ({
   },
 
   applyNodeStatus: (msg) => {
-    if (msg.flow_id !== get().flowId) return;
     const prev = get().nodeStatus[msg.node_id] ?? { phase: 'idle', queued: 0, active: 0 };
     const next: NodeLiveStatus = {
       ...prev,
@@ -201,15 +220,43 @@ export const useStudio = create<StudioState>((set, get) => ({
     set({ procStatus: rest });
   },
 
-  pulseEdge: (edgeId) => {
-    const next = new Set(get().pulsingEdges);
-    next.add(edgeId);
-    set({ pulsingEdges: next });
-    setTimeout(() => {
-      const after = new Set(useStudio.getState().pulsingEdges);
-      after.delete(edgeId);
-      set({ pulsingEdges: after });
-    }, 1800);
+  // One flash mechanism for edges AND inlets: same "light it, dim it" motion,
+  // and edge ids never collide with the `sub:` inlet ids. A repeat hit while
+  // still lit reschedules its own timer rather than stacking a second one, so a
+  // burst costs one store update in and one out.
+  flash: (ids) => {
+    if (!ids.length) return;
+    const next = new Set(get().hot);
+    for (const id of ids) {
+      next.add(id);
+      const pending = _flashTimers.get(id);
+      if (pending !== undefined) clearTimeout(pending);
+      _flashTimers.set(
+        id,
+        setTimeout(() => {
+          _flashTimers.delete(id);
+          const after = new Set(useStudio.getState().hot);
+          after.delete(id);
+          set({ hot: after });
+        }, FLASH_MS) as unknown as number,
+      );
+    }
+    set({ hot: next });
+  },
+
+  noteBusEvent: (tag, target, scope) => {
+    const subscriptions = get().doc?.subscriptions;
+    if (!subscriptions?.length) return;
+    const lit: string[] = [];
+    subscriptions.forEach((s, i) => {
+      // Mirrors the backend's three delivery filters (bus.py _sub_matches +
+      // the scope check). An empty target or scope means "any".
+      if (!tagMatches(s.pattern, tag)) return;
+      if (s.target && !targetMatches(s.target, target)) return;
+      if (s.scope?.length && !s.scope.some((want) => scope?.includes(want))) return;
+      lit.push(inletIdFor(s.id, i));
+    });
+    get().flash(lit);
   },
 
   selectNode: (id) => set({ selectedNodeId: id }),

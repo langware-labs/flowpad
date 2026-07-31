@@ -13,13 +13,12 @@ import { credentialsPointer } from '@src/components/credentials-view/credentials
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
-import { useDesktops, nextDesktopName, type Step, type DesktopDetails } from '@src/hooks/use-desktops';
+import { useDesktops, nextDesktopName, type DesktopDetails } from '@src/hooks/use-desktops';
+import { StepList } from '@src/components/ui/step-list';
 import { NewDesktopDialog } from './NewDesktopDialog';
 import { EnvironmentBanner } from '@src/components/environment-banner/EnvironmentBanner';
 import {
   Building2,
-  CheckCircle,
-  Circle,
   ExternalLink,
   FolderGit2,
   Globe,
@@ -28,17 +27,9 @@ import {
   Monitor,
   Plus,
   Trash2,
-  XCircle,
 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useState } from 'react';
-
-function StepIcon({ status }: { status: Step['status'] }) {
-  if (status === 'loading') return <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />;
-  if (status === 'success') return <CheckCircle className="h-3.5 w-3.5 text-green-500" />;
-  if (status === 'error') return <XCircle className="h-3.5 w-3.5 text-destructive" />;
-  return <Circle className="h-3.5 w-3.5 text-muted-foreground/40" />;
-}
 
 // Live desktop status styling, keyed off the backend `ExecutionEnvironmentStatus`
 // (`ops/status`). `card` tints the whole desktop block so status reads at a glance.
@@ -384,22 +375,7 @@ export function HubHome() {
           </div>
 
           {/* Live launch progress */}
-          {launchStarted && (
-            <ul
-              className="flex flex-col gap-1.5 rounded-lg border border-border bg-card/50 px-4 py-3"
-              data-testid="desktop-launch-steps"
-            >
-              {steps.map((step) => (
-                <li key={step.id} className="flex items-center gap-2 text-xs" data-status={step.status}>
-                  <StepIcon status={step.status} />
-                  <span className={step.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}>
-                    {step.label}
-                  </span>
-                  {step.detail && <span className="truncate text-muted-foreground/70">— {step.detail}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
+          {launchStarted && <StepList steps={steps} testId="desktop-launch-steps" />}
           {launchUrl && (
             <a
               href={launchUrl}

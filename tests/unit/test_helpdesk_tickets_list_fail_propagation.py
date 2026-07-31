@@ -1,11 +1,11 @@
-"""Unit tests for community_tickets_list hub-failure propagation.
+"""Unit tests for helpdesk_tickets_list hub-failure propagation.
 
 RCA debug_log.md #12b: the staff triage-queue action read ``.get("data")`` off
 the hub envelope with no status check, so a hub authorization FAIL (a non-staff
 caller gets "no valid access for role ['guest']") collapsed into an empty
 SUCCESS ``{tickets: []}``. That made "unauthorized" indistinguishable from
 "empty queue" — hiding a real staff-UI robustness gap and defeating the
-community_two_client skip-guard (its try/catch never fired). The fix propagates
+helpdesk_two_client skip-guard (its try/catch never fired). The fix propagates
 the hub failure as ApiFailResponse.
 
 # do not increase timeout without approval
@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from flow_sdk.app.actions import flow_message_action as fma
+from flow_sdk.app.actions.flow_message_action import HelpdeskTarget
 from flow_sdk.responses.response import ApiResponseStatus
 
 
@@ -25,7 +26,7 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
 def _request_info_with_user() -> SimpleNamespace:
-    # community_tickets_list only checks someone_typeid is truthy.
+    # helpdesk_tickets_list only checks someone_typeid is truthy.
     return SimpleNamespace(someone_typeid="user-aaaaaaaa-0000-0000-0000-000000000001")
 
 
@@ -37,10 +38,10 @@ async def test_hub_fail_envelope_propagates_as_failure() -> None:
 
     with (
         patch.object(fma, "get_current_request_info", return_value=_request_info_with_user()),
-        patch.object(fma, "_resolve_community_project_id", AsyncMock(return_value="proj-community")),
+        patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=HelpdeskTarget("proj-helpdesk", None))),
         patch.object(fma, "_hub_action", AsyncMock(return_value=fail_envelope)),
     ):
-        resp = await fma.community_tickets_list()
+        resp = await fma.helpdesk_tickets_list()
 
     assert resp.status == ApiResponseStatus.FAIL.value
     # Upstream hub rejection → 502, not the default 500 (our backend is healthy).
@@ -54,10 +55,10 @@ async def test_hub_transport_failure_propagates_as_failure() -> None:
     """_hub_action returns None on transport failure — also a FAIL, not empty."""
     with (
         patch.object(fma, "get_current_request_info", return_value=_request_info_with_user()),
-        patch.object(fma, "_resolve_community_project_id", AsyncMock(return_value="proj-community")),
+        patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=HelpdeskTarget("proj-helpdesk", None))),
         patch.object(fma, "_hub_action", AsyncMock(return_value=None)),
     ):
-        resp = await fma.community_tickets_list()
+        resp = await fma.helpdesk_tickets_list()
 
     assert resp.status == ApiResponseStatus.FAIL.value
     assert resp.status_code == 502
@@ -71,13 +72,13 @@ async def test_hub_success_returns_tickets() -> None:
 
     with (
         patch.object(fma, "get_current_request_info", return_value=_request_info_with_user()),
-        patch.object(fma, "_resolve_community_project_id", AsyncMock(return_value="proj-community")),
+        patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=HelpdeskTarget("proj-helpdesk", None))),
         patch.object(fma, "_hub_action", AsyncMock(return_value=ok_envelope)),
     ):
-        resp = await fma.community_tickets_list()
+        resp = await fma.helpdesk_tickets_list()
 
     assert resp.status == ApiResponseStatus.SUCCESS.value
-    assert resp.data == {"tickets": rows, "project_id": "proj-community"}
+    assert resp.data == {"tickets": rows, "project_id": "proj-helpdesk"}
 
 
 @pytest.mark.asyncio
@@ -88,10 +89,10 @@ async def test_hub_success_non_list_data_coerced_empty() -> None:
 
     with (
         patch.object(fma, "get_current_request_info", return_value=_request_info_with_user()),
-        patch.object(fma, "_resolve_community_project_id", AsyncMock(return_value="proj-community")),
+        patch.object(fma, "resolve_helpdesk", AsyncMock(return_value=HelpdeskTarget("proj-helpdesk", None))),
         patch.object(fma, "_hub_action", AsyncMock(return_value=ok_envelope)),
     ):
-        resp = await fma.community_tickets_list()
+        resp = await fma.helpdesk_tickets_list()
 
     assert resp.status == ApiResponseStatus.SUCCESS.value
-    assert resp.data == {"tickets": [], "project_id": "proj-community"}
+    assert resp.data == {"tickets": [], "project_id": "proj-helpdesk"}
