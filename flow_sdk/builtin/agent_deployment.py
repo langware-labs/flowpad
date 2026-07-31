@@ -120,6 +120,7 @@ class AgentDeployment:
         pty: bool = False,
         wait: bool = False,
         start: bool = True,
+        save: bool = True,
         **options,
     ) -> "AgenticProcess":
         """Run this agent once. Returns the process that records the run.
@@ -140,6 +141,12 @@ class AgentDeployment:
           the first turn themselves.
 
         ``wait=True`` polls to a terminal state and is only meaningful headless.
+
+        ``save=False`` skips persisting the row. Two callers need this
+        deliberately -- the migration runner and `flow diagnose` both spawn
+        without a pre-saved record (the exist_in_db gate was dropped for
+        visible=False precisely so they could), so persisting would change
+        documented behaviour.
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
         from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
@@ -184,7 +191,8 @@ class AgentDeployment:
             deployment_id=self.id,
             **options,
         )
-        await proc.save()
+        if save:
+            await proc.save()
         if not start:
             return proc
         if pty:
