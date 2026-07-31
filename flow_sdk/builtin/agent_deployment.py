@@ -113,13 +113,33 @@ class AgentDeployment:
 
     # ── the one launch verb ───────────────────────────────────────────────
 
-    async def launch(self, prompt: str, **options) -> "AgenticProcess":
+    async def launch(
+        self,
+        prompt: str,
+        *,
+        pty: bool = False,
+        wait: bool = False,
+        start: bool = True,
+        **options,
+    ) -> "AgenticProcess":
         """Run this agent once. Returns the process that records the run.
 
         Every field the agent declares (worker, model, permissions, dirs,
         system prompt) comes from the Agent; only per-run concerns
         (``visible``, ``process_type``, ``target_typeid_str``, ``context_data``,
         ``workdir``, …) are accepted here.
+
+        Three start shapes, because the call sites genuinely differ:
+
+        * ``pty=False`` (default) — headless one-shot: ``pty_mode=False`` routes
+          ``prompt()`` to the print-mode driver, no PTY or Shell. This is what
+          every internal agent wants.
+        * ``pty=True`` — interactive: spawns the PTY worker, for a run a human
+          will attach to.
+        * ``start=False`` — create the row and stop, for callers that schedule
+          the first turn themselves.
+
+        ``wait=True`` polls to a terminal state and is only meaningful headless.
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
         from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
@@ -152,6 +172,7 @@ class AgentDeployment:
             name=options.pop("name", None) or f"{agent.name}: {prompt[:40]}",
             workdir=options.pop("workdir", None),
             visible=bool(options.pop("visible", False)),
+            pty_mode=options.pop("pty_mode", pty),
             process_type=options.pop("process_type", ProcessKind.EXECUTION.value),
             worker_type=agent.worker_type,
             project_id=options.pop("project_id", None) or agent.project_id,
@@ -164,7 +185,19 @@ class AgentDeployment:
             **options,
         )
         await proc.save()
-        await proc.start_pty(instruction=prompt)
+        if not start:
+            return proc
+        if pty:
+            await proc.start_pty(instruction=prompt)
+            return proc
+
+        from flow_sdk.api.messages import ApiFailResponse  # noqa: PLC0415
+
+        resp = await proc.prompt(prompt)
+        if isinstance(resp, ApiFailResponse):
+            raise RuntimeError(f"{agent.name}: launch failed — {resp.message}")
+        if wait:
+            await proc.wait()
         return proc
 
     async def run(self, event: dict, **options) -> "AgenticProcess":
