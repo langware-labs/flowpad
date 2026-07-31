@@ -3,6 +3,7 @@ import { useProject } from '@sdk/react/hooks';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { BindSecretDialog } from '@src/components/project-home/BindSecretDialog';
 import {
   ContextFolderScopeChips,
@@ -305,7 +306,8 @@ export function QuickCreatePanel({
     const enforce = serverCreatable.size > 0;
     return QUICK_CREATE_REGISTRY.filter((d) => !HIDDEN_ASSET_TYPES.has(d.type))
       .filter((d) => !enforce || serverCreatable.has(d.type))
-      .map((d) => ({ type: d.type, Icon: d.Icon as TileIcon, label: d.label, wikiword: d.wikiword }));
+      // Glyph from the backend type registry — never a per-type icon chosen here.
+      .map((d) => ({ type: d.type, Icon: iconForType(d.type) as TileIcon, label: d.label, wikiword: d.wikiword }));
   }, [serverTypes]);
 
   const sessionTiles: Array<{
