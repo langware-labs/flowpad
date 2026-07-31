@@ -416,7 +416,7 @@ What `ApiUrl.toString()` produces:
 | Create task under workspace | `name='create', resourceType='task', scope=[ws.typeId]` | `/graph/workspace/@local/task` |
 | Browse files | `name='fs', target=cn.typeId, subpath='browse/Users/alice'` | `/graph/compute_node/@local/fs/browse/Users/alice` |
 | Terminal command | `name='terminal-command', target=cn.typeId, method='POST'` | `/graph/compute_node/@local/terminal-command` |
-| Add label | `name='label', target=entity.typeId, subpath='my-tag', method='POST'` | `/graph/agent/@local/label/my-tag` |
+| Add label | `name='label', target=entity.typeId, subpath='my-tag', method='POST'` | `/graph/subagent/@local/label/my-tag` |
 
 ## Implementations
 

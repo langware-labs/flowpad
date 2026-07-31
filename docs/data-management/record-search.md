@@ -252,8 +252,8 @@ A type contributes to search in two coordinated places:
 # skill_type_info.py
 SKILL_TYPE_INFO = TypeInfo(type_name="skill", browseable=True, index_fields=["description"], ...)
 
-# agent_type_info.py
-AGENT_TYPE_INFO = TypeInfo(type_name="agent", browseable=True, index_fields=["description"], ...)
+# subagent_type_info.py
+SUBAGENT_TYPE_INFO = TypeInfo(type_name="subagent", browseable=True, index_fields=["description"], ...)
 
 # task_type_info.py
 TASK_TYPE_INFO = TypeInfo(type_name="task", index_fields=["description", "objective"], ...)
