@@ -22,7 +22,9 @@ from typing import ClassVar, Optional
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.core import Entity
+from flow_sdk.core import action as core_action
 from flow_sdk.ingest.health import SourceHealth
+from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.types import EntityType
 
 #: The heartbeat ticks once a minute, and every provider floor we care about is
@@ -104,3 +106,86 @@ class DataSource(Entity):
             if await capability_available(kind) is not True:
                 return False
         return True
+
+    # ── operator controls ─────────────────────────────────────────────────────
+    #
+    # Three verbs, because "reset" is genuinely three different intents and
+    # conflating them produces surprises:
+    #
+    #   poll_now       — go now, keep everything we know
+    #   reset_cursors  — forget our position, keep the records
+    #   purge_items    — forget the records
+    #
+    # `reset_cursors` ALONE looks broken, and that is not a bug in the action:
+    # SourceItem ids are deterministic and the digest gate suppresses a row whose
+    # content has not moved, so re-reading the same window re-derives the same
+    # ids and the same digests and writes nothing. Re-fetching *visibly* is
+    # `purge_items` + `reset_cursors`, which is why the UI offers them together.
+
+    @core_action.post(action_name="poll_now")
+    async def poll_now_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/poll_now — make this source due.
+
+        Also the ONLY un-latch for ``config_error``: ``is_due`` refuses a source
+        in that state, so without clearing health here a source that hit a
+        transient misconfiguration would never poll again.
+
+        Not synchronous — the poller runs off the once-a-minute heartbeat, so
+        this means "on the next tick", within 60s. Deliberately not sped up.
+        """
+        self.next_poll_at = None
+        if self.health == SourceHealth.CONFIG_ERROR.value:
+            self.health = SourceHealth.NEVER_SYNCED.value if self.last_synced_at is None \
+                else SourceHealth.OK.value
+        self.error_code = None
+        self.error_detail = None
+        await self.save()
+        return ApiSuccessResponse(data={
+            "status": "due", "health": self.health, "enabled": self.enabled,
+            "detail": "queued for the next heartbeat tick (≤60s)",
+        })
+
+    @core_action.post(action_name="reset_cursors")
+    async def reset_cursors_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/reset_cursors — forget position.
+
+        Clears the normalized high-water mark AND the provider-opaque ``state``
+        (ETags, update pointers), so the next poll re-reads the whole window.
+        Cursor rows are kept rather than deleted: deleting them would also reset
+        ``last_synced_at``, flipping the next run to ``first_run`` and therefore
+        to BACKFILL — which suppresses per-item events, making a deliberate
+        re-fetch silent.
+        """
+        from flow_sdk.builtin.data_source_cursor import DataSourceCursor  # noqa: PLC0415
+
+        cursors = await DataSourceCursor.get_all({"data_source_id": self.id})
+        for cursor in cursors:
+            cursor.high_water = None
+            cursor.state = {}
+            cursor.error_code = None
+            cursor.error_detail = None
+            cursor.consecutive_failures = 0
+            cursor.health = SourceHealth.OK.value
+            await cursor.save()
+        self.next_poll_at = None
+        await self.save()
+        return ApiSuccessResponse(data={
+            "status": "reset", "streams": len(cursors),
+            "detail": "position cleared; existing records still gate on content digest — "
+                      "pair with purge_items for a visible re-fetch",
+        })
+
+    @core_action.post(action_name="purge_items")
+    async def purge_items_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/purge_items — drop the records.
+
+        Safe to pair with a re-poll: ids are ``uuid5(source, stream, external)``
+        so re-ingestion rebuilds exactly the same rows. It does discard local
+        state (``read`` / ``starred``), which is the real cost of the verb.
+        """
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+        items = await SourceItem.get_all({"data_source_id": self.id})
+        for item in items:
+            await item.destroy()
+        return ApiSuccessResponse(data={"status": "purged", "removed": len(items)})

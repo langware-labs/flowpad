@@ -23,14 +23,67 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useTheme } from 'next-themes';
-import type { GraphWorkflowDocNode } from '@sdk/services/graph-workflows';
-import { StationCard, TriggerNode } from './nodes';
+import { EXTERNAL_SOURCE, type GraphWorkflowDoc, type GraphWorkflowDocNode } from '@sdk/services/graph-workflows';
+import { InletNode, StationCard, TriggerNode } from './nodes';
 import { PulseEdge } from './PulseEdge';
-import { newNodeId, useStudio } from '../store';
+import { inletIdFor, newNodeId, useStudio } from '../store';
 import { PALETTE_DRAG_MIME, defaultNodeData, paletteLabel } from '../panels/PaletteTab';
 
-const nodeTypes = { trigger: TriggerNode, station: StationCard };
+const nodeTypes = { trigger: TriggerNode, station: StationCard, inlet: InletNode };
 const edgeTypes = { pulse: PulseEdge };
+
+const INLET_X = -260;
+const INLET_GAP = 96;
+
+/**
+ * What feeds this flow, as nodes.
+ *
+ * `subscriptions[]` and `$external` are both real entry doors that the canvas
+ * previously drew nothing for — and an edge whose source is `$external` was
+ * silently DROPPED by React Flow, because no node had that id. So a flow like
+ * hn-radar, whose report lane is entered by injection, rendered as an
+ * unreachable island. These are synthesized, never persisted into graph.json.
+ */
+function inletNodes(doc: GraphWorkflowDoc): { nodes: Node[]; edges: Edge[] } {
+  const nodes: Node[] = [];
+  const edges: Edge[] = [];
+  const place = (row: number) => ({ x: INLET_X, y: 40 + row * INLET_GAP });
+
+  (doc.subscriptions ?? []).forEach((sub, i) => {
+    // `id` is optional in the doc schema, so fall back to position — the store
+    // derives inlet ids the same way and the two must agree.
+    const id = inletIdFor(sub.id, i);
+    nodes.push({
+      id,
+      type: 'inlet',
+      position: place(i),
+      draggable: true,
+      data: { label: sub.pattern, target: sub.target ?? undefined },
+    });
+    // `node` delivers straight to that node; otherwise the event is routed from
+    // `$external` by the ordinary edges, which the door below already draws.
+    if (sub.node) {
+      edges.push({
+        id: `${id}->${sub.node}`,
+        source: id,
+        target: sub.node,
+        type: 'pulse',
+        data: { event: sub.event || sub.pattern },
+      });
+    }
+  });
+
+  if (doc.edges.some((e) => e.from.node === EXTERNAL_SOURCE)) {
+    nodes.push({
+      id: EXTERNAL_SOURCE,
+      type: 'inlet',
+      position: place(doc.subscriptions?.length ?? 0),
+      draggable: true,
+      data: { label: EXTERNAL_SOURCE, external: true },
+    });
+  }
+  return { nodes, edges };
+}
 
 /** Default event emitted by a source node type — seeds a new edge's label. */
 function defaultEventFor(node: GraphWorkflowDocNode | undefined): string {
@@ -64,9 +117,10 @@ function CanvasInner() {
       return;
     }
     const display = useStudio.getState().display;
+    const inlets = inletNodes(doc);
     setNodes((prev) => {
       const prevById = new Map(prev.map((n) => [n.id, n]));
-      return doc.nodes.map((n, i) => ({
+      const real = doc.nodes.map((n, i) => ({
         id: n.id,
         type: n.node_type === 'trigger' ? 'trigger' : 'station',
         position:
@@ -75,10 +129,17 @@ function CanvasInner() {
         selected: prevById.get(n.id)?.selected ?? false,
         data: { def: n },
       }));
+      // Same position rule as real nodes: dragged > persisted > default.
+      const synthetic = inlets.nodes.map((n) => ({
+        ...n,
+        position: prevById.get(n.id)?.position ?? display.nodes[n.id] ?? n.position,
+        selected: prevById.get(n.id)?.selected ?? false,
+      }));
+      return [...real, ...synthetic];
     });
     setEdges((prev) => {
       const prevById = new Map(prev.map((e) => [e.id, e]));
-      return doc.edges.map((e) => ({
+      const real = doc.edges.map((e) => ({
         id: e.id,
         source: e.from.node,
         target: e.to.node,
@@ -86,6 +147,7 @@ function CanvasInner() {
         selected: prevById.get(e.id)?.selected ?? false,
         data: { event: e.from.event },
       }));
+      return [...real, ...inlets.edges];
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureKey]);

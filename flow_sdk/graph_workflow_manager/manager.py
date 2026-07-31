@@ -539,16 +539,21 @@ class GraphWorkflowManager:
                 await parent.attach_child(row)
         except Exception:
             logger.debug("GraphWorkflowManager: run row start-upsert failed", exc_info=True)
-        await self._broadcast_run_event(run, "run_start", {})
+        self._emit_run_event(run, "run_start", {})
         self._emit_flow_tag(run, "started", {})
         return run
 
     # ── unified-bus boundary emissions (docs/flow-events.md phase 2) ──────────
 
     def _emit_flow_tag(self, run: _Run, subtag: str, data: dict[str, Any]) -> None:
-        """Dual-publish a run BOUNDARY onto the unified bus (flow.<subtag>).
-        Run-internal node statuses stay on the legacy WS mirror — boundaries
-        only. Best-effort: the engine never fails on bus trouble."""
+        """Dual-publish onto the unified bus as ``graph_workflow.<subtag>``.
+
+        Originally boundaries only (phase 2). Phase 8 Tier B revises that: the
+        legacy WS mirror already ships every run event and node status to every
+        client, so the tag twin adds no traffic — and without it the canvas
+        cannot be driven from the bus. The run-internal twins are emitted from
+        the two broadcast helpers below, which every call site already funnels
+        through. Best-effort: the engine never fails on bus trouble."""
         try:
             from flow_sdk.tags import emit_tag
             from flow_sdk.tags.envelope import target_of
@@ -650,12 +655,12 @@ class GraphWorkflowManager:
             identity = _delivery_identity(fe)
             if identity in rt.pending_ids:
                 run.journal.append("merged", {"node": node.id, "event": fe.event})
-                await self._broadcast_node_status(run, node, "merged")
+                self._emit_node_status(run, node, "merged")
                 return
             rt.pending_ids.add(identity)
         rt.queue.append((fe, node, run))
         run.pending += 1
-        await self._broadcast_node_status(run, node, "queued", {"event": fe.event})
+        self._emit_node_status(run, node, "queued", {"event": fe.event})
         await self._drain(run.flow.flow_id, node)
 
     def _node_rt(self, flow_id: str, node_id: str) -> _NodeRuntime:
@@ -689,7 +694,7 @@ class GraphWorkflowManager:
                 logger.exception("GraphWorkflowManager: node %s failed for %s", node_def.id, fe.event)
                 run.journal.append("node_error", {"node": node_def.id, "error": str(e),
                                                   "execution": {"seq": seq}})
-                await self._broadcast_node_status(run, node_def, "failed", {"error": str(e)})
+                self._emit_node_status(run, node_def, "failed", {"error": str(e)})
         # Reap the per-node runtime when fully idle — the map otherwise grows
         # one entry per (flow, node) forever (in-flight agents keep active > 0
         # until their watcher drains again; deliveries recreate on demand).
@@ -736,7 +741,7 @@ class GraphWorkflowManager:
         run.suspended += 1
         run.suspended_nodes.add(node.id)
         self._finish_execution(run, rt)
-        await self._broadcast_node_status(run, node, "waiting", detail)
+        self._emit_node_status(run, node, "waiting", detail)
         self._emit_flow_tag(run, "waiting", {"node_id": node.id, "seq": seq, **detail})
 
     # ── GraphWorkflowFunction execution (inline + subprocess) ──────────────────────────
@@ -761,7 +766,7 @@ class GraphWorkflowManager:
         exec_dir = inline_exec_dir(run.id, seq, node.id)
         input_dir, output_dir = prepare_execution_io(exec_dir, fe)
         ctx = InlineGraphWorkflowCtx(self, run, node, input_dir, output_dir)
-        await self._broadcast_node_status(run, node, "started", {"runtime": "inline"})
+        self._emit_node_status(run, node, "started", {"runtime": "inline"})
         started = time.monotonic()
         try:
             result = fn(fe.event, fe.data, ctx)
@@ -789,7 +794,7 @@ class GraphWorkflowManager:
         if isinstance(result, dict):
             self.emit_from_node(run, node.id, AGENT_DONE_EVENT, result)
         self._finish_execution(run, rt)
-        await self._broadcast_node_status(run, node, "finished",
+        self._emit_node_status(run, node, "finished",
                                           {"duration_ms": duration, "runtime": "inline"})
 
     async def _run_function_subprocess(self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent,
@@ -811,7 +816,7 @@ class GraphWorkflowManager:
         exec_base = execution_base(proc)
         input_dir, output_dir = prepare_execution_io(exec_base, fe)
         await self._attach_to_run(run, proc)
-        await self._broadcast_node_status(run, node, "started",
+        self._emit_node_status(run, node, "started",
                                           {"runtime": "subprocess", "process_id": proc.id})
         started = time.monotonic()
         folders = {"input": str(input_dir), "output": str(output_dir),
@@ -847,11 +852,11 @@ class GraphWorkflowManager:
             if isinstance(result.result, dict):
                 self.emit_from_node(run, node.id, AGENT_DONE_EVENT, result.result)
             self._finish_execution(run, rt)
-            await self._broadcast_node_status(run, node, "finished", detail)
+            self._emit_node_status(run, node, "finished", detail)
         else:
             self._finish_execution(run, rt)
             run.journal.append("node_error", {"node": node.id, "execution": {"seq": seq}, **detail})
-            await self._broadcast_node_status(
+            self._emit_node_status(
                 run, node, "failed",
                 {**detail, "error": f"exit {result.exit_code}: {result.stderr.strip()[-300:]}"},
             )
@@ -940,7 +945,7 @@ class GraphWorkflowManager:
         if agent_def.get("agent_id"):
             spawn_row["agent_id"] = agent_def["agent_id"]
         run.journal.append("agent_spawn", spawn_row)
-        await self._broadcast_node_status(run, node, "started",
+        self._emit_node_status(run, node, "started",
                                           {"program_kind": nd.get("program_kind", "instruction"),
                                            "process_id": proc.id})
         asyncio.create_task(self._watch_agent(run, node, proc.id, rt, seq, fe,
@@ -1030,7 +1035,7 @@ class GraphWorkflowManager:
                 run.journal.append("node_error", {"node": node.id, "process_id": proc_id,
                                                   "error": failed, "duration_ms": duration,
                                                   "execution": {"seq": seq}})
-                await self._broadcast_node_status(run, node, "failed",
+                self._emit_node_status(run, node, "failed",
                                                   {"error": failed, "process_id": proc_id,
                                                    "duration_ms": duration})
             else:
@@ -1044,7 +1049,7 @@ class GraphWorkflowManager:
                                     {"output": output, "process_id": proc_id,
                                      "output_files": self._output_listing(exec_base)})
                 self._finish_execution(run, rt)
-                await self._broadcast_node_status(run, node, "finished",
+                self._emit_node_status(run, node, "finished",
                                                   {"duration_ms": duration, "process_id": proc_id})
             await self._drain(run.flow.flow_id, node)
             self._maybe_finalize(run)
@@ -1200,7 +1205,7 @@ class GraphWorkflowManager:
                 await row.update()
         except Exception:
             logger.debug("GraphWorkflowManager: run row end-upsert failed", exc_info=True)
-        await self._broadcast_run_event(run, "run_end", {"status": status})
+        self._emit_run_event(run, "run_end", {"status": status})
         self._emit_flow_tag(
             run, "done" if status == RunStatus.COMPLETE.value else "failed",
             {"status": status, "events": run.events, "executions": run.executions,
@@ -1256,37 +1261,33 @@ class GraphWorkflowManager:
         if fe.actor:
             row["actor"] = fe.actor
         run.journal.append("event", row)
-        asyncio.ensure_future(self._broadcast_run_event(
-            run, "event", {"event": fe.event, "data": fe.data, "node": fe.source_node}))
+        self._emit_run_event(
+            run, "event", {"event": fe.event, "data": fe.data, "node": fe.source_node})
 
-    async def _broadcast_run_event(self, run: _Run, kind: str, payload: dict[str, Any]) -> None:
-        try:
-            from flow_sdk.api.messages import GraphWorkflowRunEventMessage
-            from flow_sdk.server.routes.websocket import broadcast
+    def _emit_run_event(self, run: _Run, kind: str, payload: dict[str, Any]) -> None:
+        """One beat of the run's internal stream, onto the bus."""
+        self._emit_flow_tag(run, "run.event", {
+            "kind": kind,
+            "event": str(payload.get("event") or ""),
+            "data": payload.get("data") or {},
+            "node": str(payload.get("node") or ""),
+            "status": str(payload.get("status") or ""),
+            "ts": now_iso(),
+        })
 
-            await broadcast(GraphWorkflowRunEventMessage(
-                flow_id=run.flow.flow_id, run_id=run.id, kind=kind,
-                event=str(payload.get("event") or ""), data=payload.get("data") or {},
-                node=str(payload.get("node") or ""), status=str(payload.get("status") or ""),
-                ts=now_iso(),
-            ).model_dump_json())
-        except Exception:
-            logger.debug("GraphWorkflowManager: run-event broadcast unavailable", exc_info=True)
-
-    async def _broadcast_node_status(
+    def _emit_node_status(
         self, run: _Run, node: GraphWorkflowNodeDef, phase: str, detail: dict[str, Any] | None = None
     ) -> None:
+        # `queued`/`active` are read off the scheduler runtime at emit time and
+        # exist nowhere else — they must ride the event or the live counters go
+        # dead. Likewise detail.process_id, which is what proc-watch attaches to.
         rt = self._node_rt(run.flow.flow_id, node.id)
-        try:
-            from flow_sdk.api.messages import GraphWorkflowNodeStatusMessage
-            from flow_sdk.server.routes.websocket import broadcast
-
-            await broadcast(GraphWorkflowNodeStatusMessage(
-                flow_id=run.flow.flow_id, run_id=run.id, node_id=node.id, phase=phase,
-                queued=len(rt.queue), active=rt.active, detail=detail or {}, ts=now_iso(),
-            ).model_dump_json())
-        except Exception:
-            logger.debug("GraphWorkflowManager: node-status broadcast unavailable", exc_info=True)
+        self._emit_flow_tag(run, "node.status", {
+            "node_id": node.id, "phase": phase,
+            "queued": len(rt.queue), "active": rt.active,
+            "detail": detail or {},
+            "ts": now_iso(),
+        })
 
     # ── run queries (routes) ──────────────────────────────────────────────────
 
