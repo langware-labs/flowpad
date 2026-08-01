@@ -148,6 +148,11 @@ export function ConversationRoute() {
     return DockPointer.parseConversationPointer(currentDock?.pointer);
   }, [currentDock?.viewType, currentDock?.pointer]);
 
+  // Which thread the feed is filtered to. OPTIONS, not the pointer — so the
+  // filter is linkable and reload-safe without minting a second tab.
+  const threadId =
+    currentDock?.viewType === ViewType.CONVERSATION ? (currentDock.threadId ?? null) : null;
+
   const { conversation, task, senderName, taskMissing } = useConversation(conversationId);
 
   // Stable TypeId for the members stack — useMembers' fetch effect depends on
@@ -165,6 +170,16 @@ export function ConversationRoute() {
     (id: string) => {
       if (!conversationId) return;
       navigation.openDock(DockPointer.forConversation(conversationId, { messageId: id }));
+    },
+    [navigation, conversationId],
+  );
+
+  // Opening / closing a thread is a NAVIGATION, like every other selection
+  // here — the view never filters itself.
+  const handleThreadNavigate = useCallback(
+    (id: string | null) => {
+      if (!conversationId) return;
+      navigation.openDock(DockPointer.forConversation(conversationId, { thread: id }));
     },
     [navigation, conversationId],
   );
@@ -262,6 +277,8 @@ export function ConversationRoute() {
           headerLabel={null}
           selectedMessageId={messageId}
           onMessageNavigate={handleMessageNavigate}
+          threadId={threadId}
+          onThreadNavigate={handleThreadNavigate}
         />
       </div>
     </div>

@@ -38,6 +38,7 @@ import {
   pickupConversation,
   unarchiveConversation,
   type HelpdeskTicket,
+  latestPointer,
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
@@ -155,7 +156,9 @@ export function ConversationListRow({
   // first to detect ``kind === 'invitation'``.
   const pointers = conv.conversationMessageIds ?? [];
   const firstPtr = pointers[0];
-  const lastPtr = pointers[pointers.length - 1];
+  // Newest by ts, not last-appended — an ingested mailbox backfills
+  // newest-first, so the last pointer there is the OLDEST mail.
+  const lastPtr = latestPointer(pointers);
   const firstTypeId = useMemo(() => (firstPtr?.id ? new TypeId(FlowMessage.type, firstPtr.id) : null), [firstPtr?.id]);
   const latestTypeId = useMemo(() => (lastPtr?.id ? new TypeId(FlowMessage.type, lastPtr.id) : null), [lastPtr?.id]);
   const { data: firstMessage } = useEntity<FlowMessage>(firstTypeId);
@@ -637,8 +640,7 @@ export function InboxView() {
   // FlowMessage id of a conversation's latest message — the read/unread flag
   // lives on the message, so bulk read toggles patch the last pointer's FM.
   const latestMessageId = (c: Conversation): string | null => {
-    const pointers = c.conversationMessageIds ?? [];
-    return pointers[pointers.length - 1]?.id ?? null;
+    return latestPointer(c.conversationMessageIds)?.id ?? null;
   };
 
   const handleBulkMarkRead = useCallback(

@@ -131,12 +131,15 @@ def count_unread(
             # Already counted as the pending invitation — skip so the unread
             # preview message can't double-count the same item.
             continue
-        refs = conv.message_refs()
-        if not refs:
+        ref = conv.latest_message_ref()
+        if ref is None:
             continue
         if conv.is_archived():
             continue
-        latest = fm_by_id.get(refs[-1].id)
+        # NEWEST by timestamp, not last-appended: an ingested mailbox hands
+        # its history back newest-first, so `refs[-1]` there is the OLDEST
+        # mail and the conversation reads as read when it isn't.
+        latest = fm_by_id.get(ref.id)
         if latest is None or getattr(latest, "is_draft", False):
             # Not materialized yet — don't fall back to an older message; the
             # post-materialization recompute picks it up.

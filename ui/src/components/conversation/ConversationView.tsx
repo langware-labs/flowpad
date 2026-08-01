@@ -6,16 +6,19 @@ import {
   Conversation,
   fetchConversations,
   FlowMessage,
+  MessageThread,
   pickupConversation,
   QueryFilter,
   QueryRequest,
   RemoteWorkerSession,
   RemoteWorkerSessionStatus,
   TypeId,
+  latestPointer,
 } from '@sdk';
 import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { isHelpdeskKind } from '@sdk/entities/conversation';
+import { ThreadStack } from './ThreadStack';
 import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
@@ -28,6 +31,8 @@ import { useLocalUser } from './useLocalUser';
 import { useMembers } from '@src/hooks/use-members';
 import {
   buildConversationItems,
+  groupThreadItems,
+  itemThreadId,
   ConversationItemKind,
   groupConversationItems,
   shouldShowSoloSendNotice,
@@ -65,6 +70,12 @@ interface ConversationViewProps {
   /** Open an executed message's run in the drawer's Runs tab, focused on it.
    *  Fired by the per-message run-status one-liner (not by executing). */
   onOpenRun?: (processId: string) => void;
+  /** URL-carried thread filter: show only this thread's messages, unpacked.
+   *  Null = every thread, each packed into one row. */
+  threadId?: string | null;
+  /** Open a thread (id) or return to the packed list (null). URL-first — the
+   *  view never filters itself, it asks the host to navigate. */
+  onThreadNavigate?: (threadId: string | null) => void;
 }
 
 export function ConversationView({
@@ -75,6 +86,8 @@ export function ConversationView({
   onSelectMessage,
   onMostRecentMessageChange,
   onOpenRun,
+  threadId,
+  onThreadNavigate,
 }: ConversationViewProps) {
   const { t } = useLingui();
   const conversationTypeId = useMemo(() => new TypeId(Conversation.type, conversationId), [conversationId]);
@@ -272,13 +285,51 @@ export function ConversationView({
 
   const orderedItems = useMemo(() => buildConversationItems(pointers, draftMessages), [pointers, draftMessages]);
 
+  // Authoritative per-thread sizes. The feed query is windowed, so counting
+  // the loaded messages would undercount a long thread; MessageThread carries
+  // the real number and this is the only reason the entity is fetched here.
+  const threadsRequest = useMemo(
+    () => new QueryRequest({
+      type: MessageThread.type,
+      name: `threads:${conversationId}`,
+      query: new QueryFilter({
+        match: { op: '$EQ', operands: ['conversation_id', conversationId] },
+      }),
+    }),
+    [conversationId],
+  );
+  const { data: threads = [] } = useEntitiesQuery<MessageThread>(threadsRequest, {
+    enabled: !!conversationId,
+  });
+  const threadCounts = useMemo(
+    () => new Map(threads.map((th) => [th.id ?? '', th.message_count ?? 0])),
+    [threads],
+  );
+
+  // Two views of one feed, chosen by the URL:
+  //   ?thread=<id> → only that thread's messages, unpacked
+  //   (absent)     → every thread packed into one row, internal chat flat
+  const visibleItems = useMemo(() => {
+    if (!threadId) return orderedItems;
+    return orderedItems.filter(
+      (it) => itemThreadId(it, (id) => messagesById.get(id) ?? null) === threadId,
+    );
+  }, [orderedItems, messagesById, threadId]);
+
   // Consecutive live-session runs collapse into indented SESSION_GROUP rows
   // (keyed by fm.remote_worker_session_id). Bodies come from the live query —
-  // messages outside the query window degrade to flat rendering.
-  const groupedItems = useMemo(
-    () => groupConversationItems(orderedItems, (id) => messagesById.get(id) ?? null),
-    [orderedItems, messagesById],
-  );
+  // messages outside the query window degrade to flat rendering. Thread
+  // packing runs FIRST and only when unfiltered: inside a thread the reader
+  // wants the messages, not the pile.
+  const groupedItems = useMemo(() => {
+    const getFm = (id: string) => messagesById.get(id) ?? null;
+    if (threadId) return groupConversationItems(visibleItems, getFm);
+    return groupThreadItems(visibleItems, getFm, threadCounts).flatMap((row) =>
+      row.kind === ConversationItemKind.THREAD_GROUP
+        ? [row]
+        : groupConversationItems([row as ConversationItem], getFm),
+    );
+  }, [visibleItems, messagesById, threadId, threadCounts]);
 
   // One row of the feed — a normal bubble, a draft bubble, or (for
   // kind=session_event messages) a slim centered system line. Shared by the
@@ -458,7 +509,7 @@ export function ConversationView({
   useEffect(() => {
     const markLatestRead = () => {
       if (!document.hasFocus()) return;
-      const latestId = pointers[pointers.length - 1]?.id;
+      const latestId = latestPointer(pointers)?.id;
       const latest = latestId ? messagesById.get(latestId) : undefined;
       if (!latest?.id || latest.is_read) return;
       const senderId = latest.sender_id ?? null;
@@ -659,6 +710,18 @@ export function ConversationView({
       ) : (
         <div className="flex flex-col gap-3">
           {groupedItems.map((item) => {
+            if (item.kind === ConversationItemKind.THREAD_GROUP) {
+              return (
+                <ThreadStack
+                  key={item.key}
+                  threadId={item.threadId}
+                  messageCount={item.messageCount}
+                  onOpenThread={onThreadNavigate ? () => onThreadNavigate(item.threadId) : undefined}
+                >
+                  {renderConversationItem(item.head)}
+                </ThreadStack>
+              );
+            }
             if (item.kind === ConversationItemKind.SESSION_GROUP) {
               return (
                 <LiveSessionGroup

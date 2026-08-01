@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Conversation, FlowMessage, TypeId, isHelpdeskKind } from '@sdk';
+import { Conversation, FlowMessage, TypeId, isHelpdeskKind, latestPointer } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useRecentConversations } from '@src/hooks/use-recent-conversations';
@@ -59,7 +59,7 @@ export function HelpdeskMyItems() {
 
 function HelpdeskItemRow({ conv, onOpen }: { conv: Conversation; onOpen: () => void }) {
   const pointers = conv.conversationMessageIds ?? [];
-  const last = pointers[pointers.length - 1];
+  const last = latestPointer(pointers);
   const latestTypeId = useMemo(
     () => (last?.id ? new TypeId(FlowMessage.type, last.id) : null),
     [last?.id],
