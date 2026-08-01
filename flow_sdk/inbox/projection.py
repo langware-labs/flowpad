@@ -119,7 +119,7 @@ async def project_source_item(item, *, source=None, notify: bool = True) -> Opti
         ensure_conversation_entity,
         materialize_flow_message,
     )
-    from flow_sdk.builtin.cloud_origin import CloudOrigin  # noqa: PLC0415
+    from flow_sdk.builtin.cloud_origin import CloudOrigin, permalink_for  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
 
@@ -168,7 +168,11 @@ async def project_source_item(item, *, source=None, notify: bool = True) -> Opti
             data_source_id=str(item.data_source_id or ""),
             source_item_id=str(item.id or ""),
             external_id=str(getattr(item, "external_id", "") or ""),
-            url=str(getattr(item, "permalink", "") or ""),
+            # The connector's link when it gives one; otherwise the channel's
+            # own address formula, so "Open in Gmail" works for records whose
+            # provider never supplied a URL.
+            url=(str(getattr(item, "permalink", "") or "")
+                 or permalink_for(channel, str(getattr(item, "external_id", "") or ""), key)),
         ).model_dump(),
     }
     reply_to_external = getattr(item, "reply_to_external_id", None)
@@ -185,14 +189,86 @@ async def project_source_item(item, *, source=None, notify: bool = True) -> Opti
         bundle_ts=str(getattr(item, "occurred_at", "") or "") or None,
         notify=notify,
     )
+    await _refresh_projected_fields(fm_id, payload, notify=notify)
     await recompute_thread_projection(thread_id, notify=notify)
     return fm_id
+
+
+#: The FlowMessage fields this projection OWNS. Everything else on the row —
+#: `is_read`, `is_archived`, drafts, delivery state — is the user's and must
+#: survive a refresh untouched.
+_PROJECTED_MESSAGE_FIELDS = (
+    "text", "sender_id", "sender_name", "thread_id", "reply_to_id", "origin",
+)
+
+
+async def _refresh_projected_fields(fm_id: str, payload: dict, *, notify: bool) -> None:
+    """Re-apply the source snapshot to an already-materialized message.
+
+    ``materialize_flow_message`` is deliberately create-only for local-origin
+    payloads — "a local-origin re-materialize keeps the row untouched
+    (idempotent upsert)" — which is right for a message we authored and wrong
+    for one that CACHES a mutable cloud record. Without this, a subject edited
+    in Gmail, a corrected sender, or a link the connector only started
+    supplying would never reach the row: the SourceItem would move and the
+    conversation would keep showing the first snapshot forever.
+
+    Writes only the fields above, and only when one actually differs, so the
+    common no-op poll costs a read and nothing else.
+    """
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    fm = await FlowMessage.get_one({"id": fm_id})
+    if fm is None:
+        return
+    changed = False
+    for field in _PROJECTED_MESSAGE_FIELDS:
+        if field not in payload:
+            continue
+        wanted = payload[field]
+        current = getattr(fm, field, None)
+        # `origin` round-trips as a model; compare on the wire shape so a
+        # pydantic instance and its dump don't read as different every poll.
+        if field == "origin" and current is not None and not isinstance(current, dict):
+            current = current.model_dump()
+        if current != wanted:
+            setattr(fm, field, wanted)
+            changed = True
+    if changed:
+        await fm.save(notify=notify)
 
 
 def _source_item_id(source_id: str, stream_key: str, external_id: str) -> str:
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
 
     return SourceItem.allocate_deterministic_id(source_id, stream_key, external_id)
+
+
+def self_addresses(source) -> set[str]:
+    """Every address that means "me" on this source, casefolded.
+
+    `account_identities` is the field for it; `account_key` is included only
+    because it is what a source configured before that field existed had —
+    for a mailbox it is often the address anyway.
+    """
+    values = list(getattr(source, "account_identities", None) or [])
+    values.append(str(getattr(source, "account_key", "") or ""))
+    return {v.strip().casefold() for v in values if v and v.strip()}
+
+
+def display_name_of(raw: str, address: str) -> str:
+    """A human name from whatever the provider handed us.
+
+    Providers are inconsistent here: some give `"Ada Lovelace" <ada@x.io>`,
+    some give a bare name, some give the address twice. Prefer a real name,
+    fall back to the address — never render an empty byline.
+    """
+    text = (raw or "").strip()
+    if "<" in text and text.endswith(">"):
+        name = text.split("<", 1)[0].strip().strip('"').strip()
+        if name:
+            return name
+    return text or address
 
 
 async def _sender_for(item, source, channel: str) -> tuple[str, str]:
@@ -209,9 +285,8 @@ async def _sender_for(item, source, channel: str) -> tuple[str, str]:
     from flow_sdk.builtin.user import User  # noqa: PLC0415
 
     address = str(getattr(item, "author_external_id", "") or "").strip()
-    display = str(getattr(item, "author_display", "") or "") or address
-    account = str(getattr(source, "account_key", "") or "").strip()
-    if address and account and address.casefold() == account.casefold():
+    display = display_name_of(str(getattr(item, "author_display", "") or ""), address)
+    if address and address.casefold() in self_addresses(source):
         local = await User.get_local()
         if local and local.id:
             return str(local.id), display or "You"

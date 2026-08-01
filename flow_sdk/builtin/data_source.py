@@ -46,6 +46,18 @@ class DataSource(Entity):
     # (a harness Gmail source and an API one), and threading + the message
     # badge must key on the channel so both resolve to the same thread.
     channel: str = APIField(default="", description="User-facing channel: gmail | slack | jira")
+    # The addresses/handles that are ME on this source. A record authored by
+    # one of them is mine, and the inbox projection must attribute it to the
+    # local user — otherwise my own Sent mail counts as unread mail from a
+    # stranger, because both unread formulas gate on the sender.
+    #
+    # A list, not a single value: one mailbox commonly answers to several
+    # addresses (aliases, a group address, plus-addressing). Separate from
+    # `account_key`, which is baked into the source's deterministic id and so
+    # can never be corrected without minting a different source.
+    account_identities: list[str] = APIField(
+        default_factory=list, description="Addresses that identify the local user on this source"
+    )
 
     # ── gating ──
     required_capabilities: list[str] = APIField(

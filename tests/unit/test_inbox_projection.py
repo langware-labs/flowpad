@@ -154,3 +154,141 @@ def _resolved(value):
     async def _coro():
         return value
     return _coro()
+
+
+class TestPermalinkDerivation:
+    """The connector supplies no link for Gmail, so the system derives one.
+
+    Deliberately a FORMULA, never a model-composed string: `permalink` is a
+    digested field, so a URL formatted differently on the next poll would
+    rewrite the whole corpus.
+    """
+
+    def test_gmail_addresses_by_thread(self):
+        from flow_sdk.builtin.cloud_origin import permalink_for
+
+        assert permalink_for("gmail", "msg-1", "thread-9").endswith("#all/thread-9")
+
+    def test_it_falls_back_to_the_message_id(self):
+        from flow_sdk.builtin.cloud_origin import permalink_for
+
+        assert permalink_for("gmail", "msg-1", "").endswith("#all/msg-1")
+
+    def test_it_is_stable_across_calls(self):
+        from flow_sdk.builtin.cloud_origin import permalink_for
+
+        assert permalink_for("gmail", "m", "t") == permalink_for("gmail", "m", "t")
+
+    def test_an_unknown_channel_yields_no_link(self):
+        from flow_sdk.builtin.cloud_origin import permalink_for
+
+        # Better an inert badge than a URL that 404s.
+        assert permalink_for("slack", "m", "t") == ""
+        assert permalink_for("gmail", "", "") == ""
+
+
+class TestDisplayName:
+    def test_a_name_is_extracted_from_the_rfc_form(self):
+        from flow_sdk.inbox.projection import display_name_of
+
+        assert display_name_of('"Ada Lovelace" <ada@x.io>', "ada@x.io") == "Ada Lovelace"
+        assert display_name_of("Ada Lovelace <ada@x.io>", "ada@x.io") == "Ada Lovelace"
+
+    def test_a_bare_address_stays_the_address(self):
+        from flow_sdk.inbox.projection import display_name_of
+
+        assert display_name_of("ada@x.io", "ada@x.io") == "ada@x.io"
+
+    def test_an_empty_display_falls_back_to_the_address(self):
+        from flow_sdk.inbox.projection import display_name_of
+
+        # Never render an empty byline.
+        assert display_name_of("", "ada@x.io") == "ada@x.io"
+
+
+class TestSelfAddresses:
+    def test_identities_and_the_legacy_account_key_both_count(self):
+        from flow_sdk.inbox.projection import self_addresses
+
+        source = SimpleNamespace(
+            account_identities=["Me@Example.com", "alias@example.com"],
+            account_key="gmail-primary",
+        )
+        assert self_addresses(source) == {"me@example.com", "alias@example.com", "gmail-primary"}
+
+    def test_an_alias_maps_to_the_local_user_too(self):
+        # One mailbox commonly answers to several addresses; mail I sent from
+        # an alias is still mine.
+        from flow_sdk.inbox.projection import self_addresses
+
+        source = SimpleNamespace(account_identities=["a@x.io", "b@x.io"], account_key="")
+        assert "b@x.io" in self_addresses(source)
+
+
+class TestRefreshOwnsOnlyItsFields:
+    """A SourceItem CACHES a mutable cloud record, so the projection must be
+    able to refresh — but only the fields it owns.
+
+    Regression: `materialize_flow_message` is create-only for local-origin
+    payloads, so without `_refresh_projected_fields` a subject edited in Gmail,
+    a corrected sender, or a newly-available permalink would never reach the
+    conversation. The first run's snapshot would be frozen forever.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_changed_snapshot_is_written_back(self, monkeypatch):
+        from flow_sdk.inbox import projection
+
+        saved: dict = {}
+        fm = SimpleNamespace(id="m1", text="old subject", sender_name="old",
+                             is_read=True, thread_id="t", reply_to_id=None,
+                             sender_id="s", origin=None)
+
+        async def _save(**kw):
+            saved.update(fm.__dict__)
+        fm.save = _save
+        monkeypatch.setattr("flow_sdk.builtin.flow_message.FlowMessage.get_one",
+                            classmethod(lambda cls, q: _resolved(fm)))
+
+        await projection._refresh_projected_fields(
+            "m1", {"text": "new subject", "sender_name": "Ada"}, notify=False,
+        )
+        assert fm.text == "new subject"
+        assert fm.sender_name == "Ada"
+        # Local state is the USER's — a refresh must never mark mail unread again.
+        assert fm.is_read is True
+        assert saved, "a changed snapshot must be persisted"
+
+    @pytest.mark.asyncio
+    async def test_an_unchanged_snapshot_writes_nothing(self, monkeypatch):
+        from flow_sdk.inbox import projection
+
+        calls = []
+        fm = SimpleNamespace(id="m1", text="same", sender_name="Ada", origin=None)
+
+        async def _save(**kw):
+            calls.append(1)
+        fm.save = _save
+        monkeypatch.setattr("flow_sdk.builtin.flow_message.FlowMessage.get_one",
+                            classmethod(lambda cls, q: _resolved(fm)))
+
+        await projection._refresh_projected_fields(
+            "m1", {"text": "same", "sender_name": "Ada"}, notify=False,
+        )
+        # The steady-state poll must cost a read and nothing else — no save,
+        # no WS broadcast, no unread recompute storm.
+        assert calls == []
+
+    @pytest.mark.asyncio
+    async def test_a_field_the_projection_does_not_own_is_ignored(self, monkeypatch):
+        from flow_sdk.inbox import projection
+
+        fm = SimpleNamespace(id="m1", text="same", is_read=False, origin=None)
+        fm.save = lambda **kw: _resolved(None)
+        monkeypatch.setattr("flow_sdk.builtin.flow_message.FlowMessage.get_one",
+                            classmethod(lambda cls, q: _resolved(fm)))
+
+        await projection._refresh_projected_fields(
+            "m1", {"text": "same", "is_read": True}, notify=False,
+        )
+        assert fm.is_read is False
