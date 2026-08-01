@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Project, TypeId, type ProjectBrand } from '@sdk';
 import { fsStore } from '@sdk/stores/fsStore';
-import { hexToHsl } from '@src/hooks/useColorPalette';
+import { hexToHsl, inkFor } from '@src/hooks/useColorPalette';
 
 /**
  * A desk's visual identity, resolved from the portal project.
@@ -65,7 +65,10 @@ export function useHelpdeskBrand(project?: Project | null): HelpdeskBrand {
           ? fsStore.getState().getDownloadUrl(projectTypeId, brand.logo_dark)
           : null,
       accentStyle: triple
-        ? ({ '--brand': triple, '--brand-foreground': '0 0% 100%' } as React.CSSProperties)
+        ? // Ink derived from the accent, not assumed. A site-configured pastel or
+          // yellow with hardcoded white here is the same 1.9:1 defect this file's
+          // own header describes in `useColorPalette`.
+          ({ '--brand': triple, '--brand-foreground': inkFor(triple) } as React.CSSProperties)
         : undefined,
     };
   }, [brand, projectTypeId]);
