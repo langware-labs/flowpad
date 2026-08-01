@@ -20,6 +20,30 @@ export interface ConversationMessage {
  * {typeid: "flow_message-<uuid>", ts: "<ISO>"} on disk, but call sites want
  * the bare id + type + ts triple — that's what this getter returns.
  */
+/**
+ * The newest pointer by `ts`, or null for an empty list. Exported so the
+ * surfaces that hold a raw pointer array (the inbox list, the recent strip)
+ * use the same rule as `Conversation.latestMessagePointer` — there must be
+ * exactly one definition of "latest" in the app.
+ *
+ * Unparseable timestamps sort oldest, so a corrupt entry can never win.
+ */
+export function latestPointer(
+  pointers: readonly ConversationMessagePointer[] | undefined | null,
+): ConversationMessagePointer | null {
+  let best: ConversationMessagePointer | null = null;
+  let bestAt = -Infinity;
+  for (const p of pointers ?? []) {
+    const at = Date.parse(p.ts);
+    const rank = Number.isNaN(at) ? -Infinity : at;
+    if (best === null || rank > bestAt) {
+      best = p;
+      bestAt = rank;
+    }
+  }
+  return best;
+}
+
 export interface ConversationMessagePointer {
   /** Entity id (uuid). */
   id: string;
@@ -190,6 +214,23 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
       out.push({ type: p.typeid.slice(0, dash), id: p.typeid.slice(dash + 1), ts: p.ts });
     }
     return out;
+  }
+
+  /**
+   * The NEWEST message pointer, by timestamp — not the last one appended.
+   *
+   * `message_ids` is append-ordered, and appends are arrival-ordered. Those
+   * agree only while messages arrive in the order they were sent, which stops
+   * being true the moment anything backfills: an ingested mailbox hands its
+   * history back newest-first, so the LAST pointer is the OLDEST mail. Reading
+   * `pointers[pointers.length - 1]` there silently corrupts the unread facet,
+   * the inbox preview line and the archive auto-revive comparison at once.
+   *
+   * Mirrors `Conversation.latest_message_ref()` on the backend — the two must
+   * agree or the badge and the list disagree about the same row.
+   */
+  get latestMessagePointer(): ConversationMessagePointer | null {
+    return latestPointer(this.conversationMessageIds);
   }
 
   /**

@@ -14,6 +14,25 @@ class MessageRef(NamedTuple):
     id: str
     landed_at: Optional[datetime]
 
+
+def _ref_sort_key(ref: "MessageRef") -> tuple:
+    """Total order over message refs, oldest-first, that cannot raise.
+
+    Two hazards a bare ``landed_at`` key would hit: ``None`` (a missing or
+    unparseable projected timestamp) is not comparable, and a naive datetime
+    is not comparable to an aware one — both appear in real projections, and
+    either one raises TypeError inside ``max``. Timestamped refs always beat
+    untimestamped ones; everything is compared in UTC.
+    """
+    from datetime import timezone  # noqa: PLC0415
+
+    landed = ref.landed_at
+    if landed is None:
+        return (0, 0.0)
+    if landed.tzinfo is None:
+        landed = landed.replace(tzinfo=timezone.utc)
+    return (1, landed.timestamp())
+
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.user import normalize_email
@@ -485,6 +504,25 @@ class Conversation(Entity):
             refs.append(MessageRef(pid, landed_at))
         return refs
 
+    def latest_message_ref(self) -> "Optional[MessageRef]":
+        """The NEWEST message, by timestamp — not the last one appended.
+
+        ``message_ids`` is append-ordered, and appends are arrival-ordered.
+        That is the same thing only while messages arrive in the order they
+        were sent, which stops being true the moment anything backfills: an
+        ingested mailbox hands its history back newest-first, so the LAST
+        pointer is the OLDEST mail. Reading ``refs[-1]`` there silently
+        corrupts the unread count, the inbox preview line and the archive
+        auto-revive comparison at once.
+
+        Refs whose timestamp is missing/unparseable sort oldest, so they can
+        never win — a corrupt entry must not become "latest".
+        """
+        refs = self.message_refs()
+        if not refs:
+            return None
+        return max(refs, key=_ref_sort_key)
+
     def is_archived(self) -> bool:
         """Conversation-level archive with auto-revive (see ``archived_at``):
         True while the stamp is set and no message NEWER than it has landed.
@@ -493,8 +531,8 @@ class Conversation(Entity):
         revive."""
         if self.archived_at is None:
             return False
-        refs = self.message_refs()
-        latest_ts = refs[-1].landed_at if refs else None
+        latest = self.latest_message_ref()
+        latest_ts = latest.landed_at if latest else None
         if latest_ts is None:
             return True
         archived_at = self.archived_at

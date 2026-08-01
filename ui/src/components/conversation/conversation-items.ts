@@ -10,6 +10,7 @@ export enum ConversationItemKind {
   POINTER = 'pointer',
   DRAFT = 'draft',
   SESSION_GROUP = 'session_group',
+  THREAD_GROUP = 'thread_group',
 }
 
 /**
@@ -34,7 +35,31 @@ export interface SessionGroupItem {
   sortAt: number;
 }
 
-export type GroupedConversationItem = ConversationItem | SessionGroupItem;
+/** Every message of ONE thread, packed into a single row.
+ *
+ *  Deliberately NOT the consecutive-run shape `SessionGroupItem` uses. A
+ *  session is a contiguous episode inside a timeline, so breaking its run on
+ *  interleaved chatter is correct. A thread is not: after two threads are
+ *  merged into one conversation their messages interleave in time, and
+ *  "packed together" has to mean one row per thread, ordered by that thread's
+ *  newest message — which is what a mail client does. */
+export interface ThreadGroupItem {
+  kind: ConversationItemKind.THREAD_GROUP;
+  key: string;
+  threadId: string;
+  /** Oldest-first, as `buildConversationItems` ordered them. */
+  children: ConversationItem[];
+  /** The newest message — what the packed row renders. */
+  head: ConversationItem;
+  /** How many messages the thread holds HERE. The authoritative count lives on
+   *  `MessageThread.message_count` (the conversation view fetches a bounded
+   *  window, so this can undercount a long thread); the caller passes that in
+   *  when it has it. */
+  messageCount: number;
+  sortAt: number;
+}
+
+export type GroupedConversationItem = ConversationItem | SessionGroupItem | ThreadGroupItem;
 
 function safeTime(value: string | Date | null | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -143,6 +168,73 @@ export function groupConversationItems(
   }
   flush();
   return out;
+}
+
+/**
+ * Partition by `fm.thread_id` — one row per thread, ordered by each thread's
+ * newest message.
+ *
+ * Messages with no thread id (every Flowpad-native message, and everything
+ * that predates threading) pass through UNCHANGED and keep their place in the
+ * timeline. So does a message whose body has not resolved yet — past the
+ * conversation's 500-message window `getFm` returns null and we cannot know
+ * its thread, exactly the degradation `groupConversationItems` already makes.
+ *
+ * `counts` supplies the authoritative per-thread size from
+ * `MessageThread.message_count`; without it the group falls back to what is
+ * loaded, which undercounts a thread longer than the window.
+ */
+/** The thread a feed row belongs to, or null when it has none / isn't loaded. */
+export function itemThreadId(
+  item: ConversationItem,
+  getFm: (id: string) => FlowMessage | null,
+): string | null {
+  return itemFlowMessage(item, getFm)?.thread_id ?? null;
+}
+
+export function groupThreadItems(
+  items: readonly ConversationItem[],
+  getFm: (id: string) => FlowMessage | null,
+  counts?: ReadonlyMap<string, number>,
+): GroupedConversationItem[] {
+  const groups = new Map<string, ThreadGroupItem>();
+  const out: GroupedConversationItem[] = [];
+
+  for (const item of items) {
+    const threadId = itemFlowMessage(item, getFm)?.thread_id ?? null;
+    if (!threadId) {
+      out.push(item);
+      continue;
+    }
+    const existing = groups.get(threadId);
+    if (!existing) {
+      const group: ThreadGroupItem = {
+        kind: ConversationItemKind.THREAD_GROUP,
+        key: `thread:${threadId}`,
+        threadId,
+        children: [item],
+        head: item,
+        messageCount: counts?.get(threadId) ?? 1,
+        sortAt: item.sortAt,
+      };
+      groups.set(threadId, group);
+      out.push(group);
+      continue;
+    }
+    existing.children.push(item);
+    // `items` arrives oldest-first, so the last one seen is the newest — but
+    // compare anyway rather than assume, so a caller that sorts differently
+    // still gets the right head.
+    if (item.sortAt >= existing.head.sortAt) {
+      existing.head = item;
+      existing.sortAt = item.sortAt;
+    }
+    if (counts?.get(threadId) === undefined) existing.messageCount = existing.children.length;
+  }
+
+  // Re-sort: a group's position is its NEWEST message, which it only learns
+  // after every child has been seen.
+  return out.sort((a, b) => a.sortAt - b.sortAt);
 }
 
 export interface SoloSendNoticeParams {

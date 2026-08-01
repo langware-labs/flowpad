@@ -58,6 +58,8 @@ import { DEFAULT_GRAPH_PRESENTATION, type GraphPresentation } from '@src/types/G
  * without a key translation in the middle.
  */
 export const RUN_PARAM = 'run';
+/** Which MessageThread a conversation view is filtered to (`?thread=<id>`). */
+export const THREAD_PARAM = 'thread';
 export const NODE_PARAM = 'node';
 export const PANEL_PARAM = 'panel';
 
@@ -1564,11 +1566,22 @@ export class DockPointer implements IDockPointer {
    */
   static forConversation(
     conversationId: string,
-    sub?: { messageId?: string | null },
+    sub?: { messageId?: string | null; thread?: string | null },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const pointer = sub?.messageId ? `${conversationId}/message/${sub.messageId}` : conversationId;
-    return new DockPointer(ViewType.CONVERSATION, pointer, undefined, layout);
+    // `thread` rides OPTIONS, not the path: opening a thread is a filter over
+    // the same conversation, so `tabHash` must stay `conversation|<id>` and
+    // never mint a second tab. Same call `forTriggers` and `forProcessRuns`
+    // make, for the same reason.
+    const options: Record<string, string> = {};
+    if (sub?.thread) options[THREAD_PARAM] = sub.thread;
+    return new DockPointer(ViewType.CONVERSATION, pointer, options, layout);
+  }
+
+  /** The thread this conversation dock is filtered to, or null for all. */
+  get threadId(): string | null {
+    return this.options?.[THREAD_PARAM] ?? null;
   }
 
   /**
