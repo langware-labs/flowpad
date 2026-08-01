@@ -48,6 +48,8 @@ def provider_env_var(
     icon: Optional[str],
     kind: Optional[str] = None,
     scopes: Optional[list[str]] = None,
+    expires_at: Optional[int] = None,
+    needs_reauth: bool = False,
 ) -> EnvVar:
     """One provider, as a value-free pointer row."""
     return EnvVar(
@@ -60,6 +62,11 @@ def provider_env_var(
         icon=icon,
         oauth_kind=kind,
         oauth_scopes=list(scopes or []),
+        # Freshness travels WITH the pointer. A local provider has no answer for
+        # these; a hub one does, and dropping them here is what would leave a
+        # dead credential rendering as Connected.
+        expires_at=expires_at,
+        needs_reauth=needs_reauth,
     )
 
 

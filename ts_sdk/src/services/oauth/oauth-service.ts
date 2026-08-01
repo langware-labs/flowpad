@@ -17,6 +17,10 @@ export enum ConnectionStatus {
   DISCONNECTED = 'DISCONNECTED',
   AVAILABLE = 'AVAILABLE',
   CONNECTED = 'CONNECTED',
+  /** Held but dead: the hub's refresh was permanently refused, so the row must
+   *  offer Connect rather than claim success. Distinct from DISCONNECTED — we
+   *  still hold a credential, it just no longer works. */
+  NEEDS_REAUTH = 'NEEDS_REAUTH',
 }
 
 export enum OAuthStatus {

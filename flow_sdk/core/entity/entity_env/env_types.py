@@ -52,6 +52,14 @@ class EnvVar(BaseModel):
     #: The scopes the flow will request. Empty when the side that owns the flow
     #: does not publish them (a hub provider's scopes live in its manifest).
     oauth_scopes: list[str] = []
+    #: Epoch seconds the held access token expires; None when the provider never
+    #: said, which means "does not expire".
+    expires_at: Optional[int] = None
+    #: The refresh was permanently refused — the credential is held but dead, and
+    #: only a new grant fixes it. Mirrors the hub's field of the same name so a
+    #: hub-held credential can say so here; deliberately separate from
+    #: ``var_status``, which answers "may this project use it", not "does it work".
+    needs_reauth: bool = False
 
     @property
     def is_ref(self) -> bool:
