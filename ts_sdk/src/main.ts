@@ -8,6 +8,7 @@ import { AgentHook } from './entities/agent-hook';
 import { authManager, dataContext, isTypeId, TypeId } from './FlowSync';
 import { snifferManager } from './services/snifferManager';
 import { isHubOnly, markHubModeReady, setSupportedPagesForHubMode } from './utils/hub-runtime';
+import { RuntimeKind } from './utils/runtime';
 import { ActionInfo } from './models';
 import { navigator } from './services/navigationService';
 // import { authService } from './services/authService';
@@ -42,13 +43,13 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       const session = !(window as any).allow_persistent_visitor; // session=true if no GDPR consent
       const bootstrapInfo = await dataManager.bootstrap(domain, session);
       // Dev override: `VITE_FORCE_HUB=true` forces hub mode when testing the OSS
-      // UI against a hub backend that doesn't yet advertise `supported_pages`
-      // (e.g. an un-updated dev backend). Set it ON bootstrapInfo so BOTH consumers
-      // agree — the leaf `isHubOnly()` signal AND main-loader's page-redirect,
-      // which reads `dataContext.bootstrapInfo.supported_pages` directly. No effect
-      // in normal builds.
+      // UI against a hub backend that doesn't yet declare its runtime. Set it ON
+      // bootstrapInfo so EVERY consumer agrees — the leaf `isHubOnly()` signal,
+      // `dataContext.runtimeKind`, and main-loader's page-redirect (which reads
+      // `bootstrapInfo.supported_pages` directly). No effect in normal builds.
       if (import.meta.env.VITE_FORCE_HUB === 'true') {
         (bootstrapInfo as { supported_pages?: string[] }).supported_pages = ['hub'];
+        bootstrapInfo.runtime = { ...bootstrapInfo.runtime, kind: RuntimeKind.HUB };
       }
       // Store bootstrap info in dataContext for UI access (e.g., desktop_info)
       dataContext.bootstrapInfo = bootstrapInfo;

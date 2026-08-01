@@ -8,6 +8,7 @@ import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
 import { TypeId } from '../models/TypeId';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 import { isHubOnly } from '../utils/hub-runtime';
+import { isElectronShell } from '../utils/runtime';
 import { isAbsoluteMachinePath } from '../utils/vfs-path';
 import { UserRole } from '../services/membershipService';
 import {
@@ -245,6 +246,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (session !== undefined) {
       queryParams.session = session;
     }
+
+    // The server decides the runtime kind; this is the one input only the
+    // client can observe (the preload bridge). Sent on every bootstrap rather
+    // than stored server-side, because one local server serves both the
+    // Electron shell and localhost browser tabs and must answer each correctly.
+    queryParams.electron = isElectronShell();
 
     // Add UTM params from current URL
     const utmParams = getUtmParams();
