@@ -1,5 +1,5 @@
 import '@src/i18n-init';
-import { toplog } from '@sdk';
+import { isElectronShell, toplog } from '@sdk';
 import { sdkConfig } from '@sdk/config/index';
 import { initDesktopBackend } from '@sdk/config/desktop';
 import '@src/styles/index.css';
@@ -28,7 +28,9 @@ function defineGlobals() {
 // windows never get it — wire it up ourselves, Electron only, to avoid
 // double-navigation in the browser.
 function bindMouseNavButtons() {
-  if (!(window as any).electronAPI) return;
+  // Runs before bootstrap, so it asks the shell directly rather than reading
+  // `runtimeKind` — this is the same probe the SDK sends to the server.
+  if (!isElectronShell()) return;
   window.addEventListener('mouseup', e => {
     if (e.button === 3) {
       e.preventDefault();

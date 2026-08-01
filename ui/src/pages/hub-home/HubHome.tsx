@@ -16,7 +16,6 @@ import { useProjects } from '@src/hooks/use-projects';
 import { useDesktops, nextDesktopName, type DesktopDetails } from '@src/hooks/use-desktops';
 import { StepList } from '@src/components/ui/step-list';
 import { NewDesktopDialog } from './NewDesktopDialog';
-import { EnvironmentBanner } from '@src/components/environment-banner/EnvironmentBanner';
 import {
   Building2,
   ExternalLink,
@@ -175,7 +174,6 @@ export function HubHome() {
 
   return (
     <div className="flex h-full flex-col overflow-auto">
-      <EnvironmentBanner />
       <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-10 sm:py-14">
         {/* Hero — greeting, same typographic treatment as HomeLanding */}
         <div className="flex flex-col items-center gap-3 text-center">

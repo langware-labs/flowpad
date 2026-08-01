@@ -12,7 +12,9 @@ interface AccountInfoProps {
 }
 
 export function AccountInfo({ user }: AccountInfoProps) {
-  const isDesktop = dataContext.bootstrapInfo?.desktop_info != null;
+  // Was `desktop_info != null` — a third spelling of "an app server answered",
+  // which is what `isDesktop` means. One predicate, one source (runtime.kind).
+  const isDesktop = dataContext.isDesktop;
 
   return (
     <Tabs defaultValue="organization" className="flex min-h-0 flex-1 flex-col">

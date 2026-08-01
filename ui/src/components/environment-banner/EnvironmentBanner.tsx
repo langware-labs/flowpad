@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { Trans } from '@lingui/react/macro';
-import { dataManager, FLOWPAD_ASSISTANT_PROJECT_UNAME, Layout, Project, TypeId } from '@sdk';
-import { isHubOnly } from '@src/navigation/hub-runtime';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { X } from 'lucide-react';
+import { dataManager, FLOWPAD_ASSISTANT_PROJECT_UNAME, Layout, Project, RuntimeKind, TypeId } from '@sdk';
+import { useContext } from '@src/hooks/useContext';
+import { RUNTIME_CLASS } from './runtime-appearance';
+import { minimizeBanner, useBannerMinimized } from './use-banner-minimized';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -9,17 +12,25 @@ import { MarkdownView } from '@src/components/markdown-view';
 import { notify } from '@src/notifications';
 
 /**
- * EnvironmentBanner — thin strip at the top of the home pages that color-codes
- * which of the three FlowPad runtimes this UI is serving:
+ * EnvironmentBanner — the app's topmost strip, spanning the FULL window width
+ * above the rail and the content column (mounted once in `FlowPage`, not per
+ * page), color-coding which FlowPad runtime this UI is serving.
  *
- *   hub      — grey, contrast-flipped per theme (dark grey on light, light grey
- *              on dark) so it reads as "neutral chrome" in both modes
- *   e2b      — blue: the app inside an E2B cloud sandbox (detected by the
- *              sandbox public-URL host, `<port>-<sandbox-id>.e2b.dev`)
- *   desktop  — green: the local desktop app (everything else)
+ * It DETECTS NOTHING. The kind is resolved by the backend and arrives on
+ * `bootstrapInfo.runtime.kind`; this component only maps it to a label and a
+ * color. The previous version guessed from `window.location.hostname` and could
+ * not tell the Electron shell from a browser tab, nor an agent's box from a
+ * user's — both of which are now distinct kinds the server reports.
  *
- * Clicking the banner opens the "Runtime environments" wiki page (a system doc
- * shipped with the Flowpad Assistant project).
+ * Clicking the label opens the "Runtime environments" wiki page (a system doc
+ * shipped with the Flowpad Assistant project). Closing it minimizes the strip
+ * into the rail's Home icon, which then carries the runtime color — the signal
+ * is never lost, only made small. See `use-banner-minimized` for why that lasts
+ * exactly until the next restart.
+ *
+ * The root is a `div`, not a `button`: it holds two independent controls (open
+ * the wiki, minimize), and a button inside a button is invalid HTML that React
+ * will warn about and screen readers mis-announce.
  *
  * Desk/e2b: the `@local` wiki alias resolves against the CURRENT project, so
  * the click resolves the assistant project's own default wiki and opens the
@@ -33,24 +44,11 @@ import { notify } from '@src/notifications';
 
 const WIKI_PAGE = 'Runtime environments';
 
-export type RuntimeKind = 'hub' | 'e2b' | 'desktop';
-
-export function detectRuntime(): RuntimeKind {
-  if (isHubOnly()) return 'hub';
-  const host = typeof window !== 'undefined' ? window.location.hostname : '';
-  if (host.endsWith('.e2b.dev') || host.endsWith('.e2b.app')) return 'e2b';
-  return 'desktop';
-}
-
-const BANNER_CLASS: Record<RuntimeKind, string> = {
-  hub: 'bg-neutral-600 text-neutral-50 dark:bg-neutral-300 dark:text-neutral-900',
-  e2b: 'bg-blue-600 text-white',
-  desktop: 'bg-green-600 text-white',
-};
-
 function RuntimeLabel({ kind }: { kind: RuntimeKind }) {
-  if (kind === 'hub') return <Trans>Hub</Trans>;
-  if (kind === 'e2b') return <Trans>Cloud Sandbox</Trans>;
+  if (kind === RuntimeKind.HUB) return <Trans>Hub</Trans>;
+  if (kind === RuntimeKind.SANDBOX) return <Trans>Cloud Sandbox</Trans>;
+  if (kind === RuntimeKind.AGENT) return <Trans>Agent</Trans>;
+  if (kind === RuntimeKind.BROWSER) return <Trans>Local Browser</Trans>;
   return <Trans>Desktop</Trans>;
 }
 
@@ -87,11 +85,13 @@ async function fetchHubWikiContent(name: string): Promise<string | null> {
 
 export function EnvironmentBanner() {
   const { navigation } = useDockNavigation();
-  const kind = detectRuntime();
+  const { runtimeKind: kind } = useContext();
+  const { t } = useLingui();
+  const minimized = useBannerMinimized();
   const [hubDoc, setHubDoc] = useState<string | null>(null);
 
   const openWiki = async () => {
-    if (isHubOnly()) {
+    if (kind === RuntimeKind.HUB) {
       try {
         const content = await fetchHubWikiContent(WIKI_PAGE);
         if (content) setHubDoc(content);
@@ -108,18 +108,40 @@ export function EnvironmentBanner() {
     navigation.openDock(DockPointer.forWiki(WIKI_PAGE, Layout.DOCK, wikiRef ?? undefined));
   };
 
+  // Minimized: the rail's Home icon carries the color instead. Rendering
+  // nothing here (rather than a zero-height strip) keeps the layout honest —
+  // the content column really does get the row back.
+  if (minimized) return null;
+
   return (
     <>
-      <button
-        type="button"
-        onClick={() => void openWiki()}
+      <div
         data-testid="environment-banner"
         data-runtime={kind}
-        title="What are Flowpad's runtime environments?"
-        className={`flex w-full shrink-0 cursor-pointer items-center justify-center py-1 text-xs font-medium hover:opacity-90 ${BANNER_CLASS[kind]}`}
+        className={`relative flex w-full shrink-0 items-center justify-center py-1 text-xs font-medium ${RUNTIME_CLASS[kind]}`}
       >
-        <RuntimeLabel kind={kind} />
-      </button>
+        <button
+          type="button"
+          onClick={() => void openWiki()}
+          data-testid="environment-banner-label"
+          title="What are Flowpad's runtime environments?"
+          className="cursor-pointer hover:opacity-90"
+        >
+          <RuntimeLabel kind={kind} />
+        </button>
+        {/* Absolutely positioned so the label stays centred on the WINDOW, not
+            on the space left over beside the close button. */}
+        <button
+          type="button"
+          onClick={minimizeBanner}
+          data-testid="environment-banner-close"
+          title={t`Minimize to the Home icon (returns on restart)`}
+          aria-label={t`Minimize environment banner`}
+          className="absolute right-1 flex h-4 w-4 cursor-pointer items-center justify-center rounded-sm opacity-70 hover:bg-black/20 hover:opacity-100"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
       <Dialog open={hubDoc !== null} onOpenChange={(open) => !open && setHubDoc(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>

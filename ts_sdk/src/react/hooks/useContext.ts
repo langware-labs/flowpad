@@ -63,10 +63,10 @@ export function useContext() {
     visitor: typeof dataContext.visitor;
     bootstrapError: typeof dataContext.bootstrapError;
     isBootstrapping: typeof dataContext.isBootstrapping;
-    envName: typeof dataContext.envName;
     cloudApiUrl: typeof dataContext.cloudApiUrl;
     cloudLoginAvailable: typeof dataContext.cloudLoginAvailable;
     desktopInfo: typeof dataContext.desktopInfo;
+    runtimeKind: typeof dataContext.runtimeKind;
     isDesktop: typeof dataContext.isDesktop;
     version: typeof dataContext.version;
     instanceName: typeof dataContext.instanceName;
@@ -102,10 +102,10 @@ export function useContext() {
     visitor: dataContext.visitor,
     bootstrapError: dataContext.bootstrapError,
     isBootstrapping: dataContext.isBootstrapping,
-    envName: dataContext.envName,
     cloudApiUrl: dataContext.cloudApiUrl,
     cloudLoginAvailable: dataContext.cloudLoginAvailable,
     desktopInfo: dataContext.desktopInfo,
+    runtimeKind: dataContext.runtimeKind,
     isDesktop: dataContext.isDesktop,
     version: dataContext.version,
     instanceName: dataContext.instanceName,
@@ -151,10 +151,10 @@ export function useContext() {
       visitor: dataContext.visitor,
       bootstrapError: dataContext.bootstrapError,
       isBootstrapping: dataContext.isBootstrapping,
-      envName: dataContext.envName,
       cloudApiUrl: dataContext.cloudApiUrl,
       cloudLoginAvailable: dataContext.cloudLoginAvailable,
       desktopInfo: dataContext.desktopInfo,
+      runtimeKind: dataContext.runtimeKind,
       isDesktop: dataContext.isDesktop,
       version: dataContext.version,
       instanceName: dataContext.instanceName,
@@ -200,10 +200,10 @@ export function useContext() {
       prev.visitor !== current.visitor ||
       prev.bootstrapError !== current.bootstrapError ||
       prev.isBootstrapping !== current.isBootstrapping ||
-      prev.envName !== current.envName ||
       prev.cloudApiUrl !== current.cloudApiUrl ||
       prev.cloudLoginAvailable !== current.cloudLoginAvailable ||
       prev.desktopInfo !== current.desktopInfo ||
+      prev.runtimeKind !== current.runtimeKind ||
       prev.isDesktop !== current.isDesktop ||
       prev.version !== current.version ||
       prev.instanceName !== current.instanceName ||
