@@ -298,8 +298,10 @@ export function ConversationView({
     }),
     [conversationId],
   );
+  // Only the packed view reads these counts, so a thread-filtered view opens
+  // no subscription at all.
   const { data: threads = [] } = useEntitiesQuery<MessageThread>(threadsRequest, {
-    enabled: !!conversationId,
+    enabled: !!conversationId && !threadId,
   });
   const threadCounts = useMemo(
     () => new Map(threads.map((th) => [th.id ?? '', th.message_count ?? 0])),
@@ -309,27 +311,29 @@ export function ConversationView({
   // Two views of one feed, chosen by the URL:
   //   ?thread=<id> → only that thread's messages, unpacked
   //   (absent)     → every thread packed into one row, internal chat flat
-  const visibleItems = useMemo(() => {
-    if (!threadId) return orderedItems;
-    return orderedItems.filter(
-      (it) => itemThreadId(it, (id) => messagesById.get(id) ?? null) === threadId,
-    );
-  }, [orderedItems, messagesById, threadId]);
-
-  // Consecutive live-session runs collapse into indented SESSION_GROUP rows
-  // (keyed by fm.remote_worker_session_id). Bodies come from the live query —
-  // messages outside the query window degrade to flat rendering. Thread
-  // packing runs FIRST and only when unfiltered: inside a thread the reader
-  // wants the messages, not the pile.
+  //
+  // Threaded and session messages are disjoint — an ingested email never has a
+  // `remote_worker_session_id` — so each grouper gets its own slice and ONE
+  // call. Feeding non-thread rows through `groupConversationItems` one at a
+  // time (the obvious composition) would silently defeat it: it collapses
+  // CONSECUTIVE runs, and a one-element array can never form a run, so two
+  // adjacent session messages would render as two separate groups.
   const groupedItems = useMemo(() => {
     const getFm = (id: string) => messagesById.get(id) ?? null;
-    if (threadId) return groupConversationItems(visibleItems, getFm);
-    return groupThreadItems(visibleItems, getFm, threadCounts).flatMap((row) =>
-      row.kind === ConversationItemKind.THREAD_GROUP
-        ? [row]
-        : groupConversationItems([row as ConversationItem], getFm),
-    );
-  }, [visibleItems, messagesById, threadId, threadCounts]);
+    if (threadId) {
+      const inThread = orderedItems.filter((it) => itemThreadId(it, getFm) === threadId);
+      return groupConversationItems(inThread, getFm);
+    }
+    const threaded: ConversationItem[] = [];
+    const plain: ConversationItem[] = [];
+    for (const item of orderedItems) {
+      (itemThreadId(item, getFm) ? threaded : plain).push(item);
+    }
+    return [
+      ...groupThreadItems(threaded, getFm, threadCounts),
+      ...groupConversationItems(plain, getFm),
+    ].sort((a, b) => a.sortAt - b.sortAt);
+  }, [orderedItems, messagesById, threadId, threadCounts]);
 
   // One row of the feed — a normal bubble, a draft bubble, or (for
   // kind=session_event messages) a slim centered system line. Shared by the

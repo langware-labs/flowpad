@@ -38,7 +38,8 @@ describe('groupThreadItems', () => {
     const g = out[0] as ThreadGroupItem;
     expect(g.kind).toBe(ConversationItemKind.THREAD_GROUP);
     expect(g.threadId).toBe('t1');
-    expect(g.children).toHaveLength(3);
+    expect(g.loaded).toBe(3);
+    expect(g.messageCount).toBe(3);
   });
 
   it('renders the NEWEST message as the head', () => {
@@ -75,7 +76,10 @@ describe('groupThreadItems', () => {
     const counts = new Map([['t1', 812]]);
     const g = groupThreadItems(items, table({ a: 't1', b: 't1' }), counts)[0] as ThreadGroupItem;
     expect(g.messageCount).toBe(812);
-    expect(g.children).toHaveLength(2);
+    // What is actually in the window stays visible and separate — the badge
+    // must not claim 812 are loaded.
+    expect(g.loaded).toBe(2);
+    expect(g.authoritative).toBe(true);
   });
 
   it('degrades to flat for messages whose body has not resolved', () => {

@@ -15,7 +15,7 @@ row. Keyed on CHANNEL, not provider: a Gmail thread ingested through the
 harness transport today and the API transport tomorrow must resolve to ONE
 thread (see ``cloud_origin.CloudOrigin``).
 
-**Why the counters live here and not on each message.** The conversation view
+**Why the count lives here and not on each message.** The conversation view
 loads a bounded window of messages (``CONVERSATION_MESSAGES_WINDOW``, 500) with
 no pagination, so counting a thread client-side is silently wrong for any real
 mailbox. One row per thread, one writer, counted from the store.
@@ -25,23 +25,16 @@ the inbox projector.
 """
 from __future__ import annotations
 
-from typing import ClassVar, Optional
+from typing import ClassVar, FrozenSet
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.core import Entity
+from flow_sdk.core.entity.projected_fields import ProjectedFields
 from flow_sdk.schema.types import EntityType
 
-# Projection guard — the ``Conversation.message_ids`` pattern. These three are
-# derived from the FlowMessages that carry this thread's id; application code
-# must go through ``recompute_thread_projection`` (inbox/projection.py), never
-# assign them.
-_PROJECTION_SENTINEL = object()
 
-_PROJECTED_FIELDS = frozenset({"message_count", "head_message_id", "last_message_at"})
-
-
-class MessageThread(Entity):
+class MessageThread(ProjectedFields, Entity):
     type: str = APIField(default=EntityType.MESSAGE_THREAD.value)
 
     # ── identity ───────────────────────────────────────────────────────────
@@ -62,48 +55,16 @@ class MessageThread(Entity):
     # the conversation's title, which after a merge names several threads.
     title: str = APIField(default="")
 
-    # ── projections — see the guard below ──────────────────────────────────
+    # ── projection — derived from the messages carrying this thread's id ───
+    # Written only by `recompute_thread_projection` (inbox/projection.py); the
+    # ProjectedFields guard refuses a direct assignment.
     message_count: int = APIField(default=0, sharing=Sharing.PRIVATE)
-    # The newest message: what the packed row renders without loading the rest.
-    head_message_id: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
-    last_message_at: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
 
+    projected_fields: ClassVar[FrozenSet[str]] = frozenset({"message_count"})
+    projection_writer: ClassVar[str] = "recompute_thread_projection"
     _api_visible: ClassVar[bool] = True
 
     @staticmethod
     def allocate_deterministic_id(channel: str, thread_key: str) -> str:
         """v5 id from (channel, thread key) — derived, never looked up."""
         return mint_uuid(f"message_thread:{channel}:{thread_key}")
-
-    def __setattr__(self, key, value):
-        if (
-            key in _PROJECTED_FIELDS
-            and not self.__dict__.get("_allow_projection_write", False)
-        ):
-            raise AttributeError(
-                f"MessageThread.{key} is a projection — write via "
-                f"recompute_thread_projection, not directly"
-            )
-        return super().__setattr__(key, value)
-
-    def apply_field_updates(self, fields: dict):
-        """Silently drop projection fields from inbound PUT/PATCH bodies.
-
-        A client save round-trips the whole entity dump, which includes the
-        counters. Re-applying identical values would be a no-op, but the guard
-        refuses any direct write — so strip them here rather than making the
-        guard leaky. Same reasoning as ``Conversation.apply_field_updates``.
-        """
-        if fields:
-            fields = {k: v for k, v in fields.items() if k not in _PROJECTED_FIELDS}
-        return super().apply_field_updates(fields)
-
-    def _set_projection(self, key: str, value, sentinel) -> None:
-        """Internal projection writer used by the inbox projector."""
-        if sentinel is not _PROJECTION_SENTINEL:
-            raise PermissionError("invalid projection sentinel")
-        object.__setattr__(self, "_allow_projection_write", True)
-        try:
-            setattr(self, key, value)
-        finally:
-            object.__setattr__(self, "_allow_projection_write", False)

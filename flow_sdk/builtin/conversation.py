@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, ClassVar, List, NamedTuple, Optional
+from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optional
 
 
 class MessageRef(NamedTuple):
@@ -37,6 +37,7 @@ from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.user import normalize_email
 from flow_sdk.core import Entity
+from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
 from flow_sdk.db.drivers.db_base_record import TypeId
 from flow_sdk.schema.types import EntityType
 
@@ -61,10 +62,10 @@ if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.cloud_client.client import FlowpadClient
 
 
-# Sentinel used by ConversationRecord.sync_to_db to bypass the projection
-# guard on Conversation.message_ids / message_count. Application code never
-# imports this — it must call the projection writer on the record instead.
-_PROJECTION_SENTINEL = object()
+# Kept as module-level aliases: `fs_store/operations/conversation.py` imports
+# `_PROJECTION_SENTINEL` from here, and the guard itself now lives in the
+# shared `ProjectedFields` mixin (one sentinel for every projected entity).
+_PROJECTION_SENTINEL = PROJECTION_SENTINEL
 
 _PROJECTED_FIELDS = frozenset({"message_ids", "message_count"})
 
@@ -124,7 +125,7 @@ def _coerce_context_typeid(ref) -> Optional[TypeId]:
     return None
 
 
-class Conversation(Entity):
+class Conversation(ProjectedFields, Entity):
     """A conversation composed into a Task (or other parent entity).
 
     message_ids is a JSON-encoded list of typed Pointers projected from the
@@ -171,6 +172,8 @@ class Conversation(Entity):
     # side. Defaults False (copy) — the sender opts in per conversation via the
     # Share dialog's Git toggle. Plain-text replies never change it.
     git_sharing_enabled: bool = APIField(default=False)
+    projected_fields: ClassVar[FrozenSet[str]] = _PROJECTED_FIELDS
+    projection_writer: ClassVar[str] = "ConversationRecord.sync_to_db"
     # Strip-only dismissal. When set, the Recent Conversations strip hides
     # this row UNTIL a FlowMessage newer than ``dismissed_at`` is appended
     # (auto-revive on new activity). The Inbox ignores this field entirely.
@@ -704,41 +707,6 @@ class Conversation(Entity):
         """
         from flow_sdk.fs_store.operations.conversation import default_jsonl_path  # noqa: PLC0415
         return str(default_jsonl_path(self.id))
-
-    def __setattr__(self, key, value):
-        if (
-            key in _PROJECTED_FIELDS
-            and not self.__dict__.get("_allow_projection_write", False)
-        ):
-            raise AttributeError(
-                f"Conversation.{key} is a projection — write via "
-                f"ConversationRecord.sync_to_db, not directly"
-            )
-        return super().__setattr__(key, value)
-
-    def apply_field_updates(self, fields: dict):
-        """Silently drop projection fields from inbound PUT/PATCH bodies.
-
-        A typical client save round-trips the entire entity dump, which
-        includes ``message_ids`` / ``message_count``. Those are projections
-        of ``conversation.jsonl`` — re-applying the previous values would
-        be a no-op, but the projection guard refuses any direct write.
-        Stripping them here keeps generic graph CRUD working without making
-        the projection guard leaky.
-        """
-        if fields:
-            fields = {k: v for k, v in fields.items() if k not in _PROJECTED_FIELDS}
-        return super().apply_field_updates(fields)
-
-    def _set_projection(self, key: str, value, sentinel) -> None:
-        """Internal projection writer used by ConversationRecord.sync_to_db."""
-        if sentinel is not _PROJECTION_SENTINEL:
-            raise PermissionError("invalid projection sentinel")
-        object.__setattr__(self, "_allow_projection_write", True)
-        try:
-            setattr(self, key, value)
-        finally:
-            object.__setattr__(self, "_allow_projection_write", False)
 
     # NOTE: per-subclass project-id projection moved to
     # ``Entity.get_implicit_private_context_entities`` in the base. The

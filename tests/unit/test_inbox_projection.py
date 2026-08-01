@@ -165,22 +165,22 @@ class TestPermalinkDerivation:
     """
 
     def test_gmail_addresses_by_thread(self):
-        from flow_sdk.builtin.cloud_origin import permalink_for
+        from flow_sdk.ingest.drivers.channel_links import permalink_for
 
         assert permalink_for("gmail", "msg-1", "thread-9").endswith("#all/thread-9")
 
     def test_it_falls_back_to_the_message_id(self):
-        from flow_sdk.builtin.cloud_origin import permalink_for
+        from flow_sdk.ingest.drivers.channel_links import permalink_for
 
         assert permalink_for("gmail", "msg-1", "").endswith("#all/msg-1")
 
     def test_it_is_stable_across_calls(self):
-        from flow_sdk.builtin.cloud_origin import permalink_for
+        from flow_sdk.ingest.drivers.channel_links import permalink_for
 
         assert permalink_for("gmail", "m", "t") == permalink_for("gmail", "m", "t")
 
     def test_an_unknown_channel_yields_no_link(self):
-        from flow_sdk.builtin.cloud_origin import permalink_for
+        from flow_sdk.ingest.drivers.channel_links import permalink_for
 
         # Better an inert badge than a URL that 404s.
         assert permalink_for("slack", "m", "t") == ""
@@ -247,11 +247,8 @@ class TestRefreshOwnsOnlyItsFields:
         async def _save(**kw):
             saved.update(fm.__dict__)
         fm.save = _save
-        monkeypatch.setattr("flow_sdk.builtin.flow_message.FlowMessage.get_one",
-                            classmethod(lambda cls, q: _resolved(fm)))
-
         await projection._refresh_projected_fields(
-            "m1", {"text": "new subject", "sender_name": "Ada"}, notify=False,
+            fm, {"text": "new subject", "sender_name": "Ada"}, notify=False,
         )
         assert fm.text == "new subject"
         assert fm.sender_name == "Ada"
@@ -269,11 +266,8 @@ class TestRefreshOwnsOnlyItsFields:
         async def _save(**kw):
             calls.append(1)
         fm.save = _save
-        monkeypatch.setattr("flow_sdk.builtin.flow_message.FlowMessage.get_one",
-                            classmethod(lambda cls, q: _resolved(fm)))
-
         await projection._refresh_projected_fields(
-            "m1", {"text": "same", "sender_name": "Ada"}, notify=False,
+            fm, {"text": "same", "sender_name": "Ada"}, notify=False,
         )
         # The steady-state poll must cost a read and nothing else — no save,
         # no WS broadcast, no unread recompute storm.
@@ -285,10 +279,7 @@ class TestRefreshOwnsOnlyItsFields:
 
         fm = SimpleNamespace(id="m1", text="same", is_read=False, origin=None)
         fm.save = lambda **kw: _resolved(None)
-        monkeypatch.setattr("flow_sdk.builtin.flow_message.FlowMessage.get_one",
-                            classmethod(lambda cls, q: _resolved(fm)))
-
         await projection._refresh_projected_fields(
-            "m1", {"text": "same", "is_read": True}, notify=False,
+            fm, {"text": "same", "is_read": True}, notify=False,
         )
         assert fm.is_read is False

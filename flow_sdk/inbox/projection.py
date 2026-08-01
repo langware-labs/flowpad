@@ -72,7 +72,7 @@ def normalize_subject(subject: str) -> str:
 
 def thread_key_for(item, subject: str) -> str:
     """The item's grouping key: the driver's handle, else the subject."""
-    native = (getattr(item, "thread_key", "") or "").strip()
+    native = (item.thread_key or "").strip()
     return native or normalize_subject(subject)
 
 
@@ -93,7 +93,7 @@ def is_message(item) -> bool:
     """
     from flow_sdk.tags.grammar import tag_is_within  # noqa: PLC0415
 
-    return tag_is_within(str(getattr(item, "kind", "") or ""), MESSAGE_KIND_ROOT)
+    return tag_is_within(item.kind or "", MESSAGE_KIND_ROOT)
 
 
 def channel_of(source) -> str:
@@ -107,21 +107,28 @@ def channel_of(source) -> str:
     return (getattr(source, "channel", "") or getattr(source, "provider", "") or "").strip()
 
 
-async def project_source_item(item, *, source=None, notify: bool = True) -> Optional[str]:
+async def project_source_item(item, *, source=None, notify: bool = True,
+                              recount: bool = True) -> Optional[str]:
     """Project one SourceItem into its conversation. Returns the FlowMessage id.
 
     Idempotent: the ids are derived, so a second call upserts the same rows.
     Returns None when the item cannot be placed (no source, no body) rather
     than raising — one bad record must not stall a sync.
+
+    ``recount=False`` defers the thread recount to the caller. A sweep sets it:
+    recounting per item is quadratic in thread depth, because each recount
+    reloads the whole thread.
     """
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.app.actions.materialize_flow_message import (  # noqa: PLC0415
         ensure_conversation_entity,
         materialize_flow_message,
     )
-    from flow_sdk.builtin.cloud_origin import CloudOrigin, permalink_for  # noqa: PLC0415
+    from flow_sdk.builtin.cloud_origin import CloudOrigin  # noqa: PLC0415
+    from flow_sdk.ingest.drivers.channel_links import permalink_for  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
 
     if not is_message(item):
         return None  # a feed article is not inbox material — see MESSAGE_KIND_ROOT
@@ -132,22 +139,24 @@ async def project_source_item(item, *, source=None, notify: bool = True) -> Opti
         return None
 
     channel = channel_of(source)
-    subject = str(getattr(item, "name", "") or "")
+    subject = item.name or ""
     key = thread_key_for(item, subject)
     thread_id = MessageThread.allocate_deterministic_id(channel, key)
-    conversation_id = mint_uuid(f"conversation:{thread_id}")
 
     thread = await MessageThread.get_one({"id": thread_id})
     if thread is None:
+        # The minted id is a BIRTH default only — once the thread exists, its
+        # `conversation_id` is authoritative, because a merge repoints it and
+        # that repoint is the whole reason the id is not derived from the key.
         thread = MessageThread(
             id=thread_id, channel=channel, thread_key=key,
-            conversation_id=conversation_id, title=subject or key,
-            name=subject or key,
+            conversation_id=mint_uuid(f"conversation:{thread_id}"),
+            title=subject or key, name=subject or key,
         )
         await thread.save(notify=False)
-    # A merged thread points at someone else's conversation — that repoint is
-    # the whole reason the id is not derived from the key. Always follow it.
-    conversation_id = thread.conversation_id or conversation_id
+    conversation_id = thread.conversation_id
+
+    # Defensive reads end here: `item` and `source` are typed entities.
 
     await ensure_conversation_entity(
         conversation_id, parent_typeid=None, someone_typeid=None,
@@ -158,39 +167,37 @@ async def project_source_item(item, *, source=None, notify: bool = True) -> Opti
     fm_id = mint_uuid(f"flow_message:source_item:{item.id}")
     payload: dict[str, Any] = {
         "id": fm_id,
-        "text": str(getattr(item, "body", "") or subject),
+        "text": item.body or subject,
         "sender_id": sender_id,
         "sender_name": sender_name,
         "thread_id": thread_id,
         "origin": CloudOrigin(
             kind=channel,
             provider=str(getattr(source, "provider", "") or ""),
-            data_source_id=str(item.data_source_id or ""),
-            source_item_id=str(item.id or ""),
-            external_id=str(getattr(item, "external_id", "") or ""),
+            data_source_id=item.data_source_id or "",
+            source_item_id=item.id or "",
+            external_id=item.external_id or "",
             # The connector's link when it gives one; otherwise the channel's
             # own address formula, so "Open in Gmail" works for records whose
             # provider never supplied a URL.
-            url=(str(getattr(item, "permalink", "") or "")
-                 or permalink_for(channel, str(getattr(item, "external_id", "") or ""), key)),
+            url=item.permalink or permalink_for(channel, item.external_id or "", key),
         ).model_dump(),
     }
-    reply_to_external = getattr(item, "reply_to_external_id", None)
-    if reply_to_external:
-        payload["reply_to_id"] = mint_uuid(
-            f"flow_message:source_item:"
-            f"{_source_item_id(item.data_source_id, item.stream_key, reply_to_external)}"
-        )
+    if item.reply_to_external_id:
+        parent = SourceItem.allocate_deterministic_id(
+            item.data_source_id, item.stream_key, item.reply_to_external_id)
+        payload["reply_to_id"] = mint_uuid(f"flow_message:source_item:{parent}")
 
     # `bundle_ts` becomes the conversation pointer's timestamp, which is what
     # orders the feed — so a backfill lands in message time, not arrival order.
-    await materialize_flow_message(
+    fm = await materialize_flow_message(
         payload, conversation_id, someone_typeid=None,
-        bundle_ts=str(getattr(item, "occurred_at", "") or "") or None,
+        bundle_ts=(item.occurred_at or None),
         notify=notify,
     )
-    await _refresh_projected_fields(fm_id, payload, notify=notify)
-    await recompute_thread_projection(thread_id, notify=notify)
+    await _refresh_projected_fields(fm, payload, notify=notify)
+    if recount:
+        await recompute_thread_projection(thread_id, thread=thread, notify=notify)
     return fm_id
 
 
@@ -202,7 +209,7 @@ _PROJECTED_MESSAGE_FIELDS = (
 )
 
 
-async def _refresh_projected_fields(fm_id: str, payload: dict, *, notify: bool) -> None:
+async def _refresh_projected_fields(fm, payload: dict, *, notify: bool) -> None:
     """Re-apply the source snapshot to an already-materialized message.
 
     ``materialize_flow_message`` is deliberately create-only for local-origin
@@ -214,11 +221,8 @@ async def _refresh_projected_fields(fm_id: str, payload: dict, *, notify: bool) 
     conversation would keep showing the first snapshot forever.
 
     Writes only the fields above, and only when one actually differs, so the
-    common no-op poll costs a read and nothing else.
+    common no-op poll costs nothing.
     """
-    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-
-    fm = await FlowMessage.get_one({"id": fm_id})
     if fm is None:
         return
     changed = False
@@ -238,12 +242,6 @@ async def _refresh_projected_fields(fm_id: str, payload: dict, *, notify: bool) 
         await fm.save(notify=notify)
 
 
-def _source_item_id(source_id: str, stream_key: str, external_id: str) -> str:
-    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-
-    return SourceItem.allocate_deterministic_id(source_id, stream_key, external_id)
-
-
 def self_addresses(source) -> set[str]:
     """Every address that means "me" on this source, casefolded.
 
@@ -253,22 +251,38 @@ def self_addresses(source) -> set[str]:
     """
     values = list(getattr(source, "account_identities", None) or [])
     values.append(str(getattr(source, "account_key", "") or ""))
-    return {v.strip().casefold() for v in values if v and v.strip()}
+    return {_fold(v) for v in values if v and v.strip()}
+
+
+def _fold(value: str) -> str:
+    """Compare-form for an address or handle.
+
+    `normalize_email` is the documented funnel for every email entering the
+    system ("strip + lowercase"), so use it — a parallel `casefold()` here
+    would diverge on non-ASCII (`ß` → `ss`) and silently fail to recognise our
+    own mail, which is the exact failure `_sender_for` exists to prevent. Non-
+    email handles (a Slack user id) fall through its passthrough unchanged.
+    """
+    from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+
+    text = (value or "").strip()
+    return normalize_email(text) or text.lower()
 
 
 def display_name_of(raw: str, address: str) -> str:
     """A human name from whatever the provider handed us.
 
     Providers are inconsistent here: some give `"Ada Lovelace" <ada@x.io>`,
-    some give a bare name, some give the address twice. Prefer a real name,
-    fall back to the address — never render an empty byline.
+    some a bare name, some the address twice. `parseaddr` is the stdlib's
+    RFC 5322 reader — it unescapes quoted names and tolerates trailing junk
+    (`"Ada" <a@x.io> (via list)`), both of which a hand-rolled split gets
+    wrong. Falls back to the address so a byline is never empty.
     """
+    from email.utils import parseaddr  # noqa: PLC0415
+
     text = (raw or "").strip()
-    if "<" in text and text.endswith(">"):
-        name = text.split("<", 1)[0].strip().strip('"').strip()
-        if name:
-            return name
-    return text or address
+    name = parseaddr(text)[0].strip() if text else ""
+    return name or text or address
 
 
 async def _sender_for(item, source, channel: str) -> tuple[str, str]:
@@ -284,45 +298,36 @@ async def _sender_for(item, source, channel: str) -> tuple[str, str]:
     """
     from flow_sdk.builtin.user import User  # noqa: PLC0415
 
-    address = str(getattr(item, "author_external_id", "") or "").strip()
-    display = display_name_of(str(getattr(item, "author_display", "") or ""), address)
-    if address and address.casefold() in self_addresses(source):
+    address = (item.author_external_id or "").strip()
+    display = display_name_of(item.author_display or "", address)
+    if address and _fold(address) in self_addresses(source):
         local = await User.get_local()
         if local and local.id:
             return str(local.id), display or "You"
     return (f"{channel}:{address}" if address else f"{channel}:unknown"), display or channel
 
 
-async def recompute_thread_projection(thread_id: str, *, notify: bool = True) -> None:
+async def recompute_thread_projection(thread_id: str, *, thread=None,
+                                      notify: bool = True) -> None:
     """Recount a thread from its messages and publish iff something changed.
 
-    The counters live here rather than on each message because the conversation
+    The count lives here rather than on each message because the conversation
     view fetches a bounded window (``CONVERSATION_MESSAGES_WINDOW``, 500) with
     no pagination — a client-side count is silently wrong for a real mailbox,
     and the packed row needs the count without loading the thread.
     """
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-    from flow_sdk.builtin.message_thread import (  # noqa: PLC0415
-        _PROJECTION_SENTINEL,
-        MessageThread,
-    )
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+    from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL  # noqa: PLC0415
 
-    thread = await MessageThread.get_one({"id": thread_id})
+    if thread is None:
+        thread = await MessageThread.get_one({"id": thread_id})
     if thread is None:
         return
-    messages = await FlowMessage.get_all({"match": {"thread_id": thread_id}})
-    if not messages:
-        return
-    ordered = sorted(messages, key=lambda m: str(getattr(m, "created_date", "") or ""))
-    head = ordered[-1]
-    count = len(ordered)
-    last_at = str(getattr(head, "created_date", "") or "")
-    if (thread.message_count == count and thread.head_message_id == head.id
-            and thread.last_message_at == last_at):
+    count = len(await FlowMessage.get_all({"match": {"thread_id": thread_id}}))
+    if not count or thread.message_count == count:
         return  # idempotent early-out — no save, no broadcast
-    thread._set_projection("message_count", count, _PROJECTION_SENTINEL)
-    thread._set_projection("head_message_id", head.id, _PROJECTION_SENTINEL)
-    thread._set_projection("last_message_at", last_at, _PROJECTION_SENTINEL)
+    thread._set_projection("message_count", count, PROJECTION_SENTINEL)
     await thread.save(notify=notify)
 
 
@@ -336,20 +341,22 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
     source = await DataSource.get_one({"id": data_source_id})
     if source is None:
         return 0
-    items = [
-        i for i in await SourceItem.get_all({
-            "match": {"data_source_id": data_source_id},
-            "order_by": {"occurred_at": "asc"},
-            "limit": limit,
-        })
-        if is_message(i)
-    ]
+    # The kind gate belongs in the QUERY, not after it: a source that mixes
+    # articles with mail would otherwise spend the whole `limit` budget on rows
+    # it then drops, and re-fetch the same ones on every sweep forever.
+    items = await SourceItem.get_all(QueryFilter(match=ExpressionNode(
+        op=QueryOp.AND, operands=[
+            ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", data_source_id]),
+            ExpressionNode(op=QueryOp.LIKE, operands=["kind", f"{MESSAGE_KIND_ROOT}.%"]),
+        ],
+    ), limit=limit, order_by={"occurred_at": "asc"}))
     if not items:
         return 0
     wanted = {mint_uuid(f"flow_message:source_item:{i.id}"): i for i in items}
@@ -361,14 +368,21 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
         return 0
     # Oldest first, so conversation pointers land in message order even though
     # a provider hands them back newest-first.
-    missing.sort(key=lambda i: str(getattr(i, "occurred_at", "") or ""))
+    missing.sort(key=lambda i: i.occurred_at or "")
     projected = 0
+    touched: set[str] = set()
     for item in missing:
         try:
-            if await project_source_item(item, source=source):
+            # Defer the recount: doing it per item reloads the whole thread each
+            # time, which is quadratic in thread depth over a backfill.
+            if await project_source_item(item, source=source, recount=False):
                 projected += 1
+                touched.add(MessageThread.allocate_deterministic_id(
+                    channel_of(source), thread_key_for(item, item.name or "")))
         except Exception:  # noqa: BLE001 — one bad record must not stall the sweep
             logger.exception("[inbox] reconcile failed for source_item %s", item.id)
+    for thread_id in touched:
+        await recompute_thread_projection(thread_id)
     logger.info("[inbox] reconciled %d/%d items for source %s",
                 projected, len(missing), data_source_id)
     return projected
@@ -404,7 +418,7 @@ async def _on_item(event) -> None:
         if item is None:
             return
         await project_source_item(item)
-        await _touch()
+        _touch()
     except Exception:  # noqa: BLE001 — never fail the ingest that triggered us
         logger.exception("[inbox] projection failed for source_item %s", entity_id)
 
@@ -415,13 +429,20 @@ async def _on_sync(event) -> None:
         return
     try:
         if await reconcile_source(source_id):
-            await _touch()
+            _touch()
     except Exception:  # noqa: BLE001
         logger.exception("[inbox] reconcile failed for source %s", source_id)
 
 
-async def _touch() -> None:
-    """Republish the unread count — the badge the user actually watches."""
+def _touch() -> None:
+    """Republish the unread badge.
+
+    ``inbox.touch`` and NOT ``recompute_unread``: the awaited form is for
+    callers that must observe the fresh value, and a full recompute is a
+    whole-table scan under a global lock. Awaiting one per item event would
+    put up to STORM_CAP_PER_MINUTE of those on the ingest handler's critical
+    path; the fire-and-forget form is what every other mutation site uses.
+    """
     from flow_sdk import inbox  # noqa: PLC0415
 
-    await inbox.recompute_unread("inbox-projection")
+    inbox.touch("inbox-projection")
