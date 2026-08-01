@@ -52,6 +52,7 @@ _SNAPSHOT_FIELDS: dict[str, str] = {
     "stream_label": "stream_label",
     "external_id": "external_id",
     "thread_key": "thread_key",
+    "reply_to_external_id": "reply_to_external_id",
     "permalink": "permalink",
     "occurred_at": "occurred_at",
     "author_external_id": "author_external_id",

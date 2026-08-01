@@ -27,7 +27,7 @@ from typing import Optional
 
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
-from flow_sdk.ingest.driver import StreamCursorView, get_driver
+from flow_sdk.ingest.driver import StreamCursorView, channel_of_driver, get_driver
 from flow_sdk.ingest.health import SourceHealth, classify, worst_of
 from flow_sdk.ingest.ingest_on_tag import emit_sync_tag
 from flow_sdk.ingest.ingestor import ingest_items
@@ -68,6 +68,11 @@ async def sync_source(
     # config can't drift from what the driver actually is.
     if driver.kind and source.kind != driver.kind:
         source.kind = driver.kind
+    # The channel too — the badge and the thread key read it off the row, and a
+    # row written before the field existed self-heals on its next poll.
+    channel = channel_of_driver(driver, source)
+    if channel and source.channel != channel:
+        source.channel = channel
 
     emit_sync_tag(source.provider, source.id, "started")
 

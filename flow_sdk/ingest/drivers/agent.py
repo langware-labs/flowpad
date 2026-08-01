@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -58,6 +59,15 @@ _slots = asyncio.Semaphore(MAX_CONCURRENT_AGENTS)
 #: Where the worker leaves its account of the run. Named by us, not by it.
 RECEIPT_FILENAME = "ingested.json"
 
+#: The shipped Agent a source uses unless its config names another. An Agent —
+#: not a raw prompt — so the worker, model and subagents are the ones a user can
+#: see and edit under the assistant project.
+DEFAULT_AGENT = "email-summarizer"
+
+#: The extraction contract the run actually follows (the Agent's persona sets
+#: who is working; this sets what this turn must do).
+DEFAULT_SUBAGENT = "email_analyzer"
+
 
 class AgentDriver:
     """One driver, any connector. `provider` stays `agent`; the connector rides
@@ -66,6 +76,15 @@ class AgentDriver:
     provider = "agent"
     kind = "datasource.agent"
     record_kind = "content.message.email"
+
+    def channel_for(self, source) -> str:
+        """The connector IS the channel — `gmail`, later `slack`, `jira`.
+
+        Without this every agent-transport source would badge as "agent" and
+        thread under it, so a Gmail thread later ingested by a direct API
+        driver would land in a different conversation.
+        """
+        return str((source.config or {}).get("connector") or "").strip()
 
     def streams(self, source) -> list[StreamRef]:
         config = getattr(source, "config", None) or {}
@@ -110,17 +129,29 @@ class AgentDriver:
 
     async def _run_agent(self, source, cursor: StreamCursorView,
                          config: dict, harness) -> dict[str, Any]:
-        from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+        """Launch through the NAMED agent, the way every preset launch now does.
+
+        `deployment.launch(prompt, wait=True)` is the shipped one-shot: it
+        builds the process from the Agent's persona (worker, model, permission
+        mode, subagents), saves it, runs the first turn, and polls to terminal.
+        Hand-rolling `start_pty` + a busy/idle watcher here would fork that —
+        and would silently ignore whatever the Agent declares.
+        """
+        from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
         from flow_sdk.graph_workflow_manager.manager import execution_base  # noqa: PLC0415
 
-        proc = AgenticProcess(
-            name=f"ingest {source.name or source.id[:8]} · {cursor.stream_key}",
-            visible=False,
-            worker_type=harness,
-            cli_config={"model": str(config.get("model") or "haiku")},
-        )
-        # The process's own record dir, known before save — same convention the
-        # flow engine's agent node uses.
+        agent_name = str(config.get("agent") or DEFAULT_AGENT)
+        try:
+            deployment = await get_agent_local_deployment(agent_name)
+        except LookupError as exc:
+            # A source naming an agent that does not exist needs a human, not a
+            # retry — same verdict the harness-missing case gets.
+            raise SourceError.config("unknown_agent", str(exc)) from exc
+
+        # `build` mints the process id, so the record dir is known before the
+        # run — the same pre-save convention the flow engine's agent node uses
+        # to tell an agent where to write.
+        proc = await deployment.build("", **self._launch_options(source, cursor, harness))
         base = execution_base(proc)
         (base / "output").mkdir(parents=True, exist_ok=True)
         receipt_path = base / "output" / RECEIPT_FILENAME
@@ -129,10 +160,12 @@ class AgentDriver:
         proc.instruction_content = instruction
         await proc.save()
 
-        # The instruction rides ON open. `prompt` is the chat path and needs a
-        # live turn loop; passing it here is the one-shot path.
-        await proc.start_pty(instruction=instruction, visible=False)
-        await self._await_idle(proc.id)
+        response = await proc.prompt(instruction)
+        if getattr(response, "status", None) and str(response.status).upper().endswith("FAIL"):
+            raise SourceError.transient(
+                "launch_failed", str(getattr(response, "message", "") or "prompt refused")
+            )
+        await proc.wait()
         try:
             await proc.exit()
         except Exception:  # noqa: BLE001 — the run is what matters
@@ -141,53 +174,37 @@ class AgentDriver:
         return self._read_receipt(receipt_path)
 
     @staticmethod
-    async def _await_idle(proc_id: str) -> None:
-        """Wait for the turn to end, the way the flow engine already does.
-
-        `is_turn_busy` is the sanctioned busy signal, and the busy→idle
-        transition is the turn boundary — a `worker_status` field read off a
-        stale in-memory entity never moves, because nothing refreshes it. The
-        entity is re-fetched each pass for the same reason.
-
-        The outer `wait_for` owns the deadline, so this loop has no budget of
-        its own.
-        """
-        from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
-        from flow_sdk.builtin.agentic_process.status_predicates import (  # noqa: PLC0415
-            is_turn_busy,
-        )
-
-        terminal = {"complete", "failed", "closed", "exited"}
-        seen_busy = False
-        while True:
-            await asyncio.sleep(2)
-            proc = await AgenticProcess.get_by_id(proc_id)
-            if proc is None:
-                raise SourceError.transient("process_lost", "the ingest worker disappeared")
-            if str(getattr(proc, "start_failure", "") or ""):
-                raise SourceError.config("launch_failed", str(proc.start_failure))
-            if str(proc.status) in terminal:
-                return
-            if is_turn_busy(proc):
-                seen_busy = True
-            elif seen_busy:
-                return
+    def _launch_options(source, cursor: StreamCursorView, harness) -> dict[str, Any]:
+        """Only what this run overrides. Worker and model come from the Agent."""
+        options: dict[str, Any] = {
+            "name": f"ingest {source.name or source.id[:8]} · {cursor.stream_key}",
+            "visible": False,
+        }
+        if harness:
+            options["worker_type"] = harness
+        return options
 
     def _instruction(self, source, cursor: StreamCursorView,
                      config: dict, receipt_path: Path) -> str:
         """The agent md leads; only the runtime addendum is built here — the
         shipped convention (see `asset_cleanup`)."""
-        from flow_sdk.fs_store.operations.agent import load_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.subagent import load_subagent  # noqa: PLC0415
 
         body = ""
         try:
-            agent = load_agent(str(config.get("agent") or "email_analyzer"))
+            agent = load_subagent(str(config.get("subagent") or DEFAULT_SUBAGENT))
             data = (getattr(agent, "data", None) or {}) if agent else {}
             body = str(data.get("prompt") or data.get("prompt_text") or "")
         except Exception:  # noqa: BLE001 — the addendum alone is still runnable
             logger.debug("ingest/agent: agent definition unavailable", exc_info=True)
 
         window = cursor.window_start or "(no floor — fetch the most recent)"
+        # ABSOLUTE path, never bare `flow`. The worker inherits a PATH where a
+        # stale `flow` can win (a pyenv shim shadowed the venv here and the
+        # agent got "No such command 'create'" from a CLI older than this
+        # backend). `flow_cli_env_path` exists to pin the same binary; naming it
+        # outright removes the resolution step entirely.
+        flow_cli = Path(sys.executable).parent / "flow"
         seen = (cursor.state or {}).get("high_water")
         return (
             f"{body}\n\n---\n"
@@ -198,6 +215,9 @@ class AgentDriver:
             f"- fetch messages newer than: `{seen or window}`\n"
             f"- record at most {int(config.get('max_items') or 25)} messages, newest first\n"
             f"- receipt path: `{receipt_path}`\n"
+            f"- the `flow` CLI to use, by absolute path: `{flow_cli}`\n"
+            f"  (run exactly `{flow_cli} record create source_item --json <file>` — "
+            f"a bare `flow` on PATH may be an older build without this command)\n"
         )
 
     # ── the receipt ───────────────────────────────────────────────────────────

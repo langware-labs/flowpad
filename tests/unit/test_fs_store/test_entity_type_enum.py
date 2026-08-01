@@ -196,6 +196,9 @@ EXPECTED = {
     # members, no existing value changed.
     "DATA_SOURCE": "data_source", "DATA_SOURCE_CURSOR": "data_source_cursor",
     "SOURCE_ITEM": "source_item",
+    # The inbox projection's thread grouping — additive member, no existing
+    # value changed.
+    "MESSAGE_THREAD": "message_thread",
 }
 
 
