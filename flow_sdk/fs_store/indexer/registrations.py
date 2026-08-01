@@ -20,6 +20,7 @@ import flow_sdk.builtin.dynamic_workflow  # noqa: F401
 import flow_sdk.builtin.graph_workflow  # noqa: F401
 import flow_sdk.builtin.graph_workflow_run  # noqa: F401
 import flow_sdk.builtin.markdown_index  # noqa: F401
+import flow_sdk.builtin.message_thread  # noqa: F401
 import flow_sdk.builtin.project  # noqa: F401
 import flow_sdk.builtin.skill  # noqa: F401
 import flow_sdk.builtin.source_item  # noqa: F401

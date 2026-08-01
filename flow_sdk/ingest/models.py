@@ -69,6 +69,7 @@ class IngestItem:
     author_display: Optional[str] = None
     permalink: Optional[str] = None
     thread_key: Optional[str] = None
+    reply_to_external_id: Optional[str] = None
     stream_label: str = ""
     raw: Optional[dict] = None
 

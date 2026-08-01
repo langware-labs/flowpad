@@ -81,6 +81,20 @@ class IngestDriver(Protocol):
     kind: str
     record_kind: str
 
+    def channel_for(self, source: "DataSource") -> str:
+        """The user-facing CHANNEL this source reaches — gmail | slack | jira.
+
+        Distinct from ``provider``, which is the transport: one driver can
+        reach several channels (the agent transport does), and one channel can
+        be reached by several drivers (a harness Gmail source and an API one).
+        The message badge and the thread key both key on the channel, so the
+        two transports resolve to the SAME thread.
+
+        Optional. Drivers that are their own channel (rss, hackernews) inherit
+        the default in ``channel_of_driver``.
+        """
+        ...
+
     def streams(self, source: "DataSource") -> list[StreamRef]:
         """The syncable units of ``source``, derived from its config."""
         ...
@@ -88,6 +102,23 @@ class IngestDriver(Protocol):
     async def fetch(self, source: "DataSource", cursor: StreamCursorView) -> FetchResult:
         """Fetch one stream. Raise ``SourceError`` to classify a failure."""
         ...
+
+
+def channel_of_driver(driver: "IngestDriver", source: "DataSource") -> str:
+    """The driver's channel for this source, defaulting to its provider.
+
+    The seam that lets a single-channel driver stay a three-line class while
+    the agent transport reads its connector out of config.
+    """
+    resolver = getattr(driver, "channel_for", None)
+    if callable(resolver):
+        try:
+            resolved = (resolver(source) or "").strip()
+            if resolved:
+                return resolved
+        except Exception:  # noqa: BLE001 — a bad channel must not fail a sync
+            pass
+    return str(getattr(driver, "provider", "") or "")
 
 
 _REGISTRY: dict[str, IngestDriver] = {}

@@ -36,7 +36,14 @@ class SourceItem(Entity):
     stream_key: str = APIField(default="", description="Feed URL, channel id — the cursor's unit")
     stream_label: str = APIField(default="")
     external_id: str = APIField(default="", description="Provider-native stable id")
-    thread_key: Optional[str] = APIField(default=None, description="Grouping axis for a later inbox view")
+    thread_key: Optional[str] = APIField(default=None, description="Grouping axis for the inbox projection")
+    # The provider's id for the record this replies to. Provenance for quoting
+    # and for repairing a thread whose parent arrives late — NOT how threading
+    # is decided (`thread_key` is). Deliberately absent from DIGESTED_FIELDS:
+    # it never changes for a given record, and adding a digested field rewrites
+    # the whole corpus once. The accepted consequence is that rows ingested
+    # before this field existed never backfill it.
+    reply_to_external_id: Optional[str] = APIField(default=None)
     permalink: Optional[str] = APIField(default=None)
     occurred_at: Optional[str] = APIField(default=None, description="ISO-8601; the ordering key")
 

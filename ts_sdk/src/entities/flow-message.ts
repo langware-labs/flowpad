@@ -1,6 +1,7 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import { ICloudOrigin } from '../models/CloudOrigin';
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
 
@@ -181,6 +182,16 @@ export interface IFlowMessage extends IEntity {
   cloned_from_id?: string | null;
   /** Original sender of the source message (for the "forwarded" chip). */
   cloned_from_sender_id?: string | null;
+  /** Where the real record lives when this message CACHES a cloud one (a Gmail
+   *  message, a Slack post). Null/absent means the message is ours — which is
+   *  exactly the badge rule: no origin, no channel mark. */
+  origin?: ICloudOrigin | null;
+  /** The MessageThread this belongs to. Null = ungrouped, i.e. flat rendering
+   *  (every message that predates threading). */
+  thread_id?: string | null;
+  /** Local id of the message this replies to — provenance for quoting, NOT how
+   *  threading is decided. */
+  reply_to_id?: string | null;
 }
 
 @registerEntity
@@ -207,6 +218,9 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   cloned_from_id?: string | null;
   cloned_from_sender_id?: string | null;
   remote_worker_session_id?: string | null;
+  origin?: ICloudOrigin | null;
+  thread_id?: string | null;
+  reply_to_id?: string | null;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -233,6 +247,9 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.cloned_from_id = entity.cloned_from_id ?? null;
     this.cloned_from_sender_id = entity.cloned_from_sender_id ?? null;
     this.remote_worker_session_id = entity.remote_worker_session_id ?? null;
+    this.origin = entity.origin ?? null;
+    this.thread_id = entity.thread_id ?? null;
+    this.reply_to_id = entity.reply_to_id ?? null;
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */

@@ -230,6 +230,10 @@ class EntityType(StrEnum):
     # One independently-checkpointed stream within a DataSource — a feed URL, a
     # channel. DB-only: written every poll, so it must never touch disk.
     DATA_SOURCE_CURSOR = "data_source_cursor"
+    # One thread of ingested cloud messages (a Gmail thread, a Slack
+    # `thread_ts`). MANY threads may point at ONE conversation — that is the
+    # merge seam, and why the conversation id is not derived from the thread.
+    MESSAGE_THREAD = "message_thread"
     # Entity types that previously had no enum member (string-literal `type`).
     # Retired: Artifact composition now uses canonical parent_type_id. Keep the
     # persisted value parseable, but do not register a public entity surface.

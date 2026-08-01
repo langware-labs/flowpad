@@ -13,6 +13,7 @@ ProgressCallback = Callable[[int, int], Awaitable[None]]
 from pydantic import BaseModel, SerializerFunctionWrapHandler, model_serializer
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.builtin.cloud_origin import CloudOrigin
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -357,6 +358,25 @@ class FlowMessage(Entity):
     remote_worker_session_id: Optional[str] = APIField(
         None, description="Live session this message belongs to (grouping key)"
     )
+    # ── cloud provenance ───────────────────────────────────────────────────
+    # Where the real record lives when this message is a CACHE of one (a Gmail
+    # message, a Slack post). None means the message is ours — which is exactly
+    # the rule the UI needs: no origin, no channel badge, no "open in origin".
+    origin: Optional[CloudOrigin] = APIField(
+        None, description="The cloud record this message caches; None = Flowpad-native"
+    )
+    # The MessageThread this belongs to. None = ungrouped, which is how every
+    # existing message renders — flat, exactly as before.
+    thread_id: Optional[str] = APIField(
+        None, description="MessageThread id; None = flat (no thread grouping)"
+    )
+    # The local FlowMessage this replies to. Provenance for quoting and reply
+    # nesting — deliberately NOT how threading is decided (every channel worth
+    # supporting ships a native thread id; see MessageThread).
+    reply_to_id: Optional[str] = APIField(
+        None, description="Local id of the message this one replies to"
+    )
+
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     # Receipt state — mirrors the hub-side schema. Monotonic:

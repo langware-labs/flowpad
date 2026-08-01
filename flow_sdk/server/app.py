@@ -305,6 +305,12 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
         await get_graph_workflow_manager().arm_all_flow_subscriptions()
+        # Arm the inbox projection (ingested cloud records → conversations).
+        # A backend subscriber rather than a GraphWorkflow on purpose: it must
+        # not be possible to break your inbox by editing a graph.
+        from flow_sdk.inbox.projection import start_inbox_projection
+
+        start_inbox_projection()
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")

@@ -40,6 +40,12 @@ class DataSource(Entity):
     kind: str = APIField(default="", description="Ontology kind, e.g. datasource.feed.rss")
     provider: str = APIField(default="", description="Driver registry key: rss | hackernews")
     account_key: str = APIField(default="", description="The remote account/feed-set identity")
+    # The user-facing CHANNEL — gmail | slack | jira. Deliberately NOT
+    # `provider`, which is the driver/transport key and is literally "agent"
+    # for the harness-backed sources. One channel may have several transports
+    # (a harness Gmail source and an API one), and threading + the message
+    # badge must key on the channel so both resolve to the same thread.
+    channel: str = APIField(default="", description="User-facing channel: gmail | slack | jira")
 
     # ── gating ──
     required_capabilities: list[str] = APIField(

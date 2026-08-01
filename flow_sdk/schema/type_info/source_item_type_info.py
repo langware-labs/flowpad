@@ -33,6 +33,7 @@ class SourceItemMeta(BaseMeta):
     stream_label: Optional[str] = None
     external_id: Optional[str] = None
     thread_key: Optional[str] = None
+    reply_to_external_id: Optional[str] = None
     permalink: Optional[str] = None
     occurred_at: Optional[str] = None
     author_external_id: Optional[str] = None
