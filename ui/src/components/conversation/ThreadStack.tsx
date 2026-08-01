@@ -19,7 +19,6 @@ export function ThreadStack({
   onOpenThread,
   children,
 }: {
-  threadId: string;
   /** Authoritative count from `MessageThread.message_count` when known. */
   messageCount: number;
   onOpenThread?: () => void;

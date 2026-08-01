@@ -2,6 +2,7 @@ import { ExternalLink, Mail, MessageSquare, Sparkles, SquareKanban } from 'lucid
 import type { LucideIcon } from 'lucide-react';
 import { isAddressable, type ICloudOrigin } from '@sdk';
 import { providerMark } from '@src/components/connections-manager/provider-marks';
+import { humanizeType } from '@src/tabs/provider-meta';
 
 /**
  * The channel mark on a message that CACHES a cloud record.
@@ -14,27 +15,23 @@ import { providerMark } from '@src/components/connections-manager/provider-marks
  * registry, but a channel is not an entity type and brand marks are not
  * `currentColor` glyphs, so this is the registry for that axis. Slack's real
  * four-colour mark comes from the existing `providerMark` table rather than a
- * second copy of the same SVG.
+ * second copy of the same SVG. ONE entry per channel — two parallel maps
+ * drift, and a channel added to only one renders half-labelled.
  */
-const FALLBACK: Record<string, LucideIcon> = {
-  gmail: Mail,
-  email: Mail,
-  slack: MessageSquare,
-  jira: SquareKanban,
-  notion: Sparkles,
-};
-
-const LABEL: Record<string, string> = {
-  gmail: 'Gmail',
-  email: 'Email',
-  slack: 'Slack',
-  jira: 'Jira',
-  notion: 'Notion',
+const CHANNELS: Record<string, { icon: LucideIcon; label: string }> = {
+  gmail: { icon: Mail, label: 'Gmail' },
+  email: { icon: Mail, label: 'Email' },
+  slack: { icon: MessageSquare, label: 'Slack' },
+  jira: { icon: SquareKanban, label: 'Jira' },
+  notion: { icon: Sparkles, label: 'Notion' },
 };
 
 export function channelLabel(kind: string | undefined): string {
   const key = (kind || '').trim().toLowerCase();
-  return LABEL[key] ?? (key ? key[0].toUpperCase() + key.slice(1) : '');
+  // `humanizeType` is the app's title-caser and handles `[-_]`, so an
+  // uncurated `google_chat` reads "Google Chat" here exactly as it does
+  // everywhere else — a local capitalise would render "Google_chat".
+  return CHANNELS[key]?.label ?? (key ? humanizeType(key) : '');
 }
 
 export function ChannelBadge({ origin }: { origin: ICloudOrigin | null | undefined }) {
@@ -43,7 +40,7 @@ export function ChannelBadge({ origin }: { origin: ICloudOrigin | null | undefin
 
   const kind = origin.kind.trim().toLowerCase();
   const Mark = providerMark(kind);
-  const Icon = FALLBACK[kind];
+  const Icon = CHANNELS[kind]?.icon;
   const label = channelLabel(kind);
   const openable = isAddressable(origin);
 

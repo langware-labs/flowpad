@@ -28,8 +28,6 @@ class MessageThreadMeta(BaseMeta):
     # this is the same string kept under its own name for queries.
     title: Optional[str] = None
     message_count: Optional[int] = None
-    head_message_id: Optional[str] = None
-    last_message_at: Optional[str] = None
 
 
 MESSAGE_THREAD = TypeMetadata(
@@ -37,6 +35,6 @@ MESSAGE_THREAD = TypeMetadata(
     icon="MessagesSquare",
     api_visible=True,
     creatable=False,
-    index_fields=["name", "channel", "conversation_id", "last_message_at"],
+    index_fields=["name", "channel", "conversation_id"],
     meta_model=MessageThreadMeta,
 )

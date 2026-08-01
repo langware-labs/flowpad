@@ -30,31 +30,6 @@ from typing import Optional
 from pydantic import BaseModel
 
 
-#: How to address a record in each channel's own UI, when the connector does
-#: not hand us a link. Gmail's MCP connector returns no permalink at all, and
-#: the alternative to this table is asking a model to compose a URL — which
-#: `permalink` being a DIGESTED field makes actively dangerous, since a model
-#: that formats it differently on the next poll rewrites the whole corpus.
-#:
-#: Formulas only, never a fetch. `{thread}` falls back to `{id}` when the
-#: provider has no separate thread handle.
-_PERMALINK: dict[str, str] = {
-    "gmail": "https://mail.google.com/mail/u/0/#all/{thread}",
-}
-
-
-def permalink_for(kind: str, external_id: str, thread_key: str = "") -> str:
-    """A link into the origin system, or "" when we cannot address it.
-
-    Derived rather than stored, so it is stable across polls by construction
-    and can be backfilled onto records ingested before this existed.
-    """
-    template = _PERMALINK.get((kind or "").strip().lower())
-    if not template or not (external_id or thread_key):
-        return ""
-    return template.format(thread=thread_key or external_id, id=external_id)
-
-
 class CloudOrigin(BaseModel):
     """Where the real record lives. ``None`` on a message means "ours"."""
 
@@ -74,8 +49,3 @@ class CloudOrigin(BaseModel):
     # Permalink into the origin system — what "Open in Gmail" opens. Empty when
     # the provider gives no addressable URL.
     url: str = ""
-
-    @property
-    def addressable(self) -> bool:
-        """Whether this origin can be opened in a browser."""
-        return bool(self.url)

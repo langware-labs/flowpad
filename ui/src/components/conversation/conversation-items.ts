@@ -47,15 +47,15 @@ export interface ThreadGroupItem {
   kind: ConversationItemKind.THREAD_GROUP;
   key: string;
   threadId: string;
-  /** Oldest-first, as `buildConversationItems` ordered them. */
-  children: ConversationItem[];
   /** The newest message — what the packed row renders. */
   head: ConversationItem;
-  /** How many messages the thread holds HERE. The authoritative count lives on
-   *  `MessageThread.message_count` (the conversation view fetches a bounded
-   *  window, so this can undercount a long thread); the caller passes that in
-   *  when it has it. */
+  /** What the row shows: `MessageThread.message_count` when the caller has it,
+   *  else how many of this thread's messages are actually loaded. */
   messageCount: number;
+  /** How many of this thread's messages are in the feed window. */
+  loaded: number;
+  /** Whether `messageCount` came from the server rather than the window. */
+  authoritative: boolean;
   sortAt: number;
 }
 
@@ -170,6 +170,14 @@ export function groupConversationItems(
   return out;
 }
 
+/** The thread a feed row belongs to, or null when it has none / isn't loaded. */
+export function itemThreadId(
+  item: ConversationItem,
+  getFm: (id: string) => FlowMessage | null,
+): string | null {
+  return itemFlowMessage(item, getFm)?.thread_id ?? null;
+}
+
 /**
  * Partition by `fm.thread_id` — one row per thread, ordered by each thread's
  * newest message.
@@ -184,14 +192,6 @@ export function groupConversationItems(
  * `MessageThread.message_count`; without it the group falls back to what is
  * loaded, which undercounts a thread longer than the window.
  */
-/** The thread a feed row belongs to, or null when it has none / isn't loaded. */
-export function itemThreadId(
-  item: ConversationItem,
-  getFm: (id: string) => FlowMessage | null,
-): string | null {
-  return itemFlowMessage(item, getFm)?.thread_id ?? null;
-}
-
 export function groupThreadItems(
   items: readonly ConversationItem[],
   getFm: (id: string) => FlowMessage | null,
@@ -201,35 +201,39 @@ export function groupThreadItems(
   const out: GroupedConversationItem[] = [];
 
   for (const item of items) {
-    const threadId = itemFlowMessage(item, getFm)?.thread_id ?? null;
+    const threadId = itemThreadId(item, getFm);
     if (!threadId) {
       out.push(item);
       continue;
     }
     const existing = groups.get(threadId);
     if (!existing) {
-      const group: ThreadGroupItem = {
+      // The authoritative count when we have it. Falling back to what is
+      // loaded undercounts a thread longer than the feed's window, which is
+      // the honest best we can do without it.
+      const authoritative = counts?.get(threadId);
+      groups.set(threadId, {
         kind: ConversationItemKind.THREAD_GROUP,
         key: `thread:${threadId}`,
         threadId,
-        children: [item],
         head: item,
-        messageCount: counts?.get(threadId) ?? 1,
+        messageCount: authoritative ?? 1,
+        loaded: 1,
+        authoritative: authoritative !== undefined,
         sortAt: item.sortAt,
-      };
-      groups.set(threadId, group);
-      out.push(group);
+      });
+      out.push(groups.get(threadId)!);
       continue;
     }
-    existing.children.push(item);
+    existing.loaded += 1;
+    if (!existing.authoritative) existing.messageCount = existing.loaded;
     // `items` arrives oldest-first, so the last one seen is the newest — but
-    // compare anyway rather than assume, so a caller that sorts differently
-    // still gets the right head.
+    // compare rather than assume, so a caller that sorts differently still
+    // gets the right head.
     if (item.sortAt >= existing.head.sortAt) {
       existing.head = item;
       existing.sortAt = item.sortAt;
     }
-    if (counts?.get(threadId) === undefined) existing.messageCount = existing.children.length;
   }
 
   // Re-sort: a group's position is its NEWEST message, which it only learns

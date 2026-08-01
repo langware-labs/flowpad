@@ -20,8 +20,12 @@ greps for exactly that.
 """
 from __future__ import annotations
 
+import logging
+
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, Protocol
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.data_source import DataSource
@@ -79,10 +83,13 @@ class IngestDriver(Protocol):
     #: The ontology kind a DataSource using this driver carries. Stamped onto
     #: the row by ``sync_source`` so the driver is the single owner.
     kind: str
+    #: The ontology kind stamped on each IngestItem. NOTE: this decides inbox
+    #: membership — the inbox projection accepts `content.message.*` and
+    #: nothing else (`flow_sdk/inbox/projection.py MESSAGE_KIND_ROOT`).
     record_kind: str
 
     def channel_for(self, source: "DataSource") -> str:
-        """The user-facing CHANNEL this source reaches — gmail | slack | jira.
+        """OPTIONAL. The user-facing CHANNEL this source reaches — gmail | slack | jira.
 
         Distinct from ``provider``, which is the transport: one driver can
         reach several channels (the agent transport does), and one channel can
@@ -116,8 +123,13 @@ def channel_of_driver(driver: "IngestDriver", source: "DataSource") -> str:
             resolved = (resolver(source) or "").strip()
             if resolved:
                 return resolved
-        except Exception:  # noqa: BLE001 — a bad channel must not fail a sync
-            pass
+        except Exception:
+            # Never fail a sync over this — but never hide it either. The
+            # channel is half the thread key, so a silently wrong one forks
+            # every thread in the mailbox, permanently, while still looking
+            # like a successful poll.
+            logger.exception("[ingest] channel_for failed for %s; falling back to provider",
+                             getattr(source, "id", "?"))
     return str(getattr(driver, "provider", "") or "")
 
 
