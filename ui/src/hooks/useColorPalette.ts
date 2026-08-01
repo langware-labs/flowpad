@@ -1,5 +1,6 @@
 import { ISiteConfig } from '@sdk';
 import { useEffect, useState } from 'react';
+import { contrastRatio, hslTripleToRgb } from '@src/lib/color-palette';
 
 /**
  * Convert a hex color to the `H S% L%` triple `hsl(var(--x))` expects.
@@ -49,10 +50,42 @@ export function hexToHsl(hex: string): string {
   return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
 }
 
+//: Mirrors `--primary` / `--primary-foreground` in `styles/index.css` — pinned
+//: here because the ink has to be a value the contrast maths can weigh, not a
+//: `var()`. A theme retune should move both.
+const INK_DARK = '0 0% 9%';
+const INK_LIGHT = '0 0% 98%';
+
 /**
- * Generate theme-appropriate color based on current theme
+ * The readable ink for a background, as an `H S% L%` triple.
+ *
+ * `--primary` is overridden at runtime from site config, but `--primary-foreground`
+ * is a THEME constant — so a light accent kept whatever ink the theme had picked
+ * for the theme's own primary. On the vibe views that ink is white, which is how a
+ * pastel button ended up with white text at 1.9:1. The ink has to be derived from
+ * the colour actually in use, not from the colour the theme assumed.
  */
-function generateThemeColor(hex: string, isDark: boolean): string {
+export function inkFor(background: string): string {
+  const bg = hslTripleToRgb(background);
+  // Pick whichever of the two inks wins, so a yellow accent gets black and a
+  // navy one gets white.
+  return contrastRatio(bg, hslTripleToRgb(INK_DARK)) >= contrastRatio(bg, hslTripleToRgb(INK_LIGHT))
+    ? INK_DARK
+    : INK_LIGHT;
+}
+
+/**
+ * The accent, adjusted to sit on the current theme's background.
+ *
+ * The dark-mode lift is capped rather than open-ended. Lifting by 60% of the
+ * remaining range took the default indigo (59% lightness, a comfortable 7.2:1
+ * under white text) to 84% — a pastel that no ink reads well on, and that stops
+ * looking like the brand colour at all. A ceiling keeps a dark accent visible on
+ * a dark background without bleaching an already-bright one.
+ */
+const DARK_LIGHTNESS_CEILING = 60;
+
+export function generateThemeColor(hex: string, isDark: boolean): string {
   const hsl = hexToHsl(hex);
   const [h, s, l] = hsl.split(' ').map((part, index) => {
     if (index === 0) return parseInt(part); // hue
@@ -60,9 +93,10 @@ function generateThemeColor(hex: string, isDark: boolean): string {
   });
 
   if (isDark) {
-    // For dark theme: adjust lightness to be more visible on dark backgrounds
-    // Increase lightness for better contrast on dark backgrounds
-    const darkLightness = Math.min(95, l + (100 - l) * 0.6); // Increase lightness by 60% of remaining range
+    // Lift only as far as the ceiling, and never darken a colour that already
+    // clears it — the `min` alone would drag a bright accent DOWN to the
+    // ceiling, so `max(l, …)` holds the floor at the original lightness.
+    const darkLightness = Math.max(l, Math.min(DARK_LIGHTNESS_CEILING, l + (100 - l) * 0.6));
     return `${h} ${s}% ${darkLightness}%`;
   } else {
     // For light theme: use the original color
@@ -103,10 +137,14 @@ export function useColorPalette(siteConfig: ISiteConfig | null | undefined) {
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty('--primary', primaryColor);
+    // Set as a PAIR. Overriding the background without its ink is what left
+    // every primary button reading whatever the theme guessed.
+    root.style.setProperty('--primary-foreground', inkFor(primaryColor));
 
     // Cleanup function to remove properties when component unmounts
     return () => {
       root.style.removeProperty('--primary');
+      root.style.removeProperty('--primary-foreground');
     };
   }, [primaryColor]);
 
