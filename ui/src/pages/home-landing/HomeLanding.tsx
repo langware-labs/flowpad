@@ -192,8 +192,10 @@ export function HomeLanding() {
 
               {/* Main row: Sidebar + Content */}
               <div className="flex min-h-0 flex-1 gap-4 px-3 pb-3 lg:gap-6 lg:px-4 lg:pb-4">
-                {/* Left column: Inbox */}
-                <div className="hidden w-72 shrink-0 flex-col gap-2 lg:flex">
+                {/* Left column: Inbox. Never hidden — a pending invitation is only
+            actionable from here, so gating it behind `lg` stranded invitees on
+            narrower windows with no way to accept. */}
+                <div className="flex w-60 shrink-0 flex-col gap-2 lg:w-72">
                   {/* Invisible spacer mirroring the right Feed column so Inbox aligns with Feed */}
                   <div aria-hidden className="h-9 shrink-0" />
                   <RecentConversationsStrip />

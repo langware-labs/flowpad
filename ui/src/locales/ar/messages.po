@@ -3280,6 +3280,10 @@ msgstr ""
 #~ msgid "Could not save changes"
 #~ msgstr ""
 
+#: src/components/diagnose/use-diagnosis-report.ts
+msgid "Could not send report to the Flowpad team"
+msgstr ""
+
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
@@ -8802,6 +8806,10 @@ msgstr ""
 msgid "No members yet."
 msgstr ""
 
+#: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
+msgid "No messages yet"
+msgstr ""
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "No messages yet — context will appear here as they arrive."
 msgstr ""
@@ -12636,6 +12644,7 @@ msgstr ""
 msgid "Set conversation project"
 msgstr ""
 
+#: src/components/context-process/ContextProcessButton.tsx
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Set project"
@@ -14112,6 +14121,10 @@ msgstr ""
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/collaboration/SharedSessionView.tsx
 msgid "This session has no bound conversation."
+msgstr ""
+
+#: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
+msgid "This session has not recorded any messages — its transcript is written on the first reply."
 msgstr ""
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx

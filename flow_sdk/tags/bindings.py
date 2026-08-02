@@ -157,9 +157,13 @@ async def all_entity_bindings(
 
 
 def scan_code_capsules(root: Path, name: Optional[str] = None) -> list[dict[str, Any]]:
-    """Source files under ``root`` carrying a ``tag`` capsule (optionally
+    """Source files under ``root`` carrying ``tag`` capsules (optionally
     filtered to tags within ``name``). Cheap marker check before parsing.
     Returns ``[{path, line, tags: {name: one_liner}}]`` (path root-relative).
+
+    ONE ENTRY PER BLOCK, not per file: ``tag`` is a repeatable capsule name, so
+    a test module annotates each test it carries a breadcrumb for and every
+    block reports its own marker line.
     """
     from flow_sdk.capsules.line_comment import COMMENT_LEADERS, LineCommentCapsule  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.walk import gitignore_walk  # noqa: PLC0415
@@ -175,37 +179,36 @@ def scan_code_capsules(root: Path, name: Optional[str] = None) -> list[dict[str,
                 text_content = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 continue
-            marker_at = text_content.find(_CAPSULE_MARKER)
-            if marker_at < 0:
+            if _CAPSULE_MARKER not in text_content:
                 continue
             try:
-                capsule = LineCommentCapsule(path).read("tag")
+                blocks = LineCommentCapsule(path).read_all("tag")
             except Exception:  # noqa: BLE001 — a malformed capsule never breaks reads
                 continue
-            if capsule is None:
+            if not blocks:
                 continue
-            bindings = capsule.data.get("tags")
-            if not isinstance(bindings, dict):
-                continue
-            matched: dict[str, Any] = {}
-            for raw_tag, line in sorted(bindings.items()):
-                if not isinstance(raw_tag, str):
-                    continue
-                try:
-                    tag = normalize_tag(raw_tag)
-                except (TypeError, ValueError):
-                    continue
-                if name is None or tag_is_within(tag, name):
-                    matched[tag] = line
-            if not matched:
-                continue
-            marker_line = text_content.count("\n", 0, marker_at) + 1
             try:
                 rel = str(path.relative_to(root))
             except ValueError:
                 rel = str(path)
-            out.append({"path": rel, "line": marker_line, "tags": matched})
-    out.sort(key=lambda item: item["path"])
+            for block in blocks:
+                bindings = block.data.data.get("tags")
+                if not isinstance(bindings, dict):
+                    continue
+                matched: dict[str, Any] = {}
+                for raw_tag, one_liner in sorted(bindings.items()):
+                    if not isinstance(raw_tag, str):
+                        continue
+                    try:
+                        tag = normalize_tag(raw_tag)
+                    except (TypeError, ValueError):
+                        continue
+                    if name is None or tag_is_within(tag, name):
+                        matched[tag] = one_liner
+                if not matched:
+                    continue
+                out.append({"path": rel, "line": block.line, "tags": matched})
+    out.sort(key=lambda item: (item["path"], item["line"]))
     return out
 
 

@@ -75,3 +75,57 @@ def test_markdown_still_dispatches_to_html_comment_carrier(tmp_path):
     path = tmp_path / "doc.md"
     path.write_text("# Doc\n")
     assert isinstance(AssetCapsule.from_path(path), CodeCommentCapsule)
+
+
+# ── repeatable names + anchored writes ──────────────────────────────────────
+# `tag` annotates a position, so one file carries several. Every other name
+# stays one-per-file: the identity backend relies on duplicates raising.
+
+
+def test_repeatability_does_not_leak_past_tag(tmp_path):
+    from flow_sdk.capsules.errors import DuplicateCapsuleError
+
+    identity = "# flowpad:capsule identity\n# version: 1\n# data:\n#   id: 1\n# flowpad:endcapsule identity\n"
+    path = tmp_path / "dup.py"
+    path.write_text(identity + "x = 1\n" + identity)
+    with pytest.raises(DuplicateCapsuleError):
+        AssetCapsule.from_path(path).read("identity")
+
+
+def test_identity_resolves_alongside_many_tag_blocks(tmp_path):
+    path = tmp_path / "mod.py"
+    path.write_text("a = 1\nb = 2\n")
+    capsule = LineCommentCapsule(path)
+    capsule.write("identity", CapsuleData(1, {"id": "11111111-2222-4333-8444-555555555555"}))
+    capsule.write_at("tag", CapsuleData(1, {"tags": {"qa.one": "1"}}), line=1)
+    # the second anchor is resolved AFTER the first insert shifted the file
+    second = path.read_text().splitlines().index("b = 2") + 1
+    capsule.write_at("tag", CapsuleData(1, {"tags": {"qa.two": "2"}}), line=second)
+
+    assert len(capsule.read_all("tag")) == 2
+    assert capsule.read("identity").data == {"id": "11111111-2222-4333-8444-555555555555"}
+    assert capsule.names() == ("identity", "tag")
+
+
+@pytest.mark.parametrize("line", [0, -1, 99])
+def test_write_at_refuses_an_unusable_anchor(tmp_path, line):
+    from flow_sdk.capsules.errors import MalformedCapsuleError
+
+    path = tmp_path / "mod.py"
+    path.write_text("x = 1\n")
+    with pytest.raises(MalformedCapsuleError):
+        LineCommentCapsule(path).write_at("tag", PAYLOAD, line=line)
+
+
+def test_write_at_refuses_to_split_an_existing_block(tmp_path):
+    """Anchoring inside a block would corrupt every later read of the file."""
+    from flow_sdk.capsules.errors import MalformedCapsuleError
+
+    path = tmp_path / "mod.py"
+    path.write_text("x = 1\n")
+    capsule = LineCommentCapsule(path)
+    capsule.write_at("tag", PAYLOAD, line=1)
+    inside = capsule.read_all("tag")[0].line + 1
+    with pytest.raises(MalformedCapsuleError):
+        capsule.write_at("tag", PAYLOAD, line=inside)
+    assert len(capsule.read_all("tag")) == 1  # refused, and nothing was written
