@@ -5,14 +5,7 @@
  * it; keeping it here avoids a component file exporting non-components (which
  * breaks Vite Fast Refresh) and a circular controller↔row-item import.
  */
-import {
-  AgenticProcess,
-  getDisplayStatus,
-  isProcessRunning,
-  ProcessStatus,
-  Tab,
-  TypeId,
-} from '@sdk';
+import { AgenticProcess, getDisplayStatus, isProcessRunning, ProcessStatus, Tab, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
@@ -20,7 +13,10 @@ import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { formatTimeAgo, useLastStatusChange } from '@src/store/pending-actions-store';
 import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
-import { SquareTerminal } from 'lucide-react';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { dockForDisplayTarget, type DisplayTargetLike } from '@src/navigation/display-target-pointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { Eye, SquareTerminal } from 'lucide-react';
 import React, { useMemo } from 'react';
 
 /** Vendor metadata per terminal provider kind — the single source for the strip
@@ -136,6 +132,52 @@ export const LazyProcessTooltip: React.FC<{
   );
 };
 
+/**
+ * The marker a process chip carries when its agent has shown something.
+ *
+ * Outside vibe a `flow show` mints a tab but never navigates (see
+ * `use-show-target-listener`), so the agent's "look at this" needs somewhere to
+ * land that does not steal the screen. This is it: a glyph on the process's own
+ * chip that opens whatever it last showed. In vibe the Display pane already
+ * plays that role — the badge is harmless there, but the pane is the answer.
+ *
+ * Renders nothing until there is a target that maps to a dock, so a process
+ * that has never shown anything looks exactly as it does today.
+ */
+export const ShownTargetBadge: React.FC<{ processId: string }> = ({ processId }) => {
+  const { data: process } = useEntity<AgenticProcess>(new TypeId(AgenticProcess.type, processId));
+  const { navigation } = useDockNavigation();
+  const shown = (process?.context_data as { last_shown?: DisplayTargetLike } | undefined)?.last_shown;
+  const projectId = process?.project_id ?? null;
+  // Same project rebase the listener applies when it mints the tab — without it
+  // this would navigate to the scope-collapsed Assets dock instead of the
+  // document's own tab, i.e. a different tab than the one the show created.
+  const dock = useMemo(() => {
+    const base = dockForDisplayTarget(shown);
+    return base ? DockPointer.rebaseAssetsOntoProject(base, projectId) : null;
+  }, [shown, projectId]);
+  if (!dock) return null;
+
+  const label = shown?.name || shown?.path?.split('/').pop() || shown?.type || 'the shown item';
+  return (
+    <button
+      type="button"
+      // The chip's own click activates the tab; this one opens the target
+      // instead, so it must not bubble (same guard the close button uses).
+      onClick={(e) => {
+        e.stopPropagation();
+        navigation.openDock(dock);
+      }}
+      className="shrink-0 rounded p-0.5 text-sky-500 transition-colors hover:bg-muted hover:text-sky-400"
+      title={`Open ${label}`}
+      aria-label={`Open ${label}`}
+      data-testid="tab-shown-target"
+    >
+      <Eye className="h-3 w-3" />
+    </button>
+  );
+};
+
 /** "agentic_process" → "Agentic Process", "markdown" → "Markdown". */
 // Moved to `@src/utils/humanize` — a pure function does not belong in a React
 // module that leaf components need to import. Re-exported so callers here and
@@ -154,12 +196,7 @@ export const ContentTabTooltip: React.FC<{
   typeLabel: string;
   statusReason?: string;
   location?: boolean;
-}> = ({
-  tab,
-  typeLabel,
-  statusReason,
-  location,
-}) => {
+}> = ({ tab, typeLabel, statusReason, location }) => {
   const dock = tab.dockPointer;
   const address = dock?.pointer || (tab.target_type && tab.target_id ? `${tab.target_type}/${tab.target_id}` : '');
   const lastActive = tab.last_active_at;

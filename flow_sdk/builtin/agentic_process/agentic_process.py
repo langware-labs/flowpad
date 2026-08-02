@@ -2762,14 +2762,22 @@ class AgenticProcess(Entity):
 
         Unlike ``flow navigate`` (which steers the browser tab's URL via a
         ``ui_command``), show is declarative display focus: an ``on_show``
-        entity event to whoever watches this process (the vibe display pane,
-        the standard-mode viewer). Nothing watching → a silent context change;
-        that is the intended semantics, not a failure.
+        entity event to whoever watches this process. Nothing watching → a
+        silent context change; that is the intended semantics, not a failure.
+
+        The payload says WHAT to present, never HOW — so the same verb adapts to
+        the surface the user is on, and the choice is the frontend's (only it
+        knows the live view mode). Vibe pins the target in its display pane;
+        every other mode mints it as a tab beside this process's own tab,
+        WITHOUT navigating (``ui/src/hooks/use-show-target-listener.ts``).
 
         The payload is appended to ``context_data.display_stack`` (the show
         HISTORY, newest last) and mirrored to ``context_data.last_shown`` (the
         newest target) so a display that mounts LATER (page reload, late-opened
         tab) restores the pin AND its history — the entity event has no replay.
+        Consumers of the durable copy must gate on ``shown_at``: a tab is
+        durable, so replaying a show older than the client would resurrect a tab
+        the user deliberately closed.
         """
         shown_at = datetime.now(timezone.utc).isoformat()
         context = self.context_data if isinstance(self.context_data, dict) else {}

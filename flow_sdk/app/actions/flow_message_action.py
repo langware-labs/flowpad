@@ -3353,8 +3353,16 @@ async def _local_only_conversation_list(*, auth_required: bool, user_id: str | N
     )
 
 
-async def handle_conversation_list(someone_typeid) -> ApiResponse:
+async def handle_conversation_list(someone_typeid, *, announce_invitations: bool = False) -> ApiResponse:
     """Unified conversation list: local SQLite + hub catch-up + background message fetch.
+
+    ``announce_invitations`` says whether a client refetch rides behind this
+    call. The UI action path leaves it False: the caller refetches its own
+    query once when the response lands, so broadcasting each materialized
+    invitation individually would only churn the Inbox order mid-catch-up.
+    The backend-initiated sweeps (``inbox.catchup``) have no such refetch —
+    nobody asked for this call — so they pass True and the invitation rows
+    reach the already-mounted UI.
 
     Pipeline (all stages run inside the request handler unless noted):
 
@@ -3483,15 +3491,17 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     invitation_conv_ids: set[str] = set()
     for inv in hub_invs:
         try:
-            # The HTTP response is followed by one local query refetch in the
-            # UI. Suppress per-entity broadcasts while reconciling the batch:
-            # emitting every historical invitation one by one continuously
-            # reorders Inbox rows and can make an otherwise enabled action
-            # physically unclickable until the catch-up finishes.
+            # On the UI path the HTTP response is followed by one local query
+            # refetch, so per-entity broadcasts are suppressed while reconciling
+            # the batch: emitting every historical invitation one by one
+            # continuously reorders Inbox rows and can make an otherwise enabled
+            # action physically unclickable until the catch-up finishes. A
+            # backend-initiated sweep has no refetch behind it — see
+            # ``announce_invitations``.
             _local_inv, conv_id = await _materialize_invitation(
                 inv,
                 someone_typeid,
-                notify=False,
+                notify=announce_invitations,
             )
             if conv_id:
                 invitation_conv_ids.add(conv_id)

@@ -47,6 +47,7 @@ import flow_sdk.fs_store.indexer.registrations  # noqa: E402, F401
 # Default args (include_schema=True) match bootstrap's call, so it's a cache hit.
 try:
     from flow_sdk.core.schema import build_all_type_payloads as _warm_type_payloads
+
     _warm_type_payloads()
 except Exception:
     logging.getLogger(__name__).exception("Failed to warm type payloads at startup")
@@ -166,9 +167,7 @@ async def _on_server_startup():
         _asyncio_disc.create_task(run_discovery(), name="capability-discovery")
         # Mint MCP-server capabilities (<service>.mcp.<worker_type>) from the
         # indexed records so they exist after boot.
-        _asyncio_disc.create_task(
-            reconcile_mcp_capabilities(), name="mcp-capability-reconcile"
-        )
+        _asyncio_disc.create_task(reconcile_mcp_capabilities(), name="mcp-capability-reconcile")
         print("  Capability discovery: started (background)")
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability discovery: failed to start ({_e})")
@@ -397,13 +396,13 @@ async def _transcript_catch_up_walk() -> None:
                 await transcript_streamer_registry.notify_change(jsonl)
                 scanned += 1
             except Exception:
-                logging.getLogger(__name__).exception(
-                    "Transcript streamer catch-up failed for %s", jsonl
-                )
+                logging.getLogger(__name__).exception("Transcript streamer catch-up failed for %s", jsonl)
         await transcript_streamer_registry.flush_cursors()
         logging.getLogger(__name__).info(
             "Transcript streamer catch-up: parsed %d of %d JSONL(s) (%d fresh, skipped)",
-            scanned, total, total - len(pending),
+            scanned,
+            total,
+            total - len(pending),
         )
     except Exception:
         logging.getLogger(__name__).exception("Transcript streamer catch-up failed")
@@ -416,6 +415,7 @@ async def _start_notification_scanner() -> None:
 
         from flow_sdk.app.actions.notification_scanner import scan_incoming_notifications
         from flow_sdk.builtin.user import User as _User
+
         local_user = await _User.get_one({"uname": "local"})
         if local_user:
             _asyncio.create_task(scan_incoming_notifications(local_user.id))
@@ -426,38 +426,14 @@ async def _start_notification_scanner() -> None:
 async def _start_inbox_catchup() -> None:
     """Pull any FlowMessages that landed on the hub while the app was offline.
 
-    The hub WebSocket only pushes live events; it does not replay history on
-    (re)connect, so a user who closes the app overnight and reopens it would
-    otherwise see an empty inbox until something else (manual refresh, an
-    inbound live message, ...) triggers a fetch. This sweep closes that gap.
+    Startup is only ONE of the two catch-up transitions — logging in is the
+    other, and it runs the same sweep from ``cloud_login._finalize_login``
+    (this one bails on ``hub_auth_available()`` when the app boots logged out).
+    See ``flow_sdk.inbox.catchup`` for why the sweep exists at all.
     """
-    import asyncio as _asyncio
+    from flow_sdk.inbox.catchup import start_hub_catchup
 
-    async def _run() -> None:
-        try:
-            from flow_sdk.app.actions.flow_message_action import handle_conversation_list
-            from flow_sdk.builtin.user import User as _User
-            from flow_sdk.cli.auth.hub_login import hub_auth_available
-
-            # No cloud session → the hub would 401 every conversation/invitation
-            # call. Skip the catch-up entirely instead of logging 401 warnings
-            # on every offline startup.
-            if not hub_auth_available():
-                return
-            local_user = await _User.get_one({"uname": "local"})
-            if not local_user:
-                return
-            resp = await handle_conversation_list(local_user.typeid)
-            data = getattr(resp, "data", None) or {}
-            dispatched = data.get("bg_fetch_dispatched") or []
-            if dispatched:
-                logging.getLogger(__name__).info(
-                    "Inbox catch-up: queued bundle fetch for %d conversation(s)", len(dispatched),
-                )
-        except Exception as exc:  # noqa: BLE001
-            logging.getLogger(__name__).info("Inbox catch-up skipped: %s", exc)
-
-    _asyncio.create_task(_run())
+    start_hub_catchup("startup")
 
 
 async def _start_cloud_ws_listener() -> None:
@@ -736,6 +712,7 @@ def wait_for_login_callback(timeout_sec: int = None):
         timeout_sec = int(timeout_str) if timeout_str else 30
 
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     port = get_instance_settings().port
 
     # Start server in daemon thread
@@ -758,6 +735,7 @@ def wait_for_login_callback(timeout_sec: int = None):
 if __name__ == "__main__":
     setup_defaults()
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     port = get_instance_settings().port
     print(f"Starting minihub server on http://127.0.0.1:{port}")
     start_server(port)

@@ -74,6 +74,13 @@ a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
   Renaming `AgenticFlow` removed most of the *workflow* sense, but one spelling is
   deliberately kept: the `flow_id` field on `GraphWorkflowRun` and `GraphWorkflowNode`, which
   is a stored JSON key (renaming it needs a migration — see Phase 2).
+- **`tag` means three unrelated things — say which.** A bus event name
+  (`FlowEvent.tag`), a taxonomy `Tag` entity + its `tag` capsule carrier, and
+  toplog's runtime *trace* tags (`toplog.log([...])` against
+  `.claude/skills/toplog/tags.md`). A **breadcrumb** is the second sense: a `tag`
+  capsule on a failing test pointing at its rules doc (`breadcrumb.test.*`),
+  written by the `tagit` skill and read by `tag-context`. It is not a trace tag
+  and never belongs in the toplog catalog.
 - **`harness` and `worker` are two names for one axis.** `HarnessType`
   (`fs_store/placement.py`) picks the dot-directory; `WorkerType` is the runtime driver.
   They're deliberately distinct and bridged by `_WORKER_NAME_TO_TYPE`, but the industry word
@@ -95,3 +102,9 @@ Some capability fields are currently declaration-only: `max_turns`, tool allow/d
 skills, MCP servers, and SubAgent references round-trip through `agent.md` but are not yet
 projected into the worker. They must not be presented as enforced controls until that
 projection exists.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: ab1f9726-eb39-41cb-86f0-6d57214c24ff
+flowpad:endcapsule identity -->

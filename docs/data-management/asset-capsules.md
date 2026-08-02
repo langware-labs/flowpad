@@ -53,6 +53,21 @@ most one block per name — dotted vocabularies therefore live in the payload, n
 the name. `identity` is the canonical kind; `tag` binds a source file to the
 subjects it implements (see `docs/tags.md`).
 
+`tag` is the one **repeatable** name (`_REPEATABLE_NAMES` in `line_comment.py`),
+because it annotates a *position* rather than the file: a test module carries one
+block per breadcrumbed test, each directly above it. The relaxation is per-name
+and never global — duplicate `identity` still fails closed, which is what
+`CapsuleIdentityBackend` relies on. Repeatable names get a positional API on the
+line-comment carrier; `read`/`write`/`write_if_absent` keep acting on the first
+block, so single-capsule callers are unchanged:
+
+* `read_all(name)` → every block as `AnchoredCapsule(line, end_line, data)`
+* `write_at(name, data, line=N)` → place a block immediately above 1-indexed `N`,
+  replacing in place the block of `name` already anchored there rather than
+  stacking a second one. Refuses an anchor that is out of range or that falls
+  inside an existing block (splitting one would corrupt every later read).
+* `remove(name)` drops every block of that name.
+
 ## Identity integration
 
 Types declare `CapsuleSpec("identity", 1)` and an identity backend in

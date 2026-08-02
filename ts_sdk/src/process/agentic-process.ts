@@ -805,13 +805,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Default dock pointer — the read-only transcript. Surfaces that historically
-   * meant "attach to terminal" should reference {@link terminalDockPointer}
-   * explicitly. The default is transcript because reading prior runs is the
-   * dominant gesture once a process has terminated.
+   * Default dock pointer — the transcript for a FINISHED process, the live
+   * terminal for anything still alive.
+   *
+   * Reading prior runs is the dominant gesture once a process has terminated,
+   * but a live process has no finished transcript to read. Worse, `session_id`
+   * is not proof one exists on disk: `AgenticProcess.fork` pre-allocates the
+   * fork's id, and the CLI only writes `<session_id>.jsonl` on its FIRST turn —
+   * so defaulting a running fork to the transcript lens sent it to a view that
+   * 404s ("No claude transcript JSONL found"), while its live pane sat unopened.
+   *
+   * Surfaces that always mean "attach to terminal" should keep referencing
+   * {@link terminalDockPointer} explicitly.
    */
   get dockPointer(): DockPointerData {
-    return this.transcriptDockPointer;
+    const finished = this.status === ProcessStatus.STOPPED || this.status === ProcessStatus.FAILED;
+    return finished ? this.transcriptDockPointer : this.terminalDockPointer;
   }
 
   /**
