@@ -95,12 +95,12 @@ def test_source_less_bundle_body_mints_proposed_identity(tmp_path: Path) -> None
     from flow_sdk.builtin.flow_message_bundle import _mint_rendered_asset_identity
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
-    info = SchemaRegistry.get(str(RecordType.AGENT))
+    info = SchemaRegistry.get(str(RecordType.SUBAGENT))
     assert info is not None
     body = tmp_path / "agent.md"
     body.write_text("---\nname: Agent\n---\n\nPrompt\n", encoding="utf-8")
 
-    assert _mint_rendered_asset_identity(info, body, str(RecordType.AGENT), IDENTITY) == IDENTITY
+    assert _mint_rendered_asset_identity(info, body, str(RecordType.SUBAGENT), IDENTITY) == IDENTITY
     assert AssetCapsule.from_path(body).read("identity").data["id"] == IDENTITY
 
 

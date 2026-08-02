@@ -4,29 +4,20 @@ from typing import Any, ClassVar, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_request import APIRequest
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.request_context.auth_info import AuthContext
 
 
 class WSMessageType(Enum):
-    ECHO = "echo"
     BROADCAST = "broadcast"
     PING = "ping"
     PONG = "pong"
-    HANGUP = "hangup"
     ENTITY_MSG = "entity_msg"
     DATA_OP_MSG = "data_op_msg"
     REST_API_MSG = "rest_api_msg"
-    STREAM_MSG = "stream_msg"
-    TRANSCRIPT = "transcript_msg"
-    EXE_MSG = "exe_msg"
-    CONTROL_MSG = "control_msg"
     OAUTH_MSG = "oauth_msg"
     RESPONSE_MSG = "response_msg"
-    CMD_STATUS_MSG = "cmd_status_msg"
-    CLIENT_NODE_READY_MSG = "client_node_ready_msg"
     PTY_OUTPUT_MSG = "pty_output_msg"
     PTY_SESSION_STATUS_MSG = "pty_session_status_msg"
     LLM_CONFIG_MSG = "llm_config_msg"
@@ -37,20 +28,8 @@ class WSMessageType(Enum):
     CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
     PRIVACY_MODE_MSG = "privacy_mode_msg"
     TOPLOG_STATE_MSG = "toplog_state_msg"
-    FLOW_RUN_EVENT_MSG = "flow_run_event_msg"
-    GRAPH_WORKFLOW_NODE_STATUS_MSG = "flow_node_status_msg"
     # The unified event bus frame (docs/flow-events.md) — carries one FlowEvent.
     TAG_MSG = "tag_msg"
-
-
-class ExeMessageSubType(StrEnum):
-    CONTROL = "control"
-    EXECUTION = "execution"
-
-
-class CtlMessageSubType(StrEnum):
-    READY = "ready"
-    START_SESSION = "session_start"
 
 
 class BaseMessage(BaseModel):
@@ -81,11 +60,6 @@ class BaseMessage(BaseModel):
         return cls._counter
 
 
-class EchoMessage(BaseMessage):
-    message_type: str = WSMessageType.ECHO.value
-    text: str
-
-
 class PingMessage(BaseMessage):
     message_type: str = WSMessageType.PING.value
     text: str
@@ -93,21 +67,6 @@ class PingMessage(BaseMessage):
 
 class PongMessage(BaseMessage):
     message_type: str = WSMessageType.PONG.value
-    text: str
-
-
-class HangupMessage(BaseMessage):
-    message_type: str = WSMessageType.HANGUP.value
-    text: str
-
-
-class StreamMessage(BaseMessage):
-    message_type: str = WSMessageType.STREAM_MSG.value
-    stream_id: int
-
-
-class TranscriptMessage(StreamMessage):
-    message_type: str = WSMessageType.TRANSCRIPT.value
     text: str
 
 
@@ -151,39 +110,6 @@ class ToplogStateMessage(BaseMessage):
     message_type: str = WSMessageType.TOPLOG_STATE_MSG.value
     enabled: bool
     filter: Dict[str, bool]
-
-
-class GraphWorkflowRunEventMessage(BaseMessage):
-    """Broadcast for every event/lifecycle beat of an GraphWorkflow run — the
-    live run stream. ``kind``: run_start | event | run_end. The TS mirror is
-    ``GraphWorkflowRunEventMessage`` in ``ts_sdk/src/websocket.ts``."""
-
-    message_type: str = WSMessageType.FLOW_RUN_EVENT_MSG.value
-    flow_id: str
-    run_id: str
-    kind: str
-    event: str = ""
-    data: Dict[str, Any] = {}
-    node: str = ""
-    status: str = ""
-    ts: str = ""
-
-
-class GraphWorkflowNodeStatusMessage(BaseMessage):
-    """Broadcast on every scheduler transition for a flow node — the push feed
-    for live queue/active counters and node status lines.
-    ``phase``: queued | merged | started | finished | failed.
-    The TS mirror is ``GraphWorkflowNodeStatusMessage`` in ``ts_sdk/src/websocket.ts``."""
-
-    message_type: str = WSMessageType.GRAPH_WORKFLOW_NODE_STATUS_MSG.value
-    flow_id: str
-    run_id: str
-    node_id: str
-    phase: str
-    queued: int = 0
-    active: int = 0
-    detail: Dict[str, Any] = {}
-    ts: str = ""
 
 
 class TagMessage(BaseMessage):
@@ -260,37 +186,6 @@ class APIMessage(BaseMessage, APIRequest):
 class ComputeMessage(BaseMessage):
     session_id: Optional[str] = None
     ack_required: bool = False
-
-
-class ComputeExeMessage(ComputeMessage):
-    message_type: str = WSMessageType.EXE_MSG.value
-    session_id: Optional[str] = None
-    cmd: str
-
-
-class ComputeCtrlMessage(ComputeMessage):
-    message_type: str = WSMessageType.CONTROL_MSG.value
-    subtype: CtlMessageSubType
-    content: str
-
-
-class CommandStatusMessage(ComputeMessage):
-    """
-    Represents a message that contains the status of a command execution.
-    This can be used to report the status of a command execution back to the client.
-    """
-
-    message_type: str = WSMessageType.CMD_STATUS_MSG.value
-    command_message_id: str
-    exit_code: Optional[int] = None
-    stdout: Optional[str] = None
-    stderr: Optional[str] = None
-
-
-class ClientReadyMessage(ComputeMessage):
-    message_type: str = WSMessageType.CLIENT_NODE_READY_MSG.value
-    node_id: str
-    default_session_id: Optional[str] = None
 
 
 class PtyOutputMessage(BaseMessage):

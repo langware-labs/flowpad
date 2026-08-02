@@ -43,6 +43,7 @@ Caps (CLAUDE.md, non-negotiable — never raise): pytest.ini --timeout=30. Per-c
 convergence is sub-second; CONVERGE is a 10s safety deadline (well above normal — not
 a slow-path mask). Requires the two instances up; skips cleanly otherwise.
 """
+
 from __future__ import annotations
 
 import os
@@ -53,6 +54,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from tests.hub_tests._assignment import assert_auto_assigned_sync
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ALICE_INSTANCE = os.environ.get("ALICE_INSTANCE", "dev-1")
@@ -149,10 +151,12 @@ def _wait_absent(c, be, conv_id, cid):
 
 
 def _mk(c, be, parent_type, parent_id, text, line):
-    return _u(c.post(
-        f"{be}/api/v1/graph/{parent_type}/{parent_id}/comment",
-        json={"raw_content": text, "data": {"line": line}},
-    ))["id"]
+    return _u(
+        c.post(
+            f"{be}/api/v1/graph/{parent_type}/{parent_id}/comment",
+            json={"raw_content": text, "data": {"line": line}},
+        )
+    )["id"]
 
 
 def _scoped_ids(c, be, parent_type, parent_id):
@@ -179,11 +183,12 @@ def _wait_scoped(c, be, conv_id, parent_type, parent_id, cid):
 
 def _build_shared(c, env, stamp):
     """Alice creates a markdown + conversation (markdown in shared_context, for the
-    doc-binding cell), shares with bob; bob accepts. No bob-side ``discover``."""
+    doc-binding cell), shares with Bob; Bob is assigned. No Bob-side ``discover``."""
     alice, bob, hub = env["alice"], env["bob"], env["hub"]
     bob_email = _u(c.get(f"{bob}/api/v1/cloud/status"))["login"]["user"]["email"]
     bd = c.post(f"{hub}/api/v1/login", json={"email": bob_email, "password": env["bob_pw"]}).json()["data"]
-    bob_hdr = {"Authorization": f"Bearer {bd.get('api_key') or bd['token']}"}
+    bob_token = bd.get("api_key") or bd["token"]
+    bob_id = (bd.get("user") or {})["id"]
 
     docs = os.path.expanduser("~/docs")
     os.makedirs(docs, exist_ok=True)
@@ -193,22 +198,32 @@ def _build_shared(c, env, stamp):
     md_id = _u(c.post(f"{alice}/api/v1/graph/markdown", json={"title": f"Doc {stamp}", "asset_ref": md_path}))["id"]
     Path(md_path).write_text(f"---\nid: {md_id}\n---\n\n{body}")
     md_ref = f"markdown-{md_id}"
-    conv_obj = _u(c.post(f"{alice}/api/v1/graph/conversation", json={"title": f"Conv {stamp}", "shared_context_entities": [md_ref]}))
+    conv_obj = _u(
+        c.post(
+            f"{alice}/api/v1/graph/conversation", json={"title": f"Conv {stamp}", "shared_context_entities": [md_ref]}
+        )
+    )
     conv_id = conv_obj["id"]
     # The full conv object MUST ride the share body so _link_context_to_conversation
     # links the doc → conversation (effective-remote → comments under it auto-share).
     _u(c.post(f"{alice}/api/v1/graph/conversation/{conv_id}/share", json={**conv_obj, "recipients": [bob_email]}))
 
-    accepted = False
-    for _ in range(40):
-        pending = (c.get(f"{hub}/api/v1/graph/invitation/pending", headers=bob_hdr).json().get("data")) or []
-        inv = [i for i in pending if conv_id in str(i.get("conversation") or "") and not i.get("accepted")]
-        if inv:
-            c.post(f"{bob}/api/v1/graph/invitation-accept", json={"invitation_id": inv[0]["id"]})
-            accepted = True
-            break
-        time.sleep(0.3)
-    assert accepted, "bob never received/accepted the conversation invitation"
+    assert_auto_assigned_sync(
+        c,
+        hub,
+        bob_token,
+        entity_type="conversation",
+        entity_id=conv_id,
+        user_id=bob_id,
+        expected_role="member",
+    )
+    _u(
+        c.post(
+            f"{hub}/api/v1/graph/conversation/{conv_id}/join",
+            headers={"Authorization": f"Bearer {bob_token}"},
+            json={},
+        )
+    )
     # One sync so bob materializes the conversation (so his catch-up pulls its children).
     _sync(c, bob, conv_id)
     return md_id, md_ref, conv_id, md_path
@@ -223,8 +238,15 @@ def shared(two_backends):
     c = httpx.Client(timeout=15.0)
     try:
         md_id, md_ref, conv_id, md_path = _build_shared(c, two_backends, stamp)
-        yield {**two_backends, "client": c, "md_id": md_id, "md_ref": md_ref, "conv_id": conv_id,
-               "md_path": md_path, "stamp": stamp}
+        yield {
+            **two_backends,
+            "client": c,
+            "md_id": md_id,
+            "md_ref": md_ref,
+            "conv_id": conv_id,
+            "md_path": md_path,
+            "stamp": stamp,
+        }
     finally:
         try:
             c.close()
@@ -258,7 +280,9 @@ def test_doc_comment_update_sync(shared):
 
     cid = _mk(c, alice, "conversation", conv_id, "u1", 3)
     assert _wait_text(c, bob, conv_id, cid, "u1"), "update setup: bob must first see u1"
-    c.put(f"{alice}/api/v1/graph/comment/{cid}", json={"raw_content": "edited-by-alice"}, headers={"Hub-Reflect": "true"})
+    c.put(
+        f"{alice}/api/v1/graph/comment/{cid}", json={"raw_content": "edited-by-alice"}, headers={"Hub-Reflect": "true"}
+    )
     assert _wait_text(c, bob, conv_id, cid, "edited-by-alice"), "update A→B: edit did not reach bob"
 
     cid = _mk(c, bob, "conversation", conv_id, "u1", 4)
@@ -300,7 +324,9 @@ def test_doc_comment_doc_binding(shared):
     cid = _mk(c, alice, "markdown", md_id, f"on-doc-{stamp}", 3)
     got = _wait_text(c, bob, conv_id, cid, f"on-doc-{stamp}")
     assert got is not None, "doc-binding: bob never received the doc comment"
-    assert got.get("parent_type_id") == md_ref, "doc-binding: comment must bind to the doc, not the conversation envelope"
+    assert got.get("parent_type_id") == md_ref, (
+        "doc-binding: comment must bind to the doc, not the conversation envelope"
+    )
     # Sender-side gutter parity: alice authored via add_child, so her doc-scoped
     # (edge-backed) query — the exact route the review gutter hits — must see it.
     assert cid in _scoped_ids(c, alice, "markdown", md_id), "doc-binding: comment missing from alice's doc-scoped query"
@@ -324,10 +350,12 @@ def test_doc_comment_receiver_scope_visibility(shared):
 
     # 2) Bob materializes the doc locally via the INDEXER (the real receiver path —
     #    install/index), which adopts the frontmatter capsule id → same entity id.
-    idx = _u(c.post(
-        f"{bob}/api/v1/graph/compute_node/@local/fs-records/index",
-        params={"type": "markdown", "path": md_path},
-    ))
+    idx = _u(
+        c.post(
+            f"{bob}/api/v1/graph/compute_node/@local/fs-records/index",
+            params={"type": "markdown", "path": md_path},
+        )
+    )
     assert f"markdown-{md_id}" in (idx.get("typeids") or []), (
         f"receiver-scope: bob's index must adopt the sender's entity id, got {idx.get('typeids')}"
     )

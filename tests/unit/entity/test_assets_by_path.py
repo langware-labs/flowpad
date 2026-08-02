@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.skill import Skill
+from flow_sdk.builtin.subagent import SubAgent
 from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.server.routes.assets import list_entities_by_path
@@ -27,7 +27,7 @@ from flow_sdk.server.routes.assets import list_entities_by_path
 #       skill_a/        Skill
 #       skill_b/        Skill
 #     agents/
-#       agent_x.md      Agent
+#       agent_x.md      SubAgent
 #     docs/
 #       doc_y.md        Docs (markdown)
 #       nested/
@@ -61,7 +61,7 @@ async def asset_tree(tmp_path: Path) -> dict:
                     asset_ref=canonical_posix_path(skill_a_path))
     skill_b = Skill(id=str(uuid.uuid4()), name=f"skill_b_{suffix}",
                     asset_ref=canonical_posix_path(skill_b_path))
-    agent_x = Agent(id=str(uuid.uuid4()), name=f"agent_x_{suffix}",
+    agent_x = SubAgent(id=str(uuid.uuid4()), name=f"agent_x_{suffix}",
                     asset_ref=canonical_posix_path(agent_x_path))
     doc_y = Docs(id=str(uuid.uuid4()), name=f"doc_y_{suffix}",
                  asset_ref=canonical_posix_path(doc_y_path))
@@ -139,7 +139,7 @@ async def test_skill_filter_under_root(asset_tree: dict) -> None:
 async def test_skill_or_agent_under_root(asset_tree: dict) -> None:
     res = await Entity.assets_by_path(PathQueryOptions(
         search_dirs=[asset_tree["tmp"]],
-        types=["skill", "agent"],
+        types=["skill", "subagent"],
     ))
     assert _ids(res) == {
         asset_tree["skill_a"].id, asset_tree["skill_b"].id, asset_tree["agent_x"].id,
@@ -219,7 +219,7 @@ async def test_markdown_in_skills_dir_returns_empty(asset_tree: dict) -> None:
 async def test_skill_or_agent_in_docs_returns_empty(asset_tree: dict) -> None:
     res = await Entity.assets_by_path(PathQueryOptions(
         search_dirs=[asset_tree["docs_dir"]],
-        types=["skill", "agent"],
+        types=["skill", "subagent"],
     ))
     assert res == []
 

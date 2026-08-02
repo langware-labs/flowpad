@@ -1,6 +1,6 @@
 import { FileText, type LucideIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { humanizeType } from '@src/tabs/provider-meta';
+import { humanizeType } from '@src/utils/humanize';
 import { dataManager } from '@sdk';
 
 /**

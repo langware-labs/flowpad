@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Boxes, File as FileIcon, MessageSquarePlus, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
-import { sendReply } from '@sdk/entities/notifications';
+import { sendReply, sendToChannel } from '@sdk/entities/notifications';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
@@ -22,6 +22,14 @@ interface MessageComposerProps {
   /** Conversation to append to. Falls back to the draft's `conversation_id`. */
   conversationId?: string;
   disabled?: boolean;
+  /** Overrides the reply placeholder. Used when the composer is gated, so the
+   *  box explains why instead of inviting a reply that goes nowhere. */
+  placeholder?: string;
+  /** When set, this conversation caches a cloud thread and Send pushes the
+   *  reply back into that channel instead of the hub. */
+  channel?: string;
+  /** Fires when a channel send is accepted (dispatched, not delivered). */
+  onChannelSent?: (text: string) => void;
   /** Live-session composer: every send is stamped with this session id (the
    *  backend appends the snapshot-carrier attachment). Set by LiveSessionView;
    *  the plain conversation composer leaves it unset. */
@@ -124,6 +132,9 @@ function PendingFileChip({
 export function MessageComposer({
   conversationId,
   disabled,
+  placeholder,
+  channel,
+  onChannelSent,
   liveSessionId,
   onSent,
   queuedPrompt,
@@ -155,6 +166,9 @@ export function MessageComposer({
   const canAddPrompt = !!effectiveConversationId && !liveSessionId;
   const isBusy = sending || discarding;
   const isDisabled = disabled || isBusy;
+  // A channel send carries text only, so offering the paperclip would
+  // invite an attachment the send silently drops.
+  const attachmentsDisabled = isDisabled || !!channel;
 
   const activePrompt = queuedPrompt ?? localPrompt;
   const setActivePrompt = (p: QueuedPrompt | null) => {
@@ -289,32 +303,43 @@ export function MessageComposer({
     const outgoingFiles = liveSessionPrompt ? undefined : files.length > 0 ? files : undefined;
     setSending(true);
     setError(null);
+
+
     try {
-      // Cloud reply needs an authenticated hub token; otherwise the hub POST
-      // 401s and the send fails silently. Route through OAuth first.
-      const gate = await ensureCloudLogin();
-      if (!gate.ok) {
-        setError(gate.error);
-        if (isDraftMode) notify.error({ title: gate.error });
-        return;
+      if (channel) {
+        // A channel reply never touches the hub, so it must not drag the user
+        // through a Flowpad-Cloud login to send an email. Branch on the CALL
+        // only — an early return here would have to restate the cleanup below,
+        // and the first version of it restated one quarter of it.
+        await sendToChannel(effectiveConversationId!, messageBody);
+        onChannelSent?.(messageBody);
+      } else {
+        // Cloud reply needs an authenticated hub token; otherwise the hub POST
+        // 401s and the send fails silently. Route through OAuth first.
+        const gate = await ensureCloudLogin();
+        if (!gate.ok) {
+          setError(gate.error);
+          if (isDraftMode) notify.error({ title: gate.error });
+          return;
+        }
+        // Draft promotion: discard the local-only draft, then send through the
+        // SAME reply pipeline as a fresh send. Single code path beats forking
+        // the upload/push plumbing for drafts.
+        if (draft) await discardDraftFlowMessage(draft);
+        await sendReply(
+          { conversationId: effectiveConversationId },
+          messageBody,
+          outgoingFiles,
+          buildExtras(outgoingPrompt),
+        );
       }
-      // Draft promotion: discard the local-only draft, then send through the
-      // SAME reply pipeline as a fresh send. Single code path beats forking
-      // the upload/push plumbing for drafts.
-      if (draft) await discardDraftFlowMessage(draft);
-      await sendReply(
-        { conversationId: effectiveConversationId },
-        messageBody,
-        outgoingFiles,
-        buildExtras(outgoingPrompt),
-      );
       if (!isDraftMode) {
         setText('');
         setFiles([]);
         setAssetRefs([]);
         setActivePrompt(null);
       }
-      onSent?.();
+      if (!channel) onSent?.();
     } catch (err: unknown) {
       console.error('[MessageComposer] send failed', err);
       setError(err instanceof Error ? err.message : t`Failed to send reply.`);
@@ -396,7 +421,7 @@ export function MessageComposer({
       type="file"
       multiple
       className="sr-only"
-      disabled={isDisabled}
+      disabled={attachmentsDisabled}
       onChange={(e) => {
         void addFiles(e.target.files);
         e.target.value = '';
@@ -411,7 +436,7 @@ export function MessageComposer({
       <button
         type="button"
         onClick={() => fileInputRef.current?.click()}
-        disabled={isDisabled}
+        disabled={attachmentsDisabled}
         title={t`Attach files`}
         data-testid="attach-file-button"
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
@@ -422,7 +447,7 @@ export function MessageComposer({
         trigger={
           <button
             type="button"
-            disabled={isDisabled}
+            disabled={attachmentsDisabled}
             title={t`Attach an asset (skill, agent, doc, spec)`}
             data-testid="attach-asset-button"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
@@ -625,7 +650,7 @@ export function MessageComposer({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={(e) => void handlePaste(e)}
-          placeholder={dragging ? t`Drop files here` : t`Reply to sender…`}
+          placeholder={dragging ? t`Drop files here` : (placeholder ?? t`Reply to sender…`)}
           rows={1}
           disabled={isDisabled}
           className="min-h-[1.5rem] flex-1 resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"

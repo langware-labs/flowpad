@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import apiClient from '../client';
 import {
   ActionInfo,
-  Agent,
+  SubAgent,
   ExpansionRequest,
   Plugin,
   PluginManifest,
@@ -23,6 +23,8 @@ import { Workspace } from '../entities/workspace';
 import { TypeId } from '../models/TypeId';
 import { UserWarning } from '../models/UserWarning';
 import { defineGlobal } from '../utils/globals';
+import { isHubOnly } from '../utils/hub-runtime';
+import { RuntimeInfo, RuntimeKind } from '../utils/runtime';
 import { SnifferHook } from '../services/sniffer-hook';
 import {
   HubConnectionStatus,
@@ -148,13 +150,6 @@ class DataContext extends EventEmitter {
   _warnings: UserWarning[] = [];
 
   /**
-   * Get the environment name from bootstrap info
-   */
-  get envName(): string | null {
-    return this.bootstrapInfo?.env?.env_name ?? null;
-  }
-
-  /**
    * Get the cloud API URL from bootstrap info
    */
   get cloudApiUrl(): string | null {
@@ -217,10 +212,38 @@ class DataContext extends EventEmitter {
   }
 
   /**
-   * Check if the environment is desktop
+   * The runtime the backend resolved for THIS client — the single answer to
+   * "what am I running on". Read this instead of sniffing hostnames, `env_name`,
+   * or `window.electronAPI`.
+   *
+   * The fallback is where the two bootstrap signals are reconciled, and it has
+   * to be here rather than in `hub-runtime`: against a backend too old to send
+   * `runtime`, `supported_pages` still identifies a hub, and defaulting such a
+   * server to `desktop` would make `isHubOnly()` and this getter contradict each
+   * other — the banner would read "Desktop" on the hub. Everything else old is
+   * a local install, hence `desktop`.
+   */
+  get runtimeKind(): RuntimeKind {
+    if (this.bootstrapInfo?.runtime?.kind) return this.bootstrapInfo.runtime.kind;
+    return isHubOnly() ? RuntimeKind.HUB : RuntimeKind.DESKTOP;
+  }
+
+  /** The full aggregate, inputs included. For diagnostics; render off `runtimeKind`. */
+  get runtime(): RuntimeInfo | null {
+    return this.bootstrapInfo?.runtime ?? null;
+  }
+
+  /**
+   * Backed by a flow_sdk app server rather than the hub — i.e. the full desktop
+   * API surface is available (tabs, capabilities, bookmarks, local harness).
+   *
+   * This is what `env_name === 'desktop'` always actually meant, so the meaning
+   * is unchanged: a browser tab on a local server and a cloud sandbox are both
+   * "the app", and only the hub is not. It is NOT a test for the Electron shell
+   * — for that, ask `runtimeKind === RuntimeKind.DESKTOP`.
    */
   get isDesktop(): boolean {
-    return this.envName?.toLowerCase() === 'desktop';
+    return this.runtimeKind !== RuntimeKind.HUB;
   }
 
   /**
@@ -480,8 +503,9 @@ class DataContext extends EventEmitter {
       activeTerminalTargetTypeId: observable,
       workdir: observable,
       terminalRuntimeError: observable,
-      envName: computed,
       desktopInfo: computed,
+      runtimeKind: computed,
+      runtime: computed,
       isDesktop: computed,
       version: computed,
       instanceName: computed,
@@ -680,7 +704,7 @@ class DataContext extends EventEmitter {
         return ContextEntitiesEnum.CurrentProjectTypeId;
       case ComputeNode.type:
         return ContextEntitiesEnum.CurrentComputeNodeTypeId;
-      case Agent.type:
+      case SubAgent.type:
         return ContextEntitiesEnum.CurrentAgentTypeId;
       case AgenticProcess.type:
         return ContextEntitiesEnum.CurrentProcessTypeId;

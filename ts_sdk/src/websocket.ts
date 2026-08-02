@@ -27,9 +27,7 @@ type MessageType =
   | 'cloud_connection_status_msg'
   | 'privacy_mode_msg'
   | 'toplog_state_msg'
-  | 'flow_run_event_msg'
   | 'tag_msg'
-  | 'flow_node_status_msg'
   | 'ui_command'
   | 'recovered_msg'
   | 'broadcast';
@@ -38,6 +36,8 @@ type MessageType =
 interface BaseMessage {
   message_type: MessageType;
   message_id: string;
+  /** Monotonic server-side creation sequence (present on entity data ops). */
+  instance_id?: number;
 }
 
 export interface IWSRestOptions {
@@ -70,14 +70,6 @@ type ITypeId = string | { type: string; id: string };
 interface EntityMessage extends BaseMessage {
   from_entity?: ITypeId;
   to_entity: ITypeId;
-}
-
-export interface IStreamMessage extends BaseMessage {
-  stream_id: number;
-}
-
-export interface TranscriptMessage extends IStreamMessage {
-  text: string;
 }
 
 export interface ControlMessage extends BaseMessage {
@@ -129,46 +121,10 @@ export interface ToplogStateMessage extends BaseMessage {
   filter: Record<string, boolean>;
 }
 
-/**
- * Broadcast for every event/lifecycle beat of an GraphWorkflow run — the live
- * run stream. Backend mirror: GraphWorkflowRunEventMessage in flow_sdk/api/messages.py.
- */
 /** The unified event-bus frame — one serialized FlowEvent (docs/flow-events.md). */
 export interface TagMsg extends BaseMessage {
   message_type: 'tag_msg';
   event: import('./tags/EventBus').FlowEvent;
-}
-
-export interface GraphWorkflowRunEventMessage extends BaseMessage {
-  message_type: 'flow_run_event_msg';
-  flow_id: string;
-  run_id: string;
-  /** run_start | event | run_end */
-  kind: string;
-  event: string;
-  data: Record<string, unknown>;
-  node: string;
-  status: string;
-  ts: string;
-}
-
-/**
- * Broadcast on every GraphWorkflowManager scheduler transition for a flow node — the
- * push feed for live queue/active counters and node status lines.
- * Backend mirror: GraphWorkflowNodeStatusMessage in flow_sdk/api/messages.py.
- */
-export interface GraphWorkflowNodeStatusMessage extends BaseMessage {
-  message_type: 'flow_node_status_msg';
-  flow_id: string;
-  run_id: string;
-  node_id: string;
-  phase: 'queued' | 'merged' | 'started' | 'finished' | 'failed';
-  /** Node runtime counts AFTER this transition. */
-  queued: number;
-  active: number;
-  /** started → {program_kind, process_id?}; finished → {duration_ms, stdout?...}; failed → {error}. */
-  detail: Record<string, unknown>;
-  ts: string;
 }
 
 /**
@@ -307,6 +263,8 @@ export class ConnectionManager extends EventEmitter {
   private socket: WebSocket | null = null;
   private pendingRequests: Map<string, PendingRequest<unknown>> = new Map();
   private warnedMessageTypes = new Set<string>();
+  /** Last accepted data-op sequence per entity on the current socket. */
+  private lastDataOpInstanceByEntity = new Map<string, number>();
   private requestTimeoutMs: number = 30000;
 
   // Reconnect state
@@ -508,6 +466,10 @@ export class ConnectionManager extends EventEmitter {
   }
 
   onOpen(event: Event) {
+    // The backend counter restarts with its process and an old socket cannot
+    // deliver frames after this new connection opens, so sequence ownership is
+    // per socket generation.
+    this.lastDataOpInstanceByEntity.clear();
     this.reportLifecycle('ws_open', { attempts_used: this.reconnectAttempts });
     // Reset reconnect attempts on successful connection
     this.reconnectAttempts = 0;
@@ -627,12 +589,6 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'tag_msg') {
       return this.onTagMessage(data as TagMsg);
     }
-    if (data.message_type === 'flow_run_event_msg') {
-      return this.onGraphWorkflowRunEventMessage(data as GraphWorkflowRunEventMessage);
-    }
-    if (data.message_type === 'flow_node_status_msg') {
-      return this.onGraphWorkflowNodeStatusMessage(data as GraphWorkflowNodeStatusMessage);
-    }
     if (data.message_type === 'toplog_state_msg') {
       return this.onToplogStateMessage(data as ToplogStateMessage);
     }
@@ -689,14 +645,6 @@ export class ConnectionManager extends EventEmitter {
     this.emit('on_tag_msg', data);
   }
 
-  onGraphWorkflowRunEventMessage(data: GraphWorkflowRunEventMessage) {
-    this.emit('on_flow_run_event_msg', data);
-  }
-
-  onGraphWorkflowNodeStatusMessage(data: GraphWorkflowNodeStatusMessage) {
-    this.emit('on_flow_node_status_msg', data);
-  }
-
   onUiCommandMessage(data: UiCommandMessage) {
     this.emit('on_ui_command', data);
   }
@@ -741,7 +689,14 @@ export class ConnectionManager extends EventEmitter {
       console.warn('Ignoring data_op message with invalid to_entity:', data.to_entity);
       return;
     }
-    this.emit('on_data_op', typeId.toString(), data.op, data.data);
+    const key = typeId.toString();
+    const instanceId = data.instance_id;
+    if (typeof instanceId === 'number' && Number.isSafeInteger(instanceId)) {
+      const previous = this.lastDataOpInstanceByEntity.get(key);
+      if (previous !== undefined && instanceId <= previous) return;
+      this.lastDataOpInstanceByEntity.set(key, instanceId);
+    }
+    this.emit('on_data_op', key, data.op, data.data);
   }
   onOAuthMessage(data: OAuthMessage) {
     this.emit('on_oauth_msg', data);

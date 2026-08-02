@@ -50,8 +50,9 @@ except ImportError as e:
 
 try:
     from flow_sdk.builtin.agent import Agent  # noqa: F401
+    from flow_sdk.builtin.subagent import SubAgent  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import Agent: {e}")
+    print(f"[WARN] Failed to import SubAgent: {e}")
 
 try:
     from flow_sdk.builtin.api_key import ApiKey  # noqa: F401

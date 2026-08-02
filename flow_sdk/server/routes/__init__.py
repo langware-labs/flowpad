@@ -19,6 +19,7 @@ from .graph import graph_router
 from .graph_workflows import router as graph_workflows_router
 from .health import health_router
 from .hooks import router as hooks_router
+from .ingest import router as ingest_router
 from .journeys import router as journeys_router
 from .markdown_index import router as markdown_index_router
 from .navigate import router as navigate_router
@@ -26,6 +27,7 @@ from .privacy import router as privacy_router
 from .project import router as project_router
 from .pty_stream import router as pty_stream_router
 from .rules import router as rules_router
+from .runs import router as runs_router
 from .search import router as search_router
 from .semantic_checker import router as semantic_checker_router
 from .subgraph import router as subgraph_router
@@ -63,6 +65,8 @@ __all__ = [
     "project_router",
     "compute_register_router",
     "debug_router",
+    "ingest_router",
+    "runs_router",
     "subgraph_router",
     "tags_router",
     "navigate_router",

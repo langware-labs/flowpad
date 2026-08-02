@@ -4,9 +4,8 @@ Runs against a real local hub (skipped by ``conftest`` when none is reachable).
 Verifies the two pieces that aren't conversation-shaped:
 
   * the login response embeds the user's organization + role, and
-  * the generic membership endpoint creates org/team invitations that a second
-    user discovers in ``invitation/pending`` (with a ``target`` descriptor) and
-    accepts to become a member.
+  * the generic membership endpoint immediately assigns the invited org/team
+    role to the second user, leaving no manual-acceptance row pending.
 
 The conversation invite flow is covered by ``test_members_basic_operations.py``;
 this file reuses its two-actor setup (``_alice_and_bob``).
@@ -19,6 +18,7 @@ import time
 import httpx
 import pytest
 
+from tests.hub_tests._assignment import assert_auto_assigned
 from tests.hub_tests.test_members_basic_operations import _alice_and_bob
 
 
@@ -57,35 +57,6 @@ async def _invite(hub_base_url: str, token: str, etype: str, ent_id: str, email:
             json=body,
         )
     assert r.status_code == 200, r.text
-
-
-async def _pending_for(hub_base_url: str, token: str, email: str) -> list[dict]:
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-    async with httpx.AsyncClient(timeout=5.0) as h:
-        r = await h.get(f"{hub_base_url}/api/v1/graph/invitation/pending", headers=headers)
-    r.raise_for_status()
-    pending = r.json()["data"] or []
-    return [inv for inv in pending if inv.get("recipient_email") == email and not inv.get("accepted")]
-
-
-async def _accept(hub_base_url: str, token: str, invitation_id: str) -> None:
-    """Accept a membership invitation. Like the conversation flow, the hub's
-    members/accept is browser-oriented (302); for org/team there's no
-    conversation landing, so success is 200/409 or any non-login redirect."""
-    headers = {"Authorization": f"Bearer {token}"}
-    async with httpx.AsyncClient(timeout=5.0) as h:
-        r = await h.get(
-            f"{hub_base_url}/api/v1/graph/members/accept",
-            headers=headers,
-            params={"invitation-id": invitation_id},
-        )
-    if r.status_code in (200, 409):
-        return
-    if r.status_code in (301, 302, 303, 307, 308):
-        location = (r.headers.get("location") or r.headers.get("Location") or "").lower()
-        assert "login" not in location, f"accept bounced to login (unauthenticated): {location[:200]}"
-        return
-    r.raise_for_status()
 
 
 # do not increase timeout without approval
@@ -135,11 +106,8 @@ def _alice_password() -> str:
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_org_invitation_pending_target_and_accept_makes_member(
-    hub_base_url, hub_login_payload, isolated_hub_keyring
-):
-    """alice creates an org, invites bob → bob's pending shows an organization
-    target → bob accepts → GET members lists bob with a role."""
+async def test_org_invitation_auto_assigns_member(hub_base_url, hub_login_payload, isolated_hub_keyring):
+    """Alice invites Bob to an org; Bob is immediately assigned as a member."""
     actors = await _alice_and_bob(hub_base_url, hub_login_payload)
     alice_token = actors["alice_token"]
     bob_token = actors["bob_token"]
@@ -151,19 +119,15 @@ async def test_org_invitation_pending_target_and_accept_makes_member(
     )
     await _invite(hub_base_url, alice_token, "organization", org_id, bob_email, role="member")
 
-    pending = await _pending_for(hub_base_url, bob_token, bob_email)
-    # Bob may carry unrelated pending invitations (e.g. stale conversation
-    # invites from other tests); filter to the org we just created.
-    org_pending = [
-        p for p in pending
-        if isinstance(p.get("target"), dict) and p["target"].get("id") == org_id
-    ]
-    assert org_pending, f"bob has no pending organization invitation for {org_id}; got {pending}"
-    target = org_pending[0]["target"]
-    assert target.get("type") == "organization"
-    assert org_pending[0].get("conversation") is None
-
-    await _accept(hub_base_url, bob_token, org_pending[0]["id"])
+    await assert_auto_assigned(
+        hub_base_url,
+        bob_token,
+        entity_type="organization",
+        entity_id=org_id,
+        user_id=bob_id,
+        expected_role="member",
+        members_token=alice_token,
+    )
 
     headers_a = {"Authorization": f"Bearer {alice_token}", "Accept": "application/json"}
     async with httpx.AsyncClient(timeout=5.0) as h:
@@ -171,32 +135,33 @@ async def test_org_invitation_pending_target_and_accept_makes_member(
     assert r.status_code == 200, r.text
     members = r.json().get("data") or []
     by_id = {m.get("user_id"): m for m in members if isinstance(m, dict)}
-    assert bob_id in by_id, f"bob not in org members after accept: {members}"
+    assert bob_id in by_id, f"bob not in org members after assignment: {members}"
     assert by_id[bob_id].get("role"), "bob has no role on the organization"
 
 
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_team_invitation_accept_makes_member(hub_base_url, hub_login_payload, isolated_hub_keyring):
-    """Same invite→accept→member flow for a team target."""
+async def test_team_invitation_auto_assigns_member(hub_base_url, hub_login_payload, isolated_hub_keyring):
+    """The same immediate-assignment contract applies to a team target."""
     actors = await _alice_and_bob(hub_base_url, hub_login_payload)
     alice_token = actors["alice_token"]
     bob_token = actors["bob_token"]
     bob_id = actors["bob_id"]
     bob_email = actors["bob_email"]
 
-    team_id = await _create_membership_entity(
-        hub_base_url, alice_token, "team", f"invite-team-{int(time.time())}"
-    )
+    team_id = await _create_membership_entity(hub_base_url, alice_token, "team", f"invite-team-{int(time.time())}")
     await _invite(hub_base_url, alice_token, "team", team_id, bob_email, role="member")
 
-    pending = await _pending_for(hub_base_url, bob_token, bob_email)
-    team_pending = [p for p in pending if isinstance(p.get("target"), dict) and p["target"].get("id") == team_id]
-    assert team_pending, "bob has no pending team invitation with a team target"
-    assert team_pending[0]["target"].get("type") == "team"
-
-    await _accept(hub_base_url, bob_token, team_pending[0]["id"])
+    await assert_auto_assigned(
+        hub_base_url,
+        bob_token,
+        entity_type="team",
+        entity_id=team_id,
+        user_id=bob_id,
+        expected_role="member",
+        members_token=alice_token,
+    )
 
     headers_a = {"Authorization": f"Bearer {alice_token}", "Accept": "application/json"}
     async with httpx.AsyncClient(timeout=5.0) as h:
@@ -204,4 +169,4 @@ async def test_team_invitation_accept_makes_member(hub_base_url, hub_login_paylo
     assert r.status_code == 200, r.text
     members = r.json().get("data") or []
     by_id = {m.get("user_id"): m for m in members if isinstance(m, dict)}
-    assert bob_id in by_id, f"bob not in team members after accept: {members}"
+    assert bob_id in by_id, f"bob not in team members after assignment: {members}"

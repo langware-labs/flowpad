@@ -12,20 +12,20 @@
  * ariaSelected:["arch_high_level.md"].
  *
  * Fix: `useAssetsModel` already resolves the open entity (`useEntity`), which
- * carries its vfs `asset_ref`. It now re-addresses the tree by that vfs pointer
- * instead of the typeid one, so the existing vfs path resolution + selection
- * fire. No id re-minting, no adapter change.
+ * carries its vfs `asset_ref`. It preserves the real TypeId URL as the tree's
+ * navigation cursor and exposes a second resource pointer for VFS path
+ * resolution + selection. No id re-minting, no adapter change.
  *
  * Two faithful, self-contained checks (real components; only the `/assets/*`
  * HTTP boundary / peripheral hooks are staged, never the unit under test):
- *   1. HOST (the fix): `useAssetsModel` turns a typeid URL into a vfs
- *      `treeActivePointer` once the entity resolves. `useEntity` is REAL,
- *      reading a cache-seeded entity. Pre-fix: stays typeid → fails.
- *   2. TREE (the downstream contract the fix relies on): given a vfs
- *      activePointer, the real `BrowseableTree` + `markdownFolderRoot`
- *      auto-expand + `aria-selected` the leaf.
+ *   1. HOST (the fix): `useAssetsModel` preserves the typeid URL and derives a
+ *      separate vfs resource pointer once the entity resolves. `useEntity` is
+ *      REAL, reading a cache-seeded entity.
+ *   2. TREE (the downstream contract the fix relies on): given the TypeId URL
+ *      plus its resolved VFS resource pointer, the real `BrowseableTree` +
+ *      `markdownFolderRoot` auto-expand + `aria-selected` the leaf.
  */
-import { dataManager, TypeId } from '@sdk';
+import { dataManager } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -68,6 +68,7 @@ function makeType(vaults: AssetTypeVault[]): AssetTypeInfo {
 const DOCK = new DockPointer(ViewType.PROJECT, `${PROJECT_ID}/editor/markdown/typeid/${DOC_TYPEID}`);
 const nav = { openDock: vi.fn(), openTab: vi.fn() };
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => DOCK,
   useDockNavigation: () => ({ navigation: nav, currentDock: DOCK, isDockUrl: true, windowMode: false }),
 }));
 // Peripheral hooks — irrelevant to the pointer derivation under test.
@@ -85,13 +86,14 @@ describe('markdown typeid deep-link selection (RCA + fix)', () => {
   beforeEach(() => {
     __resetVaultFilesCacheForTests();
   });
-  afterEach(() => {
+  afterEach(async () => {
     cleanup();
+    await dataManager.clearCache();
     vi.restoreAllMocks();
     nav.openDock.mockClear();
   });
 
-  it('HOST: useAssetsModel re-addresses a typeid URL to the doc vfs pointer (the fix)', async () => {
+  it('HOST: useAssetsModel keeps the typeid URL and resolves the doc vfs resource pointer', async () => {
     // The open entity carries its vfs asset_ref — seed it so the REAL useEntity
     // resolves it from cache (no backend round-trip).
     dataManager.updateEntityFromJson({
@@ -108,21 +110,22 @@ describe('markdown typeid deep-link selection (RCA + fix)', () => {
     );
     const { result } = renderHook(() => useAssetsModel(), { wrapper: Wrapper });
 
-    // The tree must be addressed by the doc's vfs pointer (what the vfs-keyed
-    // markdown tree can resolve), not the raw typeid pointer.
+    // URL identity stays canonical; the separate resource cursor gives the
+    // filesystem-backed tree the VFS identity it can resolve.
     const expected = DockPointer.forAssetEditor('markdown', DOC_ABS).pointer;
     await waitFor(() => {
-      expect(result.current.treeActivePointer?.pointer).toBe(expected);
+      expect(result.current.treeActivePointer).toBe(DOCK);
+      expect(result.current.treeActiveResourcePointer?.pointer).toBe(expected);
     });
   });
 
-  it('TREE: a vfs activePointer auto-expands + selects the doc leaf (downstream contract)', async () => {
-    const spy = vi.fn(async (_p: string) => ({ files: [DOC_REL] }));
+  it('TREE: a typeid URL plus vfs resource pointer expands + selects the doc leaf', async () => {
+    const spy = vi.fn(() => Promise.resolve({ files: [DOC_REL] }));
     vi.spyOn(apiClient, 'get').mockImplementation(spy as never);
 
     const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
     const ptr = DockPointer.forAssetEditor('markdown', DOC_ABS);
-    render(<BrowseableTree roots={[root]} activePointer={ptr} />);
+    render(<BrowseableTree roots={[root]} activePointer={DOCK} activeResourcePointer={ptr} />);
 
     await waitFor(() => expect(screen.getByText(DOC_LEAF)).toBeInTheDocument());
     const leaf = screen.getByText(DOC_LEAF).closest('[role="treeitem"]');

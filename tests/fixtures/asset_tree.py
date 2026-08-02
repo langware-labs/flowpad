@@ -10,7 +10,7 @@ The inventory is declared once in :data:`ASSET_TREE_LAYOUT`; the expected
 per-node counts are derived from it, so an assertion never restates a magic
 number that could drift from the files on disk.
 
-**Only four types are placed: skill, agent, markdown, task.** Those are exactly
+**Only four types are placed: skill, subagent, markdown, task.** Those are exactly
 the types whose walkers are registered on BOTH root types
 (``flow_sdk/fs_store/indexer/builtin.py``): a project mount is walked as
 ``REAL_PROJECT_CWD``, but a context folder is walked as ``CWD_ROOT`` by
@@ -38,10 +38,10 @@ from flow_sdk.builtin.project import Project
 # Placement per type. The walker that discovers each one is named so a failing
 # discovery assertion points at the code that changed.
 #   skill    -> .claude/skills/<name>/SKILL.md        functions/skill.py
-#   agent    -> .claude/agents/<name>.md              functions/agent.py
+#   subagent -> .claude/agents/<name>.md              functions/subagent.py
 #   markdown -> docs/<name>.md                        functions/markdown.py
 #   task     -> agentic-assets/task/<name>/task.md    functions/repo_assets.py
-ASSET_TYPES = ("skill", "agent", "markdown", "task")
+ASSET_TYPES = ("skill", "subagent", "markdown", "task")
 
 _TASK_MD = "---\nid: {tid}\ntitle: {name}\nstatus: to_do\ntask_type: Task\nkind: standard\n---\n\n# {name}\n"
 
@@ -67,17 +67,17 @@ class NodeSpec:
 
 
 ASSET_TREE_LAYOUT: tuple[NodeSpec, ...] = (
-    NodeSpec("P", "proj", "mount", assets={"skill": 1, "agent": 1, "markdown": 1, "task": 1}),
+    NodeSpec("P", "proj", "mount", assets={"skill": 1, "subagent": 1, "markdown": 1, "task": 1}),
     # A git worktree over a file:// origin. Linked SHARED, which only succeeds
     # for a transportable origin — so the link itself asserts that
     # ``Folder.detect_origin`` read the local remote as a GitOrigin.
     NodeSpec("GIT", "git", "git", parent_key="P", link_scope="shared", assets={"skill": 1, "markdown": 1}),
-    NodeSpec("A", "a", "project", parent_key="P", assets={"skill": 1, "agent": 1}),
+    NodeSpec("A", "a", "project", parent_key="P", assets={"skill": 1, "subagent": 1}),
     NodeSpec("B", "b", "project", parent_key="A", assets={"markdown": 1, "task": 1}),
     # Deliberately nested ON DISK inside B: B's path is a strict prefix of this
     # one, so it is the only node that exercises the menu's longest-prefix
     # attribution. `c_agent` must land here, never in B.
-    NodeSpec("C", "b/inner", "project", parent_key="B", assets={"agent": 1}),
+    NodeSpec("C", "b/inner", "project", parent_key="B", assets={"subagent": 1}),
     NodeSpec("PLAIN", "plain", "plain", parent_key="P", assets={"markdown": 1}),
 )
 
@@ -121,7 +121,7 @@ class AssetTree:
 # Placement is NOT listed: it comes from the registry (see ``write_asset``).
 _BODIES: dict[str, str] = {
     "skill": "---\nname: {name}\ndescription: {name} fixture skill\n---\n\n# {name}\n",
-    "agent": "---\nname: {name}\ndescription: {name} fixture agent\n---\n\n{name} system prompt\n",
+    "subagent": "---\nname: {name}\ndescription: {name} fixture agent\n---\n\n{name} system prompt\n",
     "markdown": "# {name}\n\nfixture note\n",
     "task": _TASK_MD,
     "plan": "---\ntitle: {name}\n---\n\n# {name}\n\nfixture plan\n",
@@ -296,7 +296,7 @@ async def build_asset_tree(
             ),
             # Narrow the walk: without this the claude-session / hook / mcp
             # walkers all run and the fixture stops fitting its time budget.
-            types=[RecordType.SKILL, RecordType.AGENT, RecordType.MARKDOWN, RecordType.TASK],
+            types=[RecordType.SKILL, RecordType.SUBAGENT, RecordType.MARKDOWN, RecordType.TASK],
             include_temp=True,
             force=True,
             verbose=False,

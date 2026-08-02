@@ -980,16 +980,16 @@ msgid "agent"
 msgstr ""
 
 #: src/components/asset-manager/EntityTypeBar.tsx
-msgid "Agent"
-msgstr ""
+#~ msgid "Agent"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "Agent is taking a long time to respond"
 #~ msgstr ""
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
-msgid "Agent not found"
-msgstr ""
+#~ msgid "Agent not found"
+#~ msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #~ msgid "Agentic Flows"
@@ -1000,7 +1000,6 @@ msgid "agents"
 msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
-#: src/pages/live-status/LiveStatus.tsx
 msgid "Agents"
 msgstr ""
 
@@ -3423,8 +3422,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
-msgid "Create Agent Hook"
-msgstr ""
+#~ msgid "Create Agent Hook"
+#~ msgstr ""
 
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Create apps and tools by chatting with AI"
@@ -3478,6 +3477,10 @@ msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Create Project"
+msgstr ""
+
+#: src/components/hooks-manager/HookForm.tsx
+msgid "Create SubAgent Hook"
 msgstr ""
 
 #: src/components/hooks-manager/TriggerForm.tsx
@@ -4466,8 +4469,8 @@ msgid "Edit a system trigger?"
 msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
-msgid "Edit Agent Hook"
-msgstr ""
+#~ msgid "Edit Agent Hook"
+#~ msgstr ""
 
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Edit anyway"
@@ -4518,6 +4521,10 @@ msgstr ""
 
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Edit sender name"
+msgstr ""
+
+#: src/components/hooks-manager/HookForm.tsx
+msgid "Edit SubAgent Hook"
 msgstr ""
 
 #: src/components/triggers-view/TriggerEditor.tsx
@@ -13513,7 +13520,16 @@ msgid "sub-agent"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
+#: src/pages/live-status/LiveStatus.tsx
 msgid "Sub-agents"
+msgstr ""
+
+#: src/components/asset-manager/EntityTypeBar.tsx
+msgid "SubAgent"
+msgstr ""
+
+#: src/components/agent-layout/error-screen/error-screen.tsx
+msgid "SubAgent not found"
 msgstr ""
 
 #: src/components/assets/MarkdownIndexPanel.tsx

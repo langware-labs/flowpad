@@ -180,7 +180,7 @@ GOLDEN = {
     # reads — see HARNESS_OWNED_FAMILIES below, which is the guard that keeps
     # this half of the table honest.
     "skill": (".claude/skills", AssetClass.SHARED),
-    "agent": (".claude/agents", AssetClass.SHARED),
+    "subagent": (".claude/agents", AssetClass.SHARED),
     "command": (".claude/commands", AssetClass.HARNESS),
     "claude_rules": (".claude/rules", AssetClass.HARNESS),
     "dynamic_workflow": (".claude/workflows", AssetClass.HARNESS),
@@ -316,7 +316,7 @@ def test_only_skills_and_agents_fan_out():
     # Only skills/agents are SHARED (the families syncmd actually mirrors);
     # every other .claude family is claude-only (HARNESS), no fan-out.
     shared = {t for t, (_, ac) in GOLDEN.items() if ac == AssetClass.SHARED}
-    assert shared == {"skill", "agent"}
+    assert shared == {"skill", "subagent"}
 
 
 def test_claude_md_stays_unplaced():

@@ -1,4 +1,4 @@
-import { Agent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard } from '@sdk';
+import { Agent, SubAgent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { lazy, Suspense, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -16,7 +16,8 @@ import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import type { WikiLinkTarget } from './markdown/MarkdownEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { TaskAssetEditor } from './task/TaskAssetEditor';
-import { AgentAssetEditor } from './agent/AgentAssetEditor';
+import { AgentProfileEditor } from './agent-profile/AgentProfileEditor';
+import { SubAgentAssetEditor } from './subagent/SubAgentAssetEditor';
 import { AgentTraceAssetEditor } from './agent-trace/AgentTraceAssetEditor';
 import { DynamicWorkflowAssetEditor } from './dynamic-workflow/DynamicWorkflowAssetEditor';
 import { UsageReportAssetEditor } from './usage-report/UsageReportAssetEditor';
@@ -232,7 +233,7 @@ export function AssetEditorRouter({
           resolvedEntity={typeIdEntity as Skill | undefined}
           render={(skill) => (
             <AssetCollisionProvider entity={skill}>
-              <SkillAssetEditor fsRef={fsRef!} skill={skill} wikiLinkTarget={wikiLinkTarget} />
+              <SkillAssetEditor fsRef={fsRef} skill={skill} wikiLinkTarget={wikiLinkTarget} />
             </AssetCollisionProvider>
           )}
         />
@@ -246,8 +247,22 @@ export function AssetEditorRouter({
           resolvedEntity={typeIdEntity as Task | undefined}
           render={(task) => (
             <AssetCollisionShell entity={task}>
-              <TaskAssetEditor fsRef={fsRef!} task={task} />
+              <TaskAssetEditor fsRef={fsRef} task={task} />
             </AssetCollisionShell>
+          )}
+        />
+      );
+    case AssetEditor.SUBAGENT:
+      return (
+        <EntityResolutionGate<SubAgent>
+          type={SubAgent.type}
+          fsRef={fsRef}
+          typeLabel="sub-agent"
+          resolvedEntity={typeIdEntity as SubAgent | undefined}
+          render={(subagent) => (
+            <AssetCollisionProvider entity={subagent}>
+              <SubAgentAssetEditor fsRef={fsRef} agent={subagent} wikiLinkTarget={wikiLinkTarget} />
+            </AssetCollisionProvider>
           )}
         />
       );
@@ -259,9 +274,9 @@ export function AssetEditorRouter({
           typeLabel="agent"
           resolvedEntity={typeIdEntity as Agent | undefined}
           render={(agent) => (
-            <AssetCollisionProvider entity={agent}>
-              <AgentAssetEditor fsRef={fsRef!} agent={agent} wikiLinkTarget={wikiLinkTarget} />
-            </AssetCollisionProvider>
+            <AssetCollisionShell entity={agent}>
+              <AgentProfileEditor agent={agent} />
+            </AssetCollisionShell>
           )}
         />
       );
@@ -274,7 +289,7 @@ export function AssetEditorRouter({
           resolvedEntity={typeIdEntity as Whiteboard | undefined}
           render={(whiteboard) => (
             <AssetCollisionShell entity={whiteboard}>
-              <WhiteboardAssetEditor fsRef={fsRef!} whiteboard={whiteboard} />
+              <WhiteboardAssetEditor fsRef={fsRef} whiteboard={whiteboard} />
             </AssetCollisionShell>
           )}
         />
@@ -327,7 +342,7 @@ export function AssetEditorRouter({
           render={(spreadsheet) => (
             <AssetCollisionShell entity={spreadsheet}>
               <Suspense fallback={<ConnectingFallback />}>
-                <SpreadsheetAssetEditor fsRef={fsRef!} spreadsheet={spreadsheet} />
+                <SpreadsheetAssetEditor fsRef={fsRef} spreadsheet={spreadsheet} />
               </Suspense>
             </AssetCollisionShell>
           )}
@@ -342,7 +357,7 @@ export function AssetEditorRouter({
           resolvedEntity={typeIdEntity as AgentTrace | undefined}
           render={(trace) => (
             <AssetCollisionShell entity={trace}>
-              <AgentTraceAssetEditor fsRef={fsRef!} trace={trace} />
+              <AgentTraceAssetEditor fsRef={fsRef} trace={trace} />
             </AssetCollisionShell>
           )}
         />
@@ -356,7 +371,7 @@ export function AssetEditorRouter({
           resolvedEntity={typeIdEntity as DynamicWorkflow | undefined}
           render={(workflow) => (
             <AssetCollisionShell entity={workflow}>
-              <DynamicWorkflowAssetEditor fsRef={fsRef!} workflow={workflow} />
+              <DynamicWorkflowAssetEditor fsRef={fsRef} workflow={workflow} />
             </AssetCollisionShell>
           )}
         />
@@ -370,7 +385,7 @@ export function AssetEditorRouter({
           resolvedEntity={typeIdEntity as UsageReport | undefined}
           render={(report) => (
             <AssetCollisionShell entity={report}>
-              <UsageReportAssetEditor fsRef={fsRef!} report={report} />
+              <UsageReportAssetEditor fsRef={fsRef} report={report} />
             </AssetCollisionShell>
           )}
         />
@@ -384,7 +399,7 @@ export function AssetEditorRouter({
           resolvedEntity={typeIdEntity as AssetCleanupReport | undefined}
           render={(report) => (
             <AssetCollisionShell entity={report}>
-              <AssetCleanupReportAssetEditor fsRef={fsRef!} report={report} />
+              <AssetCleanupReportAssetEditor fsRef={fsRef} report={report} />
             </AssetCollisionShell>
           )}
         />

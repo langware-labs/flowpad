@@ -14,7 +14,7 @@ type NodeType = GraphWorkflowDocNode['node_type'];
 
 const ITEMS: { type: NodeType; label: string; glyph: string; blurb: string }[] = [
   { type: 'trigger', label: 'Trigger', glyph: '◈', blurb: 'Fires the flow — links a Trigger entity, emits `fired`.' },
-  { type: 'agent', label: 'Agent', glyph: '▣', blurb: 'Spawned worker (skill / instruction). Auto-emits `done` with its output + artifacts.' },
+  { type: 'agent', label: 'SubAgent', glyph: '▣', blurb: 'Spawned worker (skill / instruction). Auto-emits `done` with its output + artifacts.' },
   { type: 'function', label: 'Function', glyph: '⌁', blurb: 'A GraphWorkflowFunction — on_graph_workflow_event(name, data, flow_ctx); inline or subprocess.' },
 ];
 

@@ -34,9 +34,9 @@ import { trackForCleanup } from '../_cleanup';
 import {
   HUB_INST_1 as INST_1,
   HUB_INST_2 as INST_2,
-  findPendingInvitation,
   getInstance,
   instanceAvailable,
+  syncAssignedConversation,
   type ResolvedInstance,
 } from './_instances';
 
@@ -106,7 +106,7 @@ async function addContextFolder(inst: ResolvedInstance, dir: string): Promise<{ 
     return infos.find((i) => i.path === real)?.typeid || null;
   }, 15_000, 'context_dir_infos carries the minted Folder typeid');
 
-  return { projectId: project.id!, folderId: typeid.split('-').slice(1).join('-') };
+  return { projectId: project.id, folderId: typeid.split('-').slice(1).join('-') };
 }
 
 beforeAll(async () => {
@@ -177,13 +177,8 @@ describe('context folder share over git — two instances', () => {
     ).data.flow_message_id as string;
     await post(alice.apiUrl, `/graph/flow_message/${fmId}/upload_body`, {});
 
-    // 3. Bob accepts + downloads → the attachment STAGES with a GitOrigin.
-    const invitation = await pollUntil(
-      () => findPendingInvitation(bob, conv.id!),
-      20_000,
-      'pending invitation on bob',
-    );
-    await bob.sdk.acceptInvitation({ invitation_id: invitation.id! });
+    // 3. Bob receives the assignment + downloads → the attachment STAGES with a GitOrigin.
+    await syncAssignedConversation(bob, conv.id);
     const receivedFm = await pollUntil(async () => {
       const fm = await bob.sdk.FlowMessage.getById(fmId).catch(() => null);
       return fm && (fm as any).body_status === 'ready' ? fm : null;

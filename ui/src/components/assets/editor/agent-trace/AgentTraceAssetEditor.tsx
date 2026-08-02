@@ -84,11 +84,11 @@ export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorPro
   const fileName = fsRef.path.split('/').pop() ?? 'trace.json';
   const dirPath = fsRef.path.slice(0, -fileName.length - 1);
 
-  // Header reads "Agent analysis: <the analyzed process's name>" — the watched
+  // Header reads "SubAgent analysis: <the analyzed process's name>" — the watched
   // process load above makes this reliable even when the row wasn't cached.
   // Falls back to the raw trace name until that name resolves.
   const processName = analyzedProcess?.displayName?.trim();
-  const headerTitle = processName ? `Agent analysis: ${processName}` : trace.name || fileName;
+  const headerTitle = processName ? `SubAgent analysis: ${processName}` : trace.name || fileName;
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="agent-trace-editor">

@@ -43,7 +43,7 @@ RESOURCE_TYPE_TO_ENTITY: dict[str, EntityType] = {
     "skill": EntityType.SKILL,
     "plugin": EntityType.PLUGIN,
     "command": EntityType.COMMAND,
-    "agent": EntityType.AGENT,
+    "subagent": EntityType.SUBAGENT,
     "todo_file": EntityType.TODO_FILE,
     "mcp_server": EntityType.MCP_SERVER,
     "claude_md": EntityType.CLAUDE_MD,
@@ -304,7 +304,7 @@ _PROJECT_TYPES: dict[str, tuple[str, EntityType]] = {
     "hooks": ("hook", EntityType.CLAUDE_HOOK),
     "mcp_servers": ("mcp_server", EntityType.MCP_SERVER),
     "commands": ("command", EntityType.COMMAND),
-    "agents": ("agent", EntityType.AGENT),
+    "agents": ("subagent", EntityType.SUBAGENT),
     "skills": ("skill", EntityType.SKILL),
     "claude_md": ("claude_md", EntityType.CLAUDE_MD),
 }

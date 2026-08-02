@@ -115,7 +115,7 @@ interface EntityExecutionPanelProps {
   noPastSessionsLabel?: string;
   /** Empty-state body shown when no process exists yet. */
   emptyStateText?: string;
-  /** Optional header label rendered above the panel (e.g. "Agent execution"). Hidden when omitted. */
+  /** Optional header label rendered above the panel (e.g. "SubAgent execution"). Hidden when omitted. */
   headerLabel?: string;
   /**
    * Optional content rendered on the LEFT of the header action row. The
@@ -133,7 +133,7 @@ interface EntityExecutionPanelProps {
    * Render TOOL_CALL/TOOL_RESULT/REASONING/STATUS/ERROR events as compact
    * "dense" rows between text messages, with an expand toggle that reveals
    * the full payload. Default false — the asset-editor surfaces (Skill,
-   * Agent, Trigger, …) intentionally stay text-only. The floating Flowpad
+   * SubAgent, Trigger, …) intentionally stay text-only. The floating Flowpad
    * Assistant chat opts in.
    */
   dense?: boolean;

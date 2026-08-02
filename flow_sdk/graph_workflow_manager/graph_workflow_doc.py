@@ -251,7 +251,7 @@ class GraphWorkflowDoc(BaseModel):
                 nd = n.node_data
                 if not (nd.get("typeid") or nd.get("program_ref") or nd.get("prompt")):
                     problems.append(
-                        f"node {n.id}: agent nodes need an Agent reference (typeid) "
+                        f"node {n.id}: agent nodes need a SubAgent reference (typeid) "
                         "or an inline program (program_ref / prompt)"
                     )
                 continue
@@ -329,9 +329,9 @@ def _parse_trigger_ref(node: GraphWorkflowNodeDef) -> str | None:
 
 
 def agent_ref(node: GraphWorkflowNodeDef) -> str | None:
-    """An agent node's referenced Agent ENTITY id (the definition), or None
+    """An agent node's referenced SubAgent ENTITY id (the definition), or None
     for a purely inline agent node."""
-    return _parse_entity_ref(node, "agent")
+    return _parse_entity_ref(node, "subagent")
 
 
 def parse_graph_workflow_doc(text: str) -> GraphWorkflowDoc:

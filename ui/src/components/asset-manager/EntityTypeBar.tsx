@@ -45,7 +45,7 @@ export function EntityTypeBar({
   const { t } = useLingui();
 
   const LABELS: Record<string, string> = {
-    agent: t`Agent`,
+    agent: t`SubAgent`,
     skill: t`Skill`,
     markdown: t`Document`,
     spec: t`Spec`,

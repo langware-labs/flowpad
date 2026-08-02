@@ -15,6 +15,11 @@ import { hubModeReady, isHubOnly } from '../utils/hub-runtime';
 const ACTION = 'desktop-db';
 const FS_RECORDS_BASE = '/graph/compute_node/@local/fs-records';
 
+/** The canonical ScopeFilter encoding for a single project. One spelling, so
+ *  the three scoped fs-records calls in this file cannot drift. */
+const projectScopeQs = (projectId: string): string =>
+  new URLSearchParams({ user: 'false', projects: projectId }).toString();
+
 export interface IndexTypeResult {
   indexed: number;
 }
@@ -576,6 +581,30 @@ export class SystemToolsService extends EventEmitter {
       void dataManager.refreshScanInfo();
     } finally {
       if (this.currentActivity === 'index') this._setActivity(null);
+    }
+  }
+
+  /**
+   * Has this project ever been indexed? One cheap scoped `index-status` read.
+   *
+   * Lives here rather than at the caller so the endpoint path, the scope
+   * encoding, and — importantly — the hub-mode guard stay in one place: the
+   * hub backend has no fs-records endpoints and 404s this, which a caller
+   * rolling its own fetch would misread as "not indexed" and answer with a
+   * pointless full scan on every call.
+   *
+   * Unreadable status resolves to `true` (assume not indexed): of the two ways
+   * to be wrong, indexing unnecessarily is the recoverable one.
+   */
+  async projectNeverIndexed(projectId: string): Promise<boolean> {
+    if (isHubOnly()) return false;
+    try {
+      const res = await apiClient.get<{ never_indexed?: boolean }>(
+        `${FS_RECORDS_BASE}/index-status?${projectScopeQs(projectId)}`,
+      );
+      return res?.never_indexed !== false;
+    } catch {
+      return true;
     }
   }
 

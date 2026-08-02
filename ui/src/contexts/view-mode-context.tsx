@@ -100,12 +100,17 @@ export function viewModePtyMode(mode: ViewMode): boolean {
 export function useSessionSurface(): SessionSurface | null {
   const mode = useViewMode();
   const resolved = usePreferenceResolved(PrefKey.VIEW_MODE);
+  const currentDock = useCurrentDock();
   const override = useSyncExternalStore(
     subscribeViewModeOverride,
     getViewModeOverrideSnapshot,
     getViewModeOverrideSnapshot,
   );
-  if (override) return surfaceForViewMode(override);
+  // URL-first: after navigation commits, the new dock mode must outrank the
+  // passive override left by the previous URL. `useViewMode()` already returns
+  // that effective mode synchronously; these two values only certify that it is
+  // known even when the persisted preference has not resolved yet.
+  if (currentDock?.viewMode || override) return surfaceForViewMode(mode);
   return resolved ? surfaceForViewMode(mode) : null;
 }
 
@@ -290,13 +295,18 @@ defineGlobal('setDev', setDev);
 defineGlobal('getDev', getDev);
 
 export function useViewMode(): ViewMode {
+  const currentDock = useCurrentDock();
   const [value] = usePreference<string>(PrefKey.VIEW_MODE);
   const override = useSyncExternalStore(
     subscribeViewModeOverride,
     getViewModeOverrideSnapshot,
     getViewModeOverrideSnapshot,
   );
-  const mode = override ?? toViewMode(value);
+  // URL-first: a committed dock URL is authoritative immediately. The
+  // transient override and persisted preference are projections adopted by a
+  // later effect; using them first creates a render where the toggle, session
+  // skin, and transport reconciler can all observe the previous mode.
+  const mode = currentDock?.viewMode ?? override ?? toViewMode(value);
   useEffect(() => applyAttribute(mode), [mode]);
   return mode;
 }

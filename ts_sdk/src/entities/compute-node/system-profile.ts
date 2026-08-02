@@ -223,7 +223,7 @@ export interface TodoFileItem extends SystemProfileItem {
   type: ItemType.TODO_FILE | string;
   /** Session ID this todo file belongs to */
   session_id: string;
-  /** Agent ID (same as session_id for main agent, different for sub-agents) */
+  /** SubAgent ID (same as session_id for main agent, different for sub-agents) */
   agent_id: string;
   /** Whether this is a sub-agent todo file */
   is_sub_agent: boolean;

@@ -4,7 +4,7 @@
  * The two-layer model over the wire: a VALUE-FREE reference travels
  * (where-to-fetch = provider, how-to-store = sod_store, how-to-use = env_var); a
  * value NEVER does. Alice adds a shared secret to a project and shares the
- * project; Bob accepts and sees the reference as MISSING (his machine has no
+ * project; Bob receives it and sees the reference as MISSING (his machine has no
  * value) — the setup-wizard state. Asserts the pointer converged on one id and
  * that no plaintext crossed.
  *
@@ -103,19 +103,6 @@ describe('project secret share — two instances via the hub', () => {
       recipients: [bob.email],
     });
     expect(shared.status, JSON.stringify(shared)).toBe('SUCCESS');
-
-    // Bob accepts the invitation for THIS project. Poll for the invitation whose
-    // target is our project id specifically — a shared instance may carry stale
-    // project invitations from earlier runs, and accepting one of those instead
-    // would never materialize our secret.
-    const ourInvitation = await pollUntil(async () => {
-      const res = await get(bob.apiUrl, '/graph/invitation');
-      const list = ((res?.data ?? []) as any[]).filter(
-        (i) => i.target_type === 'project' && i.target_id === project.id,
-      );
-      return list.length ? list[0] : null;
-    }, 25_000, 'pending project invitation on bob for THIS project');
-    await bob.sdk.acceptInvitation({ invitation_id: ourInvitation.id! });
 
     // Bob's project mirror carries the VALUE-FREE reference, converged on one id.
     const bobSecret = await pollUntil(async () => {

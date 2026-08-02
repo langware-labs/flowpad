@@ -3,7 +3,7 @@
  * clients (one realm per instance).
  *
  * Alice creates a git-backed webapp artifact and shares it with Bob with the
- * "create bookmark" flag ON. Bob accepts + downloads: the artifact must be
+ * "create bookmark" flag ON. Bob receives + downloads: the artifact must be
  * STAGED (no Artifact row yet), like a file-backed asset. Bob installs: the
  * Artifact graph row materialises (path='' — checkout resolves later at open)
  * AND a FAVORITE Bookmark pointing at the artifact appears. With the flag OFF,
@@ -32,9 +32,9 @@ import { trackForCleanup } from '../_cleanup';
 import {
   HUB_INST_1 as INST_1,
   HUB_INST_2 as INST_2,
-  findPendingInvitation,
   getInstance,
   instanceAvailable,
+  syncAssignedConversation,
   type ResolvedInstance,
 } from './_instances';
 
@@ -105,7 +105,7 @@ afterAll(() => {
   for (const r of tempRoots) rmSync(r, { recursive: true, force: true });
 });
 
-async function favoriteFor(inst: ResolvedInstance, entityId: string): Promise<any | null> {
+async function favoriteFor(inst: ResolvedInstance, entityId: string): Promise<any> {
   const rows = (await inst.sdk.Bookmark.query(
     new inst.sdk.QueryRequest({
       type: 'bookmark',
@@ -150,12 +150,7 @@ async function shareArtifact(createBookmark: boolean) {
 }
 
 async function receiveAndStage(conv: any, fmId: string, artifactId: string) {
-  const invitation = await pollUntil(
-    () => findPendingInvitation(dev2, conv.id!),
-    20_000,
-    'pending invitation on dev-2',
-  );
-  await dev2.sdk.acceptInvitation({ invitation_id: invitation.id! });
+  await syncAssignedConversation(dev2, conv.id);
   const receivedFm = await pollUntil(async () => {
     const fm = await dev2.sdk.FlowMessage.getById(fmId).catch(() => null);
     return fm && (fm as any).body_status === 'ready' ? fm : null;
@@ -194,7 +189,7 @@ describe('git artifact share — create bookmark opt-in', () => {
       10_000,
       'artifact materialised on dev-2 after install',
     );
-    expect(received!.id).toBe(artifactId);
+    expect(received.id).toBe(artifactId);
     expect((received as any).path ?? '').toBe('');
 
     const fav = await pollUntil(() => favoriteFor(dev2, artifactId), 10_000, 'favorite minted on dev-2');

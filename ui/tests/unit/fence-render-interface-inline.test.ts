@@ -277,7 +277,7 @@ describe('class member inline editing', () => {
     const classHost = document.createElement('div');
     const classCommit = vi.fn();
     renderInterfaceCard(
-      'name: Agent\nproperties:\n  status: ProcessStatus\nmethods:\n  start: "async () -> void"\n',
+      'name: SubAgent\nproperties:\n  status: ProcessStatus\nmethods:\n  start: "async () -> void"\n',
       classHost,
       {
         theme: 'dark',
@@ -310,7 +310,7 @@ describe('class member inline editing', () => {
     const classHost = document.createElement('div');
     const classCommit = vi.fn();
     renderInterfaceCard(
-      `name: Agent
+      `name: SubAgent
 properties:
   status:
     type: ProcessStatus

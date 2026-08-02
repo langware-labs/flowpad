@@ -14,8 +14,17 @@
 import { instancePreferences, InstancePreferencesEvent, PREF_REGISTRY, PrefKey } from '@sdk';
 import { renderHook } from '@testing-library/react';
 import { act } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { surfaceForViewMode, useSessionSurface, ViewMode } from '@src/contexts/view-mode-context';
+
+// `view-mode-context` reads the current dock, which calls `useLocation()`.
+// These tests render without a Router, so stub only that hook and keep the
+// rest of the module real (a full mock would drop `useDockNavigation`).
+vi.mock('@src/navigation/useDockNavigation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/navigation/useDockNavigation')>()),
+  useCurrentDock: () => null,
+}));
+
 
 // RTL's renderHook drives React outside a configured act environment otherwise,
 // which only produces console noise here — the assertions are synchronous.

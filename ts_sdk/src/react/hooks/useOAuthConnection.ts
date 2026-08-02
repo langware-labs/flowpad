@@ -8,6 +8,7 @@ import {
   dataContext,
   dataManager,
   oauthService,
+  type EntityEnvVars,
   type EnvVarStatus,
   type OAuthDetachResult,
   type OAuthProvider,
@@ -42,6 +43,47 @@ interface UseOAuthConnectionReturn {
   delete: (connectionId: string, provider: string) => Promise<void>;
   getConnectionStatus: (provider: string) => Promise<ConnectionStatus>;
   getProviderName: (provider: string) => string;
+}
+
+/** One provider's connection status, from the two tables it is derived from. */
+export function deriveConnectionStatus(
+  providerName: string,
+  userTable: EntityEnvVars,
+  projectTable: EntityEnvVars,
+): ConnectionStatus {
+  const userProviderVar = userTable.values.find(
+    (envVar: EnvVarStatus) => envVar.var_type === EnvVarType.OAUTH_PROVIDER_ID && envVar.name === providerName,
+  );
+
+  // No OAuth token exists at all — needs the full flow.
+  if (!userProviderVar || !userProviderVar.ref_name) {
+    return ConnectionStatus.DISCONNECTED;
+  }
+
+  // A credential the hub could not refresh is held but dead, and that outranks
+  // everything below: "attached to this project" stays true and stops meaning
+  // anything once the token behind it no longer works. Answering CONNECTED here
+  // is how a row claims success while every call using it fails.
+  if (userProviderVar.needs_reauth) {
+    return ConnectionStatus.NEEDS_REAUTH;
+  }
+
+  // Match: project env var whose ref_name is the user's token name, ref_type USER.
+  const projectEnvVar = projectTable.values.find(
+    (envVar: EnvVarStatus) => envVar.ref_name === userProviderVar.ref_name && envVar.ref_type === ('user' as string),
+  );
+
+  // Not attached to this project — fall back to whether the user holds it at all.
+  if (!projectEnvVar) {
+    return userProviderVar.var_status === EnvStatusEnum.AVAILABLE
+      ? ConnectionStatus.AVAILABLE
+      : ConnectionStatus.DISCONNECTED;
+  }
+
+  if (projectEnvVar.var_status === EnvStatusEnum.AVAILABLE) return ConnectionStatus.CONNECTED;
+  // Held, but this project has not been granted it yet — ready to attach.
+  if (projectEnvVar.var_status === EnvStatusEnum.CONSENT_REQUIRED) return ConnectionStatus.AVAILABLE;
+  return ConnectionStatus.DISCONNECTED;
 }
 
 export const useOAuthConnection = ({
@@ -99,124 +141,19 @@ export const useOAuthConnection = ({
     return providers;
   }, [userTable]);
 
-  // State to store connection statuses (will be updated asynchronously)
-  const [connectionStatuses, setConnectionStatuses] = useState<Record<string, ConnectionStatus>>(() => {
-    // Initialize with cached data to prevent blinking
-    if (!userTable || !projectTable || !availableProviders.length) {
-      return {};
-    }
-
-    const statuses: Record<string, ConnectionStatus> = {};
-
-    // Process each provider using cached data
-    for (const provider of availableProviders) {
-      // Find the user's OAuth token name for this provider
-      const userProviderVar = userTable.values.find(
-        (envVar: EnvVarStatus) => envVar.var_type === EnvVarType.OAUTH_PROVIDER_ID && envVar.name === provider.name,
-      );
-
-      if (!userProviderVar || !userProviderVar.ref_name) {
-        // No OAuth token exists at all - need full OAuth flow
-        statuses[provider.name] = ConnectionStatus.DISCONNECTED;
-        continue;
-      }
-
-      // Look for matching env var in project table
-      const projectEnvVar = projectTable.values.find(
-        (envVar: EnvVarStatus) =>
-          envVar.ref_name === userProviderVar.ref_name && envVar.ref_type === ('user' as string),
-      );
-
-      if (!projectEnvVar) {
-        // No project env var - check user's OAuth token status directly
-        const userTokenStatus = userProviderVar.var_status;
-        if (userTokenStatus === EnvStatusEnum.AVAILABLE) {
-          statuses[provider.name] = ConnectionStatus.AVAILABLE;
-        } else {
-          statuses[provider.name] = ConnectionStatus.DISCONNECTED;
-        }
-      } else {
-        // Found matching project env var, check its status
-        const projectVarStatus = projectEnvVar.var_status;
-        if (projectVarStatus === EnvStatusEnum.AVAILABLE) {
-          statuses[provider.name] = ConnectionStatus.CONNECTED;
-        } else if (projectVarStatus === EnvStatusEnum.CONSENT_REQUIRED) {
-          statuses[provider.name] = ConnectionStatus.AVAILABLE;
-        } else {
-          statuses[provider.name] = ConnectionStatus.DISCONNECTED;
-        }
-      }
-    }
-
-    return statuses;
-  });
-
-  // Effect to determine connection statuses by matching providers to project env vars
-  useEffect(() => {
-    const determineStatuses = () => {
-      if (!userTable || !projectTable || !availableProviders.length) {
-        // Default all providers to DISCONNECTED if no project table
-        const statuses: Record<string, ConnectionStatus> = {};
-        availableProviders.forEach((provider) => {
-          statuses[provider.name] = ConnectionStatus.DISCONNECTED;
-        });
-        setConnectionStatuses(statuses);
-        return;
-      }
-
-      const statuses: Record<string, ConnectionStatus> = {};
-
-      // Process each provider
-      for (const provider of availableProviders) {
-        // Find the user's OAuth token name for this provider
-        const userProviderVar = userTable.values.find(
-          (envVar: EnvVarStatus) => envVar.var_type === EnvVarType.OAUTH_PROVIDER_ID && envVar.name === provider.name,
-        );
-
-        if (!userProviderVar || !userProviderVar.ref_name) {
-          // No OAuth token exists at all - need full OAuth flow
-          statuses[provider.name] = ConnectionStatus.DISCONNECTED;
-          continue;
-        }
-
-        // Look for matching env var in project table
-        // Match: project env var where ref_name matches user's OAuth token name AND ref_type is USER
-        const projectEnvVar = projectTable.values.find(
-          (envVar: EnvVarStatus) =>
-            envVar.ref_name === userProviderVar.ref_name && envVar.ref_type === ('user' as string), // BuiltinEntityType.USER
-        );
-
-        if (!projectEnvVar) {
-          // No project env var - check user's OAuth token status directly
-          const userTokenStatus = userProviderVar.var_status;
-          if (userTokenStatus === EnvStatusEnum.AVAILABLE) {
-            // OAuth token exists and is available but not attached to this project - ready to attach
-            statuses[provider.name] = ConnectionStatus.AVAILABLE;
-          } else {
-            // User's OAuth token is not available (expired, revoked, missing, etc.)
-            statuses[provider.name] = ConnectionStatus.DISCONNECTED;
-          }
-        } else {
-          // Found matching project env var, check its status
-          // Project env var status already reflects the user token validity
-          const projectVarStatus = projectEnvVar.var_status;
-          if (projectVarStatus === EnvStatusEnum.AVAILABLE) {
-            // Token is attached and available
-            statuses[provider.name] = ConnectionStatus.CONNECTED;
-          } else if (projectVarStatus === EnvStatusEnum.CONSENT_REQUIRED) {
-            // Token exists but needs consent (ready to attach)
-            statuses[provider.name] = ConnectionStatus.AVAILABLE;
-          } else {
-            // MISSING or other status
-            statuses[provider.name] = ConnectionStatus.DISCONNECTED;
-          }
-        }
-      }
-
-      setConnectionStatuses(statuses);
-    };
-
-    void determineStatuses();
+  // Purely derived from the two tables, so it is computed, not stored. Holding it
+  // in state meant an initializer and an effect that computed the same map — the
+  // effect always setState'd a freshly-allocated object, so React could never
+  // bail out and every table read re-rendered the whole connections table twice.
+  // The initializer existed only to hide the blink that arrangement caused.
+  const connectionStatuses = useMemo<Record<string, ConnectionStatus>>(() => {
+    const ready = userTable && projectTable;
+    return Object.fromEntries(
+      availableProviders.map((provider) => [
+        provider.name,
+        ready ? deriveConnectionStatus(provider.name, userTable, projectTable) : ConnectionStatus.DISCONNECTED,
+      ]),
+    );
   }, [userTable, projectTable, availableProviders]);
 
   // Listen for OAuth flow completion (auth + attach) via custom event

@@ -415,14 +415,14 @@ traceable:
   hold the verbatim envelope id + user:u-42. Live drill on flow-5 confirms
   entry rows carry event_id. 66 tests green across the suites.
 
-## Phase 8 — Strangle the WS dialect  ⏸ PARKED (2026-07-22, user decision)  ⚠ the only wire-changing phase
+## Phase 8 — Strangle the WS dialect  ▶ UNPARKED (2026-07-31)  ⚠ the only wire-changing phase
 
-> Parked indefinitely — phases 0-7 are self-contained without it; dual-publish
-> means the legacy dialect keeps working untouched. **Standing rule while
-> parked: NEW push-style events go on the bus (a tag + allowlist entry),
-> never as a new WSMessageType** — the legacy dialect is frozen, not growing.
-> Tier D (per-connection subscriptions) still rides with phase 9 whenever
-> that lands.
+> Unparked to make the flow canvas bus-driven, which is the precondition for a
+> single consolidated event surface. **Tiers A and B are DONE**; Tier C is
+> mechanical and outstanding; **Tier D remains parked** and still rides with
+> phase 9 — nothing in this pass needs it. The standing rule is unchanged: NEW
+> push-style events go on the bus (a tag + allowlist entry), never as a new
+> WSMessageType.
 
 Migrate the legacy WS dialect one class at a time: dual-publish the tag
 twin → move that class's frontend consumers from `cm.on('on_<type>_msg')` to
@@ -481,6 +481,52 @@ with phase 9. Burn-down metric: EVENT-dialect classes remaining (start ~14;
 after 8a target: 2 — the whales).
 
 ### Log
+
+**2026-07-31 — Tier A ✅.** Deleted 8 zero-constructor classes and their enum
+members from BOTH `api/messages.py` and the stale `api/api_types/messages.py`
+(29→21 and 20→12): Echo, Hangup, Stream, Transcript, ComputeExe, ComputeCtrl,
+CommandStatus, ClientReady, plus the orphaned `ExeMessageSubType` /
+`CtlMessageSubType`. **Correction to the plan's Tier A list: `EntityMessage` and
+`ComputeMessage` are NOT deletable** — they are the base classes of
+`DataOpMessage` (the entity invalidation channel) and `ResponseMessage` (the
+WS-REST RPC). Only their wire semantics are dead. TS left alone: its
+`ControlMessage` is `{state: boolean}`, a different shape from the backend's
+`{subtype, content}`, and `FlowSync/store.ts` subscribes to it — dead on arrival,
+but not free to remove.
+
+**2026-07-31 — Tier B ✅.** `graph_workflow.run.event` + `graph_workflow.node.status`
+replace `flow_run_event_msg` / `flow_node_status_msg`. Both classes, both enum
+members, the TS interfaces, the two dispatch cases, the two CM handlers and the
+`GraphWorkflowsClient` EventEmitter/`bootstrap()` re-emit layer are gone; the two
+payload shapes are now plain types on the service.
+
+Implementation note: the twins are emitted **inside `_broadcast_run_event` /
+`_broadcast_node_status`**, not at the 12 call sites — every site already
+funnelled through those two helpers, so nothing can be missed. They reuse
+`_emit_flow_tag`, inheriting `target` and `ctx.scope` (which is what keeps the
+subscription self-loop brake working). Both helpers stay `async` and keep their
+names because every call site awaits them, but the delivery underneath is now a
+synchronous bus emit that no slow WS client can stall.
+
+Four things had to ride the twin or something breaks silently, all pinned by
+`test_the_bus_twin_carries_everything_the_ws_dialect_did` (falsified: dropping
+the counters fails it): `queued`/`active` (read off `_node_rt` at emit time,
+stored nowhere else), `detail.process_id` (the only thing `proc-watch` attaches
+to), the run-internal `kind: event` beats (the edge-pulse input, which the
+boundary tags never carried), and `target` (how a client filters to one flow).
+
+Consumers adapt the envelope at the subscription boundary in
+`GraphWorkflowsView.tsx` rather than rewriting `store.ts` / `proc-watch.ts`:
+`target` supplies `flow_id`, `data` supplies the rest. Two fixes fell out — the
+TS `phase` union gained the `waiting` value the backend has always emitted
+(`manager.py:739`), and the header "connected" dot now follows the real socket
+instead of a one-shot bootstrap promise that could only ever resolve true.
+`test_run_boundaries_emit_flow_tags` had its ORDERING assertion scoped to
+boundary tags; its per-event `target`/`scope`/`run_id` invariants deliberately
+still cover the twins.
+
+Verified: 4556 backend unit tests pass; `ui` unit project 3083 pass (the one
+failure, `cloud-manager-hub-identity`, reproduces on unmodified code).
 
 ## Phase 9 — Recorder + policy hardening  ☐
 

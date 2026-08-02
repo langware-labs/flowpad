@@ -251,9 +251,14 @@ export interface BrowseableTreeProps {
    *  in. Undefined ⇒ no footer, unchanged for ordinary navigators. */
   levelFooter?: (parentId: string) => ReactNode;
 
-  /** The currently-active pointer (from URL). Drives both row selection and
-   *  ancestor auto-expand. */
+  /** The currently-active pointer (from URL). Drives exact row selection and
+   *  remains the navigation cursor. */
   activePointer: DockPointer | null;
+
+  /** Optional resolved resource identity for a URL whose serialized pointer
+   *  cannot carry the backing VFS path (for example a TypeId editor URL). Used
+   *  only for ancestor expansion, resource equality, and reveal/scroll. */
+  activeResourcePointer?: DockPointer | null;
 
   /** Optional URL-derived alternate selection key (e.g. the active entity's
    *  `<type>-<uuid>` typeid when the URL addresses an asset by typeid). A row is

@@ -43,9 +43,7 @@ interface ExtendedOAuthConnection extends OAuthConnection {
   icon?: string;
 }
 
-
-
-/** The three states, each visually distinct.
+/** Each state visually distinct.
  *
  *  They used to share one grey circle and one grey label, so "Ready to Connect"
  *  and "Disconnected" were indistinguishable — the only difference that matters
@@ -55,6 +53,9 @@ const STATUS_META: Record<ConnectionStatus, { dot: string; text: string }> = {
   [ConnectionStatus.CONNECTED]: { dot: 'bg-green-500', text: 'text-green-600 dark:text-green-500' },
   [ConnectionStatus.AVAILABLE]: { dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-500' },
   [ConnectionStatus.DISCONNECTED]: { dot: 'bg-muted-foreground/40', text: 'text-muted-foreground' },
+  // Held but dead. Red rather than amber: amber here means "one click from
+  // working", and this is not — it needs the whole grant again.
+  [ConnectionStatus.NEEDS_REAUTH]: { dot: 'bg-red-500', text: 'text-red-600 dark:text-red-500' },
 };
 
 /** How many scopes to show before collapsing the rest into a count. A dozen
@@ -197,9 +198,11 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   const statusLabel = (status: ConnectionStatus): string =>
     status === ConnectionStatus.CONNECTED
       ? t`Connected`
-      : status === ConnectionStatus.AVAILABLE
-        ? t`Ready to connect`
-        : t`Not connected`;
+      : status === ConnectionStatus.NEEDS_REAUTH
+        ? t`Reconnect needed`
+        : status === ConnectionStatus.AVAILABLE
+          ? t`Ready to connect`
+          : t`Not connected`;
 
   const grantLabel = (kind: OAuthFlowKind): string =>
     kind === 'device' ? t`Device code` : kind === 'loopback' ? t`OAuth + PKCE` : t`OAuth`;
@@ -264,8 +267,14 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       const currentStatus = connection.status;
       const providerName = connection.providerName || connection.provider.toLowerCase();
 
-      if (currentStatus === ConnectionStatus.DISCONNECTED) {
-        // No OAuth token exists, start full OAuth flow
+      if (
+        currentStatus === ConnectionStatus.DISCONNECTED ||
+        // Held but dead. Attaching would re-share the same refused credential and
+        // report success, leaving the row Connected and every call still failing;
+        // only a new grant replaces the token.
+        currentStatus === ConnectionStatus.NEEDS_REAUTH
+      ) {
+        // No usable OAuth token, start the full OAuth flow
         await connect(connectionId, providerName);
       } else {
         // OAuth token exists (AVAILABLE/CONNECTED), just attach to current project
@@ -315,11 +324,21 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         <Table className="max-w-5xl">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[180px]"><Trans>Provider</Trans></TableHead>
-              <TableHead className="w-[130px]"><Trans>Sign-in</Trans></TableHead>
-              <TableHead><Trans>Access requested</Trans></TableHead>
-              <TableHead className="w-[200px]"><Trans>Status</Trans></TableHead>
-              <TableHead className="w-[210px] text-right"><Trans>Actions</Trans></TableHead>
+              <TableHead className="w-[180px]">
+                <Trans>Provider</Trans>
+              </TableHead>
+              <TableHead className="w-[130px]">
+                <Trans>Sign-in</Trans>
+              </TableHead>
+              <TableHead>
+                <Trans>Access requested</Trans>
+              </TableHead>
+              <TableHead className="w-[200px]">
+                <Trans>Status</Trans>
+              </TableHead>
+              <TableHead className="w-[210px] text-right">
+                <Trans>Actions</Trans>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -364,10 +383,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                           </Badge>
                         ))}
                         {connection.scopes.length > SCOPES_SHOWN && (
-                          <span
-                            className="text-[11px] text-muted-foreground/70"
-                            title={connection.scopes.join(', ')}
-                          >
+                          <span className="text-[11px] text-muted-foreground/70" title={connection.scopes.join(', ')}>
                             +{connection.scopes.length - SCOPES_SHOWN}
                           </span>
                         )}
@@ -427,35 +443,35 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                         </Button>
                       )}
                       {connection.status === ConnectionStatus.CONNECTED ? (
-                      // Ghost until hovered, and destructive only then: revoking
-                      // access should not be the loudest thing in a table whose
-                      // normal state is "already connected".
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => void handleDisconnect(connection.id)}
-                        disabled={connectingConnectionId === connection.id}
-                        className="h-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                      >
-                        <Trans>Disconnect</Trans>
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void handleConnect(connection.id)}
-                        disabled={connectingConnectionId === connection.id}
-                        className="h-7"
-                      >
-                        {connectingConnectionId === connection.id ? (
-                          <>
-                            <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
-                            <Trans>Connecting</Trans>
-                          </>
-                        ) : (
-                          <Trans>Connect</Trans>
-                        )}
-                      </Button>
+                        // Ghost until hovered, and destructive only then: revoking
+                        // access should not be the loudest thing in a table whose
+                        // normal state is "already connected".
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void handleDisconnect(connection.id)}
+                          disabled={connectingConnectionId === connection.id}
+                          className="h-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trans>Disconnect</Trans>
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void handleConnect(connection.id)}
+                          disabled={connectingConnectionId === connection.id}
+                          className="h-7"
+                        >
+                          {connectingConnectionId === connection.id ? (
+                            <>
+                              <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                              <Trans>Connecting</Trans>
+                            </>
+                          ) : (
+                            <Trans>Connect</Trans>
+                          )}
+                        </Button>
                       )}
                     </div>
                   </TableCell>

@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import warnings
 
+from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.transcript_analyzer import (
     AgentTranscriptFile,
     AssistantMessageEntry,
+    ExitPlanModeEntry,
     MetaEntry,
-    SystemEntry,
     ToolResultEntry,
     ToolUseEntry,
+    TranscriptFormat,
     UnknownEntry,
     UserMessageEntry,
 )
-from flow_sdk.transcript_analyzer import TranscriptFormat
-
 
 # ── stream-event shape ────────────────────────────────────────────────────────
 
@@ -54,18 +55,25 @@ def test_stream_kind_breakdown(codex_stream_jsonl):
     #   item.started, file_change → 2 META
     #   item.completed:agent_message → 1 ASSISTANT_MESSAGE
     #   item.completed:command_execution → 1 TOOL_USE + 1 TOOL_RESULT
+    # ...plus the derivation layer's refinement: codex hands us a GENERIC
+    # tool-use for its shell, which the layer turns into a shell_command. Before
+    # the layer, codex shell calls rendered as nameless tool rows while claude's
+    # and copilot's did not — this entry is that gap closing.
     assert counts == {
         "system": 3,
         "meta": 2,
         "assistant_message": 1,
         "tool_use": 1,
         "tool_result": 1,
+        "shell_command": 1,
     }
 
 
 def test_stream_command_execution_synthesizes_tool_use_pair(codex_stream_jsonl):
     t = AgentTranscriptFile("codex", codex_stream_jsonl)
-    uses = [e for e in t.entries if isinstance(e, ToolUseEntry)]
+    # `type(...) is` not isinstance: the derived ShellCommandEntry subclasses
+    # ToolUseEntry, and this test is about the PHYSICAL pair the parser built.
+    uses = [e for e in t.entries if type(e) is ToolUseEntry]
     results = [e for e in t.entries if isinstance(e, ToolResultEntry)]
     assert len(uses) == 1
     assert len(results) == 1
@@ -168,10 +176,6 @@ def test_rollout_session_meta_is_meta_entry(codex_rollout_jsonl):
 
 # ── plan-mode (<proposed_plan>) synthesis ─────────────────────────────────────
 
-import json
-from flow_sdk.transcript_analyzer import ExitPlanModeEntry
-from flow_sdk.instance_settings import get_instance_settings
-
 
 def _stream_plan_lines(plan_body: str, *, thread_id: str = "019eeee0-aaaa-7000-9000-000000000abc") -> str:
     text = f"Here is the finalized plan.\n<proposed_plan>\n{plan_body}\n</proposed_plan>"
@@ -189,7 +193,7 @@ def _stream_plan_lines(plan_body: str, *, thread_id: str = "019eeee0-aaaa-7000-9
             "timestamp": "2026-05-06T15:00:02.000Z",
         },
     ]
-    return "\n".join(json.dumps(l) for l in lines) + "\n"
+    return "\n".join(json.dumps(line) for line in lines) + "\n"
 
 
 def _rollout_plan_lines(plan_body: str, *, session_id: str = "019eeee0-bbbb-7000-9000-000000000def") -> str:
@@ -210,7 +214,7 @@ def _rollout_plan_lines(plan_body: str, *, session_id: str = "019eeee0-bbbb-7000
             "timestamp": "2026-05-06T15:00:01.000Z",
         },
     ]
-    return "\n".join(json.dumps(l) for l in lines) + "\n"
+    return "\n".join(json.dumps(line) for line in lines) + "\n"
 
 
 def test_stream_proposed_plan_becomes_exit_plan_mode_entry(tmp_path):
@@ -268,7 +272,7 @@ def test_assistant_message_without_proposed_plan_emits_no_entry(tmp_path):
             "timestamp": "2026-05-06T15:00:02.000Z",
         },
     ]
-    jsonl.write_text("\n".join(json.dumps(l) for l in lines) + "\n", encoding="utf-8")
+    jsonl.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
 
     t = AgentTranscriptFile("codex", jsonl)
     assert not [e for e in t.entries if isinstance(e, ExitPlanModeEntry)]
@@ -291,7 +295,7 @@ def test_update_plan_does_not_become_plan(tmp_path):
             "timestamp": "2026-05-06T15:00:01.000Z",
         },
     ]
-    jsonl.write_text("\n".join(json.dumps(l) for l in lines) + "\n", encoding="utf-8")
+    jsonl.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
 
     t = AgentTranscriptFile("codex", jsonl)
     # update_plan still parses as a generic ToolUseEntry...
@@ -329,7 +333,7 @@ def _token_count_line(ts, *, in_t, cached, out_t, tot_in, tot_cached, tot_out):
 
 def _write_jsonl(tmp_path, name, lines):
     path = tmp_path / name
-    path.write_text("\n".join(json.dumps(l) for l in lines) + "\n", encoding="utf-8")
+    path.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
     return path
 
 

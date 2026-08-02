@@ -19,9 +19,10 @@ vi.mock('@sdk/react/hooks', () => ({
   },
 }));
 
-const openShellProcess = vi.fn(async () => true);
+const openShellProcess = vi.fn(() => Promise.resolve(true));
 const openLens = vi.fn();
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => null,
   useDockNavigation: () => ({ navigation: { openShellProcess, openLens } }),
 }));
 
@@ -32,10 +33,7 @@ import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 const createdIds = new Set<string>();
 const uid = () => crypto.randomUUID();
 
-function emit(
-  id: string,
-  fields: { status?: ProcessStatus; worker_status?: WorkerStatus; visible?: boolean },
-): void {
+function emit(id: string, fields: { status?: ProcessStatus; worker_status?: WorkerStatus; visible?: boolean }): void {
   createdIds.add(id);
   act(() => {
     captured?.({ toString: () => `${AgenticProcess.type}-${id}` }, 'update', fields);
@@ -135,9 +133,7 @@ describe('PendingActionsChip — worker status list', () => {
     await userEvent.click(within(popover).getByTestId('worker-mode-interactive'));
     await userEvent.click(within(popover).getByTestId('worker-mode-background'));
     await userEvent.click(within(popover).getByTestId('worker-mode-error'));
-    expect(await screen.findByTestId('worker-list-empty')).toHaveTextContent(
-      'No external workers detected',
-    );
+    expect(await screen.findByTestId('worker-list-empty')).toHaveTextContent('No external workers detected');
   });
 
   it('clicking an interactive row attaches its terminal, not the transcript', async () => {
@@ -148,9 +144,7 @@ describe('PendingActionsChip — worker status list', () => {
     await userEvent.click(await screen.findByTestId('pending-actions-chip'));
     const popover = await screen.findByTestId('pending-actions-popover');
     const row = within(popover).getByRole('listitem');
-    await userEvent.click(
-      within(row).getByRole('button', { name: new RegExp(id.slice(0, 8), 'i') }),
-    );
+    await userEvent.click(within(row).getByRole('button', { name: new RegExp(id.slice(0, 8), 'i') }));
 
     expect(openShellProcess).toHaveBeenCalledWith(id);
     expect(openLens).not.toHaveBeenCalled();
@@ -164,9 +158,7 @@ describe('PendingActionsChip — worker status list', () => {
     await userEvent.click(await screen.findByTestId('pending-actions-chip'));
     const popover = await screen.findByTestId('pending-actions-popover');
     const row = within(popover).getByRole('listitem');
-    await userEvent.click(
-      within(row).getByRole('button', { name: new RegExp(id.slice(0, 8), 'i') }),
-    );
+    await userEvent.click(within(row).getByRole('button', { name: new RegExp(id.slice(0, 8), 'i') }));
 
     // Background → transcript branch (openLens), never the terminal-attach path.
     // (openLens resolution needs a cached session_id, exercised in the browser;

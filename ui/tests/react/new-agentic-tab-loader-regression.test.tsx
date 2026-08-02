@@ -7,10 +7,9 @@
  * - The user clicks the production Claude opener from the tab strip.
  *
  * The only mocked function is the SDK backend action boundary,
- * dataManager.callAction. It returns real-shaped backend payloads but does not
- * mutate the React tab store. The test currently fails at the final assertion:
- * the URL changes and setupTab materializes the Tab, but TabbedTerminal still
- * renders from a stale all-tabs-store snapshot.
+ * dataManager.callAction. Its process `open` action is deliberately held so
+ * this test proves URL commitment + tab materialization happen before the
+ * mounted terminal finishes its worker/PTY start.
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -35,6 +34,7 @@ import {
   type TabRow,
 } from '@sdk';
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
+import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { loadAgentApp } from '@src/routes/loaders/main-loader';
 import { applyAllTabs } from '@src/tabs/all-tabs-store';
@@ -83,6 +83,8 @@ function processPayload(processId: string, shellId: string | null = null) {
     project_id: PROJECT_ID,
     workdir: '/tmp/flowpad-project',
     shell_id: shellId,
+    pty_mode: true,
+    visible: true,
     worker_type: 'claude',
     auto_rename: false,
   };
@@ -181,6 +183,7 @@ describe('new agentic-process loader handoff', () => {
     }
 
     window.localStorage.clear();
+    setViewMode(ViewMode.Advanced);
     await dataManager.clearCache();
     applyAllTabs([]);
     resetTabLifecycleForTests();
@@ -313,6 +316,7 @@ describe('new agentic-process loader handoff', () => {
     resetTabLifecycleForTests();
     (capabilityManager as unknown as { capabilities: Capability[] }).capabilities = [];
     (connectionManager as unknown as { socket: unknown }).socket = null;
+    setViewMode(ViewMode.Vibe);
     // Reset the shared dataContext the loader mutated (active shell/target +
     // current project). These are process-wide singletons; without clearing them
     // a following loader-integration test in the SAME worker inherits this test's

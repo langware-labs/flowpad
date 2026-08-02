@@ -11,7 +11,7 @@
  */
 import { promises as fsp } from 'node:fs';
 
-import { HUB_URL } from './_hub';
+import { HUB_URL, syncAssignedConversationAt } from './_hub';
 
 // Rendezvous file: alice writes the freshly-created conv id here after
 // ``share()``; bob polls for it so he targets THIS run's conversation and
@@ -48,18 +48,10 @@ export async function probeLocalBackendLoggedIn(apiBase: string): Promise<{
   }
 }
 
-/** Materialize only the pending invitation for this protocol's conversation.
+/** Materialize only this protocol's immediately assigned conversation.
  * `apiBase` is the SDK-configured `/api/v1` base for the current process. */
-export async function syncPendingInvitation(apiBase: string, convId: string): Promise<void> {
-  const response = await fetch(`${apiBase}/graph/invitation-sync`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conversation_id: convId }),
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok || body?.status !== 'SUCCESS') {
-    throw new Error(`invitation sync failed: HTTP ${response.status} ${JSON.stringify(body)}`);
-  }
+export async function syncAssignedConversation(apiBase: string, convId: string): Promise<void> {
+  await syncAssignedConversationAt(apiBase, convId);
 }
 
 // Generic poll: call ``fn`` every 100ms until it returns a truthy value or we
@@ -77,28 +69,6 @@ export async function pollUntil<T>(
     await new Promise((r) => setTimeout(r, 100));
   }
   throw new Error(`pollUntil(${label}) timed out after ${timeoutMs}ms`);
-}
-
-interface PendingInvitationCandidate {
-  accepted?: boolean;
-  conversation?: { id?: string };
-  conversation_id?: string;
-  target_url_path?: string;
-}
-
-/** Pick the pending invitation that targets `convId` from an invitation list.
- *  Matches the EMBEDDED conversation id (the hub stamps `target_url_path`
- *  null but embeds `conversation`) or a persisted `target_url_path`. NO
- *  newest-unaccepted fallback — on a shared hub, stale/concurrent invitations
- *  to the same recipient make recency pick the wrong conversation. */
-export function pickPendingInvitation<T extends PendingInvitationCandidate>(all: T[], convId: string): T | null {
-  return (
-    all.find(
-      (inv) =>
-        !inv.accepted &&
-        ((inv.conversation?.id ?? inv.conversation_id) === convId || (inv.target_url_path || '').includes(convId)),
-    ) ?? null
-  );
 }
 
 // Bob waits for alice to publish the conv id. Returns the conv id string.

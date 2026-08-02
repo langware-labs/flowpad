@@ -41,6 +41,9 @@ vi.mock('@src/contexts/agent-context', () => ({
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ currentDock, navigation: { openDock } }),
+  // view-mode-context reads the dock directly, so a partial mock of this
+  // module made every consumer of it throw "No useCurrentDock export".
+  useCurrentDock: () => currentDock,
 }));
 vi.mock('@src/tabs/setup-tab-and-adopt', () => ({
   setupTabAndAdopt: setupMocks.setupTabAndAdopt,

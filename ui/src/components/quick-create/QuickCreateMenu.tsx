@@ -5,6 +5,7 @@ import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import {
   NewProjectDialog,
   NewProjectFromGitDialog,
@@ -185,7 +186,8 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
           <DropdownMenuSeparator />
           <DropdownMenuLabel><Trans>Create new…</Trans></DropdownMenuLabel>
           {items.map((item) => {
-            const Icon = item.Icon;
+            // Backend type registry owns the glyph (TypeInfo.icon).
+            const Icon = iconForType(item.type);
             return (
               <DropdownMenuItem
                 key={item.type}

@@ -128,7 +128,7 @@ function kindMeta(op: GenericEntry, t: any): KindMeta | null {
       return {
         Icon: Bot,
         iconClassName: 'text-fuchsia-500',
-        label: op.agent_type || t`Agent`,
+        label: op.agent_type || t`SubAgent`,
         primary: op.description || firstLine(op.prompt ?? ''),
         chips: [],
       };

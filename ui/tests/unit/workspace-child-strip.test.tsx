@@ -18,6 +18,7 @@ const openDock = vi.fn();
 let currentDock: DockPointer | null = null;
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ currentDock, navigation: { openDock } }),
+  useCurrentDock: () => currentDock,
 }));
 
 import { WorkspaceChildStrip } from '@src/pages/flow-page/workspace-child-strip';
@@ -59,7 +60,7 @@ function processTab(): Tab {
 const processDock = () => new DockPointer(ViewType.SHELL, `agentic_process-${AP}`);
 
 beforeEach(() => {
-  vi.spyOn(Tab, 'listAll').mockImplementation(async () => getAllTabsSnapshot());
+  vi.spyOn(Tab, 'listAll').mockImplementation(() => Promise.resolve(getAllTabsSnapshot()));
 });
 
 afterEach(() => {

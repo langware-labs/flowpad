@@ -22,13 +22,13 @@ function basename(p: string): string {
  *
  * `record_type` on `/search` is single-valued, so we fan out one request per
  * asset type and merge (mirrors the default set `Project.get_assets_action`
- * uses server-side: skill / agent / spec / markdown). `projectScope` keeps the
+ * uses server-side: skill / subagent / spec / markdown). `projectScope` keeps the
  * result to records owned by THIS project (scope=project ∩ project_id), rather
  * than everything globally visible to it.
  */
 
 /** Asset types that make up a project's box. Mirrors the backend get-assets default. */
-export const PACKAGE_ASSET_TYPES = ['skill', 'agent', 'spec', 'markdown'] as const;
+export const PACKAGE_ASSET_TYPES = ['skill', 'subagent', 'spec', 'markdown'] as const;
 
 const PER_TYPE_LIMIT = 500;
 

@@ -10,6 +10,7 @@ import { IMAGE_EXTENSIONS } from '../utils/utils';
 export enum AssetEditor {
   CODE = 'code', // raw text editor — any file, no backing entity
   MARKDOWN = 'markdown', // rich markdown editor — entity-backed markdown family
+  SUBAGENT = 'subagent',
   AGENT = 'agent',
   SKILL = 'skill',
   TASK = 'task',
@@ -44,6 +45,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
     RecordType.PLAN,
     RecordType.PROMPT, // library prompt — md + frontmatter (docs/prompt-library.md)
   ],
+  [AssetEditor.SUBAGENT]: [RecordType.SUBAGENT],
   [AssetEditor.AGENT]: [RecordType.AGENT],
   [AssetEditor.SKILL]: [RecordType.SKILL],
   [AssetEditor.TASK]: [RecordType.TASK],
