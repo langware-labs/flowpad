@@ -18,6 +18,7 @@ import { trackEvent } from '@src/utils/analytics';
 import { redirectToConsole } from '@src/utils/navigation';
 import { SubAgent, cloudManager, dataContext, ExpansionRequest, HubConnectionStatus, HubLoginStatus, navigator, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
 import { useAuth, useCloudStatus, useConnectionStatus, useContext, useEntitiesQuery, useEntity, useWatch } from '@sdk/react/hooks';
+import { isLucideName, renderIconValue } from '@src/lib/icon-value';
 import { usePrivacyMode } from '@src/hooks/use-privacy-mode';
 import { guardCloudAction } from '@src/services/privacy-guard';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -184,6 +185,19 @@ export function UserDropdown() {
         .toUpperCase()
         .slice(0, 2)
     : null;
+  // `picture` carries two unrelated things now. A human's is a URL from the
+  // identity provider; a deployed agent's is the icon TOKEN its Agent row was
+  // authored with (an emoji or a lucide name — `/current-user` projects
+  // `identity.avatar` straight into this field). Feed a token to <img src> and
+  // it 404s, so discriminate: URL → image, known token → glyph, anything else →
+  // initials, same order of preference as the rest of the app.
+  const picture = cloudLoginAvailable ? (currentUser?.picture ?? '') : '';
+  const pictureIsUrl = /^(https?:|data:|\/)/.test(picture);
+  // A token is a glyph we can actually draw: a lucide export name, or anything
+  // non-wordlike (an emoji). A bare word like "pirate" is neither — drawing it
+  // would put literal text in the avatar circle, so it falls through to initials.
+  const pictureIsToken = !!picture && !pictureIsUrl && (isLucideName(picture) || !/^[\w .-]+$/.test(picture));
+  const pictureIcon = pictureIsToken ? renderIconValue(picture, { className: 'h-5 w-5' }) : null;
   const agentTypeId = useMemo(() => (agentId ? new TypeId(SubAgent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<SubAgent>(agentTypeId, {
     query: user ? agentQuery : new ExpansionRequest({}),
@@ -369,11 +383,11 @@ export function UserDropdown() {
                     title={!isConnected ? t`Service unavailable` : undefined}
                     data-testid="agent-page-user-avatar"
                   >
-                    {cloudLoginAvailable && currentUser?.picture && (
-                      <AvatarImage src={currentUser.picture} alt={currentUser.name ?? currentUser.email ?? ''} />
+                    {cloudLoginAvailable && pictureIsUrl && (
+                      <AvatarImage src={currentUser!.picture} alt={currentUser?.name ?? currentUser?.email ?? ''} />
                     )}
                     <AvatarFallback>
-                      {avatarInitials ?? <HelpCircle className="h-5 w-5 text-muted-foreground" />}
+                      {pictureIcon ?? avatarInitials ?? <HelpCircle className="h-5 w-5 text-muted-foreground" />}
                     </AvatarFallback>
                   </Avatar>
                   {dotClass && (
