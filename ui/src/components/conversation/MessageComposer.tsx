@@ -22,6 +22,9 @@ interface MessageComposerProps {
   /** Conversation to append to. Falls back to the draft's `conversation_id`. */
   conversationId?: string;
   disabled?: boolean;
+  /** Overrides the reply placeholder. Used when the composer is gated, so the
+   *  box explains why instead of inviting a reply that goes nowhere. */
+  placeholder?: string;
   /** Live-session composer: every send is stamped with this session id (the
    *  backend appends the snapshot-carrier attachment). Set by LiveSessionView;
    *  the plain conversation composer leaves it unset. */
@@ -124,6 +127,7 @@ function PendingFileChip({
 export function MessageComposer({
   conversationId,
   disabled,
+  placeholder,
   liveSessionId,
   onSent,
   queuedPrompt,
@@ -625,7 +629,7 @@ export function MessageComposer({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={(e) => void handlePaste(e)}
-          placeholder={dragging ? t`Drop files here` : t`Reply to sender…`}
+          placeholder={dragging ? t`Drop files here` : (placeholder ?? t`Reply to sender…`)}
           rows={1}
           disabled={isDisabled}
           className="min-h-[1.5rem] flex-1 resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
