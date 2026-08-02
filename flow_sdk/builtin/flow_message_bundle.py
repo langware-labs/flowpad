@@ -881,64 +881,6 @@ def _restore_file_backed_entry(
     return copied_any
 
 
-def _restored_asset_ref(
-    entry_dir: Path,
-    scope_root: Path,
-    entry_type: str,
-    entry_id: str,
-    git_origin: dict | None = None,
-) -> Path | None:
-    """Resolve the just-restored top asset without walking the whole scope.
-
-    A bundle entry contains exactly one top-level asset under its registry-derived
-    ``main_subdir`` (plus any repo children nested inside that asset). Map that
-    staged asset_ref onto ``scope_root`` so reception can parse this one asset
-    directly. Git-origin copy entries already carry their exact relative path.
-    """
-    from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    info = SchemaRegistry.get(entry_type)
-    main_subdir = getattr(info, "main_subdir", None) if info else None
-    if info is None or not main_subdir:
-        return None
-
-    rel_path = str((git_origin or {}).get("rel_path") or "")
-    if rel_path:
-        return _asset_ref_for_git_origin(scope_root, rel_path, info)
-
-    staged_container = entry_dir / PurePosixPath(main_subdir.replace("\\", "/"))
-    if not staged_container.is_dir():
-        return None
-    if info.main_layout == "folder":
-        candidates = [info.asset_ref_for(path) for path in staged_container.iterdir() if path.is_dir()]
-    else:
-        candidates = [
-            path
-            for path in staged_container.iterdir()
-            if path.is_file() and (not info.main_ext or path.suffix == info.main_ext)
-        ]
-    if not candidates:
-        return None
-
-    matching: list[Path] = []
-    for candidate in candidates:
-        try:
-            ref = FSRef(candidate, record_type=RecordType(entry_type))
-            if info.extract_id(ref) == entry_id:
-                matching.append(candidate)
-        except Exception:
-            continue
-    if len(matching) == 1:
-        selected = matching[0]
-    elif len(candidates) == 1:
-        selected = candidates[0]
-    else:
-        return None
-    return scope_root / selected.relative_to(entry_dir)
-
-
 async def _reindex_root(root: Path, record_type, *, types=None, project_id: str | None = None) -> None:
     """Drive ``FSIndexer.index(force=True)`` over a single restored ``root``.
 
@@ -1063,42 +1005,6 @@ class ReceivedAsset:
     entry_key: str
     record_type: object | None = None
     git_origin: dict | None = None
-    asset_ref: Path | None = None
-
-
-async def _reindex_received_repo_asset(
-    item: ReceivedAsset,
-    repo_types: tuple,
-    *,
-    project_id: str | None,
-) -> None:
-    """Parse one restored repo asset, then scan only its nested repo subtree."""
-    from flow_sdk.builtin.faas.fs_records_actions import discover_record_by_path  # noqa: PLC0415
-    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    assert item.asset_ref is not None
-    record = await discover_record_by_path(
-        item.asset_type,
-        str(item.asset_ref),
-        notify=False,
-        proposed_id=item.asset_id,
-        scope=item.scope,
-        project_id=project_id,
-    )
-    if record is None:
-        raise FileNotFoundError(f"restored {item.asset_type} could not be indexed at {item.asset_ref}")
-
-    info = SchemaRegistry.get(item.asset_type)
-    if info is None or info.main_layout != "folder":
-        return
-    nested_root_type = RecordType.REAL_PROJECT_CWD if item.scope == "project" else RecordType.USER_HOME_FOLDER
-    await _reindex_root(
-        info.folder_for(item.asset_ref),
-        nested_root_type,
-        types=repo_types,
-        project_id=project_id,
-    )
 
 
 async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: str | None, owner) -> None:
@@ -1129,9 +1035,7 @@ async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: s
     for item in attachments:
         if item.record_type is not None:
             types = repo_reindex_types if str(item.asset_type) in repo_types else (item.record_type,)
-            if str(item.asset_type) in repo_types and item.asset_ref is not None:
-                await _reindex_received_repo_asset(item, repo_reindex_types, project_id=project_id)
-            elif item.scope == AttachmentScope.PROJECT.value:
+            if item.scope == AttachmentScope.PROJECT.value:
                 await _reindex_received_assets(item.root, types, project_id=project_id)
             else:
                 await _reindex_root(item.root, RecordType.USER_HOME_FOLDER, types=types, project_id=project_id)

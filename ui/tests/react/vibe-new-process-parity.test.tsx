@@ -68,9 +68,7 @@ vi.mock('@src/components/entity-execution-panel', () => ({
   }) => {
     panelProps.onProcessCreated = props.onProcessCreated;
     const slot =
-      typeof props.leadingSlot === 'function'
-        ? props.leadingSlot({ startNewSession: () => {} })
-        : props.leadingSlot;
+      typeof props.leadingSlot === 'function' ? props.leadingSlot({ startNewSession: () => {} }) : props.leadingSlot;
     return <div data-testid="exec-panel-stub">{slot}</div>;
   },
 }));
@@ -83,11 +81,11 @@ vi.mock('@src/contexts/agent-context', () => ({
   }),
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => null,
   useDockNavigation: () => ({ navigation: navMocks, currentDock: null }),
 }));
 vi.mock('@src/hooks/flow-hooks', () => ({
-  useViewerStore: (sel: (s: { setCurrentContext: () => void }) => unknown) =>
-    sel({ setCurrentContext: () => {} }),
+  useViewerStore: (sel: (s: { setCurrentContext: () => void }) => unknown) => sel({ setCurrentContext: () => {} }),
   useProcessWebApp: () => ({ host: null }),
   useAppDisplay: () => ({
     runtime: null,
@@ -167,10 +165,9 @@ describe('VIBE-006 — New must reach parity with the vibe-home creation path', 
     // Facet 2 — attachment parity: the new process must be routed through the
     // shared vibe-persona embed, exactly like createVibeProcessForProject.
     // Currently the host hook only enables the assistant, so this is absent.
-    expect(
-      embedMock,
-      'New-path process must embed the vibe persona agent (attachment parity)',
-    ).toHaveBeenCalledWith(created);
+    expect(embedMock, 'New-path process must embed the vibe persona agent (attachment parity)').toHaveBeenCalledWith(
+      created,
+    );
 
     // Facet 1 — URL rebind: the workspace must navigate to the new process id
     // so the URL-derived Display binds to P1 and a reload preserves it.

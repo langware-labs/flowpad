@@ -467,7 +467,6 @@ async def handle_attachment_install(
         ReceivedAsset,
         _restore_file_backed_entry,
         _restore_git_transfer_entry,
-        _restored_asset_ref,
         index_attachments,
     )
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
@@ -607,13 +606,6 @@ async def handle_attachment_install(
                 return _staging_gone()
             assert root is not None  # copy mode always resolves a root above
             _restore_file_backed_entry(entry_dir, root, overwrite)
-            restored_asset_ref = _restored_asset_ref(
-                entry_dir,
-                root,
-                ma.asset_type,
-                ma.asset_id,
-                ma.git_origin,
-            )
             # The single reception indexer: copy-scope walk (skipped when
             # record_type is None — a raw non-markdown file), git-origin nested
             # re-walk + provenance stamp, and the received-asset notify.
@@ -627,7 +619,6 @@ async def handle_attachment_install(
                         entry_key=entry_key,
                         record_type=record_type,
                         git_origin=ma.git_origin,
-                        asset_ref=restored_asset_ref,
                     )
                 ],
                 project_id=project_id,
