@@ -328,6 +328,10 @@ export function ConversationPanel({
           <div className={`${bodyWrapper} relative min-h-0 flex-1 overflow-y-auto`}>
             <ChipsExcludeProvider add={taskKeys}>
               <ConversationView
+                // Keyed so switching conversations RESETS the view's local
+                // state. Without it the instance is reused and an in-flight
+                // "composing…" line follows you into the next conversation.
+                key={conversationId}
                 conversationId={conversationId}
                 task={task}
                 senderName={senderName}

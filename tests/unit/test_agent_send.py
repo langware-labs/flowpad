@@ -11,7 +11,7 @@ import asyncio
 import pytest
 
 from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
-from flow_sdk.ingest.driver import SendOutcome
+from flow_sdk.ingest.driver import SendOutcome, SendStatus
 from flow_sdk.ingest.drivers.agent import (
     DEFAULT_SEND_AGENT,
     SEND_RECEIPT_FILENAME,
@@ -37,19 +37,15 @@ class TestReceiptReading:
 
     def test_a_confirmed_send_yields_its_ids(self):
         out = self.driver._send_result_from(
-            {"sent": True, "external_id": "m-1", "thread_key": "t-1",
-             "occurred_at": "2026-08-02T10:00:00+00:00", "recorded": True},
-            "t-fallback",
-        )
-        assert out == SendOutcome(external_id="m-1", thread_key="t-1",
-                                  occurred_at="2026-08-02T10:00:00+00:00",
+            {"sent": True, "external_id": "m-1", "recorded": True})
+        assert out == SendOutcome(external_id="m-1", status=SendStatus.SENT,
                                   recorded=True)
 
     def test_a_receipt_without_confirmation_is_not_an_outcome(self):
         # No error, no send and no draft is ambiguous, and ambiguity must not
         # read as success — a caller would tell the user their mail went out.
         with pytest.raises(LaunchError) as caught:
-            self.driver._send_result_from({"external_id": "m-1"}, "t-1")
+            self.driver._send_result_from({"external_id": "m-1"})
         assert caught.value.health is LaunchHealth.CONFIG_ERROR
 
     def test_a_draft_is_a_real_outcome_not_a_failure(self):
@@ -57,7 +53,7 @@ class TestReceiptReading:
         # at all, so drafting is the best a whole class of connectors can do.
         # Reporting it as an error would make the feature look broken.
         out = self.driver._send_result_from(
-            {"drafted": True, "draft_id": "r-1", "thread_key": "t-9"}, "t-1")
+            {"drafted": True, "draft_id": "r-1"})
         assert out.drafted is True
         assert out.external_id == "r-1"
         # A draft has reached nobody, so it is never recorded as a message.
@@ -65,26 +61,20 @@ class TestReceiptReading:
 
     def test_a_reported_error_is_never_retryable(self):
         with pytest.raises(LaunchError) as caught:
-            self.driver._send_result_from({"error": "auth_failed"}, "t-1")
+            self.driver._send_result_from({"error": "auth_failed"})
         assert caught.value.health is LaunchHealth.CONFIG_ERROR
 
     def test_a_missing_connector_is_a_config_problem(self):
         with pytest.raises(LaunchError) as caught:
-            self.driver._send_result_from({"error": "no_connector"}, "t-1")
+            self.driver._send_result_from({"error": "no_connector"})
         assert caught.value.health is LaunchHealth.CONFIG_ERROR
 
     def test_the_mail_can_be_sent_even_when_recording_failed(self):
         # The mail is gone. Reporting this as a failure invites a re-send.
         out = self.driver._send_result_from(
-            {"sent": True, "external_id": "m-1", "recorded": False,
-             "error": None}, "t-1")
+            {"sent": True, "external_id": "m-1", "recorded": False, "error": None})
         assert out.external_id == "m-1"
         assert out.recorded is False
-
-    def test_the_thread_falls_back_to_the_one_we_asked_for(self):
-        out = self.driver._send_result_from({"sent": True, "external_id": "m"}, "t-1")
-        assert out.thread_key == "t-1"
-
 
 class TestTimeoutIsNotRetryable:
     """THE test. `fetch` classes a timeout transient — "the next attempt may

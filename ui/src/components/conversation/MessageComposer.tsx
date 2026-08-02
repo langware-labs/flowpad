@@ -166,6 +166,9 @@ export function MessageComposer({
   const canAddPrompt = !!effectiveConversationId && !liveSessionId;
   const isBusy = sending || discarding;
   const isDisabled = disabled || isBusy;
+  // A channel send carries text only, so offering the paperclip would
+  // invite an attachment the send silently drops.
+  const attachmentsDisabled = isDisabled || !!channel;
 
   const activePrompt = queuedPrompt ?? localPrompt;
   const setActivePrompt = (p: QueuedPrompt | null) => {
@@ -301,47 +304,42 @@ export function MessageComposer({
     setSending(true);
     setError(null);
 
-    // A channel reply never touches the hub, so it must not drag the user
-    // through a Flowpad-Cloud login to send an email.
-    if (channel) {
-      try {
-        const body = messageBody;
-        await sendToChannel(effectiveConversationId!, body);
-        setText('');
-        onChannelSent?.(body);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setSending(false);
-      }
-      return;
-    }
+
     try {
-      // Cloud reply needs an authenticated hub token; otherwise the hub POST
-      // 401s and the send fails silently. Route through OAuth first.
-      const gate = await ensureCloudLogin();
-      if (!gate.ok) {
-        setError(gate.error);
-        if (isDraftMode) notify.error({ title: gate.error });
-        return;
+      if (channel) {
+        // A channel reply never touches the hub, so it must not drag the user
+        // through a Flowpad-Cloud login to send an email. Branch on the CALL
+        // only — an early return here would have to restate the cleanup below,
+        // and the first version of it restated one quarter of it.
+        await sendToChannel(effectiveConversationId!, messageBody);
+        onChannelSent?.(messageBody);
+      } else {
+        // Cloud reply needs an authenticated hub token; otherwise the hub POST
+        // 401s and the send fails silently. Route through OAuth first.
+        const gate = await ensureCloudLogin();
+        if (!gate.ok) {
+          setError(gate.error);
+          if (isDraftMode) notify.error({ title: gate.error });
+          return;
+        }
+        // Draft promotion: discard the local-only draft, then send through the
+        // SAME reply pipeline as a fresh send. Single code path beats forking
+        // the upload/push plumbing for drafts.
+        if (draft) await discardDraftFlowMessage(draft);
+        await sendReply(
+          { conversationId: effectiveConversationId },
+          messageBody,
+          outgoingFiles,
+          buildExtras(outgoingPrompt),
+        );
       }
-      // Draft promotion: discard the local-only draft, then send through the
-      // SAME reply pipeline as a fresh send. Single code path beats forking
-      // the upload/push plumbing for drafts.
-      if (draft) await discardDraftFlowMessage(draft);
-      await sendReply(
-        { conversationId: effectiveConversationId },
-        messageBody,
-        outgoingFiles,
-        buildExtras(outgoingPrompt),
-      );
       if (!isDraftMode) {
         setText('');
         setFiles([]);
         setAssetRefs([]);
         setActivePrompt(null);
       }
-      onSent?.();
+      if (!channel) onSent?.();
     } catch (err: unknown) {
       console.error('[MessageComposer] send failed', err);
       setError(err instanceof Error ? err.message : t`Failed to send reply.`);
@@ -423,7 +421,7 @@ export function MessageComposer({
       type="file"
       multiple
       className="sr-only"
-      disabled={isDisabled}
+      disabled={attachmentsDisabled}
       onChange={(e) => {
         void addFiles(e.target.files);
         e.target.value = '';
@@ -438,7 +436,7 @@ export function MessageComposer({
       <button
         type="button"
         onClick={() => fileInputRef.current?.click()}
-        disabled={isDisabled}
+        disabled={attachmentsDisabled}
         title={t`Attach files`}
         data-testid="attach-file-button"
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
@@ -449,7 +447,7 @@ export function MessageComposer({
         trigger={
           <button
             type="button"
-            disabled={isDisabled}
+            disabled={attachmentsDisabled}
             title={t`Attach an asset (skill, agent, doc, spec)`}
             data-testid="attach-asset-button"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"

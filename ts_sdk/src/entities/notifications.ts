@@ -114,15 +114,11 @@ export async function refreshNotifications(projectPath?: string): Promise<void> 
  * seconds; the reply appears in the conversation by the ordinary ingest route
  * when the worker records it.
  */
-export async function sendToChannel(
-  conversationId: string,
-  text: string,
-  replyToMessageId?: string,
-): Promise<{ accepted: boolean; channel?: string; to?: string }> {
+export async function sendToChannel(conversationId: string, text: string): Promise<void> {
+  if (!conversationId) {
+    throw new Error('sendToChannel requires a conversationId');
+  }
   const action = new ActionInfo('send_external', 'conversation', conversationId, 'POST');
-  const body: Record<string, unknown> = { text };
-  if (replyToMessageId) body.reply_to_message_id = replyToMessageId;
-  action.bodyParameters = body;
-  const res = await dataManager.callAction(action);
-  return (res ?? { accepted: false }) as { accepted: boolean; channel?: string; to?: string };
+  action.bodyParameters = { text };
+  await dataManager.callAction(action);
 }

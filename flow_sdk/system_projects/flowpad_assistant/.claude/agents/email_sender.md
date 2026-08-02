@@ -47,6 +47,12 @@ Search your tools before concluding anything is missing, and search for what
 the tool *does* rather than for a name you expect — a connector may call it
 `create_draft`, `reply`, `send_message` or something else entirely.
 
+**Once you have found the tool, CALL it.** Do not search again to confirm it
+exists, and never write out the arguments you would pass as text — an observed
+run searched six times in a row, printed the JSON body it intended to send, and
+delivered nothing. One search, then the call. If a call fails, read the error
+and act on it; do not fall back to searching.
+
 Given a `thread_key`, work **inside that thread** so the recipient sees the
 message in context — look the thread up through the connector to get whatever
 a proper reply needs. Given no `thread_key`, start a new message with the
