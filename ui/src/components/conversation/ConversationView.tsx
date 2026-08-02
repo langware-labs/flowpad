@@ -19,6 +19,7 @@ import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hoo
 import type { ITask } from '@sdk/entities/task';
 import { isHelpdeskKind } from '@sdk/entities/conversation';
 import { ThreadStack } from './ThreadStack';
+import { ChannelReplyNotice, channelLabel } from './ChannelBadge';
 import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
@@ -284,6 +285,16 @@ export function ConversationView({
   }, [wsProjectId, wsRoomId, wsSessionId, dockNavigation]);
 
   const orderedItems = useMemo(() => buildConversationItems(pointers, draftMessages), [pointers, draftMessages]);
+
+  // The cloud thread this conversation caches, if any — the first message that
+  // carries an `origin`. Every message in a source-backed conversation shares a
+  // channel, so the first one found answers for the conversation.
+  const channelOrigin = useMemo(() => {
+    for (const fm of messagesById.values()) {
+      if (fm.origin?.kind) return fm.origin;
+    }
+    return null;
+  }, [messagesById]);
 
   // Authoritative per-thread sizes. The feed query is windowed, so counting
   // the loaded messages would undercount a long thread; MessageThread carries
@@ -755,7 +766,18 @@ export function ConversationView({
           bubble with Send/Discard — but it must not block composing a fresh reply.
           The plain composer never auto-creates a draft, so there's no duplication
           loop. */}
-      <MessageComposer conversationId={conversationId} onSent={() => void refetch()} />
+      {channelOrigin && <ChannelReplyNotice origin={channelOrigin} />}
+      <MessageComposer
+        conversationId={conversationId}
+        onSent={() => void refetch()}
+        // A source-backed conversation has no working reply path yet: the send
+        // would become a Flowpad message the real recipient never sees. Gate it
+        // rather than let the box lie. Replaced by the channel send in Part 2.
+        disabled={!!channelOrigin}
+        placeholder={
+          channelOrigin ? t`Reply in ${channelLabel(channelOrigin.kind)} to continue this thread` : undefined
+        }
+      />
 
       {executeTarget && (
         <ExecutePromptDialog
