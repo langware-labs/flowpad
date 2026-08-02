@@ -1,4 +1,4 @@
-import { Agent, AgentKind, AgenticProcess, apiClient, ComputeNode, dataContext, ProcessKind, Project, QueryFilter, QueryRequest, TypeId } from '@sdk';
+import { SubAgent, AgentKind, AgenticProcess, apiClient, ComputeNode, dataContext, ProcessKind, Project, QueryFilter, QueryRequest, TypeId } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -75,12 +75,12 @@ async function embedVibeKindAgents(proc: AgenticProcess): Promise<void> {
   const projectId = proc.project_id;
   if (!projectId) return;
   const req = new QueryRequest({
-    type: Agent.type,
+    type: SubAgent.type,
     scope: [new TypeId(Project.type, projectId)],
     name: `vibeAgents:${projectId}`,
     query: new QueryFilter({ match: { kind: AgentKind.Vibe }, order_by: { created_date: 'asc' } }),
   });
-  const agents = await Agent.query<Agent>(req);
+  const agents = await SubAgent.query<SubAgent>(req);
   for (const agent of agents) {
     if (agent.asset_ref) await proc.loadEmbeddedAgent(agent.asset_ref);
   }

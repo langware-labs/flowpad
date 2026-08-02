@@ -38,6 +38,7 @@ vi.mock('@src/components/favorites/FavoritesMenu', async () => {
 });
 // Stable dock so useCloseOnNavigate / BrowseableGrid default nav don't need a provider.
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => ({ toString: () => 'DOCK' }),
   useDockNavigation: () => ({ navigation: { openDock: vi.fn() }, currentDock: { toString: () => 'DOCK' } }),
 }));
 

@@ -10,7 +10,7 @@ import { useStudio } from '../store';
 
 export function PulseEdge(props: EdgeProps) {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, selected } = props;
-  const pulsing = useStudio((s) => s.pulsingEdges.has(id));
+  const pulsing = useStudio((s) => s.hot.has(id));
   const mutateDoc = useStudio((s) => s.mutateDoc);
   const event = String((data as { event?: string } | undefined)?.event ?? '*');
   const isCatchAll = event === '*';

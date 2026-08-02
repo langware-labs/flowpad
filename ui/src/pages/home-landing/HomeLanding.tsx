@@ -9,7 +9,6 @@ import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { AdvancedOnly, VibeSwap } from '@src/components/view-mode';
 import { useProjects } from '@src/hooks/use-projects';
 import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/components/home-customization';
-import { EnvironmentBanner } from '@src/components/environment-banner/EnvironmentBanner';
 import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
 import { useAuth } from '@sdk/react/hooks';
 import { useSystemTools } from '@src/hooks/use-system-tools';
@@ -120,9 +119,6 @@ export function HomeLanding() {
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
       <HomeCustomBackground url={homeBackgroundUrl} />
-      <div className="relative z-10">
-        <EnvironmentBanner />
-      </div>
       <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
         <VibeSwap
           vibe={

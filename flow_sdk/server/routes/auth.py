@@ -88,6 +88,7 @@ async def login_callback(
     flowpad_api_key: str = Query(None, alias="flowpad-api-key"),
     next: str = Query(None),
     cookie_gate: str = Query(None, alias="cookie-gate"),
+    runtime: str = Query(None),
 ):
     """Cloud-redirect callback. Validates the api-key and finalizes the login.
 
@@ -98,6 +99,14 @@ async def login_callback(
     ``flow_sdk/instance_settings/cookie_gate.py``). The hub passes it here
     because this request is made by curl over sandbox loopback — a channel the
     sandbox's public URL cannot see. Optional: absent, nothing changes.
+
+    `runtime` records what the hub launched this instance AS — ``sandbox`` for a
+    box a human opened, ``agent`` for one an agent Identity was deployed into.
+    It rides this request for the same reason ``cookie-gate`` does, and because
+    this is the hub's ONLY guaranteed channel into a running box: the app
+    restart that could carry it as env is skipped in production, where the
+    sandbox keeps serving from its template snapshot. Optional and, like
+    ``cookie-gate``, applied strictly after the api-key validates.
     """
     try:
         from flow_sdk.cli.auth.cloud_login import _finalize_login
@@ -149,6 +158,17 @@ async def login_callback(
 
             set_cookie_gate(cookie_gate)
             logger.info("login_callback: cookie-gate armed for this instance")
+
+        # Same gate, same reason: an unvalidated caller must not be able to
+        # relabel the instance. An unassignable or unknown value is logged and
+        # dropped — a login must not fail over a display label.
+        if runtime:
+            from flow_sdk.instance_settings.runtime import set_assigned_runtime
+
+            try:
+                logger.info("login_callback: runtime assigned as %s", set_assigned_runtime(runtime))
+            except ValueError:
+                logger.warning("login_callback: ignoring unassignable runtime %r", runtime)
 
         safe_next = _safe_next(next, default="")
         if safe_next:

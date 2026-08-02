@@ -28,6 +28,7 @@ export function AssetsNavigator() {
     roots: m.roots,
     isLoading: m.menuLoading,
     activePointer: m.treeActivePointer,
+    activeResourcePointer: m.treeActiveResourcePointer,
     activeKey: m.openAssetId,
     onNavigate: m.navigateAsset,
     bulkActions: m.bulkActions,

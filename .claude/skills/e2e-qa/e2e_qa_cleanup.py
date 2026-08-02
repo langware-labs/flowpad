@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
-"""e2e-qa startup cleanup — wipe accumulated test-instance scratch.
+"""e2e-qa startup cleanup — wipe legacy test-instance scratch.
 
-The pytest suite routes every test through a SHARED sandbox HOME at
-``<os-tempdir>/flowpad_test_home`` (see ``tests/conftest.py``: ``_TEST_HOME``).
-Each test that materialises an instance leaves a ``.flow/instances/test-*``
-dir behind, and the shared singleton instances (``oss``/``test``/``prod``)
-accumulate duplicate rows across runs. Left unbounded this grows to hundreds
-of dirs and poisons later runs with non-deterministic failures —
-"Multiple rows were found" on @local singletons, stale orphaned skill folders,
-empty-scan regressions — that look like code bugs but are pure contamination.
+Older pytest runs shared the sandbox HOME ``<os-tempdir>/flowpad_test_home``.
+Current runs use a unique ``<FLOWPAD_TEMP_DIR>/pytest-*/home`` owned and removed
+by that process, but the retired shared directory may still contain polluted
+singleton instances and stale artifacts from earlier runs. Remove that legacy
+scratch before a QA cycle so it cannot contaminate tools that still inspect it.
 
 This script removes that scratch so every QA cycle starts pristine. It is
 wired into the e2e-qa skill STARTUP (see SKILL.md → "Startup: clean old").
 
 SAFETY (non-negotiable):
-- Only ever operates on a directory literally named ``flowpad_test_home`` that
-  lives under the OS temp dir. Any other target is refused.
-- NEVER touches the real user ``~/.flow`` / ``~/.claude`` or any launched
-  instance under ``~/.flow/instances`` — only the pytest sandbox HOME.
+- Only ever operates on the retired directory literally named
+  ``flowpad_test_home`` under the OS temp dir. Any other target is refused.
+- NEVER globs or deletes the live per-process ``pytest-*`` roots.
+- Outside that legacy HOME, only directories whose names begin with the
+  reserved ``e2etest-`` prefix are removed from skill roots; all other real
+  user and launched-instance data is untouched.
 - NEVER kills processes. It is filesystem-only and safe to run any time no
   pytest process is mid-run.
 
@@ -26,6 +25,7 @@ Usage:
 
 Exit code 0 always (cleanup is best-effort and must never block the cycle).
 """
+
 from __future__ import annotations
 
 import os
@@ -35,8 +35,8 @@ import tempfile
 from pathlib import Path
 
 
-def _test_home() -> Path:
-    """The shared pytest sandbox HOME — must match tests/conftest.py:_TEST_HOME."""
+def _legacy_test_home() -> Path:
+    """The retired shared pytest HOME used before per-process isolation."""
     return Path(tempfile.gettempdir()) / "flowpad_test_home"
 
 
@@ -54,7 +54,7 @@ def _is_safe_target(path: Path) -> bool:
 
 
 def cleanup(dry_run: bool = False) -> int:
-    home = _test_home()
+    home = _legacy_test_home()
     if not _is_safe_target(home):
         print(f"[e2e-qa-cleanup] REFUSED unsafe target: {home}")
         return 0
@@ -82,23 +82,18 @@ def cleanup(dry_run: bool = False) -> int:
         f"[e2e-qa-cleanup] target={home}\n"
         f"  instances={len(inst_dirs)} (test-*={len(test_dirs)}, "
         f"other={[p.name for p in inst_dirs if not p.name.startswith('test-')]})\n"
-        f"  size={size/1_000_000:.1f}MB"
+        f"  size={size / 1_000_000:.1f}MB"
     )
 
     if dry_run:
         print("[e2e-qa-cleanup] --dry-run: no changes made")
         return 0
 
-    # Wipe the whole sandbox HOME — conftest recreates the .claude/.codex/.flow
-    # subdirs on next import, so a full wipe is the cleanest pristine start and
-    # also clears the polluted shared singleton instance DBs (oss/test/prod).
+    # Wipe only the retired shared HOME. Current pytest homes are children of
+    # unique run roots and are removed by their owning process's atexit hook.
     shutil.rmtree(home, ignore_errors=True)
-    # Recreate the bare skeleton conftest expects so an immediately-following
-    # run does not race on first-creation.
-    for sub in (".claude", ".codex", ".flow"):
-        (home / sub).mkdir(parents=True, exist_ok=True)
 
-    print(f"[e2e-qa-cleanup] removed {len(inst_dirs)} instance dirs, freed ~{size/1_000_000:.1f}MB")
+    print(f"[e2e-qa-cleanup] removed {len(inst_dirs)} instance dirs, freed ~{size / 1_000_000:.1f}MB")
     return 0
 
 

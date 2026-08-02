@@ -176,10 +176,7 @@ describe('group task attachments — file + git folder across two instances', ()
       .filter(Boolean);
     expect(memberTaskIds.length, JSON.stringify(created?.data)).toBeGreaterThan(0);
 
-    // ── Bob: observe an auto-accepted assignment, or accept it explicitly ──
-    // Current hubs auto-accept task-only assignments between same-org users.
-    // Older hubs retain the pending-invitation path, so exercise it when present.
-    let acceptedInvitation: string | null = null;
+    // ── Bob: observe the immediately assigned member task. ──
     const memberTask = await pollUntil(
       async () => {
         const rows = (await bob.sdk.Task.query(
@@ -187,22 +184,6 @@ describe('group task attachments — file + git folder across two instances', ()
           true,
         ).catch(() => [])) as any[];
         if (rows[0]) return rows[0];
-
-        const synced = await post(bob.apiUrl, '/graph/invitation-sync', {});
-        expect(synced.status, JSON.stringify(synced)).toBe('SUCCESS');
-        const all: any[] = await (bob.sdk.Invitation as any).query({ query: {} }, true).catch(() => []);
-        const invitation = all.find(
-          (inv) =>
-            !inv.accepted &&
-            [task.id, ...memberTaskIds].some(
-              (targetId) =>
-                inv.target_id === targetId || (inv.target_url_path || '').includes(targetId),
-            ),
-        );
-        if (invitation && acceptedInvitation !== invitation.id) {
-          acceptedInvitation = invitation.id!;
-          await bob.sdk.acceptInvitation({ invitation_id: invitation.id! });
-        }
         return null;
       },
       30_000,

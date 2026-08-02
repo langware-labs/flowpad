@@ -28,19 +28,17 @@
 import { promises as fsp } from 'node:fs';
 
 import { config, dataContext } from '@sdk';
-import { Conversation, acceptInvitation } from '@sdk/entities/conversation';
-import { Invitation } from '@sdk/entities/invitation';
+import { Conversation } from '@sdk/entities/conversation';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import { hubConversationTitle, hubConversationWatchers, hubLogin } from './_hub';
 import {
-  pickPendingInvitation,
   pollUntil,
   probeHub,
   probeLocalBackendLoggedIn,
   readRendezvous,
-  syncPendingInvitation,
+  syncAssignedConversation,
   waitMarker,
 } from './_matrix';
 
@@ -87,11 +85,6 @@ beforeEach(async (context: any) => {
   await apiTestSetup(signupInfo, context.task.name);
 });
 
-async function findPendingInvitation(convId: string): Promise<Invitation | null> {
-  const all = await Invitation.query<Invitation>({ query: {} }, true);
-  return pickPendingInvitation(all, convId);
-}
-
 describe('hub: rename two-process — BOB (cross-validates HTTP + WS on the hub)', () => {
   it("confirms both of alice's renames (HTTP, then WS) on the hub", async () => {
     const convId = await readRendezvous(25_000);
@@ -99,11 +92,8 @@ describe('hub: rename two-process — BOB (cross-validates HTTP + WS on the hub)
     const wsName = `ws-${convId.slice(0, 8)}`;
     console.log(`[rename.bob] conv id: ${convId.slice(0, 8)}`);
 
-    await syncPendingInvitation(config.SERVER_URL, convId);
-    const invitation = await pollUntil(() => findPendingInvitation(convId), 25_000, 'pending invitation for conv');
-    const accepted = await acceptInvitation({ invitation_id: invitation.id });
-    expect(accepted.invitation_id).toBe(invitation.id);
-    console.log('[rename.bob] invitation accepted + joined');
+    await syncAssignedConversation(config.SERVER_URL, convId);
+    console.log('[rename.bob] assigned conversation synchronized');
 
     // Materialize locally, then tap bob's LOCAL conversation entity for live
     // updates pushed over his own UI WS. ``watch()`` registers the backend-side

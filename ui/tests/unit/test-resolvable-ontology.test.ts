@@ -268,9 +268,9 @@ describe('Resolvable with Ontology Merge Handler', () => {
     });
   });
 
-  describe('Real-World Agent/Flow Scenarios', () => {
+  describe('Real-World SubAgent/Flow Scenarios', () => {
     it('should merge agent base_skill with message labels (no conflict)', () => {
-      // Agent has software_architect
+      // SubAgent has software_architect
       const agentSkill = '--skill--.software_architect';
 
       // Message adds additional labels (no skill override)
@@ -287,7 +287,7 @@ describe('Resolvable with Ontology Merge Handler', () => {
     });
 
     it('should override agent base_skill with message baseSkill', () => {
-      // Agent has software_architect
+      // SubAgent has software_architect
       const agentSkill = '--skill--.software_architect';
 
       // Message overrides with solution_engineer
@@ -307,7 +307,7 @@ describe('Resolvable with Ontology Merge Handler', () => {
     });
 
     it('should handle message with skill in labels array', () => {
-      // Agent has software_architect
+      // SubAgent has software_architect
       const agentSkill = '--skill--.software_architect';
 
       // Message adds skill via labels array (not baseSkill)

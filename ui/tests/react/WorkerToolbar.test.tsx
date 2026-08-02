@@ -17,14 +17,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => null,
+}));
+
 import { instancePreferences, PrefKey } from '@sdk';
 import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
-import {
-  openerToWorker,
-  useLastWorkerType,
-  workerToOpener,
-} from '@src/components/terminal/openers/useLastWorkerType';
+import { openerToWorker, useLastWorkerType, workerToOpener } from '@src/components/terminal/openers/useLastWorkerType';
 import { renderHook } from '@testing-library/react';
 import { resetOpenerPrefs } from '../utils/opener-prefs';
 
@@ -97,9 +97,7 @@ describe('WorkerToolbar — launch + persistence', () => {
 
   it('hasProcess short-circuits to the Open button', () => {
     const onOpen = vi.fn();
-    render(
-      <WorkerToolbar onLaunch={() => {}} hasProcess onOpen={onOpen} testIdPrefix="t" />,
-    );
+    render(<WorkerToolbar onLaunch={() => {}} hasProcess onOpen={onOpen} testIdPrefix="t" />);
     expect(screen.getByTestId('t-open-session')).toBeTruthy();
     expect(screen.queryByTestId('t-launch-claude_code')).toBeNull();
   });

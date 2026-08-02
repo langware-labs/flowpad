@@ -11,6 +11,7 @@ import {
   fetchConversations,
   isInvitationGoneError,
   isTypeId,
+  latestPointer,
 } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
@@ -144,7 +145,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     try {
       try {
         await fetchConversations();
-      } catch (e) {
+      } catch {
         // hub may be unavailable / not configured — local refetch still works
       }
       await refetch();
@@ -160,7 +161,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       // hides it from this list but keeps it in the full Inbox and lets it
       // reappear when a new message arrives, matching the per-row EyeOff action.
       const targets = sorted.filter((c) => c.id && !hiddenIds.has(c.id));
-      await Promise.all(targets.map((c) => dismissConversation({ conversation_id: c.id! })));
+      await Promise.all(targets.map((c) => dismissConversation({ conversation_id: c.id })));
       void refetch();
     } finally {
       setDismissingAll(false);
@@ -332,8 +333,8 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
               conv={conv}
               acceptingId={acceptingId}
               dismissingId={dismissingId}
-              onAcceptInvitation={handleAcceptInvitation}
-              onDismiss={handleDismissConversation}
+              onAcceptInvitation={(id) => void handleAcceptInvitation(id)}
+              onDismiss={(id) => void handleDismissConversation(id)}
               onHiddenChange={handleHiddenChange}
             />
           ))
@@ -414,7 +415,7 @@ function ConversationRow({
   // latest message preview but still need the first to detect invitation kind.
   const pointers = conv.conversationMessageIds ?? [];
   const firstPtr = pointers[0];
-  const lastPtr = pointers[pointers.length - 1];
+  const lastPtr = latestPointer(pointers);
 
   const firstTypeId = useMemo(
     () => (firstPtr ? new TypeId(FlowMessage.type, firstPtr.id) : null),
@@ -438,7 +439,7 @@ function ConversationRow({
   const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
 
   // Shared category classifier — single source of truth for invitation /
-  // community / archived (replacing the per-strip copies). Invitation is
+  // helpdesk / archived (replacing the per-strip copies). Invitation is
   // viewer-relative: matched on the Invitation's ``recipient_email`` so "I was
   // invited" stays distinct from "I sent this". Archived compares the latest
   // pointer ``ts`` so it auto-revives without racing the async FlowMessage fetch.
@@ -606,7 +607,7 @@ function ConversationRow({
         {conv.id && (
           <button
             type="button"
-            onClick={() => onDismiss(conv.id!)}
+            onClick={() => onDismiss(conv.id)}
             disabled={dismissingId === conv.id}
             className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 disabled:opacity-40"
             title={t`Hide from Recent — still visible in Inbox; reappears when a new message arrives`}

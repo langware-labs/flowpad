@@ -14,6 +14,7 @@ import {
 } from '@src/notifications';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
 import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
+import { RunPreviewRoot } from '@src/components/runs/RunPreviewRoot';
 import { FilePreviewRoot } from '@src/components/file-preview/FilePreviewRoot';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
@@ -24,7 +25,6 @@ import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowMod
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
 import { SnifferActiveNotice } from '@src/components/hooks/SnifferActiveNotice';
-import { initNotificationListener } from '@src/store/use-notification-store';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
 import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
@@ -135,6 +135,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <IncomingDeepLink />
         <ActivityProgressModalRoot />
         <WikiModalRoot />
+        <RunPreviewRoot />
         <FilePreviewRoot />
         <GlobalEvents />
         <GitHubDeviceFlowModal />

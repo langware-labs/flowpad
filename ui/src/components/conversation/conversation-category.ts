@@ -2,14 +2,14 @@ import type { LucideIcon } from 'lucide-react';
 import { Archive, ArchiveRestore, CheckSquare, LifeBuoy, Trash2 } from 'lucide-react';
 import {
   Conversation,
-  ConversationKind,
   FlowMessage,
   FlowMessageKind,
   Invitation,
+  isHelpdeskKind,
 } from '@sdk';
 
 // ── Conversation category — the single source of truth ──────────────────────
-// The inbox "category" is NOT one axis: a conversation can be community AND
+// The inbox "category" is NOT one axis: a conversation can be helpdesk AND
 // archived AND unread at once, and two of the axes (unread, invitation) are
 // *viewer-relative* — the same thread is an "Accept" row for the recipient and
 // a normal row for the sender. So we derive a small facet struct (centralizing
@@ -38,7 +38,7 @@ export interface CategoryInputs {
 }
 
 export interface ConversationFacets {
-  kind: 'direct' | 'community';
+  kind: 'direct' | 'helpdesk';
   /** Viewer is the pending recipient of an unaccepted invitation. */
   isInvitation: boolean;
   /** `archived_at` is set and not yet revived by newer activity. */
@@ -53,7 +53,7 @@ export interface ConversationFacets {
 export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   const { conv, firstMessage, latestMessage, latestPtrTs, invitation, viewer } = inp;
 
-  const kind = conv.kind === ConversationKind.COMMUNITY ? 'community' : 'direct';
+  const kind = isHelpdeskKind(conv.kind) ? 'helpdesk' : 'direct';
 
   // Invitation — viewer-relative. The first message stays `kind === invitation`
   // forever, so the sender (and everyone post-accept) must see a normal row;
@@ -104,7 +104,7 @@ export function compareConversationsByRecency(a: Conversation, b: Conversation):
 }
 
 // ── Chips — a per-row category label ─────────────────────────────────────────
-// Chips can co-occur (a community row can also be archived), so this returns a
+// Chips can co-occur (a helpdesk row can also be archived), so this returns a
 // list. Invitation rows keep their existing row treatment (violet left border +
 // MailPlus + Accept), so they get no chip here.
 
@@ -122,8 +122,8 @@ const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
 
 export function chipsFor(f: ConversationFacets): ChipSpec[] {
   const chips: ChipSpec[] = [];
-  if (f.kind === 'community') {
-    chips.push({ key: 'community', icon: LifeBuoy, label: 'Support', className: VIOLET_CHIP });
+  if (f.kind === 'helpdesk') {
+    chips.push({ key: 'helpdesk', icon: LifeBuoy, label: 'Support', className: VIOLET_CHIP });
   }
   if (f.isArchived) {
     chips.push({ key: 'archived', icon: Archive, label: 'Archived', className: MUTED_CHIP });

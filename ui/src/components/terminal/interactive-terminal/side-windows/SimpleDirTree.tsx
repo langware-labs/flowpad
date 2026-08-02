@@ -96,7 +96,7 @@ export function DirTreeItemIconButton({
 
 const ASSET_RECORD_TYPES = [
   'skill',
-  'agent',
+  'subagent',
   'workflow',
   'markdown',
   'claude_md',

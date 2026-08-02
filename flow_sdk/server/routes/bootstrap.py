@@ -1792,6 +1792,10 @@ def entity_to_dict(entity) -> dict:
 # and return the cached result. TTL of 30s allows a fresh bootstrap if the
 # server has been running a while (e.g. after a plugin install).
 _bootstrap_lock = asyncio.Lock()
+# Holds SERVER-owned fields only. Per-caller fields (today: `runtime`, which
+# depends on the request's `electron` flag) are left unset here and stamped on
+# the way out by `_with_runtime` — a new per-caller field belongs there, not in
+# the payload builder below.
 _bootstrap_cache: BootstrapInfo | None = None
 _bootstrap_cache_ts: float = 0.0
 _BOOTSTRAP_CACHE_TTL = 30.0  # seconds
@@ -1817,8 +1821,26 @@ def invalidate_bootstrap_cache() -> None:
     _bootstrap_cache_ts = 0.0
 
 
+def _with_runtime(info: BootstrapInfo, electron: bool) -> ApiSuccessResponse[BootstrapInfo]:
+    """Stamp the per-request runtime onto a (possibly cached) payload.
+
+    ``runtime`` is the one field that belongs to the CALLER rather than to the
+    server: the same instance answers ``desktop`` to the Electron shell and
+    ``browser`` to a localhost tab, concurrently. Baking it into
+    ``_bootstrap_cache`` would serve whichever client happened to miss the cache
+    first to everyone else for the next 30 seconds.
+
+    ``model_copy`` leaves the cached object untouched — mutating ``info`` in
+    place would write through to the cache, which is the same bug wearing a
+    different hat.
+    """
+    from flow_sdk.instance_settings.runtime import resolve_runtime  # noqa: PLC0415
+
+    return ApiSuccessResponse[BootstrapInfo](data=info.model_copy(update={"runtime": resolve_runtime(electron=electron)}))
+
+
 @router.get("/api/v1/graph/bootstrap")
-async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
+async def bootstrap(electron: bool = False) -> ApiSuccessResponse[BootstrapInfo]:
     """
     Bootstrap endpoint - creates local entities and returns BootstrapInfo.
 
@@ -1833,19 +1855,26 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_desktop_entities)
     and flowpad/hub/app/actions/bootstrap_actions.py (bootstrap action).
 
+    Args:
+        electron: Set by the client when it is running inside the Electron
+            shell (``ts_sdk`` ``isElectronShell()``). The preload bridge is the
+            only thing that can know this, so the client reports it and the
+            server decides — see ``instance_settings/runtime.py``. It selects
+            ``desktop`` vs ``browser`` and is never stored.
+
     Returns:
-        ApiSuccessResponse containing BootstrapInfo with env, desktop_info, user, project, workspace, agent
+        ApiSuccessResponse containing BootstrapInfo with env, runtime, desktop_info, user, project, workspace, agent
     """
     global _bootstrap_cache, _bootstrap_cache_ts
 
     # Fast path: return cached result without acquiring the lock
     if _bootstrap_cache is not None and time.monotonic() - _bootstrap_cache_ts < _BOOTSTRAP_CACHE_TTL:
-        return ApiSuccessResponse[BootstrapInfo](data=_bootstrap_cache)
+        return _with_runtime(_bootstrap_cache, electron)
 
     async with _bootstrap_lock:
         # Re-check inside the lock (another coroutine may have just finished)
         if _bootstrap_cache is not None and time.monotonic() - _bootstrap_cache_ts < _BOOTSTRAP_CACHE_TTL:
-            return ApiSuccessResponse[BootstrapInfo](data=_bootstrap_cache)
+            return _with_runtime(_bootstrap_cache, electron)
 
         from flow_sdk.utils import TimeIt  # noqa: PLC0415
 
@@ -2031,9 +2060,8 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             records_root=str(get_instance_settings().records_root),
             supported_locales=get_supported_locales(),
             translation_targets=get_translation_targets(),
-            # Local desktop server serves the `desk` page by default; a dev can
-            # opt into the `hub` page via preferences.dev.app_page (see
-            # _resolve_supported_pages). A hub backend reports its own set here.
+            # Both pages; see _resolve_supported_pages. A hub backend reports
+            # its own set here (and its own `runtime`).
             supported_pages=_resolve_supported_pages(),
             privacy_mode=get_privacy_mode(),
             notice=notice,
@@ -2046,4 +2074,4 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         # Release any background backfills that deferred to the first bootstrap.
         first_bootstrap_served.set()
 
-    return ApiSuccessResponse[BootstrapInfo](data=_bootstrap_cache)
+    return _with_runtime(_bootstrap_cache, electron)

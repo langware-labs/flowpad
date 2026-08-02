@@ -210,7 +210,15 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   get saved(): boolean {
-    return this.created_by !== undefined;
+    // Hub mirrors intentionally omit ``created_by``: attribution is PRIVATE.
+    // ``created_date`` is HUB_READ and is stamped for every durable row,
+    // including creator-less remote reflections. Recognize either marker so a
+    // received entity updates its existing id via PUT instead of being POSTed
+    // as a new, local-only entity.
+    return (
+      (this.created_by !== undefined && this.created_by !== null) ||
+      (this.created_date !== undefined && this.created_date !== null)
+    );
   }
 
   get isLoaded(): boolean {

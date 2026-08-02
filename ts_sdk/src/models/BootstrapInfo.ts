@@ -4,12 +4,17 @@ import { ComputeNode } from '../entities/compute_node';
 import { AgentHook } from '../entities/agent-hook';
 import { WebDomain } from '../entities/web-domain';
 import { CapabilitiesSummary } from '../capabilities/CapabilityManager';
+import { RuntimeInfo } from '../utils/runtime';
 
 /**
  * Environment information returned in bootstrap
  */
 export interface EnvInfo {
-  /** Current environment name (e.g., "desktop", "local", "development", "production") */
+  /**
+   * Legacy: a hardcoded `"desktop"` literal on every flow_sdk backend, so it is
+   * `"desktop"` inside a cloud sandbox too. It means "a flow_sdk server
+   * answered", nothing more. Read `BootstrapInfo.runtime.kind` instead.
+   */
   env_name: string;
   /** FLOWPAD_CLOUD_API_URL if set */
   cloud_api_url?: string;
@@ -125,6 +130,12 @@ export interface BootstrapInfo {
   /** Raw ComputeNode payloads for each live @docker-<name> node. Hydrate via dataContext.dockerComputeNodes. */
   docker_compute_nodes?: ComputeNode[];
   env?: EnvInfo;
+  /**
+   * What this app is running as — the single signal every surface reads.
+   * Resolved server-side per request (it depends on the `electron` flag this
+   * client sent), so it is not part of the backend's cached bootstrap payload.
+   */
+  runtime?: RuntimeInfo;
   desktop_info?: LmInfo;
   harness_state?: HarnessBootstrapState;
   /** All capabilities + how to access each, grouped by intent (see CapabilityManager). */

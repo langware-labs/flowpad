@@ -9,11 +9,12 @@
  *
  * Drivers cover the canonical share template end-to-end:
  *   driveShareDialog       — contact → conversation row → Share → success
- *   acceptInvitationInUI   — receiver clicks the strip's Accept CTA
+ *   openAssignedConversationInUI — receiver syncs + opens its assignment
  *   openConversation       — /dock/conversation/<id>
  *   replyInComposer        — type into "Reply to sender…" + click Send
  */
 import { chromium, type Browser, type Page } from 'playwright';
+import { syncAssignedConversationAt } from './_hub';
 import { readEnvFile } from './_instances';
 
 export interface InstancePage {
@@ -45,15 +46,17 @@ export async function openInstancePage(browser: Browser, name: string): Promise<
   });
   page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
   await page.goto(feUrl, { waitUntil: 'domcontentloaded' });
-  // `domcontentloaded` fires BEFORE React mounts and `useDockNavigation` runs its
-  // `defineGlobal('navigation', …)`. Until then `window.navigation` is the native
-  // (method-less) Navigation object, so a test calling `window.navigation.*`
-  // right away races the app boot. Wait for the app's navigation to be installed
-  // (mounts in ~0.5s) before handing the page back — a readiness gate, not a
-  // timeout mask.
+  // `domcontentloaded` fires BEFORE React mounts. `useDockNavigation` publishes
+  // `window.navigation` during render, which is still too early: concurrent
+  // React can yield before the commit that activates React Router's navigate
+  // function. Calling the published action in that gap is a silent no-op. The
+  // root page marker proves the commit completed; appReady proves SDK bootstrap
+  // completed. Keep all three checks in this one existing readiness gate.
   await page
     .waitForFunction(
       () =>
+        window.appReady === true &&
+        document.querySelector('[data-testid="flow-page"]') !== null &&
         typeof (window as unknown as { navigation?: { openShellProcess?: unknown } }).navigation?.openShellProcess ===
         'function',
       undefined,
@@ -155,95 +158,13 @@ export async function driveShareDialog(page: Page, opts: ShareDialogOptions): Pr
   }
 }
 
-/**
- * Receiver side: sync pending invitations, enter Inbox through the live app,
- * and click the invitation Accept CTA. Retries the refresh a few times — the
- * invitation has to sync down from the hub first.
- */
-export async function acceptInvitationInUI(inst: InstancePage, conversationId?: string): Promise<void> {
-  const { page } = inst;
-  if (conversationId) {
-    // Leave any asset editor before materializing the invitation. An editor's
-    // asset-stat subscriptions react to those entity ops; keeping it mounted
-    // while opening Inbox makes an unrelated invalidation storm compete with
-    // the Inbox tab loader. This is a real production URL-first click, not a
-    // harness-side state write or document reload.
-    await page.locator('[data-rail-item="home"]').click();
-  }
-  // Catch the pending invitation down from the hub FIRST, then load the page
-  // once. The targeted invitation sync materializes the placeholder row
-  // without dispatching catch-up work for every historical conversation; that
-  // broad work contended with the subsequent accept action on long-lived
-  // cycle instances.
-  await fetch(`${inst.apiUrl}/api/v1/graph/invitation-sync`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(conversationId ? { conversation_id: conversationId } : {}),
-  }).catch(() => undefined);
-  if (conversationId) {
-    // The receiver page is already a live app realm. Use the production
-    // URL-first rail action so React Router owns the Inbox transition; a hard
-    // page reload here tears down the socket/watch graph, re-runs bootstrap,
-    // and overlaps shell + Inbox conversation reconciles before the accept can
-    // even start.
-    await page.locator('[data-rail-item="inbox"]').click();
-  } else {
-    await page.goto(inst.feUrl, { waitUntil: 'domcontentloaded' });
-  }
-
-  const accept = conversationId
-    ? page
-        .locator(`[data-testid="inbox-conversation-row"][data-conversation-id="${conversationId}"]`)
-        .getByTestId('inbox-accept-invitation-button')
-    : page.getByTestId('accept-invitation-button').first();
-  // The broad, no-id Home path retains its real Recent-strip refresh. A known
-  // id is in Inbox, where that selector does not exist; silently attempting it
-  // consumed two seconds per loop without refreshing anything.
-  const refresh = conversationId ? null : page.getByTestId('refresh-conversations-button');
-  const deadline = Date.now() + 18_000;
-  for (;;) {
-    if (await accept.isVisible().catch(() => false)) break;
-    // Cheap in-page refresh (no reload) if the strip rendered it.
-    await refresh?.click({ timeout: 2_000 }).catch(() => undefined);
-    if (Date.now() > deadline) {
-      throw new Error(`no invitation Accept CTA appeared on ${inst.name} within 18s`);
-    }
-    await page.waitForTimeout(1_000);
-  }
-  if (conversationId) {
-    // A Playwright click resolves once the DOM action is dispatched; it does
-    // not wait for an async React handler's fetch to finish. The next matrix
-    // step navigates this same page, so leaving here before the canonical
-    // invitation-accept POST resolves can abort the request. Synchronize on
-    // that exact response with no independent timeout budget: the containing
-    // test's unchanged cap remains the only deadline.
-    const [response] = await Promise.all([
-      page.waitForResponse((candidate) => {
-        const request = candidate.request();
-        return request.method() === 'POST' && new URL(candidate.url()).pathname === '/api/v1/graph/invitation-accept';
-      }),
-      accept.click(),
-    ]);
-    const body = await response.json().catch(() => null);
-    if (!response.ok() || body?.status !== 'SUCCESS') {
-      throw new Error(`invitation accept failed on ${inst.name}: HTTP ${response.status()} ${JSON.stringify(body)}`);
-    }
-    return;
-  }
-
-  // Callers without a known conversation id retain the broad cleanup path:
-  // click each visible Accept once so long-lived instance residue cannot hide
-  // the invitation under test.
-  const buttons = page.getByTestId('accept-invitation-button');
-  const count = await buttons.count();
-  for (let i = count - 1; i >= 0; i--) {
-    await buttons
-      .nth(i)
-      .click({ timeout: 5_000 })
-      .catch(() => undefined);
-    await page.waitForTimeout(500);
-  }
-  await page.waitForTimeout(1_500);
+/** Materialize one immediately assigned conversation, then open it URL-first. */
+export async function openAssignedConversationInUI(
+  inst: InstancePage,
+  conversationId: string,
+): Promise<void> {
+  await syncAssignedConversationAt(`${inst.apiUrl}/api/v1`, conversationId, inst.name);
+  await openConversation(inst, conversationId);
 }
 
 export async function openConversation(inst: InstancePage, conversationId: string): Promise<void> {
@@ -260,7 +181,7 @@ export async function openConversation(inst: InstancePage, conversationId: strin
  * eat the open budget, while the UI picker's optimistic PUT races the next
  * download. A dedicated empty project keeps the open fast and deterministic.
  * Mechanics use the instance's backend API (same `inst.apiUrl` probe
- * `acceptInvitationInUI` uses) — no browser injection. Returns the project dir.
+ * `openAssignedConversationInUI` uses) — no browser injection. Returns the project dir.
  */
 export async function mapConversationToProject(inst: InstancePage, conversationId: string): Promise<string> {
   const { mkdtempSync } = await import('node:fs');

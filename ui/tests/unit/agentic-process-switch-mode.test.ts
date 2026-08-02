@@ -58,6 +58,17 @@ describe('AgenticProcess.switchMode', () => {
       visible: true,
       pty_mode: true,
     } as any);
+    callActionSpy.mockImplementationOnce(() => {
+      // The desired-value latch must protect broadcasts emitted while the
+      // backend action is still in flight.
+      expect(p.visible).toBe(false);
+      expect(p.pty_mode).toBe(false);
+      expect((p as unknown as SwitchModeInternals)._pendingTransport).toEqual({
+        visible: false,
+        pty_mode: false,
+      });
+      return Promise.resolve(fakeOpenResult as never);
+    });
 
     await p.switchMode(WorkerMode.CLI);
 
@@ -65,9 +76,28 @@ describe('AgenticProcess.switchMode', () => {
     const action = callActionSpy.mock.calls[0][0] as any;
     expect(action.name).toBe('switch-mode');
     expect(action.bodyParameters.mode).toBe(WorkerMode.CLI); // 'cli'
-    // Frontend calls backend, then mirrors the durable transport intent.
+    // Frontend holds the durable transport intent through the backend action.
     expect(p.visible).toBe(false);
     expect(p.pty_mode).toBe(false);
+  });
+
+  it('CLI rejection restores the prior PTY intent and desired-value latches', async () => {
+    const error = new Error('switch rejected');
+    callActionSpy.mockRejectedValueOnce(error);
+    const p = new AgenticProcess({
+      id: '00000000-0000-4000-8000-000000000001',
+      status: ProcessStatus.RUNNING,
+      visible: true,
+      pty_mode: true,
+    } satisfies Partial<IAgenticProcess>);
+    const internals = p as unknown as SwitchModeInternals;
+    internals._pendingTransport = { pty_mode: true, visible: true };
+
+    await expect(p.switchMode(WorkerMode.CLI)).rejects.toBe(error);
+
+    expect(p.pty_mode).toBe(true);
+    expect(p.visible).toBe(true);
+    expect(internals._pendingTransport).toEqual({ pty_mode: true, visible: true });
   });
 
   it('Interactive → routes through the open path and flips to PTY', async () => {

@@ -1,18 +1,47 @@
 /**
  * GraphWorkflows client — the SDK face of GraphWorkflowManager v2
- * (flow_sdk/graph_workflow_manager/). Inject events into a flow, list its runs, read a
- * run's journal, and subscribe to the live run/node streams.
+ * (flow_sdk/graph_workflow_manager/). Inject events into a flow, list its runs
+ * and read a run's journal.
+ *
+ * Liveness is NOT here: run and node beats arrive on the unified event bus as
+ * `graph_workflow.run.event` / `graph_workflow.node.status`, so consumers use
+ * `useOnTag` directly. The two payload shapes below are what those events carry
+ * in `data` (plus `flow_id`, which the envelope carries in `target`); they are
+ * plain payloads now, not WS frames.
  *
  * graph.json / display.json read+write go through the flow entity's folder
  * FSRef (the whiteboard pattern) — this service carries only the runtime
  * surfaces.
  */
 
-import { EventEmitter } from 'events';
 import apiClient from '../client';
-import type { GraphWorkflowNodeStatusMessage, GraphWorkflowRunEventMessage } from '../websocket';
 
-export type { GraphWorkflowNodeStatusMessage, GraphWorkflowRunEventMessage } from '../websocket';
+/** One beat of a run's internal stream — the `data` of a
+ *  `graph_workflow.run.event` envelope. The flow is the envelope's `target`. */
+export interface RunEventPayload {
+  run_id: string;
+  /** run_start | event | run_end */
+  kind: string;
+  event: string;
+  data: Record<string, unknown>;
+  node: string;
+  status: string;
+  ts: string;
+}
+
+/** One scheduler transition for a flow node — live counters and status lines;
+ *  the `data` of a `graph_workflow.node.status` envelope. */
+export interface NodeStatusPayload {
+  run_id: string;
+  node_id: string;
+  phase: 'queued' | 'merged' | 'started' | 'finished' | 'failed' | 'waiting';
+  /** Node runtime counts AFTER this transition. */
+  queued: number;
+  active: number;
+  /** started → {program_kind, process_id?}; finished → {duration_ms, stdout?...}; failed → {error}. */
+  detail: Record<string, unknown>;
+  ts: string;
+}
 
 /** Wire shape of one graph.json node (see graph_workflow_doc.py). */
 export interface GraphWorkflowDocNode {
@@ -94,23 +123,39 @@ export interface RunJournalEntry {
   [key: string]: unknown;
 }
 
-class GraphWorkflowsClient extends EventEmitter {
-  private _initialized = false;
+/** One file an execution read or wrote. */
+export interface ArtifactFile {
+  name: string;
+  direction: 'input' | 'output';
+  size: number;
+  previewable: boolean;
+  /** Absolute on-disk path — shown so the file is findable outside the app. */
+  path: string;
+}
 
-  /** Subscribe to the live run/node streams. Idempotent. */
-  async bootstrap(): Promise<void> {
-    if (this._initialized) return;
-    this._initialized = true;
-    const { ConnectionManager } = await import('../websocket');
-    const cm = ConnectionManager.getInstance();
-    cm.on('on_flow_run_event_msg', (msg: GraphWorkflowRunEventMessage) => {
-      this.emit('run_event', msg);
-    });
-    cm.on('on_flow_node_status_msg', (msg: GraphWorkflowNodeStatusMessage) => {
-      this.emit('node_status', msg);
-    });
-  }
+/** One execution's I/O record. An agent node's files live under its AGENTIC
+ *  PROCESS record, not the run's, hence `process_id`. */
+export interface ArtifactExecution {
+  key: string;
+  label: string;
+  seq: number;
+  node: string;
+  process_id?: string | null;
+  files: ArtifactFile[];
+}
 
+export interface RunArtifacts {
+  executions: ArtifactExecution[];
+}
+
+export interface ArtifactContent {
+  name: string;
+  size: number;
+  path: string;
+  text: string;
+}
+
+class GraphWorkflowsClient {
   /** Deliver an event into a flow (starts a run, or joins `executionId`). */
   async inject(
     flowId: string,
@@ -149,6 +194,22 @@ class GraphWorkflowsClient extends EventEmitter {
   /** A run's full journal (from the flow folder's runs/<id>.jsonl). */
   async fetchRunJournal(flowId: string, runId: string): Promise<RunJournalEntry[] | undefined> {
     return apiClient.get(`/graph-workflows/${flowId}/runs/${runId}`);
+  }
+
+  /** Every execution of a run, with the files it read and wrote. */
+  async fetchRunArtifacts(flowId: string, runId: string): Promise<RunArtifacts | undefined> {
+    return apiClient.get(`/graph-workflows/${flowId}/runs/${runId}/artifacts`);
+  }
+
+  /** One artifact's text. `key` and `name` must come from `fetchRunArtifacts`. */
+  async fetchRunArtifact(
+    flowId: string,
+    runId: string,
+    key: string,
+    name: string,
+  ): Promise<ArtifactContent | undefined> {
+    const q = `key=${encodeURIComponent(key)}&name=${encodeURIComponent(name)}`;
+    return apiClient.get(`/graph-workflows/${flowId}/runs/${runId}/artifact?${q}`);
   }
 }
 

@@ -13,16 +13,17 @@ import {
   Shell,
   toplog,
   type AgenticProcess,
-  type MarkdownDoc,
 } from '@sdk';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
 import { useContext } from '@src/hooks/useContext';
+import { useEntity } from '@src/hooks/entity-hooks';
 import { useInputDir } from '@src/hooks/use-input-dir';
 import { useInstancePreferences } from '@src/hooks/use-instance-preferences';
 import { usePreference } from '@src/hooks/use-preference';
-import { DockPointer, useDockNavigation, useSideWindows } from '@src/navigation';
+import { useProcessArtifacts } from '@src/hooks/use-process-artifacts';
+import { useDockNavigation, useSideWindows } from '@src/navigation';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
@@ -42,7 +43,6 @@ import { ProcessToolbar } from './ProcessToolbar';
 import { ChatComposerBar } from './ChatComposerBar';
 import { ChatPlanModeProvider } from './chat-plan-mode-context';
 import { SimpleChatPane } from './SimpleChatPane';
-import { useProcessSurface } from './use-process-surface';
 
 import { useIsAdvanced } from '@src/components/view-mode';
 import { useSessionSurface } from '@src/contexts/view-mode-context';
@@ -93,9 +93,6 @@ export interface ColVisibility {
   annotations: boolean;
 }
 
-// Stable empty-array identity so a doc-less process doesn't hand the ribbon a
-// fresh `[]` every render.
-const EMPTY_DOCS: MarkdownDoc[] = [];
 
 // An empty bracketed paste (RFC 6093 start+end markers, no payload) — the exact
 // signal an image paste delivers to the PTY, which the CLI reads the system
@@ -163,7 +160,16 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // Prop takes precedence (e.g. WorkflowsPage passes an explicit process).
   // For TabbedTerminal, no prop is passed — fall back to the context process
   // set by the loader, which is always authoritative for the active tab.
-  const process = propProcess ?? contextProcess ?? undefined;
+  const suppliedProcess = propProcess ?? contextProcess ?? undefined;
+  // Lifecycle reconciliation lives in the always-mounted TerminalPanel, but
+  // this memoized renderer still needs its own entity subscription. Process
+  // instances mutate in place, so a parent re-render with the same process id
+  // is intentionally swallowed by the comparator below; the subscription is
+  // what updates every render-driving field (transport, shell, status, plan,
+  // start failure, and transcript metadata) without moving lifecycle ownership
+  // back under the startup gate.
+  const { data: subscribedProcess } = useEntity<AgenticProcess>(suppliedProcess?.typeId ?? null);
+  const process = subscribedProcess ?? suppliedProcess;
   const { navigation } = useDockNavigation();
   const { resolvedTheme } = useTheme();
   // Skin layer: the view mode's SURFACE decides which pane shows (the footer
@@ -232,18 +238,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // entity update flipping `start_failure`. The loader-context `process` is
   // not reactive, so subscribe via useEntity and surface the banner here.
   // ── Session surface ───────────────────────────────────────────────────────
-  // The footer ViewToggle is the mode selector; this keeps the worker's
-  // TRANSPORT aligned with whatever mode it picks. All this mount contributes is
-  // the live xterm size for the →terminal direction.
-  const getTerminalDims = useCallback(
-    () => (terminalRef.current ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows } : undefined),
-    [],
-  );
-  const liveProcess = useProcessSurface({ process, getDims: getTerminalDims });
-
-  // The reactive entity comes from the mode-switch hook, which already
-  // subscribes to it — one subscription per process, not two.
-  const liveStartFailure = liveProcess?.start_failure ?? null;
+  // The always-mounted TerminalPanel owns process transport reconciliation, so
+  // this conditional renderer cannot lose a mode click while startup hides it.
+  // This component's subscription above is render-only.
+  const liveStartFailure = process?.start_failure ?? null;
   useEffect(() => {
     if (!liveStartFailure || !process) return;
     dataContext.setTerminalRuntimeError({
@@ -509,13 +507,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     navigation.openPlan(agenticProcessTypeId, process.plan_path);
   }, [process, agenticProcessTypeId, navigation]);
 
-  // Docs chip: persisted ``markdown_docs`` (oldest-first; tail = latest) drives
-  // the "Open Doc" affordance, mirroring ``plan_path`` / Open Plan. The list is
-  // a persisted entity field, so it restores after a reload via ``useEntity``.
-  const markdownDocs = process?.markdown_docs ?? EMPTY_DOCS;
-  // Open via the shared file dispatch (an .md routes to the markdown asset
-  // editor, rendered — the same chokepoint every "open this file" surface uses).
-  const handleOpenMarkdown = useCallback((path: string) => navigation.openFile(path), [navigation]);
+  // Artifacts chip: what the run REGISTERED (`flow artifact …`), read off the
+  // process property and kept live by the `artifact.*` bus lane. It replaces
+  // the markdown-docs chip, which inferred "the run produced something" from an
+  // authored `.md` instead of the run saying so.
+  const { data: artifacts } = useProcessArtifacts(process);
+  // The click opens the REFERENCED ASSET, never the artifact row — via the
+  // shared file dispatch, the chokepoint every "open this file" surface uses.
+  const handleOpenArtifact = useCallback((assetRef: string) => navigation.openFile(assetRef), [navigation]);
 
   // On mount (and whenever the process identity changes), proactively call
   // getPlan() once so the button restores after a reload — the line trigger
@@ -992,8 +991,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     [sessionId],
   );
 
-  // PTY connect and WS reconnect are handled by process.start() (called in loader)
-  // and Shell's built-in auto-reconnect (ConnectionManager on_reconnected listener).
+  // The owning TerminalPanel starts/attaches an AgenticProcess after the route
+  // commits. Shell WS reconnects remain owned by Shell's ConnectionManager
+  // on_reconnected listener.
 
   // Ref so the output handler always reads the latest bufferSyncUpdates without
   // requiring the effect to re-subscribe when the setting changes.
@@ -1800,8 +1800,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             }}
             hasLastPlan={hasPlan}
             onOpenLastPlan={handleOpenLastPlan}
-            markdownDocs={markdownDocs}
-            onOpenMarkdown={handleOpenMarkdown}
+            artifacts={artifacts}
+            onOpenArtifact={handleOpenArtifact}
             composer={
               showSimpleChat && process ? (
                 <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} />

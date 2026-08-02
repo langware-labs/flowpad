@@ -1,5 +1,5 @@
 import {
-  Agent,
+  SubAgent,
   AgenticProcess,
   ComputeNode,
   ProcessKind,
@@ -18,12 +18,12 @@ let wizardAgentRefCache: Record<string, string | null> = {};
  *
  *  System (SDK-shipped) wizard agents only surface with `include_system`, which
  *  the entity query layer omits — so we hit the graph route with the flag passed
- *  as `params` and hydrate the rows into `Agent` entities via `dataManager`
+ *  as `params` and hydrate the rows into `SubAgent` entities via `dataManager`
  *  (the same shape `CapabilityManager` uses), rather than reading raw JSON. */
 export async function resolveWizardAgentRef(name: string): Promise<string | null> {
   if (name in wizardAgentRefCache) return wizardAgentRefCache[name];
   const rows = await apiClient.get<unknown[]>('/graph/agent', { params: { include_system: true } });
-  const agents = (rows ?? []).map((row) => dataManager.updateEntityFromJson<Agent>(row));
+  const agents = (rows ?? []).map((row) => dataManager.updateEntityFromJson<SubAgent>(row));
   const ref = agents.find((a) => a.name === name)?.asset_ref ?? null;
   wizardAgentRefCache = { ...wizardAgentRefCache, [name]: ref };
   return ref;

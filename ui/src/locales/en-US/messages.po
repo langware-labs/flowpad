@@ -980,16 +980,16 @@ msgid "agent"
 msgstr "agent"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
-msgid "Agent"
-msgstr "Agent"
+#~ msgid "Agent"
+#~ msgstr "Agent"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "Agent is taking a long time to respond"
 #~ msgstr "Agent is taking a long time to respond"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
-msgid "Agent not found"
-msgstr "Agent not found"
+#~ msgid "Agent not found"
+#~ msgstr "Agent not found"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #~ msgid "Agentic Flows"
@@ -1000,7 +1000,6 @@ msgid "agents"
 msgstr "agents"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
-#: src/pages/live-status/LiveStatus.tsx
 msgid "Agents"
 msgstr "Agents"
 
@@ -3423,8 +3422,8 @@ msgstr "Create a new {0}."
 #~ msgstr "Create a new artifact in this project."
 
 #: src/components/hooks-manager/HookForm.tsx
-msgid "Create Agent Hook"
-msgstr "Create Agent Hook"
+#~ msgid "Create Agent Hook"
+#~ msgstr "Create Agent Hook"
 
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Create apps and tools by chatting with AI"
@@ -3479,6 +3478,10 @@ msgstr "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Create Project"
 msgstr "Create Project"
+
+#: src/components/hooks-manager/HookForm.tsx
+msgid "Create SubAgent Hook"
+msgstr "Create SubAgent Hook"
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Create Trigger"
@@ -4466,8 +4469,8 @@ msgid "Edit a system trigger?"
 msgstr "Edit a system trigger?"
 
 #: src/components/hooks-manager/HookForm.tsx
-msgid "Edit Agent Hook"
-msgstr "Edit Agent Hook"
+#~ msgid "Edit Agent Hook"
+#~ msgstr "Edit Agent Hook"
 
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Edit anyway"
@@ -4519,6 +4522,10 @@ msgstr "Edit prompt"
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Edit sender name"
 msgstr "Edit sender name"
+
+#: src/components/hooks-manager/HookForm.tsx
+msgid "Edit SubAgent Hook"
+msgstr "Edit SubAgent Hook"
 
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Edit system trigger"
@@ -13522,8 +13529,17 @@ msgid "sub-agent"
 msgstr "sub-agent"
 
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
+#: src/pages/live-status/LiveStatus.tsx
 msgid "Sub-agents"
 msgstr "Sub-agents"
+
+#: src/components/asset-manager/EntityTypeBar.tsx
+msgid "SubAgent"
+msgstr "SubAgent"
+
+#: src/components/agent-layout/error-screen/error-screen.tsx
+msgid "SubAgent not found"
+msgstr "SubAgent not found"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx

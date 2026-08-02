@@ -11,47 +11,31 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.indexer.functions.markdown import (
-    extract_markdown,
-)
+from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.indexer import IndexerOptions, build_default_indexer
+from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
+from flow_sdk.fs_store.indexer.functions.whiteboard import extract_whiteboard
+from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
-from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
 
 
 class MarkdownRecord:
-    @staticmethod
-    def from_file(p):
-        ref = _FSRef(p)
-        return extract_markdown(ref, SchemaRegistry.get("markdown").mint_id(ref))[0]
-
     @staticmethod
     def from_fsref(ref):
         # async-compat: the real indexer awaits this; the test will too.
         async def _aw():
             return extract_markdown(ref, SchemaRegistry.get("markdown").mint_id(ref))
+
         return _aw()
 
-    @staticmethod
-    def asset_hash_for_ref(ref):
-        from flow_sdk.fs_store.fs_record import FSRecord as _FSR
-        return _FSR.asset_hash_for_ref(ref)
 
-    @staticmethod
-    def genId(ref):
-        return SchemaRegistry.get("markdown").mint_id(ref)
-  # alias for tests; uses extract_markdown for parsing
-from flow_sdk.fs_store.indexer.functions.whiteboard import extract_whiteboard
-from flow_sdk.fs_store.fs_record import FSRecord
 class WhiteboardRecord:
     @staticmethod
     def from_fsref(ref):
-        from flow_sdk.fs_store.indexer.functions.whiteboard import extract_whiteboard
         async def _aw():
             return extract_whiteboard(ref, SchemaRegistry.get("whiteboard").mint_id(ref))
+
         return _aw()
-from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer import IndexerOptions, build_default_indexer
-from flow_sdk.fs_store.record_types import RecordType
 
 
 pytestmark = pytest.mark.asyncio
@@ -66,12 +50,13 @@ def _write_markdown(root: Path, name: str) -> None:
 
 
 def _write_whiteboard(root: Path, name: str) -> None:
-    """Drop a whiteboard folder under ``root/.claude/whiteboards/<name>/``
-    with WHITE_BOARD.md + board.json — the layout ``whiteboard_fn`` expects."""
-    folder = root / ".claude" / "whiteboards" / name
+    """Drop a whiteboard in its registry-owned folder for the repo walker."""
+    info = SchemaRegistry.get(RecordType.WHITEBOARD)
+    assert info is not None and info.main_subdir is not None
+    folder = root / info.main_subdir / name
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "WHITE_BOARD.md").write_text(
-        f"---\nname: {name}\ndescription: \"\"\n---\n\n# {name}\n",
+        f'---\nname: {name}\ndescription: ""\n---\n\n# {name}\n',
         encoding="utf-8",
     )
     (folder / "board.json").write_text(
@@ -131,9 +116,7 @@ async def test_resolve_collision_is_ambiguous(bootstrapped_client, tmp_path: Pat
     assert resp_default.status_code == 200, resp_default.text
     assert resp_default.json()["data"] == {"kind": "ambiguous"}
 
-    resp_pref = await bootstrapped_client.get(
-        f"/api/v1/wiki/resolve?name={same}&prefer_type=whiteboard"
-    )
+    resp_pref = await bootstrapped_client.get(f"/api/v1/wiki/resolve?name={same}&prefer_type=whiteboard")
     assert resp_pref.status_code == 200, resp_pref.text
     assert resp_pref.json()["data"] == {"kind": "ambiguous"}
 

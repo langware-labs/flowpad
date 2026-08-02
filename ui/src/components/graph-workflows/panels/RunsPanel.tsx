@@ -6,9 +6,88 @@
  * journals on demand.
  */
 import { useEffect, useState } from 'react';
-import { graphWorkflows, type RunJournalEntry } from '@sdk/services/graph-workflows';
+import {
+  graphWorkflows,
+  type ArtifactExecution,
+  type RunJournalEntry,
+} from '@sdk/services/graph-workflows';
+import { formatBytes } from '@src/utils/format-bytes';
 import { asStr, fmtRelative, parseIsoMs } from '../fmt';
 import { useStudio } from '../store';
+
+/** `key`+`name` identifies one artifact across executions. */
+const artifactId = (key: string, name: string) => `${key}/${name}`;
+
+/**
+ * What each execution actually read and produced.
+ *
+ * The engine has always written these records; nothing read them back, so a
+ * flow's real products were reachable only through the filesystem. Agent-node
+ * files live under the agentic process's record dir rather than the run's —
+ * the backend resolves that via the journal so both appear in one list.
+ */
+function ArtifactList({
+  flowId,
+  runId,
+  executions,
+}: {
+  flowId: string;
+  runId: string;
+  executions: ArtifactExecution[];
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+  // `null` IS the loading state — it cannot disagree with a separate flag.
+  const [text, setText] = useState<string | null>(null);
+
+  const show = (key: string, name: string) => {
+    const id = artifactId(key, name);
+    if (open === id) {
+      setOpen(null);
+      return;
+    }
+    setOpen(id);
+    setText(null);
+    void graphWorkflows
+      .fetchRunArtifact(flowId, runId, key, name)
+      .then((a) => setText(a?.text ?? '(empty)'))
+      .catch((e) => setText(String(e)));
+  };
+
+  if (!executions.length) return null;
+  return (
+    <div className="afl-artifacts">
+      <div className="eye">outputs</div>
+      {executions.map((ex) => (
+        <div key={ex.key} className="afl-exec">
+          <div className="afl-exechead">
+            <span className="s">#{ex.seq}</span>
+            <span className="n">{ex.label || ex.node || ex.key}</span>
+            {ex.process_id && <span className="tagpill">agent</span>}
+          </div>
+          {ex.files.length === 0 && <div className="afl-note">no files</div>}
+          {ex.files.map((f) => {
+            const id = artifactId(ex.key, f.name);
+            return (
+              <div key={id} className="afl-file">
+                <button
+                  className={`afl-filerow ${f.direction}${open === id ? ' on' : ''}`}
+                  onClick={() => show(ex.key, f.name)}
+                  title={f.path}
+                  disabled={!f.previewable}
+                >
+                  <span className="dir">{f.direction === 'input' ? '→' : '←'}</span>
+                  <span className="fn">{f.name}</span>
+                  <span className="sz">{formatBytes(f.size)}</span>
+                </button>
+                {open === id && <pre className="afl-filebody">{text ?? 'loading…'}</pre>}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const STATUS_GLYPH: Record<string, string> = {
   running: '▶',
@@ -65,13 +144,13 @@ function JournalTimeline({
   );
 }
 
-export function RunsPanel() {
+export function RunsPanel({ onSelectRun }: { onSelectRun: (runId: string | null) => void }) {
   const flowId = useStudio((s) => s.flowId);
   const runs = useStudio((s) => s.runs);
   const selectedRunId = useStudio((s) => s.selectedRunId);
-  const selectRun = useStudio((s) => s.selectRun);
-  const openProcess = useStudio((s) => s.openProcess);
+  const previewRuns = useStudio((s) => s.previewRuns);
   const [entries, setEntries] = useState<RunJournalEntry[]>([]);
+  const [artifacts, setArtifacts] = useState<ArtifactExecution[]>([]);
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const now = Date.now();
   const selectedStatus = runs.find((r) => r.id === selectedRunId)?.status;
@@ -97,16 +176,26 @@ export function RunsPanel() {
   useEffect(() => {
     if (!flowId || !selectedRunId) {
       setEntries([]);
+      setArtifacts([]);
       return;
     }
     let cancelled = false;
-    const load = () =>
+    const load = () => {
       void graphWorkflows
         .fetchRunJournal(flowId, selectedRunId)
         .then((j) => {
           if (!cancelled && j) setEntries(j);
         })
         .catch(() => undefined);
+      // Artifacts follow the same cadence: a running run writes files as it
+      // goes, so they must not be fetched once and frozen.
+      void graphWorkflows
+        .fetchRunArtifacts(flowId, selectedRunId)
+        .then((a) => {
+          if (!cancelled && a) setArtifacts(a.executions ?? []);
+        })
+        .catch(() => undefined);
+    };
     load();
     // A running run's journal grows — follow it while selected. Keyed on the
     // selected run's STATUS (not the whole runs array) so unrelated run
@@ -120,14 +209,27 @@ export function RunsPanel() {
 
   return (
     <div className="afl-panel afl-runs">
-      <div className="eye">runs</div>
+      <div className="eye">
+        runs
+        {flowId && (
+          <button
+            className="lnk"
+            title="open this flow's full run history"
+            onClick={() =>
+              previewRuns?.({ scope: { flow_id: flowId }, title: 'Runs of this flow' })
+            }
+          >
+            all ⬈
+          </button>
+        )}
+      </div>
       {!runs.length && <p className="afl-note">No runs yet — inject an event or fire the trigger.</p>}
       <div className="afl-runlist">
         {runs.map((r) => (
           <button
             key={r.id}
             className={`afl-runrow ${r.status} ${selectedRunId === r.id ? 'on' : ''}`}
-            onClick={() => selectRun(selectedRunId === r.id ? null : r.id)}
+            onClick={() => onSelectRun(selectedRunId === r.id ? null : r.id)}
           >
             <span className="g">{STATUS_GLYPH[r.status] ?? '·'}</span>
             <span className="id">{r.id.slice(0, 8)}</span>
@@ -150,8 +252,17 @@ export function RunsPanel() {
           <JournalTimeline
             entries={entries}
             onReexecute={reexecute}
-            onOpenProcess={(pid) => openProcess?.(pid)}
+            onOpenProcess={(pid) =>
+              previewRuns?.({
+                scope: selectedRunId ? { flow_run_id: selectedRunId } : {},
+                runId: pid,
+                title: `Run ${selectedRunId?.slice(0, 8) ?? ''}`,
+              })
+            }
           />
+          {flowId && (
+            <ArtifactList flowId={flowId} runId={selectedRunId} executions={artifacts} />
+          )}
         </>
       )}
     </div>

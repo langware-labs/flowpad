@@ -108,7 +108,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     ],
   },
   agent: {
-    dockPointer: (r) => assetEditorPointer('agent', r),
+    dockPointer: (r) => assetEditorPointer('subagent', r),
   },
   annotation: {
     primaryAction: async (r, navigation) => {
@@ -216,7 +216,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
         notify.error({ title: 'App not found', message: 'This app is no longer available.' });
         return;
       }
-      await openArtifact(artifact, {
+      openArtifact(artifact, {
         navigation,
         currentProjectId: dataContext.project?.id ?? null,
       });

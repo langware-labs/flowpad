@@ -14,19 +14,31 @@
   --afl-edge: hsl(var(--border));
   --edge-soft: hsl(var(--border) / 0.55);
 
-  --ink: hsl(var(--foreground) / 0.88);
+  /* Ink ladder — derived from --foreground (NOT --muted-foreground), because
+   * this canvas is dense mono micro-type (8.5–11px) on both themes. The old
+   * ladder bottomed out at ~3.6:1 (muted-foreground) and ~4.4:1 (its 0.72
+   * step); these alphas clear 4.5:1 in light AND dark with one formula:
+   * faint ≈ 5.2:1 light / 7.0:1 dark, soft ≈ 10:1 light / 11:1 dark. */
+  --ink: hsl(var(--foreground) / 0.9);
   --ink-strong: hsl(var(--foreground));
-  --ink-soft: hsl(var(--muted-foreground));
-  --ink-faint: hsl(var(--muted-foreground) / 0.72);
+  --ink-soft: hsl(var(--foreground) / 0.78);
+  --ink-faint: hsl(var(--foreground) / 0.6);
 
-  --rubric: rgb(5 150 105);
-  --rubric-dim: rgb(5 150 105 / 0.12);
+  /* One channel triplet per hue, alpha'd at the point of use — the literals
+   * were repeated per variant, and --sel silently kept an older emerald. */
+  --rubric-rgb: 4 120 87;
+  --warn-rgb: 180 83 9;
+  --rubric: rgb(var(--rubric-rgb));
+  --rubric-dim: rgb(var(--rubric-rgb) / 0.12);
   --flow: rgb(67 56 202 / 0.55);
   --flow-hot: rgb(67 56 202 / 0.9);
-  --sel: rgb(5 150 105 / 0.16);
-  --afl-warn: rgb(180 83 9);
-  --afl-warn-dim: rgb(180 83 9 / 0.14);
-  --afl-err: rgb(220 38 38);
+  --sel: rgb(var(--rubric-rgb) / 0.16);
+  --afl-warn: rgb(var(--warn-rgb));
+  --afl-warn-dim: rgb(var(--warn-rgb) / 0.14);
+  --afl-err: rgb(185 28 28);
+
+  /* React Flow's dot grid (the <Background> layer) — was a hardcoded slate. */
+  --xy-background-pattern-color: hsl(var(--foreground) / 0.16);
 
   --serif: 'Newsreader', Georgia, serif;
   --mono: 'IBM Plex Mono', ui-monospace, monospace;
@@ -40,24 +52,22 @@
   -webkit-font-smoothing: antialiased;
 }
 .dark .graph-workflows {
-  --rubric: rgb(16 185 129);
-  --rubric-dim: rgb(16 185 129 / 0.16);
+  --rubric-rgb: 16 185 129;
+  --warn-rgb: 245 158 11;
+  --rubric-dim: rgb(var(--rubric-rgb) / 0.16);
   --flow: rgb(99 102 241 / 0.55);
   --flow-hot: rgb(129 140 248 / 0.95);
-  --sel: rgb(16 185 129 / 0.2);
-  --afl-warn: rgb(245 158 11);
-  --afl-warn-dim: rgb(245 158 11 / 0.18);
+  --sel: rgb(var(--rubric-rgb) / 0.2);
+  --afl-warn-dim: rgb(var(--warn-rgb) / 0.18);
   --afl-err: rgb(248 113 113);
 }
 .graph-workflows * { box-sizing: border-box; }
 .graph-workflows ::selection { background: var(--sel); }
 
-/* React Flow canvas: dotted graph-paper background (atlas) */
-.graph-workflows .react-flow {
-  background:
-    radial-gradient(circle at 1px 1px, hsl(var(--foreground) / 0.12) 1px, transparent 0) 0 0 / 30px 30px,
-    var(--paper);
-}
+/* React Flow canvas: paper only — the dots are the <Background> layer, which
+ * rides the viewport transform (a static gradient here would sit still while
+ * the nodes pan). */
+.graph-workflows .react-flow { background: var(--paper); }
 .graph-workflows .react-flow__attribution { display: none; }
 .graph-workflows .react-flow__controls {
   background: var(--paper);
@@ -116,17 +126,20 @@
 }
 .graph-workflows .afl-node.running .card { animation: afl-heartbeat 1.8s ease-in-out infinite; }
 
-.graph-workflows .afl-node .kic {
+/* kicker type — shared by station cards and trigger cards; only the color and
+ * the card's own spacing differ (see .afl-trigger .kic below). */
+.graph-workflows .kic {
   font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.18em;
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-faint);
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 5px;
 }
+.graph-workflows .afl-node .kic { margin-bottom: 5px; }
 .graph-workflows .afl-node .kic .pip {
   width: 5px; height: 5px; border-radius: 50%;
   background: var(--rubric);
@@ -156,7 +169,8 @@
   padding-top: 6px;
   border-top: 1px solid var(--edge-soft);
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 10.5px;
+  font-weight: 500;
   letter-spacing: 0.04em;
   display: flex;
   align-items: center;
@@ -164,6 +178,14 @@
   white-space: nowrap;
   overflow: hidden;
 }
+/* status tones — the color half of fmt.ts::nodeStatusLine's ladder. Every
+ * tone reuses an existing token; running wears the same accent as the card's
+ * running border, queued the same amber as every other caution on the surface. */
+.graph-workflows .stl-running { color: var(--rubric); }
+.graph-workflows .stl-failed { color: var(--afl-err); }
+.graph-workflows .stl-queued { color: var(--afl-warn); }
+.graph-workflows .stl-done { color: var(--ink-soft); }
+.graph-workflows .stl-idle { color: var(--ink-faint); }
 .graph-workflows .afl-node .stl .lnk {
   margin-left: auto;
   color: var(--rubric);
@@ -191,7 +213,7 @@
 .graph-workflows .afl-node .sizes { display: inline-flex; gap: 2px; margin-left: auto; }
 .graph-workflows .afl-node .sizes button {
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.08em;
   padding: 1px 5px;
   border-radius: 4px;
@@ -233,6 +255,29 @@
   text-overflow: ellipsis;
 }
 .graph-workflows .afl-tag .ttl .pfx { color: var(--ink-faint); }
+/* The subscription's target filter, when it has one. */
+.graph-workflows .afl-tag .tgt {
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The injection door reads as a dashed opening, not a wired-up source. */
+.graph-workflows .afl-tag.external .card { border-style: dashed; }
+/* Lit while a matching event is entering — the flow's doorbell. */
+.graph-workflows .afl-tag.hot .card {
+  border-color: var(--rubric);
+  box-shadow: 0 0 0 1px var(--rubric), 0 6px 20px -8px var(--rubric);
+  animation: afl-inlet-hit 0.5s ease-out;
+}
+@keyframes afl-inlet-hit {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.045); }
+  100% { transform: scale(1); }
+}
 
 /* inline emit popover on a selected tag pill */
 .graph-workflows .afl-emitpop {
@@ -533,21 +578,12 @@
   box-shadow: 0 0 0 3px var(--rubric-dim);
 }
 .graph-workflows .afl-trigger.running .card { animation: afl-heartbeat 1.8s ease-in-out infinite; }
-.graph-workflows .afl-trigger .kic {
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--rubric);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
+.graph-workflows .afl-trigger .kic { color: var(--rubric); }
 .graph-workflows .afl-trigger .kic .pip.trigger { width: 7px; height: 7px; border-radius: 50%; background: var(--rubric); }
 .graph-workflows .afl-trigger .ttl { font-size: 15px; font-weight: 500; color: var(--ink-strong); margin-top: 3px; }
 .graph-workflows .afl-trigger .sub {
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 10px;
   color: var(--ink-faint);
   margin-top: 2px;
   overflow: hidden;
@@ -556,7 +592,7 @@
 }
 .graph-workflows .afl-trigger .evt {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.1em;
   color: var(--ink-faint);
   text-align: right;
@@ -579,8 +615,9 @@
   border: 1px solid var(--afl-edge);
   color: var(--ink-soft);
   border-radius: 999px;
-  padding: 1px 8px;
-  font-size: 10px;
+  padding: 1.5px 9px;
+  font-size: 10.5px;
+  font-weight: 500;
   font-family: var(--mono);
   transition: background 200ms, color 200ms;
 }
@@ -605,14 +642,29 @@
   text-transform: uppercase;
   color: var(--rubric);
 }
-.graph-workflows .afl-panel label {
+/* A rubric that carries an action (runs → "all ⬈") is a row, not a word: the
+   0.18em tracking above otherwise runs the label straight into the link. */
+.graph-workflows .afl-panel .eye:has(> .lnk) {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.graph-workflows .afl-panel .eye > .lnk {
+  letter-spacing: normal;
+  text-transform: none;
+}
+/* field labels — one type spec for the side panel and the node inspector. */
+.graph-workflows .afl-panel label,
+.graph-workflows .afl-field label {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 9.5px;
+  font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-faint);
-  margin-top: 4px;
 }
+.graph-workflows .afl-panel label { margin-top: 4px; }
 .graph-workflows .afl-panel input,
 .graph-workflows .afl-panel textarea,
 .graph-workflows .afl-panel select {
@@ -676,9 +728,9 @@
   border: 1px solid var(--afl-edge);
   background: var(--paper);
   border-radius: 8px;
-  padding: 6px 10px;
+  padding: 7px 10px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--ink-soft);
   cursor: pointer;
   text-align: left;
@@ -705,25 +757,18 @@
   display: flex;
   gap: 8px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 10.5px;
+  line-height: 1.5;
   align-items: baseline;
 }
-.graph-workflows .afl-jrow .k { flex: none; width: 74px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; font-size: 8.5px; }
+.graph-workflows .afl-jrow .k { flex: none; width: 74px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; font-size: 9.5px; font-weight: 500; }
 .graph-workflows .afl-jrow.node_error .k, .graph-workflows .afl-jrow.tripped .k { color: var(--afl-err); }
 .graph-workflows .afl-jrow .n { color: var(--ink-strong); flex: none; }
 .graph-workflows .afl-jrow .d { color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* inspector */
 .graph-workflows .afl-inspector { display: flex; flex-direction: column; gap: 10px; }
-.graph-workflows .afl-field label {
-  display: block;
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin-bottom: 3px;
-}
+.graph-workflows .afl-field label { display: block; margin-bottom: 3px; }
 .graph-workflows .afl-field input:not([type='checkbox']),
 .graph-workflows .afl-field textarea,
 .graph-workflows .afl-field select {
@@ -829,8 +874,66 @@
 .graph-workflows .afl-jrow .lnk {
   color: var(--rubric);
   cursor: pointer;
-  font-size: 9px;
+  font-size: 10px;
+  font-weight: 500;
   white-space: nowrap;
   text-decoration: none;
 }
 .graph-workflows .afl-jrow .lnk:hover { text-decoration: underline; }
+
+/* ---- execution artifacts (runs panel) ------------------------------- */
+.graph-workflows .afl-artifacts { margin-top: 12px; }
+.graph-workflows .afl-exec { margin-bottom: 8px; }
+.graph-workflows .afl-exechead {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+  padding: 2px 0;
+}
+.graph-workflows .afl-exechead .n { color: var(--ink-strong); font-weight: 600; }
+.graph-workflows .afl-exechead .tagpill {
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--afl-edge);
+  border-radius: 7px;
+  padding: 0 4px;
+}
+.graph-workflows .afl-filerow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 4px;
+  background: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.graph-workflows .afl-filerow:hover:not(:disabled) { background: var(--paper-2); }
+.graph-workflows .afl-filerow:disabled { opacity: 0.45; cursor: default; }
+.graph-workflows .afl-filerow.on { border-left-color: var(--rubric); background: var(--paper-2); }
+/* Direction is the useful distinction: what came in vs what this made. */
+.graph-workflows .afl-filerow.output .fn { color: var(--ink-strong); }
+.graph-workflows .afl-filerow .dir { color: var(--ink-faint); }
+.graph-workflows .afl-filerow .fn { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.graph-workflows .afl-filerow .sz { color: var(--ink-faint); font-size: 9.5px; }
+.graph-workflows .afl-filebody {
+  margin: 2px 0 6px 10px;
+  padding: 6px 8px;
+  max-height: 260px;
+  overflow: auto;
+  font-size: 10px;
+  line-height: 1.45;
+  background: var(--paper-2);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

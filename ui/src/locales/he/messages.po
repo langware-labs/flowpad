@@ -980,16 +980,16 @@ msgid "agent"
 msgstr "סוכן"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
-msgid "Agent"
-msgstr "סוכן"
+#~ msgid "Agent"
+#~ msgstr "סוכן"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "Agent is taking a long time to respond"
 #~ msgstr "הסוכן לוקח זמן רב מדי להשיב"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
-msgid "Agent not found"
-msgstr "סוכן לא נמצא"
+#~ msgid "Agent not found"
+#~ msgstr "סוכן לא נמצא"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #~ msgid "Agentic Flows"
@@ -1000,7 +1000,6 @@ msgid "agents"
 msgstr "סוכנים"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
-#: src/pages/live-status/LiveStatus.tsx
 msgid "Agents"
 msgstr "סוכנים"
 
@@ -2845,7 +2844,7 @@ msgstr "אישור"
 #: src/journey/JourneyTray.tsx
 #: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Connect"
-msgstr "חבר"
+msgstr "התחבר"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Connect a harness"
@@ -3423,8 +3422,8 @@ msgstr "צור {0} חדש."
 #~ msgstr "צור ארטיפקט חדש בפרויקט זה."
 
 #: src/components/hooks-manager/HookForm.tsx
-msgid "Create Agent Hook"
-msgstr "צור Agent Hook"
+#~ msgid "Create Agent Hook"
+#~ msgstr "צור Agent Hook"
 
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Create apps and tools by chatting with AI"
@@ -3479,6 +3478,10 @@ msgstr "צור אחד על ידי שמיטת <0>index.md</0> עם frontmatter מ
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Create Project"
 msgstr "צור פרויקט"
+
+#: src/components/hooks-manager/HookForm.tsx
+msgid "Create SubAgent Hook"
+msgstr ""
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Create Trigger"
@@ -4466,8 +4469,8 @@ msgid "Edit a system trigger?"
 msgstr "ערוך Trigger של מערכת?"
 
 #: src/components/hooks-manager/HookForm.tsx
-msgid "Edit Agent Hook"
-msgstr "ערוך Agent Hook"
+#~ msgid "Edit Agent Hook"
+#~ msgstr "ערוך Agent Hook"
 
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Edit anyway"
@@ -4519,6 +4522,10 @@ msgstr "ערוך prompt"
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Edit sender name"
 msgstr "עריכת שם המשדר"
+
+#: src/components/hooks-manager/HookForm.tsx
+msgid "Edit SubAgent Hook"
+msgstr ""
 
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Edit system trigger"
@@ -4903,7 +4910,7 @@ msgstr "כל מי שהפרויקט משותף איתו יקבל אותו"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Everything you can reach, as a live graph."
-msgstr "כל מה שניתן להגיע אליו, כגרף חי"
+msgstr "כל מה שניתן להגיע אליו, כגרף חי."
 
 #: src/components/conversation/ExecutePromptDialog.tsx
 #~ msgid "Execute"
@@ -5011,7 +5018,7 @@ msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Explore your organization and everything you can reach."
-msgstr "חקרו את הארגון שלך וכל מה שניתן להגיע אליו"
+msgstr "יש לחקור את הארגון שלך וכל מה שניתן להגיע אליו."
 
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Explorer"
@@ -11359,7 +11366,7 @@ msgstr "מאגר"
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Repo is not public — connect GitHub to continue."
-msgstr "המאגר אינו ציבורי — יש לחבר את GitHub כדי להמשיך."
+msgstr "המאגר אינו ציבורי — יש להתחבר ל-GitHub כדי להמשיך."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -11870,7 +11877,7 @@ msgstr "מדדי Sandbox"
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sandbox unavailable"
-msgstr ""
+msgstr "סביבה לא זמינה"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
@@ -13009,7 +13016,7 @@ msgstr "היכנסו"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sign in to create desktops"
-msgstr ""
+msgstr "יש להתחבר לצורך יצירת שולחנות עבודה"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Sign in to see who's a member"
@@ -13522,8 +13529,17 @@ msgid "sub-agent"
 msgstr "תת-סוכן"
 
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
+#: src/pages/live-status/LiveStatus.tsx
 msgid "Sub-agents"
 msgstr "סוכנים משנה"
+
+#: src/components/asset-manager/EntityTypeBar.tsx
+msgid "SubAgent"
+msgstr ""
+
+#: src/components/agent-layout/error-screen/error-screen.tsx
+msgid "SubAgent not found"
+msgstr ""
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -13762,7 +13778,7 @@ msgstr "צוותים"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Teams and people across your org."
-msgstr "צוותים ואנשים ברחבי הארגון"
+msgstr "צוותים ואנשים ברחבי הארגון שלך."
 
 #: src/pages/flow-page/vibe-workspace.tsx
 #~ msgid "Tell the assistant what to build."

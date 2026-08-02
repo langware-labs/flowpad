@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import field_validator, model_validator
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.fs_origin_field import FSOriginField
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
@@ -60,6 +60,26 @@ class Artifact(Entity):
     origin: FSOriginField | None = APIField(
         default=None,
         description="Optional source locator (for example GitOrigin or LocalOrigin)",
+    )
+    #: An artifact REFERENCES an asset; it never owns the path. Both rows carry
+    #: the same ``asset_ref``, so without this the artifact would compete with
+    #: the real entity in ``Entity.get_by_asset_ref`` and win or lose by registry
+    #: order. Resolution goes the other way: read ``asset_ref``, then ask
+    #: ``get_by_asset_ref`` for the entity that does own it.
+    owns_asset_ref: ClassVar[bool] = False
+
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
+    generated_by: str | None = APIField(
+        default=None,
+        description=(
+            "TypeId of the run that produced this artifact, e.g. "
+            "``agentic_process-<uuid>``. A TypeId rather than a bare uuid so a "
+            "graph-workflow run or a subagent can be a producer too. The edge "
+            "lives here, not as a list on the process: 'this run's artifacts' is "
+            "a match query, so concurrent registrations cannot clobber one "
+            "another. Deliberately NOT a revival of the retired "
+            "``generating_flow_id`` — provenance that was dropped stays dropped."
+        ),
     )
 
     def __init__(self, **data: Any) -> None:

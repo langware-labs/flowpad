@@ -1,5 +1,5 @@
 /**
- * AgentSpawnEntry — an agent dispatched a sub-agent (Task / Agent tool).
+ * AgentSpawnEntry — an agent dispatched a sub-agent (Task / SubAgent tool).
  *
  * Mirrors flow_sdk/transcript_analyzer/entries/agent_spawn.py. The spawned
  * sub-agent's transcript is carried inline as `children` once the server has

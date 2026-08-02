@@ -128,3 +128,26 @@ describe('ConnectionsManager', () => {
     expect(screen.getByTestId('connection-scopes-slack').textContent).toContain('Shown at approval');
   });
 });
+
+describe('ConnectionsManager — a credential that is held but dead', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    h.providers = [{ name: 'googledrive', display_name: 'Google Drive', icon: undefined }];
+    h.statuses = { googledrive: 'NEEDS_REAUTH' };
+  });
+  afterEach(() => cleanup());
+
+  it('says reconnect is needed rather than claiming a connection', () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    expect(screen.getByText('Reconnect needed')).toBeTruthy();
+    expect(screen.queryByText('Connected')).toBeNull();
+  });
+
+  it('runs the full flow, not attach — attaching would re-share the refused token', async () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+    await userEvent.click(screen.getByRole('button', { name: /connect/i }));
+    expect(h.connect).toHaveBeenCalledWith('googledrive', 'googledrive');
+    expect(h.attach).not.toHaveBeenCalled();
+  });
+});

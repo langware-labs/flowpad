@@ -30,15 +30,15 @@ const WORKSPACE_PORT = 9007;
 /** The flavor that marks a ComputeNode as a desktop (vs. an agent/exec-env node). */
 const WORKSPACE_FLAVOR = 'workspace';
 
-export type StepStatus = 'idle' | 'loading' | 'success' | 'error';
-export type StepId = 'launch' | 'health' | 'setup-git' | 'open';
+// Step/StepStatus are the shared checklist model (`@src/hooks/use-step-flow`),
+// re-exported here so existing importers of this module keep working. This
+// hook predates that extraction and still drives its own steps inline, because
+// it also mirrors each transition into the claimed tab's placeholder document
+// (see paintTab) — something the generic runner has no concept of.
+import type { Step as GenericStep } from './use-step-flow';
 
-export interface Step {
-  id: StepId;
-  label: string;
-  status: StepStatus;
-  detail?: string;
-}
+export type StepId = 'launch' | 'health' | 'setup-git' | 'open';
+export type Step = GenericStep<StepId>;
 
 /** Steps for the launch progress list. The `setup-git` step is only present
  *  when launching from a git repo (the hub clones + copies it into the box). */

@@ -69,6 +69,11 @@ const GraphView = lazy(() =>
     ? import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView }))
     : Promise.resolve({ default: WebglUnavailableView }),
 );
+// Lazy like its neighbours: the portal drags react-markdown + the article
+// renderer, which no user who never opens a help desk should pay for.
+const HelpdeskPortalPage = lazy(() =>
+  import('@src/components/helpdesk/HelpdeskPortalPage').then((m) => ({ default: m.HelpdeskPortalPage })),
+);
 const WorldView = lazy(() =>
   isWebglAvailable()
     ? import('@src/components/graph-view/GraphView').then((m) => ({ default: m.WorldView }))
@@ -84,6 +89,10 @@ const GenericSubgraphView = lazy(() =>
 const GraphWorkflowsView = lazy(() =>
   import('@src/components/graph-workflows/GraphWorkflowsView').then((m) => ({ default: m.GraphWorkflowsView })),
 );
+const SignalsView = lazy(() =>
+  import('@src/components/signals/SignalsView').then((m) => ({ default: m.SignalsView })),
+);
+const RunsView = lazy(() => import('@src/components/runs/RunsView').then((m) => ({ default: m.RunsView })));
 const SurveyView = lazy(() =>
   import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })),
 );
@@ -385,6 +394,18 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
             <GraphWorkflowsView />
           </Suspense>
         );
+      case ViewType.SIGNALS:
+        return (
+          <Suspense fallback={null}>
+            <SignalsView />
+          </Suspense>
+        );
+      case ViewType.PROCESS_RUNS:
+        return (
+          <Suspense fallback={null}>
+            <RunsView />
+          </Suspense>
+        );
       case ViewType.K_BROWSER:
         return (
           <Suspense fallback={null}>
@@ -423,6 +444,8 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         );
       case ViewType.ASSETS:
         return <AssetsPage />;
+      case ViewType.HELPDESK:
+        return <HelpdeskPortalPage />;
       case ViewType.PROJECT: {
         // A project dock scoped to a collaboration_room (…/collaboration_room/<id>)
         // renders the collaboration room; a bare project dock is the assets

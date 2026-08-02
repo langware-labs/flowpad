@@ -1,4 +1,4 @@
-import { Agent, AgenticProcess, ComputeNode, dataContext, Project } from '@sdk';
+import { SubAgent, AgenticProcess, ComputeNode, dataContext, Project } from '@sdk';
 import { useOutletContext } from 'react-router';
 
 /**
@@ -16,7 +16,7 @@ import { useOutletContext } from 'react-router';
  */
 export interface AgentContext {
   /** The current agent instance, or null/undefined if not loaded */
-  agent: Agent | null | undefined;
+  agent: SubAgent | null | undefined;
   /** The current agentic process instance, or null/undefined if not loaded */
   flow: AgenticProcess | null | undefined;
   /** The compute node for executing commands, or null/undefined if not available */
@@ -28,10 +28,10 @@ export interface AgentContext {
 export const useAgentContext = (): AgentContext => {
   const outletContext = useOutletContext<AgentContext>(); // Get outlet-specific values
 
-  // Derive agent from activeEntity when activeEntity is an Agent type
+  // Derive agent from activeEntity when activeEntity is a SubAgent type
   // Note: dataContext is a global singleton and doesn't trigger re-renders
   const agentFromContext =
-    dataContext.activeEntity && Agent.isType(dataContext.activeEntity) ? dataContext.activeEntity : null;
+    dataContext.activeEntity && SubAgent.isType(dataContext.activeEntity) ? dataContext.activeEntity : null;
 
   // Merge: outlet context takes precedence, fallback to dataContext
   return {

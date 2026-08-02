@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Example RSS Feed</title>
+    <link>https://example.test/</link>
+    <description>An RSS 2.0 feed</description>
+    <item>
+      <guid isPermaLink="false">rss-item-0001</guid>
+      <title>First rss item</title>
+      <link>https://example.test/r/1</link>
+      <description>Body of the first rss item mentioning platypus.</description>
+      <pubDate>Thu, 30 Jul 2026 10:00:00 GMT</pubDate>
+      <author>ada@example.test</author>
+    </item>
+    <item>
+      <guid isPermaLink="false">rss-item-0002</guid>
+      <title>Second rss item</title>
+      <link>https://example.test/r/2</link>
+      <description>Body of the second rss item.</description>
+      <pubDate>Wed, 29 Jul 2026 08:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

@@ -11,6 +11,15 @@ import {
 } from '@src/components/prompt-library/useLibraryPromptsForProject';
 import type { AgenticProcess, Prompt } from '@sdk';
 
+// `view-mode-context` reads the current dock, which calls `useLocation()`.
+// These tests render without a Router, so stub only that hook and keep the
+// rest of the module real (a full mock would drop `useDockNavigation`).
+vi.mock('@src/navigation/useDockNavigation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/navigation/useDockNavigation')>()),
+  useCurrentDock: () => null,
+}));
+
+
 vi.mock('@src/components/prompt-library/useLibraryPromptsForProject', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@src/components/prompt-library/useLibraryPromptsForProject')>();
   return { ...actual, useLibraryPromptsForProject: vi.fn() };

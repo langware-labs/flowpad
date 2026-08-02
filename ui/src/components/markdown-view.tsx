@@ -169,15 +169,21 @@ export const MarkdownView = ({
   value,
   compact = false,
   codeChrome = true,
+  components,
 }: {
   value: string;
   compact?: boolean;
   codeChrome?: boolean;
+  /** Element overrides merged OVER the defaults — for renderers that can resolve
+   *  something this component cannot know about on its own. The portal uses it
+   *  for `img`/`a`, which are document-relative and need a project to resolve
+   *  against (see `useMarkdownAssetComponents`). */
+  components?: Partial<Components>;
 }) => (
   <ReactMarkdown
     remarkPlugins={[remarkGfm]}
     rehypePlugins={[rehypeRaw, rehypeSanitize, rehypeHighlight]}
-    components={markdownComponents({ compact, codeChrome })}
+    components={{ ...markdownComponents({ compact, codeChrome }), ...components }}
   >
     {value}
   </ReactMarkdown>

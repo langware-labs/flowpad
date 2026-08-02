@@ -9,8 +9,7 @@ import { homedir } from 'node:os';
 import * as path from 'node:path';
 
 import { createSdkRealm } from '../_sdk_realm';
-import { pickPendingInvitation } from './_matrix';
-import { HUB_URL, parseDotEnv } from './_hub';
+import { HUB_URL, parseDotEnv, syncAssignedConversationAt } from './_hub';
 
 /** The freshly-evaluated `@sdk` module namespace for one realm/instance. */
 export type SdkRealm = typeof import('@sdk');
@@ -195,22 +194,7 @@ export async function queryMessageAttachments(inst: ResolvedInstance, fmId: stri
   ).catch(() => [])) as any[];
 }
 
-/** Find the exact pending invitation after the receiver's production catch-up. */
-export async function findPendingInvitation(inst: ResolvedInstance, convId: string): Promise<any> {
-  // Pull pending invitations only. `fetchConversations()` runs the broad
-  // conversation/message catch-up and, on a long-lived staff account, retries
-  // every historical bundle before this exact invitation can be observed.
-  // The production invitation-sync action exists specifically to avoid that
-  // unrelated work on realtime accept paths.
-  const response = await fetch(`${inst.apiUrl}/api/v1/graph/invitation-sync`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conversation_id: convId }),
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok || body?.status !== 'SUCCESS') {
-    throw new Error(`invitation sync failed on ${inst.name}: HTTP ${response.status} ${JSON.stringify(body)}`);
-  }
-  const all: any[] = await (inst.sdk.Invitation as any).query({ query: {} }, true);
-  return pickPendingInvitation(all, convId);
+/** Materialize one immediately assigned conversation on the receiver. */
+export async function syncAssignedConversation(inst: ResolvedInstance, convId: string): Promise<unknown> {
+  return syncAssignedConversationAt(`${inst.apiUrl}/api/v1`, convId, inst.name);
 }

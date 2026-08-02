@@ -22,6 +22,7 @@ import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 
 const nav = vi.hoisted(() => ({ openDock: vi.fn(), openTab: vi.fn(), openAssets: vi.fn() }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => null,
   useDockNavigation: () => ({ navigation: nav, currentDock: null, isDockUrl: false, windowMode: false }),
 }));
 // Heavy presentational leaves — irrelevant to the nav decision.

@@ -247,3 +247,100 @@ async def test_an_unresolvable_provider_blames_the_right_thing(monkeypatch):
     monkeypatch.setattr("flow_sdk.core.oauth.hub_providers._hub_reachable", lambda: True)
     assert "Unknown OAuth provider" in unresolved_provider_reason("madeup")
 
+
+
+def _hub_table(monkeypatch, values):
+    """Stand in for the hub's USER env-var table.
+
+    Shape matters here and is the whole point of these tests: the hub's USER
+    table is built by `get_oauth_providers_as_env_table`, which merges
+    base-rows-only over the provider list — so it contains PROVIDER rows, and
+    the token row the credential is stored under is the join side and is never
+    emitted.
+    """
+
+    async def _data(user_id, *, action, sub_path, on_error, level=None):
+        assert (action, sub_path) == ("env-var", "table")
+        return {"values": values}
+
+    monkeypatch.setattr("flow_sdk.core.oauth.hub_oauth._hub_data", _data)
+    monkeypatch.setattr("flow_sdk.core.oauth.hub_providers._cloud_user_id", lambda: "u-1")
+
+
+@pytest.mark.asyncio
+async def test_hub_holds_credential_reads_the_provider_row(monkeypatch):
+    """The regression: matching on `name == credentials_name` never matched.
+
+    `GOOGLEDRIVE_OAUTH_USER_TOKEN` is not a row name in this table and never
+    will be — the rows are named for the PROVIDER. The old predicate therefore
+    returned False for every hub provider forever, so `poll_hub_credential`
+    burned its whole timeout and `_adopt_hub_credential` was never reached: no
+    hub credential was ever adopted onto a desktop.
+    """
+    from flow_sdk.core.oauth.hub_oauth import hub_holds_credential
+
+    _hub_table(
+        monkeypatch,
+        [
+            {
+                "name": "googledrive",
+                "var_type": "oauth_provider",
+                "ref_name": "GOOGLEDRIVE_OAUTH_USER_TOKEN",
+                "var_status": "AVAILABLE",
+            }
+        ],
+    )
+
+    assert await hub_holds_credential("GOOGLEDRIVE_OAUTH_USER_TOKEN") is True
+
+
+@pytest.mark.asyncio
+async def test_hub_holds_credential_is_false_until_the_token_lands(monkeypatch):
+    """A provider the hub defines but holds no token for is MISSING, not held.
+
+    This is the state the poll sits in while the user is still at the provider,
+    so getting it wrong in the other direction would report success before any
+    token existed and adopt an empty credential.
+    """
+    from flow_sdk.core.oauth.hub_oauth import hub_holds_credential
+
+    _hub_table(
+        monkeypatch,
+        [
+            {
+                "name": "googledrive",
+                "var_type": "oauth_provider",
+                "ref_name": "GOOGLEDRIVE_OAUTH_USER_TOKEN",
+                "var_status": "MISSING",
+            }
+        ],
+    )
+
+    assert await hub_holds_credential("GOOGLEDRIVE_OAUTH_USER_TOKEN") is False
+
+
+@pytest.mark.asyncio
+async def test_hub_holds_credential_does_not_confuse_providers(monkeypatch):
+    """One provider being connected must not answer for another."""
+    from flow_sdk.core.oauth.hub_oauth import hub_holds_credential
+
+    _hub_table(
+        monkeypatch,
+        [
+            {
+                "name": "googledrive",
+                "var_type": "oauth_provider",
+                "ref_name": "GOOGLEDRIVE_OAUTH_USER_TOKEN",
+                "var_status": "AVAILABLE",
+            },
+            {
+                "name": "github",
+                "var_type": "oauth_provider",
+                "ref_name": "GITHUB_OAUTH_USER_TOKEN",
+                "var_status": "MISSING",
+            },
+        ],
+    )
+
+    assert await hub_holds_credential("GOOGLEDRIVE_OAUTH_USER_TOKEN") is True
+    assert await hub_holds_credential("GITHUB_OAUTH_USER_TOKEN") is False

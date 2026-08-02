@@ -5,12 +5,54 @@
  * - StationCard — agent / function atlas .card: mono kicker + pip,
  *   serif title, live status line, model-size selector (agents), inline vs
  *   subprocess badge (functions), heartbeat while running, active/queued badges.
+ * - InletNode — a bus subscription or the `$external` injection door: what
+ *   FEEDS this flow from outside it. Synthesized from `graph.json`, never a
+ *   real node, so it carries no status of its own — it pulses when a matching
+ *   event arrives.
  */
 import { useEffect, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { functionRuntime, type GraphWorkflowDocNode } from '@sdk/services/graph-workflows';
 import { asStr, nodeStatusLine } from '../fmt';
 import { useStudio } from '../store';
+
+/** Payload the canvas synthesizes for an inlet. */
+export interface InletData {
+  /** Bus pattern, or `$external` for the injection door. */
+  label: string;
+  target?: string;
+  external?: boolean;
+}
+
+export function InletNode({ data, selected, id }: NodeProps) {
+  const inlet = data as unknown as InletData;
+  const hot = useStudio((s) => s.hot.has(id));
+  const dot = inlet.label.lastIndexOf('.');
+  // Dim everything up to the last segment so the eye lands on the verb.
+  const prefix = dot > 0 ? inlet.label.slice(0, dot + 1) : '';
+  const leaf = dot > 0 ? inlet.label.slice(dot + 1) : inlet.label;
+
+  return (
+    <div
+      className={[
+        'afl-tag',
+        selected ? 'selected' : '',
+        hot ? 'hot' : '',
+        inlet.external ? 'external' : '',
+      ].join(' ')}
+      title={inlet.target ? `${inlet.label} → target ${inlet.target}` : inlet.label}
+    >
+      <div className="card">
+        <div className="ttl">
+          {prefix && <span className="pfx">{prefix}</span>}
+          {leaf}
+        </div>
+        {inlet.target && <div className="tgt">{inlet.target}</div>}
+      </div>
+      <Handle type="source" position={Position.Right} />
+    </div>
+  );
+}
 
 const MODEL_SIZES = ['sm', 'md', 'lg'] as const;
 const MODEL_TITLES: Record<string, string> = {
@@ -81,7 +123,8 @@ export function StationCard({ data, selected }: NodeProps) {
   const isAgent = !isFunction;
 
   const { live, proc, running, now } = useLive(def.id);
-  const openProcess = useStudio((s) => s.openProcess);
+  const previewRuns = useStudio((s) => s.previewRuns);
+  const flowId = useStudio((s) => s.flowId);
   const mutateDoc = useStudio((s) => s.mutateDoc);
 
   const failed = !running && !!live?.error;
@@ -97,8 +140,8 @@ export function StationCard({ data, selected }: NodeProps) {
     });
   };
 
-  const agentRef = !isFunction && typeof nd.typeid === 'string' && nd.typeid.startsWith('agent-')
-    ? nd.typeid.slice('agent-'.length)
+  const agentRef = !isFunction && typeof nd.typeid === 'string' && nd.typeid.startsWith('subagent-')
+    ? nd.typeid.slice('subagent-'.length)
     : '';
   const sub = isFunction
     ? nd.function || 'no function'
@@ -138,18 +181,22 @@ export function StationCard({ data, selected }: NodeProps) {
         <div className="sub" title={nd.prompt || sub}>
           {sub}
         </div>
-        <div className="stl" style={{ color: statusLine.color }} title={live?.error || statusLine.text}>
+        <div className={`stl stl-${statusLine.tone}`} title={live?.error || statusLine.text}>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{statusLine.text}</span>
           {live?.processId && running && (
             <a
               className="lnk nodrag"
-              title={`open process ${live.processId}`}
+              title="show this station's runs"
               onClick={(e) => {
                 e.stopPropagation();
-                openProcess?.(live.processId!);
+                previewRuns?.({
+                  scope: flowId ? { flow_id: flowId, node_id: def.id } : { node_id: def.id },
+                  runId: live.processId,
+                  title: def.name || def.id,
+                });
               }}
             >
-              proc ⬈
+              runs ⬈
             </a>
           )}
         </div>

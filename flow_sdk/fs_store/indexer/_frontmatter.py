@@ -244,12 +244,37 @@ def write_frontmatter_id(path: Any, entity_id: str) -> bool:
         return False
 
 
+def _plain_yaml(value: Any) -> Any:
+    """Recurse a value down to plain YAML-representable Python.
+
+    Lives here rather than in one type's ``default_body_fn`` so every
+    folder-asset type is covered, not just the first one to hit the problem.
+    """
+    if isinstance(value, dict):
+        return {str(k): _plain_yaml(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain_yaml(v) for v in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
 def _render_frontmatter(fields: dict[str, Any]) -> str:
     """Serialize a dict to a ``---\\n...\\n---`` YAML frontmatter block."""
     try:
         import yaml  # type: ignore
 
-        yaml_text = yaml.dump(fields, default_flow_style=False, sort_keys=False, allow_unicode=True).strip()
+        # safe_dump over coerced values. Entity fields arrive as TrackedList /
+        # TrackedDict (mutation-tracking collections holding a `_parent` backref
+        # to the entity) and as TypeId. Plain `yaml.dump` happily emitted
+        # `!!python/object/new:` for those and, following `_parent`, serialized
+        # the ENTIRE entity into the frontmatter — one UI field edit once turned
+        # a 26-line agent.md into 190 lines of pickled object graph carrying
+        # absolute paths. safe_dump makes an un-coerced exotic type raise (and
+        # fall to the simple renderer below) instead of pickling itself.
+        yaml_text = yaml.safe_dump(
+            _plain_yaml(fields), default_flow_style=False, sort_keys=False, allow_unicode=True
+        ).strip()
     except Exception:
         # Fallback: simple key: value rendering
         parts: list[str] = []

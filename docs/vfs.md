@@ -15,7 +15,7 @@ vfs://{type}-{id}/{entity_sub_path}
 | Component           | Required | Description                                                             |
 | ------------------- | -------- | ----------------------------------------------------------------------- |
 | `vfs://`            | No       | Protocol prefix. May be omitted — paths are valid without it.           |
-| `{type}`            | Yes      | Entity type: `compute_node`, `agent`, `project`, `workspace`, `user`    |
+| `{type}`            | Yes      | Entity type: `compute_node`, `subagent`, `project`, `workspace`, `user`    |
 | `{id}`              | Yes      | Entity identifier (see [ID Formats](#id-formats) below)                 |
 | `{entity_sub_path}` | No       | Path within the entity's storage. No leading `/`, forward slashes only. |
 

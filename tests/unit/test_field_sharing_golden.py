@@ -197,9 +197,11 @@ def test_the_two_egress_seams_now_agree():
              "is_draft", "is_read", "prompt_auto_handled", "received_at", "remote", "system"],
             # `body_status` is an enum the filler leaves None — it is still pinned by
             # the LOCAL_ONLY assertion above, just not by the leak guard.
+            # `origin` is a nested CloudOrigin model the filler leaves None —
+            # the cloud record this message caches, absent on Flowpad-native ones.
             ["attachment", "body_status", "env_vars", "expand", "fs_storage_provider",
-             "git_origin", "kind", "last_active_at", "private_context_entities_",
-             "shared_context_entities"],
+             "git_origin", "kind", "last_active_at", "origin",
+             "private_context_entities_", "shared_context_entities"],
         ),
         (
             "flow_sdk.builtin.claude_session", "ClaudeSession", {}, [],

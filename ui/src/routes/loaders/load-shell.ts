@@ -463,12 +463,19 @@ export async function loadShellRoute(
   const shellUrl: ShellUrlBuilder = (p?: string) =>
     buildShellRedirectUrl(requestPath, p, carry?.options);
 
-  // Gate on the FlowSync WS being OPEN. The dispatch chain below
-  // (loadProcess → process.start → shell.attachPty → _reattach → callActionOverWS)
-  // throws synchronously when the socket isn't connected, which on cold tabs
-  // races against initSdk's fire-and-forget connect. 5 s budget; on timeout we
-  // surface a toast and fall through (the existing redirect-on-failure chain
-  // still applies if the downstream WS call ultimately fails).
+  // A process URL resolves identity/context only. Its mounted TerminalPanel
+  // owns the WS-bound start/attach, so do not hold this route on realtime
+  // readiness before React Router can commit the URL.
+  if (pointer && DockPointer.isAgenticProcessPointer(pointer)) {
+    const processId = DockPointer.extractAgenticProcessId(pointer);
+    await routeProcessPointer(processId, shellUrl, requestPath, carry);
+    perfLog('loadShellRoute done (agentic process path)');
+    return;
+  }
+
+  // Plain-Shell paths still attach inside loadShell, so retain their existing
+  // FlowSync readiness gate and budget. On timeout we surface a toast and let
+  // the existing failure/recovery chain decide what to render.
   try {
     await perfTime('connectionManager.waitForConnected', () =>
       connectionManager.waitForConnected(5000),
@@ -486,13 +493,6 @@ export async function loadShellRoute(
 
   if (!pointer) {
     await routeDefaultShell(shellUrl);
-    return;
-  }
-
-  if (DockPointer.isAgenticProcessPointer(pointer)) {
-    const processId = DockPointer.extractAgenticProcessId(pointer);
-    await routeProcessPointer(processId, shellUrl, requestPath, carry);
-    perfLog('loadShellRoute done (agentic process path)');
     return;
   }
 

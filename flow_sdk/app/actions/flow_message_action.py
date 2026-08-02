@@ -14,7 +14,7 @@ import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, NamedTuple, Optional
 
 from flow_sdk import inbox
 from flow_sdk._compat import UTC
@@ -48,6 +48,10 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.invitation import Invitation
+
+
+def _body_status_value(status: str | BodyStatus | None) -> str | None:
+    return status.value if isinstance(status, BodyStatus) else status
 
 
 def _meaningful_name(title: str) -> str:
@@ -388,7 +392,7 @@ async def handle_upload_body(fm_id: str, *, transfer_mode: str = "copy") -> ApiR
     return ApiSuccessResponse(
         data={
             "flow_message_id": fm.id,
-            "body_status": fm.body_status.value if hasattr(fm.body_status, "value") else fm.body_status,
+            "body_status": _body_status_value(fm.body_status),
             "attachment_filename": fm.attachment_filename,
         }
     )
@@ -433,7 +437,7 @@ async def handle_download_body(fm_id: str, *, overwrite: bool = False) -> ApiRes
     return ApiSuccessResponse(
         data={
             "flow_message_id": fm.id,
-            "body_status": fm.body_status.value if hasattr(fm.body_status, "value") else fm.body_status,
+            "body_status": _body_status_value(fm.body_status),
         }
     )
 
@@ -1292,7 +1296,7 @@ async def conversation_create() -> ApiResponse:
 
 
 # ---------------------------------------------------------------------------
-# Community / support-center actions
+# Help-desk (support) actions
 # ---------------------------------------------------------------------------
 
 
@@ -1300,7 +1304,7 @@ async def _hub_action(method: str, path: str, body: Optional[dict] = None, timeo
     """Authenticated HTTP call to a hub action; returns the parsed ApiResponse
     envelope (``{"status","message","data"}``) or ``None`` on transport failure.
 
-    Community queue/ticket actions are request/response project actions — HTTP is
+    Help-desk queue/ticket actions are request/response project actions — HTTP is
     a better fit (and more robust) than the message-fanout WS bridge, which is
     reserved for the add_message fast-path. Mirrors the authed-httpx pattern in
     ``notification_action._hub_knows_conversation``."""
@@ -1323,46 +1327,70 @@ async def _hub_action(method: str, path: str, body: Optional[dict] = None, timeo
             r = await h.request(method, url, headers=headers, json=None if method == "GET" else (body or {}))
             return r.json()
     except Exception as e:  # noqa: BLE001
-        logger.warning("[community] hub %s %s failed: %s", method, path, e)
+        logger.warning("[helpdesk] hub %s %s failed: %s", method, path, e)
         return None
 
 
-_COMMUNITY_PROJECT_ID_CACHE: Optional[str] = None
+class HelpdeskTarget(NamedTuple):
+    """Which help desk a request should be routed to.
+
+    ``project_id`` is the hub project that owns the ticket queue;
+    ``portal_git_url`` is that desk's help-content repo (may be ``None`` — a
+    desk can answer tickets without publishing a portal).
+    """
+
+    project_id: str
+    portal_git_url: Optional[str] = None
 
 
-async def _resolve_community_project_id() -> Optional[str]:
-    """The fixed community/support project id, learned from the hub's
-    ``/version`` (``community_project_id``). ``None`` when the hub is
-    unreachable or doesn't advertise one. See CommunityConfig and the hub's
-    ``ensure_community_project``.
+async def _hub_default_helpdesk() -> Optional[HelpdeskTarget]:
+    """The deployment's default help desk, from the hub's ``/version``.
 
-    Cached for the process lifetime once resolved — it's a deployment constant,
-    so re-fetching ``/version`` on every ticket open / queue poll is wasted I/O.
-    A miss is not cached, so a transient hub outage retries next call."""
-    global _COMMUNITY_PROJECT_ID_CACHE
-    if _COMMUNITY_PROJECT_ID_CACHE:
-        return _COMMUNITY_PROJECT_ID_CACHE
+    ``None`` when the hub is unreachable or doesn't advertise one. This is the
+    terminal fallback for :func:`resolve_helpdesk` — the end of every support
+    chain. See the hub's ``ensure_helpdesk_project``.
+    """
     try:
         from flow_sdk.cloud_client.transport.hub_http import get_info  # noqa: PLC0415
 
         info = await get_info() or {}
-        cid = info.get("community_project_id")
-        if isinstance(cid, str) and cid.strip():
-            _COMMUNITY_PROJECT_ID_CACHE = cid
-            return cid
+        pid = info.get("helpdesk_project_id")
+        if isinstance(pid, str) and pid.strip():
+            portal = info.get("helpdesk_portal_git_url")
+            return HelpdeskTarget(pid, portal if isinstance(portal, str) and portal.strip() else None)
         return None
     except Exception:  # noqa: BLE001
         return None
 
 
-@action.post(action_name="community-start-ticket", types=None)
-async def community_start_ticket() -> ApiResponse:
-    """Open a support ticket — a guest-authored ``community`` conversation under
-    the hub's fixed community project.
+async def resolve_helpdesk(project_id: Optional[str] = None) -> Optional[HelpdeskTarget]:
+    """Which help desk serves ``project_id`` (or the app at large when None).
+
+    Resolution order — nearest desk wins, so support chains terminate:
+
+    1. the project's own helpdesk pointer, when it names one *(phase 2; the
+       pointer field does not exist yet, so this arm never fires today)*
+    2. the hub's default desk (``/version``)
+
+    Deliberately NOT memoized. The pre-rename implementation cached one id for
+    the process lifetime on the premise that the desk was a deployment
+    constant. Once resolution depends on the calling project that premise is
+    false, and a process-global memo would serve one project's desk to another.
+    ``get_info`` is a single cheap GET on a cold path (ticket open / queue
+    poll), so re-resolving is the correct trade.
+    """
+    # (1) reserved for the per-project pointer; falls through until it exists.
+    return await _hub_default_helpdesk()
+
+
+@action.post(action_name="helpdesk-start-ticket", types=None)
+async def helpdesk_start_ticket() -> ApiResponse:
+    """Open a support ticket — a guest-authored ``helpdesk`` conversation under
+    the resolved helpdesk project.
 
     Routes through the hub (``Project.start_guest_conversation``), then
     materializes the conversation + first message locally as a hub-mirrored
-    ``kind=community`` row so it appears in the guest's UI immediately (the hub
+    ``kind=helpdesk`` row so it appears in the guest's UI immediately (the hub
     fanout skips the sender, so the local backend is this row's source of
     truth). Returns the new conversation id for navigation.
     """
@@ -1377,16 +1405,17 @@ async def community_start_ticket() -> ApiResponse:
         if not text:
             return ApiFailResponse(message="text is required")
 
-        community_id = await _resolve_community_project_id()
-        if not community_id:
-            return ApiFailResponse(message="Community support is unavailable on this hub")
+        target = await resolve_helpdesk()
+        if not target:
+            return ApiFailResponse(message="Help desk is unavailable on this hub")
+        helpdesk_id = target.project_id
 
-        resp = await _hub_action("POST", f"/graph/project/{community_id}/start_guest_conversation", {"text": text})
+        resp = await _hub_action("POST", f"/graph/project/{helpdesk_id}/start_guest_conversation", {"text": text})
         if not resp or resp.get("status") != "SUCCESS":
             msg = (resp or {}).get("message") or "hub unreachable"
             # 502, not the default 500: the failure is the UPSTREAM hub rejecting
-            # or not resolving the community project (e.g. an unseeded community
-            # hub returns 401 "Entity project-<id> not found") — our backend is
+            # or not resolving the helpdesk project (e.g. an unseeded hub
+            # returns 401 "Entity project-<id> not found") — our backend is
             # healthy, so a 500 Internal Server Error misattributes it to us.
             return ApiFailResponse(message=f"Could not open support ticket: {msg}", status_code=502)
         conv_data = resp.get("data") or {}
@@ -1403,12 +1432,12 @@ async def community_start_ticket() -> ApiResponse:
 
         title = text if len(text) <= 60 else f"{text[:60].rstrip()}…"
         # Hub-owned conversation: no local project_id (mirrors how received
-        # remote conversations materialize); carry the community project as the
+        # remote conversations materialize); carry the helpdesk project as the
         # remote project identity for traceability.
         await ensure_conversation_entity(
             conv_id,
             parent_typeid=None,
-            remote_project_id=community_id,
+            remote_project_id=helpdesk_id,
             title=title,
             someone_typeid=someone_typeid,
         )
@@ -1420,11 +1449,11 @@ async def community_start_ticket() -> ApiResponse:
         try:
             await _fetch_conversation_messages(conv_id, someone_typeid)
         except Exception as e:  # noqa: BLE001
-            logger.warning("[community-start-ticket] message sync failed (non-fatal): %s", e)
+            logger.warning("[helpdesk-start-ticket] message sync failed (non-fatal): %s", e)
 
         conv = await Conversation.get_one({"id": conv_id})
         if conv:
-            conv.kind = ConversationKind.COMMUNITY
+            conv.kind = ConversationKind.HELPDESK
             conv.remote = True
             # Carry the hub owner VERBATIM when present; never mask a genuinely
             # null hub owner with a stale local value. Reflection keeps the
@@ -1434,15 +1463,15 @@ async def community_start_ticket() -> ApiResponse:
             with remote_reflection():
                 await conv.save(someone_typeid, notify=False)
 
-        return ApiSuccessResponse(data={"conversation_id": conv_id, "project_id": community_id})
+        return ApiSuccessResponse(data={"conversation_id": conv_id, "project_id": helpdesk_id})
     except Exception as e:
-        logger.error("[flow_message_action] community-start-ticket error: %s", e, exc_info=True)
+        logger.error("[flow_message_action] helpdesk-start-ticket error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed to start support ticket: {str(e)}")
 
 
 @action.post(action_name="conversation-pickup", types=None)
 async def conversation_pickup() -> ApiResponse:
-    """Staff-side: pick up (join) a community ticket so the caller starts
+    """Staff-side: pick up (join) a helpdesk ticket so the caller starts
     receiving its messages and can reply. Proxies to the hub ``pickup`` action,
     then syncs the conversation's messages locally. Hub gates on project
     membership."""
@@ -1475,9 +1504,9 @@ async def conversation_pickup() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to pick up conversation: {str(e)}")
 
 
-@action.post(action_name="community-tickets-list", types=None)
-async def community_tickets_list() -> ApiResponse:
-    """Staff triage queue: list the community project's tickets (members-only on
+@action.post(action_name="helpdesk-tickets-list", types=None)
+async def helpdesk_tickets_list() -> ApiResponse:
+    """Staff triage queue: list the helpdesk project's tickets (members-only on
     the hub). Returns the lightweight rows verbatim so the UI can render an
     "unpicked" queue — unpicked tickets don't fan out to non-participants, so
     this is the only way staff discover them. Picking one up materializes it
@@ -1487,29 +1516,30 @@ async def community_tickets_list() -> ApiResponse:
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="No authenticated user in request context")
 
-        community_id = await _resolve_community_project_id()
-        if not community_id:
-            return ApiFailResponse(message="Community support is unavailable on this hub")
+        target = await resolve_helpdesk()
+        if not target:
+            return ApiFailResponse(message="Help desk is unavailable on this hub")
+        helpdesk_id = target.project_id
 
-        resp = await _hub_action("GET", f"/graph/project/{community_id}/community_conversations")
+        resp = await _hub_action("GET", f"/graph/project/{helpdesk_id}/helpdesk_conversations")
         # Propagate a hub authorization/transport failure instead of synthesizing
         # an empty success. A non-staff caller gets a FAIL envelope here ("no
         # valid access for role ['guest']"); collapsing that to {tickets: []}
         # makes "unauthorized" indistinguishable from "empty queue" — it hid a
-        # real staff-UI robustness gap and defeated the community_two_client
+        # real staff-UI robustness gap and defeated the helpdesk_two_client
         # skip-guard (its try/catch never fired on a non-staff hub).
         if not resp or resp.get("status") != "SUCCESS":
             msg = (resp or {}).get("message") or "hub unreachable"
-            # 502: upstream hub rejected/could not resolve the community queue
+            # 502: upstream hub rejected/could not resolve the helpdesk queue
             # (non-staff caller → "no valid access"), not an internal error here.
-            return ApiFailResponse(message=f"Could not list community tickets: {msg}", status_code=502)
+            return ApiFailResponse(message=f"Could not list help desk tickets: {msg}", status_code=502)
         rows = resp.get("data") or []
         if not isinstance(rows, list):
             rows = []
-        return ApiSuccessResponse(data={"tickets": rows, "project_id": community_id})
+        return ApiSuccessResponse(data={"tickets": rows, "project_id": helpdesk_id})
     except Exception as e:
-        logger.error("[flow_message_action] community-tickets-list error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed to list community tickets: {str(e)}")
+        logger.error("[flow_message_action] helpdesk-tickets-list error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to list help desk tickets: {str(e)}")
 
 
 # ---------------------------------------------------------------------------
@@ -1571,7 +1601,7 @@ async def _download_and_unpack_bundle(
     )
 
     if body_status is not None:
-        bs = body_status.value if isinstance(body_status, BodyStatus) else body_status
+        bs = _body_status_value(body_status)
         if bs != BodyStatus.READY.value:
             logger.debug(
                 "[bundle] skip download fm=%s — body_status=%s (no bundle to pull)",
@@ -1615,14 +1645,8 @@ async def _download_and_unpack_bundle(
                 # hub advertised body_status=READY (the gate above) and the body is
                 # now on disk — so the row IS downloadable. Stamp READY so the
                 # receiver reflects that instead of the stale pack-time UPLOADING.
-                target_bs = (
-                    body_status.value if isinstance(body_status, BodyStatus) else body_status
-                ) or BodyStatus.READY.value
-                current_bs = (
-                    refreshed.body_status.value
-                    if isinstance(refreshed.body_status, BodyStatus)
-                    else refreshed.body_status
-                )
+                target_bs = _body_status_value(body_status) or BodyStatus.READY.value
+                current_bs = _body_status_value(refreshed.body_status)
                 if current_bs != target_bs:
                     refreshed.body_status = BodyStatus(target_bs)
                     await refreshed.save(notify=False)
@@ -1749,10 +1773,17 @@ async def _process_single_hub_message(raw: dict) -> str | None:
                 attachment_filename,
                 body_status=raw.get("body_status"),
             )
-            if success and existing is None:
-                # unpack materialized the FM row itself (body + the real entity
-                # data carried in the bundle) — nothing left to persist.
-                return fm_id
+            if success:
+                # Unpack owns the durable row and may have changed local-only
+                # fields (notably stamping body_status=READY). Refresh before
+                # the metadata merge below: reusing the pre-download object
+                # would preserve its stale HUB_WRITE values and overwrite the
+                # freshly unpacked state.
+                existing = await FlowMessage.get_one({"id": fm_id})
+                if existing is None:
+                    # A no-row success means unpack materialized the message;
+                    # there is no separate header write left to perform.
+                    return fm_id
             # Download failed (body still uploading, a transient hub error, or —
             # the receiver pre-accept case — the recipient can't pull the bundle
             # body yet). Do NOT return empty: fall through to materialize the FM
@@ -1765,6 +1796,18 @@ async def _process_single_hub_message(raw: dict) -> str | None:
             # body stays un-downloaded (is_body_downloaded()=False), so the next
             # sync pass re-attempts the bundle through this same branch: the
             # download gate above is keyed on body-presence, not row existence.
+        hub_body_status = _body_status_value(raw.get("body_status"))
+        if existing is not None and hub_body_status == BodyStatus.READY.value:
+            local_body_status = _body_status_value(existing.body_status)
+            if existing.is_body_downloaded() and local_body_status != BodyStatus.READY.value:
+                # READY is monotonic once the receiver has the body. This also
+                # heals rows left at pack-time UPLOADING after a missed bridge
+                # UPDATE; never apply the inverse downgrade from stale hub data.
+                existing.body_status = BodyStatus.READY
+                if not FlowMessage.is_stale(existing, raw):
+                    await existing.save(notify=False)
+                    await existing.notify_updated()
+                    return fm_id
     if existing is not None and not FlowMessage.is_stale(existing, raw):
         # Metadata current (body handled above).
         return fm_id
@@ -2149,19 +2192,6 @@ def _invitation_common_fields(hub_inv: dict) -> dict:
     }
 
 
-# Membership-invitation targets that get a pre-accept local mirror. Exactly
-# the container types whose local entity displays by ``name`` and has no
-# on-disk asset folder — the only shape the {id, name, icon} mirror payload
-# fits (see the allowlist rationale at the call site).
-_PRE_ACCEPT_MIRROR_TYPES: frozenset[str] = frozenset(
-    {
-        BuiltinEntityType.ORGANIZATION.value,
-        BuiltinEntityType.TEAM.value,
-        BuiltinEntityType.PROJECT.value,
-    }
-)
-
-
 def _membership_cls(target_type: str | None):
     """Entity class for a membership target type (organization / team / project / …).
 
@@ -2193,6 +2223,7 @@ async def _materialize_membership_invitation(
     a real entity.
     """
     from flow_sdk.app.actions.membership_sync import (  # noqa: PLC0415
+        MEMBERSHIP_MIRROR_TYPES,
         materialize_remote_membership_entity,
     )
     from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
@@ -2213,7 +2244,7 @@ async def _materialize_membership_invitation(
     # the Invitation row alone carries the display name until accept
     # materializes the real entity (e.g.
     # ``materialize_accepted_task_invitation`` for tasks).
-    if target_type in _PRE_ACCEPT_MIRROR_TYPES:
+    if target_type in MEMBERSHIP_MIRROR_TYPES:
         try:
             cls = _membership_cls(target_type)
             await materialize_remote_membership_entity(
@@ -2828,10 +2859,21 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
             synced = 0
             for raw_fm in child_list:
                 fm_id = raw_fm["id"]
-                # Cheap skip: already-current rows need no work (and no body
-                # re-download). is_stale(None, ...) is True so new ids pass.
+                # Cheap skip: already-current rows need no metadata work, but
+                # READY-body recovery is independent. Push is best-effort; an
+                # exact pull must still download a missing body or heal a local
+                # pack-time UPLOADING marker after the Hub reached READY.
                 local = await FlowMessage.get_one({"id": fm_id})
-                if not FlowMessage.is_stale(local, raw_fm):
+                hub_body_status = _body_status_value(raw_fm.get("body_status"))
+                local_body_status = _body_status_value(getattr(local, "body_status", None))
+                attachment_filename = (raw_fm.get("attachment_filename") or "").strip()
+                needs_body_reconcile = bool(
+                    local is not None
+                    and attachment_filename
+                    and hub_body_status == BodyStatus.READY.value
+                    and (local_body_status != BodyStatus.READY.value or not local.is_body_downloaded())
+                )
+                if not FlowMessage.is_stale(local, raw_fm) and not needs_body_reconcile:
                     continue
                 try:
                     # Hub's FM payload doesn't carry conversation_id (the graph
@@ -3724,12 +3766,23 @@ async def conversation_message_sync() -> ApiResponse:
         conv_id = (body.get("conversation_id") or "").strip()
         if not conv_id:
             return ApiFailResponse(message="conversation_id required")
-        # Authorization: require a local Conversation row for this id. Without
-        # this gate any authenticated caller could trigger a hub fetch + local
-        # store write under any conv_id they happen to know.
+        # A bridge reconnect can miss the assignment frame that normally
+        # materializes this row. Heal that exact cache miss from the hub before
+        # syncing children. The hub's GET is the authorization gate: it only
+        # returns a conversation the logged-in user may read, so a guessed id
+        # cannot trigger a local write.
         local_conv = await Conversation.get_one({"id": conv_id})
         if local_conv is None:
-            return ApiFailResponse(message="conversation not found", status_code=404)
+            hub_conv = await hub_get(BuiltinEntityType.CONVERSATION, conv_id)
+            if not isinstance(hub_conv, dict) or not hub_conv.get("id"):
+                return ApiFailResponse(message="conversation not found", status_code=404)
+            local_conv = await _upsert_hub_conversation_metadata(
+                hub_conv,
+                request_info.someone_typeid,
+                existing=None,
+            )
+            if local_conv is None:
+                return ApiFailResponse(message="conversation not found", status_code=404)
         # A local-only conversation (remote=False) has no hub counterpart —
         # asking the hub is guaranteed to fail (and its 401 surfaces as a
         # spurious "Cloud sign-in expired" toast). Nothing to catch up.
@@ -3882,7 +3935,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
         try:
             target = None
             body_text = (resp.text or "").strip()
-            if body_text.startswith("{") or body_text.startswith("["):
+            if body_text.startswith(("{", "[")):
                 target = (resp.json() or {}).get("data")
             fm_prefix = f"{BuiltinEntityType.FLOW_MESSAGE.value}-"
             conv_prefix = f"{BuiltinEntityType.CONVERSATION.value}-"

@@ -4,12 +4,17 @@ import { PageId, isValidPage } from './ui/view-types';
  * Runtime hub-mode — is the app serving ONLY the hub page?
  *
  * The same OSS build serves both the local desktop ("desk") and the cloud hub
- * ("hub"), differing only by API base + the server-declared `supported_pages`
- * (bootstrap). When the served backend advertises no `desk` page, we run against
- * the hub, whose API is a strict SUBSET of the desktop `flow_sdk` — so
+ * ("hub"), differing only by API base + what the backend declares at bootstrap.
+ * Against the hub, whose API is a strict SUBSET of the desktop `flow_sdk`,
  * desktop-only endpoints (`tab`, `capability`, `bookmark`, `assets/types`,
  * `cloud/status`, `toplog/state`, `@local` compute node, …) must be skipped to
  * avoid 404/422s.
+ *
+ * This stays keyed on `supported_pages` even though the backend now also
+ * declares `runtime.kind`, because it is the signal that works against EVERY
+ * hub including one too old to send a runtime. `dataContext.runtimeKind` folds
+ * the two together (see context.ts) so the leaf and the context can never
+ * disagree about what the hub is.
  *
  * LEAF module by design: it imports only `view-types` and holds the value in a
  * module-local, fed by `setSupportedPagesForHubMode` at bootstrap. It must NOT
@@ -42,10 +47,12 @@ function _markResolved(): void {
 }
 
 /** Called once at bootstrap (`dataContext.bootstrapInfo` assignment) with the
- *  server's `supported_pages`. Also unblocks `hubModeReady()`. */
+ *  server's `supported_pages`. Also unblocks `hubModeReady()`.
+ *
+ *  Mirrors `normalizeSupportedPages`: a missing/empty/unknown list falls back
+ *  to `[desk]`, so hub-only is true ONLY when the server explicitly serves no
+ *  desk. */
 export function setSupportedPagesForHubMode(list: string[] | null | undefined): void {
-  // Mirrors `normalizeSupportedPages`: a missing/empty/unknown list falls back
-  // to `[desk]`, so hub-only is true ONLY when the server explicitly serves no desk.
   const known = (Array.isArray(list) ? list : []).filter(isValidPage);
   const pages = known.length > 0 ? known : [PageId.DESK];
   _isHubOnly = !pages.includes(PageId.DESK);

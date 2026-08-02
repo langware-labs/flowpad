@@ -13,6 +13,7 @@ import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useLingui } from '@lingui/react/macro';
+import { ChannelBadge } from './ChannelBadge';
 import { Trans } from '@lingui/react/macro';
 
 interface MessageBubbleProps {
@@ -162,7 +163,6 @@ export function MessageBubble({
   message,
   flowMessageId,
   flowMessage,
-  task,
   senderName,
   onEditName,
   onDeleteMessage,
@@ -301,6 +301,9 @@ export function MessageBubble({
               <Forward className="h-2.5 w-2.5" />
             </button>
           )}
+          {/* Channel mark — nothing at all when the message is ours
+              (`origin === null`), which is the whole badge rule. */}
+          <ChannelBadge origin={flowMessage?.origin} />
           {flowMessage?.cloned_from_id && (
             <span
               className="inline-flex items-center gap-0.5 text-[10px] italic text-muted-foreground"
