@@ -24,6 +24,18 @@ def _agent_files():
     return sorted(AGENT_ROOT.glob("*/agent.md"))
 
 
+#: Agents that have EARNED a bigger model, with the reason. Adding a row here
+#: is a cost decision and should read like one.
+COSTLIER_BY_DESIGN = {
+    # Sending mail is irreversible, and haiku could not reliably call the
+    # connector: an observed run searched for `create_draft` six times, printed
+    # the JSON body it meant to send as prose, and delivered nothing. Sonnet
+    # completed the same send first try. Tool-calling reliability is worth more
+    # than the token saving when the action cannot be undone.
+    "emailer": "sonnet",
+}
+
+
 def test_every_internal_launch_has_a_shipped_agent():
     assert {p.parent.name for p in _agent_files()} == EXPECTED
 
@@ -35,6 +47,10 @@ def test_shipped_agent_parses_and_is_cheap(path: Path):
     assert parsed.get("description"), "an agent with no description is unreadable in project home"
     assert parsed["system_prompt"], "an agent with no system prompt has no identity"
     # sm tier == haiku (model_tiers.py). Internal agents must not silently
-    # default to an expensive model.
-    assert parsed.get("model") == "haiku", f"{path.parent.name} is not on haiku"
+    # default to an expensive model — the exemptions below are deliberate and
+    # each one names the failure that bought it.
+    expected = COSTLIER_BY_DESIGN.get(path.parent.name, "haiku")
+    assert parsed.get("model") == expected, (
+        f"{path.parent.name} is on {parsed.get('model')}, expected {expected}"
+    )
     assert parsed.get("worker_type") == "claude"

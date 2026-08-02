@@ -40,7 +40,13 @@ from flow_sdk.builtin.agentic_process.launch_health import (
     emit_launch_failed,
     ensure_launchable,
 )
-from flow_sdk.ingest.driver import FetchResult, SendOutcome, StreamCursorView, StreamRef
+from flow_sdk.ingest.driver import (
+    FetchResult,
+    SendOutcome,
+    SendStatus,
+    StreamCursorView,
+    StreamRef,
+)
 from flow_sdk.ingest.health import SourceError
 
 logger = logging.getLogger(__name__)
@@ -100,6 +106,8 @@ class AgentDriver:
     provider = "agent"
     kind = "datasource.agent"
     record_kind = "content.message.email"
+    #: This transport can push a message back to its channel — see `send`.
+    sends = True
 
     def channel_for(self, source) -> str:
         """The connector IS the channel — `gmail`, later `slack`, `jira`.
@@ -151,10 +159,8 @@ class AgentDriver:
 
     # ── the send verb ─────────────────────────────────────────────────────────
 
-    sends = True
-
-    async def send(self, source, *, thread_key: str, to: str,
-                   text: str, subject: str = "") -> SendOutcome:
+    async def send(self, source, *, thread_key: str, to: str, text: str,
+                   subject: str = "", conversation_id: str = "") -> SendOutcome:
         """Reply into the channel, and record the reply the same way an inbound
         message is recorded.
 
@@ -186,7 +192,9 @@ class AgentDriver:
                 receipt = await asyncio.wait_for(
                     self._run_send_agent(source, config, harness,
                                          thread_key=thread_key, to=to,
-                                         text=text, subject=subject),
+                                         text=text, subject=subject,
+                                         channel=self.channel_for(source),
+                                         conversation_id=conversation_id),
                     timeout=deadline,
                 )
             except asyncio.TimeoutError:
@@ -208,10 +216,10 @@ class AgentDriver:
                 emit_launch_failed(error, target)
                 raise error from exc
 
-        return self._send_result_from(receipt, thread_key)
+        return self._send_result_from(receipt)
 
     @staticmethod
-    def _send_result_from(receipt: dict, thread_key: str) -> SendOutcome:
+    def _send_result_from(receipt: dict) -> SendOutcome:
         """Read the send receipt. Mirrors ``_result_from``'s error mapping, but
         every failure here is CONFIG health for the reason in ``send``."""
         reported = receipt.get("error")
@@ -231,15 +239,14 @@ class AgentDriver:
             )
         return SendOutcome(
             external_id=str(receipt.get("external_id") or receipt.get("draft_id") or ""),
-            thread_key=str(receipt.get("thread_key") or thread_key or ""),
-            occurred_at=str(receipt.get("occurred_at") or ""),
+            status=SendStatus.DRAFTED if drafted else SendStatus.SENT,
             recorded=bool(receipt.get("recorded")),
-            drafted=drafted,
         )
 
     async def _run_send_agent(self, source, config: dict, harness,
                               *, thread_key: str, to: str, text: str,
-                              subject: str) -> dict:
+                              subject: str, channel: str = "",
+                              conversation_id: str = "") -> dict:
         """One agent turn that sends and records. Same build/save/prompt/wait
         shape as ``_run_agent`` — ``build`` (not ``launch``) because the receipt
         path must be known before the run starts."""
@@ -252,7 +259,18 @@ class AgentDriver:
         except LookupError as exc:
             raise LaunchError.config(LaunchErrorCode.UNKNOWN, str(exc), "") from exc
 
-        options: dict = {"name": f"reply · {to}", "visible": False}
+        options: dict = {
+            "name": f"reply · {to}",
+            "visible": False,
+            # Provenance in the same channel the flow engine uses. Without it a
+            # send is an anonymous worker: the Runs list cannot say what it was
+            # for, and the conversation cannot find its own in-flight replies
+            # after a reload.
+            "context_data": {"channel_send": {
+                "to": to, "thread_key": thread_key, "channel": channel,
+                "conversation_id": conversation_id or "",
+            }},
+        }
         if harness:
             options["worker_type"] = harness
         proc = await deployment.build("", **options)

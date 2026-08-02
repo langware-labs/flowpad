@@ -230,7 +230,7 @@ async def conversation_send_external() -> ApiResponse:
     by the ordinary ingest route once the worker records it, sorted into place
     by its own timestamp — there is no outbound rendering path.
     """
-    from flow_sdk.app.actions.channel_send import dispatch_channel_reply  # noqa: PLC0415
+    from flow_sdk.inbox.outbound import dispatch_channel_reply  # noqa: PLC0415
 
     request_info = get_current_request_info()
     if not request_info or not request_info.target_entity_typeid:
@@ -245,8 +245,4 @@ async def conversation_send_external() -> ApiResponse:
     if not text:
         return ApiFailResponse(message="send_external: an empty message is not a reply")
 
-    return await dispatch_channel_reply(
-        request_info.target_entity_typeid.id,
-        text=text,
-        reply_to_message_id=str((body or {}).get("reply_to_message_id") or "") or None,
-    )
+    return await dispatch_channel_reply(request_info.target_entity_typeid.id, text=text)

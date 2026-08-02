@@ -23,6 +23,8 @@ from __future__ import annotations
 import logging
 
 from dataclasses import dataclass, field
+
+from flow_sdk._compat import StrEnum
 from typing import TYPE_CHECKING, Optional, Protocol
 
 logger = logging.getLogger(__name__)
@@ -32,29 +34,48 @@ if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.ingest.models import IngestItem
 
 
+class SendStatus(StrEnum):
+    """What actually became of an outbound message.
+
+    An enum rather than booleans because the repo has settled this shape twice
+    already — ``SourceHealth`` and ``LaunchHealth`` are both StrEnums with
+    stable wire values — and because two independent flags spanned four states
+    of which one was meaningless.
+
+    SENT     — the channel confirmed delivery.
+    DRAFTED  — composed into the channel for the user to send. Some connectors
+               can write but not send: the claude.ai Gmail connector exposes
+               `create_draft` and no send verb at all. A draft is a real
+               outcome, not a failure — but it has reached nobody, so it is
+               never recorded as a message.
+    """
+
+    SENT = "sent"
+    DRAFTED = "drafted"
+
+
 @dataclass(frozen=True)
 class SendOutcome:
-    """What the channel confirmed about one send.
+    """What the channel confirmed about one message.
 
-    ``external_id`` is the provider's id for the message it created — the same
+    ``external_id`` is the provider's id for what it created — the same
     namespace an inbound record's ``external_id`` lives in, which is what lets
-    the sent copy and any later fetch of it converge on one row.
+    a sent copy and any later fetch of it converge on one row.
 
-    ``recorded`` says whether the transport also wrote the SourceItem. False
-    means the mail went out but the local copy did not land: the user's message
-    IS sent, and re-sending to fix the bookkeeping would mail them twice.
+    ``recorded`` says whether the transport also wrote the SourceItem. It is
+    orthogonal to ``status`` and load-bearing: False on a SENT message means
+    the mail is gone but the local copy is missing, and re-sending to fix the
+    bookkeeping would mail the recipient twice.
     """
 
     external_id: str = ""
-    thread_key: str = ""
-    occurred_at: str = ""
+    status: SendStatus = SendStatus.SENT
     recorded: bool = False
-    #: The message was placed in the channel as a DRAFT for the user to send,
-    #: not delivered. Some connectors can compose but not send — the claude.ai
-    #: Gmail connector exposes `create_draft` and no send verb at all — and a
-    #: draft is a真 outcome, not a failure. The caller must not tell the user
-    #: their mail went out.
-    drafted: bool = False
+
+    @property
+    def drafted(self) -> bool:
+        """Sugar for the question every caller asks: is this waiting on the user?"""
+        return self.status is SendStatus.DRAFTED
 
 
 @dataclass(frozen=True)
@@ -119,7 +140,8 @@ class IngestDriver(Protocol):
     sends: bool = False
 
     async def send(self, source: "DataSource", *, thread_key: str, to: str,
-                   text: str, subject: str = "") -> "SendOutcome":
+                   text: str, subject: str = "",
+                   conversation_id: str = "") -> "SendOutcome":
         """OPTIONAL. Push one message into the channel and record it.
 
         Returns what the channel confirmed. The driver does NOT write the

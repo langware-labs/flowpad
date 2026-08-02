@@ -3,7 +3,7 @@ name: emailer
 description: Sends mail on the user's behalf through the harness's own email connector, and records what it sent. Delivery only — never composes, never edits.
 avatar: ✉️
 worker_type: claude
-model: haiku
+model: sonnet
 permission_mode: bypassPermissions
 enabled: true
 subagents: [email_sender]
