@@ -154,6 +154,7 @@ export function NavigatorPanel({
     <BrowseableTree
       roots={descriptor.roots ?? []}
       activePointer={descriptor.activePointer ?? null}
+      activeResourcePointer={descriptor.activeResourcePointer ?? null}
       activeKey={descriptor.activeKey}
       isLoading={descriptor.isLoading}
       onNavigate={descriptor.onNavigate}

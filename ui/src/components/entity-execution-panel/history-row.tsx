@@ -95,7 +95,7 @@ export function timeAgo(iso: string | null | undefined): string {
 }
 
 interface WorkerIconProps {
-  workerType?: WorkerHistoryEntry['worker_type'] | string | null;
+  workerType?: string | null;
   className?: string;
 }
 

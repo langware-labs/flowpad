@@ -10,7 +10,7 @@
  *        2. a CONVERSATION message to bob carrying the issue text, the ONE task
  *           chip, and the session transcript.
  *   bob (dev-2, SDK): the task itself arrives unassisted — assignment shares it
- *          rather than cloning a "member task"; he accepts the invitation and
+ *          rather than cloning a "member task"; he receives the assignment and
  *          reads the message + its transcript attachment.
  *
  * The point of driving the browser is that only the UI wires title+notes into
@@ -34,11 +34,11 @@ import { pollUntil } from './_matrix';
 import {
   HUB_INST_1 as INST_1,
   HUB_INST_2 as INST_2,
-  findPendingInvitation,
   getInstance,
   instanceAvailable,
   postApi,
   queryMessageAttachments,
+  syncAssignedConversation,
   type ResolvedInstance,
 } from './_instances';
 import { launchBrowser, openInstancePage, type InstancePage } from './_browser';
@@ -248,13 +248,8 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     expect(text, 'the notes ride along').toContain(NOTES);
   }, 30_000);
 
-  it('bob accepts and receives the issue, the task chips, and the transcript', async () => {
-    const invitation = await pollUntil(
-      () => findPendingInvitation(bob, conversationId),
-      25_000,
-      'pending invitation on bob',
-    );
-    await bob.sdk.acceptInvitation({ invitation_id: invitation.id! });
+  it('bob receives the issue, the task chips, and the transcript', async () => {
+    await syncAssignedConversation(bob, conversationId);
 
     const received = await pollUntil(async () => {
       const fm: any = await bob.sdk.FlowMessage.getById(fmId).catch(() => null);

@@ -13,6 +13,7 @@ conversation must stay usable while one runs. What the caller gets back is "this
 was accepted", never "this was delivered" — the second only becomes true when
 the message appears.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -48,6 +49,9 @@ class ReplyTarget:
     to: str
     thread_key: str
     subject: str
+    #: The provider's id for the message being replied to. Some transports
+    #: thread on this rather than on `thread_key`.
+    in_reply_to: str
 
 
 async def resolve_reply_target(conversation_id: str) -> ReplyTarget:
@@ -59,22 +63,24 @@ async def resolve_reply_target(conversation_id: str) -> ReplyTarget:
     indistinguishable once stored. An empty ``SourceItem.thread_key`` is the
     only honest signal that we have no addressable thread.
     """
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
     # Side-effect import: `drivers/__init__` is what populates the registry, and
     # `get_driver` alone does not pull it in. Without this the resolver races
     # server startup and reports "cannot send" for a driver that can.
     import flow_sdk.ingest.drivers  # noqa: F401,PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
     from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
 
     # Newest-first and bounded: the DB does the ordering, and one page is
     # always enough because every message here shares a channel.
-    recent = await FlowMessage.get_all({
-        "match": {"conversation_id": conversation_id},
-        "order_by": {"created_date": "desc"},
-        "limit": RECENT_WINDOW,
-    })
+    recent = await FlowMessage.get_all(
+        {
+            "match": {"conversation_id": conversation_id},
+            "order_by": {"created_date": "desc"},
+            "limit": RECENT_WINDOW,
+        }
+    )
     target = next((m for m in recent if m.origin and m.origin.kind), None)
     if target is None:
         raise ChannelSendUnavailable("this conversation did not come from a channel")
@@ -103,8 +109,13 @@ async def resolve_reply_target(conversation_id: str) -> ReplyTarget:
         raise ChannelSendUnavailable("the message being replied to carries no sender address")
 
     return ReplyTarget(
-        driver=driver, source=source, channel=origin.kind, to=to,
-        thread_key=item.thread_key or "", subject=item.name or "",
+        driver=driver,
+        source=source,
+        channel=origin.kind,
+        to=to,
+        thread_key=item.thread_key or "",
+        subject=item.name or "",
+        in_reply_to=item.external_id or "",
     )
 
 
@@ -124,8 +135,7 @@ async def dispatch_channel_reply(conversation_id: str, *, text: str):
     _INFLIGHT.add(task)
     task.add_done_callback(_INFLIGHT.discard)
 
-    return ApiSuccessResponse(data={"accepted": True, "channel": target.channel,
-                                    "to": target.to})
+    return ApiSuccessResponse(data={"accepted": True, "channel": target.channel, "to": target.to})
 
 
 async def _run_send(conversation_id: str, target: ReplyTarget, text: str) -> None:
@@ -135,20 +145,28 @@ async def _run_send(conversation_id: str, target: ReplyTarget, text: str) -> Non
 
     try:
         outcome = await target.driver.send(
-            target.source, thread_key=target.thread_key, to=target.to,
-            text=text, subject=target.subject, conversation_id=conversation_id,
+            target.source,
+            thread_key=target.thread_key,
+            to=target.to,
+            text=text,
+            subject=target.subject,
+            conversation_id=conversation_id,
+            in_reply_to=target.in_reply_to,
         )
-        logger.info("[channel-send] %s → %s %s (id=%s)", target.channel,
-                    target.to, outcome.status.value, outcome.external_id or "?")
+        logger.info(
+            "[channel-send] %s → %s %s (id=%s)",
+            target.channel,
+            target.to,
+            outcome.status.value,
+            outcome.external_id or "?",
+        )
         if not outcome.drafted and not outcome.recorded:
             # Only meaningful for a real send: the mail IS gone, and only the
             # local copy is missing. Re-sending to fix bookkeeping would mail
             # the recipient twice. A DRAFT is never recorded by design, so
             # warning about it would fire on every reply.
-            logger.warning("[channel-send] %s → %s delivered but NOT recorded locally",
-                           target.channel, target.to)
+            logger.warning("[channel-send] %s → %s delivered but NOT recorded locally", target.channel, target.to)
     except LaunchError as exc:
-        logger.error("[channel-send] %s → %s failed: %s", target.channel,
-                     target.to, exc.as_dict())
+        logger.error("[channel-send] %s → %s failed: %s", target.channel, target.to, exc.as_dict())
     except Exception:  # noqa: BLE001
         logger.exception("[channel-send] %s → %s failed", target.channel, target.to)

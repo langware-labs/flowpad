@@ -6,24 +6,22 @@
  *     tests/hub/conversation_messages.bob.test.ts
  *
  * Protocol (documented in the alice file): bob polls the rendezvous file for
- * the conv id, accepts the invitation (exact conv match), sends the "0"
+ * the conv id, synchronizes the immediate assignment, sends the "0"
  * handshake, then mirrors alice's loop — rx n → tx n+1 — until STOP_AT.
- * Pure SDK on this side, same as alice: targeted invitation sync, receive tap
+ * Pure SDK on this side, same as alice: targeted assignment sync, receive tap
  * via conv.on('message'), sends via conv.addMessage.
  */
 import { config, dataManager } from '@sdk';
-import { Conversation, acceptInvitation } from '@sdk/entities/conversation';
+import { Conversation } from '@sdk/entities/conversation';
 import type { FlowMessage } from '@sdk/entities/flow-message';
-import { Invitation } from '@sdk/entities/invitation';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import {
-  pickPendingInvitation,
   pollUntil,
   probeHub,
   probeLocalBackendLoggedIn,
-  syncPendingInvitation,
+  syncAssignedConversation,
 } from './_matrix';
 
 const STOP_AT = 20;
@@ -48,13 +46,8 @@ beforeEach(async (context: any) => {
   await apiTestSetup(signupInfo, context.task.name);
 });
 
-async function findPendingInvitation(convId: string): Promise<Invitation | null> {
-  const all = await Invitation.query<Invitation>({ query: {} }, true);
-  return pickPendingInvitation(all, convId);
-}
-
 describe(`hub: bob ping-pong companion to ${STOP_AT}`, () => {
-  it('accepts the invite, handshakes 0, and mirrors rx n → tx n+1', async () => {
+  it('receives the assignment, handshakes 0, and mirrors rx n → tx n+1', async () => {
     const fs = await import('node:fs/promises');
     // Poll the ping-pong rendezvous file alice writes after sharing. The
     // launcher clears it before starting both halves, so any content is
@@ -74,12 +67,8 @@ describe(`hub: bob ping-pong companion to ${STOP_AT}`, () => {
     const t0 = Date.now();
     const mark = (label: string) => console.log(`[pp-bob] +${Date.now() - t0}ms ${label}`);
     mark('rendezvous read');
-    await syncPendingInvitation(config.SERVER_URL, convId);
-    mark('targeted invitation sync done');
-    const invitation = await pollUntil(() => findPendingInvitation(convId), 20_000, 'pending invitation for conv');
-    mark('invitation found');
-    await acceptInvitation({ invitation_id: invitation.id });
-    mark('accepted');
+    await syncAssignedConversation(config.SERVER_URL, convId);
+    mark('assigned conversation synchronized');
 
     const conv = await pollUntil(
       async () => (await Conversation.getById<Conversation>(convId)) ?? null,

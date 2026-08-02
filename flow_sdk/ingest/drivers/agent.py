@@ -24,6 +24,7 @@ forever, and there is no global process cap. Without them one stuck worker
 holds its source's ``_inflight`` slot permanently and N due sources spawn N
 concurrent workers.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -137,9 +138,7 @@ class AgentDriver:
 
         async with _slots:
             try:
-                receipt = await asyncio.wait_for(
-                    self._run_agent(source, cursor, config, harness), timeout=deadline
-                )
+                receipt = await asyncio.wait_for(self._run_agent(source, cursor, config, harness), timeout=deadline)
             except asyncio.TimeoutError:
                 error = LaunchError.transient(
                     LaunchErrorCode.TIMEOUT,
@@ -159,8 +158,17 @@ class AgentDriver:
 
     # ── the send verb ─────────────────────────────────────────────────────────
 
-    async def send(self, source, *, thread_key: str, to: str, text: str,
-                   subject: str = "", conversation_id: str = "") -> SendOutcome:
+    async def send(
+        self,
+        source,
+        *,
+        thread_key: str,
+        to: str,
+        text: str,
+        subject: str = "",
+        conversation_id: str = "",
+        in_reply_to: str = "",
+    ) -> SendOutcome:
         """Reply into the channel, and record the reply the same way an inbound
         message is recorded.
 
@@ -190,11 +198,17 @@ class AgentDriver:
         async with _send_slots:
             try:
                 receipt = await asyncio.wait_for(
-                    self._run_send_agent(source, config, harness,
-                                         thread_key=thread_key, to=to,
-                                         text=text, subject=subject,
-                                         channel=self.channel_for(source),
-                                         conversation_id=conversation_id),
+                    self._run_send_agent(
+                        source,
+                        config,
+                        harness,
+                        thread_key=thread_key,
+                        to=to,
+                        text=text,
+                        subject=subject,
+                        channel=self.channel_for(source),
+                        conversation_id=conversation_id,
+                    ),
                     timeout=deadline,
                 )
             except asyncio.TimeoutError:
@@ -225,9 +239,9 @@ class AgentDriver:
         reported = receipt.get("error")
         if reported:
             raise LaunchError.config(
-                LaunchErrorCode.NOT_AUTHENTICATED if str(reported) == "no_connector"
-                else LaunchErrorCode.UNKNOWN,
-                str(reported), "",
+                LaunchErrorCode.NOT_AUTHENTICATED if str(reported) == "no_connector" else LaunchErrorCode.UNKNOWN,
+                str(reported),
+                "",
             )
         drafted = bool(receipt.get("drafted"))
         if not receipt.get("sent") and not drafted:
@@ -243,10 +257,19 @@ class AgentDriver:
             recorded=bool(receipt.get("recorded")),
         )
 
-    async def _run_send_agent(self, source, config: dict, harness,
-                              *, thread_key: str, to: str, text: str,
-                              subject: str, channel: str = "",
-                              conversation_id: str = "") -> dict:
+    async def _run_send_agent(
+        self,
+        source,
+        config: dict,
+        harness,
+        *,
+        thread_key: str,
+        to: str,
+        text: str,
+        subject: str,
+        channel: str = "",
+        conversation_id: str = "",
+    ) -> dict:
         """One agent turn that sends and records. Same build/save/prompt/wait
         shape as ``_run_agent`` — ``build`` (not ``launch``) because the receipt
         path must be known before the run starts."""
@@ -266,10 +289,14 @@ class AgentDriver:
             # send is an anonymous worker: the Runs list cannot say what it was
             # for, and the conversation cannot find its own in-flight replies
             # after a reload.
-            "context_data": {"channel_send": {
-                "to": to, "thread_key": thread_key, "channel": channel,
-                "conversation_id": conversation_id or "",
-            }},
+            "context_data": {
+                "channel_send": {
+                    "to": to,
+                    "thread_key": thread_key,
+                    "channel": channel,
+                    "conversation_id": conversation_id or "",
+                }
+            },
         }
         if harness:
             options["worker_type"] = harness
@@ -280,8 +307,13 @@ class AgentDriver:
         receipt_path = base / "output" / SEND_RECEIPT_FILENAME
 
         instruction = self._send_instruction(
-            source, config, receipt_path,
-            thread_key=thread_key, to=to, text=text, subject=subject,
+            source,
+            config,
+            receipt_path,
+            thread_key=thread_key,
+            to=to,
+            text=text,
+            subject=subject,
         )
         proc.instruction_content = instruction
         await proc.save()
@@ -290,7 +322,8 @@ class AgentDriver:
         if getattr(response, "status", None) and str(response.status).upper().endswith("FAIL"):
             raise LaunchError.config(
                 LaunchErrorCode.UNKNOWN,
-                str(getattr(response, "message", "") or "prompt refused"), "",
+                str(getattr(response, "message", "") or "prompt refused"),
+                "",
             )
         await proc.wait()
         try:
@@ -301,9 +334,9 @@ class AgentDriver:
         return self._read_receipt(receipt_path)
 
     @staticmethod
-    def _send_instruction(source, config: dict, receipt_path,
-                          *, thread_key: str, to: str, text: str,
-                          subject: str) -> str:
+    def _send_instruction(
+        source, config: dict, receipt_path, *, thread_key: str, to: str, text: str, subject: str
+    ) -> str:
         """The send contract plus this run's facts.
 
         Same shape as ``_instruction``: the subagent markdown is the contract,
@@ -348,8 +381,7 @@ class AgentDriver:
 
     # ── the spawn ─────────────────────────────────────────────────────────────
 
-    async def _run_agent(self, source, cursor: StreamCursorView,
-                         config: dict, harness) -> dict[str, Any]:
+    async def _run_agent(self, source, cursor: StreamCursorView, config: dict, harness) -> dict[str, Any]:
         """Launch through the NAMED agent, the way every preset launch now does.
 
         `deployment.launch(prompt, wait=True)` is the shipped one-shot: it
@@ -383,9 +415,7 @@ class AgentDriver:
 
         response = await proc.prompt(instruction)
         if getattr(response, "status", None) and str(response.status).upper().endswith("FAIL"):
-            raise SourceError.transient(
-                "launch_failed", str(getattr(response, "message", "") or "prompt refused")
-            )
+            raise SourceError.transient("launch_failed", str(getattr(response, "message", "") or "prompt refused"))
         await proc.wait()
         try:
             await proc.exit()
@@ -405,8 +435,7 @@ class AgentDriver:
             options["worker_type"] = harness
         return options
 
-    def _instruction(self, source, cursor: StreamCursorView,
-                     config: dict, receipt_path: Path) -> str:
+    def _instruction(self, source, cursor: StreamCursorView, config: dict, receipt_path: Path) -> str:
         """The agent md leads; only the runtime addendum is built here — the
         shipped convention (see `asset_cleanup`)."""
         from flow_sdk.fs_store.operations.subagent import load_subagent  # noqa: PLC0415
@@ -454,9 +483,7 @@ class AgentDriver:
         try:
             raw = path.read_text(encoding="utf-8")
         except OSError as exc:
-            raise SourceError.transient(
-                "no_receipt", f"the worker wrote no receipt at {path}: {exc}"
-            ) from exc
+            raise SourceError.transient("no_receipt", f"the worker wrote no receipt at {path}: {exc}") from exc
         try:
             data = json.loads(raw)
         except ValueError as exc:
@@ -472,8 +499,7 @@ class AgentDriver:
             # `no_connector` cannot be fixed by trying again; anything else the
             # agent names is assumed retryable, matching `classify`'s default.
             if str(reported) == "no_connector":
-                raise SourceError.config("no_connector",
-                                         "the harness has no email connector in this session")
+                raise SourceError.config("no_connector", "the harness has no email connector in this session")
             raise SourceError.transient(str(reported), "reported by the ingest agent")
 
         count = int(receipt.get("count") or 0)
@@ -497,4 +523,3 @@ def recorded_ids(receipt: dict[str, Any]) -> list[str]:
     """Provider ids the receipt claims — exposed for tests and diagnostics."""
     ids = receipt.get("external_ids")
     return [str(i) for i in ids] if isinstance(ids, list) else []
-

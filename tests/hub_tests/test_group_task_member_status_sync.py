@@ -110,11 +110,6 @@ def _email(c: httpx.Client, be: str) -> str:
     return (_u(c.get(f"{be}/api/v1/cloud/status"))["login"]["user"]["email"]).strip().lower()
 
 
-def _hub_hdr(c: httpx.Client, hub: str, email: str, pw: str) -> dict:
-    d = c.post(f"{hub}/api/v1/login", json={"email": email, "password": pw}).json()["data"]
-    return {"Authorization": f"Bearer {d.get('api_key') or d['token']}"}
-
-
 def _task(c: httpx.Client, be: str, cid: str) -> dict | None:
     r = c.get(f"{be}/api/v1/graph/task/{cid}")
     if r.status_code != 200:
@@ -134,30 +129,9 @@ def _wait_task(c: httpx.Client, be: str, cid: str) -> dict | None:
     return None
 
 
-def _accept(c: httpx.Client, hub: str, member_be: str, hub_hdr: dict, child_id: str) -> bool:
-    """Observe an auto-accepted assignment or accept its pending invitation.
-
-    Current hubs auto-accept task-only invitations between users who share an
-    organization, so the member task can already be materialized locally before
-    the pending-invitation endpoint is queried. Older hubs retain the explicit
-    acceptance path exercised below.
-    """
-    end = time.monotonic() + CONVERGE
-    while time.monotonic() < end:
-        if _task(c, member_be, child_id) is not None:
-            return True
-        pending = (c.get(f"{hub}/api/v1/graph/invitation/pending", headers=hub_hdr).json().get("data")) or []
-        inv = [i for i in pending if child_id in str(i) and not i.get("accepted")]
-        if inv:
-            c.post(f"{member_be}/api/v1/graph/invitation-accept", json={"invitation_id": inv[0]["id"]})
-            return True
-        time.sleep(0.3)
-    return False
-
-
 def _set_status(c: httpx.Client, be: str, cid: str, status: str) -> None:
     """Member edits their member-task status; ``Hub-Reflect`` mirrors it to the
-    hub row (the member task is ``remote=True`` after accept)."""
+    hub row (the assigned member task is ``remote=True``)."""
     _u(c.put(f"{be}/api/v1/graph/task/{cid}", json={"status": status}, headers={"Hub-Reflect": "true"}))
 
 
@@ -193,14 +167,11 @@ def test_group_task_member_status_reaches_owner(three_backends):
     """Owner assigns a group task to two members; both change status; the owner's
     ``sync-group`` catch-up surfaces BOTH members' up-to-date status."""
     env = three_backends
-    owner, m1, m2, hub = env["owner"], env["m1"], env["m2"], env["hub"]
+    owner, m1, m2 = env["owner"], env["m1"], env["m2"]
     c = httpx.Client(timeout=15.0)
     try:
         m1_email = _email(c, m1)
         m2_email = _email(c, m2)
-        m1_hdr = _hub_hdr(c, hub, m1_email, env["m1_pw"])
-        m2_hdr = _hub_hdr(c, hub, m2_email, env["m2_pw"])
-
         # 1) Owner creates a task and fans it out to the two members as a group task.
         parent_id = _u(c.post(f"{owner}/api/v1/graph/task", json={"type": "task", "title": "Quarterly audit"}))["id"]
         res = _u(
@@ -223,9 +194,7 @@ def test_group_task_member_status_reaches_owner(three_backends):
         m1_child = by_email[m1_email]
         m2_child = by_email[m2_email]
 
-        # 2) Each member accepts their invitation, then changes their own status.
-        assert _accept(c, hub, m1, m1_hdr, m1_child), "member 1 never received/accepted their invitation"
-        assert _accept(c, hub, m2, m2_hdr, m2_child), "member 2 never received/accepted their invitation"
+        # 2) Each member receives the immediate assignment, then changes status.
         assert _wait_task(c, m1, m1_child), "member 1 never materialized their member task locally"
         assert _wait_task(c, m2, m2_child), "member 2 never materialized their member task locally"
 

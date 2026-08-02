@@ -7,11 +7,11 @@ Merged from:
 - tests/conftest.py (session fixtures: DB init, env, app, async markers)
 """
 
-import os
 import asyncio
 import atexit
 import functools
 import logging
+import os
 import shutil
 
 import pytest
@@ -42,17 +42,33 @@ os.environ["TESTING"] = "true"
 import tempfile  # noqa: E402
 from pathlib import Path as _Path  # noqa: E402
 
-_TEST_HOME = _Path(tempfile.gettempdir()) / "flowpad_test_home"
+# Compute the per-process run root with the same stdlib-only rule as
+# ``flow_sdk.config.init_temp_dir``. This must happen before importing any
+# ``flow_sdk`` module: several modules resolve ``Path.home()`` at import time.
+_FLOWPAD_TEMP_DIR_RAW = os.environ.get("FLOWPAD_TEMP_DIR")
+_FLOWPAD_TEMP_ROOT = (
+    _Path(_FLOWPAD_TEMP_DIR_RAW) if _FLOWPAD_TEMP_DIR_RAW else _Path(tempfile.gettempdir()) / "flowpad_temp"
+)
+_FLOWPAD_TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+_TEST_RUN_ROOT = _Path(tempfile.mkdtemp(prefix="pytest-", dir=_FLOWPAD_TEMP_ROOT))
+atexit.register(shutil.rmtree, _TEST_RUN_ROOT, ignore_errors=True)
+# Pin every path-bearing override before any ``flow_sdk`` module can snapshot
+# pytest-env's legacy shared defaults during import.
+os.environ["SQLITE_DATABASE_PATH"] = str(_TEST_RUN_ROOT / "flowpad_test.db")
+os.environ["FS_RECORD_PATH"] = str(_TEST_RUN_ROOT / "flowpad_test_records")
+
+_TEST_HOME = _TEST_RUN_ROOT / "home"
 for _sub in (".claude", ".codex", ".flow"):
     (_TEST_HOME / _sub).mkdir(parents=True, exist_ok=True)
 # Stash the pre-sandbox HOME so child conftests can hand it to subprocess
 # environments that need real CLI auth (e.g. tests/long_tests/conftest.py
 # restoring HOME for tests that spawn the real Claude/Codex CLI). This is
-# the actual user-facing HOME on POSIX, macOS, AND Windows — `pwd.getpwuid`
-# returns the passwd-entry home which can diverge under `sudo -u` / CI
-# service accounts, and `pwd` doesn't exist on Windows at all.
-os.environ["FLOWPAD_PRE_SANDBOX_HOME"] = os.environ.get("HOME") or os.path.expanduser("~")
+# the actual home Python resolves on POSIX, macOS, AND Windows. Capture it
+# before overriding either variable: POSIX ``Path.home()`` reads HOME, while
+# Windows reads USERPROFILE (then HOMEDRIVE/HOMEPATH) and ignores HOME.
+os.environ.setdefault("FLOWPAD_PRE_SANDBOX_HOME", str(_Path.home()))
 os.environ["HOME"] = str(_TEST_HOME)
+os.environ["USERPROFILE"] = str(_TEST_HOME)
 
 
 # -----------------------------------------------------------------------------
@@ -123,25 +139,20 @@ for _inherited in ("FLOWPAD_DESKTOP", "SOD_ENC_KEY", "DEPLOY_ENV"):
 
 from flow_sdk.config import FLOWPAD_TEMP_DIR
 
-# Every pytest process gets its own filesystem root. A shared ``basetemp`` lets
-# concurrent test runs race while pytest removes/recreates that directory,
-# causing FileExistsError or cross-run fixture deletion.
-_TEST_RUN_ROOT = _Path(tempfile.mkdtemp(prefix="pytest-", dir=FLOWPAD_TEMP_DIR))
-atexit.register(shutil.rmtree, _TEST_RUN_ROOT, ignore_errors=True)
-
-# Ensure tests use a separate DB path (prevents conflicts with a running dev
-# server or another pytest process).
-if not os.environ.get("SQLITE_DATABASE_PATH"):
-    os.environ["SQLITE_DATABASE_PATH"] = str(_TEST_RUN_ROOT / "flowpad_test.db")
-# Isolate filesystem records from dev/prod data
-if not os.environ.get("FS_RECORD_PATH"):
-    os.environ["FS_RECORD_PATH"] = str(_TEST_RUN_ROOT / "flowpad_test_records")
+# Keep the pre-import bootstrap rule in lockstep with ``flow_sdk.config``.
+assert _Path(FLOWPAD_TEMP_DIR) == _FLOWPAD_TEMP_ROOT
 
 
 def pytest_configure(config):
-    """Root all tmp_path fixtures under FLOWPAD_TEMP_DIR."""
+    """Root every pytest-owned writable path under this process's run root."""
+    # pytest-env applies the legacy shared DB value from pytest.ini during
+    # startup. Reassert the per-process paths during root configuration so
+    # API cleanup and any pre-fixture settings lookup cannot touch another run.
+    os.environ["SQLITE_DATABASE_PATH"] = str(_TEST_RUN_ROOT / "flowpad_test.db")
+    os.environ["FS_RECORD_PATH"] = str(_TEST_RUN_ROOT / "flowpad_test_records")
     if not getattr(config.option, "basetemp", None):
         config.option.basetemp = str(_TEST_RUN_ROOT / "tmp")
+
 
 from pytest_asyncio import is_async_test
 
@@ -165,6 +176,7 @@ def _restore_main_thread_event_loop():
     """
     yield
     import asyncio as _asyncio
+
     try:
         loop = _asyncio.get_event_loop_policy().get_event_loop()
         closed = loop.is_closed()
@@ -176,6 +188,7 @@ def _restore_main_thread_event_loop():
 
 def async_context(func):
     """Decorator to run async tests with proper async event loop."""
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         try:
@@ -187,16 +200,20 @@ def async_context(func):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         return loop.run_until_complete(func(*args, **kwargs))
+
     return wrapper
 
 
 # ==================== Session-scoped fixtures ====================
 
+
 @pytest.fixture(scope="session", autouse=True)
 def clean_claude_temp_projects():
     """Remove temp-path Claude projects before and after the test session."""
     import asyncio
+
     from flow_sdk.fs_store.operations.claude_project import clean_temp_projects
+
     asyncio.get_event_loop().run_until_complete(clean_temp_projects())
     yield
     asyncio.get_event_loop().run_until_complete(clean_temp_projects())
@@ -206,6 +223,7 @@ def clean_claude_temp_projects():
 def load_env():
     """Load environment variables before any tests run."""
     from flow_sdk.cli.env_loader import cli_init
+
     cli_init()
 
 
@@ -220,8 +238,8 @@ async def initialize_test_db(tmp_path_factory):
 
     logging.basicConfig(level=logging.WARNING)
 
-    from flow_sdk.db.drivers.sqlite import SQLiteDBDriver
     from flow_sdk.db.drivers.db_driver import DBConfig, _driver_instances
+    from flow_sdk.db.drivers.sqlite import SQLiteDBDriver
 
     # Use a temp file instead of :memory:
     tmp_dir = tmp_path_factory.mktemp("db")
@@ -229,7 +247,7 @@ async def initialize_test_db(tmp_path_factory):
 
     config = DBConfig(database=db_path)
     driver = SQLiteDBDriver(config)
-    _driver_instances['sqlite'] = driver
+    _driver_instances["sqlite"] = driver
     _test_db_driver = driver
     _test_db_initialized = True
 
@@ -245,6 +263,7 @@ async def initialize_test_db(tmp_path_factory):
     # entity queries pointed at the schema this fixture just created.
     from flow_sdk.db.db_entity import DBEntity
     from flow_sdk.db.db_relationship import DBRelationship
+
     DBEntity._db = driver
     DBRelationship._db = driver
 
@@ -258,6 +277,7 @@ async def initialize_test_db(tmp_path_factory):
 def app():
     """Get the FastAPI app instance."""
     from flow_sdk.server.app import app as minihub_app
+
     return minihub_app
 
 
@@ -290,6 +310,7 @@ def isolated_records_root(tmp_path, monkeypatch):
 # ``credentials_mod.keyring`` — that import is gone in Phase C.
 # ----------------------------------------------------------------------
 
+
 @pytest.fixture
 def sod_env(monkeypatch, tmp_path):
     import uuid as _uuid
@@ -305,6 +326,7 @@ def sod_env(monkeypatch, tmp_path):
         get_instance_settings,
         reset_instance_settings,
     )
+
     reset_instance_settings()
 
     store: dict[tuple[str, str], str] = {}
@@ -327,9 +349,11 @@ def sod_env(monkeypatch, tmp_path):
     monkeypatch.setattr(_keyring, "delete_password", _del)
 
     from flow_sdk.fs_store import set_default_records_root
+
     set_default_records_root(Path(tmp_path) / "records")
 
     from flow_sdk.cli.auth.secrets import enable_secrets
+
     assert enable_secrets() is True
 
     yield get_instance_settings()

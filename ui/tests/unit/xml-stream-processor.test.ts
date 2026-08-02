@@ -466,7 +466,7 @@ describe('XML Stream Processor', () => {
       const processor = new FlowStreamProcessor();
 
       let eventEndFired = false;
-      processor.on(FlowEvents.DATA_END, (_flowEvent: FlowData) => {
+      processor.on(FlowEvents.DATA_END, () => {
         eventEndFired = true;
       });
 
@@ -482,7 +482,7 @@ describe('XML Stream Processor', () => {
       const processor = new FlowStreamProcessor();
 
       let eventEndFired = false;
-      processor.on(FlowEvents.DATA_END, (_flowEvent: FlowData) => {
+      processor.on(FlowEvents.DATA_END, () => {
         eventEndFired = true;
       });
 

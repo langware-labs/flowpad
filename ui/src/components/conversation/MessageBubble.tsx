@@ -163,7 +163,6 @@ export function MessageBubble({
   message,
   flowMessageId,
   flowMessage,
-  task,
   senderName,
   onEditName,
   onDeleteMessage,

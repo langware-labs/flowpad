@@ -36,6 +36,8 @@ type MessageType =
 interface BaseMessage {
   message_type: MessageType;
   message_id: string;
+  /** Monotonic server-side creation sequence (present on entity data ops). */
+  instance_id?: number;
 }
 
 export interface IWSRestOptions {
@@ -261,6 +263,8 @@ export class ConnectionManager extends EventEmitter {
   private socket: WebSocket | null = null;
   private pendingRequests: Map<string, PendingRequest<unknown>> = new Map();
   private warnedMessageTypes = new Set<string>();
+  /** Last accepted data-op sequence per entity on the current socket. */
+  private lastDataOpInstanceByEntity = new Map<string, number>();
   private requestTimeoutMs: number = 30000;
 
   // Reconnect state
@@ -462,6 +466,10 @@ export class ConnectionManager extends EventEmitter {
   }
 
   onOpen(event: Event) {
+    // The backend counter restarts with its process and an old socket cannot
+    // deliver frames after this new connection opens, so sequence ownership is
+    // per socket generation.
+    this.lastDataOpInstanceByEntity.clear();
     this.reportLifecycle('ws_open', { attempts_used: this.reconnectAttempts });
     // Reset reconnect attempts on successful connection
     this.reconnectAttempts = 0;
@@ -681,7 +689,14 @@ export class ConnectionManager extends EventEmitter {
       console.warn('Ignoring data_op message with invalid to_entity:', data.to_entity);
       return;
     }
-    this.emit('on_data_op', typeId.toString(), data.op, data.data);
+    const key = typeId.toString();
+    const instanceId = data.instance_id;
+    if (typeof instanceId === 'number' && Number.isSafeInteger(instanceId)) {
+      const previous = this.lastDataOpInstanceByEntity.get(key);
+      if (previous !== undefined && instanceId <= previous) return;
+      this.lastDataOpInstanceByEntity.set(key, instanceId);
+    }
+    this.emit('on_data_op', key, data.op, data.data);
   }
   onOAuthMessage(data: OAuthMessage) {
     this.emit('on_oauth_msg', data);

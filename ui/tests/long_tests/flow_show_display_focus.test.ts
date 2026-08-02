@@ -115,7 +115,7 @@ describe('flow show — agent-declared display focus reaches proc.onShow', () =>
     const outputs: FlowData[] = [];
     void (async () => {
       try {
-        for await (const item of proc!.output()) {
+        for await (const item of proc.output()) {
           outputs.push(item);
           if (outputs.length > 200) outputs.shift();
         }

@@ -29,7 +29,6 @@ import { WikiTip } from '@src/components/wiki-tip';
 import { useContext } from '@src/hooks/useContext';
 import { RUNTIME_CLASS } from '@src/components/environment-banner/runtime-appearance';
 import { useBannerMinimized } from '@src/components/environment-banner/use-banner-minimized';
-import { useInboxStore } from '@src/store/use-inbox-store';
 import { useProjectTasks } from '@src/hooks/use-project-tasks';
 import { useHasConversations } from '@src/hooks/use-has-conversations';
 import { useLastVibeChat } from '@src/pages/flow-page/use-last-vibe-chat';

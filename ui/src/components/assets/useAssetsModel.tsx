@@ -170,7 +170,7 @@ export function useAssetsModel() {
   // Single typed view of the resolved entity's optional fs fields (the SDK
   // entity type is generic here); reused for scope-bucketing and tree addressing.
   const openAssetFields = openAsset as { asset_ref?: string; scope?: string | null; project_id?: string | null } | null;
-  const openAssetBucket = useMemo<AssetScopeBucket>(() => assetScopeBucket(openAssetFields), [openAsset]);
+  const openAssetBucket = useMemo<AssetScopeBucket>(() => assetScopeBucket(openAssetFields), [openAssetFields]);
   const [suppressedAssetId, setSuppressedAssetId] = useState<string | null>(null);
 
   const effectiveFilter = useMemo<AssetFilter>(() => {
@@ -471,10 +471,16 @@ export function useAssetsModel() {
     [navigation],
   );
 
-  // URL-first: the active row is derived from the real dock. DockPointer itself
-  // exposes cross-route resource identity (`resourceVfsPath`), so the tree
-  // never rewrites an editor URL into a synthetic filesystem pointer.
+  // URL-first: the navigation cursor is always the real dock. A canonical
+  // TypeId editor URL cannot itself contain the entity's VFS path, so expose a
+  // separate, read-only resource cursor after the URL-addressed entity resolves.
+  // The tree uses that cursor only to reveal the corresponding filesystem row;
+  // clicks and route identity continue to use `treeActivePointer`.
   const treeActivePointer = currentDock ?? null;
+  const treeActiveResourcePointer = useMemo(() => {
+    if (!openAssetTypeId || !openAssetFields?.asset_ref) return null;
+    return DockPointer.forAssetEditor(openAssetTypeId.type, openAssetFields.asset_ref);
+  }, [openAssetTypeId, openAssetFields?.asset_ref]);
 
   const handleNew = useCallback((type: string) => {
     setNewTypeTarget(type);
@@ -721,6 +727,7 @@ export function useAssetsModel() {
   return {
     roots,
     treeActivePointer,
+    treeActiveResourcePointer,
     openAssetId,
     menuLoading,
     typeCounts,

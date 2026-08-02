@@ -6,6 +6,7 @@ registered, a report lane accidentally wired to the ingestion lane (spawning a
 live agent every poll cycle), or a window filter that quietly includes undated
 rows. Each of those is asserted directly.
 """
+
 from __future__ import annotations
 
 import json
@@ -90,9 +91,7 @@ def test_both_functions_are_registered():
 
     for node in _doc().nodes:
         if node.node_type == "function":
-            assert node.node_data["function"] in registered, (
-                f"node {node.id!r} names an unregistered function"
-            )
+            assert node.node_data["function"] in registered, f"node {node.id!r} names an unregistered function"
 
 
 def test_builtin_triggers_imports_the_flow_functions():
@@ -118,25 +117,43 @@ class _Ctx:
 def test_tick_summarises_a_cycle_without_touching_the_record_store():
     out = hn.hn_radar_tick(
         "ingest.hackernews.sync.completed",
-        {"tag": "ingest.hackernews.sync.completed",
-         "target": "data_source:s-1",
-         "data": {"provider": "hackernews", "source_id": "s-1",
-                  "created": 3, "updated": 1, "unchanged": 12,
-                  "changed_ids": ["a", "b", "c", "d"]}},
+        {
+            "tag": "ingest.hackernews.sync.completed",
+            "target": "data_source:s-1",
+            "data": {
+                "provider": "hackernews",
+                "source_id": "s-1",
+                "created": 3,
+                "updated": 1,
+                "unchanged": 12,
+                "changed_ids": ["a", "b", "c", "d"],
+            },
+        },
         _Ctx(None),
     )
-    assert out == {"provider": "hackernews", "source_id": "s-1", "created": 3,
-                   "updated": 1, "unchanged": 12, "changed": 4,
-                   "tag": "ingest.hackernews.sync.completed"}
+    assert out == {
+        "provider": "hackernews",
+        "source_id": "s-1",
+        "created": 3,
+        "updated": 1,
+        "unchanged": 12,
+        "changed": 4,
+        "tag": "ingest.hackernews.sync.completed",
+    }
 
 
 async def _item(*, external_id: str, occurred_at, score: int, title: str) -> SourceItem:
     source_id = "src-hn"
     row = SourceItem(
         id=SourceItem.allocate_deterministic_id(source_id, "updates", external_id),
-        data_source_id=source_id, provider="hackernews", kind="content.feed.item",
-        stream_key="updates", external_id=external_id, name=title,
-        body="https://example.test/x", author_display="ada",
+        data_source_id=source_id,
+        provider="hackernews",
+        kind="content.feed.item",
+        stream_key="updates",
+        external_id=external_id,
+        name=title,
+        body="https://example.test/x",
+        author_display="ada",
         occurred_at=occurred_at.isoformat() if occurred_at else None,
         raw={"score": score},
     )
@@ -149,14 +166,10 @@ async def _item(*, external_id: str, occurred_at, score: int, title: str) -> Sou
 async def test_collect_windows_by_time_and_ranks_by_score(tmp_path):
     now = datetime.now(timezone.utc)
     tag = uuid.uuid4().hex[:6]
-    await _item(external_id=f"{tag}-hot", occurred_at=now - timedelta(hours=2),
-                score=300, title="Hot story")
-    await _item(external_id=f"{tag}-mild", occurred_at=now - timedelta(hours=6),
-                score=10, title="Mild story")
-    await _item(external_id=f"{tag}-old", occurred_at=now - timedelta(days=4),
-                score=999, title="Old story")
-    await _item(external_id=f"{tag}-undated", occurred_at=None,
-                score=500, title="Undated story")
+    await _item(external_id=f"{tag}-hot", occurred_at=now - timedelta(hours=2), score=300, title="Hot story")
+    await _item(external_id=f"{tag}-mild", occurred_at=now - timedelta(hours=6), score=10, title="Mild story")
+    await _item(external_id=f"{tag}-old", occurred_at=now - timedelta(days=4), score=999, title="Old story")
+    await _item(external_id=f"{tag}-undated", occurred_at=None, score=500, title="Undated story")
 
     ctx = _Ctx(tmp_path)
     result = await hn.hn_radar_collect("report", {}, ctx)
@@ -174,6 +187,27 @@ async def test_collect_windows_by_time_and_ranks_by_score(tmp_path):
     assert result["items_file"].endswith("items.json")
     assert result["empty"] is False
     assert result["window_hours"] == 24
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_zulu_timestamps_are_inside_the_window(tmp_path):
+    """Providers emit `...Z`; `fromisoformat` rejects it before 3.11.
+
+    Unfixed, every timestamped row reads as undated, the window returns empty,
+    and the report says "no mail" while the records sit in the table — which is
+    exactly what a live Gmail run produced.
+    """
+    now = datetime.now(timezone.utc)
+    tag = uuid.uuid4().hex[:6]
+    zulu = (now - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    row = await _item(external_id=f"{tag}-zulu", occurred_at=None, score=1, title="Zulu mail")
+    row.occurred_at = zulu
+    await row.save()
+
+    await hn.hn_radar_collect("report", {"provider": "hackernews"}, _Ctx(tmp_path))
+    titles = [i["title"] for i in json.loads((tmp_path / "items.json").read_text(encoding="utf-8"))["items"]]
+    assert "Zulu mail" in titles, f"a Z-suffixed timestamp ({zulu}) was treated as undated and dropped"
 
 
 @pytest.mark.asyncio

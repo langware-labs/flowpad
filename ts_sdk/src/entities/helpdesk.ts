@@ -87,4 +87,3 @@ export async function helpdeskReset(): Promise<HelpdeskResetResult> {
   const res = await dataManager.callAction<Record<string, never>, HelpdeskResetResult>(action);
   return res!;
 }
-

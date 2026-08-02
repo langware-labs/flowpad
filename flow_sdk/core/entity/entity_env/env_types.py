@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from flow_sdk._compat import StrEnum
 from typing import Generic, List, Optional, TypeVar
 
 from pydantic import BaseModel, Field
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 

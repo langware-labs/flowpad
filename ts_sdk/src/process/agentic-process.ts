@@ -15,10 +15,12 @@ import { FSRef, type FSRefJson } from '../fs/FSRef';
 import { ClaudeAgentOptions, factory as cliOptionsFactory } from '../cli_workers';
 import { dataContext } from '../FlowSync/context';
 import { FlowDataFactory } from '../flow_processing/flow-data-factory';
+import { Artifact, type IArtifact } from '../entities/artifact/artifact';
 import { Shell, ShellStatus } from '../entities/shell';
 import { FlowData, FlowDataAttribute, FlowDataSource } from '../flow_processing';
 import { FlowElementTypes } from '../flow_processing/flow-element-types';
 import { ActionInfo } from '../models/ActionInfo';
+import type { FlowEvent } from '../tags/EventBus';
 import { toplog } from '../services/toplog';
 
 /** Elapsed ms since `t0` formatted for `process_load` trace lines. */
@@ -193,6 +195,42 @@ function reconcileHistoryOverlap(history: FlowData[], existing: readonly FlowDat
     if (identity && take(byIdentity, identity)) return false;
     return !take(byFallback, historyFallbackKey(item));
   });
+}
+
+/**
+ * The artifact an `artifact.*` event is about.
+ *
+ * `data.artifact_id` is the adapter's identity field; the colon-form `target`
+ * (`artifact:<id>`) is the normative fallback, because the bus grammar
+ * guarantees it even when a future emitter trims `data` further.
+ */
+function artifactIdOf(event: FlowEvent): string {
+  const fromData = event.data?.artifact_id;
+  if (typeof fromData === 'string' && fromData) return fromData;
+  const [type, id] = String(event.target ?? '').split(':');
+  return type === Artifact.type && id ? id : '';
+}
+
+/**
+ * Artifact fields carried by an event. The lane is deliberately LEAN — identity
+ * and pointers, never the row body — so anything absent is left to whatever the
+ * row already had (or to the next snapshot). `created_date` falls back to the
+ * envelope timestamp so a freshly created row can win `latestArtifact` before
+ * any REST read confirms it.
+ */
+function artifactFieldsOf(event: FlowEvent, id: string): Partial<IArtifact> {
+  const data = event.data ?? {};
+  const str = (key: string): string | undefined => {
+    const value = data[key];
+    return typeof value === 'string' && value ? value : undefined;
+  };
+  const fields: Record<string, unknown> = { id, type: Artifact.type };
+  for (const key of ['name', 'kind', 'asset_ref', 'generated_by', 'project_id', 'description']) {
+    const value = str(key);
+    if (value !== undefined) fields[key] = value;
+  }
+  if (event.tag === 'artifact.created' && event.timestamp) fields.created_date = event.timestamp;
+  return fields as Partial<IArtifact>;
 }
 
 export enum AgenticProcessEventName {
@@ -1366,6 +1404,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   private _historyLoaded: boolean = false;
   private _historyLoading: Promise<void> | null = null;
 
+  /** Artifact list state — see the `artifacts` getter / `loadArtifacts`. */
+  private _artifacts: Artifact[] = [];
+  private _artifactsLoaded: boolean = false;
+  private _artifactsLoading: Promise<Artifact[]> | null = null;
+  /** Ids deleted while an artifact snapshot is in flight, so that stale
+   *  snapshot cannot resurrect the row. Cleared when that request settles. */
+  private _deletedArtifactIds = new Set<string>();
+
   /**
    * True after the user explicitly stopped this process (``stop`` /
    * ``exit`` / ``close``) and before the next successful ``start``. Gates
@@ -2068,6 +2114,105 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Everything this run produced, as durable Artifact rows.
+   *
+   * A PROPERTY, not a fetch: hydrated once by {@link loadArtifacts} and kept
+   * live from there by the `artifact.*` bus lane through
+   * {@link applyArtifactEvent}. One source of truth, so every reader — the
+   * ribbon chip, a viewer, a test — sees the same array.
+   *
+   * The array is REPLACED on every change (never mutated in place) so a
+   * memoized React reader notices.
+   */
+  get artifacts(): Artifact[] {
+    return this._artifacts;
+  }
+
+  /**
+   * Hydrate {@link artifacts} from the server, once.
+   *
+   * Server-side this is a match query over `generated_by`, not a list field on
+   * the process, so concurrent registrations cannot clobber one another's
+   * append. GET, like its sibling `get-assets`: a pure read with no body.
+   *
+   * **The snapshot MERGES; it never replaces.** Callers subscribe to the bus
+   * BEFORE calling this (fetch-then-subscribe silently loses any event landing
+   * in the gap), which means deltas can — and in a busy run will — be applied
+   * while this request is still in flight. A row the deltas already carry wins
+   * over the snapshot's copy of it, and a row the deltas deleted is not
+   * resurrected by a snapshot that predates the delete.
+   */
+  async loadArtifacts(): Promise<Artifact[]> {
+    if (this._artifactsLoaded) return this._artifacts;
+    if (this._artifactsLoading) return this._artifactsLoading;
+    this._artifactsLoading = (async () => {
+      const actionInfo = new ActionInfo('artifacts', AgenticProcess.type, this.id, 'GET');
+      try {
+        const response = await dataManager.callAction<void, { artifacts?: unknown[] }>(actionInfo);
+        const snapshot = (response?.artifacts ?? []).map((row) => new Artifact(row as Partial<IArtifact>));
+        this._mergeArtifactSnapshot(snapshot);
+        this._artifactsLoaded = true;
+        return this._artifacts;
+      } finally {
+        this._deletedArtifactIds.clear();
+        this._artifactsLoading = null;
+      }
+    })();
+    return this._artifactsLoading;
+  }
+
+  /**
+   * Apply one `artifact.created|updated|deleted` delta, by id.
+   *
+   * Returns whether the array changed, so a subscriber can skip a re-render on
+   * a duplicate or an unknown-id delete. Events for another producer are
+   * ignored: the bus lane is scoped by `ctx.scope`, but a delivery filter is
+   * not an identity check and this list means "what THIS run made".
+   */
+  applyArtifactEvent(event: FlowEvent): boolean {
+    const id = artifactIdOf(event);
+    if (!id) return false;
+    const producer = event.data?.generated_by;
+    if (typeof producer === 'string' && producer && producer !== `${AgenticProcess.type}-${this.id}`) {
+      return false;
+    }
+    if (event.tag === 'artifact.deleted') {
+      // Only an in-flight GET can resurrect this row; once its snapshot settles
+      // the database itself is the authoritative record of the delete.
+      if (this._artifactsLoading) this._deletedArtifactIds.add(id);
+      const next = this._artifacts.filter((a) => String(a.id) !== id);
+      if (next.length === this._artifacts.length) return false;
+      this._artifacts = next;
+      return true;
+    }
+    const at = this._artifacts.findIndex((a) => String(a.id) === id);
+    const merged = new Artifact({
+      ...(at >= 0 ? (this._artifacts[at].toJSON() as Partial<IArtifact>) : {}),
+      ...artifactFieldsOf(event, id),
+    });
+    const next = [...this._artifacts];
+    if (at >= 0) next[at] = merged;
+    else next.push(merged);
+    this._artifacts = next;
+    return true;
+  }
+
+  /** Snapshot ∪ deltas: deltas win per id, deleted ids stay deleted. */
+  private _mergeArtifactSnapshot(snapshot: Artifact[]): void {
+    const live = new Map(this._artifacts.map((a) => [String(a.id), a]));
+    const merged: Artifact[] = [];
+    for (const row of snapshot) {
+      const id = String(row.id);
+      if (this._deletedArtifactIds.has(id)) continue;
+      merged.push(live.get(id) ?? row);
+      live.delete(id);
+    }
+    // Rows the snapshot predates — created by an event during the request.
+    merged.push(...live.values());
+    this._artifacts = merged;
+  }
+
+  /**
    * Unified attach/detach/list for file-backed entities (agents, skills, …)
    * materialized under the process's assets dir and discovered by Claude via
    * ``--add-dir``. Mirrors Python ``process.attach_embedded_asset`` /
@@ -2690,10 +2835,20 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       shell.status = ShellStatus.CLOSING;
       dataManager.notifyEntityChanged(shell);
     }
+    // Stage the desired CLI transport BEFORE the request, symmetric with the
+    // Interactive branch above. Backend exit/final-save broadcasts happen
+    // before the HTTP response; keeping the prior PTY latch during that window
+    // can discard the authoritative false frame as stale. Roll back both the
+    // fields and latch if the action is rejected.
+    const restoreTransport = this.stageTransportIntent({ pty_mode: false, visible: false });
     const actionInfo = new ActionInfo('switch-mode', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = { mode };
-    await dataManager.callAction(actionInfo);
-    this.stageTransportIntent({ pty_mode: false, visible: false });
+    try {
+      await dataManager.callAction(actionInfo);
+    } catch (error) {
+      restoreTransport();
+      throw error;
+    }
   }
 
   /**

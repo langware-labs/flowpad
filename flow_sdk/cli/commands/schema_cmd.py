@@ -7,17 +7,19 @@ construct new records via ``flow record index``.
 
 from __future__ import annotations
 
-
 import requests
 import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
+)
+from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
     ok as _ok,
 )
-
 
 schema_app = typer.Typer(
     name="schema",

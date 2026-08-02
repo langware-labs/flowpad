@@ -18,6 +18,10 @@ import {
   Zap,
 } from 'lucide-react';
 
+import { transcriptEntry } from './transcriptEntry';
+
+export { transcriptEntry } from './transcriptEntry';
+
 /**
  * What a chip opens when clicked, or null when it opens nothing (the row stays
  * a plain expander; the raw payload is still one chevron away).
@@ -39,14 +43,6 @@ export interface EventDescriptor {
   /** One-liner detail: a path, a command, a target. Truncated by the caller. */
   detail: string;
   target: ChipTarget;
-}
-
-/** The typed entry the backend attached to this frame, when there is one. */
-export function transcriptEntry(fd: FlowData): Record<string, unknown> | null {
-  const pe = fd.processEntry;
-  if (!pe || typeof pe !== 'object') return null;
-  const entry = (pe as { transcript_entry?: unknown }).transcript_entry;
-  return entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : null;
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -154,9 +150,14 @@ export function describeEvent(fd: FlowData): EventDescriptor {
 }
 
 /**
- * `flow show entity <typeid>` opens that entity; `flow show file <path>` opens
- * the file. Anything else (a bare `flow record`, an unrecognized target) stays
- * a payload popover rather than guessing a destination.
+ * `flow <verb> entity <typeid>` opens that entity, `… file <path>` opens the
+ * file, `… webapp <port>` opens the port preview — the three addressing forms
+ * `_TARGETED` derives (flow_sdk/transcript_analyzer/derive.py). Anything else
+ * (a bare `flow record`, an unrecognized target) stays a payload popover rather
+ * than guessing a destination.
+ *
+ * For `flow artifact` the target is the REFERENCED asset, never the Artifact
+ * row that records it: the artifact is the receipt, the chip opens the thing.
  */
 function flowTarget(subverb: string, target: string): ChipTarget {
   if (!target) return null;
@@ -166,5 +167,9 @@ function flowTarget(subverb: string, target: string): ChipTarget {
     return { kind: 'entity', typeid: target, type: new TypeId(target).type };
   }
   if (subverb === 'file') return filePath(target);
+  if (subverb === 'webapp') {
+    const port = Number(target);
+    return Number.isInteger(port) && port > 0 ? { kind: 'webapp', port } : null;
+  }
   return null;
 }

@@ -14,6 +14,10 @@ export interface IArtifact extends IEntity {
   description?: string;
   origin?: FSOriginField | null;
   project_id?: string | null;
+  /** Path of the asset this artifact REFERENCES. It never owns the path. */
+  asset_ref?: string;
+  /** TypeId of the run that produced it, e.g. `agentic_process-<uuid>`. */
+  generated_by?: string | null;
 }
 
 /** Private compatibility input for rows received before the Artifact migration. */
@@ -70,6 +74,13 @@ export class Artifact extends APIEntity<Artifact> implements IArtifact {
   description?: string;
   origin: FSOriginField | null;
   project_id: string | null;
+  asset_ref: string;
+  /**
+   * Provenance. Deliberately NOT a revival of the retired `generating_flow_id`
+   * (which stays in RETIRED_ARTIFACT_KEYS and is deleted, never aliased):
+   * dropped provenance stays dropped rather than reappearing with new meaning.
+   */
+  generated_by: string | null;
 
   constructor(entity: Partial<IArtifact> | (Partial<IArtifact> & LegacyArtifactInput) = {}) {
     super(entity);
@@ -81,6 +92,8 @@ export class Artifact extends APIEntity<Artifact> implements IArtifact {
     this.description = entity.description;
     this.origin = normalizeFSOrigin((entity.origin ?? legacy.git_origin ?? metadataOrigin) as FSOriginInput | null);
     this.project_id = entity.project_id ?? null;
+    this.asset_ref = entity.asset_ref ?? '';
+    this.generated_by = entity.generated_by ?? null;
 
     // APIEntity.deepAssign intentionally accepts open wire payloads. Remove
     // legacy keys it copied before they can become a public runtime/write
@@ -104,6 +117,8 @@ export class Artifact extends APIEntity<Artifact> implements IArtifact {
     for (const key of RETIRED_ARTIFACT_KEYS) delete json[key];
     json.kind = this.kind;
     json.origin = this.origin;
+    json.asset_ref = this.asset_ref;
+    json.generated_by = this.generated_by;
     return json;
   }
 

@@ -23,6 +23,7 @@ deliberately ignores ``changed_ids``: the agent transport's worker writes
 through ``flow record create``, a separate ``ingest_items`` call, so the
 driver's own report is empty.
 """
+
 from __future__ import annotations
 
 import logging
@@ -107,8 +108,7 @@ def channel_of(source) -> str:
     return (getattr(source, "channel", "") or getattr(source, "provider", "") or "").strip()
 
 
-async def project_source_item(item, *, source=None, notify: bool = True,
-                              recount: bool = True) -> Optional[str]:
+async def project_source_item(item, *, source=None, notify: bool = True, recount: bool = True) -> Optional[str]:
     """Project one SourceItem into its conversation. Returns the FlowMessage id.
 
     Idempotent: the ids are derived, so a second call upserts the same rows.
@@ -125,10 +125,10 @@ async def project_source_item(item, *, source=None, notify: bool = True,
         materialize_flow_message,
     )
     from flow_sdk.builtin.cloud_origin import CloudOrigin  # noqa: PLC0415
-    from flow_sdk.ingest.drivers.channel_links import permalink_for  # noqa: PLC0415
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+    from flow_sdk.ingest.drivers.channel_links import permalink_for  # noqa: PLC0415
 
     if not is_message(item):
         return None  # a feed article is not inbox material — see MESSAGE_KIND_ROOT
@@ -149,9 +149,12 @@ async def project_source_item(item, *, source=None, notify: bool = True,
         # `conversation_id` is authoritative, because a merge repoints it and
         # that repoint is the whole reason the id is not derived from the key.
         thread = MessageThread(
-            id=thread_id, channel=channel, thread_key=key,
+            id=thread_id,
+            channel=channel,
+            thread_key=key,
             conversation_id=mint_uuid(f"conversation:{thread_id}"),
-            title=subject or key, name=subject or key,
+            title=subject or key,
+            name=subject or key,
         )
         await thread.save(notify=False)
     conversation_id = thread.conversation_id
@@ -159,7 +162,9 @@ async def project_source_item(item, *, source=None, notify: bool = True,
     # Defensive reads end here: `item` and `source` are typed entities.
 
     await ensure_conversation_entity(
-        conversation_id, parent_typeid=None, someone_typeid=None,
+        conversation_id,
+        parent_typeid=None,
+        someone_typeid=None,
         title=thread.title or subject or key,
     )
 
@@ -184,14 +189,15 @@ async def project_source_item(item, *, source=None, notify: bool = True,
         ).model_dump(),
     }
     if item.reply_to_external_id:
-        parent = SourceItem.allocate_deterministic_id(
-            item.data_source_id, item.stream_key, item.reply_to_external_id)
+        parent = SourceItem.allocate_deterministic_id(item.data_source_id, item.stream_key, item.reply_to_external_id)
         payload["reply_to_id"] = mint_uuid(f"flow_message:source_item:{parent}")
 
     # `bundle_ts` becomes the conversation pointer's timestamp, which is what
     # orders the feed — so a backfill lands in message time, not arrival order.
     fm = await materialize_flow_message(
-        payload, conversation_id, someone_typeid=None,
+        payload,
+        conversation_id,
+        someone_typeid=None,
         bundle_ts=(item.occurred_at or None),
         notify=notify,
     )
@@ -205,7 +211,12 @@ async def project_source_item(item, *, source=None, notify: bool = True,
 #: `is_read`, `is_archived`, drafts, delivery state — is the user's and must
 #: survive a refresh untouched.
 _PROJECTED_MESSAGE_FIELDS = (
-    "text", "sender_id", "sender_name", "thread_id", "reply_to_id", "origin",
+    "text",
+    "sender_id",
+    "sender_name",
+    "thread_id",
+    "reply_to_id",
+    "origin",
 )
 
 
@@ -307,8 +318,7 @@ async def _sender_for(item, source, channel: str) -> tuple[str, str]:
     return (f"{channel}:{address}" if address else f"{channel}:unknown"), display or channel
 
 
-async def recompute_thread_projection(thread_id: str, *, thread=None,
-                                      notify: bool = True) -> None:
+async def recompute_thread_projection(thread_id: str, *, thread=None, notify: bool = True) -> None:
     """Recount a thread from its messages and publish iff something changed.
 
     The count lives here rather than on each message because the conversation
@@ -351,12 +361,19 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
     # The kind gate belongs in the QUERY, not after it: a source that mixes
     # articles with mail would otherwise spend the whole `limit` budget on rows
     # it then drops, and re-fetch the same ones on every sweep forever.
-    items = await SourceItem.get_all(QueryFilter(match=ExpressionNode(
-        op=QueryOp.AND, operands=[
-            ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", data_source_id]),
-            ExpressionNode(op=QueryOp.LIKE, operands=["kind", f"{MESSAGE_KIND_ROOT}.%"]),
-        ],
-    ), limit=limit, order_by={"occurred_at": "asc"}))
+    items = await SourceItem.get_all(
+        QueryFilter(
+            match=ExpressionNode(
+                op=QueryOp.AND,
+                operands=[
+                    ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", data_source_id]),
+                    ExpressionNode(op=QueryOp.LIKE, operands=["kind", f"{MESSAGE_KIND_ROOT}.%"]),
+                ],
+            ),
+            limit=limit,
+            order_by={"occurred_at": "asc"},
+        )
+    )
     if not items:
         return 0
     wanted = {mint_uuid(f"flow_message:source_item:{i.id}"): i for i in items}
@@ -377,14 +394,14 @@ async def reconcile_source(data_source_id: str, *, limit: int = RECONCILE_BATCH)
             # time, which is quadratic in thread depth over a backfill.
             if await project_source_item(item, source=source, recount=False):
                 projected += 1
-                touched.add(MessageThread.allocate_deterministic_id(
-                    channel_of(source), thread_key_for(item, item.name or "")))
+                touched.add(
+                    MessageThread.allocate_deterministic_id(channel_of(source), thread_key_for(item, item.name or ""))
+                )
         except Exception:  # noqa: BLE001 — one bad record must not stall the sweep
             logger.exception("[inbox] reconcile failed for source_item %s", item.id)
     for thread_id in touched:
         await recompute_thread_projection(thread_id)
-    logger.info("[inbox] reconciled %d/%d items for source %s",
-                projected, len(missing), data_source_id)
+    logger.info("[inbox] reconciled %d/%d items for source %s", projected, len(missing), data_source_id)
     return projected
 
 

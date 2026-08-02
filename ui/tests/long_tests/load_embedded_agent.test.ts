@@ -1,11 +1,11 @@
 /**
- * loadEmbeddedAgent Integration Test
+ * loadEmbeddedAgent SubAgent Integration Test
  *
  * Verifies that:
- *   1. loadEmbeddedAgent records the agent's ENTITY ref (agent-<uuid>) in
+ *   1. loadEmbeddedAgent records the SubAgent ENTITY ref (subagent-<uuid>) in
  *      embedded_asset_refs (durable across requests) and getAssets() reports
  *      it as an EMBEDDED descriptor
- *   2. executeInstruction on a process with an embedded agent produces CHAT/TEXT FlowData output
+ *   2. executeInstruction on a process with an embedded SubAgent produces CHAT/TEXT FlowData output
  *
  * Uses new AgenticProcess({ workdir }).save([]) pattern — not computeNode.createProcess().
  * Output-stream assertions explicitly select headless mode; the entity default
@@ -76,7 +76,7 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     );
   });
 
-  it('records the agent entity ref in embedded_asset_refs (persisted)', async () => {
+  it('records the SubAgent entity ref in embedded_asset_refs (persisted)', async () => {
     const proc = await new AgenticProcess({ workdir }).save([]);
 
     await proc.loadEmbeddedAgent(agentFilePath);
@@ -87,11 +87,11 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     // take a beat — poll briefly so the test isn't racing a fan-out we
     // can't observe directly.
     // Same gate the product code uses: well-formed typeid + uuid-form entity id.
-    const isAgentUuidRef = (r: unknown) => {
+    const isSubAgentUuidRef = (r: unknown) => {
       const s = String(r);
       if (!isTypeId(s)) return false;
       const tid = new TypeId(s);
-      return tid.type === 'agent' && isValidUUIDv4(tid.id);
+      return tid.type === 'subagent' && isValidUUIDv4(tid.id);
     };
     const deadline = Date.now() + 5000;
     let refreshed: AgenticProcess | null = null;
@@ -99,20 +99,20 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     while (Date.now() < deadline) {
       refreshed = await dataManager.getByTypeId<AgenticProcess>(proc.typeId);
       refs = (refreshed?.embedded_asset_refs ?? []) as unknown[];
-      if (refs.some(isAgentUuidRef)) break;
+      if (refs.some(isSubAgentUuidRef)) break;
       await new Promise((r) => setTimeout(r, 50));
     }
     expect(refreshed, 'Process not found in dataManager after loadEmbeddedAgent').not.toBeNull();
     expect(
       refs.map(String),
-      'Expected an agent-<uuid> entry in embedded_asset_refs',
-    ).toSatisfy((all: string[]) => all.some(isAgentUuidRef));
+      'Expected a subagent-<uuid> entry in embedded_asset_refs',
+    ).toSatisfy((all: string[]) => all.some(isSubAgentUuidRef));
 
     // The unified descriptor view reports it as EMBEDDED with the same ref.
-    const embeddedRef = refs.map(String).find(isAgentUuidRef)!;
+    const embeddedRef = refs.map(String).find(isSubAgentUuidRef)!;
     const descriptors = await proc.getAssets();
     const embedded = descriptors.filter((d) => d.typeid === embeddedRef);
-    expect(embedded.length, 'getAssets should surface the embedded agent').toBeGreaterThan(0);
+    expect(embedded.length, 'getAssets should surface the embedded SubAgent').toBeGreaterThan(0);
     expect(embedded.every((d) => d.source === 'embedded')).toBe(true);
 
     console.log('[load_embedded_agent] embedded_asset_refs:', refs.map(String).join(', '));

@@ -16,6 +16,7 @@ Three things that only break silently:
 
 # do not increase timeout without approval
 """
+
 from __future__ import annotations
 
 import ntpath
@@ -234,9 +235,9 @@ def test_brand_accepts_any_extension(tmp_path) -> None:
 @pytest.mark.parametrize(
     "brand",
     [
-        None,           # key absent
-        {},             # present but empty
-        "not-a-dict",   # wrong type
+        None,  # key absent
+        {},  # present but empty
+        "not-a-dict",  # wrong type
         {"name": "   "},  # whitespace-only
         {"logo": "brand/absent.svg"},  # only an asset, and it does not exist
     ],
@@ -332,4 +333,3 @@ async def test_refresh_reports_whether_the_pull_moved_anything() -> None:
     ):
         resp = await hda.helpdesk_refresh()
     assert resp.data["updated"] is True
-

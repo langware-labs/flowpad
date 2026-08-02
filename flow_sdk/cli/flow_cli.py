@@ -187,14 +187,14 @@ def upgrade(
 
 def _start_service(port: int) -> None:
     """Start the Flow server and monitor. Shared by `flow start` and `flow start service`."""
-    from flow_sdk.server.launch import check_server_health, start_monitor_detached, wait_for_server_health
-
     # Run any pending migration for the current version BEFORE the server
     # boots. The migration is itself a headless AgenticProcess, so its
     # stdout streams to this same terminal — the user sees progress.
     # ``run_if_needed`` is a no-op when no recipe exists or the migration
     # already completed, so this is safe on every start.
     from flow_sdk.migrations import runner as migration_runner
+    from flow_sdk.server.launch import check_server_health, start_monitor_detached, wait_for_server_health
+
     migration_exit = migration_runner.run_if_needed()
     if migration_exit != 0:
         typer.echo(
@@ -237,6 +237,7 @@ def start(ctx: typer.Context):
     # Skip browser open when launched from Electron (it has its own BrowserWindow)
     if not os.environ.get("FLOWPAD_NO_BROWSER"):
         import time
+
         from flow_sdk.server.launch import check_server_health
 
         healthy = False
@@ -960,52 +961,71 @@ log_app = typer.Typer(help="View and replay CLI invocation logs")
 app.add_typer(log_app, name="log")
 
 from flow_sdk.cli.commands.compute_cmd import compute_app
+
 app.add_typer(compute_app, name="compute")
 
 from flow_sdk.cli.commands.navigate_cmd import navigate_app
+
 app.add_typer(navigate_app, name="navigate")
 
+from flow_sdk.cli.commands.artifact_cmd import artifact_app
+
+app.add_typer(artifact_app, name="artifact")
+
 from flow_sdk.cli.commands.show_cmd import show_app
+
 app.add_typer(show_app, name="show")
 
 from flow_sdk.cli.commands.terminal_cmd import terminal_app
+
 app.add_typer(terminal_app, name="terminal")
 
 from flow_sdk.cli.commands.tag_cmd import tag_app
+
 app.add_typer(tag_app, name="tag")
 
 from flow_sdk.cli.commands.app_cmd import app_app
+
 app.add_typer(app_app, name="app")
 
 from flow_sdk.cli.commands.context_cmd import context_app
+
 app.add_typer(context_app, name="context")
 
 from flow_sdk.cli.commands.schema_cmd import schema_app
+
 app.add_typer(schema_app, name="schema")
 
 from flow_sdk.cli.commands.record_cmd import record_app
+
 app.add_typer(record_app, name="record")
 
 from flow_sdk.cli.commands.conversation_cmd import conversation_app
+
 app.add_typer(conversation_app, name="conversation")
 
 
 from flow_sdk.cli.commands.process_cmd import process_app
+
 app.add_typer(process_app, name="process")
 
 from flow_sdk.cli.commands.wizard_cmd import wizard_command
+
 app.command(
     "wizard",
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
 )(wizard_command)
 
 from flow_sdk.cli.commands.migrate_cmd import migrate_app
+
 app.add_typer(migrate_app, name="migrate")
 
 from flow_sdk.cli.commands.instance_cmd import instance_app
+
 app.add_typer(instance_app, name="instance")
 
 from flow_sdk.cli.commands.diagnose_cmd import diagnose_command
+
 # No positional MESSAGE arg — the issue is read at a prompt. allow_extra_args so
 # stray words (e.g. `flow diagnose backend down`) are ignored, not errors.
 app.command(

@@ -204,7 +204,11 @@ def test_codex_history_replays_all_durable_typed_entries(tmp_path):
     history = load_transcript_history(rollout)
     transcript_entries = [item.process_entry["transcript_entry"] for item in history]
 
-    assert len(history) == 14
+    # 14 physical frames, plus one refinement the derivation layer appends: codex
+    # hands us a generic tool-use for its shell, which becomes a shell_command.
+    # Claude and copilot always had that entry; codex did not, and this is it.
+    assert len(history) == 15
+    assert sum(1 for e in transcript_entries if e.get("virtual")) == 1
     assert {entry["kind"] for entry in transcript_entries} == {
         "assistant_message",
         "system",
@@ -212,6 +216,7 @@ def test_codex_history_replays_all_durable_typed_entries(tmp_path):
         "tool_result",
         "tool_use",
         "user_message",
+        "shell_command",  # the derived refinement of codex's generic shell tool-use
     }
     assert "meta" not in {entry["kind"] for entry in transcript_entries}
     assert all(item.process_entry["observation_kind"] == "replay" for item in history)

@@ -6,7 +6,6 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
-import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useProcessAssets } from './useProcessAssets';
 import {
   displayLabelForTypeid,
@@ -116,8 +115,6 @@ export function AssetPickerPopover({
   // process: null → useProcessAssets returns the synthetic SubAgent + Skill list
   // pulled from the global entity queries. No process needs to exist yet.
   const { descriptors, isLoading, refresh } = useProcessAssets(null, { enabled: open });
-  const { types: assetTypes } = useAssetTypes();
-
   // On open: refresh the list and start from "All" so every agent/skill is
   // visible by default (the project-scoped default would hide user assets).
   useEffect(() => {

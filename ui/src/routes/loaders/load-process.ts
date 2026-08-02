@@ -2,9 +2,11 @@
  * AgenticProcess loading primitive.
  *
  * Pure (no redirects, no toasts, no URL knowledge): fetches the process,
- * starts it to attach the PTY, resolves the linked Shell, and sets the
- * dataContext bits every caller needs. Failures throw typed errors — the
- * route wrapper decides how to recover (redirect URL, recovery skips, etc).
+ * resolves its owning project + linked Shell, and sets the dataContext bits
+ * every caller needs. Identity-only: the mounted terminal panel owns the
+ * PTY-bound `process.start()` side effect so route commitment is never gated
+ * on a worker/WS attach. Failures throw typed errors — the route wrapper
+ * decides how to recover (redirect URL, recovery skips, etc).
  */
 
 import {
@@ -16,7 +18,6 @@ import {
   systemTools,
   TypeId,
 } from '@sdk';
-import { estimateCols, estimateRows } from '@src/components/terminal/interactive-terminal/terminalConfig';
 import { stampTabRecencyForTarget } from '@src/tabs/tab-recency';
 import { perfLog, perfTime } from './_perf';
 import { loadProject } from './load-project';
@@ -76,7 +77,7 @@ export class ProcessLoadError extends Error {
  * server-supplied error messages — those are the only signals available
  * without rewiring the SDK to throw typed errors of its own.
  */
-function classifyRuntimeFailure(
+export function classifyRuntimeFailure(
   processId: string,
   process: AgenticProcess,
   cause: unknown,
@@ -124,10 +125,9 @@ export function describeProcessStartError(error: unknown): { title: string; desc
 }
 
 /**
- * Load an AgenticProcess by id: cache-first fetch, `start({visible:true})` to
- * attach the PTY, resolve its Shell, write context. Idempotent when the
- * process is already live and attached in this client (fast path inside
- * AgenticProcess.start).
+ * Load an AgenticProcess by id: cache-first fetch, resolve its owning project
+ * and linked Shell, then write URL-derived context. The PTY attach belongs to
+ * the mounted terminal panel, not this route loader.
  *
  * Throws ProcessLoadError on any failure. Never redirects.
  */
@@ -165,15 +165,13 @@ export async function loadProcess(
   }
 
   // ── Project phase — URL-first: resolve the owning project into context
-  // BEFORE any runtime side effect. `process.start()` and its downstream
-  // (claude-session discovery, CWD selection for `claude --resume`, etc.)
-  // read `dataContext.project`; if that still reflects the previously-active
-  // project, the PTY launches in the wrong CWD and Claude can't find the
-  // transcript. Doing the project write here makes every consumer URL-first.
+  // before the route commits. The mounted view starts the process only after
+  // this loader has established the project, so runtime CWD/session discovery
+  // cannot observe the previously-active project.
   if (process.project_id) {
     try {
       await perfTime('loadProject', () =>
-        loadProject(new TypeId(Project.type, process!.project_id!)),
+        loadProject(new TypeId(Project.type, process.project_id!)),
       );
     } catch (cause) {
       // The stored project_id can dangle when the project was deleted under
@@ -194,35 +192,26 @@ export async function loadProcess(
     await systemTools.resolveProjectContext(process.workdir, process);
   }
 
-  // ── Runtime phase (soft errors — entity is fine, runtime isn't) ────────
-  // Headless (`pty_mode === false`): no PTY attach and no Shell — the chat
-  // streams over `flowDataStream`. Skip the PTY runtime phase entirely so the
-  // choice is durable across reload (the loader no longer forces visible:true).
+  // ── Linked-Shell identity phase ────────────────────────────────────────
+  // Do not call process.start() here: it awaits the backend worker plus PTY/WS
+  // attach, and React Router cannot commit the destination URL while a loader
+  // is pending. The mounted TerminalPanel owns that runtime side effect.
+  // An already-cached linked Shell remains useful for workdir context, but no
+  // Shell fetch belongs on the route's critical path — start() hydrates or
+  // restores the runtime entity after paint. Headless processes legitimately
+  // have no Shell.
   let shell: Shell | null = null;
-  if (process.pty_mode !== false) {
-    try {
-      const cols = estimateCols(window.innerWidth);
-      const rows = estimateRows(window.innerHeight);
-      await perfTime('process.start (PTY attach)', () =>
-        process.start({ visible: true, cols, rows }),
-      );
-      shell = await perfTime('process.shell()', () => process.shell());
-    } catch (cause) {
-      throw classifyRuntimeFailure(processId, process, cause);
-    }
-
-    if (!shell) {
-      throw new ProcessLoadError('shell_entity_missing', processId, process.shell_id ?? null);
-    }
+  if (process.pty_mode !== false && process.shell_id) {
+    shell = Shell.getByIdFromCache<Shell>(process.shell_id) ?? null;
   }
 
   // The strip self-populates from the live `Tab` entity query (useTerminalTabs);
   // the loader's `ensureTabForCurrentDock` already materialized this process's
   // Tab. No imperative strip fetch needed.
 
-  await perfTime('dataContext sync setters (shellId/target/workdir)', async () => {
+  await perfTime('dataContext sync setters (shellId/target/workdir)', () => {
     // Headless: '' clears any stale active shell (same sentinel as load-shell).
-    dataContext.setActiveShellId(shell?.id ?? '');
+    dataContext.setActiveShellId(process.pty_mode === false ? '' : (process.shell_id ?? ''));
     dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
     // Fire-and-forget server stamp (Part 3 §4 D-A): never awaited — loaders
     // must stay fast; the in-cache bump above is the synchronous seed.
@@ -232,7 +221,7 @@ export async function loadProcess(
     // falls back to tab_order.
     stampTabRecencyForTarget(AgenticProcess.type, processId);
     dataContext.setWorkdir(
-      process!.workdir ?? shell?.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
+      process.workdir ?? shell?.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
     );
   });
   await perfTime('setContextEntityTypeId(CurrentProcessTypeId)', () =>

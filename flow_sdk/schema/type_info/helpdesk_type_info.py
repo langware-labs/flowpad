@@ -1,10 +1,11 @@
 """Type metadata for HELPDESK — folder-backed support-desk portal."""
+
+from flow_sdk.fs_store.identity_backend import DerivedIdentityBackend
 from flow_sdk.fs_store.indexer.functions.helpdesk import (
     extract_helpdesk,
     helpdesk_asset_hash,
     helpdesk_stable_key,
 )
-from flow_sdk.fs_store.identity_backend import DerivedIdentityBackend
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode

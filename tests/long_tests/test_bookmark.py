@@ -1,6 +1,5 @@
 """Long tests for Bookmark entity — TestClient + WebSocket path (slow)."""
 
-import json
 import uuid
 
 import pytest
@@ -29,10 +28,27 @@ def _envelope(payload: dict) -> dict:
 
 
 @pytest.fixture(autouse=True)
+def no_startup_system_index(monkeypatch):
+    """Keep unrelated startup indexing off the bookmark WebSocket.
+
+    The detached system-content index broadcasts entity notifications to every
+    connection. This test asserts a bounded sequence of bookmark operations,
+    so the index's unrelated asset notifications must not share its wire.
+    """
+    import flow_sdk.server.app as _app
+
+    async def _noop() -> None:
+        return None
+
+    monkeypatch.setattr(_app, "_start_system_content_index", _noop)
+
+
+@pytest.fixture(autouse=True)
 def isolate_records_root(tmp_path):
     original = get_default_records_root()
     set_default_records_root(tmp_path)
     from flow_sdk.core.network.connections import _registry
+
     _registry.clear()
     yield tmp_path
     set_default_records_root(original)
@@ -57,9 +73,7 @@ def _receive_bookmark_op(ws, *, op: str, title: str | None = None) -> dict:
         if title is not None and msg.get("data", {}).get("title") != title:
             continue
         return msg
-    raise AssertionError(
-        f"Did not receive expected bookmark {op} (title={title!r}) within {_WS_DRAIN_LIMIT} messages"
-    )
+    raise AssertionError(f"Did not receive expected bookmark {op} (title={title!r}) within {_WS_DRAIN_LIMIT} messages")
 
 
 # do not increase timeout without approval
@@ -67,6 +81,7 @@ def _receive_bookmark_op(ws, *, op: str, title: str | None = None) -> dict:
 def test_hook_op_ws_and_graph_update():
     """Create/update/delete via hook_op and graph PUT, verify all WS data_op_msg events."""
     from starlette.testclient import TestClient
+
     from flow_sdk.server.app import app
 
     with TestClient(app) as tc:
@@ -103,7 +118,7 @@ def test_hook_op_ws_and_graph_update():
             assert data["action"] in ("created", "updated")
             bookmark_id = data["bookmark_id"]
 
-            msg = _receive_bookmark_op(ws, op="create", title="WS Test Bookmark")
+            _receive_bookmark_op(ws, op="create", title="WS Test Bookmark")
 
             # --- Watch bookmark for targeted update/delete events ---
             resp = tc.post(
@@ -120,7 +135,7 @@ def test_hook_op_ws_and_graph_update():
             assert resp.status_code == 200, resp.text
             assert resp.json()["data"]["title"] == "Graph Updated"
 
-            msg = _receive_bookmark_op(ws, op="update", title="Graph Updated")
+            _receive_bookmark_op(ws, op="update", title="Graph Updated")
 
             # --- hook_op UPDATE -> WS update events ---
             resp = tc.post(
@@ -181,6 +196,7 @@ def test_hook_op_ws_and_graph_update():
 def test_sdk_notify_creates_bookmark():
     """Simulate the SDK notify path: POST webhook envelope to /listen, verify DB + WS."""
     from starlette.testclient import TestClient
+
     from flow_sdk.server.app import app
 
     with TestClient(app) as tc:
