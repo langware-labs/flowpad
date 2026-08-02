@@ -210,3 +210,43 @@ async def flow_message_forward() -> ApiResponse:
         return ApiFailResponse(message="Cloud login required to send messages")
 
     return await handle_forward_message(body, request_info.someone_typeid)
+
+
+# ── replying into the channel a conversation came from ───────────────────────
+
+
+@action.post(action_name="send_external", types=["conversation"])
+async def conversation_send_external() -> ApiResponse:
+    """``POST /graph/conversation/<id>/send_external`` — reply into the cloud
+    thread this conversation caches.
+
+    Deliberately NOT a branch inside ``add_message``. That path is two hundred
+    lines of hub semantics — cloud-login gates, remote-send forks, body uploads,
+    delivery receipts — none of which apply to an email, and all of which would
+    be at risk from a change made for one.
+
+    Returns as soon as the send is DISPATCHED, not when it lands: an agent turn
+    is tens of seconds and the conversation must stay usable. The reply appears
+    by the ordinary ingest route once the worker records it, sorted into place
+    by its own timestamp — there is no outbound rendering path.
+    """
+    from flow_sdk.app.actions.channel_send import dispatch_channel_reply  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        raise HTTPException(status_code=400,
+                            detail="send_external: target conversation typeid required")
+    if request_info.target_entity_typeid.type != "conversation":
+        raise HTTPException(status_code=400,
+                            detail="send_external: target must be a conversation")
+
+    body = await request_info.get_post_data() or {}
+    text = str((body or {}).get("text") or (body or {}).get("message") or "").strip()
+    if not text:
+        return ApiFailResponse(message="send_external: an empty message is not a reply")
+
+    return await dispatch_channel_reply(
+        request_info.target_entity_typeid.id,
+        text=text,
+        reply_to_message_id=str((body or {}).get("reply_to_message_id") or "") or None,
+    )

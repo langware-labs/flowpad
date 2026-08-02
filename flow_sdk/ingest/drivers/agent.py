@@ -40,7 +40,7 @@ from flow_sdk.builtin.agentic_process.launch_health import (
     emit_launch_failed,
     ensure_launchable,
 )
-from flow_sdk.ingest.driver import FetchResult, StreamCursorView, StreamRef
+from flow_sdk.ingest.driver import FetchResult, SendOutcome, StreamCursorView, StreamRef
 from flow_sdk.ingest.health import SourceError
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,30 @@ _slots = asyncio.Semaphore(MAX_CONCURRENT_AGENTS)
 
 #: Where the worker leaves its account of the run. Named by us, not by it.
 RECEIPT_FILENAME = "ingested.json"
+
+#: The send verb's receipt. A separate name so the two verbs can never read
+#: each other's account of a run.
+SEND_RECEIPT_FILENAME = "sent.json"
+
+#: A SEPARATE budget from `_slots`. A reply is foreground work: sharing the
+#: poll semaphore would park it behind up to two 300-second mailbox fetches
+#: while the user watches a spinner, and dropping the budget entirely would let
+#: N clicks spawn N unbounded workers — the exact failure the module docstring
+#: says these caps exist to prevent. This is the codebase's first
+#: foreground/background distinction; it is deliberate and it is small.
+MAX_CONCURRENT_SENDS = 2
+_send_slots = asyncio.Semaphore(MAX_CONCURRENT_SENDS)
+
+#: The send deadline. Shorter than the fetch's 300s: a fetch may sweep a
+#: mailbox, a send writes one message.
+DEFAULT_SEND_DEADLINE_SECONDS = 120
+
+#: The Agent that owns replying. NOT `email-summarizer` — that persona's own
+#: prose says "You do not open the mailbox".
+DEFAULT_SEND_AGENT = "emailer"
+
+#: Its task contract for this verb.
+DEFAULT_SEND_SUBAGENT = "email_sender"
 
 #: The shipped Agent a source uses unless its config names another. An Agent —
 #: not a raw prompt — so the worker, model and subagents are the ones a user can
@@ -124,6 +148,185 @@ class AgentDriver:
                 raise error.as_source_error() from exc
 
         return self._result_from(receipt, cursor)
+
+    # ── the send verb ─────────────────────────────────────────────────────────
+
+    sends = True
+
+    async def send(self, source, *, thread_key: str, to: str,
+                   text: str, subject: str = "") -> SendOutcome:
+        """Reply into the channel, and record the reply the same way an inbound
+        message is recorded.
+
+        Deliberately NOT symmetric with ``fetch`` in two places, both of which
+        would be bugs if copied:
+
+        1. **No ``SourceError``.** ``as_source_error()`` produces a health that
+           parks the DataSource — one failed reply would stop the mailbox
+           syncing. ``LaunchError`` propagates instead and is converted at the
+           API boundary, where ``as_dict()`` is already the right shape.
+        2. **A timeout is not a failure, and never a retry.** ``fetch`` classes
+           TIMEOUT as transient because a re-run is an upsert behind the digest
+           gate. A send has no such gate: re-running mails the recipient twice.
+           So a timeout raises a CONFIG-health error — the one health that
+           forbids automatic re-attempts — carrying "outcome unknown".
+        """
+        config = getattr(source, "config", None) or {}
+        harness = config.get("harness") or None
+        deadline = int(config.get("send_deadline_seconds") or DEFAULT_SEND_DEADLINE_SECONDS)
+        target = f"conversation_send:{source.id}"
+
+        launch_problem = await ensure_launchable(harness)
+        if launch_problem is not None:
+            emit_launch_failed(launch_problem, target)
+            raise launch_problem
+
+        async with _send_slots:
+            try:
+                receipt = await asyncio.wait_for(
+                    self._run_send_agent(source, config, harness,
+                                         thread_key=thread_key, to=to,
+                                         text=text, subject=subject),
+                    timeout=deadline,
+                )
+            except asyncio.TimeoutError:
+                # CONFIG, not transient — transient means "the next attempt may
+                # succeed", and there must not BE a next attempt: the mail may
+                # already be gone.
+                error = LaunchError.config(
+                    LaunchErrorCode.TIMEOUT,
+                    f"the worker did not finish within {deadline}s — the mail may "
+                    f"or may not have been sent; check the channel before retrying",
+                    str(harness or ""),
+                )
+                emit_launch_failed(error, target)
+                raise error from None
+            except LaunchError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — classify, never leak
+                error = LaunchError.classify(exc, str(harness or ""))
+                emit_launch_failed(error, target)
+                raise error from exc
+
+        return self._send_result_from(receipt, thread_key)
+
+    @staticmethod
+    def _send_result_from(receipt: dict, thread_key: str) -> SendOutcome:
+        """Read the send receipt. Mirrors ``_result_from``'s error mapping, but
+        every failure here is CONFIG health for the reason in ``send``."""
+        reported = receipt.get("error")
+        if reported:
+            raise LaunchError.config(
+                LaunchErrorCode.NOT_AUTHENTICATED if str(reported) == "no_connector"
+                else LaunchErrorCode.UNKNOWN,
+                str(reported), "",
+            )
+        drafted = bool(receipt.get("drafted"))
+        if not receipt.get("sent") and not drafted:
+            # No error, no send and no draft is still not an outcome.
+            raise LaunchError.config(
+                LaunchErrorCode.UNKNOWN,
+                "the worker returned a receipt that confirms neither a send nor a draft",
+                "",
+            )
+        return SendOutcome(
+            external_id=str(receipt.get("external_id") or receipt.get("draft_id") or ""),
+            thread_key=str(receipt.get("thread_key") or thread_key or ""),
+            occurred_at=str(receipt.get("occurred_at") or ""),
+            recorded=bool(receipt.get("recorded")),
+            drafted=drafted,
+        )
+
+    async def _run_send_agent(self, source, config: dict, harness,
+                              *, thread_key: str, to: str, text: str,
+                              subject: str) -> dict:
+        """One agent turn that sends and records. Same build/save/prompt/wait
+        shape as ``_run_agent`` — ``build`` (not ``launch``) because the receipt
+        path must be known before the run starts."""
+        from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
+        from flow_sdk.graph_workflow_manager.manager import execution_base  # noqa: PLC0415
+
+        agent_name = str(config.get("send_agent") or DEFAULT_SEND_AGENT)
+        try:
+            deployment = await get_agent_local_deployment(agent_name)
+        except LookupError as exc:
+            raise LaunchError.config(LaunchErrorCode.UNKNOWN, str(exc), "") from exc
+
+        options: dict = {"name": f"reply · {to}", "visible": False}
+        if harness:
+            options["worker_type"] = harness
+        proc = await deployment.build("", **options)
+
+        base = execution_base(proc)
+        (base / "output").mkdir(parents=True, exist_ok=True)
+        receipt_path = base / "output" / SEND_RECEIPT_FILENAME
+
+        instruction = self._send_instruction(
+            source, config, receipt_path,
+            thread_key=thread_key, to=to, text=text, subject=subject,
+        )
+        proc.instruction_content = instruction
+        await proc.save()
+
+        response = await proc.prompt(instruction)
+        if getattr(response, "status", None) and str(response.status).upper().endswith("FAIL"):
+            raise LaunchError.config(
+                LaunchErrorCode.UNKNOWN,
+                str(getattr(response, "message", "") or "prompt refused"), "",
+            )
+        await proc.wait()
+        try:
+            await proc.exit()
+        except Exception:  # noqa: BLE001
+            logger.debug("send worker exit failed", exc_info=True)
+
+        return self._read_receipt(receipt_path)
+
+    @staticmethod
+    def _send_instruction(source, config: dict, receipt_path,
+                          *, thread_key: str, to: str, text: str,
+                          subject: str) -> str:
+        """The send contract plus this run's facts.
+
+        Same shape as ``_instruction``: the subagent markdown is the contract,
+        and everything below `## This run` is what changes per send. The body
+        is fenced rather than inlined so the model can see exactly where the
+        user's words start and stop — it must send them verbatim.
+        """
+        from flow_sdk.fs_store.operations.subagent import load_subagent  # noqa: PLC0415
+
+        body = ""
+        try:
+            agent = load_subagent(str(config.get("send_subagent") or DEFAULT_SEND_SUBAGENT))
+            data = getattr(agent, "data", None) or {}
+            body = str(data.get("prompt") or data.get("prompt_text") or "")
+        except Exception:  # noqa: BLE001 — the addendum alone is still runnable
+            logger.debug("send subagent load failed", exc_info=True)
+
+        flow_cli = Path(sys.executable).parent / "flow"
+        lines = [
+            "",
+            "---",
+            "## This run",
+            "",
+            f"- data-source id (`source_id`): `{source.id}`",
+            f"- provider: `{config.get('connector') or 'gmail'}`",
+            f"- reply into thread (`thread_key`): `{thread_key or '(none — start a new thread)'}`",
+            f"- send to: `{to}`",
+            f"- subject: `{subject or '(reuse the thread’s subject)'}`",
+            f"- receipt path: `{receipt_path}`",
+            f"- the `flow` CLI to use, by absolute path: `{flow_cli}`",
+            "  (run exactly `… record create source_item --json <file>` — a bare",
+            "  `flow` on PATH may be an older build without this command)",
+            "",
+            "### The message body — send exactly this, and nothing else",
+            "",
+            "```",
+            text,
+            "```",
+            "",
+        ]
+        return (body + "\n\n" + "\n".join(lines)) if body else "\n".join(lines)
 
     # ── the spawn ─────────────────────────────────────────────────────────────
 

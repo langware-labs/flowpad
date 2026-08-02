@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Boxes, File as FileIcon, MessageSquarePlus, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
-import { sendReply } from '@sdk/entities/notifications';
+import { sendReply, sendToChannel } from '@sdk/entities/notifications';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
@@ -25,6 +25,11 @@ interface MessageComposerProps {
   /** Overrides the reply placeholder. Used when the composer is gated, so the
    *  box explains why instead of inviting a reply that goes nowhere. */
   placeholder?: string;
+  /** When set, this conversation caches a cloud thread and Send pushes the
+   *  reply back into that channel instead of the hub. */
+  channel?: string;
+  /** Fires when a channel send is accepted (dispatched, not delivered). */
+  onChannelSent?: (text: string) => void;
   /** Live-session composer: every send is stamped with this session id (the
    *  backend appends the snapshot-carrier attachment). Set by LiveSessionView;
    *  the plain conversation composer leaves it unset. */
@@ -128,6 +133,8 @@ export function MessageComposer({
   conversationId,
   disabled,
   placeholder,
+  channel,
+  onChannelSent,
   liveSessionId,
   onSent,
   queuedPrompt,
@@ -293,6 +300,22 @@ export function MessageComposer({
     const outgoingFiles = liveSessionPrompt ? undefined : files.length > 0 ? files : undefined;
     setSending(true);
     setError(null);
+
+    // A channel reply never touches the hub, so it must not drag the user
+    // through a Flowpad-Cloud login to send an email.
+    if (channel) {
+      try {
+        const body = messageBody;
+        await sendToChannel(effectiveConversationId!, body);
+        setText('');
+        onChannelSent?.(body);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
     try {
       // Cloud reply needs an authenticated hub token; otherwise the hub POST
       // 401s and the send fails silently. Route through OAuth first.

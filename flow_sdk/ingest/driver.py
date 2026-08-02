@@ -33,6 +33,31 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 @dataclass(frozen=True)
+class SendOutcome:
+    """What the channel confirmed about one send.
+
+    ``external_id`` is the provider's id for the message it created — the same
+    namespace an inbound record's ``external_id`` lives in, which is what lets
+    the sent copy and any later fetch of it converge on one row.
+
+    ``recorded`` says whether the transport also wrote the SourceItem. False
+    means the mail went out but the local copy did not land: the user's message
+    IS sent, and re-sending to fix the bookkeeping would mail them twice.
+    """
+
+    external_id: str = ""
+    thread_key: str = ""
+    occurred_at: str = ""
+    recorded: bool = False
+    #: The message was placed in the channel as a DRAFT for the user to send,
+    #: not delivered. Some connectors can compose but not send — the claude.ai
+    #: Gmail connector exposes `create_draft` and no send verb at all — and a
+    #: draft is a真 outcome, not a failure. The caller must not tell the user
+    #: their mail went out.
+    drafted: bool = False
+
+
+@dataclass(frozen=True)
 class StreamRef:
     """One syncable unit within a source — a feed URL, a channel."""
 
@@ -87,6 +112,25 @@ class IngestDriver(Protocol):
     #: membership — the inbox projection accepts `content.message.*` and
     #: nothing else (`flow_sdk/inbox/projection.py MESSAGE_KIND_ROOT`).
     record_kind: str
+
+    #: Whether this driver can push a message back to its channel. Discovered
+    #: the same way ``channel_for`` is — a driver that cannot send simply omits
+    #: ``send`` and leaves this False, and stays a three-line class.
+    sends: bool = False
+
+    async def send(self, source: "DataSource", *, thread_key: str, to: str,
+                   text: str, subject: str = "") -> "SendOutcome":
+        """OPTIONAL. Push one message into the channel and record it.
+
+        Returns what the channel confirmed. The driver does NOT write the
+        record itself — the transport does, through the same
+        ``ingest_items`` chokepoint an inbound message uses, so a reply
+        re-enters by the front door and needs no outbound code path.
+
+        MUST NOT raise ``SourceError``: that health drives DataSource parking,
+        and one failed reply must never stop a mailbox syncing.
+        """
+        ...
 
     def channel_for(self, source: "DataSource") -> str:
         """OPTIONAL. The user-facing CHANNEL this source reaches — gmail | slack | jira.

@@ -19,7 +19,7 @@ import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hoo
 import type { ITask } from '@sdk/entities/task';
 import { isHelpdeskKind } from '@sdk/entities/conversation';
 import { ThreadStack } from './ThreadStack';
-import { ChannelReplyNotice, channelLabel } from './ChannelBadge';
+import { channelLabel } from './ChannelBadge';
 import { syncConversationMessages, updateMessage } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
@@ -295,6 +295,18 @@ export function ConversationView({
     }
     return null;
   }, [messagesById]);
+
+  // What is in flight. Local state, because the line must appear the instant
+  // the user hits Send — the worker's process does not exist yet. Cleared when
+  // the reply lands, which is the only honest signal it is no longer sending.
+  const [sendingText, setSendingText] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (sendingText) setSendingText(null);
+    // Intentionally keyed on the pointer count alone: a new message in this
+    // conversation IS the arrival, whichever direction it came from.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointers.length]);
 
   // Authoritative per-thread sizes. The feed query is windowed, so counting
   // the loaded messages would undercount a long thread; MessageThread carries
@@ -766,16 +778,19 @@ export function ConversationView({
           bubble with Send/Discard — but it must not block composing a fresh reply.
           The plain composer never auto-creates a draft, so there's no duplication
           loop. */}
-      {channelOrigin && <ChannelReplyNotice origin={channelOrigin} />}
+      {sendingText && (
+        <SessionEventLine
+          text={t`Composing in ${channelLabel(channelOrigin?.kind)}: “${sendingText}” — finish sending there`}
+        />
+      )}
       <MessageComposer
         conversationId={conversationId}
         onSent={() => void refetch()}
-        // A source-backed conversation has no working reply path yet: the send
-        // would become a Flowpad message the real recipient never sees. Gate it
-        // rather than let the box lie. Replaced by the channel send in Part 2.
-        disabled={!!channelOrigin}
+        // A source-backed conversation replies into its channel, not the hub.
+        channel={channelOrigin?.kind}
+        onChannelSent={setSendingText}
         placeholder={
-          channelOrigin ? t`Reply in ${channelLabel(channelOrigin.kind)} to continue this thread` : undefined
+          channelOrigin ? t`Reply — drafted into ${channelLabel(channelOrigin.kind)}` : undefined
         }
       />
 
