@@ -38,12 +38,12 @@ vi.mock('@src/components/chats-navigator/useChatHistory', () => ({
 }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => null,
   useDockNavigation: () => ({ navigation: { openDockPointer } }),
 }));
 
 vi.mock('@src/components/terminal/HistoryModal', () => ({
-  HistoryModal: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="history-modal-open" /> : null,
+  HistoryModal: ({ open }: { open: boolean }) => (open ? <div data-testid="history-modal-open" /> : null),
 }));
 
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn() } }));
@@ -131,9 +131,7 @@ describe('VibeRecentSessions', () => {
     await user.click(screen.getByTestId('vibe-recent-session'));
 
     expect(getByWorkerId).toHaveBeenCalledWith('w1', 'claude');
-    await waitFor(() =>
-      expect(openDockPointer).toHaveBeenCalledWith(terminalDockPointer, { viewMode: 'vibe' }),
-    );
+    await waitFor(() => expect(openDockPointer).toHaveBeenCalledWith(terminalDockPointer, { viewMode: 'vibe' }));
   });
 
   it('opens the history modal from "Show more"', async () => {

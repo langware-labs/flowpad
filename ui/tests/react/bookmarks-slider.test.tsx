@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Bookmark } from '@sdk';
@@ -95,6 +95,7 @@ describe('LeftSlider', () => {
 const h = vi.hoisted(() => ({ openDock: vi.fn(), dock: 'DOCK' }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => ({ toString: () => h.dock }),
   useDockNavigation: () => ({
     navigation: { openDock: h.openDock },
     currentDock: { toString: () => h.dock },

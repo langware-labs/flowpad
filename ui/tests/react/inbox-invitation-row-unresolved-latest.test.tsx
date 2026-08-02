@@ -59,6 +59,7 @@ vi.mock('@sdk/react/hooks', () => ({
 }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => null,
   useDockNavigation: () => ({
     navigation: { openDock: vi.fn() },
     currentDock: null,

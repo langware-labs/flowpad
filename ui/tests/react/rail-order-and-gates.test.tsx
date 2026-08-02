@@ -24,6 +24,7 @@ const nav = vi.hoisted(() => ({ openDock: vi.fn(), openTab: vi.fn(), openAssets:
 /** Mutable so a test can put the rail on a given dock URL (active-state input). */
 const dock = vi.hoisted(() => ({ current: null as { viewType: ViewType; pointer?: string } | null }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => dock.current,
   useDockNavigation: () => ({
     navigation: nav,
     currentDock: dock.current,
@@ -82,8 +83,7 @@ function renderRail() {
   return {
     container,
     /** Rail ids in DOM order. */
-    ids: () =>
-      [...container.querySelectorAll('[data-rail-item]')].map((el) => el.getAttribute('data-rail-item')),
+    ids: () => [...container.querySelectorAll('[data-rail-item]')].map((el) => el.getAttribute('data-rail-item')),
     item: (id: string) => container.querySelector<HTMLButtonElement>(`[data-rail-item="${id}"]`),
   };
 }

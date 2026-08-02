@@ -68,6 +68,7 @@ function makeType(vaults: AssetTypeVault[]): AssetTypeInfo {
 const DOCK = new DockPointer(ViewType.PROJECT, `${PROJECT_ID}/editor/markdown/typeid/${DOC_TYPEID}`);
 const nav = { openDock: vi.fn(), openTab: vi.fn() };
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => DOCK,
   useDockNavigation: () => ({ navigation: nav, currentDock: DOCK, isDockUrl: true, windowMode: false }),
 }));
 // Peripheral hooks — irrelevant to the pointer derivation under test.

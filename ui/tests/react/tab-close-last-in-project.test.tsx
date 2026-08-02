@@ -36,6 +36,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => h.currentDock,
   useDockNavigation: () => ({
     navigation: { openDock: h.openDock, openDockInWindow: h.openDockInWindow, closeDock: h.closeDock },
     currentDock: h.currentDock,
