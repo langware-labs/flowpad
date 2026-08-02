@@ -32,6 +32,12 @@ INDEXABLE_TYPES: list[RecordType] = [
     RecordType.SPEC,
     RecordType.SKILL,
     RecordType.SUBAGENT,
+    # The launchable agent. Must be listed here as well as in
+    # SchemaRegistry._BUILTIN_DEFAULT_TYPES — the two lists are required to
+    # overlap (see the comment there). Omitting it indexed an agent to a row
+    # carrying `name` and nothing else: no system_prompt, no model, no
+    # asset_ref.
+    RecordType.AGENT,
     RecordType.COMMAND,
     RecordType.CLAUDE_MEMORY,
     RecordType.MARKDOWN,
