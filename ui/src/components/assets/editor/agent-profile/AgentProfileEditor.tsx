@@ -14,6 +14,7 @@ import { Switch } from '@src/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
 
+import { AgentDeploymentsSection } from './AgentDeploymentsSection';
 import { AgentListField, AgentSection, AgentSelectField } from './AgentProfileFields';
 import { AgentRunDialog } from './AgentRunDialog';
 import {
@@ -253,6 +254,9 @@ export function AgentProfileEditor({ agent }: AgentProfileEditorProps) {
             />
           </div>
         </AgentSection>
+
+        {/* ── deployment ──────────────────────────────────────────────── */}
+        <AgentDeploymentsSection agent={agent} />
 
         {/* ── advanced ────────────────────────────────────────────────── */}
         <AgentSection title={t`Advanced`}>

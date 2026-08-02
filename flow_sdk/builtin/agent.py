@@ -184,6 +184,59 @@ class Agent(Entity):
             data={"agent_id": self.id, "published": published, "already_on_hub": not published}
         )
 
+    # ── deploy to the cloud ───────────────────────────────────────────────
+
+    async def deploy_to_cloud(self) -> dict:
+        """Give this agent a machine of its own on the hub.
+
+        Publish is implicit: a deploy names an agent the hub has to already
+        know, so ``ensure_on_hub`` runs first and the two are never separately
+        orderable by a caller.
+
+        The hub does everything else — it mints the ComputeNode, provisions the
+        Identity, and logs the sandbox in AS the agent. Deliberately no
+        parameters: were the node or the principal passable from here they would
+        be passable from anywhere, which is the exact hole the hub's pentest
+        guards exist to keep shut. This call says only *which agent*.
+
+        The credentials live in this process, so the browser never talks to the
+        hub directly.
+        """
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            raise RuntimeError("Cloud login required before deploy")
+
+        await self.ensure_on_hub()
+        path = build_hub_url(self, action="deploy")
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            # `post` already unwraps the envelope, and raises on a non-success
+            # one — so a hub-side refusal surfaces here rather than returning {}.
+            data = await client.post(path, {})
+        return data if isinstance(data, dict) else {}
+
+    @action.post(action_name="deploy")
+    async def deploy_action(self):
+        """`POST /agent/<id>/deploy` — publish, then boot a box for this agent.
+
+        One round trip for the UI's one button. Long by nature (E2B create +
+        boot + health is tens of seconds); if that becomes a timeout in
+        practice the fix is 202-and-poll on the node's ``ops/status``, which
+        already exists, not a longer client timeout.
+        """
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.enabled:
+            return ApiFailResponse(message=f"agent {self.name!r} is disabled")
+        try:
+            data = await self.deploy_to_cloud()
+        except Exception as exc:
+            return ApiFailResponse(message=f"deploy failed: {exc}")
+        return ApiSuccessResponse(data={"agent_id": self.id, **data})
+
     # ── the run verb (HTTP) ───────────────────────────────────────────────
 
     @action.post(action_name="run")
