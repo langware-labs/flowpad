@@ -142,6 +142,38 @@ export class Agent extends APIEntity<Agent> {
     action.bodyParameters = { prompt };
     return (await dataManager.callAction(action)) as AgentRunResult;
   }
+
+  /**
+   * Give this agent a machine of its own in the cloud.
+   *
+   * Publishing to the hub is implicit — the backend does it before deploying,
+   * so there is no order for a caller to get wrong. It also holds the cloud
+   * credentials, which is why this goes through the local backend rather than
+   * the browser calling the hub.
+   *
+   * Slow by nature (create + boot + health on a real sandbox); callers should
+   * show progress rather than assume a snappy round trip.
+   */
+  async deploy(): Promise<AgentDeployResult> {
+    const action = new ActionInfo('deploy', Agent.type, this.id, 'POST');
+    return (await dataManager.callAction(action)) as AgentDeployResult;
+  }
+}
+
+/**
+ * What `POST /agent/<id>/deploy` hands back.
+ *
+ * The keys past `agent_id` are the hub's, forwarded verbatim: whatever
+ * `workspace-ready` reported, plus the node and the cookie-gated URL that opens
+ * it. `agent_definition_error` is present when the box came up but `agent.md`
+ * failed to land — a live machine that is not yet the agent.
+ */
+export interface AgentDeployResult {
+  agent_id: string;
+  node_typeid?: string;
+  host_url?: string;
+  agent_definition?: string;
+  agent_definition_error?: string;
 }
 
 /** What `POST /agent/<id>/run` hands back. */
