@@ -146,6 +146,44 @@ class Agent(Entity):
 
         return await AgentDeployment.for_agent(self)
 
+    # ── publish ───────────────────────────────────────────────────────────
+
+    async def ensure_on_hub(self) -> bool:
+        """Push this agent to the hub if it isn't there. Returns whether it published.
+
+        Deploying is a cloud act, so the definition has to exist on the hub
+        first. Mirrors ``ensure_task_on_hub`` (``app/actions/task_assign_action.py``),
+        the working precedent for this shape.
+
+        Only the fields travel. ``asset_ref`` is ``Sharing.PRIVATE`` so the local
+        absolute path is stripped, and the hub renders its own ``agent.md`` from
+        the fields it receives (``Agent.render_markdown``) — the deployed sandbox
+        then indexes an ordinary file and nothing downstream learns a second
+        shape. The id travels verbatim: one agent, one id, both sides.
+
+        ``share()`` deliberately does not save, so persisting ``remote`` is ours
+        to do — without it every deploy would re-publish.
+        """
+        if self.remote:
+            return False
+        await self.share()
+        self.remote = True
+        await self.save()
+        return True
+
+    @action.post(action_name="publish")
+    async def publish_action(self):
+        """`POST /agent/<id>/publish` — make this agent exist on the hub."""
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        try:
+            published = await self.ensure_on_hub()
+        except Exception as exc:
+            return ApiFailResponse(message=f"publish failed: {exc}")
+        return ApiSuccessResponse(
+            data={"agent_id": self.id, "published": published, "already_on_hub": not published}
+        )
+
     # ── the run verb (HTTP) ───────────────────────────────────────────────
 
     @action.post(action_name="run")
