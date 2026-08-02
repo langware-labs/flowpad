@@ -62,12 +62,9 @@ test('C01/C03/C09/C10: a new headless Codex opens as chat and reload preserves t
 
 test('C02-C16: transport switching stays one URL-first process with busy and accessibility guards', () => {
   const repo = join(process.cwd(), '..');
-  const interactive = readFileSync(
-    join(repo, 'ui/src/components/terminal/interactive-terminal/InteractiveTerminal.tsx'),
-    'utf8',
-  );
-  // The chat⇄terminal switch is the 3-mode control in the terminal HEADER; the
-  // transport action itself lives in the hook it calls.
+  // The chat⇄terminal switch is the 3-mode control in the terminal footer; the
+  // always-mounted TerminalPanel owns the transport hook so its startup child
+  // cannot swallow a mode change.
   const modeSwitch = readFileSync(join(repo, 'ui/src/components/view-toggle/view-toggle.tsx'), 'utf8');
   const modeSwitchHook = readFileSync(
     join(repo, 'ui/src/components/terminal/interactive-terminal/use-process-surface.ts'),
@@ -83,7 +80,7 @@ test('C02-C16: transport switching stays one URL-first process with busy and acc
     'utf8',
   );
 
-  expect(interactive).toContain('useProcessSurface');
+  expect(terminalPanel).toContain('useProcessSurface');
   expect(modeSwitchHook).toContain('.switchMode(');
   expect(terminalPanel).toContain('data-worker-session-id');
   expect(terminalPanel).toContain('data-pty-mode');

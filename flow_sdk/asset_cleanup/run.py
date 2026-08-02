@@ -1,15 +1,17 @@
 """One-shot asset-cleanup run — launch the ``asset_cleanup`` agent headless.
 
-``run_asset_cleanup()`` loads the ``asset_cleanup`` agent markdown (project >
-user > system resolution via ``load_subagent``), appends the scan-root list to
-its prompt, and runs it as a headless :class:`AgenticProcess` on the model the
-agent's frontmatter declares (haiku). The worker's final reply must end with a
-fenced ```json report (see the agent md); this module parses it into
-dataclasses. The run is identify-only — the agent has read-only tools and this
-module never touches the reported files.
+``run_asset_cleanup()`` loads the ``asset_cleanup`` SubAgent markdown (user >
+system resolution via ``load_subagent``) as the task contract, appends the
+scan-root list, and launches the named ``asset-cleanup`` Agent headlessly. The
+Agent owns worker/model/system identity; the SubAgent owns the scan and output
+instructions. The worker's final reply must end with a fenced ```json report,
+which this module parses into dataclasses. The run is identify-only — Flowpad
+supplies the candidate contents and this module never touches reported files.
 """
+
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -117,17 +119,17 @@ async def run_asset_cleanup(
     """
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.subagent import load_subagent  # noqa: PLC0415
 
-    # ONE identity source. This used to read the prompt from the `.claude/agents`
-    # SubAgent md while taking worker/model from the Agent — two asset families
-    # describing one run. The Agent's system_prompt is the prompt.
     deployment = await get_agent_local_deployment("asset-cleanup")
-    agent_entity = await deployment.agent()
-    prompt = (getattr(agent_entity, "system_prompt", "") or "").strip()
-    if not prompt:
-        raise RuntimeError("asset-cleanup agent has an empty system prompt")
-    # The model is no longer read here: the `asset-cleanup` Agent declares it
-    # (haiku), and the deployment projects it into the launch options.
+    task = load_subagent("asset_cleanup")
+    if task is None:
+        raise RuntimeError("asset_cleanup task instructions not found")
+    task_prompt = (
+        task.data.get("prompt") or task.data.get("prompt_text") or getattr(task, "prompt_text", None) or ""
+    ).strip()
+    if not task_prompt:
+        raise RuntimeError("asset_cleanup task instructions are empty")
 
     if roots is None:
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
@@ -143,16 +145,24 @@ async def run_asset_cleanup(
     if not root_strs:
         raise RuntimeError("no scan roots to inspect")
 
+    from .scan import collect_asset_inventory  # noqa: PLC0415
+
+    asset_inventory = await asyncio.to_thread(collect_asset_inventory, root_strs)
+
     # The agent md is also discoverable as a subagent (--add-dir picks up the
     # system agents dir); a delegating parent paraphrases the report and drops
     # the JSON block. Pin the contract: do the scan inline, JSON in the final
     # message.
     instruction = (
-        f"{prompt}\n\n"
+        f"{task_prompt}\n\n"
         "IMPORTANT: perform the scan yourself in this session — do NOT "
         "delegate to a subagent or the Task tool. Your final message must "
-        "end with the fenced ```json report.\n\n"
-        "## Scan roots\n\n" + "\n".join(root_strs) + "\n"
+        "end with the fenced ```json report. The asset inventory below was "
+        "collected deterministically and is complete. Classify exactly those "
+        "entries from their supplied content. Do not call filesystem tools, "
+        "inspect other paths, or write a report file.\n\n"
+        "## Scan roots\n\n" + "\n".join(root_strs) + "\n\n"
+        "## Asset inventory\n\n" + json.dumps(asset_inventory, indent=2) + "\n"
     )
     if projects:
         instruction += "\n## Projects\n\n" + json.dumps(projects, indent=2) + "\n"
@@ -179,13 +189,11 @@ async def run_asset_cleanup(
         instruction,
         wait=True,
         name="Asset cleanup scan",
-        workdir=workdir or str(root_strs[0]),
+        workdir=workdir or root_strs[0],
     )
     result = _build_run_result(proc)
     if not result.ok:
-        raise RuntimeError(
-            f"asset_cleanup worker ended {result.status} (session {result.session_id})"
-        )
+        raise RuntimeError(f"asset_cleanup worker ended {result.status} (session {result.session_id})")
 
     text = result.text or ""
     models_used = list(result.models_used or [])
@@ -198,10 +206,7 @@ async def run_asset_cleanup(
 
     report = parse_report(text)
     if report is None:
-        raise RuntimeError(
-            f"asset_cleanup worker returned no parseable report "
-            f"(session {result.session_id})"
-        )
+        raise RuntimeError(f"asset_cleanup worker returned no parseable report (session {result.session_id})")
 
     findings = [
         AssetCleanupFinding(
@@ -219,8 +224,10 @@ async def run_asset_cleanup(
     summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
     _log.info(
         "asset_cleanup: scanned %d roots — %d findings (%d garbage) session=%s",
-        len(root_strs), len(findings),
-        sum(1 for f in findings if f.verdict == "garbage"), result.session_id,
+        len(root_strs),
+        len(findings),
+        sum(1 for f in findings if f.verdict == "garbage"),
+        result.session_id,
     )
     return AssetCleanupResult(
         roots=report.get("scanned_roots") or root_strs,

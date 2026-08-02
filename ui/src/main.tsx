@@ -17,7 +17,7 @@ import './styles/highlightjs.css';
 
 
 function defineGlobals() {
-  import('@sdk').then(sdk => {
+  void import('@sdk').then(sdk => {
     (window as any).AgenticProcess = sdk.AgenticProcess;
     (window as any).Shell = sdk.Shell;
   });
@@ -101,4 +101,4 @@ async function init() {
   );
 }
 
-init();
+void init();

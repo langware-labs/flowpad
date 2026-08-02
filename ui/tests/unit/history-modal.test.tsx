@@ -3,7 +3,8 @@ import { HistoryModal } from '@src/components/terminal/HistoryModal';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@src/hooks/useWorkerHistory', () => ({
+vi.mock('@src/hooks/useWorkerHistory', async (orig) => ({
+  ...(await orig<typeof import('@src/hooks/useWorkerHistory')>()),
   useWorkerHistory: vi.fn(),
 }));
 

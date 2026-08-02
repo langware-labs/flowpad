@@ -14,6 +14,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({
     navigation: navMocks,
   }),
+  useCurrentDock: () => null,
 }));
 
 vi.mock('@src/tabs/useTabs', () => ({
@@ -25,8 +26,8 @@ vi.mock('@src/hooks/use-all-projects', () => ({
 }));
 
 const entryMocks = vi.hoisted(() => ({
-  dockForProjectEntry: vi.fn(async () => ({ __dock: 'project' })),
-  dockForGlobalEntry: vi.fn(async () => ({ __dock: 'global' })),
+  dockForProjectEntry: vi.fn(() => Promise.resolve({ __dock: 'project' })),
+  dockForGlobalEntry: vi.fn(() => Promise.resolve({ __dock: 'global' })),
 }));
 
 vi.mock('@src/tabs/project-entry', () => ({

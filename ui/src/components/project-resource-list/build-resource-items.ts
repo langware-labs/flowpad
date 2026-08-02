@@ -133,7 +133,7 @@ export function buildResourceItems(
     const resolvedSessionId = session.session_id || session.id;
     // Use server-computed status; fall back to 'idle' for sessions with no
     // assistant messages (status property is added by ClaudeSessionRecord.to_dict()).
-    const status: ClaudeSessionStatus = (session.status ?? 'idle') as ClaudeSessionStatus;
+    const status: ClaudeSessionStatus = (session.status ?? 'idle');
     items.push({
       id: `session:${session.id}`,
       itemId: session.id,

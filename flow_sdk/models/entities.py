@@ -49,8 +49,8 @@ except ImportError as e:
     print(f"[WARN] Failed to import Team: {e}")
 
 try:
-    from flow_sdk.builtin.subagent import SubAgent  # noqa: F401
     from flow_sdk.builtin.agent import Agent  # noqa: F401
+    from flow_sdk.builtin.subagent import SubAgent  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import SubAgent: {e}")
 

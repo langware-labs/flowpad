@@ -472,11 +472,7 @@ def try_admit_prompt(process_id: str) -> object | None:
     opaque token makes release owner-safe when an older setup unwinds after a
     newer admission has already been installed.
     """
-    if (
-        process_id in _PROMPT_ADMISSIONS
-        or process_id in _PROMPT_WORKERS
-        or _PROMPT_LOCKS[process_id].locked()
-    ):
+    if process_id in _PROMPT_ADMISSIONS or process_id in _PROMPT_WORKERS or _PROMPT_LOCKS[process_id].locked():
         return None
     token = object()
     _PROMPT_ADMISSIONS[process_id] = token
@@ -1373,9 +1369,8 @@ class AgenticProcess(Entity):
                 self.pty_mode = True
 
             shell = await self.shell() if self.shell_id else None
-            if shell is not None:
-                if not await shell.ensure_live_compute_node_binding():
-                    return ApiFailResponse(message=f"Compute node not found for linked shell {shell.id}")
+            if shell is not None and not await shell.ensure_live_compute_node_binding():
+                return ApiFailResponse(message=f"Compute node not found for linked shell {shell.id}")
 
             if (
                 self.status
@@ -2069,6 +2064,7 @@ class AgenticProcess(Entity):
     def _record_dir(self) -> "Path":
         """This process's record folder (deterministic from type+id)."""
         from flow_sdk.fs_store.record_paths import shadow_dir_for
+
         return shadow_dir_for("agentic_process", self.id)
 
     @property
@@ -2362,11 +2358,119 @@ class AgenticProcess(Entity):
         project = await self._resolve_webapp_project()
         source = project.typeid if project is not None else None
         deployments = await Deployment.get_all(QueryFilter.by_type(Deployment.get_type()), source_entity=source)
-        return [
-            deployment
-            for deployment in deployments
-            if kind_matches("local.runtime.web", deployment.kind)
-        ]
+        return [deployment for deployment in deployments if kind_matches("local.runtime.web", deployment.kind)]
+
+    async def _artifact_asset_ref(self, payload: dict) -> str:
+        """The path of the asset a resolved display target points at.
+
+        An artifact REFERENCES an asset, so it records the same ``asset_ref`` the
+        owning entity has — resolution back the other way is
+        ``Entity.get_by_asset_ref``. A target with no file behind it (a bare port)
+        has no ref; the runtime plane carries that instead.
+        """
+        from flow_sdk.api.api_types.type_id import TypeId  # noqa: PLC0415
+        from flow_sdk.core import Entity  # noqa: PLC0415
+        from flow_sdk.core.display_target import DisplayTargetKind  # noqa: PLC0415
+
+        kind = str(payload.get("kind") or "")
+        if kind == DisplayTargetKind.VFS:
+            return str(payload.get("path") or "")
+        if kind == DisplayTargetKind.ENTITY:
+            raw = str(payload.get("typeid") or "")
+            if not raw:
+                return ""
+            try:
+                entity = await Entity.get_by_typeid(TypeId(raw))
+            except (ValueError, IndexError):
+                return ""
+            return str(getattr(entity, "asset_ref", "") or "")
+        return ""
+
+    @action.post(action_name="register-artifact")
+    async def _http_register_artifact(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Register a produced deliverable, then show it.
+
+        The consolidation of ``flow show``: same address grammar
+        (``typeid`` | ``path`` | ``port``), but the result is a durable,
+        queryable Artifact carrying ``generated_by`` — not just a transient
+        display pin that vanished with the run.
+
+        Provenance is derived from the URL scope, never read from the body: an
+        artifact records who actually ran, not who the payload claims.
+        """
+        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+        from flow_sdk.core.display_target import (  # noqa: PLC0415
+            DisplayTargetKind,
+            DisplayTargetNotFound,
+            InvalidDisplayTarget,
+            resolve_display_target,
+        )
+
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+
+        typeid = str(body.get("typeid") or "").strip() or None
+        path = str(body.get("path") or "").strip() or None
+        port = body.get("port")
+        if not (typeid or path or port):
+            return ApiFailResponse(
+                message="register-artifact needs one of: typeid, path, port",
+                status_code=400,
+            )
+
+        try:
+            payload = await resolve_display_target(typeid=typeid, path=path, port=port)
+        except InvalidDisplayTarget as e:
+            return ApiFailResponse(message=str(e), status_code=400)
+        except DisplayTargetNotFound as e:
+            return ApiFailResponse(message=str(e), status_code=404)
+
+        asset_ref = await self._artifact_asset_ref(payload)
+        kind = (
+            "application.web"
+            if payload.get("kind") in (DisplayTargetKind.WEBAPP, DisplayTargetKind.APP)
+            else "content.file"
+        )
+        name = (
+            str(body.get("name") or "").strip()
+            or str(payload.get("name") or "").strip()
+            or (Path(asset_ref).name if asset_ref else "")
+            or "Artifact"
+        )
+
+        artifact = Artifact(
+            name=name,
+            kind=kind,
+            description=str(body.get("description") or "").strip() or None,
+            asset_ref=asset_ref,
+            generated_by=str(self.typeid),
+            project_id=await self.effective_project_id(),
+        )
+        await artifact.save()
+
+        shown = None
+        if bool(body.get("show", True)):
+            await self.on_show(payload)
+            shown = payload
+
+        return ApiSuccessResponse(data={"artifact": artifact.model_dump(mode="json"), "shown": shown})
+
+    @action.get(action_name="artifacts")
+    async def _http_artifacts(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Everything this run produced.
+
+        A query over ``generated_by``, not a list field on the process — so two
+        registrations landing at once cannot clobber each other's append.
+
+        GET, like its sibling ``get-assets``: this is a pure read with no body,
+        and modelling it as a POST would make it indistinguishable from the
+        mutating ``register-artifact`` next door.
+        """
+        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+
+        rows = await Artifact.get_all({"generated_by": str(self.typeid)})
+        return ApiSuccessResponse(data={"artifacts": [row.model_dump(mode="json") for row in rows]})
 
     @action.post(action_name="webapp-artifacts")
     async def _http_webapp_artifacts(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -4892,11 +4996,7 @@ class AgenticProcess(Entity):
 
         if transcript is None:
             return []
-        return [
-            e
-            for e in transcript.filter(kind=EntryKind.SKILL_CALL)
-            if (getattr(e, "skill_name", "") or "").strip()
-        ]
+        return [e for e in transcript.filter(kind=EntryKind.SKILL_CALL) if (getattr(e, "skill_name", "") or "").strip()]
 
     @staticmethod
     def _usage_from_file_read(entry: object, read_path: str) -> AssetUsage:
@@ -6879,11 +6979,7 @@ class AgenticProcess(Entity):
                 # tracked on the persisted ``markdown_docs`` list (parallel to
                 # ``plan_path`` + ``plan.create``). Plan files and agent-internal
                 # docs are excluded so they don't double up with the Open-Plan chip.
-                if (
-                    is_markdown
-                    and isinstance(entry, (FileWriteEntry, FileEditEntry))
-                    and self._is_user_doc(path)
-                ):
+                if is_markdown and isinstance(entry, (FileWriteEntry, FileEditEntry)) and self._is_user_doc(path):
                     change = "create" if isinstance(entry, FileWriteEntry) else "update"
                     await self._track_markdown_doc(path, change)
 
@@ -6971,15 +7067,16 @@ class AgenticProcess(Entity):
         on a status transition. Migrates the API_TIMEOUT → ``_on_timeout``
         invocation from the deleted ``_poll_for_completion``.
 
-        The in-memory ``self.status`` may be ~1s stale after the sleep but
-        the only stale path is "AP was stopped externally during the window"
-        — covered by the lifecycle guard below. notify_updated broadcasts
-        the in-memory state; downstream observers are idempotent.
+        The in-memory object may be stale after the sleep: lifecycle mutations
+        hydrate their own AP instance while this callback retains the PTY-era
+        snapshot. Re-read the durable row at both sides of the flush and never
+        broadcast stale ``self`` across a transport/lifecycle transition.
         """
         try:
             await asyncio.sleep(self._DEBOUNCE_SECONDS)
 
-            if self.status != ProcessStatus.RUNNING.value:
+            durable = await AgenticProcess.get_by_id(str(self.id))
+            if durable is None or durable.status != ProcessStatus.RUNNING.value or durable.pty_mode != self.pty_mode:
                 return
 
             entries = list(getattr(self, "_pending_entries", []))
@@ -7029,7 +7126,14 @@ class AgenticProcess(Entity):
                         exc_info=True,
                     )
 
-            await self.notify_updated()
+            # A switch/stop can complete while entry processing and status
+            # derivation are in flight. Broadcast the latest durable object,
+            # never this callback's full stale PTY snapshot (which would undo a
+            # successful CLI switch for every watcher).
+            durable = await AgenticProcess.get_by_id(str(self.id))
+            if durable is None or durable.status != self.status or durable.pty_mode != self.pty_mode:
+                return
+            await durable.notify_updated()
 
             # Drain the prompt queue on the turn-end edge (busy→not-busy). Single
             # AP-level seam for both PTY *and* headless turns (both write the
@@ -7234,9 +7338,7 @@ class AgenticProcess(Entity):
             # fetching on receipt reads the post-write row).
             from flow_sdk.builtin.agentic_process.agent_on_tag import emit_agent_status
 
-            emit_agent_status(self.id,
-                              current.value if current is not None else "",
-                              self.status, current_busy)
+            emit_agent_status(self.id, current.value if current is not None else "", self.status, current_busy)
             await self.emit_flow_data(
                 {
                     "attributes": {
@@ -7413,9 +7515,7 @@ class AgenticProcess(Entity):
                     proc.sidecar_shell_id = None
                     if exit_code is not None and exit_code < 0:
                         proc.status = ProcessStatus.FAILED.value
-                        proc.start_failure = (
-                            f"Worker terminated by crash signal {-exit_code}."
-                        )
+                        proc.start_failure = f"Worker terminated by crash signal {-exit_code}."
                         logger.warning(
                             "AgenticProcess %s: %s Auto-relaunch paused until user retry.",
                             agentic_process_id,

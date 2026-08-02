@@ -2,7 +2,7 @@
 
 Standard invite pattern (no shortcuts):
   1. alice creates a Conversation + joins (owner).
-  2. alice invites bob via /members; bob accepts (/members/accept) + joins.
+  2. alice invites bob via /members; bob is assigned immediately + joins.
   3. alice and bob each send a message (POST /conversation/<id>/add_message).
   4. Validate BOTH users' worldview on the hub: querying as alice AND as bob,
      the conversation exists and BOTH messages are visible to each.
@@ -10,6 +10,7 @@ Standard invite pattern (no shortcuts):
 Credentials come from the cycle's ``ALICE_*``/``BOB_*`` environment, with the
 two project ``.env.local`` files as local-development fallbacks.
 """
+
 from __future__ import annotations
 
 import os
@@ -18,6 +19,8 @@ from pathlib import Path
 
 import httpx
 import pytest
+
+from tests.hub_tests._assignment import assert_auto_assigned
 
 REPO_OSS = Path(__file__).resolve().parents[2]
 REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
@@ -43,21 +46,6 @@ async def _login(hub_base_url: str, email: str, password: str) -> tuple[str, dic
     r.raise_for_status()
     data = r.json()["data"]
     return data.get("api_key") or data["token"], data.get("user") or {}
-
-
-async def _accept_invitation(h: httpx.AsyncClient, hub_base_url: str, headers: dict, invitation_id: str) -> None:
-    # Browser-oriented endpoint: ALWAYS 302s. login redirect = failure;
-    # conversation/flow_message redirect (or 200/409) = success.
-    r = await h.get(
-        f"{hub_base_url}/api/v1/graph/members/accept",
-        headers=headers,
-        params={"invitation-id": invitation_id},
-    )
-    if r.status_code in (301, 302, 303, 307, 308):
-        loc = (r.headers.get("location") or r.headers.get("Location") or "").lower()
-        assert "login" not in loc, f"accept bounced to login (unauthenticated): {loc[:200]}"
-        return
-    r.raise_for_status()
 
 
 async def _messages(h: httpx.AsyncClient, hub_base_url: str, headers: dict, conv_id: str) -> list[dict]:
@@ -96,28 +84,47 @@ async def test_conversation_worldview_consistent_for_both(hub_base_url):
         r = await h.post(f"{hub_base_url}/api/v1/graph/conversation", headers=headers_a, json={"title": title})
         r.raise_for_status()
         conv_id = r.json()["data"]["id"]
-        (await h.post(f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/join", headers=headers_a, json={})).raise_for_status()
+        (
+            await h.post(f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/join", headers=headers_a, json={})
+        ).raise_for_status()
 
-        # 2) alice invites bob; bob accepts + joins.
+        # 2) alice invites bob; the hub assigns bob immediately, then bob joins.
         r = await h.post(
             f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/members",
             headers=headers_a,
-            json={"recipient_email": bob_email, "invitation_targets": [{"typeid": f"conversation-{conv_id}", "role": "member"}]},
+            json={
+                "recipient_email": bob_email,
+                "invitation_targets": [{"typeid": f"conversation-{conv_id}", "role": "member"}],
+            },
         )
         r.raise_for_status()
-        r = await h.get(f"{hub_base_url}/api/v1/graph/invitation/pending", headers=headers_b)
-        r.raise_for_status()
-        pending = [inv for inv in (r.json()["data"] or []) if inv.get("recipient_email") == bob_email and not inv.get("accepted")]
-        # Narrow to THIS conversation (stale invites from prior runs may linger).
-        mine = [p for p in pending if (p.get("conversation") or {}).get("id") == conv_id] or pending
-        mine.sort(key=lambda x: x.get("created_date") or "", reverse=True)
-        assert mine, f"bob has no pending invitation; got {pending}"
-        await _accept_invitation(h, hub_base_url, headers_b, mine[0]["id"])
-        (await h.post(f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/join", headers=headers_b, json={})).raise_for_status()
+        await assert_auto_assigned(
+            hub_base_url,
+            bob_tok,
+            entity_type="conversation",
+            entity_id=conv_id,
+            user_id=bob_id,
+            expected_role="member",
+        )
+        (
+            await h.post(f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/join", headers=headers_b, json={})
+        ).raise_for_status()
 
         # 3) both send a message (after bob joined, so fanout + scoped reads include both).
-        (await h.post(f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/add_message", headers=headers_a, json={"text": msg_alice})).raise_for_status()
-        (await h.post(f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/add_message", headers=headers_b, json={"text": msg_bob})).raise_for_status()
+        (
+            await h.post(
+                f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/add_message",
+                headers=headers_a,
+                json={"text": msg_alice},
+            )
+        ).raise_for_status()
+        (
+            await h.post(
+                f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/add_message",
+                headers=headers_b,
+                json={"text": msg_bob},
+            )
+        ).raise_for_status()
 
         # 4) Both worldviews must contain the conversation + BOTH messages.
         for who, headers in (("alice", headers_a), ("bob", headers_b)):

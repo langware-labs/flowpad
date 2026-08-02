@@ -1,5 +1,6 @@
 import type { FlowMessage } from '@sdk';
 import type { ConversationMessagePointer } from '@sdk/entities/conversation';
+import { AttachmentType } from '@sdk/entities/flow-message';
 import { promptAttachmentsOf } from './attachment-actions/prompt-attachment';
 
 /** Discriminator for `ConversationItem`. POINTER rows resolve via the
@@ -104,7 +105,9 @@ export function buildConversationItems(
 
 function messageHasPromptCompletion(fm: FlowMessage): boolean {
   return (fm.attachment ?? []).some(
-    (a) => a?.attachment_type === 'type_id' && (a.data ?? '').startsWith('prompt_completion-'),
+    (a) =>
+      a?.attachment_type === AttachmentType.TYPE_ID &&
+      (a.data ?? '').startsWith('prompt_completion-'),
   );
 }
 

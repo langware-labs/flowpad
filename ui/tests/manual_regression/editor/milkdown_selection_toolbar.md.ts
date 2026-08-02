@@ -67,7 +67,7 @@ async function selectFirstChars(page: Page, n: number, container = '.ProseMirror
   }
   return page.evaluate(
     ({ count, sel: containerSel }) => {
-      const root = document.querySelector(containerSel) as HTMLElement | null;
+      const root = document.querySelector(containerSel);
       if (!root) return '';
       const block = (root.querySelector('p, h1, h2, h3, li') as HTMLElement) || root;
       const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);

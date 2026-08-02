@@ -53,6 +53,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   const {
     roots,
     activePointer,
+    activeResourcePointer,
     activeKey,
     header,
     onNavigate,
@@ -122,21 +123,25 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     [tree],
   );
 
-  // Auto-expand ancestors for the active pointer. Dedupe by pointer value so
+  // Auto-expand ancestors for the active resource. Most routes encode their
+  // resource directly, so this falls back to the URL pointer. Canonical TypeId
+  // routes can provide a separately resolved VFS cursor without replacing the
+  // URL/navigation identity. Dedupe by both pointer values so
   // we don't re-walk on every render — but only mark as resolved once a leaf
   // was actually found, so we retry when `roots` populate later (e.g. async
   // adapter like useAssetTypes loads after initial render).
   useEffect(() => {
-    if (!activePointer) return;
-    const key = `${activePointer.viewType ?? ''}::${activePointer.pointer ?? ''}::${activeKey ?? ''}::${rootIdsKey}`;
+    const resourcePointer = activeResourcePointer ?? activePointer;
+    if (!resourcePointer) return;
+    const key = `${activePointer?.viewType ?? ''}::${activePointer?.pointer ?? ''}::${resourcePointer.viewType ?? ''}::${resourcePointer.pointer ?? ''}::${activeKey ?? ''}::${rootIdsKey}`;
     if (key === lastResolvedRef.current) return;
-    void tree.expandParentsForPointer(activePointer).then((leaves) => {
+    void tree.expandParentsForPointer(resourcePointer).then((leaves) => {
       requestAnimationFrame(() => {
         // Resource identity crosses presentation routes: an editor pointer and
         // an Assets fs pointer can name the same VFS file. Prefer the first
         // matching resource row in DOM/root order, then retain the typeid-key
         // fallback for entity-addressed assets and finally the first path leaf.
-        const resourceUri = activePointer.resourceVfsPath?.uri;
+        const resourceUri = resourcePointer.resourceVfsPath?.uri;
         const treeElement = treeElementRef.current;
         const el =
           (resourceUri &&
@@ -150,7 +155,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePointer, activeKey, tree.expandParentsForPointer]);
+  }, [activePointer, activeResourcePointer, activeKey, tree.expandParentsForPointer]);
 
   if (isLoading) {
     return (
@@ -206,6 +211,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             tree={tree}
             selection={selection}
             activePointer={activePointer}
+            activeResourcePointer={activeResourcePointer}
             activeKey={activeKey}
             openTabHashes={openTabHashes}
             onNavigate={handleNavigate}
@@ -228,6 +234,7 @@ interface RowProps {
   tree: ReturnType<typeof useBrowseableTree>;
   selection: TreeSelectionApi | null;
   activePointer: DockPointer | null;
+  activeResourcePointer?: DockPointer | null;
   activeKey?: string | null;
   /** Open-tab identities (`pointer.tabHash`) → un-dimmed rows. */
   openTabHashes: Set<string>;
@@ -248,6 +255,7 @@ function BrowseableRow({
   tree,
   selection,
   activePointer,
+  activeResourcePointer,
   activeKey,
   openTabHashes,
   onNavigate,
@@ -287,7 +295,7 @@ function BrowseableRow({
         activePointer &&
         ((node.pointer.viewType === activePointer.viewType &&
           node.pointer.pointer === activePointer.pointer) ||
-          node.pointer.resourceVfsPath?.equals(activePointer.resourceVfsPath)))
+          node.pointer.resourceVfsPath?.equals((activeResourcePointer ?? activePointer).resourceVfsPath)))
     )
   );
 
@@ -657,6 +665,7 @@ function BrowseableRow({
               tree={tree}
               selection={selection}
               activePointer={activePointer}
+              activeResourcePointer={activeResourcePointer}
               activeKey={activeKey}
               openTabHashes={openTabHashes}
               onNavigate={onNavigate}

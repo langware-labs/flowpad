@@ -3,7 +3,7 @@
  *
  * Every scenario walks the four steps the product defines for any share:
  *   1. share    — sender performs the share through the real entry-point UI
- *   2. accept   — receiver sees the invitation in its UI and accepts it
+ *   2. receive  — receiver synchronizes its immediate assignment
  *   3. open     — receiver opens the shared asset; it renders with a clean
  *                 console (manual_regression noise filter applied)
  *   4. reply    — receiver replies in the composer; sender sees it arrive
@@ -11,7 +11,7 @@
  * Entry points: asset-page share (workflow — the MarkdownEditor share button
  * every md-backed editor inherits; whiteboard — the AssetEditorHeader button)
  * and message forward. Assets are seeded via each instance's SDK realm; every
- * share/accept/open/reply interaction is a real browser click (Playwright,
+ * share/open/reply interaction is driven through the real browser (Playwright,
  * headless Chromium).
  *
  * All scenarios drive the full four-step loop. A/B step 3 (open the shared
@@ -41,10 +41,10 @@ import {
   type ResolvedInstance,
 } from './_instances';
 import {
-  acceptInvitationInUI,
   driveShareDialog,
   launchBrowser,
   mapConversationToProject,
+  openAssignedConversationInUI,
   openConversation,
   openInstancePage,
   realConsoleErrors,
@@ -153,34 +153,6 @@ afterAll(async () => {
   // deleting only the local mirrors makes the next conversation-list sync
   // rebuild every old hub conversation and starts a refetch/broadcast storm.
   if (!skipReason && dev1 && dev2) {
-    // Decline receiver-side test invitations before deleting their local
-    // Conversation mirrors. A generic local DELETE does not express the
-    // hub-side decline intent; after a bailed run that left the invitation
-    // pending forever, so every later sync rebuilt and broadcast all prior
-    // e2etest rows. Match through the canonical invitation target path and
-    // touch only conversations carrying this harness's test prefix.
-    const receiverConversations = await fetch(`${dev2.apiUrl}/api/v1/graph/conversation`)
-      .then((r) => r.json())
-      .catch(() => null);
-    const receiverInvitations = await fetch(`${dev2.apiUrl}/api/v1/graph/invitation`)
-      .then((r) => r.json())
-      .catch(() => null);
-    const testConversationIds = new Set(
-      ((receiverConversations?.data ?? []) as any[])
-        .filter((row) => ownedConversationTitles.has(String(row?.title ?? '')))
-        .map((row) => String(row.id)),
-    );
-    for (const invitation of (receiverInvitations?.data ?? []) as any[]) {
-      const match = String(invitation?.target_url_path ?? '').match(/^\/conversation\/([0-9a-f-]+)$/);
-      if (!invitation?.accepted && invitation?.id && match && testConversationIds.has(match[1])) {
-        await fetch(`${dev2.apiUrl}/api/v1/graph/invitation-decline`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ invitation_id: invitation.id }),
-        }).catch(() => undefined);
-      }
-    }
-
     const cleanupFailures: string[] = [];
     const instances = [dev1, dev2];
     const testConversations = new Map<ResolvedInstance, any[]>();
@@ -426,8 +398,8 @@ describe('A. asset-page share: workflow', () => {
     expect(convId).toBeTruthy();
   });
 
-  it('A2 accept — dev-2 accepts the invitation in its UI', async () => {
-    await acceptInvitationInUI(p2, convId);
+  it('A2 receive — dev-2 opens its assigned conversation', async () => {
+    await openAssignedConversationInUI(p2, convId);
   });
 
   // Receiver materialization: the body bundle downloads, unpacks, and
@@ -496,8 +468,8 @@ describe('B. asset-page share: whiteboard', () => {
     expect(convId).toBeTruthy();
   });
 
-  it('B2 accept — dev-2 accepts the invitation in its UI', async () => {
-    await acceptInvitationInUI(p2, convId);
+  it('B2 receive — dev-2 opens its assigned conversation', async () => {
+    await openAssignedConversationInUI(p2, convId);
   });
 
   // Receiver materializes the shared whiteboard under the same id (see A3) —
@@ -557,8 +529,8 @@ describe('C. forward a message', () => {
     await p1.page.getByTestId('message-forwarded-marker').first().waitFor({ timeout: 15_000 });
   });
 
-  it('C4 accept + receive — dev-2 accepts and sees the forwarded text', async () => {
-    await acceptInvitationInUI(p2, fwdConvId);
+  it('C4 receive — dev-2 opens the assignment and sees the forwarded text', async () => {
+    await openAssignedConversationInUI(p2, fwdConvId);
     await openConversation(p2, fwdConvId);
     await waitForMessageText(p2, `forward me ${ts}`);
   });

@@ -22,6 +22,7 @@ retired spellings (``pysdk`` / ``process_runner`` / ``program_kind:
 callback``) — seed-owned shapes only; user flows fail validation with a
 pointed message instead.
 """
+
 from __future__ import annotations
 
 import json
@@ -62,8 +63,13 @@ def on_graph_workflow_event(event_name, data, flow_ctx):
 def _doc(flow_id: str, name: str, nodes: list[dict], edges: list[dict], **extra) -> str:
     """The graph.json envelope. `extra` carries the optional blocks
     (`description`, `config`, `subscriptions`) so no seed hand-rolls its own."""
-    return json.dumps({"version": 1, "id": flow_id, "name": name, "enabled": True,
-                       **extra, "nodes": nodes, "edges": edges}, indent=2) + "\n"
+    return (
+        json.dumps(
+            {"version": 1, "id": flow_id, "name": name, "enabled": True, **extra, "nodes": nodes, "edges": edges},
+            indent=2,
+        )
+        + "\n"
+    )
 
 
 async def set_service_graph_workflows() -> None:
@@ -141,10 +147,8 @@ async def _seed_mini_analyzer() -> None:
     trigger = await _mini_trigger()
     (folder / "scripts").mkdir(exist_ok=True)
     (folder / "scripts" / "mini_analyzer.py").write_text(MINI_ANALYZER_SCRIPT, encoding="utf-8")
-    graph.write_text(
-        _doc(flow.id, "mini-analyzer", _mini_nodes(trigger.id), _MINI_EDGES), encoding="utf-8")
-    logger.info("set_service_graph_workflows: %s mini-analyzer (%s)",
-                "seeded" if created else "migrated", flow.id)
+    graph.write_text(_doc(flow.id, "mini-analyzer", _mini_nodes(trigger.id), _MINI_EDGES), encoding="utf-8")
+    logger.info("set_service_graph_workflows: %s mini-analyzer (%s)", "seeded" if created else "migrated", flow.id)
 
 
 async def _mini_trigger():
@@ -152,8 +156,13 @@ async def _mini_trigger():
 
     trigger = await Trigger.get_one({"name": "Mini analyzer (manual)"})
     if trigger is None:
-        trigger = Trigger(name="Mini analyzer (manual)", trigger_type="schedule",
-                          sched_trigger_type="interval", expr="24h", scope="system")
+        trigger = Trigger(
+            name="Mini analyzer (manual)",
+            trigger_type="schedule",
+            sched_trigger_type="interval",
+            expr="24h",
+            scope="system",
+        )
         await trigger.save()
         await trigger._register_schedule_job()
     return trigger
@@ -161,12 +170,24 @@ async def _mini_trigger():
 
 def _mini_nodes(trigger_id: str) -> list[dict]:
     return [
-        {"id": "trigger-node", "node_type": "trigger", "name": "Manual / daily",
-         "node_data": {"typeid": f"trigger-{trigger_id}"}},
-        {"id": "analyzer", "node_type": "function", "name": "Mini analyzer",
-         "node_data": {"function": "scripts/mini_analyzer.py", "runtime": "subprocess"}},
-        {"id": "echo", "node_type": "function", "name": "Log summary",
-         "node_data": {"function": "flow_echo", "runtime": "inline"}},
+        {
+            "id": "trigger-node",
+            "node_type": "trigger",
+            "name": "Manual / daily",
+            "node_data": {"typeid": f"trigger-{trigger_id}"},
+        },
+        {
+            "id": "analyzer",
+            "node_type": "function",
+            "name": "Mini analyzer",
+            "node_data": {"function": "scripts/mini_analyzer.py", "runtime": "subprocess"},
+        },
+        {
+            "id": "echo",
+            "node_type": "function",
+            "name": "Log summary",
+            "node_data": {"function": "flow_echo", "runtime": "inline"},
+        },
     ]
 
 
@@ -186,6 +207,7 @@ a specific range; default is yesterday (local time).
 from flow_sdk.usage_report.graph_workflow_function import on_graph_workflow_event  # noqa: F401
 '''
 
+
 def _graph_has_retired_shapes(doc: dict) -> bool:
     """True when a seed-owned graph still uses pre-GraphWorkflowFunction spellings.
 
@@ -204,12 +226,24 @@ def _graph_has_retired_shapes(doc: dict) -> bool:
 
 def _daily_graph(flow_id: str, trigger_id: str) -> str:
     nodes = [
-        {"id": "trigger-node", "node_type": "trigger", "name": "Daily 7am",
-         "node_data": {"typeid": f"trigger-{trigger_id}"}},
-        {"id": "analyze", "node_type": "function", "name": "Analyze usage",
-         "node_data": {"function": "scripts/analyze_usage.py", "runtime": "subprocess"}},
-        {"id": "publish", "node_type": "function", "name": "Post to feed",
-         "node_data": {"function": "flow_publish_usage_report", "runtime": "inline"}},
+        {
+            "id": "trigger-node",
+            "node_type": "trigger",
+            "name": "Daily 7am",
+            "node_data": {"typeid": f"trigger-{trigger_id}"},
+        },
+        {
+            "id": "analyze",
+            "node_type": "function",
+            "name": "Analyze usage",
+            "node_data": {"function": "scripts/analyze_usage.py", "runtime": "subprocess"},
+        },
+        {
+            "id": "publish",
+            "node_type": "function",
+            "name": "Post to feed",
+            "node_data": {"function": "flow_publish_usage_report", "runtime": "inline"},
+        },
     ]
     edges = [
         {"id": "e1", "from": {"node": "trigger-node", "event": "fired"}, "to": {"node": "analyze"}},
@@ -328,34 +362,49 @@ def _hn_radar_graph(flow_id: str) -> str:
     injector, or the flow's own Inject panel) — and only that lane costs money.
     """
     nodes = [
-        {"id": "tick", "node_type": "function", "name": "Ingestion pulse",
-         "node_data": {"function": "hn_radar_tick", "runtime": "inline"}},
-        {"id": "collect", "node_type": "function", "name": "Collect last 24h",
-         "node_data": {"function": "hn_radar_collect", "runtime": "inline"}},
-        {"id": "report", "node_type": "agent", "name": "Write the report",
-         "node_data": {"prompt": HN_REPORT_PROMPT, "model_size": "sm"}},
+        {
+            "id": "tick",
+            "node_type": "function",
+            "name": "Ingestion pulse",
+            "node_data": {"function": "hn_radar_tick", "runtime": "inline"},
+        },
+        {
+            "id": "collect",
+            "node_type": "function",
+            "name": "Collect last 24h",
+            "node_data": {"function": "hn_radar_collect", "runtime": "inline"},
+        },
+        {
+            "id": "report",
+            "node_type": "agent",
+            "name": "Write the report",
+            "node_data": {"prompt": HN_REPORT_PROMPT, "model_size": "sm"},
+        },
     ]
     edges = [
-        {"id": "e1", "from": {"node": "$external", "event": "report"},
-         "to": {"node": "collect"}},
-        {"id": "e2", "from": {"node": "collect", "event": "done"},
-         "to": {"node": "report"}},
+        {"id": "e1", "from": {"node": "$external", "event": "report"}, "to": {"node": "collect"}},
+        {"id": "e2", "from": {"node": "collect", "event": "done"}, "to": {"node": "report"}},
     ]
     return _doc(
-        flow_id, "hn-radar", nodes, edges,
+        flow_id,
+        "hn-radar",
+        nodes,
+        edges,
         description=(
             "Hacker News ingestion, watched live; produces a last-24h HTML report "
             "on demand. Inject the `report` event to run it."
         ),
         config={"retention_runs": HN_RADAR_RETENTION_RUNS},
-        subscriptions=[{
-            "id": "s1",
-            # The operational lane: one event per cycle carrying counts and
-            # changed_ids. The per-item lane is capped at 30/min with the excess
-            # silently dropped, and is not what a flow should ride.
-            "pattern": "ingest.hackernews.sync.completed",
-            "node": "tick",
-        }],
+        subscriptions=[
+            {
+                "id": "s1",
+                # The operational lane: one event per cycle carrying counts and
+                # changed_ids. The per-item lane is capped at 30/min with the excess
+                # silently dropped, and is not what a flow should ride.
+                "pattern": "ingest.hackernews.sync.completed",
+                "node": "tick",
+            }
+        ],
     )
 
 
@@ -371,6 +420,10 @@ async def _seed_hn_radar() -> None:
 
 
 # ── gmail-radar ──────────────────────────────────────────────────────────────
+
+#: The shipped SubAgent the report node runs. Its md is the contract; this is
+#: only the name the seed resolves.
+EMAIL_SUMMARIZER_SUBAGENT = "email_summarizer"
 
 GMAIL_REPORT_PROMPT = """\
 Write a "Gmail — last 24 hours" inbox summary as a single self-contained HTML file.
@@ -394,36 +447,109 @@ below). Requirements:
 """
 
 
-def _gmail_radar_graph(flow_id: str) -> str:
+async def _email_summarizer_ref() -> str:
+    """`subagent-<id>` for the shipped Email Summarizer, or "" if unresolved.
+
+    Referencing the SubAgent rather than inlining a prompt is what makes the
+    node a *standard agent* on the canvas: its md is the base (model + system
+    prompt), the node overrides only what it needs, and a user editing the
+    agent changes what the flow runs. The empty fallback keeps a fresh
+    instance seedable before the assistant project has been indexed.
+    """
+    try:
+        from flow_sdk.builtin.subagent import SubAgent  # noqa: PLC0415
+
+        row = await SubAgent.get_one({"name": EMAIL_SUMMARIZER_SUBAGENT})
+        return str(row.typeid) if row is not None else ""
+    except Exception:  # noqa: BLE001 — seeding must never fail on a lookup
+        logger.debug("gmail-radar: could not resolve the summarizer subagent", exc_info=True)
+        return ""
+
+
+def _gmail_radar_graph(flow_id: str, subagent_ref: str = "") -> str:
     """The same two-lane shape as hn-radar, over a different provider — which
     is the point: the ingestion spine does not care what fetched the records."""
     nodes = [
-        {"id": "tick", "node_type": "function", "name": "Mail pulse",
-         "node_data": {"function": "hn_radar_tick", "runtime": "inline"}},
-        {"id": "collect", "node_type": "function", "name": "Collect last 24h",
-         "node_data": {"function": "hn_radar_collect", "runtime": "inline"}},
-        {"id": "report", "node_type": "agent", "name": "Write the summary",
-         "node_data": {"prompt": GMAIL_REPORT_PROMPT, "model_size": "sm"}},
+        {
+            "id": "tick",
+            "node_type": "function",
+            "name": "Mail pulse",
+            "node_data": {"function": "hn_radar_tick", "runtime": "inline"},
+        },
+        {
+            "id": "collect",
+            "node_type": "function",
+            "name": "Collect last 24h",
+            "node_data": {"function": "hn_radar_collect", "runtime": "inline"},
+        },
+        {
+            "id": "report",
+            "node_type": "agent",
+            "name": "Email Summarizer",
+            # The standard agent IS the node: its md carries the model and the
+            # system prompt, so nothing is duplicated here. `prompt` rides only as
+            # the per-run addendum when the reference cannot be resolved.
+            "node_data": (
+                {"typeid": subagent_ref} if subagent_ref else {"prompt": GMAIL_REPORT_PROMPT, "model_size": "sm"}
+            ),
+        },
     ]
     edges = [
-        {"id": "e1", "from": {"node": "$external", "event": "report"},
-         "to": {"node": "collect"}},
-        {"id": "e2", "from": {"node": "collect", "event": "done"},
-         "to": {"node": "report"}},
+        {"id": "e1", "from": {"node": "$external", "event": "report"}, "to": {"node": "collect"}},
+        {"id": "e2", "from": {"node": "collect", "event": "done"}, "to": {"node": "report"}},
     ]
     return _doc(
-        flow_id, "gmail-radar", nodes, edges,
+        flow_id,
+        "gmail-radar",
+        nodes,
+        edges,
         description=(
             "Gmail ingested by an agent transport, watched live; produces a "
             "last-24h HTML inbox summary on demand. Inject `report` to run it."
         ),
         config={"retention_runs": HN_RADAR_RETENTION_RUNS},
-        subscriptions=[{
-            "id": "s1",
-            "pattern": "ingest.agent.sync.completed",
-            "node": "tick",
-        }],
+        subscriptions=[
+            {
+                "id": "s1",
+                "pattern": "ingest.agent.sync.completed",
+                "node": "tick",
+            }
+        ],
     )
+
+
+def _repin_agent_node(graph_path, node_id: str, subagent_ref: str) -> None:
+    """Re-point a seed-owned agent node at the CURRENT SubAgent row.
+
+    Same reasoning as ``_repin_trigger_nodes``: the reference is ours, the rest
+    of the graph is the user's. A SubAgent row can be minted after the flow was
+    seeded (a fresh instance seeds before the assistant project is indexed), or
+    recreated — either way the node is left pointing at nothing, or at the
+    inline fallback, and silently runs the wrong thing.
+    """
+    if not subagent_ref:
+        return
+    try:
+        doc = json.loads(graph_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    changed = False
+    for node in doc.get("nodes") or []:
+        if node.get("id") != node_id or node.get("node_type") != "agent":
+            continue
+        nd = node.get("node_data") or {}
+        if nd.get("typeid") == subagent_ref:
+            continue
+        nd["typeid"] = subagent_ref
+        # The inline prompt was only ever the unresolved fallback; leaving it
+        # would layer a duplicate system prompt on top of the agent's own.
+        nd.pop("prompt", None)
+        nd.pop("model_size", None)
+        node["node_data"] = nd
+        changed = True
+    if changed:
+        graph_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+        logger.info("set_service_graph_workflows: re-pinned gmail-radar agent node to %s", subagent_ref)
 
 
 async def _seed_gmail_radar() -> None:
@@ -432,6 +558,10 @@ async def _seed_gmail_radar() -> None:
     if flow is None or folder is None:
         return
     if not created:
-        return  # the user's flow now — never overwrite an existing graph
-    (folder / "graph.json").write_text(_gmail_radar_graph(flow.id), encoding="utf-8")
-    logger.info("set_service_graph_workflows: seeded gmail-radar (%s)", flow.id)
+        # The graph is the user's now — but the agent REF is seed-owned, so keep
+        # it pointing at the shipped Email Summarizer.
+        _repin_agent_node(folder / "graph.json", "report", await _email_summarizer_ref())
+        return
+    ref = await _email_summarizer_ref()
+    (folder / "graph.json").write_text(_gmail_radar_graph(flow.id, ref), encoding="utf-8")
+    logger.info("set_service_graph_workflows: seeded gmail-radar (%s) agent=%s", flow.id, ref or "(inline fallback)")

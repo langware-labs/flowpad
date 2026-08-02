@@ -28,6 +28,7 @@ IO_FOLDER-compatible; deterministic id) — runs are born as training data.
 The per-node scheduler (serial/parallel, queue, merge_identical) is keyed by
 (flow, node). Budgets + run retention come from the flow's ``config`` block.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -114,10 +115,27 @@ class _LoadedFlow:
 class _Run:
     """Live run state: counters + journal + record dir. Row upserts at start/end."""
 
-    __slots__ = ("id", "flow", "journal", "started_at", "pending", "active",
-                 "hops", "processes", "events", "executions", "error", "finalized",
-                 "seq", "in_count", "out_count", "record_dir", "suspended",
-                 "suspended_nodes", "actor")
+    __slots__ = (
+        "id",
+        "flow",
+        "journal",
+        "started_at",
+        "pending",
+        "active",
+        "hops",
+        "processes",
+        "events",
+        "executions",
+        "error",
+        "finalized",
+        "seq",
+        "in_count",
+        "out_count",
+        "record_dir",
+        "suspended",
+        "suspended_nodes",
+        "actor",
+    )
 
     def __init__(self, run_id: str, flow: _LoadedFlow) -> None:
         self.id = run_id
@@ -131,14 +149,14 @@ class _Run:
         # a TAG trigger firing from another run's entity write). The entry
         # path (on_trigger_fired / inject) releases it after first routing.
         self.pending = 1
-        self.active = 0       # executions in flight
+        self.active = 0  # executions in flight
         self.hops = 0
         self.processes = 0
         self.events = 0
         self.executions = 0
-        self.seq = 0          # execution sequence (journal-ordered)
-        self.in_count = 0     # entry events materialized (input/event-N.json)
-        self.out_count = 0    # terminal events materialized (output/event-N.json)
+        self.seq = 0  # execution sequence (journal-ordered)
+        self.in_count = 0  # entry events materialized (input/event-N.json)
+        self.out_count = 0  # terminal events materialized (output/event-N.json)
         self.error: Optional[str] = None
         self.finalized = False
         self.record_dir: Path = run_record_dir(run_id)
@@ -160,8 +178,7 @@ class _Run:
         return self.seq
 
     def maybe_sink(self) -> bool:
-        return (not self.finalized and self.pending == 0 and self.active == 0
-                and self.suspended == 0)
+        return not self.finalized and self.pending == 0 and self.active == 0 and self.suspended == 0
 
 
 class _NodeRuntime:
@@ -192,8 +209,14 @@ class InlineGraphWorkflowCtx:
     the logger and the execution's output record.
     """
 
-    def __init__(self, manager: "GraphWorkflowManager", run: _Run, node: GraphWorkflowNodeDef,
-                 input_folder: Path, output_folder: Path) -> None:
+    def __init__(
+        self,
+        manager: "GraphWorkflowManager",
+        run: _Run,
+        node: GraphWorkflowNodeDef,
+        input_folder: Path,
+        output_folder: Path,
+    ) -> None:
         self._manager = manager
         self._run = run
         self._node = node
@@ -221,8 +244,7 @@ class InlineGraphWorkflowCtx:
         from flow_sdk.graph_workflow_manager.function_runner import _api_base
 
         sub = _SubCtx(self.flow_id, self.node_id, self.execution_id, _api_base())
-        return await asyncio.get_running_loop().run_in_executor(
-            None, lambda: sub.post(path, body, timeout=timeout))
+        return await asyncio.get_running_loop().run_in_executor(None, lambda: sub.post(path, body, timeout=timeout))
 
     def log(self, msg: Any) -> None:
         logger.info("[flow %s/%s] %s", self.flow_id[:8], self.node_id, msg)
@@ -329,15 +351,16 @@ class GraphWorkflowManager:
             return
         unsubs = []
         for sub in loaded.doc.subscriptions:
-            unsubs.append(event_bus.on(
-                sub.pattern,
-                self._subscription_handler(loaded.flow_id, sub),
-                target=sub.target or None,
-                scope=list(sub.scope) or None,
-            ))
+            unsubs.append(
+                event_bus.on(
+                    sub.pattern,
+                    self._subscription_handler(loaded.flow_id, sub),
+                    target=sub.target or None,
+                    scope=list(sub.scope) or None,
+                )
+            )
         self._flow_subs[loaded.flow_id] = unsubs
-        logger.info("GraphWorkflowManager: %s armed %d subscription(s)",
-                    loaded.flow_id[:8], len(unsubs))
+        logger.info("GraphWorkflowManager: %s armed %d subscription(s)", loaded.flow_id[:8], len(unsubs))
 
     def _subscription_handler(self, flow_id: str, sub):
         from flow_sdk.tags.envelope import FlowEvent, target_of
@@ -368,8 +391,7 @@ class GraphWorkflowManager:
                     envelope=event,
                 )
             except ValueError as e:
-                logger.warning("GraphWorkflowManager: subscription entry refused for %s: %s",
-                               flow_id[:8], e)
+                logger.warning("GraphWorkflowManager: subscription entry refused for %s: %s", flow_id[:8], e)
 
         return _on_event
 
@@ -388,7 +410,9 @@ class GraphWorkflowManager:
             logger.warning(
                 "GraphWorkflowManager: %s subscription entries exceeded %d/min — "
                 "suppressing until the window resets (cross-flow loop?)",
-                flow_id[:8], cap)
+                flow_id[:8],
+                cap,
+            )
 
         return self._entry_guard.allows(flow_id, cap, _warn)
 
@@ -420,11 +444,9 @@ class GraphWorkflowManager:
                     # that no longer parses.
                     for unsub in self._flow_subs.pop(flow_id, []):
                         unsub()
-                    logger.warning("GraphWorkflowManager: %s subscriptions disarmed (reload failed)",
-                                   flow_id[:8])
+                    logger.warning("GraphWorkflowManager: %s subscriptions disarmed (reload failed)", flow_id[:8])
 
-            self._rearm_unsub = event_bus.on(
-                "entity.updated", _rearm, target="graph_workflow:*")
+            self._rearm_unsub = event_bus.on("entity.updated", _rearm, target="graph_workflow:*")
 
     # ── activation ────────────────────────────────────────────────────────────
 
@@ -443,8 +465,11 @@ class GraphWorkflowManager:
                     if envelope is not None:
                         extra = {"id": envelope.id, "actor": envelope.ctx.actor}
                     fe = RunEvent(
-                        event=TRIGGER_FIRED_EVENT, data={"trigger_id": trigger_id},
-                        flow_id=flow.flow_id, execution_id=run.id, source_node=node.id,
+                        event=TRIGGER_FIRED_EVENT,
+                        data={"trigger_id": trigger_id},
+                        flow_id=flow.flow_id,
+                        execution_id=run.id,
+                        source_node=node.id,
                         **extra,
                     )
                     if run.actor is None and fe.actor:
@@ -492,8 +517,9 @@ class GraphWorkflowManager:
             extra: dict[str, Any] = {}
             if envelope is not None:
                 extra = {"id": envelope.id, "actor": envelope.ctx.actor}
-            fe = RunEvent(event=event, data=data or {}, flow_id=flow_id,
-                          execution_id=run.id, source_node=source_node, **extra)
+            fe = RunEvent(
+                event=event, data=data or {}, flow_id=flow_id, execution_id=run.id, source_node=source_node, **extra
+            )
             if run.actor is None and fe.actor:
                 run.actor = fe.actor
             if source_node == EXTERNAL_SOURCE:
@@ -531,8 +557,13 @@ class GraphWorkflowManager:
         try:
             from flow_sdk.builtin.graph_workflow_run import GraphWorkflowRun, RunStatus
 
-            row = GraphWorkflowRun(id=run.id, name=f"run {run.id[:8]}", flow_id=flow.flow_id,
-                                 status=RunStatus.RUNNING.value, started_at=now_iso())
+            row = GraphWorkflowRun(
+                id=run.id,
+                name=f"run {run.id[:8]}",
+                flow_id=flow.flow_id,
+                status=RunStatus.RUNNING.value,
+                started_at=now_iso(),
+            )
             await row.save()
             parent = await _resolve_flow_entity(flow.flow_id)
             if parent is not None:
@@ -562,16 +593,14 @@ class GraphWorkflowManager:
                 f"graph_workflow.{subtag}",
                 target_of("graph_workflow", run.flow.flow_id),
                 {"run_id": run.id, **data},
-                ctx={"scope": [target_of("graph_workflow_run", run.id),
-                               target_of("graph_workflow", run.flow.flow_id)]},
+                ctx={"scope": [target_of("graph_workflow_run", run.id), target_of("graph_workflow", run.flow.flow_id)]},
             )
         except Exception:
             logger.debug("GraphWorkflowManager: flow.%s emission failed", subtag, exc_info=True)
 
     # ── standardized I/O records ──────────────────────────────────────────────
 
-    def _record_run_event(self, run: _Run, fe: RunEvent, direction: str,
-                          target_node: str | None = None) -> None:
+    def _record_run_event(self, run: _Run, fe: RunEvent, direction: str, target_node: str | None = None) -> None:
         """The run-level I/O record: entry events → ``input/event-N.json``,
         terminal (unrouted) emissions → ``output/event-N.json`` (numbered =
         Dataset occurrence grammar). ``target_node`` (direct delivery) rides
@@ -592,17 +621,22 @@ class GraphWorkflowManager:
         if direction == "output":
             self._emit_flow_tag(run, "output", {"event": fe.event, "payload": fe.data})
 
-    def _stamp_example(self, exec_dir: Path, run: _Run, node_id: str, seq: int,
-                       fe: RunEvent | None, process_id: str | None = None,
-                       agent_id: str | None = None) -> None:
+    def _stamp_example(
+        self,
+        exec_dir: Path,
+        run: _Run,
+        node_id: str,
+        seq: int,
+        fe: RunEvent | None,
+        process_id: str | None = None,
+        agent_id: str | None = None,
+    ) -> None:
         """Born-compatible Dataset example: id is deterministic → idempotent promotion."""
         from flow_sdk.fs_store.identifier import mint_uuid
 
-        source: dict[str, Any] = {"flow_id": run.flow.flow_id, "run_id": run.id,
-                                  "node_id": node_id, "seq": seq}
+        source: dict[str, Any] = {"flow_id": run.flow.flow_id, "run_id": run.id, "node_id": node_id, "seq": seq}
         if fe is not None:
-            source.update({"event": fe.event, "source_node": fe.source_node,
-                           "hop": fe.hop, "event_id": fe.id})
+            source.update({"event": fe.event, "source_node": fe.source_node, "hop": fe.hop, "event_id": fe.id})
         if run.actor:
             source["actor"] = run.actor
         if process_id:
@@ -612,13 +646,16 @@ class GraphWorkflowManager:
         try:
             from flow_sdk.builtin.dataset import EXAMPLE_META
 
-            _write_json(exec_dir / EXAMPLE_META, {
-                "metadata": {
-                    "id": str(mint_uuid(f"{run.flow.flow_id}:{run.id}:{seq}")),
-                    "kind": "train",
-                    "source": source,
+            _write_json(
+                exec_dir / EXAMPLE_META,
+                {
+                    "metadata": {
+                        "id": str(mint_uuid(f"{run.flow.flow_id}:{run.id}:{seq}")),
+                        "kind": "train",
+                        "source": source,
+                    },
                 },
-            })
+            )
         except OSError:
             logger.debug("GraphWorkflowManager: example.json stamp failed", exc_info=True)
 
@@ -692,8 +729,7 @@ class GraphWorkflowManager:
             except Exception as e:
                 self._finish_execution(run, rt)
                 logger.exception("GraphWorkflowManager: node %s failed for %s", node_def.id, fe.event)
-                run.journal.append("node_error", {"node": node_def.id, "error": str(e),
-                                                  "execution": {"seq": seq}})
+                run.journal.append("node_error", {"node": node_def.id, "error": str(e), "execution": {"seq": seq}})
                 self._emit_node_status(run, node_def, "failed", {"error": str(e)})
         # Reap the per-node runtime when fully idle — the map otherwise grows
         # one entry per (flow, node) forever (in-flight agents keep active > 0
@@ -708,8 +744,7 @@ class GraphWorkflowManager:
 
     # ── execution per node type ───────────────────────────────────────────────
 
-    async def _execute(self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent,
-                       rt: _NodeRuntime, seq: int) -> None:
+    async def _execute(self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent, rt: _NodeRuntime, seq: int) -> None:
         if node.node_type == "guided_step":
             await self._enter_guided_step(run, node, fe, rt, seq)
         elif node.node_type == "function":
@@ -719,8 +754,9 @@ class GraphWorkflowManager:
 
     # ── guided_step (User Journey — human-in-the-loop) ────────────────────────
 
-    async def _enter_guided_step(self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent,
-                                 rt: _NodeRuntime, seq: int) -> None:
+    async def _enter_guided_step(
+        self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent, rt: _NodeRuntime, seq: int
+    ) -> None:
         """Park the run at a guided step: record the entry, broadcast the
         "waiting for you to…" one-liner, then RESERVE ``suspended`` (keeps the
         run alive) and release this execution slot WITHOUT emitting ``done``.
@@ -746,16 +782,17 @@ class GraphWorkflowManager:
 
     # ── GraphWorkflowFunction execution (inline + subprocess) ──────────────────────────
 
-    async def _run_function(self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent,
-                            rt: _NodeRuntime, seq: int) -> None:
+    async def _run_function(
+        self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent, rt: _NodeRuntime, seq: int
+    ) -> None:
         if node.function_runtime() == "inline":
             await self._run_function_inline(run, node, fe, rt, seq)
         else:
             await self._run_function_subprocess(run, node, fe, rt, seq)
 
-
-    async def _run_function_inline(self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent,
-                                   rt: _NodeRuntime, seq: int) -> None:
+    async def _run_function_inline(
+        self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent, rt: _NodeRuntime, seq: int
+    ) -> None:
         from flow_sdk.graph_workflow_manager import graph_workflow_functions
 
         ref = str(node.node_data.get("function") or "")
@@ -787,18 +824,17 @@ class GraphWorkflowManager:
         except OSError:
             pass
         self._stamp_example(exec_dir, run, node.id, seq, fe)
-        run.journal.append("node_done", {"node": node.id, "duration_ms": duration,
-                                         "execution": {"seq": seq}})
+        run.journal.append("node_done", {"node": node.id, "duration_ms": duration, "execution": {"seq": seq}})
         # Reserve the successor hop (pending += 1, synchronous) BEFORE releasing
         # this execution slot — counters must never hit 0/0 mid-handoff.
         if isinstance(result, dict):
             self.emit_from_node(run, node.id, AGENT_DONE_EVENT, result)
         self._finish_execution(run, rt)
-        self._emit_node_status(run, node, "finished",
-                                          {"duration_ms": duration, "runtime": "inline"})
+        self._emit_node_status(run, node, "finished", {"duration_ms": duration, "runtime": "inline"})
 
-    async def _run_function_subprocess(self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent,
-                                       rt: _NodeRuntime, seq: int) -> None:
+    async def _run_function_subprocess(
+        self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent, rt: _NodeRuntime, seq: int
+    ) -> None:
         from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
         from flow_sdk.builtin.process_lifecycle import ProcessStatus
         from flow_sdk.flowpad_types.enums.process_enums import ProcessKind
@@ -816,11 +852,13 @@ class GraphWorkflowManager:
         exec_base = execution_base(proc)
         input_dir, output_dir = prepare_execution_io(exec_base, fe)
         await self._attach_to_run(run, proc)
-        self._emit_node_status(run, node, "started",
-                                          {"runtime": "subprocess", "process_id": proc.id})
+        self._emit_node_status(run, node, "started", {"runtime": "subprocess", "process_id": proc.id})
         started = time.monotonic()
-        folders = {"input": str(input_dir), "output": str(output_dir),
-                   "flow_output": str(run.record_dir / "execution" / "output")}
+        folders = {
+            "input": str(input_dir),
+            "output": str(output_dir),
+            "flow_output": str(run.record_dir / "execution" / "output"),
+        }
         try:
             result = await run_function_subprocess(run.flow.folder, node, fe, run, folders)
         except BaseException:
@@ -835,15 +873,18 @@ class GraphWorkflowManager:
             pass
         self._stamp_example(exec_base, run, node.id, seq, fe, process_id=proc.id)
         try:
-            proc.status = (ProcessStatus.STOPPED if result.exit_code == 0
-                           else ProcessStatus.FAILED).value
+            proc.status = (ProcessStatus.STOPPED if result.exit_code == 0 else ProcessStatus.FAILED).value
             proc.exit_code = result.exit_code
             await proc.update()
         except Exception:
             logger.debug("GraphWorkflowManager: subprocess row stamp failed", exc_info=True)
-        detail = {"duration_ms": duration, "exit_code": result.exit_code,
-                  "stdout": result.stdout[-2000:], "stderr": result.stderr[-2000:],
-                  "process_id": proc.id}
+        detail = {
+            "duration_ms": duration,
+            "exit_code": result.exit_code,
+            "stdout": result.stdout[-2000:],
+            "stderr": result.stderr[-2000:],
+            "process_id": proc.id,
+        }
         if result.exit_code == 0:
             run.journal.append("node_done", {"node": node.id, "execution": {"seq": seq}, **detail})
             # Uniform auto-`done`: the handler's dict return, in both runtimes.
@@ -857,7 +898,9 @@ class GraphWorkflowManager:
             self._finish_execution(run, rt)
             run.journal.append("node_error", {"node": node.id, "execution": {"seq": seq}, **detail})
             self._emit_node_status(
-                run, node, "failed",
+                run,
+                node,
+                "failed",
                 {**detail, "error": f"exit {result.exit_code}: {result.stderr.strip()[-300:]}"},
             )
         self._maybe_finalize(run)
@@ -894,8 +937,7 @@ class GraphWorkflowManager:
         if entity is None or not entity.asset_ref:
             raise RuntimeError(f"agent node {node.id}: SubAgent {agent_id!r} not found")
         try:
-            parsed = parse_subagent_markdown(Path(entity.asset_ref).read_text(encoding="utf-8"),
-                                          name=entity.name)
+            parsed = parse_subagent_markdown(Path(entity.asset_ref).read_text(encoding="utf-8"), name=entity.name)
         except OSError as e:
             raise RuntimeError(f"agent node {node.id}: SubAgent md unreadable: {e}") from e
         parsed["agent_id"] = agent_id
@@ -911,8 +953,9 @@ class GraphWorkflowManager:
             return MODEL_SIZE_TO_CLI.get(str(nd["model_size"]), "haiku")
         return str(agent_def.get("model") or "") or "haiku"
 
-    async def _spawn_agent(self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent,
-                           rt: _NodeRuntime, seq: int) -> None:
+    async def _spawn_agent(
+        self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent, rt: _NodeRuntime, seq: int
+    ) -> None:
         from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
         cfg = run.flow.doc.config
@@ -927,8 +970,14 @@ class GraphWorkflowManager:
             workdir=nd.get("workdir"),
             visible=bool(nd.get("visible", False)),
             name=f"Flow {run.flow.doc.name or run.flow.flow_id[:8]}: "
-                 f"{node.name or agent_def.get('name') or node.id[:8]}",
+            f"{node.name or agent_def.get('name') or node.id[:8]}",
             cli_config={"model": self._agent_model(agent_def, nd)},
+            # Provenance, in the same channel `deployment_id` uses. The run↔process
+            # link was otherwise ONLY a relationship edge plus the journal, so
+            # process→run needed a graph walk that raises on multi-parent — and
+            # the flow's name was smuggled in `name` as the only field-level
+            # trace. A runs list has to answer "what did this belong to" cheaply.
+            context_data={"flow_run_id": run.id, "flow_id": run.flow.flow_id, "node_id": node.id},
         )
         # Standardized input record in the process's OWN folders (id is minted
         # at construction, so the record dir is known pre-save) — the preamble
@@ -940,19 +989,23 @@ class GraphWorkflowManager:
         await proc.save()
         await proc.start_pty(instruction=instruction, visible=bool(nd.get("visible", False)))
         await self._attach_to_run(run, proc)
-        spawn_row: dict[str, Any] = {"node": node.id, "process_id": proc.id,
-                                     "execution": {"seq": seq}}
+        spawn_row: dict[str, Any] = {"node": node.id, "process_id": proc.id, "execution": {"seq": seq}}
         if agent_def.get("agent_id"):
             spawn_row["agent_id"] = agent_def["agent_id"]
         run.journal.append("agent_spawn", spawn_row)
-        self._emit_node_status(run, node, "started",
-                                          {"program_kind": nd.get("program_kind", "instruction"),
-                                           "process_id": proc.id})
-        asyncio.create_task(self._watch_agent(run, node, proc.id, rt, seq, fe,
-                                              agent_id=agent_def.get("agent_id")))
+        self._emit_node_status(
+            run, node, "started", {"program_kind": nd.get("program_kind", "instruction"), "process_id": proc.id}
+        )
+        asyncio.create_task(self._watch_agent(run, node, proc.id, rt, seq, fe, agent_id=agent_def.get("agent_id")))
 
-    def _agent_instruction(self, run: _Run, node: GraphWorkflowNodeDef, fe: RunEvent,
-                           exec_base: Path, agent_def: dict[str, Any] | None = None) -> str:
+    def _agent_instruction(
+        self,
+        run: _Run,
+        node: GraphWorkflowNodeDef,
+        fe: RunEvent,
+        exec_base: Path,
+        agent_def: dict[str, Any] | None = None,
+    ) -> str:
         nd = node.node_data
         prompt = f" {nd.get('prompt')}" if nd.get("prompt") else ""
         base = (
@@ -980,9 +1033,16 @@ class GraphWorkflowManager:
         )
         return base + context
 
-    async def _watch_agent(self, run: _Run, node: GraphWorkflowNodeDef, proc_id: str,
-                           rt: _NodeRuntime, seq: int, fe: RunEvent,
-                           agent_id: str | None = None) -> None:
+    async def _watch_agent(
+        self,
+        run: _Run,
+        node: GraphWorkflowNodeDef,
+        proc_id: str,
+        rt: _NodeRuntime,
+        seq: int,
+        fe: RunEvent,
+        agent_id: str | None = None,
+    ) -> None:
         """One-shot agent execution: wait for the turn to complete (busy→idle),
         stop the process, auto-emit ``done {output, output_files}``, free the slot."""
         from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -1028,29 +1088,38 @@ class GraphWorkflowManager:
         finally:
             duration = int((time.monotonic() - started) * 1000)
             if exec_base is not None:
-                self._stamp_example(exec_base, run, node.id, seq, fe, process_id=proc_id,
-                                    agent_id=agent_id)
+                self._stamp_example(exec_base, run, node.id, seq, fe, process_id=proc_id, agent_id=agent_id)
             if failed:
                 self._finish_execution(run, rt)
-                run.journal.append("node_error", {"node": node.id, "process_id": proc_id,
-                                                  "error": failed, "duration_ms": duration,
-                                                  "execution": {"seq": seq}})
-                self._emit_node_status(run, node, "failed",
-                                                  {"error": failed, "process_id": proc_id,
-                                                   "duration_ms": duration})
+                run.journal.append(
+                    "node_error",
+                    {
+                        "node": node.id,
+                        "process_id": proc_id,
+                        "error": failed,
+                        "duration_ms": duration,
+                        "execution": {"seq": seq},
+                    },
+                )
+                self._emit_node_status(
+                    run, node, "failed", {"error": failed, "process_id": proc_id, "duration_ms": duration}
+                )
             else:
-                run.journal.append("node_done", {"node": node.id, "process_id": proc_id,
-                                                 "duration_ms": duration,
-                                                 "execution": {"seq": seq}})
+                run.journal.append(
+                    "node_done",
+                    {"node": node.id, "process_id": proc_id, "duration_ms": duration, "execution": {"seq": seq}},
+                )
                 # Reserve the successor hop (pending += 1, synchronous) BEFORE
                 # releasing this execution slot — counters must never hit 0/0
                 # mid-handoff or a concurrent finalize could sink the run.
-                self.emit_from_node(run, node.id, AGENT_DONE_EVENT,
-                                    {"output": output, "process_id": proc_id,
-                                     "output_files": self._output_listing(exec_base)})
+                self.emit_from_node(
+                    run,
+                    node.id,
+                    AGENT_DONE_EVENT,
+                    {"output": output, "process_id": proc_id, "output_files": self._output_listing(exec_base)},
+                )
                 self._finish_execution(run, rt)
-                self._emit_node_status(run, node, "finished",
-                                                  {"duration_ms": duration, "process_id": proc_id})
+                self._emit_node_status(run, node, "finished", {"duration_ms": duration, "process_id": proc_id})
             await self._drain(run.flow.flow_id, node)
             self._maybe_finalize(run)
 
@@ -1093,8 +1162,9 @@ class GraphWorkflowManager:
         """SYNC on purpose: the ``pending`` reserve must land before the caller
         releases its execution slot (or returns to the event loop) — counters
         must never hit 0/0 mid-handoff. The hop itself runs as a loop task."""
-        fe = RunEvent(event=event, data=data, flow_id=run.flow.flow_id,
-                       execution_id=run.id, source_node=node_id, hop=run.hops + 1)
+        fe = RunEvent(
+            event=event, data=data, flow_id=run.flow.flow_id, execution_id=run.id, source_node=node_id, hop=run.hops + 1
+        )
         # Chain hops run as loop tasks, not stack frames — long chains (and the
         # hop-capped cycle case) must never grow the call stack. The pending
         # counter keeps the run alive until the scheduled hop lands.
@@ -1117,15 +1187,16 @@ class GraphWorkflowManager:
         Replay is a real re-execution — side effects re-fire; idempotency is
         the function author's contract. Returns the new run id."""
         input_dir = run_record_dir(run_id) / "execution" / "input"
-        entries = sorted(input_dir.glob("event-*.json"),
-                         key=lambda p: int(p.stem.split("-")[1]))
+        entries = sorted(input_dir.glob("event-*.json"), key=lambda p: int(p.stem.split("-")[1]))
         if not entries:
             raise ValueError(f"run {run_id} has no recorded input events")
         new_run_id: Optional[str] = None
         for path in entries:
             payload = json.loads(path.read_text(encoding="utf-8"))
             fe = await self.inject(
-                flow_id, str(payload.get("event") or ""), payload.get("data") or {},
+                flow_id,
+                str(payload.get("event") or ""),
+                payload.get("data") or {},
                 execution_id=new_run_id,
                 source_node=str(payload.get("source_node") or EXTERNAL_SOURCE),
                 target_node=str(payload.get("target_node") or "") or None,
@@ -1164,7 +1235,9 @@ class GraphWorkflowManager:
         except (OSError, ValueError) as e:
             raise ValueError(f"execution input record unavailable: {e}") from e
         fe = await self.inject(
-            flow_id, str(payload.get("event") or ""), payload.get("data") or {},
+            flow_id,
+            str(payload.get("event") or ""),
+            payload.get("data") or {},
             target_node=node_id,
         )
         return fe.execution_id if fe else None
@@ -1190,8 +1263,9 @@ class GraphWorkflowManager:
         from flow_sdk.builtin.graph_workflow_run import GraphWorkflowRun, RunStatus
 
         status = RunStatus.TRIPPED.value if run.error else RunStatus.COMPLETE.value
-        run.journal.append("run_end", {"status": status, "events": run.events,
-                                       "executions": run.executions, "error": run.error})
+        run.journal.append(
+            "run_end", {"status": status, "events": run.events, "executions": run.executions, "error": run.error}
+        )
         # The whole RUN is an example too (input = entry events, output = terminals).
         self._stamp_example(run.record_dir / "execution", run, "$run", 0, None)
         try:
@@ -1207,9 +1281,10 @@ class GraphWorkflowManager:
             logger.debug("GraphWorkflowManager: run row end-upsert failed", exc_info=True)
         self._emit_run_event(run, "run_end", {"status": status})
         self._emit_flow_tag(
-            run, "done" if status == RunStatus.COMPLETE.value else "failed",
-            {"status": status, "events": run.events, "executions": run.executions,
-             "error": run.error})
+            run,
+            "done" if status == RunStatus.COMPLETE.value else "failed",
+            {"status": status, "events": run.events, "executions": run.executions, "error": run.error},
+        )
         self._runs.pop(run.id, None)
         try:
             await self._prune_runs(run.flow)
@@ -1249,31 +1324,39 @@ class GraphWorkflowManager:
                 await row.destroy()
             except Exception:
                 logger.debug("GraphWorkflowManager: prune run destroy failed", exc_info=True)
-            logger.info("GraphWorkflowManager: pruned run %s of flow %s (retention %d)",
-                        row.id[:8], flow.flow_id[:8], keep)
+            logger.info(
+                "GraphWorkflowManager: pruned run %s of flow %s (retention %d)", row.id[:8], flow.flow_id[:8], keep
+            )
 
     # ── observability ─────────────────────────────────────────────────────────
 
     def _journal_event(self, run: _Run, fe: RunEvent) -> None:
-        row: dict[str, Any] = {"event": fe.event, "data": fe.data,
-                               "source_node": fe.source_node, "hop": fe.hop,
-                               "event_id": fe.id}
+        row: dict[str, Any] = {
+            "event": fe.event,
+            "data": fe.data,
+            "source_node": fe.source_node,
+            "hop": fe.hop,
+            "event_id": fe.id,
+        }
         if fe.actor:
             row["actor"] = fe.actor
         run.journal.append("event", row)
-        self._emit_run_event(
-            run, "event", {"event": fe.event, "data": fe.data, "node": fe.source_node})
+        self._emit_run_event(run, "event", {"event": fe.event, "data": fe.data, "node": fe.source_node})
 
     def _emit_run_event(self, run: _Run, kind: str, payload: dict[str, Any]) -> None:
         """One beat of the run's internal stream, onto the bus."""
-        self._emit_flow_tag(run, "run.event", {
-            "kind": kind,
-            "event": str(payload.get("event") or ""),
-            "data": payload.get("data") or {},
-            "node": str(payload.get("node") or ""),
-            "status": str(payload.get("status") or ""),
-            "ts": now_iso(),
-        })
+        self._emit_flow_tag(
+            run,
+            "run.event",
+            {
+                "kind": kind,
+                "event": str(payload.get("event") or ""),
+                "data": payload.get("data") or {},
+                "node": str(payload.get("node") or ""),
+                "status": str(payload.get("status") or ""),
+                "ts": now_iso(),
+            },
+        )
 
     def _emit_node_status(
         self, run: _Run, node: GraphWorkflowNodeDef, phase: str, detail: dict[str, Any] | None = None
@@ -1282,12 +1365,18 @@ class GraphWorkflowManager:
         # exist nowhere else — they must ride the event or the live counters go
         # dead. Likewise detail.process_id, which is what proc-watch attaches to.
         rt = self._node_rt(run.flow.flow_id, node.id)
-        self._emit_flow_tag(run, "node.status", {
-            "node_id": node.id, "phase": phase,
-            "queued": len(rt.queue), "active": rt.active,
-            "detail": detail or {},
-            "ts": now_iso(),
-        })
+        self._emit_flow_tag(
+            run,
+            "node.status",
+            {
+                "node_id": node.id,
+                "phase": phase,
+                "queued": len(rt.queue),
+                "active": rt.active,
+                "detail": detail or {},
+                "ts": now_iso(),
+            },
+        )
 
     # ── run queries (routes) ──────────────────────────────────────────────────
 

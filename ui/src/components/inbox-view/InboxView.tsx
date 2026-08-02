@@ -435,7 +435,7 @@ export function InboxView() {
   // — only gates the empty state; the unread NUMBER is backend-owned.
   const [membershipPendingCount, setMembershipPendingCount] = useState(0);
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
-  const { navigation, currentDock } = useDockNavigation();
+  const { navigation } = useDockNavigation();
   const { cloudUser } = useAuth();
   const cloudUserId = cloudUser?.id ?? null;
   const { connection } = useCloudStatus();

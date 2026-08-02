@@ -1,6 +1,6 @@
 # Test Index
 
-> Last updated: 2026-07-29T02:09:43Z
+> Last updated: 2026-08-01T22:33:18Z
 > Scope: all manual-regression `.md` scenarios, `.md.ts` Playwright files, and standalone browser specs.
 
 ## agentic-process (md=13, md.ts=16, spec.ts=0)
@@ -8,8 +8,8 @@
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |----------|------:|------------|-----------|------|
 | agentic_process_visible_restored_on_load.md.ts *(md.ts only)* | 1 | yes | no | - |
-| codex_chat_terminal_full_matrix.md | 2 | yes | no | - |
-| codex_chat_terminal_switch_matrix.md | 2 | yes | no | - |
+| codex_chat_terminal_full_matrix.md | 27 | yes | no | - |
+| codex_chat_terminal_switch_matrix.md | 16 | yes | no | - |
 | conversation_view_three_spawn_branches.md | 2 | yes | no | - |
 | embedded_close_preserves_process.md | 1 | yes | no | - |
 | new_claude_session_no_console_errors.md | 1 | yes | no | - |
@@ -19,10 +19,10 @@
 | process_terminal_shell_tab_navigates_url.md | 1 | yes | no | - |
 | processtoolbar_fork.md | 2 | yes | no | - |
 | quick_create_session_browser_url_order.md.ts *(md.ts only)* | 1 | yes | no | - |
-| resume_session_from_recent.md | 2 | yes | no | other (challenge) |
+| resume_session_from_recent.md | 3 | yes | no | other (challenge) |
 | session_info_popover.md | 3 | yes | no | - |
 | shell_url_recovers_linked_process.md.ts *(md.ts only)* | 1 | yes | no | - |
-| worktree_lifecycle.md | 2 | yes | no | - |
+| worktree_lifecycle.md | 3 | yes | no | - |
 
 ## assets (md=3, md.ts=4, spec.ts=0)
 
@@ -31,18 +31,18 @@
 | asset_id_collisions.md | 2 | yes | no | - |
 | assets_list_mode.md | 6 | yes | no | - |
 | vfs_files_tree_selection.md.ts *(md.ts only)* | 1 | yes | no | - |
-| wiki_folder_tree.md | 4 | yes | no | other (challenge) |
+| wiki_folder_tree.md | 16 | yes | no | other (challenge) |
 
 ## chat (md=19, md.ts=19, spec.ts=0)
 
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |----------|------:|------------|-----------|------|
 | 401_unauthorized_when_closing_a_chat.md | 1 | yes | no | - |
-| chat_input_controls.md | 3 | yes | no | - |
+| chat_input_controls.md | 2 | yes | no | - |
 | chat_refresh_persistence.md | 1 | yes | no | - |
 | chat_tab_switching.md | 1 | yes | no | - |
 | closing_a_chat_produces_console_error_401.md | 1 | yes | no | - |
-| doc_chat_per_type.md | 5 | yes | no | live-claude |
+| doc_chat_per_type.md | 4 | yes | no | live-claude |
 | first_chat_message_is_slow.md | 1 | yes | no | - |
 | in_chats_expanding_agent_thinking_component_is_not_retained.md | 1 | yes | no | - |
 | landing_to_new_chat.md | 1 | yes | no | - |
@@ -89,7 +89,7 @@
 |----------|------:|------------|-----------|------|
 | v0.28_scenarios/LLM_comfigure.md | 1 | yes | no | - |
 | v0.28_scenarios/coding_agent_cli.md | 1 | yes | no | - |
-| v0.28_scenarios/environment_tab.md | 1 | yes | no | - |
+| v0.28_scenarios/environment_tab.md | 3 | yes | no | - |
 | v0.28_scenarios/shell_tab.md | 1 | yes | no | - |
 
 ## editor (md=13, md.ts=13, spec.ts=0)
@@ -123,6 +123,12 @@
 | refreshing_any_tab_other_than_main_app_error_404_agent_id_mi.md | 2 | yes | no | - |
 | usage_cost_failed_to_fetch_cost_overview.md | 1 | yes | no | - |
 
+## graph-workflows (md=0, md.ts=0, spec.ts=1)
+
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|----------|------:|------------|-----------|------|
+| demo-workflows.spec.ts *(standalone spec)* | 2 | yes | no | - |
+
 ## k_browser (md=1, md.ts=1, spec.ts=0)
 
 | Scenario | Tests | Playwright | Fast Path | Skip |
@@ -139,14 +145,21 @@
 
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |----------|------:|------------|-----------|------|
-| mcp_ui_vibe_form.md.ts *(md.ts only)* | 3 | yes | no | other (challenge) |
+| mcp_ui_vibe_form.md.ts *(md.ts only)* | 1 | yes | no | other (challenge) |
+
+## root (md=2, md.ts=2, spec.ts=0)
+
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|----------|------:|------------|-----------|------|
+| migration.md | 2 | yes | no | - |
+| run_test_instructions.md | 1 | yes | no | - |
 
 ## search (md=8, md.ts=8, spec.ts=0)
 
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |----------|------:|------------|-----------|------|
 | mcp_index.md | 5 | yes | no | other (challenge) |
-| rebuild_index_ui.md | 4 | yes | no | - |
+| rebuild_index_ui.md | 11 | yes | no | - |
 | record_search_from_home.md | 3 | yes | no | - |
 | record_search_view.md | 4 | yes | yes | - |
 | scan_records_viewer.md | 3 | yes | no | - |
@@ -201,30 +214,30 @@
 |----------|------:|------------|-----------|------|
 | ctrlc_doesnt_copy_in_shell_tab.md | 1 | yes | no | - |
 | debug_nav.md.ts *(md.ts only)* | 1 | yes | no | - |
-| dir_panel_scroll.md.ts *(md.ts only)* | 2 | yes | no | other (challenge) |
-| docker_stale_shell_reopen.md.ts *(md.ts only)* | 2 | yes | no | other (challenge) |
-| docker_terminal_uname.md.ts *(md.ts only)* | 2 | yes | no | other (challenge) |
-| docker_two_tabs_roundtrip.md.ts *(md.ts only)* | 2 | yes | no | other (challenge) |
+| dir_panel_scroll.md.ts *(md.ts only)* | 1 | yes | no | other (challenge) |
+| docker_stale_shell_reopen.md.ts *(md.ts only)* | 1 | yes | no | other (challenge) |
+| docker_terminal_uname.md.ts *(md.ts only)* | 1 | yes | no | other (challenge) |
+| docker_two_tabs_roundtrip.md.ts *(md.ts only)* | 1 | yes | no | other (challenge) |
 | flow_shell_tab_location.md | 1 | yes | no | - |
-| git_status_panel.md | 12 | yes | no | other (challenge) |
+| git_status_panel.md | 10 | yes | no | other (challenge) |
 | in_claude_ctrlv_does_not_paste.md | 1 | yes | no | - |
 | interactive_tabs_project_filtering_matrix.md | 51 | yes | no | platform |
 | multiple_terminal_tabs.md | 1 | yes | no | - |
 | navigate_to_shell.md | 1 | yes | no | - |
 | plain_shell_url_loads_silently.md.ts *(md.ts only)* | 1 | yes | no | - |
-| prompt_index_panel.md | 7 | yes | no | other (challenge) |
+| prompt_index_panel.md | 12 | yes | no | other (challenge) |
 | run_basic_command.md | 1 | yes | no | - |
-| sandbox_tab_cloud_icon.md.ts *(md.ts only)* | 2 | yes | no | other (challenge) |
-| sandbox_terminal_uname.md.ts *(md.ts only)* | 2 | yes | no | other (challenge) |
-| sandbox_two_tabs_roundtrip.md.ts *(md.ts only)* | 2 | yes | no | other (challenge) |
+| sandbox_tab_cloud_icon.md.ts *(md.ts only)* | 1 | yes | no | other (challenge) |
+| sandbox_terminal_uname.md.ts *(md.ts only)* | 1 | yes | no | other (challenge) |
+| sandbox_two_tabs_roundtrip.md.ts *(md.ts only)* | 1 | yes | no | other (challenge) |
 | session_persistence_on_refresh.md | 4 | yes | no | - |
 | session_resumes_after_sleep_wake.md | 1 | yes | no | - |
-| shell_slow_to_start_powershell_only.md | 2 | yes | no | platform |
+| shell_slow_to_start_powershell_only.md | 1 | yes | no | platform |
 | shell_starts_in_acceptable_time.md | 1 | yes | no | - |
 | shell_tab_title_and_switch.md.ts *(md.ts only)* | 1 | yes | no | - |
 | shell_tabs_remain_open_after_closing.md | 1 | yes | no | - |
 | shell_terminals_looks_empty.md | 1 | yes | no | - |
-| terminal_annotation_bookmark.md | 4 | yes | no | other (challenge) |
+| terminal_annotation_bookmark.md | 5 | yes | no | other (challenge) |
 | terminal_clear_and_scrollback.md | 1 | yes | no | - |
 | terminal_command_history.md | 1 | yes | no | - |
 | terminal_ctrl_c.md | 1 | yes | no | - |
@@ -235,8 +248,8 @@
 | terminal_scroll_sync.md | 2 | yes | no | - |
 | terminal_tab_rename.md | 1 | yes | no | - |
 | terminal_tab_switch_no_duplicates.md.ts *(md.ts only)* | 1 | yes | no | - |
-| time_gutter_and_prompt_annotations.md | 20 | yes | no | live-claude |
-| visible_process_still_pty.md | 2 | yes | no | other (challenge) |
+| time_gutter_and_prompt_annotations.md | 10 | yes | no | live-claude |
+| visible_process_still_pty.md | 1 | yes | no | other (challenge) |
 | web_app_artifact_not_created_when_prompted.md | 1 | yes | no | - |
 | when_claude_runs_in_shell_and_is_thinking_not_all_the_output.md | 1 | yes | no | - |
 
@@ -268,14 +281,14 @@
 | scope.md | 2 | yes | no | - |
 | smoke.md | 3 | yes | no | - |
 | ui_ux.md | 4 | yes | no | - |
-| wiki_integration.md | 2 | yes | no | other (challenge) |
+| wiki_integration.md | 1 | yes | no | other (challenge) |
 
 ## wiki (md=1, md.ts=1, spec.ts=0)
 
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |----------|------:|------------|-----------|------|
-| wiki_link_layer.md | 3 | yes | no | - |
+| wiki_link_layer.md | 23 | yes | no | - |
 
 ---
 
-TOTAL: md=133, md.ts=157, spec.ts=1, orphan .md (Phase 12 scope)=0
+TOTAL: md=135, md.ts=159, spec.ts=2, orphan .md (Phase 12 scope)=0

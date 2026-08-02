@@ -1,6 +1,7 @@
 """Concrete ``TranscriptEntry`` subclasses, one file per kind."""
 
 from .agent_spawn import AgentSpawnEntry
+from .artifact import ArtifactEntry
 from .assistant_message import AssistantMessageEntry
 from .compaction import CompactionEntry
 from .exit_plan_mode import ExitPlanModeEntry
@@ -24,6 +25,7 @@ from .web_fetch import WebFetchEntry
 from .worker_unavailable import WorkerUnavailableEntry, WorkerUnavailableReason
 
 __all__ = [
+    "ArtifactEntry",
     "AgentSpawnEntry",
     "AssistantMessageEntry",
     "CompactionEntry",

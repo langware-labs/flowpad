@@ -11,7 +11,7 @@ Names should make that obvious.
 | `SubAgent` (a `.md` prompt asset) | **subagent** | — |
 | `AgentOptions` | options | — |
 | `SubAgent` + `AgentOptions` together | — | **`agent`** |
-| `Agent` | — | — (**reserved**, not yet built) |
+| `Agent` (launchable identity + bundle) | — | closest analogue: `agent` |
 | `AgenticProcess` (one run) | session | session |
 | `ClaudeSession` / `CodexSession` / `CopilotSession` | transcript | — |
 | `Skill` (`SKILL.md`) | skill | skill |
@@ -23,19 +23,18 @@ Names should make that obvious.
 ## The three rows that are not clean matches
 
 **OpenClaw's `agent` is not our `SubAgent`.** Theirs is a persistent tenant —
-`agents.entries.*` with `id`, `workspace`, `model`, `identity`, skill visibility, its own
-auth profile and session store, with channel bindings routing to it; many live in one
-Gateway process, and it has no subagent concept. Ours is a prompt asset. The real
-equivalent is our **`SubAgent` + `AgentOptions` pair**: `workspace`↔`workdir`,
-`model`↔`model`, `skills`↔`skill_names`/`agents_json`, session store↔`session_id`, auth
-profile↔`env_vars` + `cli_drivers/api_auth.py`.
+`agents.entries.*` with `id`, workspace, model, identity, skill visibility, its own auth
+profile and session store, with channel bindings routing to it; many live in one Gateway
+process, and it has no subagent concept. Our `SubAgent` is only a provider-owned prompt
+asset. The closest Flowpad analogue is `Agent`: a native, launchable identity plus bundle
+stored at `agentic-assets/agent/<name>/agent.md`. It deploys through `AgentDeployment` and
+each launch becomes an `AgenticProcess`. Unlike OpenClaw's tenant, Flowpad keeps deployment
+placement and each run as separate entities.
 
-That is why the entity is spelled `SubAgent` and the bare noun `Agent` is **reserved**:
-Claude Code calls these subagents, our entity is a thin wrapper over its
-`.claude/agents/*.md` contract, and `Agent` is being held for the hub-level launchable
-principal — the thing that actually corresponds to OpenClaw's `agent`. The mismatch is
-structural rather than lexical: OpenClaw fuses definition and launch config into one
-persistent noun; we split them and bind them only at spawn.
+That is why the provider prompt entity is spelled `SubAgent`: Claude Code calls these
+subagents, and our entity is a thin wrapper over its `.claude/agents/*.md` contract.
+`Agent` names Flowpad's launchable principal instead; it may reference SubAgents without
+absorbing their provider-owned format.
 
 **The type renamed; the directory did not.** `.claude/agents/` is a **provider-owned path**
 — Claude Code reads it directly — so `family` stays `"agents"` and the frontmatter spec
@@ -59,7 +58,7 @@ Keep these apart when naming anything new:
 | `DynamicWorkflow` (`.claude/workflows/*.js`) | `GraphWorkflow` (`agentic-assets/graph_workflow/`) |
 | `WorkflowRun` (`wf_<runId>.json`, read-only) | `GraphWorkflowRun` |
 | `ClaudeSession` / `CodexSession` / `CopilotSession` | `AgenticProcess` |
-| `SubAgent` (`.claude/agents/`), `Skill`, `Command`, `ClaudeMd` | `Project`, `Task`, `Spec`, `Journey`, `Deck` |
+| `SubAgent` (`.claude/agents/`), `Skill`, `Command`, `ClaudeMd` | `Agent` (`agentic-assets/agent/`), `Project`, `Task`, `Spec`, `Journey`, `Deck` |
 
 A provider mirror is read-only-ish and its format is not ours to change. A native asset is
 a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
@@ -88,12 +87,11 @@ a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
   and discriminated by `kind` (`content.feed.item`), deliberately not one entity type per
   provider. Provider-specific knowledge lives only in `flow_sdk/ingest/drivers/`.
 
-## Known gap: no profile
+## Agent capability fields
 
-We have no persistent, named binding of *"this prompt + this model + these skills + these
-dirs."* That pairing exists only for the lifetime of a run, inside an `AgenticProcess`.
-OpenClaw's `agent`, OpenAI's Assistant, and Claude Code's `.claude/agents/*.md` frontmatter
-(`model:`, `tools:`) all have it. The ecosystem calls it a **profile**.
-
-Not built — it's a feature, and should be decided on its own merits rather than smuggled in
-with a rename.
+`Agent` is the persistent, named binding of identity, system prompt, worker/model choices,
+and launch configuration. `AgentDeployment` places it; `AgenticProcess` records one run.
+Some capability fields are currently declaration-only: `max_turns`, tool allow/deny lists,
+skills, MCP servers, and SubAgent references round-trip through `agent.md` but are not yet
+projected into the worker. They must not be presented as enforced controls until that
+projection exists.

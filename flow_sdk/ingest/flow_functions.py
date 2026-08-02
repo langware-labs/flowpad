@@ -17,6 +17,7 @@ same as ``flow_publish_usage_report``. Neither blocks: the tick does no I/O at
 all, and the collector pushes both its provider filter and its time window into
 the query rather than hydrating the table and filtering in Python.
 """
+
 from __future__ import annotations
 
 import json
@@ -62,9 +63,7 @@ def hn_radar_tick(event_name: str, data: dict, flow_ctx: Any) -> dict:
         "changed": len(changed) if isinstance(changed, list) else 0,
         "tag": (data or {}).get("tag") or event_name,
     }
-    flow_ctx.log(
-        "hn-radar: cycle {created} new / {updated} updated / {unchanged} unchanged".format(**summary)
-    )
+    flow_ctx.log("hn-radar: cycle {created} new / {updated} updated / {unchanged} unchanged".format(**summary))
     return summary
 
 
@@ -100,10 +99,13 @@ async def hn_radar_collect(event_name: str, data: dict, flow_ctx: Any) -> dict:
     # bound as the corpus does.
     rows = await SourceItem.get_all(
         QueryFilter(
-            match=ExpressionNode(op=QueryOp.AND, operands=[
-                ExpressionNode(op=QueryOp.EQ, operands=["provider", provider]),
-                ExpressionNode(op=QueryOp.GE, operands=["occurred_at", since.isoformat()]),
-            ])
+            match=ExpressionNode(
+                op=QueryOp.AND,
+                operands=[
+                    ExpressionNode(op=QueryOp.EQ, operands=["provider", provider]),
+                    ExpressionNode(op=QueryOp.GE, operands=["occurred_at", since.isoformat()]),
+                ],
+            )
         )
     )
     # The window bound is now the query's; this re-check only drops rows whose
@@ -137,9 +139,7 @@ async def hn_radar_collect(event_name: str, data: dict, flow_ctx: Any) -> dict:
 
     out = flow_ctx.output_folder / "items.json"
     out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    flow_ctx.log(
-        f"hn-radar: {len(items)} of {len(fresh)} {provider} items in the last {hours}h → {out}"
-    )
+    flow_ctx.log(f"hn-radar: {len(items)} of {len(fresh)} {provider} items in the last {hours}h → {out}")
     # Returned dict auto-emits this node's `done`, which is what routes onward.
     return {
         "items_file": str(out),
@@ -154,11 +154,18 @@ async def hn_radar_collect(event_name: str, data: dict, flow_ctx: Any) -> dict:
 
 def _occurred_after(occurred_at: str | None, since: datetime) -> bool:
     """Items with no timestamp are excluded: a 'last 24h' report that silently
-    includes undated rows is not the report it claims to be."""
+    includes undated rows is not the report it claims to be.
+
+    The ``Z`` swap is load-bearing, not cosmetic. ``fromisoformat`` rejects a
+    Zulu suffix before 3.11, and most providers emit exactly that — Gmail does.
+    Without it every timestamped row parses as unparseable, is treated as
+    undated, and the window silently returns empty while the records sit right
+    there in the table.
+    """
     if not occurred_at:
         return False
     try:
-        when = datetime.fromisoformat(occurred_at)
+        when = datetime.fromisoformat(str(occurred_at).strip().replace("Z", "+00:00"))
     except (TypeError, ValueError):
         return False
     if when.tzinfo is None:

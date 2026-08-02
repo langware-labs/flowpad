@@ -210,7 +210,11 @@ class Entity(DBEntity):
     visitor_role: str | None = EntityField(default=None, sharing=Sharing.PRIVATE)
     labels: List[str] | None = APIField(default=None)
     tags: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
-    system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project", sharing=Sharing.PRIVATE)
+    system: bool = APIField(
+        default=False,
+        description="True when this entity belongs to an SDK-shipped system project",
+        sharing=Sharing.PRIVATE,
+    )
     remote: bool = APIField(
         sharing=Sharing.PRIVATE,
         default=False,
@@ -442,7 +446,8 @@ class Entity(DBEntity):
     )
     project_id: str | None = APIField(
         sharing=Sharing.PRIVATE,
-        default=None, description="Owning project id, when applicable. Stamped at index time from the FSRef walk."
+        default=None,
+        description="Owning project id, when applicable. Stamped at index time from the FSRef walk.",
     )
 
     def __init__(self, **kwargs):
@@ -634,6 +639,15 @@ class Entity(DBEntity):
         end = opts.offset + opts.limit if opts.limit else None
         return results[opts.offset : end]
 
+    @staticmethod
+    def asset_owner_classes() -> list[type["Entity"]]:
+        """Entity types that own, rather than merely reference, an asset path."""
+        return [
+            entity_cls
+            for entity_cls in SchemaRegistry.get_all_entity_classes()
+            if "asset_ref" in getattr(entity_cls, "model_fields", {}) and getattr(entity_cls, "owns_asset_ref", True)
+        ]
+
     @classmethod
     async def get_by_asset_ref(cls, path: "str | Path", *, resolve_containing: bool = False) -> "Entity | None":
         """Resolve the single entity whose ``asset_ref`` equals ``path``.
@@ -656,9 +670,13 @@ class Entity(DBEntity):
         import asyncio  # noqa: PLC0415
 
         path_str = str(path)
-        candidates = [
-            ecls for ecls in SchemaRegistry.get_all_entity_classes() if "asset_ref" in getattr(ecls, "model_fields", {})
-        ]
+        # Only types that OWN their path may answer "who owns this path". A type
+        # that merely *references* an asset (``owns_asset_ref = False``, e.g.
+        # Artifact) carries the same ``asset_ref`` as the entity it points at, so
+        # enrolling it would let it shadow the real owner — and which one won
+        # would be decided by SchemaRegistry iteration order, i.e. correct for a
+        # type registered before it and silently wrong for one registered after.
+        candidates = cls.asset_owner_classes()
 
         async def _try(ecls: type) -> "Entity | None":
             try:
@@ -1782,7 +1800,7 @@ class Entity(DBEntity):
 
         path = build_hub_url(self.get_type())
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            resp = await client.post(path, body)
+            await client.post(path, body)
 
         # ``remote`` is opt-in per subclass. Flip it when present so callers
         # can branch on it. Subclasses without the field stay unchanged.

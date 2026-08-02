@@ -1,17 +1,20 @@
-"""Materialize hub-side Organization / Team rows locally as ``remote=True``.
+"""Materialize hub-side membership-container rows locally as ``remote=True``.
 
-Organizations and teams are hub-authoritative. The desktop client mirrors them
-into the local store as ``remote=True`` entities at the hub id so the profile
-chip, the Organization settings tab, and member lists resolve from a real local
-row (and stay refreshable from the hub). Used on two paths:
+Organizations, teams, and projects are hub-authoritative once shared. The
+desktop client mirrors them into the local store as ``remote=True`` entities at
+the hub id so local surfaces resolve from a real row (and stay refreshable from
+the hub). Used on three paths:
 
   * cloud login — the login payload embeds the user's organization;
   * invitation accept — the accepted org/team becomes a local membership.
+  * live assignment — the Hub pushes the granted container to the recipient.
 
 This mirrors ``_upsert_hub_conversation_metadata`` (the Conversation precedent)
-but is intentionally tiny: orgs/teams have no children, projections, or
-message_ids to guard, only flat metadata fields.
+but keeps container-specific expansion here: organizations and teams need only
+flat metadata, while projects additionally materialize their shared Folder and
+SecretOrigin declarations.
 """
+
 from __future__ import annotations
 
 import logging
@@ -24,8 +27,21 @@ from flow_sdk._compat import UTC
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.organization import Organization
 from flow_sdk.core.entity.entity_model import Entity, remote_reflection
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 logger = logging.getLogger(__name__)
+
+
+# The membership containers whose full Hub payload can be mirrored directly.
+# Keep this set shared by invitation previews and live assignment ingest so a
+# newly supported container cannot silently work on only one receive path.
+MEMBERSHIP_MIRROR_TYPES: frozenset[str] = frozenset(
+    {
+        BuiltinEntityType.ORGANIZATION.value,
+        BuiltinEntityType.TEAM.value,
+        BuiltinEntityType.PROJECT.value,
+    }
+)
 
 # Flat metadata fields we mirror from the hub payload, when present on the type.
 # ``name`` AND ``title`` both ride: every entity carries both slots on both
@@ -122,7 +138,7 @@ async def materialize_remote_membership_entity(
     *,
     notify: bool = True,
 ) -> Optional[Entity]:
-    """Upsert a hub Organization/Team dict into the local store (``remote=True``).
+    """Upsert a Hub membership-container dict locally (``remote=True``).
 
     Idempotent: re-running with the same payload is a no-op when nothing
     changed. Returns the local row, or ``None`` when the payload has no id.
@@ -262,9 +278,7 @@ async def materialize_project_secret_origins(
         return 0
     has_explicit_shared = "shared_secret_origins" in data
     shared = (
-        data.get("shared_secret_origins")
-        if has_explicit_shared
-        else getattr(project, "shared_secret_origins", None)
+        data.get("shared_secret_origins") if has_explicit_shared else getattr(project, "shared_secret_origins", None)
     ) or {}
     if not isinstance(shared, dict):
         return 0
@@ -310,10 +324,13 @@ async def materialize_project_secret_origins(
             "locator": locator.model_dump(mode="json"),
             "sod_store": secret.effective_sod_store(),
         }
-        changed = project.add_shared_context_entities(
-            secret.typeid,
-            data=secret.context_data(scope="shared"),
-        ) or changed
+        changed = (
+            project.add_shared_context_entities(
+                secret.typeid,
+                data=secret.context_data(scope="shared"),
+            )
+            or changed
+        )
         count += 1
 
     if has_explicit_shared:
@@ -325,9 +342,8 @@ async def materialize_project_secret_origins(
         if stale:
             changed = project.remove_shared_context_entities(*stale) or changed
 
-    if (
-        getattr(project, "shared_secret_origins", None) != normalized_shared
-        and hasattr(project, "shared_secret_origins")
+    if getattr(project, "shared_secret_origins", None) != normalized_shared and hasattr(
+        project, "shared_secret_origins"
     ):
         setattr(project, "shared_secret_origins", normalized_shared)
         changed = True

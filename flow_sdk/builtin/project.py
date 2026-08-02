@@ -73,9 +73,10 @@ def _fresh_clone_slot(preferred_leaf: str) -> Path:
     """
     base = Path(AGENT_MOUNT_FOLDER)
     base.mkdir(parents=True, exist_ok=True)
-    leaf = "".join(
-        c if c.isalnum() or c in ("-", "_", ".") else "-" for c in (preferred_leaf or "")
-    ).strip("-. ") or "project"
+    leaf = (
+        "".join(c if c.isalnum() or c in ("-", "_", ".") else "-" for c in (preferred_leaf or "")).strip("-. ")
+        or "project"
+    )
     candidate = base / leaf
     n = 2
     # An EMPTY directory is not a collision — nothing there can be lost, and
@@ -118,9 +119,7 @@ def _detach_git_history(repo_root: Path) -> None:
     # A fresh empty repo so the customer's first commit is theirs. No commit is
     # made — that needs a configured identity, and failing setup on a missing
     # ``user.email`` would be absurd.
-    subprocess.run(
-        ["git", "init", "-q"], cwd=root, capture_output=True, timeout=30, check=False
-    )
+    subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True, timeout=30, check=False)
 
 
 class ProjectInitializeOptions(ComputeSourceControlInitializeOptions):
@@ -185,7 +184,9 @@ class Project(Entity):
         "Applied on project load so the mode is remembered per project.",
     )
     fs_storage_provider: StorageProvider | None = EntityField(default=StorageProvider.SANDBOX, sharing=Sharing.PRIVATE)
-    fs_storage_mount_path: str | None = APIField(default=None, description="Full path to the project folder", sharing=Sharing.PRIVATE)
+    fs_storage_mount_path: str | None = APIField(
+        default=None, description="Full path to the project folder", sharing=Sharing.PRIVATE
+    )
     # Portable repository identity for a project shared through the hub. This
     # is never the sender's local worktree path; the recipient uses it to
     # clone/materialize its own checkout.
@@ -264,10 +265,7 @@ class Project(Entity):
     @property
     def protected_path(self) -> bool:
         """Whether this project's source path is forbidden as a delete target."""
-        return bool(
-            self.fs_storage_mount_path
-            and is_protected_path(self.fs_storage_mount_path)
-        )
+        return bool(self.fs_storage_mount_path and is_protected_path(self.fs_storage_mount_path))
 
     @model_validator(mode="before")
     @classmethod
@@ -527,9 +525,7 @@ class Project(Entity):
                 else:
                     os_root = os.sep
                 relative_name = self.name.lstrip("/\\")
-                self.fs_storage_mount_path = os.path.normpath(
-                    os.path.join(os_root, relative_name)
-                )
+                self.fs_storage_mount_path = os.path.normpath(os.path.join(os_root, relative_name))
                 self.name = os.path.basename(self.fs_storage_mount_path)
             else:
                 # Simple name like "my_first_project"
@@ -622,11 +618,7 @@ class Project(Entity):
         existing = await cls.get_all()
         for proj in existing:
             mp = proj.fs_storage_mount_path
-            if (
-                mp
-                and is_valid_project_cwd(mp, include_temp=True)
-                and canonical_posix_path(mp) == canonical
-            ):
+            if mp and is_valid_project_cwd(mp, include_temp=True) and canonical_posix_path(mp) == canonical:
                 return proj
         return None
 
@@ -884,10 +876,10 @@ class Project(Entity):
         no explicit join is needed — the roster derives from role edges.
         With ``recipients`` (emails): one ``MembershipRequest`` per recipient
         targets ``project-<id>`` with role ``member`` via
-        ``POST /graph/project/<id>/members`` — the recipient discovers it via
-        ``GET /graph/invitation/pending`` and accepts via the standard flow
-        (``flow_message_action.handle_invitation_accept`` →
-        ``_membership_cls('project')`` → local ``remote=True`` Project mirror).
+        ``POST /graph/project/<id>/members``. Under the Hub's assignment policy,
+        the recipient is granted immediately and receives the full Project over
+        the live bridge; explicit invitation acceptance remains the fallback
+        when Hub auto-accept is disabled.
         """
         from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
@@ -1045,9 +1037,7 @@ class Project(Entity):
         # name for their own work.
         target_dir = str(await asyncio.to_thread(_fresh_clone_slot, self.name or origin.name))
         token, _ = await _get_github_token_for_current_user()
-        ok, message = await git_clone(
-            origin.clone_url(), target_dir, branch=origin.branch or None, token=token
-        )
+        ok, message = await git_clone(origin.clone_url(), target_dir, branch=origin.branch or None, token=token)
         if not ok:
             return ApiFailResponse(message=message, status_code=502)
 
@@ -1314,7 +1304,7 @@ class Project(Entity):
             menu = await build_asset_menu(
                 self,
                 # Only narrow when the CALLER asked for types. ``requested``
-                # defaults to the flat staging list (skill/agent/markdown/spec);
+                # defaults to the flat staging list (skill/subagent/markdown/spec);
                 # the menu's own default is every browseable scannable type,
                 # because it stands in for the whole Assets navigator.
                 types=requested if types else None,
@@ -1482,9 +1472,7 @@ class Project(Entity):
             except Exception:  # noqa: BLE001
                 continue
             env_var = entry.get("env_var") or ""
-            found_in = await self._where_is_secret_value(
-                env_var, loc, driver, env_local_names, sodot_names
-            )
+            found_in = await self._where_is_secret_value(env_var, loc, driver, env_local_names, sodot_names)
             hint = driver.setup_hint(loc)
             rows.append(
                 {
@@ -1619,9 +1607,7 @@ class Project(Entity):
                 data={"error": "project_not_published"},
             )
 
-        response = await hub_delete(
-            BuiltinEntityType.PROJECT, str(self.id), action="env-var", sub_path=env_var
-        )
+        response = await hub_delete(BuiltinEntityType.PROJECT, str(self.id), action="env-var", sub_path=env_var)
         if response is None:
             return ApiFailResponse(message="could not reach the hub")
         return ApiSuccessResponse(data={"ok": True, "env_var": env_var})
@@ -1656,9 +1642,7 @@ class Project(Entity):
                 resolved = None
             if resolved is None:
                 continue
-            drifted = await asyncio.to_thread(
-                check_drift, str(self.id), env_var, resolved.get_secret_value()
-            )
+            drifted = await asyncio.to_thread(check_drift, str(self.id), env_var, resolved.get_secret_value())
             rows.append(
                 {
                     "typeid": entry.get("typeid"),
@@ -1750,8 +1734,7 @@ class Project(Entity):
         block = env_local_block(gitignore)
         declared = {row.get("env_var") for row in self.secret_origins if row.get("env_var")}
         keys = [
-            {"key": row["key"], "line": row["line"], "declared": row["key"] in declared}
-            for row in list_env_local(self)
+            {"key": row["key"], "line": row["line"], "declared": row["key"] in declared} for row in list_env_local(self)
         ]
         return ApiSuccessResponse(
             data={

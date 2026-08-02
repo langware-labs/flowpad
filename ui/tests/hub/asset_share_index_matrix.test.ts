@@ -10,7 +10,7 @@
  * button) copies into the chosen project at `<project>/<TypeInfo subdir>/<leaf>`
  * and indexes from there. ONE family handler — no per-type code.
  *
- *   1. Alice invites Bob; Bob accepts.
+ *   1. Alice assigns Bob; the conversation materializes on Bob immediately.
  *   2. Alice shares an asset BY TYPE_ID; Bob downloads → STAGED (no entity,
  *      MessageAttachment scope=null); no project mapping is needed to download.
  *   3. Bob installs into a real project. For every file-backed type, Bob must:
@@ -34,7 +34,6 @@ import { testEntityName, trackForCleanup } from '../_cleanup';
 import {
   HUB_INST_1 as INST_1,
   HUB_INST_2 as INST_2,
-  findPendingInvitation,
   getInstance,
   instanceAvailable,
   type ResolvedInstance,
@@ -65,6 +64,17 @@ beforeEach((context: any) => {
 
 afterAll(async () => {
   if (skipReason || !alice || !bob) return;
+  // Delete the Hub owners first. Local-only DELETE leaves the shared row live,
+  // allowing an already-queued bridge frame to recreate Bob's mirror after
+  // teardown. Hub reflection removes the source; the exact local purges below
+  // then clear both caches.
+  for (const conversation of createdConversations) {
+    if (conversation.apiUrl !== alice.apiUrl) continue;
+    await fetch(`${conversation.apiUrl}/api/v1/graph/conversation/${conversation.id}`, {
+      method: 'DELETE',
+      headers: { 'Hub-Reflect': 'true' },
+    }).catch(() => undefined);
+  }
   for (const conversation of createdConversations) {
     await fetch(`${conversation.apiUrl}/api/v1/graph/conversation/${conversation.id}`, {
       method: 'DELETE',
@@ -125,7 +135,7 @@ async function createProject(): Promise<{ id: string; dir: string }> {
 }
 
 /** Bob's staged MessageAttachment for (fmId, asset id) — backend read, no cache. */
-async function findStagedAttachment(fmId: string, assetId: string): Promise<any | null> {
+async function findStagedAttachment(fmId: string, assetId: string): Promise<any> {
   const r = await fetch(`${bob.apiUrl}/api/v1/graph/message_attachment`).then((x) => x.json());
   const rows = (r?.data ?? []) as any[];
   return rows.find((m) => m.flow_message_id === fmId && m.asset_id === assetId) ?? null;
@@ -148,7 +158,7 @@ const ASSETS: AssetSpec[] = [
     },
   },
   {
-    type: 'agent',
+    type: 'subagent',
     mainSubdir: '.claude/agents',
     create: async (sdk) => {
       const a = trackForCleanup(await sdk.SubAgent.createInProject(null, testEntityName('agent')));
@@ -186,7 +196,7 @@ const ASSETS: AssetSpec[] = [
   },
   {
     type: 'prompt',
-    mainSubdir: 'prompts',
+    mainSubdir: 'agentic-assets/prompt',
     create: async (sdk) => {
       const p = trackForCleanup(await sdk.Prompt.create({ name: testEntityName('prompt'), text: 'do the thing' }));
       return { id: p.id!, name: p.name ?? p.title };
@@ -199,7 +209,7 @@ const ASSETS: AssetSpec[] = [
   // rides the identical file-backed family path as every other type.
   {
     type: 'whiteboard',
-    mainSubdir: '.claude/whiteboards',
+    mainSubdir: 'agentic-assets/whiteboard',
     create: async (sdk) => {
       const name = testEntityName('whiteboard');
       const wb = trackForCleanup(await sdk.Whiteboard.create(name));
@@ -223,21 +233,23 @@ const ASSETS: AssetSpec[] = [
 // (its files materialize lazily on editor mount, not on create()). Two more
 // file-backed types ride the SAME generic handler but have no on-disk source to
 // seed in this harness, so they're tracked separately:
-//   - plan: an API-created `new Plan().save()` writes no .claude/plans/<n>.md and
+//   - plan: an API-created `new Plan().save()` writes no agentic-assets/plan/<n>.md and
 //     plan TypeInfo has no default_body_fn, so the DB-only entity can't render a
 //     body to ship. (command/rule have no SDK create at all.)
 // Their share path is identical once an on-disk asset_ref exists; the gap is in
 // test-asset CREATION, not the share/copy/index refactor.
 
 /** Sender: create a conv, invite Bob, attach the asset by TypeId, stage READY. */
-async function shareAsset(spec: AssetSpec): Promise<{ convId: string; created: { id: string; name: string } }> {
+async function shareAsset(
+  spec: AssetSpec,
+): Promise<{ convId: string; fmId: string; created: { id: string; name: string } }> {
   const created = await spec.create(alice.sdk);
   expect(created.id, `${spec.type} created`).toBeTruthy();
   createdAssets.push({ apiUrl: alice.apiUrl, type: spec.type, id: created.id });
 
   const conv = trackForCleanup(new alice.sdk.Conversation({ title: testEntityName(`conv-${spec.type}`) }));
   await conv.save();
-  createdConversations.push({ apiUrl: alice.apiUrl, id: conv.id! });
+  createdConversations.push({ apiUrl: alice.apiUrl, id: conv.id });
   await conv.share([bob.email]);
   expect(conv.remote).toBe(true);
 
@@ -249,17 +261,14 @@ async function shareAsset(spec: AssetSpec): Promise<{ convId: string; created: {
   expect(fmId, `${spec.type} flow_message_id`).toBeTruthy();
   const upload = await post(alice.apiUrl, `/graph/flow_message/${fmId}/upload_body`, {});
   expect(upload.body.data?.body_status, `${spec.type} body READY`).toBe('ready');
-  return { convId: conv.id!, created };
+  return { convId: conv.id, fmId, created };
 }
 
-/** Receiver: accept the invitation and resolve the shared FlowMessage (READY). */
-async function acceptAndFindMessage(convId: string): Promise<{ fmId: string }> {
-  const invitation = await pollUntil(() => findPendingInvitation(bob, convId), 20_000, 'pending invitation');
-  await bob.sdk.acceptInvitation({ invitation_id: invitation.id! });
-  // Pull only this newly accepted conversation's messages. A global
-  // fetchConversations() foreground-reconciles every conversation and bundle
-  // accessible to the staff account, making this exact-id flow scale with
-  // unrelated hub history.
+/** Receiver: prove immediate assignment and resolve the exact shared FlowMessage. */
+async function syncAssignedMessage(convId: string, fmId: string): Promise<void> {
+  // This exact-id action is also the reconnect recovery seam: if Bob missed
+  // the assignment frame, it authorizes against the hub and materializes only
+  // this conversation before reconciling its messages.
   const sync = await post(bob.apiUrl, '/graph/conversation-message-sync', {
     conversation_id: convId,
   });
@@ -267,49 +276,42 @@ async function acceptAndFindMessage(convId: string): Promise<{ fmId: string }> {
 
   const received = await pollUntil(
     async () => {
-      const c = await bob.sdk.Conversation.getById(convId).catch(() => null);
-      const ptrs = c?.conversationMessageIds ?? [];
-      return ptrs.some((p: any) => p.type === 'flow_message') ? c : null;
+      const conversation = await bob.sdk.Conversation.getById(convId).catch(() => null);
+      return conversation?.remote ? conversation : null;
     },
     20_000,
-    'message pointer on receiver',
+    'assigned conversation on receiver',
+  );
+  // Pull only this assigned conversation's messages. A global
+  // fetchConversations() foreground-reconciles every conversation and bundle
+  // accessible to the staff account, making this exact-id flow scale with
+  // unrelated hub history.
+  await pollUntil(
+    async () => {
+      const c = await bob.sdk.Conversation.getById(convId).catch(() => null);
+      const ptrs = c?.conversationMessageIds ?? [];
+      return ptrs.some((p: any) => p.type === 'flow_message' && p.id === fmId) ? c : null;
+    },
+    20_000,
+    'exact message pointer on receiver',
   );
   // Register Bob's materialized conversation copy so the global leak sweep
   // purges it (it's created backend-side on receive, not via trackForCleanup).
   trackForCleanup(received);
-  createdConversations.push({ apiUrl: bob.apiUrl, id: received.id! });
+  createdConversations.push({ apiUrl: bob.apiUrl, id: received.id });
 
-  // The conversation strip carries TWO flow_message pointers: the shared ASSET
-  // message (rides a body bundle → body_status flips to READY) AND a
-  // kind='invitation' placeholder row ("You've been invited…", no body, stays
-  // body_status=na). Both are typed 'flow_message', and the invitation
-  // placeholder is materialized synchronously on accept — so it wins the race
-  // against the slower catch-up asset message. Don't pin to the FIRST pointer;
-  // poll ALL locally materialized pointers and select the one that actually
-  // carries the uploaded bundle (body_status READY). The targeted sync above
-  // owns catch-up; the placeholder never becomes READY.
-  const fm = await pollUntil(
-    async () => {
-      const c = await bob.sdk.Conversation.getById(convId).catch(() => null);
-      const ptrs = c?.conversationMessageIds ?? [];
-      for (const p of ptrs as any[]) {
-        if (p.type !== 'flow_message') continue;
-        const full = await bob.sdk.FlowMessage.getById(p.id).catch(() => null);
-        if (full && full.body_status === 'ready') return full;
-      }
-      return null;
-    },
-    20_000,
-    'shared message READY',
-  );
-  return { fmId: fm.id };
+  // Exact sync is the reconnect correctness seam. Its response must not race a
+  // best-effort SDK cache update: verify the durable receiver row immediately.
+  const full = await api(bob.apiUrl, 'GET', `/graph/flow_message/${fmId}`);
+  expect(full.status, `exact shared message read ok (got ${JSON.stringify(full.body?.message)})`).toBeLessThan(400);
+  expect(full.body?.data?.body_status, 'exact shared message READY after sync').toBe('ready');
 }
 
 describe('asset share → staged → install-to-project → index matrix (Alice → Bob)', () => {
   for (const spec of ASSETS) {
     it(`${spec.type}: stages on download, installs into Bob's project, resolves by sender id`, async () => {
-      const { convId, created } = await shareAsset(spec);
-      const { fmId } = await acceptAndFindMessage(convId);
+      const { convId, fmId, created } = await shareAsset(spec);
+      await syncAssignedMessage(convId, fmId);
 
       // The install target — no conversation mapping needed to download.
       const project = await createProject();
@@ -381,8 +383,8 @@ describe('asset share → staged → install-to-project → index matrix (Alice 
 
   it('no-project download: succeeds and stages (consent boundary — nothing lands)', async () => {
     const spec = ASSETS[0]; // skill
-    const { convId, created } = await shareAsset(spec);
-    const { fmId } = await acceptAndFindMessage(convId);
+    const { convId, fmId, created } = await shareAsset(spec);
+    await syncAssignedMessage(convId, fmId);
     // Download WITHOUT any project anywhere — must succeed (staging needs none).
     const dl = await post(bob.apiUrl, `/graph/flow_message/${fmId}/download_body`, {});
     expect(dl.status, `no-project download ok (got ${JSON.stringify(dl.body?.message)})`).toBeLessThan(400);

@@ -83,7 +83,6 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
 
   beforeAll(async () => {
     if (!(await hubAvailable()).ok || !instanceAvailable(INSTANCE)) {
-      // eslint-disable-next-line no-console
       console.warn(`[skip] hub or instance '${INSTANCE}' not up — launch via scripts/instance_ctl.sh`);
       return;
     }
@@ -134,13 +133,26 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
     // correctly, which is also what a real click does. Pin Advanced explicitly:
     // long-lived cycle instances retain the user's last view mode, and Vibe
     // intentionally renders a different process surface without this toggle.
-    page = await openInstancePage(browser!, INSTANCE);
+    page = await openInstancePage(browser, INSTANCE);
     await page.page.evaluate(
       (id) => (window as any).navigation.openShellProcess(id, { viewMode: 'advanced' }),
       proc.id as string,
     );
+    const processPointer = `agentic_process-${proc.id as string}`;
     try {
-      await page.page.getByTestId('view-toggle').waitFor({ state: 'visible', timeout: 20_000 });
+      // `openShellProcess` starts React Router navigation but does not await its
+      // loader. The footer toggle is global (it is already present on Home), so
+      // destination readiness must be certified by the URL-owned active panel
+      // for this exact process. Reuse the existing setup cap unchanged.
+      await page.page
+        .locator(
+          `[data-testid="terminal-panel"][data-active="true"]` +
+            `[data-session-id="${processPointer}"][data-pty-mode="true"]`,
+        )
+        .waitFor({ state: 'visible', timeout: 20_000 });
+      const committedUrl = new URL(page.page.url());
+      expect(committedUrl.pathname).toContain(`/dock/shell/${processPointer}`);
+      expect(committedUrl.searchParams.get('viewMode')).toBe('advanced');
     } catch (error) {
       const diagnostics = await page.page.evaluate(() => ({
         url: window.location.href,
@@ -150,7 +162,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
         text: document.body.innerText.replace(/\s+/g, ' ').slice(0, 800),
       }));
       throw new Error(
-        `terminal toggle did not render: ${JSON.stringify(diagnostics)}; ` +
+        `target terminal panel did not render: ${JSON.stringify(diagnostics)}; ` +
           `console=${JSON.stringify(realConsoleErrors(page.consoleErrors))}`,
         { cause: error },
       );
@@ -190,14 +202,17 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
   /** Read the footer selector's presence and rendered chat surface in one
    *  round-trip. Transport readiness/completion come from the watched process,
    *  because the URL-first footer intentionally owns no worker lifecycle state. */
-  async function readToggle(): Promise<{ present: boolean; chatActive: boolean }> {
-    return page!.page.evaluate(() => {
-      const el = document.querySelector('[data-testid="terminal-panel"][data-active="true"]');
+  async function readToggle(): Promise<{ present: boolean; ptyMode: boolean | null }> {
+    return page!.page.evaluate((processPointer) => {
+      const el = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-testid="terminal-panel"][data-active="true"]'),
+      ).find((candidate) => candidate.dataset.sessionId === processPointer);
+      const rawPtyMode = el?.getAttribute('data-pty-mode');
       return {
-        present: document.querySelector('[data-testid="view-toggle"]') !== null,
-        chatActive: el?.getAttribute('data-pty-mode') === 'false',
+        present: !!el && document.querySelector('[data-testid="view-toggle"]') !== null,
+        ptyMode: rawPtyMode === 'true' ? true : rawPtyMode === 'false' ? false : null,
       };
-    });
+    }, `agentic_process-${proc.id as string}`);
   }
 
   /** Wait inside the existing switch budget until the selector is mounted and
@@ -206,7 +221,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
     const end = Date.now() + SWITCH_BUDGET_MS;
     for (;;) {
       const t = await readToggle().catch(() => null);
-      if (t?.present && inst!.sdk.isReadyForInput(proc)) return;
+      if (t?.present && t.ptyMode !== null && inst!.sdk.isReadyForInput(proc)) return;
       if (Date.now() > end) {
         throw new Error(
           `toggle never became ready — toggle=${JSON.stringify(t)} ` +
@@ -224,7 +239,10 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
    *  preference has an intermittent re-render race under rapid toggling. */
   async function currentPty(): Promise<boolean | null> {
     const v = await page!.page
-      .locator('[data-testid="terminal-panel"][data-active="true"]')
+      .locator(
+        `[data-testid="terminal-panel"][data-active="true"]` +
+          `[data-session-id="agentic_process-${proc.id as string}"]`,
+      )
       .getAttribute('data-pty-mode')
       .catch(() => null);
     return v === 'true' ? true : v === 'false' ? false : null;
@@ -237,7 +255,6 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
    *  enqueue duplicate navigations before the first commit. */
   async function switchTransportTo(targetPty: boolean): Promise<void> {
     await waitToggleEnabled();
-    if ((await currentPty()) === targetPty) return;
     // Fire onClick directly: a Playwright pointer-click can miss on a small
     // segment; el.click() always invokes the production URL-first handler.
     await page!.page
@@ -245,13 +262,27 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
       .evaluate((el) => (el as HTMLButtonElement).click());
     const end = Date.now() + SWITCH_BUDGET_MS;
     while (Date.now() < end) {
-      if ((await currentPty()) === targetPty && inst!.sdk.isReadyForInput(proc)) return;
+      const browserPty = await currentPty();
+      const sdkPty = typeof proc.pty_mode === 'boolean' ? proc.pty_mode : null;
+      const expectedMode = targetPty ? 'advanced' : 'standard';
+      const urlMode = new URL(page!.page.url()).searchParams.get('viewMode');
+      if (
+        browserPty === targetPty &&
+        sdkPty === targetPty &&
+        urlMode === expectedMode &&
+        inst!.sdk.isReadyForInput(proc)
+      ) return;
       await page!.page.waitForTimeout(150);
     }
+    const uiState = await page!.page.evaluate(() => ({
+      url: `${window.location.pathname}${window.location.search}`,
+      view: document.documentElement.getAttribute('data-view'),
+      selected: document.querySelector('[data-testid^="view-toggle-"][aria-checked="true"]')
+        ?.getAttribute('data-testid') ?? null,
+    }));
     throw new Error(
       `transport never reached pty=${targetPty} — pty=${await currentPty()} ` +
-        `override=${await page!.page.evaluate(() => (window as any).getChatUi?.()).catch(() => 'err')} ` +
-        `backend=${proc?.status}/${proc?.workerStatus} sdkPty=${proc?.pty_mode}`,
+        `ui=${JSON.stringify(uiState)} backend=${proc?.status}/${proc?.workerStatus} sdkPty=${proc?.pty_mode}`,
     );
   }
 
@@ -307,7 +338,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
       const perCount: Array<{
         count: number;
         transport: 'pty' | 'headless';
-        skinMatched: boolean; // did the chat SKIN follow the transport? (logged, not asserted)
+        skinMatched: boolean; // did the skin follow transport? asserted in the aggregate below
         tokenSeen: boolean;
         sessionStable: boolean;
         statusIdle: boolean;
@@ -318,7 +349,9 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
       // the chat SKIN is a separate rendering with a known reactivity race, so we
       // key control flow on the transport, not the skin.
       const bootPty = await currentPty();
-      let targetPty = !(bootPty ?? true);
+      if (bootPty === null) throw new Error('active process panel lost before the measured loop');
+      expect(bootPty, 'process boots in PTY transport').toBe(true);
+      let targetPty = !bootPty;
 
       for (let count = 1; count <= COUNT_TARGET; count++, targetPty = !targetPty) {
         // 1) TOGGLE the transport via the real UI button.
@@ -332,14 +365,8 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
         const domSession = await activePanel.getAttribute('data-worker-session-id').catch(() => null);
         if (domSession) expect(domSession, 'DOM worker-session matches backend').toBe(sessionId);
 
-        // 3) STATUS INDICATOR is idle. The logical wire `status` (ready ⇔ the
-        //    worker is awaiting the user) is the authoritative cross-transport
-        //    signal; when the chat SKIN happens to be showing, its label must agree.
+        // 3) STATUS is idle on the authoritative watched process.
         const statusIdle = inst!.sdk.isReadyForInput(proc);
-        if ((await readToggle().catch(() => null))?.chatActive) {
-          const statusText = (await p.getByTestId('simple-chat-status').textContent().catch(() => '')) ?? '';
-          expect(IDLE_STATUS.has(statusText.trim()), `chat status idle at count ${count} (was "${statusText}")`).toBe(true);
-        }
 
         // 4) SKIN follows transport: headless ⇒ chat pane; PTY ⇒ a mounted xterm.
         //    Checking only that chat is hidden is insufficient: a mode round trip
@@ -349,6 +376,17 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
           .waitFor({ state: 'visible', timeout: 4_000 })
           .then(() => true)
           .catch(() => false);
+        // The status element belongs to the chat skin, not to the transport
+        // attribute. Only inspect it after the existing skin gate proves the
+        // composer is mounted; absence must never be laundered into an empty
+        // status label.
+        if (!onPty && skinMatched) {
+          const statusText = await p.getByTestId('simple-chat-status').textContent();
+          expect(
+            IDLE_STATUS.has((statusText ?? '').trim()),
+            `chat status idle at count ${count} (was "${statusText ?? ''}")`,
+          ).toBe(true);
+        }
 
         // 5) LIVENESS — the one session is usable after the switch. Drive a token
         //    turn on the CURRENT transport and see it land as REAL agent output in
@@ -396,7 +434,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
           sessionStable: proc.session_id === sessionId,
           statusIdle,
         });
-        // eslint-disable-next-line no-console
+
         console.log(
           `• count ${String(count).padStart(2)}  transport=${(onPty ? 'pty' : 'headless').padEnd(8)}` +
             `  skin=${skinMatched ? 'ok ' : 'LAG'}  token=${tokenSeen ? 'OK ' : 'MISS'}` +

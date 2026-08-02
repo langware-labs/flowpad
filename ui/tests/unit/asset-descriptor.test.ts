@@ -61,7 +61,7 @@ describe('isReadOnlySource — partition over every AssetSource member', () => {
 
 describe('assetDescriptorHasUsage', () => {
   const base: AssetDescriptor = {
-    typeid: 'agent-11111111-1111-4111-8111-111111111111',
+    typeid: 'subagent-11111111-1111-4111-8111-111111111111',
     source: 'embedded',
     posix_path: '/tmp/.claude/agents/vibe.md',
     source_dir: null,

@@ -6,11 +6,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from flow_sdk.api.api_types.api_request import APIRequest
 from flow_sdk.api.api_types.type_id import TypeId
+
 # TODO: AuthContext not available locally, need to implement or stub
 # from request_context.auth_info import AuthContext
 
+
 class AuthContext:
     """Stub implementation of AuthContext"""
+
     def __init__(self):
         self.scope = None
         self.method = None

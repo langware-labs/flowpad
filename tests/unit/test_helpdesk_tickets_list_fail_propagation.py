@@ -10,6 +10,7 @@ the hub failure as ApiFailResponse.
 
 # do not increase timeout without approval
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -20,7 +21,6 @@ import pytest
 from flow_sdk.app.actions import flow_message_action as fma
 from flow_sdk.app.actions.flow_message_action import HelpdeskTarget
 from flow_sdk.responses.response import ApiResponseStatus
-
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 

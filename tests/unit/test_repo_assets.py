@@ -7,6 +7,7 @@ tree + index it", so the tests exercise: (1) placement/deploy nesting math, and
 A transient fixture REPO type (``repo_node``) is registered so the machinery is
 covered independent of which real types migrate to REPO.
 """
+
 import types
 
 import pytest
@@ -58,8 +59,7 @@ def test_repo_child_nests_recursively(repo_type, tmp_path):
 
     grand = FSRecord(type=repo_type, name="Grand").compute_asset_ref(child._path, _entity("Grand"))
     assert grand._path == (
-        parent_folder / AGENTIC_ASSETS_DIR / repo_type / "child"
-        / AGENTIC_ASSETS_DIR / repo_type / "grand"
+        parent_folder / AGENTIC_ASSETS_DIR / repo_type / "child" / AGENTIC_ASSETS_DIR / repo_type / "grand"
     )
 
 
@@ -169,9 +169,7 @@ def test_repo_walker_emits_only_requested_type_but_traverses_other_parents(
         IndexerOptions(types=[EntityType.SPEC]),
     )
 
-    assert [(ref._path, ref.record_type) for ref in refs] == [
-        (nested_spec / "spec.md", EntityType.SPEC)
-    ]
+    assert [(ref._path, ref.record_type) for ref in refs] == [(nested_spec / "spec.md", EntityType.SPEC)]
 
 
 def test_repo_walker_noop_when_no_repo_types(tmp_path, monkeypatch):
@@ -179,7 +177,7 @@ def test_repo_walker_noop_when_no_repo_types(tmp_path, monkeypatch):
     from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
     from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 
-    monkeypatch.setattr(SchemaRegistry, "repo_family_to_info", lambda: {})
+    monkeypatch.setattr(SchemaRegistry, "repo_family_to_info", dict)
     (tmp_path / AGENTIC_ASSETS_DIR / "spec" / "x").mkdir(parents=True)
     assert repo_assets_fn([FSRef(tmp_path)], IndexerOptions()) == []
 
@@ -228,17 +226,102 @@ async def test_index_attachments_widens_types_for_repo(tmp_path, monkeypatch):
 
     # A repo asset (spec) → reindex covers ALL repo types, not just spec.
     await index_attachments(
-        [ReceivedAsset(root=tmp_path, scope="project", asset_type="spec",
-                       asset_id="x", entry_key="spec-x", record_type=EntityType.SPEC)],
-        project_id=None, owner=None,
+        [
+            ReceivedAsset(
+                root=tmp_path,
+                scope="project",
+                asset_type="spec",
+                asset_id="x",
+                entry_key="spec-x",
+                record_type=EntityType.SPEC,
+            )
+        ],
+        project_id=None,
+        owner=None,
     )
     assert set(captured["types"]) == {"spec", "task"}
 
     # A non-repo asset (markdown) keeps the tight single-type scope.
     captured.clear()
     await index_attachments(
-        [ReceivedAsset(root=tmp_path, scope="project", asset_type="markdown",
-                       asset_id="y", entry_key="markdown-y", record_type=EntityType.MARKDOWN)],
-        project_id=None, owner=None,
+        [
+            ReceivedAsset(
+                root=tmp_path,
+                scope="project",
+                asset_type="markdown",
+                asset_id="y",
+                entry_key="markdown-y",
+                record_type=EntityType.MARKDOWN,
+            )
+        ],
+        project_id=None,
+        owner=None,
     )
     assert captured["types"] == ("markdown",)
+
+
+def test_restored_asset_ref_maps_the_exact_registry_file(tmp_path):
+    from flow_sdk.builtin.flow_message_bundle import _restored_asset_ref
+
+    session_id = "5e551011-0000-4000-8000-000000000019"
+    entry = tmp_path / "staged" / f"claude_session-{session_id}"
+    staged = entry / AGENTIC_ASSETS_DIR / "claude_session" / f"{session_id}.jsonl"
+    staged.parent.mkdir(parents=True)
+    staged.write_text('{"type":"user"}\n')
+    root = tmp_path / "receiver"
+
+    assert _restored_asset_ref(entry, root, "claude_session", session_id) == (
+        root / AGENTIC_ASSETS_DIR / "claude_session" / f"{session_id}.jsonl"
+    )
+
+
+async def test_index_attachments_targets_one_restored_repo_file(tmp_path, monkeypatch):
+    import flow_sdk.builtin.faas.fs_records_actions as fs_actions
+    import flow_sdk.builtin.flow_message_bundle as fmb
+    from flow_sdk.builtin.flow_message_bundle import ReceivedAsset, index_attachments
+    from flow_sdk.schema.types import EntityType
+
+    session_id = "5e551011-0000-4000-8000-000000000020"
+    asset_ref = tmp_path / AGENTIC_ASSETS_DIR / "claude_session" / f"{session_id}.jsonl"
+    asset_ref.parent.mkdir(parents=True)
+    asset_ref.write_text('{"type":"user"}\n')
+    captured: dict = {}
+
+    async def _discover(record_type, path, **kwargs):
+        captured.update(record_type=record_type, path=path, **kwargs)
+        return object()
+
+    async def _no_scope_walk(*args, **kwargs):
+        raise AssertionError("a file-layout repo install must not scan the scope root")
+
+    async def _noop(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(fs_actions, "discover_record_by_path", _discover)
+    monkeypatch.setattr(fmb, "_reindex_root", _no_scope_walk)
+    monkeypatch.setattr(fmb, "_notify_received_assets", _noop)
+
+    await index_attachments(
+        [
+            ReceivedAsset(
+                root=tmp_path,
+                scope="user",
+                asset_type="claude_session",
+                asset_id=session_id,
+                entry_key=f"claude_session-{session_id}",
+                record_type=EntityType.CLAUDE_SESSION,
+                asset_ref=asset_ref,
+            )
+        ],
+        project_id=None,
+        owner=None,
+    )
+
+    assert captured == {
+        "record_type": "claude_session",
+        "path": str(asset_ref),
+        "notify": False,
+        "proposed_id": session_id,
+        "scope": "user",
+        "project_id": None,
+    }

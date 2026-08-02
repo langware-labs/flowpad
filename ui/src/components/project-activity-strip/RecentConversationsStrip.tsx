@@ -145,7 +145,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     try {
       try {
         await fetchConversations();
-      } catch (e) {
+      } catch {
         // hub may be unavailable / not configured — local refetch still works
       }
       await refetch();
@@ -161,7 +161,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       // hides it from this list but keeps it in the full Inbox and lets it
       // reappear when a new message arrives, matching the per-row EyeOff action.
       const targets = sorted.filter((c) => c.id && !hiddenIds.has(c.id));
-      await Promise.all(targets.map((c) => dismissConversation({ conversation_id: c.id! })));
+      await Promise.all(targets.map((c) => dismissConversation({ conversation_id: c.id })));
       void refetch();
     } finally {
       setDismissingAll(false);
@@ -333,8 +333,8 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
               conv={conv}
               acceptingId={acceptingId}
               dismissingId={dismissingId}
-              onAcceptInvitation={handleAcceptInvitation}
-              onDismiss={handleDismissConversation}
+              onAcceptInvitation={(id) => void handleAcceptInvitation(id)}
+              onDismiss={(id) => void handleDismissConversation(id)}
               onHiddenChange={handleHiddenChange}
             />
           ))
@@ -607,7 +607,7 @@ function ConversationRow({
         {conv.id && (
           <button
             type="button"
-            onClick={() => onDismiss(conv.id!)}
+            onClick={() => onDismiss(conv.id)}
             disabled={dismissingId === conv.id}
             className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 disabled:opacity-40"
             title={t`Hide from Recent — still visible in Inbox; reappears when a new message arrives`}

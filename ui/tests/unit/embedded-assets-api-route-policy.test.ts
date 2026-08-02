@@ -17,11 +17,11 @@ describe('embedded-assets long-test API isolation policy', () => {
   it('uses only configured relative apiClient routes', () => {
     expect(SOURCE).toMatch(/import\s*\{[^}]*\bapiClient\b[^}]*\}\s*from\s*['"]@sdk['"]/s);
     expect(SOURCE).toMatch(
-      /apiClient\.post\(\s*['"]\/graph\/compute_node\/@local\/fs-records\/index\?type=agent['"],\s*\{\}\s*\)/,
+      /apiClient\.post\(\s*['"]\/graph\/compute_node\/@local\/fs-records\/index\?type=subagent['"],\s*\{\}\s*\)/,
     );
     expect(SOURCE).toMatch(/apiClient\.get\(\s*['"]\/search['"]/);
     expect(SOURCE).toMatch(
-      /apiClient\.delete\(\s*`\/graph\/compute_node\/@local\/fs-records\/agent\/\$\{agentRecordId\}`/,
+      /apiClient\.delete\(\s*`\/graph\/compute_node\/@local\/fs-records\/subagent\/\$\{subagentRecordId\}`/,
     );
 
     expect(SOURCE).not.toMatch(/\bfetch\s*\(/);

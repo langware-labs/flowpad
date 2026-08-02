@@ -4,7 +4,7 @@
  * Alice (runner, real browser).
  *
  *   1. Bob creates the "find me a product" skill and shares it with Alice (SDK).
- *   2. Alice accepts, opens the conversation, downloads it (staged chip), and
+ *   2. Alice receives it, opens the conversation, downloads it (staged chip), and
  *      clicks the RUN icon on the chip.
  *   3. A Vibe process opens; the skill is installed into the conversation
  *      project and run BY NAME (`run the skill <name>`).
@@ -20,7 +20,7 @@
  *   - a settled frontend (the concurrent project-home/context-folders refactor
  *     must land first — a churning tree yields false failures).
  *
- * The SDK share → accept → stage → install legs are already proven by
+ * The SDK share → receive → stage → install legs are already proven by
  * skill_share_two_client.test.ts; the install-then-run-by-name wiring is
  * unit-covered by tests/unit/use-run-received-skill.test.ts. This test covers
  * the NEW browser run surface; the mcp-ui selectors are reused verbatim from
@@ -33,13 +33,12 @@ import type { Browser } from 'playwright';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { testEntityName, trackForCleanup } from '../_cleanup';
 import { hubAvailable } from './_hub';
-import { pollUntil } from './_matrix';
 import {
   HUB_INST_1 as AUTHOR_INSTANCE,
   HUB_INST_2 as RUNNER_INSTANCE,
-  findPendingInvitation,
   getInstance,
   instanceAvailable,
+  syncAssignedConversation,
   type ResolvedInstance,
 } from './_instances';
 import { launchBrowser, openInstancePage, type InstancePage } from './_browser';
@@ -145,15 +144,10 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     await post(bob.apiUrl, `/graph/flow_message/${fmId}/upload_body`, {});
     step(`shared fm=${fmId?.slice(0, 8)}`);
 
-    // 2. Alice accepts the invitation (SDK), then opens the conversation in her
-    //    real browser and downloads the bundle → staged chip.
-    const invitation = await pollUntil(
-      () => findPendingInvitation(alice, conv.id),
-      20_000,
-      'pending invitation on dev-2',
-    );
-    await alice.sdk.acceptInvitation({ invitation_id: invitation.id! });
-    step('alice accepted invitation');
+    // 2. Alice synchronizes the immediate assignment, then opens the conversation
+    //    in her real browser and downloads the bundle → staged chip.
+    await syncAssignedConversation(alice, conv.id);
+    step('alice synchronized assignment');
 
     const page = alicePage.page;
     await page.goto(`${alicePage.feUrl}/dock/conversation/${conv.id}?viewMode=advanced`, {
@@ -162,10 +156,10 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     step('alice opened conversation');
     const download = page.getByTestId('download-attachments-button');
     const runIcon = page.getByTestId('skill-run-icon').first();
-    // Depending on the invitation-accept materialization path, the first
+    // Depending on the assignment materialization path, the first
     // browser render legitimately starts in either state:
     //   • remote body → Download button; the user click stages the bundle;
-    //   • body already staged by accept → the Run chip is present directly.
+    //   • body already staged by assignment sync → the Run chip is present directly.
     // Race those two production surfaces inside the click's existing
     // actionability window. An instantaneous isVisible probe would race the
     // conversation render and misclassify the required branch.
@@ -177,7 +171,7 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
       await download.click({ force: true });
       step('clicked download');
     } else {
-      step('accept already staged the bundle');
+      step('assignment sync already staged the bundle');
     }
 
     // 3. The run icon appears on the staged skill chip → click it.

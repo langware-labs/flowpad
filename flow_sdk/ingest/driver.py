@@ -18,14 +18,14 @@ If the sync loop ever needs to look inside ``state``, the abstraction has leaked
 and the next provider will need a special case. ``test_cursor_state_is_opaque``
 greps for exactly that.
 """
+
 from __future__ import annotations
 
 import logging
-
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Optional, Protocol
 
 from flow_sdk._compat import StrEnum
-from typing import TYPE_CHECKING, Optional, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -139,9 +139,17 @@ class IngestDriver(Protocol):
     #: ``send`` and leaves this False, and stays a three-line class.
     sends: bool = False
 
-    async def send(self, source: "DataSource", *, thread_key: str, to: str,
-                   text: str, subject: str = "",
-                   conversation_id: str = "") -> "SendOutcome":
+    async def send(
+        self,
+        source: "DataSource",
+        *,
+        thread_key: str,
+        to: str,
+        text: str,
+        subject: str = "",
+        conversation_id: str = "",
+        in_reply_to: str = "",
+    ) -> "SendOutcome":
         """OPTIONAL. Push one message into the channel and record it.
 
         Returns what the channel confirmed. The driver does NOT write the
@@ -194,8 +202,7 @@ def channel_of_driver(driver: "IngestDriver", source: "DataSource") -> str:
             # channel is half the thread key, so a silently wrong one forks
             # every thread in the mailbox, permanently, while still looking
             # like a successful poll.
-            logger.exception("[ingest] channel_for failed for %s; falling back to provider",
-                             getattr(source, "id", "?"))
+            logger.exception("[ingest] channel_for failed for %s; falling back to provider", getattr(source, "id", "?"))
     return str(getattr(driver, "provider", "") or "")
 
 

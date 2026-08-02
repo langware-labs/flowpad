@@ -8,6 +8,7 @@ from flow_sdk.actions import action
 from flow_sdk.builtin.user import User
 from flow_sdk.builtin.visitor import Visitor
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.drivers.query import QueryFilter
 from flow_sdk.flowpad_types.enums.auth_enums import AuthRole
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -80,6 +81,7 @@ def _request_wants_system(request_info, filter_params) -> bool:
     Checked in three places (any one wins): ?include_system=1 query string,
     include_system key inside filter JSON body, or X-Include-System header.
     """
+
     def _truthy(v) -> bool:
         if isinstance(v, bool):
             return v
@@ -90,9 +92,7 @@ def _request_wants_system(request_info, filter_params) -> bool:
     params = getattr(request_info, "request_parameters", {}) or {}
     if _truthy(params.get("include_system")):
         return True
-    if isinstance(filter_params, dict) and _truthy(filter_params.get("include_system")):
-        return True
-    return False
+    return isinstance(filter_params, dict) and _truthy(filter_params.get("include_system"))
 
 
 async def handle_get_by_id():
@@ -103,8 +103,9 @@ async def handle_get_by_id():
         raise HTTPException(status_code=400, detail="target not available")
     entity_model, entity = await get_by_id(request_info.target_entity_typeid)
     # Schedule background record refresh (non-blocking)
-    if entity is not None and hasattr(entity, 'check_and_refresh_record'):
+    if entity is not None and hasattr(entity, "check_and_refresh_record"):
         import asyncio
+
         asyncio.create_task(entity.check_and_refresh_record())
     return ApiSuccessResponse[entity_model](data=entity)
 
@@ -138,6 +139,14 @@ async def handle_delete_by_id():
             detail=f"Delete error: Unknown entity type: {target_typeid.type}",
         )
 
+    # A Hub message materializer runs detached from the HTTP request and may
+    # already be in flight. Tombstone a Conversation before deleting its row so
+    # that task cannot recreate the parent after this action returns.
+    if target_typeid.type == BuiltinEntityType.CONVERSATION.value:
+        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+
+        hub_ws_bridge.suppress_conversation_materialization(target_typeid.id)
+
     # Auto-propagate removal — symmetric with ``handle_create_entity``'s auto-share.
     # Create makes a ``remote`` child a hub ``is_child`` (the hub fans
     # ``child_created`` to the parent's watchers); delete must do the inverse:
@@ -152,9 +161,7 @@ async def handle_delete_by_id():
         try:
             await entity.unshare(recursive=False)
         except Exception as e:  # noqa: BLE001
-            service_log.warn(
-                f"[delete] auto-unshare {target_typeid} failed (non-fatal): {e}"
-            )
+            service_log.warn(f"[delete] auto-unshare {target_typeid} failed (non-fatal): {e}")
 
     is_deleted = await entity_model.delete_by_id(target_typeid.id)
     if not is_deleted:
@@ -227,11 +234,11 @@ async def handle_record_action():
         raise HTTPException(status_code=404, detail="Entity not found")
 
     rec = await entity.get_record()
-    if rec is None:
+    if rec is None and getattr(entity, "uname", None):
         # Try by uname as well
-        if getattr(entity, "uname", None):
-            from flow_sdk.fs_store.fs_record import FSRecord
-            rec = FSRecord.load_or_none(entity.type, entity.uname)
+        from flow_sdk.fs_store.fs_record import FSRecord
+
+        rec = FSRecord.load_or_none(entity.type, entity.uname)
     if rec is None:
         return ApiFailResponse(message="Record not found", status_code=404)
 
@@ -248,7 +255,7 @@ async def handle_record_action():
 #: IS correct, so the refusal tells the caller where to go instead of just no.
 _ALTERNATE_BIRTH_PATH: dict[str, str] = {
     "source_item": "POST /api/v1/ingest/items (or `flow record create source_item`) — "
-                   "the ingestor owns this type's deterministic id and content digest",
+    "the ingestor owns this type's deterministic id and content digest",
 }
 
 

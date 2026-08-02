@@ -6,7 +6,7 @@ import { dataManager, isTypeId, isValidUUIDv4, TypeId } from '@sdk';
  * isn't well-formed.
  */
 export function displayLabelForTypeid(typeid: string): string {
-  // Name-form pseudo-typeids (entity-less inline personas, `agent-<name>`)
+  // Name-form pseudo-typeids (entity-less inline personas, `subagent-<name>`)
   // aren't cache-resolvable — show the bare name, not the raw pair.
   if (!isTypeId(typeid)) return parseTypeid(typeid).id || typeid;
   try {
@@ -27,7 +27,7 @@ export function parseTypeid(typeid: string): { type: string; id: string } {
  * Whether a descriptor's typeid points at a real backing entity that can be
  * opened in an editor/viewer. Entity ids are always UUID v4/v5 (policy), so
  * gate on that rather than the looser isTypeId grammar: an entity-less inline
- * persona carries a name-form pseudo-typeid (e.g. `agent-team.lead`) that
+ * persona carries a name-form pseudo-typeid (e.g. `subagent-team.lead`) that
  * parses as well-formed but has nothing to open. Single source of truth for
  * the "click to open" affordance shared by the asset picker and manager rows.
  */
