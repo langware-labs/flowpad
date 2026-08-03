@@ -6,6 +6,7 @@ import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { BindSecretDialog } from '@src/components/project-home/BindSecretDialog';
 import {
+  CONTEXT_FOLDERS_WIKI,
   ContextFolderScopeChips,
   useContextFolderSources,
   type ContextFolderSource,
@@ -21,7 +22,7 @@ import { cn } from '@src/lib/utils';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openNewChat } from '@src/navigation/open-new-chat';
-import { KeyRound, MessageSquarePlus } from 'lucide-react';
+import { Info, KeyRound, MessageSquarePlus } from 'lucide-react';
 import {
   Fragment,
   forwardRef,
@@ -31,7 +32,8 @@ import {
   type ComponentType,
   type ReactNode,
 } from 'react';
-import { WikiTip } from '@src/components/wiki-tip';
+import { WikiButton, WikiTip } from '@src/components/wiki-tip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { QuickCreateDialog } from './QuickCreateDialog';
 import { QUICK_CREATE_REGISTRY, getDescriptor } from './registry';
 
@@ -96,7 +98,10 @@ const DesktopTile = forwardRef<HTMLButtonElement, DesktopTileProps>(function Des
       {...rest}
     >
       <Icon className={cn('h-7 w-7', iconClassName)} />
-      <span className="w-full truncate px-1 text-center text-[10px] font-medium leading-tight">
+      {/* Two lines, not one truncated one: a multi-word label ("Folder on this
+          computer") is unreadable clipped, and two 10px lines still clear the
+          tile's height. */}
+      <span className="line-clamp-2 w-full text-balance break-words px-1 text-center text-[10px] font-medium leading-tight">
         {label}
       </span>
     </button>
@@ -132,12 +137,12 @@ export function TileSection({
  * is tipped: the grid is often a new user's first sight of these concepts, and
  * a 10px label can't explain what a skill or a context folder is.
  */
-function TippedTile({ wikiword, ...tile }: { wikiword: string } & DesktopTileProps) {
+function TippedTile({ wikiword, tip, ...tile }: { wikiword: string; tip?: string } & DesktopTileProps) {
   const { t } = useLingui();
   return (
     <WikiTip
       wikiword={wikiword}
-      label={tile.label}
+      label={tip ?? tile.label}
       buttonLabel={t`What is ${tile.label}?`}
       openDelay={TILE_TIP_DELAY}
     >
@@ -221,7 +226,7 @@ export type PanelHandlers = Omit<QuickCreatePanelProps, 'onDone' | 'sections' | 
 
 /** The tile groups this panel can render, in order. */
 export type QuickCreateSection = 'session' | 'message' | 'asset' | 'folder';
-const ALL_SECTIONS: QuickCreateSection[] = ['session', 'message', 'asset', 'folder'];
+export const ALL_SECTIONS: QuickCreateSection[] = ['session', 'message', 'asset', 'folder'];
 
 export interface QuickCreatePanelProps {
   /** Open the per-type create dialog (name / folder / scope) for an asset type. */
@@ -304,10 +309,12 @@ export function QuickCreatePanel({
   const assetItems = useMemo(() => {
     const serverCreatable = new Set(serverTypes.filter((t) => t.creatable).map((t) => t.type_name));
     const enforce = serverCreatable.size > 0;
-    return QUICK_CREATE_REGISTRY.filter((d) => !HIDDEN_ASSET_TYPES.has(d.type))
-      .filter((d) => !enforce || serverCreatable.has(d.type))
-      // Glyph from the backend type registry — never a per-type icon chosen here.
-      .map((d) => ({ type: d.type, Icon: iconForType(d.type) as TileIcon, label: d.label, wikiword: d.wikiword }));
+    return (
+      QUICK_CREATE_REGISTRY.filter((d) => !HIDDEN_ASSET_TYPES.has(d.type))
+        .filter((d) => !enforce || serverCreatable.has(d.type))
+        // Glyph from the backend type registry — never a per-type icon chosen here.
+        .map((d) => ({ type: d.type, Icon: iconForType(d.type) as TileIcon, label: d.label, wikiword: d.wikiword }))
+    );
   }, [serverTypes]);
 
   const sessionTiles: Array<{
@@ -437,7 +444,36 @@ export function QuickCreatePanel({
     ),
     folder: (
       <TileSection
-        title={<Trans>New folder</Trans>}
+        title={
+          <span className="flex items-center gap-1">
+            {/* Sentence case, matching the sibling headings ("New session",
+                "New asset") and the AddContextFolderDialog title — same string,
+                one catalog entry. */}
+            <Trans>Add context folder</Trans>
+            <Tooltip delayDuration={150}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t`What is a context folder?`}
+                  className="text-muted-foreground/70 transition-colors hover:text-foreground"
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              {/* pointer-events-auto: portals to <body>, which the modal Dialog
+                  marks pointer-events:none (see ContextFolderScopeChips). */}
+              <TooltipContent side="top" className="pointer-events-auto flex max-w-[280px] items-start gap-2">
+                <span className="text-xs leading-snug text-muted-foreground">
+                  <Trans>
+                    Point this project at another folder so agents can read it as background — code, docs or assets that
+                    live outside the project, without copying anything.
+                  </Trans>
+                </span>
+                <WikiButton wikiword={CONTEXT_FOLDERS_WIKI} label={t`What is a context folder?`} />
+              </TooltipContent>
+            </Tooltip>
+          </span>
+        }
         headerExtra={<ContextFolderScopeChips scope={folderScope} onChange={setFolderScope} />}
       >
         {folderSources.map((source) => (
@@ -446,6 +482,7 @@ export function QuickCreatePanel({
             wikiword={source.wikiword}
             Icon={source.Icon}
             label={source.label}
+            tip={source.tip}
             data-testid={source.testId}
             disabled={!currentProject}
             onClick={() => {

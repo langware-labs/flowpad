@@ -4,6 +4,7 @@ import { NotificationFeed } from '@src/notifications';
 import { RecentConversationsStrip } from '@src/components/project-activity-strip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
 import { MiniDesktop } from '@src/components/quick-create';
+import { ProjectStarterActions } from '@src/components/project-starter-actions';
 import { SessionInput } from '@src/components/session-input/session-input';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { AdvancedOnly, VibeSwap } from '@src/components/view-mode';
@@ -228,6 +229,9 @@ export function HomeLanding() {
                         onChange={setDraftPrompt}
                         onSubmit={(msg) => void handleVibeSubmit(msg)}
                       />
+                      {/* Same four project starting points as the Vibe hero —
+                          one shared row, so the modes can't drift apart. */}
+                      <ProjectStarterActions className="self-start" />
                     </div>
                   </div>
 
