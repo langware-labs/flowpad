@@ -13,20 +13,12 @@ import { credentialsPointer } from '@src/components/credentials-view/credentials
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
+import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
+import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
 import { useDesktops, nextDesktopName, type DesktopDetails } from '@src/hooks/use-desktops';
 import { StepList } from '@src/components/ui/step-list';
 import { NewDesktopDialog } from './NewDesktopDialog';
-import {
-  Building2,
-  ExternalLink,
-  FolderGit2,
-  Globe,
-  Loader2,
-  KeyRound,
-  Monitor,
-  Plus,
-  Trash2,
-} from 'lucide-react';
+import { Building2, ExternalLink, FolderGit2, Globe, Loader2, KeyRound, Monitor, Trash2 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useState } from 'react';
 
@@ -223,12 +215,17 @@ export function HubHome() {
           </button>
         </div>
 
-        {/* Projects — real hub data (graph/project) */}
-        {projects && projects.length > 0 && (
-          <div className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium text-muted-foreground">
-              <Trans>Projects</Trans>
-            </h2>
+        {/* Projects — real hub data (graph/project). Always rendered, zero
+            projects included: the hub has projects and a current project like
+            the desktop does, so "get me into a project" must be reachable from
+            an empty hub home too. The actions are project home's tiles, one
+            shared component with the Vibe hero (see ProjectActionsRow). */}
+        <div className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium text-muted-foreground">
+            <Trans>Projects</Trans>
+          </h2>
+          <ProjectActionsRow variant="tiles" />
+          {!!projects?.length && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {projects.map((p) => {
                 const isCurrent = currentProject?.id === p.id;
@@ -254,39 +251,34 @@ export function HubHome() {
                 );
               })}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Desktops — cloud FlowPad instances running in E2B (ComputeNode flavor=workspace) */}
         <div className="flex flex-col gap-3">
           <h2 className="text-sm font-medium text-muted-foreground">
             <Trans>Desktops</Trans>
           </h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {/* New desktop — always first, high-contrast + theme-aware. */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {/* span keeps the tooltip working while the button is disabled */}
-                <span className="flex" tabIndex={canCreateDesktop ? -1 : 0}>
-                  <button
-                    type="button"
-                    onClick={() => setNewDesktop({})}
-                    disabled={launching || !canCreateDesktop}
-                    data-testid="new-desktop-button"
-                    className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/20 disabled:pointer-events-none disabled:border-primary/20 disabled:bg-primary/5"
-                  >
-                    {launching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                    {launching ? <Trans>Launching…</Trans> : <Trans>New Desktop</Trans>}
-                  </button>
-                </span>
-              </TooltipTrigger>
-              {!canCreateDesktop && (
-                <TooltipContent>
-                  {!desktopsEnabled ? <Trans>Sandbox unavailable</Trans> : <Trans>Sign in to create desktops</Trans>}
-                </TooltipContent>
-              )}
-            </Tooltip>
+          {/* New desktop — same DesktopTile shape the Projects section uses. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DesktopTile
+                Icon={Monitor}
+                label={launching ? t`Launching…` : t`New Desktop`}
+                loading={launching}
+                disabled={!canCreateDesktop}
+                onClick={() => setNewDesktop({})}
+                data-testid="new-desktop-button"
+              />
+            </TooltipTrigger>
+            {!canCreateDesktop && (
+              <TooltipContent>
+                {!desktopsEnabled ? <Trans>Sandbox unavailable</Trans> : <Trans>Sign in to create desktops</Trans>}
+              </TooltipContent>
+            )}
+          </Tooltip>
 
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {desktops.map((d) => (
               <div
                 key={d.id}
