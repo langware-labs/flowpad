@@ -251,7 +251,7 @@ async def materialize_flow_message(
     # (the "doorbell rings once" bug): the second materialize was silent,
     # so body-bearing messages never reached the open conversation.
     if notify and (is_new or emit_live_create):
-        from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
+        from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
         from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
 
         await handle_entity_op(DataOpMessage(data=fm, op=OperationType.CREATE, to_entity=fm.typeid))
@@ -292,12 +292,18 @@ async def materialize_flow_message(
     # this function sees (live frame then catch-up, or a bundle re-unpack) emit at
     # most one ``child_created``. notify rides the caller's flag: a live arrival
     # announces, a bulk catch-up pass does not.
+    announce_child = False
     try:
         if fm.parent_type_id != str(conv.typeid):
             fm.parent_type_id = str(conv.typeid)
             with remote_reflection() if getattr(fm, "remote", False) else nullcontext():
                 await fm.save(someone_typeid, notify=False)
-        await conv.attach_child(fm, notify=notify)
+        # Attach silently; announce only after the projection below carries this
+        # message. A client reacts to ``child_created`` by re-reading the
+        # conversation, so announcing at attach time hands it the pre-arrival
+        # ``message_ids`` and the silent projection write never corrects it.
+        announce_child = notify and not await conv._has_child_edge(fm)
+        await conv.attach_child(fm, notify=False)
     except Exception as e:  # noqa: BLE001
         logger.warning("[materialize_flow_message] child edge conv=%s failed: %s", conv.id, e)
 
@@ -307,6 +313,14 @@ async def materialize_flow_message(
         append_message_pointer(rec, fm.id, ts)
         await rec.sync_to_db(notify=False)
         await project_pointers_to_entity(rec, notify=False)
+
+    if announce_child:
+        try:
+            from flow_sdk.api.api_types.messages import OperationType  # noqa: PLC0415
+
+            await conv.emit_child_op(fm, OperationType.CHILD_CREATED)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[materialize_flow_message] child announce conv=%s failed: %s", conv.id, e)
 
     if notify:
         try:

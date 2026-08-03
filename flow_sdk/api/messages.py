@@ -5,6 +5,7 @@ from typing import Any, ClassVar, Dict, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from flow_sdk.api.api_request import APIRequest
+from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: F401  (re-export)
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.request_context.auth_info import AuthContext
 
@@ -141,33 +142,11 @@ class EntityMessage(BaseMessage):
     to_entity: TypeId
 
 
-class OperationType(Enum):
-    CREATE = "create"
-    UPDATE = "update"
-    DELETE = "delete"
-    # Kept in lockstep with the duplicate enum in ``api/api_types/messages.py``
-    # (both are imported across the codebase) and with the hub's
-    # ``flowpad/hub/api/messages.py``. See that file for the inverted envelope.
-    CHILD_CREATED = "child_created"
-    CHILD_UPDATED = "child_updated"
-    CHILD_DELETED = "child_deleted"
-
-
 class HttpMethod(Enum):
     GET = "GET"
     POST = "POST"
     PUT = "PUT"
     DELETE = "DELETE"
-
-
-class DataOpMessage(EntityMessage):
-    model_config = ConfigDict(use_enum_values=True)
-    message_type: str = WSMessageType.DATA_OP_MSG.value
-    op: OperationType
-    data: Any = None  # AppLayerMessage
-
-    def handle(self):
-        raise NotImplementedError("This method must be implemented in a subclass")
 
 
 class APIMessage(BaseMessage, APIRequest):
