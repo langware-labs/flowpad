@@ -35,7 +35,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.entity.remote = false;
   mocks.typeInfo.cloud_file_transport = 'git';
-  mocks.entity.share.mockResolvedValue(mocks.entity);
+  // The real ``APIEntity.share`` adopts the backend's canonical entity, which is
+  // what flips ``remote`` — the button never writes that field itself.
+  mocks.entity.share.mockImplementation(async () => {
+    mocks.entity.remote = true;
+    return mocks.entity;
+  });
 });
 
 afterEach(cleanup);

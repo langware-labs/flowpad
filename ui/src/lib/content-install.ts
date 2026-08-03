@@ -1,4 +1,5 @@
 import { gitOriginFromUrl } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
 
 export const INSTALL_REVIEW_BRANCH = 'flowpad/install-cloudnsite-agents';
 const SAFE_BRANCH = /^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]+$/;
@@ -74,10 +75,11 @@ export function installProjectLandingUrl(
   const projectId = result.install_result?.target_project_id || result.project?.id;
   if (!projectId) return null;
 
-  const landing = new URLSearchParams();
-  const journeyId = result.install_result?.auto_launch_journey_id;
-  if (journeyId) landing.set('journeyId', journeyId);
-  const projectPath = `/dock/project/${encodeURIComponent(projectId)}${landing.size ? `?${landing.toString()}` : ''}`;
+  // DockPointer owns the project-route grammar and the journey param name;
+  // spelling either out here would be a second owner of both.
+  const projectPath = DockPointer.forProject(projectId)
+    .withJourney(result.install_result?.auto_launch_journey_id ?? null)
+    .toUrl();
   const url = new URL(host);
   if (url.searchParams.has('next')) {
     url.searchParams.set('next', projectPath);

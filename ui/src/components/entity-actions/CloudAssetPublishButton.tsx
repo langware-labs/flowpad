@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Cloud, CloudUpload } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 import { dataManager } from '@sdk';
 import type { TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
+import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { compactEntityActionClassName } from './action-button-styles';
 
@@ -22,9 +23,9 @@ export function CloudAssetPublishButton({ typeId, variant }: CloudAssetPublishBu
   const { data: entity } = useEntity(typeId);
   const typeInfo = useMemo(() => dataManager.getTypeInfo(typeId.type), [typeId.type]);
   const [busy, setBusy] = useState(false);
-  const [published, setPublished] = useState(Boolean(entity?.remote));
-
-  useEffect(() => setPublished(Boolean(entity?.remote)), [entity?.remote]);
+  // Derived, never mirrored into state: ``share()`` adopts the backend's
+  // canonical entity, which is the only thing allowed to declare ``remote``.
+  const published = Boolean(entity?.remote);
 
   if (typeInfo?.cloud_file_transport !== 'git') return null;
 
@@ -33,12 +34,11 @@ export function CloudAssetPublishButton({ typeId, variant }: CloudAssetPublishBu
     setBusy(true);
     try {
       await entity.share();
-      setPublished(true);
       notify.success({ title: t`Published`, message: t`The asset is now available to project members.` });
     } catch (error) {
       notify.error({
         title: t`Could not publish asset`,
-        message: error instanceof Error ? error.message : t`Publish failed.`,
+        message: errorMessage(error, t`Publish failed.`),
       });
     } finally {
       setBusy(false);
