@@ -62,7 +62,7 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
           </div>
         ) : isError ? (
           <div className="px-3 py-4 text-xs text-destructive">
-            Failed to load branches: {(error as Error)?.message ?? 'unknown error'}
+            Failed to load branches: {error?.message ?? 'unknown error'}
           </div>
         ) : list.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">
@@ -74,6 +74,7 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
               <li
                 key={branch.name}
                 className="flex cursor-pointer items-center gap-2 border-b border-border/40 px-3 py-2 text-xs last:border-b-0 hover:bg-accent"
+                data-testid={`branch-picker-row-${branch.name}`}
                 onClick={() => onSelect(branch)}
               >
                 <GitBranch className="h-3 w-3 text-muted-foreground" />

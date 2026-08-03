@@ -1766,6 +1766,10 @@ msgstr ""
 #~ msgid "Back to projects"
 #~ msgstr ""
 
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Back to repositories"
+msgstr ""
+
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
 msgstr ""
@@ -2094,6 +2098,7 @@ msgstr ""
 #: src/components/triggers-view/TriggerEditor.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
+#: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
@@ -3463,6 +3468,10 @@ msgstr ""
 msgid "Couldn't finish preparing your sandbox"
 msgstr ""
 
+#: src/pages/entry/InstallLanding.tsx
+msgid "Couldn't finish preparing your workspace"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
 msgstr ""
@@ -3554,6 +3563,14 @@ msgstr ""
 #~ msgid "Create a new artifact in this project."
 #~ msgstr ""
 
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Create a private GitHub repository"
+msgstr ""
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Create a private repository"
+msgstr ""
+
 #: src/components/hooks-manager/HookForm.tsx
 #~ msgid "Create Agent Hook"
 #~ msgstr ""
@@ -3606,6 +3623,10 @@ msgstr ""
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1> frontmatter into a docs folder and running <2>flow record index <path></2>."
+msgstr ""
+
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Create private repo"
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
@@ -5935,6 +5956,10 @@ msgstr ""
 #~ msgid "Flowpad docs"
 #~ msgstr ""
 
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "FlowPad Server Status"
 msgstr ""
@@ -7325,6 +7350,10 @@ msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Launch sandbox"
+msgstr ""
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Launch workspace"
 msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
@@ -9678,6 +9707,10 @@ msgstr ""
 msgid "Nothing to show."
 msgstr ""
 
+#: src/pages/entry/InstallLanding.tsx
+msgid "Nothing was installed. You can close this tab."
+msgstr ""
+
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Nothing was launched. You can close this tab."
 msgstr ""
@@ -10197,6 +10230,10 @@ msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Open the live session in a terminal"
+msgstr ""
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Open the project"
 msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -10792,6 +10829,10 @@ msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Preparing your sandbox…"
+msgstr ""
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Preparing your workspace…"
 msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
@@ -11734,6 +11775,7 @@ msgid "Repository and remote configured"
 msgstr ""
 
 #: src/components/assets/AddGitFolderDialog.tsx
+#: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Repository name"
 msgstr ""
 
@@ -13354,8 +13396,16 @@ msgstr ""
 #~ msgid "Sign in to a coding assistant"
 #~ msgstr ""
 
+#: src/pages/entry/InstallLanding.tsx
+msgid "Sign in to choose one of your GitHub repositories."
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sign in to create desktops"
+msgstr ""
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Sign in to Flowpad"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -15841,6 +15891,10 @@ msgstr ""
 
 #: src/components/graph-view/webglSupport.tsx
 msgid "Your browser could not create a WebGL context, so the graph cannot render. This usually means graphics acceleration is disabled or the GPU process crashed."
+msgstr ""
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Your CloudNSite workspace is ready"
 msgstr ""
 
 #: src/components/collaboration/StartRoomDialog.tsx

@@ -1766,6 +1766,10 @@ msgstr "Back to open projects"
 #~ msgid "Back to projects"
 #~ msgstr "Back to projects"
 
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Back to repositories"
+msgstr "Back to repositories"
+
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
 msgstr "Back to tasks"
@@ -2094,6 +2098,7 @@ msgstr "Can't update — showing last synced"
 #: src/components/triggers-view/TriggerEditor.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
+#: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
@@ -3463,6 +3468,10 @@ msgstr "Couldn't check for updates: {error}"
 msgid "Couldn't finish preparing your sandbox"
 msgstr "Couldn't finish preparing your sandbox"
 
+#: src/pages/entry/InstallLanding.tsx
+msgid "Couldn't finish preparing your workspace"
+msgstr "Couldn't finish preparing your workspace"
+
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
 msgstr "Couldn’t load transcript"
@@ -3554,6 +3563,14 @@ msgstr "Create a new {0}."
 #~ msgid "Create a new artifact in this project."
 #~ msgstr "Create a new artifact in this project."
 
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Create a private GitHub repository"
+msgstr "Create a private GitHub repository"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Create a private repository"
+msgstr "Create a private repository"
+
 #: src/components/hooks-manager/HookForm.tsx
 #~ msgid "Create Agent Hook"
 #~ msgstr "Create Agent Hook"
@@ -3607,6 +3624,10 @@ msgstr "Create new…"
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1> frontmatter into a docs folder and running <2>flow record index <path></2>."
 msgstr "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1> frontmatter into a docs folder and running <2>flow record index <path></2>."
+
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Create private repo"
+msgstr "Create private repo"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Create Project"
@@ -5938,6 +5959,10 @@ msgstr "Flowpad diagnostics"
 #~ msgid "Flowpad docs"
 #~ msgstr "Flowpad docs"
 
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
+msgstr "Flowpad initializes the repository, then proposes the install on a separate review branch."
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "FlowPad Server Status"
 msgstr "FlowPad Server Status"
@@ -7329,6 +7354,10 @@ msgstr "Launch a session first"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Launch sandbox"
 msgstr "Launch sandbox"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Launch workspace"
+msgstr "Launch workspace"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Launching…"
@@ -9681,6 +9710,10 @@ msgstr "Nothing to save"
 msgid "Nothing to show."
 msgstr "Nothing to show."
 
+#: src/pages/entry/InstallLanding.tsx
+msgid "Nothing was installed. You can close this tab."
+msgstr "Nothing was installed. You can close this tab."
+
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Nothing was launched. You can close this tab."
 msgstr "Nothing was launched. You can close this tab."
@@ -10203,6 +10236,10 @@ msgstr "Open the live session"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Open the live session in a terminal"
 msgstr "Open the live session in a terminal"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Open the project"
+msgstr "Open the project"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #~ msgid "Open the raw JSONL in a new tab"
@@ -10798,6 +10835,10 @@ msgstr "Preferences"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Preparing your sandbox…"
 msgstr "Preparing your sandbox…"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Preparing your workspace…"
+msgstr "Preparing your workspace…"
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Preparing…"
@@ -11739,6 +11780,7 @@ msgid "Repository and remote configured"
 msgstr "Repository and remote configured"
 
 #: src/components/assets/AddGitFolderDialog.tsx
+#: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Repository name"
 msgstr "Repository name"
 
@@ -13363,9 +13405,17 @@ msgstr "Sign in"
 #~ msgid "Sign in to a coding assistant"
 #~ msgstr "Sign in to a coding assistant"
 
+#: src/pages/entry/InstallLanding.tsx
+msgid "Sign in to choose one of your GitHub repositories."
+msgstr "Sign in to choose one of your GitHub repositories."
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sign in to create desktops"
 msgstr "Sign in to create desktops"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Sign in to Flowpad"
+msgstr "Sign in to Flowpad"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Sign in to see who's a member"
@@ -15851,6 +15901,10 @@ msgstr "Your API Keys"
 #: src/components/graph-view/webglSupport.tsx
 msgid "Your browser could not create a WebGL context, so the graph cannot render. This usually means graphics acceleration is disabled or the GPU process crashed."
 msgstr "Your browser could not create a WebGL context, so the graph cannot render. This usually means graphics acceleration is disabled or the GPU process crashed."
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Your CloudNSite workspace is ready"
+msgstr "Your CloudNSite workspace is ready"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 #: src/components/collaboration/StartRoomDialog.tsx

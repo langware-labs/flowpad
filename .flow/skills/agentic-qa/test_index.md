@@ -1,6 +1,6 @@
 # Test Index
 
-> Last updated: 2026-08-01T22:33:18Z
+> Last updated: 2026-08-03T18:42:49Z
 > Scope: all manual-regression `.md` scenarios, `.md.ts` Playwright files, and standalone browser specs.
 
 ## agentic-process (md=13, md.ts=16, spec.ts=0)
@@ -110,11 +110,12 @@
 | new_prompt_save_indefinitely.md | 1 | yes | no | - |
 | uploading_a_file_doesnt_show_up_in_the_side_bar.md | 1 | yes | no | - |
 
-## general (md=8, md.ts=8, spec.ts=0)
+## general (md=8, md.ts=9, spec.ts=0)
 
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |----------|------:|------------|-----------|------|
 | app_slow_before_clearing_database.md | 1 | yes | no | - |
+| cloudnsite-install.md.ts *(md.ts only)* | 2 | yes | no | other (challenge) |
 | console_error_482_failed_to_start_in_app_hompage.md | 1 | yes | no | - |
 | current_activity_recent_sessions.md | 5 | yes | no | - |
 | execute_flow_hangs_indefinitely.md | 1 | yes | no | - |

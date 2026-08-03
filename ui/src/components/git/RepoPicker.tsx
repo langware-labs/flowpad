@@ -17,6 +17,7 @@ interface RepoPickerProps {
   provider: GitProvider;
   onSelect: (repo: RepoSummary) => void;
   enabled?: boolean;
+  allowedRoles?: RepoSummary['role'][];
 }
 
 function formatRelative(iso: string): string {
@@ -48,7 +49,7 @@ function roleBadgeClass(role: RepoSummary['role']): string {
  * provider. Click a row → ``onSelect(repo)``. Filtering is client-side over
  * the full fetched list (5-min query cache via useGitRepos).
  */
-export function RepoPicker({ provider, onSelect, enabled = true }: RepoPickerProps) {
+export function RepoPicker({ provider, onSelect, enabled = true, allowedRoles }: RepoPickerProps) {
   const { t } = useLingui();
   const { data: repos, isLoading, isError, error, refetch, isFetching } = useGitRepos(provider, enabled);
   const [query, setQuery] = useState('');
@@ -56,17 +57,18 @@ export function RepoPicker({ provider, onSelect, enabled = true }: RepoPickerPro
   const filtered = useMemo(() => {
     if (!repos) return [];
     const q = query.trim().toLowerCase();
+    const eligible = allowedRoles ? repos.filter((repo) => allowedRoles.includes(repo.role)) : repos;
     const matched = q
-      ? repos.filter(
+      ? eligible.filter(
           (r) =>
             r.full_name.toLowerCase().includes(q) ||
             r.owner.toLowerCase().includes(q) ||
             r.name.toLowerCase().includes(q),
         )
-      : repos;
+      : eligible;
     // Sort: pushed_at desc (most recent first).
     return [...matched].sort((a, b) => (b.pushed_at || '').localeCompare(a.pushed_at || ''));
-  }, [repos, query]);
+  }, [allowedRoles, repos, query]);
 
   return (
     <div className="flex flex-col gap-2">
@@ -98,7 +100,7 @@ export function RepoPicker({ provider, onSelect, enabled = true }: RepoPickerPro
           </div>
         ) : isError ? (
           <div className="px-3 py-4 text-xs text-destructive">
-            Failed to load repos: {(error as Error)?.message ?? 'unknown error'}
+            Failed to load repos: {error?.message ?? 'unknown error'}
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">
@@ -120,6 +122,7 @@ export function RepoPicker({ provider, onSelect, enabled = true }: RepoPickerPro
                 <TableRow
                   key={repo.full_name}
                   className="cursor-pointer hover:bg-accent"
+                  data-testid={`repo-picker-row-${repo.full_name}`}
                   onClick={() => onSelect(repo)}
                 >
                   <TableCell className="text-muted-foreground">

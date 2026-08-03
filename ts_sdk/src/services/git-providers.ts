@@ -103,6 +103,19 @@ export async function getRepos(provider: GitProvider): Promise<RepoSummary[]> {
   return all;
 }
 
+/** Create an initialized private repository that can immediately be selected
+ * as an install target. The backend owns provider credentials and policy; the
+ * browser sends only the provider and validated repository name. */
+export async function createPrivateRepo(provider: GitProvider, name: string): Promise<RepoSummary> {
+  const user = _userInfo();
+  const info = new ActionInfo('repo', user.type, user.id, 'POST');
+  info.subpath = 'create';
+  info.bodyParameters = { provider, name };
+  const res = await dataManager.callAction<unknown, { repo?: RepoSummary }>(info);
+  if (!res?.repo) throw new Error('Invalid /repo/create response');
+  return res.repo;
+}
+
 function _isBranchSummary(x: unknown): x is BranchSummary {
   if (!x || typeof x !== 'object') return false;
   const o = x as Record<string, unknown>;
