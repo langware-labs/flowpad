@@ -1,17 +1,20 @@
 import uuid
 from enum import Enum
-from flow_sdk._compat import StrEnum
 from typing import Any, ClassVar, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_request import APIRequest
 from flow_sdk.api.api_types.type_id import TypeId
+
 # TODO: AuthContext not available locally, need to implement or stub
 # from request_context.auth_info import AuthContext
 
+
 class AuthContext:
     """Stub implementation of AuthContext"""
+
     def __init__(self):
         self.scope = None
         self.method = None
@@ -150,6 +153,15 @@ class OperationType(Enum):
     CREATE = "create"
     UPDATE = "update"
     DELETE = "delete"
+    # Subtree ops — vocabulary and values identical to the hub's
+    # ``flowpad/hub/api/messages.py`` so a frame means the same thing on both
+    # sides of the bridge. The envelope INVERTS relative to the ops above:
+    # ``to_entity`` is the PARENT, ``from_entity`` is the changed child, and
+    # ``data`` is the child — so watchers of a parent learn about its subtree
+    # without subscribing to every child.
+    CHILD_CREATED = "child_created"
+    CHILD_UPDATED = "child_updated"
+    CHILD_DELETED = "child_deleted"
 
 
 class HttpMethod(Enum):

@@ -141,6 +141,7 @@ class AuthExpiredMessage(BaseMessage):
 class PrivacyModeMessage(BaseMessage):
     """Broadcast when this instance's data-privacy mode changes, so every open
     client updates the footer control + cloud-access guards without a reload."""
+
     message_type: str = WSMessageType.PRIVACY_MODE_MSG.value
     privacy_mode: str  # "local" | "connected"
 
@@ -148,6 +149,7 @@ class PrivacyModeMessage(BaseMessage):
 class ToplogStateMessage(BaseMessage):
     """Broadcast when this instance's toplog state changes, so every open client
     updates its in-memory tag set live (no reload). See flow_sdk/toplog.py."""
+
     message_type: str = WSMessageType.TOPLOG_STATE_MSG.value
     enabled: bool
     filter: Dict[str, bool]
@@ -217,6 +219,12 @@ class OperationType(Enum):
     CREATE = "create"
     UPDATE = "update"
     DELETE = "delete"
+    # Kept in lockstep with the duplicate enum in ``api/api_types/messages.py``
+    # (both are imported across the codebase) and with the hub's
+    # ``flowpad/hub/api/messages.py``. See that file for the inverted envelope.
+    CHILD_CREATED = "child_created"
+    CHILD_UPDATED = "child_updated"
+    CHILD_DELETED = "child_deleted"
 
 
 class HttpMethod(Enum):
