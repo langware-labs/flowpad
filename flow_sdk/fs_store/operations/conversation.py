@@ -13,6 +13,7 @@ Surface (all free functions, no class):
 - ``from_jsonl(jsonl_path, parent_id, record_id, *, parent_type)``
 - ``project_pointers_to_entity(rec, notify)``
 """
+
 from __future__ import annotations
 
 import json
@@ -29,6 +30,7 @@ def default_data_dir(record_id: str) -> Path:
     if not record_id:
         raise ValueError("record_id is required")
     from flow_sdk.fs_store.record_paths import data_dir_for
+
     return data_dir_for(RecordType.CONVERSATION, record_id)
 
 
@@ -92,9 +94,7 @@ def write_pointers(rec: FSRecord, pointers: list[Pointer]) -> None:
     write_text_if_changed(path, "".join(p.to_jsonl_line() + "\n" for p in pointers))
 
 
-async def prune_message_pointer(
-    rec: FSRecord, flow_message_id: str, notify: bool = True
-) -> bool:
+async def prune_message_pointer(rec: FSRecord, flow_message_id: str, notify: bool = True) -> bool:
     """Drop the pointer to ``flow_message_id`` from the conversation index and
     re-project. Mirror of ``append_message_pointer`` for removal.
 
@@ -144,50 +144,73 @@ def from_jsonl(
 
 
 async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None:
-    """Mirror the on-disk pointer index into Conversation.message_ids/message_count
+    """Mirror the conversation's messages into ``message_ids``/``message_count``
     and set ``conv.updated_date`` to the conversation's recency.
 
-    Recency is the last *real* message change — ``max(message.updated_date)`` over
-    the conversation's messages, NOT the pointer ts (which is each message's
-    ``created_date`` and so never reflects an edit). ``FlowMessage.is_stale``
-    keeps a message's ``updated_date`` from advancing on a bare touch, so this
-    ``max`` excludes touches by construction: a body re-download bumps no
-    message clock and therefore no inbox recency. ``updated_date`` stays the
-    single field used for inbox order AND the hub-sync LWW key — there is no
-    separate recency column.
+    Membership and ORDER now come from the parent→child ``is_child`` edges,
+    ordered by ``created_date`` — not from the on-disk pointer index. The jsonl
+    keeps its other three jobs (outbound outbox, recipient-side import,
+    DB-rebuild durability) and is still appended; it simply stopped being the
+    ordering source, so there is one representation of "which messages are in
+    this conversation" instead of two that could silently disagree.
+
+    Edges are newer than the data, so a conversation that predates them has
+    none — reading edges alone would blank its projection. The drift check
+    below backfills first and re-reads; a converged conversation pays one set
+    comparison and writes nothing.
+
+    Recency is the last *real* message change — ``max(message.updated_date)``,
+    NOT ``created_date`` (which never reflects an edit). ``FlowMessage.is_stale``
+    keeps ``updated_date`` from advancing on a bare touch, so this ``max``
+    excludes touches by construction: a body re-download bumps no message clock
+    and therefore no inbox recency. ``updated_date`` stays the single field used
+    for inbox order AND the hub-sync LWW key.
     """
     from datetime import datetime
+
     from flow_sdk._compat import UTC
-    from flow_sdk.builtin.conversation import Conversation, _PROJECTION_SENTINEL
+    from flow_sdk.builtin.conversation import _PROJECTION_SENTINEL, Conversation
     from flow_sdk.builtin.flow_message import FlowMessage
-    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+    from flow_sdk.db.drivers.query import QueryFilter
+    from flow_sdk.fs_store.pointer import Pointer
+    from flow_sdk.fs_store.type_id import TypeId
 
     conv = await Conversation.get_one({"id": rec.id})
     if not conv:
         return
-    pointers = message_pointers(rec)
-    new_count = len(pointers)
-    new_ids = json.dumps([p.to_dict() for p in pointers]) if pointers else None
 
-    # Recency = max real-change clock across the messages. Prefer each row's
-    # ``updated_date`` (advanced only by a real edit); fall back to the pointer
-    # ts (created_date) when the row isn't loadable. Batch-load the rows in one
-    # query rather than a get_one per pointer.
-    by_id: dict[str, FlowMessage] = {}
-    if pointers:
-        try:
-            rows = await FlowMessage.get_all(QueryFilter(
-                match=ExpressionNode(op=QueryOp.IN, operands=["id", [p.id for p in pointers]]),
-            ))
-            by_id = {fm.id: fm for fm in rows}
-        except Exception:  # noqa: BLE001
-            by_id = {}
-    new_updated = None
-    for p in pointers:
-        fm = by_id.get(p.id)
-        ts = Conversation._as_datetime(
-            fm.updated_date if fm is not None and fm.updated_date is not None else p.ts
+    async def _ordered_children() -> list[FlowMessage]:
+        kids = await conv.get_children(
+            child_filter=QueryFilter(type=FlowMessage.get_type(), order_by={"created_date": "asc"})
         )
+        return [c.value for c in kids if getattr(c, "value", None) is not None]
+
+    messages = await _ordered_children()
+    # Legacy data (or a lost edge) — heal from the pointer index / conversation_id
+    # before deriving anything, then re-read. Skipped entirely once converged.
+    pointer_ids = {p.id for p in message_pointers(rec)}
+    if pointer_ids - {m.id for m in messages}:
+        await conv.ensure_message_edges()
+        messages = await _ordered_children()
+
+    new_count = len(messages)
+    new_ids = (
+        json.dumps(
+            [
+                Pointer(
+                    TypeId(type=Pointer.DEFAULT_MESSAGE_TYPE, id=m.id),
+                    (m.created_date.isoformat() if m.created_date is not None else ""),
+                ).to_dict()
+                for m in messages
+            ]
+        )
+        if messages
+        else None
+    )
+
+    new_updated = None
+    for m in messages:
+        ts = Conversation._as_datetime(m.updated_date or m.created_date)
         if ts is not None and (new_updated is None or ts > new_updated):
             new_updated = ts
     if new_updated is None:
@@ -212,6 +235,7 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
 async def _resolve_local_owner_typeid():
     try:
         from flow_sdk.builtin.user import User
+
         u = await User.get_one({"uname": "local"})
         return u.typeid if u else None
     except Exception:
