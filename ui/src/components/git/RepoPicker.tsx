@@ -109,11 +109,14 @@ export function RepoPicker({ provider, onSelect, enabled = true, allowedRoles }:
             <TableHeader>
               <TableRow>
                 <TableHead className="w-7"></TableHead>
-                <TableHead>
-                  <Trans>Owner</Trans>
-                </TableHead>
+                {/* The repo name is what the user is looking for, so it leads
+                    and it is the biggest thing in the row; the owner is a
+                    qualifier and rides behind it. */}
                 <TableHead>
                   <Trans>Repo</Trans>
+                </TableHead>
+                <TableHead className="w-32">
+                  <Trans>Owner</Trans>
                 </TableHead>
                 <TableHead className="w-20">
                   <Trans>Role</Trans>
@@ -134,8 +137,8 @@ export function RepoPicker({ provider, onSelect, enabled = true, allowedRoles }:
                   <TableCell className="text-muted-foreground">
                     {repo.private ? <Lock className="h-3 w-3" /> : repo.fork ? <GitFork className="h-3 w-3" /> : null}
                   </TableCell>
-                  <TableCell className="text-xs">{repo.owner}</TableCell>
-                  <TableCell className="text-xs font-medium">{repo.name}</TableCell>
+                  <TableCell className="text-sm font-semibold">{repo.name}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{repo.owner}</TableCell>
                   <TableCell>
                     <span
                       className={`rounded px-1.5 py-px text-[10px] font-medium uppercase ${roleBadgeClass(repo.role)}`}
