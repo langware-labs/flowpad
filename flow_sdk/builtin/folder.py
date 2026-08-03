@@ -207,13 +207,17 @@ class Folder(Entity):
     # ── Materialize ──────────────────────────────────────────────────────────
 
     @action.post(action_name="resolve-location")
-    async def resolve_location(self, *, preferred_root=None) -> "object":
+    async def resolve_location(self, *, preferred_root=None, strict_index: bool = False) -> "object":
         """Materialize this folder's origin into a local path on THIS machine.
 
         ``preferred_root`` directs where a fresh checkout lands. Callers that
         manage a folder on the user's behalf (a helpdesk portal, say) pass a
         root outside the visible workspace; ordinary context folders pass
         nothing and take the driver's default placement.
+
+        Indexing remains best-effort for ordinary folder resolution. Install
+        flows pass ``strict_index=True`` because they must not link a content
+        project whose assets were not discovered successfully.
 
         For a ``local`` origin: verify base+rel exist, set ``path``. For a
         transportable origin (git/…): clone/pull via the kind's driver, join the
@@ -269,6 +273,7 @@ class Folder(Entity):
             # place that knows the origin, keeps every caller of
             # ``resolve_location`` from having to remember it.
             await _index_additional_dir(self.path, read_only=origin.transportable)
-        except Exception:
-            pass
+        except Exception as exc:
+            if strict_index:
+                return ApiSuccessResponse(data={"kind": "error", "message": str(exc)})
         return ApiSuccessResponse(data={"kind": "ready", "path": self.path})
