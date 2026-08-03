@@ -5,16 +5,19 @@ hand-rolled HTTP sequence in ``test_two_client_loop.py``:
 
   - hub-side Conversation exists
   - alice is in ``participants`` (via the join the SDK fires after share)
-  - one ``Invitation`` row exists for bob's email
-  - bob can accept and join through the standard ``/members/accept``
-    + ``/conversation/<id>/join`` pair
+  - bob holds an APPROVED role immediately — the hub grants at invite time
+  - bob can join through ``/conversation/<id>/join``
   - both ends receive ``flow_message`` fanout (alice ignites "1", bob rxs)
 
-This is the canonical SDK-driven test for the share+invite+accept+join
-pattern. ``test_two_client_loop.py`` covers the raw HTTP version; this one
-covers the same flow through the Python SDK that the UI / TS SDK also build
-on top of.
+This is the canonical SDK-driven test for the share+grant+join pattern.
+``test_two_client_loop.py`` covers the raw HTTP version; this one covers the
+same flow through the Python SDK that the UI / TS SDK also build on top of.
+
+There is no accept step: hub ``74694a30d`` made invite-time auto-accept apply
+to every entity type (it was previously tasks-only, which is why this test used
+to find a pending invitation for a conversation and accept it).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,13 +25,11 @@ import json
 import os
 import time
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
 import pytest
 import websockets
-
 
 REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
 
@@ -55,15 +56,14 @@ def _make_ws_url(hub_base_url: str) -> str:
 @pytest.mark.asyncio
 async def test_share_with_recipients(hub_base_url, hub_login_payload, isolated_hub_keyring):
     """Alice uses ``Conversation.share(recipients=[bob_email])`` → bob accepts → realtime fanout."""
-    from tests.hub_tests._local_login import login_as
     from flow_sdk.builtin.conversation import Conversation
+    from tests.hub_tests._local_login import login_as
 
     # Alice's cloud creds come from the conftest fixture (env-mode login).
-    alice_user = hub_login_payload.get("user") or {}
     # login_as persists BOTH halves (token + user record); a token-only write is
     # a half-logged-in state that share() rejects.
-    login_as(hub_login_payload)
-    alice_id = alice_user["id"]
+    alice_key = login_as(hub_login_payload)
+    headers_a = {"Authorization": f"Bearer {alice_key}", "Content-Type": "application/json"}
 
     # Bob's creds come from the cycle env, with the sibling flowpad-app repo as
     # a local-development fallback. There is no second SDK identity in-process;
@@ -89,43 +89,30 @@ async def test_share_with_recipients(hub_base_url, hub_login_payload, isolated_h
     await conv.share(recipients=[bob_email])
     assert conv.remote is True
 
-    # Bob discovers the invitation via the canonical ``/invitation/pending``.
+    # The role is granted at INVITE time — there is no pending invitation to
+    # accept. ``_maybe_auto_accept`` (hub membership/services.py) is governed by
+    # ``invitation_auto_accept_on_invite`` alone, uniformly for every target
+    # type, and marks the invitation accepted as it grants: "what someone hands
+    # you is simply yours, not an offer you must first accept". The emailed link
+    # survives as a deep link, not as the mechanism.
+    #
+    # Access is still gated — an unverified address cannot authenticate at all
+    # (auth0_handler raises "Email not verified"), so the grant sits inert on a
+    # shadow account until the real owner verifies. That gate is what makes
+    # granting-before-acceptance safe, and it is asserted in the hub's own
+    # auth tests, not here.
     async with httpx.AsyncClient(timeout=5.0) as h:
-        r = await h.get(f"{hub_base_url}/api/v1/graph/invitation/pending", headers=headers_b)
+        r = await h.get(f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/members", headers=headers_a)
         r.raise_for_status()
-        pending = r.json()["data"] or []
-        matching = [inv for inv in pending if inv.get("recipient_email") == bob_email and not inv.get("accepted")]
-        assert matching, f"bob has no pending invitation; got {pending}"
-        matching.sort(key=lambda x: x.get("created_date") or "", reverse=True)
-        invitation_id = matching[0]["id"]
-
-        # Bob accepts → grants role on the Conversation target. The hub's
-        # members/accept is browser-oriented and ALWAYS 302s: to /login when
-        # unauthenticated (accept did NOT run), or to the /conversation/<id>
-        # (or /flow_message/<id>) landing on a SUCCESSFUL authenticated accept
-        # (role granted server-side before the redirect). Mirror the SDK's
-        # handle_invitation_accept: do NOT follow the redirect; treat 200/409
-        # or a redirect to the conversation/flow_message landing as success,
-        # only a redirect to login as failure. (raise_for_status rejected the
-        # by-design 302 and failed every accept.)
-        r = await h.get(
-            f"{hub_base_url}/api/v1/graph/members/accept",
-            headers=headers_b,
-            params={"invitation-id": invitation_id},
+        roster = r.json()["data"] or []
+        bob_rows = [m for m in roster if (m.get("user_email") or "").lower() == bob_email.lower()]
+        assert bob_rows, f"bob is not on the roster after share; got {roster}"
+        assert bob_rows[0].get("status") == "approved", (
+            f"share should grant the role outright, got status={bob_rows[0].get('status')!r}"
         )
-        if r.status_code not in (200, 409):
-            if r.status_code in (301, 302, 303, 307, 308):
-                location = (r.headers.get("location") or r.headers.get("Location") or "")
-                assert "login" not in location.lower(), (
-                    f"accept redirected to login (unauthenticated); location={location[:200]}"
-                )
-                assert ("/conversation/" in location) or ("/flow_message/" in location), (
-                    f"accept returned an unexpected redirect location={location[:200]}"
-                )
-            else:
-                r.raise_for_status()
 
-        # Bob joins → enters ``participants``.
+        # Bob joins → enters ``participants``. Still his own call: ``share()``
+        # joins the CALLER (alice), and participants is what drives WS fanout.
         r = await h.post(
             f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/join",
             headers=headers_b,

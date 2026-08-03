@@ -10,6 +10,7 @@ conversation must stay at exactly 1.
 Mirrors the harness in ``test_share_with_recipients.py`` (env-mode alice login
 via fixtures; bob driven over raw HTTP from the cycle env, with a repo fallback).
 """
+
 from __future__ import annotations
 
 import os
@@ -19,7 +20,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-
 
 REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
 
@@ -38,25 +38,35 @@ def _read_env_local(repo: Path) -> dict[str, str]:
     return out
 
 
-async def _count_invitations(hub_base_url: str, headers_b: dict, bob_email: str) -> int:
-    """How many invitations bob currently has for the (any) conversation."""
+async def _count_grants(hub_base_url: str, headers_a: dict, conv_id: str, bob_email: str) -> int:
+    """How many roster rows bob holds on THIS conversation.
+
+    The invariant under test is "first contact grants access once; further
+    messages into the same thread don't re-grant" — it used to be counted as
+    pending invitations, but the hub now grants at invite time and marks the
+    invitation accepted (74694a30d), so ``/invitation/pending`` is always empty
+    and the old count was 0 → 0. Counting roster rows measures the same thing
+    where it is now observable, and scoped to one conversation rather than
+    globally, so a stale invite from another test can't drift the baseline.
+    """
     async with httpx.AsyncClient(timeout=5.0) as h:
-        r = await h.get(f"{hub_base_url}/api/v1/graph/invitation/pending", headers=headers_b)
+        r = await h.get(f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/members", headers=headers_a)
         r.raise_for_status()
-        pending = r.json()["data"] or []
-    return len([inv for inv in pending if inv.get("recipient_email") == bob_email])
+        roster = r.json()["data"] or []
+    return len([m for m in roster if (m.get("user_email") or "").lower() == bob_email.lower()])
 
 
 @pytest.mark.asyncio
 async def test_message_into_existing_conversation_sends_no_new_invite(
     hub_base_url, hub_login_payload, isolated_hub_keyring
 ):
-    from tests.hub_tests._local_login import login_as
     from flow_sdk.builtin.conversation import Conversation
+    from tests.hub_tests._local_login import login_as
 
     # login_as persists BOTH halves (token + user record); a token-only write is
     # a half-logged-in state that share() rejects.
-    login_as(hub_login_payload)
+    alice_key = login_as(hub_login_payload)
+    headers_a = {"Authorization": f"Bearer {alice_key}", "Content-Type": "application/json"}
 
     app_env = _read_env_local(REPO_APP)
     bob_email = os.environ.get("BOB_EMAIL") or app_env.get("FLOWPAD_CLOUD_USER_EMAIL")
@@ -64,29 +74,23 @@ async def test_message_into_existing_conversation_sends_no_new_invite(
     if not bob_email or not bob_pw:
         pytest.skip("missing BOB_EMAIL/BOB_PW and flowpad-app fallback credentials")
 
-    async with httpx.AsyncClient(timeout=5.0) as h:
-        r = await h.post(f"{hub_base_url}/api/v1/login", json={"email": bob_email, "password": bob_pw})
-        r.raise_for_status()
-        bob_data = r.json()["data"]
-        bob_token = bob_data.get("api_key") or bob_data["token"]
-    headers_b = {"Authorization": f"Bearer {bob_token}", "Content-Type": "application/json"}
+    # Bob is never driven here — the grant is read from alice's roster, so his
+    # credentials are only needed to prove the account resolves. (The old
+    # version logged him in to read HIS pending-invitation list; that list is
+    # empty by design now.)
 
-    # Baseline: invitations bob already has (other tests may have left some).
-    base = await _count_invitations(hub_base_url, headers_b, bob_email)
-
-    # First contact: share creates exactly ONE new invitation.
+    # First contact: share grants bob exactly ONE role on the conversation.
     title = f"share-existing-{int(time.time())}-{uuid.uuid4().hex[:6]}"
     conv = Conversation(title=title)
     await conv.share(recipients=[bob_email])
-    after_share = await _count_invitations(hub_base_url, headers_b, bob_email)
-    assert after_share == base + 1, f"share should add exactly one invite ({base} → {after_share})"
+    after_share = await _count_grants(hub_base_url, headers_a, conv.id, bob_email)
+    assert after_share == 1, f"share should grant bob exactly one role, got {after_share}"
 
-    # Now send several messages into the SAME conversation. None may mint an
-    # invitation — this is the converged-share invariant (re-share threads in).
+    # Now send several messages into the SAME conversation. None may re-grant —
+    # this is the converged-share invariant (re-share threads in).
     await conv.add_message("first reply")
     await conv.add_message("second reply")
-    after_msgs = await _count_invitations(hub_base_url, headers_b, bob_email)
+    after_msgs = await _count_grants(hub_base_url, headers_a, conv.id, bob_email)
     assert after_msgs == after_share, (
-        f"messages into an existing conversation must not mint invites "
-        f"({after_share} → {after_msgs})"
+        f"messages into an existing conversation must not re-grant ({after_share} → {after_msgs})"
     )
