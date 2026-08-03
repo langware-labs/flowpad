@@ -1,11 +1,5 @@
 import { Button } from '@src/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { notify } from '@src/notifications';
 import { FolderOpen, Loader2 } from 'lucide-react';
@@ -70,7 +64,9 @@ export function NewProjectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle><Trans>New project</Trans></DialogTitle>
+          <DialogTitle>
+            <Trans>New project</Trans>
+          </DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           <Input
@@ -84,7 +80,7 @@ export function NewProjectDialog({
           />
           <div className="flex gap-2">
             <Input
-              placeholder={t`Parent folder`}
+              placeholder={t`Project folder`}
               value={parent}
               onChange={(e) => setParent(e.target.value)}
               className="flex-1 font-mono text-xs"

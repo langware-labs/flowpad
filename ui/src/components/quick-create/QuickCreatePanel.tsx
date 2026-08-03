@@ -21,7 +21,7 @@ import { cn } from '@src/lib/utils';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openNewChat } from '@src/navigation/open-new-chat';
-import { KeyRound, MessageSquarePlus } from 'lucide-react';
+import { KeyRound, Loader2, MessageSquarePlus } from 'lucide-react';
 import {
   Fragment,
   forwardRef,
@@ -55,16 +55,21 @@ const TILE_TIP_DELAY = 500;
 /** Icon components accept a className — both lucide icons and the brand SVGs. */
 type TileIcon = ComponentType<{ className?: string }>;
 
-type DesktopTileProps = {
+export type DesktopTileProps = {
   Icon: TileIcon;
   label: string;
   iconClassName?: string;
   disabled?: boolean;
+  /** In-flight: show a spinner instead of `Icon` and refuse clicks. Lives here
+   *  rather than in each caller so every tile spells "working" the same way. */
+  loading?: boolean;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'disabled'>;
 
 /**
- * A single desktop-style icon tile — sized to match the home MiniDesktop /
- * favorites grid (square tile, icon over a single-line label).
+ * The square icon-over-label tile every "New …" affordance on project home
+ * uses — sized to match the home MiniDesktop / favorites grid. Exported so
+ * sibling surfaces (hub home's projects and desktops) present the same shape
+ * rather than inventing a second look for the same kind of act.
  *
  * Forwards its ref and spreads the rest of its props onto the real `<button>`
  * so it can be a Radix `asChild` trigger: `Slot` clones this element to merge
@@ -75,30 +80,34 @@ type DesktopTileProps = {
  * natively disabled button drops pointer events, which would take its WikiTip
  * with it, and an unavailable tile is exactly the one worth explaining.
  */
-const DesktopTile = forwardRef<HTMLButtonElement, DesktopTileProps>(function DesktopTile(
-  { Icon, label, iconClassName, disabled, className, onClick, ...rest },
+export const DesktopTile = forwardRef<HTMLButtonElement, DesktopTileProps>(function DesktopTile(
+  { Icon, label, iconClassName, disabled, loading, className, onClick, ...rest },
   ref,
 ) {
+  const inert = disabled || loading;
   return (
     <button
       ref={ref}
       type="button"
-      onClick={disabled ? undefined : onClick}
-      aria-disabled={disabled || undefined}
+      onClick={inert ? undefined : onClick}
+      aria-disabled={inert || undefined}
+      aria-busy={loading || undefined}
       aria-label={label}
       className={cn(
         'flex h-20 w-20 flex-col items-center justify-center gap-1.5 rounded-md border border-border bg-background text-muted-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        disabled
+        inert
           ? 'cursor-not-allowed opacity-50'
           : 'cursor-pointer hover:border-primary hover:bg-accent hover:text-foreground',
         className,
       )}
       {...rest}
     >
-      <Icon className={cn('h-7 w-7', iconClassName)} />
-      <span className="w-full truncate px-1 text-center text-[10px] font-medium leading-tight">
-        {label}
-      </span>
+      {loading ? (
+        <Loader2 className={cn('h-7 w-7 animate-spin', iconClassName)} />
+      ) : (
+        <Icon className={cn('h-7 w-7', iconClassName)} />
+      )}
+      <span className="w-full truncate px-1 text-center text-[10px] font-medium leading-tight">{label}</span>
     </button>
   );
 });
@@ -135,12 +144,7 @@ export function TileSection({
 function TippedTile({ wikiword, ...tile }: { wikiword: string } & DesktopTileProps) {
   const { t } = useLingui();
   return (
-    <WikiTip
-      wikiword={wikiword}
-      label={tile.label}
-      buttonLabel={t`What is ${tile.label}?`}
-      openDelay={TILE_TIP_DELAY}
-    >
+    <WikiTip wikiword={wikiword} label={tile.label} buttonLabel={t`What is ${tile.label}?`} openDelay={TILE_TIP_DELAY}>
       {/* Every tile is a tag (its wikiword): highlightable by journeys and
           click-observable on the EventBus, with no per-tile wiring. */}
       <DesktopTile {...tagAttrs(wikiword, 'button')} {...tile} />
@@ -304,10 +308,12 @@ export function QuickCreatePanel({
   const assetItems = useMemo(() => {
     const serverCreatable = new Set(serverTypes.filter((t) => t.creatable).map((t) => t.type_name));
     const enforce = serverCreatable.size > 0;
-    return QUICK_CREATE_REGISTRY.filter((d) => !HIDDEN_ASSET_TYPES.has(d.type))
-      .filter((d) => !enforce || serverCreatable.has(d.type))
-      // Glyph from the backend type registry — never a per-type icon chosen here.
-      .map((d) => ({ type: d.type, Icon: iconForType(d.type) as TileIcon, label: d.label, wikiword: d.wikiword }));
+    return (
+      QUICK_CREATE_REGISTRY.filter((d) => !HIDDEN_ASSET_TYPES.has(d.type))
+        .filter((d) => !enforce || serverCreatable.has(d.type))
+        // Glyph from the backend type registry — never a per-type icon chosen here.
+        .map((d) => ({ type: d.type, Icon: iconForType(d.type) as TileIcon, label: d.label, wikiword: d.wikiword }))
+    );
   }, [serverTypes]);
 
   const sessionTiles: Array<{
