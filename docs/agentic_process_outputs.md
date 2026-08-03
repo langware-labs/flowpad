@@ -118,10 +118,39 @@ artifact.
 
 | Field | Meaning |
 |---|---|
-| `asset_ref` | path of the asset it references |
+| `asset_ref` | path of the asset it references, when it is a file |
+| `target_type_id` | TypeId of the entity it references, when it is a row |
 | `generated_by` | TypeId of the producing run (`agentic_process-<uuid>`) |
 | `kind` | open dot-path ontology (`content.file`, `application.web`, …) |
 | `owns_asset_ref = False` | it references a path; it never *owns* one |
+
+### Two ways to address a deliverable
+
+`asset_ref` assumes every deliverable is a file. Not all are. A message an agent
+**sent**, a task it opened, a record it created — these are rows with no path,
+and addressing one by `asset_ref` yields the empty string, i.e. an artifact
+pointing at nothing, indistinguishable from a bug.
+
+`target_type_id` is the identity form, and it is the primary one for anything
+the agent produced *in the system* rather than *on disk*. Both may be set: a
+file-backed entity has a path and an identity, and the identity is the exact
+address where the path still has to be resolved back through
+`Entity.get_by_asset_ref`. The bus lane carries `target_type_id` for the same
+reason it carries `asset_ref` — an event a subscriber cannot resolve is noise.
+
+### `kind` comes from the entity, not from the address
+
+`register-artifact` used to infer a binary — `application.web` for a webapp
+target, `content.file` for everything else. That erases what the referenced
+entity already knows: a `source_item` **is** `content.message.email`, and no
+amount of looking at its (nonexistent) path recovers that.
+
+So an entity that declares its own ontology `kind` is the authority, and the
+binary is the fallback for targets that declare nothing. This is what lets a
+consumer tell *"this run sent a message"* from *"this run wrote a file"* off the
+`artifact.created` event alone, with no follow-up fetch. A malformed kind falls
+back rather than failing the registration — losing a label is not worth losing
+the record of a deliverable.
 
 **`owns_asset_ref` is not a detail.** `Entity.get_by_asset_ref` enrols every type
 declaring an `asset_ref` and returns the first hit in registry order, and its
@@ -143,8 +172,17 @@ scope — never from the body**, and presents it unless `--no-show`.
 
 Not every file an agent writes is an artifact. Nothing is inferred from writes
 and nothing is swept off disk: an artifact is a distinct deliverable — an app, a
-plan, a document, a skill — that the user asked for or that is the direct product
-of what they asked for.
+plan, a document, a skill, **a message it sent** — that the user asked for or
+that is the direct product of what they asked for.
+
+The counter-example worth keeping in mind is the **run receipt**: the small JSON
+a worker leaves in `execution/output/` so its caller can read a structured
+result (`ingest/drivers/agent.py`'s `sent.json`). That is a *return value*, not
+a deliverable — nobody asked for it, and registering it would put a file nobody
+wants to open in the run's output list. The email send registers the
+`source_item` it created, and leaves its receipt alone. The platform has no
+named contract for run return values; the receipt convention is local to its
+driver.
 
 `flow show` remains the display-only verb. The two are distinct contracts:
 `show` changes display focus, `artifact` records durable provenance and may also

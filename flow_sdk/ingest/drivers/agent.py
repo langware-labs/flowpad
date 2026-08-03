@@ -255,6 +255,9 @@ class AgentDriver:
             external_id=str(receipt.get("external_id") or receipt.get("draft_id") or ""),
             status=SendStatus.DRAFTED if drafted else SendStatus.SENT,
             recorded=bool(receipt.get("recorded")),
+            # Absent when registration failed on its own — which the prompt
+            # deliberately does NOT let cancel a send that already happened.
+            artifact_id=str(receipt.get("artifact_id") or ""),
         )
 
     async def _run_send_agent(
