@@ -10,8 +10,9 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 const REVIEW_BRANCH = 'flowpad/install-cloudnsite-agents';
 const INSTALL_NAME = 'CloudNSite Agents';
 const JOURNEY_NAME = 'Start using CloudNSite agents';
-const CONTENT_REPO_DEFAULT = 'https://github.com/langware-labs/cloudnsite-support';
-const CONTENT_BRANCH_DEFAULT = 'main';
+const CONTENT_REPO_DEFAULT = 'https://github.com/langware-labs/langware-support';
+const CONTENT_BRANCH_DEFAULT = 'demo/cloudnsite-agents';
+const QUEUE_PROJECT_ID_DEFAULT = '4f9f1fd1-39b6-5465-9c20-cb4c59b08318';
 const GITHUB_API_DEFAULT = 'https://api.github.com';
 const RUN_MARKER = process.env.CLOUDNSITE_E2E_RUN_ID?.trim() || `cloudnsite-e2e-${Date.now()}-${process.pid}`;
 const UUID_V4_OR_V5 = /^[0-9a-f]{8}-[0-9a-f]{4}-[45][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -26,7 +27,7 @@ const rawEnv = {
   contentBranch: process.env.CLOUDNSITE_E2E_CONTENT_BRANCH?.trim() || CONTENT_BRANCH_DEFAULT,
   targetRepo: process.env.CLOUDNSITE_E2E_TARGET_REPO?.trim() ?? '',
   targetBranch: process.env.CLOUDNSITE_E2E_TARGET_BRANCH?.trim() ?? '',
-  queueProjectId: process.env.CLOUDNSITE_E2E_QUEUE_PROJECT_ID?.trim() ?? '',
+  queueProjectId: process.env.CLOUDNSITE_E2E_QUEUE_PROJECT_ID?.trim() || QUEUE_PROJECT_ID_DEFAULT,
   githubToken: process.env.CLOUDNSITE_E2E_GITHUB_TOKEN ?? '',
   githubApiUrl: process.env.CLOUDNSITE_E2E_GITHUB_API_URL?.trim() || GITHUB_API_DEFAULT,
   storageState: process.env.CLOUDNSITE_E2E_STORAGE_STATE?.trim() ?? '',
@@ -36,7 +37,6 @@ const REQUIRED_INPUTS = [
   'CLOUDNSITE_E2E_HUB_URL',
   'CLOUDNSITE_E2E_TARGET_REPO',
   'CLOUDNSITE_E2E_TARGET_BRANCH',
-  'CLOUDNSITE_E2E_QUEUE_PROJECT_ID',
   'CLOUDNSITE_E2E_GITHUB_TOKEN',
 ] as const;
 
