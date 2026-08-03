@@ -100,6 +100,17 @@ interface ApiEnvelope<T> {
   data: T;
 }
 
+interface RepoAccessSummary {
+  full_name?: string;
+  role?: 'admin' | 'write' | 'read';
+}
+
+interface RepoAccessPage {
+  repos?: RepoAccessSummary[];
+  next_page?: number | null;
+  page?: number;
+}
+
 interface RunResult {
   workspace: Page;
   nodeId: string;
@@ -280,6 +291,63 @@ async function authenticate(context: BrowserContext, config: Config): Promise<vo
   ]);
 }
 
+async function assertTargetRepoSelectable(context: BrowserContext, config: Config): Promise<void> {
+  const currentUserResponse = await context.request.get(`${config.hubUrl}/api/v1/current-user`);
+  expect(currentUserResponse.status(), 'authenticated Flowpad user resolves before repository selection').toBe(200);
+  const currentUserEnvelope = (await currentUserResponse.json()) as ApiEnvelope<{ id?: string }>;
+  assertKnownSecretsAbsent(config, 'current-user response', currentUserEnvelope);
+  expect(currentUserEnvelope.status, 'current-user returns SUCCESS').toBe('SUCCESS');
+  expectEntityId(currentUserEnvelope.data?.id, 'authenticated Flowpad user id');
+
+  const target = config.targetRepo.toLowerCase();
+  let pageNumber = 1;
+  let targetRepo: RepoAccessSummary | undefined;
+
+  for (let pageCount = 0; pageCount < 50; pageCount += 1) {
+    const repoResponse = await context.request.post(
+      `${config.hubUrl}/api/v1/graph/user/${currentUserEnvelope.data.id}/repo/list`,
+      { data: { provider: 'github', page: pageNumber } },
+    );
+    if (repoResponse.status() !== 200) {
+      throw new Error(
+        `CloudNSite E2E repo preflight failed: the authenticated Hub user cannot list GitHub repositories ` +
+          `(HTTP ${repoResponse.status()}). Connect GitHub for this Flowpad account and grant write access to ` +
+          `${config.targetRepo}.`,
+      );
+    }
+
+    const envelope = (await repoResponse.json()) as Partial<ApiEnvelope<RepoAccessPage>>;
+    assertKnownSecretsAbsent(config, 'repo list response', envelope);
+    if (envelope.status !== 'SUCCESS' || !Array.isArray(envelope.data?.repos)) {
+      throw new Error(
+        `CloudNSite E2E repo preflight failed: the authenticated Hub user has no usable GitHub connection. ` +
+          `Connect GitHub for this Flowpad account and grant write access to ${config.targetRepo}.`,
+      );
+    }
+
+    targetRepo = envelope.data.repos.find((repo) => repo.full_name?.toLowerCase() === target);
+    if (targetRepo) break;
+
+    const nextPage = envelope.data.next_page;
+    if (typeof nextPage !== 'number' || nextPage <= pageNumber) break;
+    pageNumber = nextPage;
+  }
+
+  if (!targetRepo) {
+    throw new Error(
+      `CloudNSite E2E repo preflight failed: ${config.targetRepo} is not visible to the authenticated Hub user. ` +
+        `Grant that user's GitHub connection write access to the fixture repository.`,
+    );
+  }
+  if (targetRepo.role !== 'admin' && targetRepo.role !== 'write') {
+    throw new Error(
+      `CloudNSite E2E repo preflight failed: ${config.targetRepo} is ${targetRepo.role ?? 'not writable'} for the ` +
+        `authenticated Hub user; the install target requires write or admin access.`,
+    );
+  }
+  logPhase('target repository write access verified');
+}
+
 async function runInstall(
   page: Page,
   context: BrowserContext,
@@ -300,6 +368,7 @@ async function runInstall(
   context.on('page', watchConsole);
 
   await authenticate(context, config);
+  await assertTargetRepoSelectable(context, config);
   await page.goto(installUrl(config));
 
   const title = `Where do you want to install ${INSTALL_NAME}?`;
