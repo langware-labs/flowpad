@@ -42,6 +42,13 @@ let _attached = false;
  * Expected `to_entity` format: `{recordType}-{uuid}` (canonical TypeId).
  */
 function handleDataOp(toEntity: string, op: string, data?: Record<string, unknown>): void {
+  // child_* ops are NOT about the addressed record. Their envelope is inverted:
+  // `to_entity` is the parent and `data` is the child. `conversation` is a
+  // registered fs-record type, so without this guard a parent-addressed
+  // child_created would be dispatched to conversation subscribers as "this
+  // record changed", carrying an unrelated child as its payload.
+  if (op === 'child_created' || op === 'child_updated' || op === 'child_deleted') return;
+
   // Parse record type from the entity identifier
   const dashIdx = toEntity.indexOf('-');
   if (dashIdx < 0) return;
