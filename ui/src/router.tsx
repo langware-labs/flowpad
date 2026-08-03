@@ -17,6 +17,7 @@ import InvitePage from '@src/pages/entry/InvitePage';
 import WrongAccountPage from '@src/pages/entry/WrongAccountPage';
 import MessageLanding from '@src/pages/entry/MessageLanding';
 import LaunchLanding from '@src/pages/entry/LaunchLanding';
+import InstallLanding from '@src/pages/entry/InstallLanding';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
 import {
@@ -124,6 +125,7 @@ export const router = createBrowserRouter(
       {/* One-click "try this repo": /launch?repo=<git url> asks before it
           launches anything (the link came from outside the app). */}
       <Route path="launch" element={<LaunchLanding />} />
+      <Route path="install" element={<InstallLanding />} />
       {/* Root dock routes - use default agent from bootstrap */}
       <Route
         path="dock"

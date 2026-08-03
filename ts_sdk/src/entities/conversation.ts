@@ -411,10 +411,16 @@ export interface StartHelpdeskTicketResult {
  *  resolved helpdesk project (resolved server-side from ``/version``). The
  *  backend routes through the hub and materializes the conversation locally,
  *  then returns its id for navigation. Requires cloud login. */
-export async function startHelpdeskTicket(text: string): Promise<StartHelpdeskTicketResult> {
+export async function startHelpdeskTicket(
+  text: string,
+  projectId?: string | null,
+): Promise<StartHelpdeskTicketResult> {
   const action = new ActionInfo('helpdesk-start-ticket', null, null, 'POST');
-  action.bodyParameters = { text };
-  const res = await dataManager.callAction<{ text: string }, StartHelpdeskTicketResult>(action);
+  action.bodyParameters = { text, project_id: projectId ?? '' };
+  const res = await dataManager.callAction<
+    { text: string; project_id: string },
+    StartHelpdeskTicketResult
+  >(action);
   return res!;
 }
 
@@ -453,10 +459,10 @@ export interface ListHelpdeskTicketsResult {
 /** Staff triage queue: list the helpdesk project's tickets, including ones the
  *  caller hasn't picked up (which don't otherwise appear in their inbox).
  *  Members-only on the hub. */
-export async function listHelpdeskTickets(): Promise<ListHelpdeskTicketsResult> {
+export async function listHelpdeskTickets(projectId?: string | null): Promise<ListHelpdeskTicketsResult> {
   const action = new ActionInfo('helpdesk-tickets-list', null, null, 'POST');
-  action.bodyParameters = {};
-  const res = await dataManager.callAction<Record<string, never>, ListHelpdeskTicketsResult>(action);
+  action.bodyParameters = { project_id: projectId ?? '' };
+  const res = await dataManager.callAction<{ project_id: string }, ListHelpdeskTicketsResult>(action);
   return res ?? { tickets: [], project_id: '' };
 }
 

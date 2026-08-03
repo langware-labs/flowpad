@@ -27,9 +27,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from flow_sdk.app.actions import flow_message_action as fma
 from flow_sdk.app.actions import helpdesk_action as hda
 from flow_sdk.app.actions.flow_message_action import HelpdeskTarget
 from flow_sdk.builtin.conversation import ConversationKind
+from flow_sdk.builtin.helpdesk import Helpdesk
 from flow_sdk.builtin.project import HelpdeskConfig, Project
 from flow_sdk.config import helpdesk_project_dir, helpdesk_root, is_system_project_path
 from flow_sdk.fs_store.path_utils import is_protected_path, is_valid_project_cwd
@@ -175,6 +177,37 @@ async def test_ensure_still_fails_when_there_is_no_desk_at_all() -> None:
     assert resp.status == ApiResponseStatus.FAIL.value
     # 502: the upstream hub advertises no desk; our backend is healthy.
     assert resp.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_project_adopted_helpdesk_routes_to_manifest_queue(tmp_path) -> None:
+    """A content Project's manifest, not the Hub default, owns its tickets."""
+    import json
+
+    queue_id = "0f92d293-4535-5bd6-be4e-c1404b94f13b"
+    portal_root = tmp_path / "cloudnsite-support"
+    desk_dir = portal_root / "agentic-assets" / "helpdesk" / "cloudnsite"
+    desk_dir.mkdir(parents=True)
+    (desk_dir / "helpdesk.json").write_text(
+        json.dumps({"display_name": "CloudNSite Support", "desk_project_id": queue_id}),
+        encoding="utf-8",
+    )
+    portal = Project(name="cloudnsite-support", fs_storage_mount_path=str(portal_root))
+    target = Project(
+        name="customer",
+        fs_storage_mount_path=str(tmp_path / "customer"),
+        legacy_include_dirs_=[str(portal_root)],
+    )
+    desk = Helpdesk(name="CloudNSite Support", asset_ref=str(desk_dir))
+    await portal.save()
+    await target.save()
+    await desk.save()
+
+    with patch.object(fma, "_hub_default_helpdesk", AsyncMock()) as fallback:
+        resolved = await fma.resolve_helpdesk(target.id)
+
+    assert resolved == HelpdeskTarget(queue_id, None)
+    fallback.assert_not_awaited()
 
 
 # ── portal branding ─────────────────────────────────────────────────────────

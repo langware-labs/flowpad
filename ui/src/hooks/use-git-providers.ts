@@ -1,5 +1,6 @@
 import {
   type BranchSummary,
+  createPrivateRepo,
   type GitOrigin,
   getBranches,
   getInvitations,
@@ -21,6 +22,16 @@ export function useGitRepos(provider: GitProvider, enabled: boolean = true) {
     queryFn: () => getRepos(provider),
     staleTime: REPO_STALE_MS,
     enabled,
+  });
+}
+
+export function useCreateGitRepo(provider: GitProvider) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => createPrivateRepo(provider, name),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['git-repos', provider] });
+    },
   });
 }
 

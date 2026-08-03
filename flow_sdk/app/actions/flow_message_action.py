@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, NamedTuple, Optional
 from flow_sdk import inbox
 from flow_sdk._compat import UTC
 from flow_sdk.actions.action_registry import action
+from flow_sdk.app.helpdesk_resolver import resolve_adopted_helpdesk
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import BodyStatus, DeliveryStatus, FlowMessage, FlowMessageKind
 from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
@@ -1368,8 +1369,8 @@ async def resolve_helpdesk(project_id: Optional[str] = None) -> Optional[Helpdes
 
     Resolution order — nearest desk wins, so support chains terminate:
 
-    1. the project's own helpdesk pointer, when it names one *(phase 2; the
-       pointer field does not exist yet, so this arm never fires today)*
+    1. the Helpdesk manifest indexed from the Project root or one of its direct
+       context folders
     2. the hub's default desk (``/version``)
 
     Deliberately NOT memoized. The pre-rename implementation cached one id for
@@ -1379,7 +1380,10 @@ async def resolve_helpdesk(project_id: Optional[str] = None) -> Optional[Helpdes
     ``get_info`` is a single cheap GET on a cold path (ticket open / queue
     poll), so re-resolving is the correct trade.
     """
-    # (1) reserved for the per-project pointer; falls through until it exists.
+    if project_id:
+        adopted = await resolve_adopted_helpdesk(project_id)
+        if adopted is not None:
+            return HelpdeskTarget(adopted.queue_project_id)
     return await _hub_default_helpdesk()
 
 
@@ -1405,7 +1409,8 @@ async def helpdesk_start_ticket() -> ApiResponse:
         if not text:
             return ApiFailResponse(message="text is required")
 
-        target = await resolve_helpdesk()
+        project_id = (body.get("project_id") or "").strip()
+        target = await resolve_helpdesk(project_id or None)
         if not target:
             return ApiFailResponse(message="Help desk is unavailable on this hub")
         helpdesk_id = target.project_id
@@ -1516,7 +1521,9 @@ async def helpdesk_tickets_list() -> ApiResponse:
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="No authenticated user in request context")
 
-        target = await resolve_helpdesk()
+        body = await request_info.get_post_data() or {}
+        project_id = (body.get("project_id") or "").strip()
+        target = await resolve_helpdesk(project_id or None)
         if not target:
             return ApiFailResponse(message="Help desk is unavailable on this hub")
         helpdesk_id = target.project_id

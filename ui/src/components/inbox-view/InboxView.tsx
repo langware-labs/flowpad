@@ -30,6 +30,7 @@ import {
   declineInvitation,
   deleteArchivedConversations,
   deleteConversation,
+  dataContext,
   dismissConversation,
   fetchConversations,
   isInvitationGoneError,
@@ -838,7 +839,7 @@ export function InboxView() {
   const loadHelpdeskTickets = useCallback(async () => {
     setHelpdeskLoading(true);
     try {
-      const res = await listHelpdeskTickets();
+      const res = await listHelpdeskTickets(dataContext.project?.id);
       setHelpdeskTickets(res.tickets ?? []);
     } catch (err) {
       console.error('[inbox] failed to load help desk tickets', err);
