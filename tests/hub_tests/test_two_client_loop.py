@@ -33,6 +33,7 @@ singleton, so it doesn't support two simultaneous identities in a single
 process. This test uses HTTP via ``httpx`` and per-token raw
 ``websockets.connect()`` for each identity's WS subscription.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -45,7 +46,6 @@ from pathlib import Path
 import httpx
 import pytest
 import websockets
-
 
 REPO_OSS = Path(__file__).resolve().parents[2]
 REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
@@ -126,7 +126,7 @@ async def test_two_client_loop(hub_base_url):
             json={},
         )
         r.raise_for_status()
-        print(f"join: alice is now a participant")
+        print("join: alice is now a participant")
 
         # 2) alice invites bob via the canonical /members endpoint.
         members_url = f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/members"
@@ -143,57 +143,31 @@ async def test_two_client_loop(hub_base_url):
         r.raise_for_status()
         print(f"invite: sent to {bob_email}")
 
-        # 3) bob lists pending invitations (filtered by his email).
+        # 3) the invite ALREADY granted bob's role — there is nothing pending to
+        # accept. ``_maybe_auto_accept`` grants at invite time for every target
+        # type (hub 74694a30d) and marks the invitation accepted as it does, so
+        # ``/invitation/pending`` is empty by design. Assert the grant landed by
+        # reading the roster instead.
         r = await h.get(
-            f"{hub_base_url}/api/v1/graph/invitation/pending",
-            headers=headers_b,
+            f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/members",
+            headers=headers_a,
         )
         r.raise_for_status()
-        pending = r.json()["data"] or []
-        # Pick the most recent invitation that matches this conversation's
-        # InvitedThrough edge. Since pending may include older invites from
-        # prior runs, we just take the first matching by recipient_email.
-        matching = [inv for inv in pending if inv.get("recipient_email") == bob_email]
-        assert matching, f"bob's pending invitations list is empty; got {pending}"
-        # Newest first; the just-created invite should be at the top.
-        matching.sort(key=lambda x: x.get("created_date") or "", reverse=True)
-        invitation_id = matching[0]["id"]
-        print(f"pending: bob has {len(matching)} invitation(s); accepting {invitation_id[:8]}")
+        roster = r.json()["data"] or []
+        bob_rows = [m for m in roster if (m.get("user_email") or "").lower() == bob_email.lower()]
+        assert bob_rows, f"invite did not grant bob a role; roster={roster}"
+        print(f"grant: bob is {bob_rows[0].get('role')} / {bob_rows[0].get('status')}")
 
-        # 4) bob accepts via the canonical /graph/members/accept endpoint.
-        # It is browser-oriented and ALWAYS 302s (→login = accept did NOT run;
-        # →/conversation|/flow_message = success, role granted server-side).
-        # Mirror the SDK's handle_invitation_accept: do NOT follow; 200/409 or
-        # a conversation/flow_message redirect = success, login redirect =
-        # failure. (raise_for_status + .json() rejected the by-design 302.)
-        r = await h.get(
-            f"{hub_base_url}/api/v1/graph/members/accept",
-            headers=headers_b,
-            params={"invitation-id": invitation_id},
-        )
-        if r.status_code in (301, 302, 303, 307, 308):
-            location = (r.headers.get("location") or r.headers.get("Location") or "")
-            assert "login" not in location.lower(), (
-                f"accept redirected to login (unauthenticated); location={location[:200]}"
-            )
-            assert ("/conversation/" in location) or ("/flow_message/" in location), (
-                f"accept returned an unexpected redirect location={location[:200]}"
-            )
-            print(f"accept: ok (302 → {location[:80]})")
-        else:
-            r.raise_for_status()
-            print(f"accept: ok ({r.json().get('message','')[:80]})")
-
-        # 5) bob joins → adds himself to participants so fanout reaches him.
+        # 4) bob joins → adds himself to participants so fanout reaches him.
         r = await h.post(
             f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/join",
             headers=headers_b,
             json={},
         )
         r.raise_for_status()
-        print(f"join: bob is now a participant")
+        print("join: bob is now a participant")
 
-    log: list[tuple[float, str, str, int]] = []   # (t, who, kind, n)
+    log: list[tuple[float, str, str, int]] = []  # (t, who, kind, n)
     done = asyncio.Event()
     ready = {"alice": asyncio.Event(), "bob": asyncio.Event()}
 
@@ -250,7 +224,7 @@ async def test_two_client_loop(hub_base_url):
     bob_task = asyncio.create_task(loop("bob", bob_tok, bob_id))
 
     await asyncio.wait_for(asyncio.gather(ready["alice"].wait(), ready["bob"].wait()), timeout=5.0)
-    await asyncio.sleep(0.1)   # tiny grace period after the WS upgrade
+    await asyncio.sleep(0.1)  # tiny grace period after the WS upgrade
 
     # Alice ignites.
     t0 = time.monotonic()
@@ -262,11 +236,9 @@ async def test_two_client_loop(hub_base_url):
             json={"text": "1"},
         )
 
-    timed_out = False
     try:
         await asyncio.wait_for(done.wait(), timeout=10.0)
     except asyncio.TimeoutError:
-        timed_out = True
         print(f"\n  TIMEOUT — last log entry: {log[-1] if log else '(empty)'}")
     finally:
         for t in (alice_task, bob_task):
@@ -277,7 +249,7 @@ async def test_two_client_loop(hub_base_url):
     print()
     print(f"{'dt_ms':>8}  {'who':>5}  {'kind':>6}  {'n':>3}")
     for t, name, kind, n in log:
-        print(f"{(t-t0)*1000:>8.1f}  {name:>5}  {kind:>6}  {n:>3}")
+        print(f"{(t - t0) * 1000:>8.1f}  {name:>5}  {kind:>6}  {n:>3}")
 
     nums_rx_a = sorted({n for _, name, k, n in log if name == "alice" and k == "rx"})
     nums_rx_b = sorted({n for _, name, k, n in log if name == "bob" and k == "rx"})

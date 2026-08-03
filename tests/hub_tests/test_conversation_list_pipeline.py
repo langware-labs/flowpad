@@ -22,6 +22,7 @@ allocates unique ids to avoid interference.
 Per project policy: no mocks, 30s per test. Each test is independent;
 ordering is alphabetical (pytest default).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,7 +34,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-
 
 # The cycle env holds the second hub user's (bob's) credentials. The sibling
 # flowpad-app checkout remains a local-development fallback.
@@ -73,7 +73,10 @@ def _stash_credentials(hub_login_payload: dict) -> str:
 
 
 async def _hub_create_conversation(
-    hub_base_url: str, api_key: str, *, title: str | None = None,
+    hub_base_url: str,
+    api_key: str,
+    *,
+    title: str | None = None,
 ) -> str:
     """Create a Conversation on the hub via share() so the caller is a
     participant and add_message works. Returns the conversation id."""
@@ -88,13 +91,17 @@ async def _hub_create_conversation(
     async with httpx.AsyncClient(timeout=5.0) as h:
         await h.post(
             f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/join",
-            headers=headers, json={},
+            headers=headers,
+            json={},
         )
     return conv.id  # type: ignore[return-value]
 
 
 async def _hub_add_message(
-    hub_base_url: str, api_key: str, conv_id: str, text: str,
+    hub_base_url: str,
+    api_key: str,
+    conv_id: str,
+    text: str,
 ) -> str:
     """Append a FlowMessage on the hub. Returns the new fm_id."""
     headers = {"Authorization": f"Bearer {api_key}"}
@@ -112,7 +119,9 @@ async def _hub_add_message(
 
 
 async def _hub_get_conversation(
-    hub_base_url: str, api_key: str, conv_id: str,
+    hub_base_url: str,
+    api_key: str,
+    conv_id: str,
 ) -> dict:
     headers = {"Authorization": f"Bearer {api_key}"}
     async with httpx.AsyncClient(timeout=5.0) as h:
@@ -190,8 +199,7 @@ async def test_list_merges_hub_conversations(hub_base_url, hub_login_payload):
     from flow_sdk.app.actions.flow_message_action import handle_conversation_list
     from flow_sdk.builtin.conversation import Conversation
 
-    conv_id = await _hub_create_conversation(hub_base_url, api_key,
-                                             title=f"merge-{uuid.uuid4()}")
+    conv_id = await _hub_create_conversation(hub_base_url, api_key, title=f"merge-{uuid.uuid4()}")
     someone = await _local_user_typeid()
     resp = await handle_conversation_list(someone)
     assert resp.status == "SUCCESS"
@@ -211,10 +219,10 @@ async def test_message_count_delta_dispatches_bg_fetch(hub_base_url, hub_login_p
     FlowMessage materializes locally within a short polling window."""
     api_key = _stash_credentials(hub_login_payload)
     from flow_sdk.app.actions.flow_message_action import handle_conversation_list
+
+    conv_id = await _hub_create_conversation(hub_base_url, api_key, title=f"delta-{uuid.uuid4()}")
     from flow_sdk.builtin.flow_message import FlowMessage
 
-    conv_id = await _hub_create_conversation(hub_base_url, api_key,
-                                             title=f"delta-{uuid.uuid4()}")
     fm_id = await _hub_add_message(hub_base_url, api_key, conv_id, "delta msg")
     assert fm_id
 
@@ -222,8 +230,9 @@ async def test_message_count_delta_dispatches_bg_fetch(hub_base_url, hub_login_p
     resp = await handle_conversation_list(someone)
     assert resp.status == "SUCCESS"
     data = resp.data or {}
-    assert conv_id in data.get("bg_fetch_dispatched", []), \
+    assert conv_id in data.get("bg_fetch_dispatched", []), (
         f"expected {conv_id[:8]} in bg_fetch_dispatched={data.get('bg_fetch_dispatched')}"
+    )
 
     # Background fetcher races the test — poll for the FM to land.
     materialized = await _poll_until(
@@ -243,8 +252,7 @@ async def test_updated_date_bumped_on_append(hub_base_url, hub_login_payload):
     every time a FlowMessage is appended."""
     api_key = _stash_credentials(hub_login_payload)
 
-    conv_id = await _hub_create_conversation(hub_base_url, api_key,
-                                             title=f"upd-{uuid.uuid4()}")
+    conv_id = await _hub_create_conversation(hub_base_url, api_key, title=f"upd-{uuid.uuid4()}")
     pre = await _hub_get_conversation(hub_base_url, api_key, conv_id)
     pre_updated = pre.get("updated_date") or ""
 
@@ -253,8 +261,9 @@ async def test_updated_date_bumped_on_append(hub_base_url, hub_login_payload):
 
     post = await _hub_get_conversation(hub_base_url, api_key, conv_id)
     post_updated = post.get("updated_date") or ""
-    assert post_updated > pre_updated, \
+    assert post_updated > pre_updated, (
         f"updated_date should advance after append: pre={pre_updated!r} post={post_updated!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -268,13 +277,12 @@ async def test_single_flight_per_conversation(hub_base_url, hub_login_payload):
     only one background fetcher running at a time per conv id."""
     api_key = _stash_credentials(hub_login_payload)
     from flow_sdk.app.actions.flow_message_action import (
-        handle_conversation_list,
         _conv_fetch_locks,
+        handle_conversation_list,
     )
     from flow_sdk.builtin.flow_message import FlowMessage
 
-    conv_id = await _hub_create_conversation(hub_base_url, api_key,
-                                             title=f"sf-{uuid.uuid4()}")
+    conv_id = await _hub_create_conversation(hub_base_url, api_key, title=f"sf-{uuid.uuid4()}")
     fm_ids = []
     for i in range(3):
         fm_ids.append(await _hub_add_message(hub_base_url, api_key, conv_id, f"sf-{i}"))
@@ -313,11 +321,12 @@ async def test_invitations_through_same_pipeline(hub_base_url, hub_login_payload
     call. The hub embeds the real Conversation in the invitation response;
     placeholder-id synthesis was removed in the conv refactor — we look up
     the conversation by its embedded id instead."""
-    api_key = _stash_credentials(hub_login_payload)
+    # Called for its side effect — persists the recipient's creds so
+    # handle_conversation_list runs as them. The returned key is unused:
+    # the sender is driven through the SDK below, not over raw HTTP.
+    _stash_credentials(hub_login_payload)
     from flow_sdk.app.actions.flow_message_action import handle_conversation_list
     from flow_sdk.builtin.conversation import Conversation
-    from flow_sdk.builtin.invitation import Invitation
-    from flow_sdk.builtin.flow_message import FlowMessage
 
     # The logged-in user (the stashed hub_login_payload user) must be the
     # RECIPIENT of a pending invitation for handle_conversation_list to
@@ -346,19 +355,25 @@ async def test_invitations_through_same_pipeline(hub_base_url, hub_login_payload
     # the invitation is addressed to us (alice). We restore alice's creds
     # before driving handle_conversation_list.
     from tests.hub_tests._local_login import login_as
+
     async with httpx.AsyncClient(timeout=5.0) as h:
-        r = await h.post(f"{hub_base_url}/api/v1/login",
-                         json={"email": sender_email, "password": sender_pw})
+        r = await h.post(f"{hub_base_url}/api/v1/login", json={"email": sender_email, "password": sender_pw})
         if r.status_code != 200:
             pytest.skip(f"sender (bob) hub login failed: {r.status_code} {r.text[:200]}")
         sender_data = r.json()["data"]
-    sender_key = login_as(sender_data)
+    login_as(sender_data)
 
     conv = Conversation(title=f"inv-{uuid.uuid4()}")
     await conv.share(recipients=[recipient_email])
     if not getattr(conv, "remote", False):
-        pytest.skip("sender share() did not reach the hub; can't exercise invitation pipeline")
+        pytest.skip("sender share() did not reach the hub; can't exercise the share pipeline")
     conv_id = conv.id
+    # Put a REAL message in it. The pointer assertion below used to be satisfied
+    # by the synthesized invitation notice; with the hub granting outright there
+    # is no notice, and a conversation nobody has written to legitimately has
+    # zero messages — so asserting pointers without sending one would only ever
+    # re-test the placeholder.
+    await conv.add_message("hello from the sender")
 
     # Restore the recipient's (alice's) credentials — handle_conversation_list
     # must run as the invited user so its invitation/pending fetch returns the
@@ -368,28 +383,42 @@ async def test_invitations_through_same_pipeline(hub_base_url, hub_login_payload
     someone = await _local_user_typeid()
     await handle_conversation_list(someone)
 
-    invs = await Invitation.get_all({})
-    pending = [i for i in (invs or []) if not i.accepted and i.recipient_email == recipient_email]
-    assert pending, "no pending Invitation row materialized locally"
+    # Await the DETACHED per-conversation message drain that conversation-list
+    # spawns at the end (``_dispatch_conversation_message_fetches`` →
+    # ``conv-msg-drain-<n>``). The messages land there, not in the foreground
+    # pass. This used to pass without waiting only because the invitation branch
+    # materialized its preview message SYNCHRONOUSLY — with the hub granting
+    # outright there is no invitation, so the drain IS the path now. Awaiting
+    # the task is deterministic; no sleep to tune.
+    while True:
+        drains = [t for t in asyncio.all_tasks() if (t.get_name() or "").startswith("conv-msg-drain-")]
+        if not drains:
+            break
+        await asyncio.gather(*drains, return_exceptions=True)
 
-    # The hub now embeds the real Conversation. Look it up by the conv id
-    # we created above.
+    # NOT asserted: a pending Invitation row. With
+    # ``invitation_auto_accept_on_invite`` (hub default True since 74694a30d)
+    # the invite grants the role and marks itself accepted in the same breath,
+    # so ``/invitation/pending`` is empty and there is nothing for
+    # ``_materialize_invitation`` to materialize. That branch is NOT dead — the
+    # flag is configurable, and a hub with it off still produces pending rows —
+    # it is simply unreachable against this hub's config, so asserting it here
+    # would be testing the hub's settings rather than our pipeline. Its own
+    # coverage lives in tests/unit/test_invitation_membership_gate_and_prune.py
+    # and tests/unit/test_invitation_synth_no_fake_sender.py.
+    #
+    # What this test still proves, and what actually matters to the product:
+    # a conversation someone else shared with us shows up locally, with its
+    # messages, off the back of one ``conversation-list`` call.
     conv = await Conversation.get_one({"id": conv_id})
-    assert conv is not None, "embedded Conversation not materialized locally"
+    assert conv is not None, "shared conversation not materialized locally"
 
     ptrs = []
     try:
-        ptrs = [
-            {"typeid": x["typeid"], "ts": x["ts"]}
-            for x in __import__("json").loads(conv.message_ids or "[]")
-        ]
+        ptrs = [{"typeid": x["typeid"], "ts": x["ts"]} for x in __import__("json").loads(conv.message_ids or "[]")]
     except Exception:
         ptrs = []
     assert ptrs, f"conversation {conv.id} has no message pointers"
-    first_id = ptrs[0]["typeid"].split("-", 1)[-1].lstrip("@")
-    first = await FlowMessage.get_one({"id": first_id})
-    assert first is not None and first.kind == "invitation", \
-        f"first msg kind expected 'invitation', got {first.kind if first else None}"
 
 
 # ---------------------------------------------------------------------------
@@ -404,8 +433,7 @@ async def test_no_dupes_on_repeated_calls(hub_base_url, hub_login_payload):
     from flow_sdk.app.actions.flow_message_action import handle_conversation_list
     from flow_sdk.builtin.conversation import Conversation
 
-    await _hub_create_conversation(hub_base_url, api_key,
-                                   title=f"dup-{uuid.uuid4()}")
+    await _hub_create_conversation(hub_base_url, api_key, title=f"dup-{uuid.uuid4()}")
     someone = await _local_user_typeid()
 
     await handle_conversation_list(someone)
@@ -415,8 +443,7 @@ async def test_no_dupes_on_repeated_calls(hub_base_url, hub_login_payload):
     await handle_conversation_list(someone)
     count3 = len(await Conversation.get_all({}))
 
-    assert count1 == count2 == count3, \
-        f"row counts diverged across idempotent calls: {count1} {count2} {count3}"
+    assert count1 == count2 == count3, f"row counts diverged across idempotent calls: {count1} {count2} {count3}"
 
 
 # ---------------------------------------------------------------------------
@@ -431,6 +458,7 @@ async def test_ws_bridge_still_drives_realtime(hub_base_url, hub_login_payload):
     methods are present and the install() entry-point is callable. Catch-up
     via conversation-list is defensive, not replacement."""
     from flow_sdk.cloud_client.hub_bridge import HubWsBridge
+
     assert callable(getattr(HubWsBridge, "_handle_conversation_op", None))
     assert callable(getattr(HubWsBridge, "_handle_flow_message_op", None))
     assert callable(getattr(HubWsBridge, "install", None))
@@ -449,8 +477,7 @@ async def test_hub_unavailable_returns_local(hub_base_url, hub_login_payload, mo
     from flow_sdk.config import default_service_config
 
     # Point at a guaranteed-dead port; restore via monkeypatch teardown.
-    monkeypatch.setattr(default_service_config, "flowpad_hub_url",
-                        "http://127.0.0.1:1")
+    monkeypatch.setattr(default_service_config, "flowpad_hub_url", "http://127.0.0.1:1")
 
     someone = await _local_user_typeid()
     resp = await handle_conversation_list(someone)
@@ -493,8 +520,9 @@ async def test_hub_401_surfaces_clearly(hub_base_url, monkeypatch):
     # might respond 401 in slightly different shapes across versions, so
     # we accept either auth_required=True OR hub_reachable=False here —
     # both are correct UI signals.
-    assert (data.get("auth_required") is True) or (data.get("hub_reachable") is False), \
+    assert (data.get("auth_required") is True) or (data.get("hub_reachable") is False), (
         f"expected auth_required=True or hub_reachable=False, got {data}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -509,10 +537,9 @@ async def test_count_mismatch_equal_date_dispatches_fetch_and_heals(hub_base_url
     authoritative reconcile must rebuild message_ids/message_count."""
     api_key = _stash_credentials(hub_login_payload)
     from flow_sdk.app.actions.flow_message_action import handle_conversation_list
-    from flow_sdk.builtin.conversation import Conversation, _PROJECTION_SENTINEL
+    from flow_sdk.builtin.conversation import _PROJECTION_SENTINEL, Conversation
 
-    conv_id = await _hub_create_conversation(hub_base_url, api_key,
-                                             title=f"incident-{uuid.uuid4()}")
+    conv_id = await _hub_create_conversation(hub_base_url, api_key, title=f"incident-{uuid.uuid4()}")
     await _hub_add_message(hub_base_url, api_key, conv_id, "m1")
     await _hub_add_message(hub_base_url, api_key, conv_id, "m2")
 
@@ -521,12 +548,14 @@ async def test_count_mismatch_equal_date_dispatches_fetch_and_heals(hub_base_url
     # Wait for the initial materialization to settle (count lands via the
     # background fetch → projection).
     settled = await _poll_until(
-        lambda: Conversation.get_one({"id": conv_id}), timeout=10.0,
+        lambda: Conversation.get_one({"id": conv_id}),
+        timeout=10.0,
     )
     assert settled is not None
 
     healthy = await _poll_until(
-        _projected(conv_id, expected_count=2), timeout=10.0,
+        _projected(conv_id, expected_count=2),
+        timeout=10.0,
     )
     assert healthy, f"initial sync never projected 2 messages for {conv_id[:8]}"
 
@@ -541,11 +570,13 @@ async def test_count_mismatch_equal_date_dispatches_fetch_and_heals(hub_base_url
 
     resp = await handle_conversation_list(someone)
     data = resp.data or {}
-    assert conv_id in data.get("bg_fetch_dispatched", []), \
+    assert conv_id in data.get("bg_fetch_dispatched", []), (
         f"count mismatch must dispatch a fetch; got {data.get('bg_fetch_dispatched')}"
+    )
 
     healed = await _poll_until(
-        _projected(conv_id, expected_count=2), timeout=10.0,
+        _projected(conv_id, expected_count=2),
+        timeout=10.0,
     )
     assert healed, f"projection not healed for {conv_id[:8]}"
 
@@ -573,12 +604,12 @@ async def test_created_date_adopted_from_hub(hub_base_url, hub_login_payload):
     from flow_sdk.app.actions.flow_message_action import handle_conversation_list
     from flow_sdk.builtin.conversation import Conversation
 
-    conv_id = await _hub_create_conversation(hub_base_url, api_key,
-                                             title=f"birthday-{uuid.uuid4()}")
+    conv_id = await _hub_create_conversation(hub_base_url, api_key, title=f"birthday-{uuid.uuid4()}")
     someone = await _local_user_typeid()
     await handle_conversation_list(someone)
     local = await _poll_until(
-        lambda: Conversation.get_one({"id": conv_id}), timeout=10.0,
+        lambda: Conversation.get_one({"id": conv_id}),
+        timeout=10.0,
     )
     assert local is not None
 
@@ -592,8 +623,9 @@ async def test_created_date_adopted_from_hub(hub_base_url, hub_login_payload):
 
     await handle_conversation_list(someone)
     repaired = await Conversation.get_one({"id": conv_id})
-    assert Conversation._as_datetime(repaired.created_date) == hub_created, \
+    assert Conversation._as_datetime(repaired.created_date) == hub_created, (
         f"created_date not repaired: {repaired.created_date} != hub {hub_created}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -606,12 +638,12 @@ async def test_fetched_at_stamped_and_not_outbound(hub_base_url, hub_login_paylo
     from flow_sdk.app.actions.flow_message_action import handle_conversation_list
     from flow_sdk.builtin.conversation import Conversation
 
-    conv_id = await _hub_create_conversation(hub_base_url, api_key,
-                                             title=f"fetched-{uuid.uuid4()}")
+    conv_id = await _hub_create_conversation(hub_base_url, api_key, title=f"fetched-{uuid.uuid4()}")
     someone = await _local_user_typeid()
     await handle_conversation_list(someone)
     local = await _poll_until(
-        lambda: Conversation.get_one({"id": conv_id}), timeout=10.0,
+        lambda: Conversation.get_one({"id": conv_id}),
+        timeout=10.0,
     )
     assert local is not None
     assert local.fetched_at is not None, "hub-refreshed row must carry fetched_at"

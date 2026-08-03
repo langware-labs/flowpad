@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
 import pytest
-
 
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _LOCAL_HUB_STATUS: tuple[bool, str] | None = None
@@ -115,14 +115,16 @@ def isolated_hub_keyring(monkeypatch):
     backend before any flow_sdk import, so even if a test bypassed this
     fixture the real OS keychain would still be unreachable.
     """
+    import uuid as _uuid
+
     import keyring
     import keyring.errors
-    import uuid as _uuid
 
     instance_name = f"test-{_uuid.uuid4().hex[:8]}"
     monkeypatch.setenv("FLOW_INSTANCE", instance_name)
 
     from flow_sdk.instance_settings import reset_instance_settings
+
     reset_instance_settings()
 
     store: dict[tuple[str, str], str] = {}
@@ -143,6 +145,7 @@ def isolated_hub_keyring(monkeypatch):
     monkeypatch.setattr(keyring, "delete_password", delete_password)
 
     from flow_sdk.cli.auth.secrets import enable_secrets
+
     enable_secrets()
 
     yield store
@@ -174,6 +177,54 @@ def _login(hub_base_url: str, *, expires_in_seconds: int | None = None) -> dict:
     return body["data"]
 
 
+def _email_from_env_local(repo: Path) -> str | None:
+    env_local = repo / ".env.local"
+    if not env_local.exists():
+        return None
+    for line in env_local.read_text().splitlines():
+        line = line.strip()
+        if line.startswith("FLOWPAD_CLOUD_USER_EMAIL") and "=" in line:
+            return line.partition("=")[2].strip().strip("\"'").lower() or None
+    return None
+
+
+def _resolve_identities() -> tuple[str | None, str | None]:
+    """Resolve 'alice' and 'bob' exactly as the two-user tests do.
+
+    Alice is NOT simply ``FLOWPAD_CLOUD_USER_EMAIL``: ``test_two_client_loop``
+    reads ``ALICE_EMAIL`` else this repo's ``.env.local`` FILE, so exporting the
+    env var alone leaves that test pointed at whatever the file says. Resolving
+    both the same way the tests do is the whole point — a guard that checks a
+    different source than the code it guards will happily pass while the tests
+    it protects are collapsed onto one account.
+    """
+    oss = Path(__file__).resolve().parents[2]
+    app = oss.parent / "flowpad-app"
+    alice = (os.environ.get("ALICE_EMAIL") or _email_from_env_local(oss) or "").strip().lower()
+    bob = (os.environ.get("BOB_EMAIL") or _email_from_env_local(app) or "").strip().lower()
+    return (alice or None, bob or None)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _two_distinct_identities():
+    """Skip the tier when 'alice' and 'bob' resolve to the SAME hub account.
+
+    The two-user tests read alice from this repo's ``.env.local`` (via
+    ``FLOWPAD_CLOUD_USER_EMAIL``) and bob from the sibling flowpad-app checkout.
+    Point both at one address — easy to do while setting up a two-user rig — and
+    every share invites the conversation's own owner, so the roster and the
+    pending list are legitimately empty and a dozen tests go red for a reason
+    that has nothing to do with the code under test. Announce it as a skip.
+    """
+    alice, bob = _resolve_identities()
+    if alice and bob and alice == bob:
+        pytest.skip(
+            f"hub tier needs two distinct identities — alice and bob both resolve to {alice}. "
+            "Set ALICE_EMAIL/ALICE_PW and BOB_EMAIL/BOB_PW to different accounts "
+            "(or fix FLOWPAD_CLOUD_USER_EMAIL in this repo's .env.local)."
+        )
+
+
 @pytest.fixture()
 def hub_login_payload(hub_base_url) -> dict:
     return _login(hub_base_url)
@@ -182,3 +233,25 @@ def hub_login_payload(hub_base_url) -> dict:
 @pytest.fixture()
 def short_lived_hub_login_payload(hub_base_url) -> dict:
     return _login(hub_base_url, expires_in_seconds=5)
+
+
+@pytest.fixture(autouse=True)
+async def _close_shared_hub_client():
+    """Drop the process-shared hub client between tests.
+
+    ``hub_http._shared_client`` is a module global deliberately kept alive across
+    calls so the TLS context and connection pool survive (see ``_hub_client``).
+    Inside one pytest process that global outlives the test that created it, and
+    its internals end up bound to that test's loop — the next test's ``hub_get``
+    then dies with ``<asyncio.locks.Event ...> is bound to a different event
+    loop``, which ``hub_get`` swallows as a non-fatal warning. The caller sees
+    ``hub_reachable=False``, degrades to local-only, and asserts against a hub it
+    never actually reached: a green-or-red outcome decided by test ORDER.
+
+    Closing it per test costs one TLS handshake and makes the tier order-
+    independent. Same call the backend makes on shutdown (``server/app.py``).
+    """
+    yield
+    from flow_sdk.cloud_client.transport.hub_http import close_hub_client
+
+    await close_hub_client()
