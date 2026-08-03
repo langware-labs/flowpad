@@ -1,21 +1,12 @@
 import { SessionInput } from '@src/components/session-input/session-input';
 import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/components/home-customization';
-import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
-import { normalizePath, useProjectOpener } from '@src/components/open-project-component/use-open-project';
-import { NewProjectDialog, NewProjectFromGitDialog, useGitCloneDialogSubmit } from '@src/components/project-selector';
-import { notify } from '@src/notifications';
-import { dataContext } from '@sdk';
+import { ProjectStarterActions } from '@src/components/project-starter-actions';
 import { useAuth } from '@sdk/react/hooks';
-import { FolderOpen, FolderPlus, FolderSearch, GitBranch, Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
 import { VIBE_MODEL_DEFAULT, type VibeModelTier } from './vibe-model-select';
 import { VibeRecentSessions } from './vibe-recent-sessions';
-
-/** Shared ghost-button style for the two under-input project actions. */
-const PROJECT_ACTION_BUTTON_CLASS =
-  'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50';
 
 /**
  * Vibe fallback shown when no build session is active — i.e. we're in Vibe mode
@@ -31,35 +22,8 @@ export function VibeNewChat() {
   const startVibe = useStartVibeSession();
   const [draft, setDraft] = useState('');
   const model: VibeModelTier = VIBE_MODEL_DEFAULT;
-  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
-  const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
-  const [isGitProjectOpen, setIsGitProjectOpen] = useState(false);
-  const [isOpeningFolder, setIsOpeningFolder] = useState(false);
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
   const { homeTitle, homeBackgroundUrl } = useHomeCustomization();
-  const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
-
-  // On vibe home, opening/switching a project just changes the project and
-  // lands on the fresh vibe home (never resumes an old build process) — that
-  // decision lives inside useProjectOpener, derived from the current surface.
-  const { openProjectFolder, pickFolder, ensureProjectAndSetContext, openExistingProject, computeNode } =
-    useProjectOpener({
-      onError: (message) => notify.error({ title: message }),
-    });
-
-  // Clone + open, with this surface's landing: from home we stay home (on the
-  // fresh vibe hero for the new project) rather than jumping to its dock.
-  const handleCreateGitProject = useGitCloneDialogSubmit(computeNode?.id, openExistingProject);
-
-  const handleOpenFolder = async () => {
-    // openProjectFolder never throws — it routes failures through onError.
-    setIsOpeningFolder(true);
-    try {
-      await openProjectFolder();
-    } finally {
-      setIsOpeningFolder(false);
-    }
-  };
 
   return (
     <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4">
@@ -96,66 +60,9 @@ export function VibeNewChat() {
             onSubmit={(msg, files) => startVibe(msg, files, model)}
           />
         </div>
-        <div className="flex w-full flex-wrap items-center gap-1.5 self-start">
-          <button
-            type="button"
-            onClick={() => void handleOpenFolder()}
-            disabled={isOpeningFolder}
-            className={PROJECT_ACTION_BUTTON_CLASS}
-            data-testid="vibe-open-project-folder"
-          >
-            {isOpeningFolder ? (
-              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-            ) : (
-              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-            )}
-            <Trans>Open folder</Trans>
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsProjectModalOpen(true)}
-            className={PROJECT_ACTION_BUTTON_CLASS}
-            data-testid="vibe-open-existing-project"
-          >
-            <FolderSearch className="h-3.5 w-3.5 shrink-0" />
-            <Trans>Open existing project</Trans>
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsNewProjectOpen(true)}
-            className={PROJECT_ACTION_BUTTON_CLASS}
-            data-testid="vibe-new-project"
-          >
-            <FolderPlus className="h-3.5 w-3.5 shrink-0" />
-            <Trans>New project</Trans>
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsGitProjectOpen(true)}
-            className={PROJECT_ACTION_BUTTON_CLASS}
-            data-testid="vibe-open-from-git"
-          >
-            <GitBranch className="h-3.5 w-3.5 shrink-0" />
-            <Trans>Open from git</Trans>
-          </button>
-        </div>
+        <ProjectStarterActions className="self-start" />
         <VibeRecentSessions />
       </div>
-      <OpenProjectComponent open={isProjectModalOpen} onOpenChange={setIsProjectModalOpen} />
-      <NewProjectDialog
-        open={isNewProjectOpen}
-        onOpenChange={setIsNewProjectOpen}
-        defaultParentFolder={defaultWorkspacePath}
-        onPickFolder={() => pickFolder(defaultWorkspacePath || undefined)}
-        onCreate={async (name, parentFolder) => {
-          await ensureProjectAndSetContext(`${normalizePath(parentFolder)}/${name}`);
-        }}
-      />
-      {/* Mounted only while open — keeps the repo/branch pickers out of the
-          home route's eager module graph. */}
-      {isGitProjectOpen && (
-        <NewProjectFromGitDialog open onOpenChange={setIsGitProjectOpen} onCreate={handleCreateGitProject} />
-      )}
     </div>
   );
 }

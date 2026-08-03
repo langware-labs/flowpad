@@ -7,7 +7,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useProjects } from '@src/hooks/use-projects';
 import { FolderOpen } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
-import { QuickCreatePanel, type PanelHandlers } from './QuickCreatePanel';
+import { useIsAdvanced } from '@src/components/view-mode';
+import { ALL_SECTIONS, QuickCreatePanel, type PanelHandlers } from './QuickCreatePanel';
 
 interface QuickCreateModalProps {
   open: boolean;
@@ -29,6 +30,14 @@ export function QuickCreateModal({ open, onOpenChange, panelProps }: QuickCreate
   const { project: currentProject } = useProject();
   const { projects, isLoading: isLoadingProjects } = useProjects();
   const [projectModalOpen, setProjectModalOpen] = useState(false);
+  // Context folders are an Advanced concept — the section is dropped entirely
+  // in Standard/Vibe rather than reserved, so the dialog closes the gap instead
+  // of leaving a hole where the tiles were.
+  const isAdvanced = useIsAdvanced();
+  const sections = useMemo(
+    () => (isAdvanced ? ALL_SECTIONS : ALL_SECTIONS.filter((s) => s !== 'folder')),
+    [isAdvanced],
+  );
 
   const projectItems = useMemo(() => projectEntitiesToSelectorItems(projects), [projects]);
 
@@ -46,7 +55,13 @@ export function QuickCreateModal({ open, onOpenChange, panelProps }: QuickCreate
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-md">
+        {/* Capped and scrollable: with four tile groups this dialog is taller
+            than a ~670px window, and an uncapped DialogContent (centered by a
+            -50% transform, overflow visible) simply hangs off both edges — the
+            last group's tiles land outside the viewport where nothing can click
+            them. grid-rows-[auto,minmax(0,1fr)] lets the header stay put while
+            the panel takes the scroll. */}
+        <DialogContent className="max-h-[85vh] max-w-md grid-rows-[auto,minmax(0,1fr)] overflow-hidden">
           <DialogHeader>
             <DialogTitle>
               <Trans>Create new</Trans>
@@ -70,7 +85,9 @@ export function QuickCreateModal({ open, onOpenChange, panelProps }: QuickCreate
             </DialogDescription>
           </DialogHeader>
 
-          <QuickCreatePanel {...panelProps} onDone={() => onOpenChange(false)} />
+          <div className="min-h-0 overflow-y-auto pr-1">
+            <QuickCreatePanel {...panelProps} sections={sections} onDone={() => onOpenChange(false)} />
+          </div>
         </DialogContent>
       </Dialog>
 

@@ -888,8 +888,13 @@ msgid "Add comment..."
 msgstr ""
 
 #: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Add context folder"
 msgstr ""
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+#~ msgid "Add Context Folder"
+#~ msgstr ""
 
 #: src/components/label-select.tsx
 #~ msgid "Add custom label..."
@@ -1316,6 +1321,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Annotations"
+msgstr ""
+
+#: src/components/assets/context-folder-sources.tsx
+msgid "Another Flowpad project — its folder becomes context for this one"
 msgstr ""
 
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
@@ -2559,6 +2568,10 @@ msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Clone & Open"
+msgstr ""
+
+#: src/components/assets/context-folder-sources.tsx
+msgid "Clone a git repo (or reuse a local clone) as context"
 msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -5075,8 +5088,8 @@ msgid "Every skill, agent, spec, and document this project ships."
 msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Everyone the project is shared with gets it"
-msgstr ""
+#~ msgid "Everyone the project is shared with gets it"
+#~ msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Everything you can reach, as a live graph."
@@ -5972,6 +5985,10 @@ msgstr ""
 msgid "Folder name"
 msgstr ""
 
+#: src/components/assets/context-folder-sources.tsx
+msgid "Folder on this computer"
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Folder…"
 msgstr ""
@@ -6143,8 +6160,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Git folder"
-msgstr ""
+#~ msgid "Git folder"
+#~ msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Git is required to share files"
@@ -6164,6 +6181,7 @@ msgid "Git repo (optional)"
 msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/assets/context-folder-sources.tsx
 msgid "Git repository"
 msgstr ""
 
@@ -8467,7 +8485,6 @@ msgstr ""
 
 #: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/quick-create/DesktopSurface.tsx
-#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New folder"
 msgstr ""
@@ -8499,8 +8516,8 @@ msgstr ""
 
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
+#: src/components/project-starter-actions/project-starter-actions.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "New project"
 msgstr ""
 
@@ -9752,8 +9769,8 @@ msgid "Only harness entries here — enable “Show all” to view them."
 msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Only on this machine — never shared"
-msgstr ""
+#~ msgid "Only on this machine — never shared"
+#~ msgstr ""
 
 #: src/components/chat-input.tsx
 #~ msgid "Only one ZIP file can be uploaded at a time"
@@ -9891,7 +9908,7 @@ msgstr ""
 msgid "Open dot-path ontology; custom descendants are welcome."
 msgstr ""
 
-#: src/pages/flow-page/vibe-new-chat.tsx
+#: src/components/project-starter-actions/project-starter-actions.tsx
 msgid "Open existing project"
 msgstr ""
 
@@ -9920,8 +9937,7 @@ msgstr ""
 #~ msgid "Open Flowpad docs"
 #~ msgstr ""
 
-#: src/components/assets/context-folder-sources.tsx
-#: src/pages/flow-page/vibe-new-chat.tsx
+#: src/components/project-starter-actions/project-starter-actions.tsx
 msgid "Open folder"
 msgstr ""
 
@@ -9933,7 +9949,7 @@ msgstr ""
 msgid "Open folder: {projectPath}"
 msgstr ""
 
-#: src/pages/flow-page/vibe-new-chat.tsx
+#: src/components/project-starter-actions/project-starter-actions.tsx
 msgid "Open from git"
 msgstr ""
 
@@ -10562,6 +10578,10 @@ msgstr ""
 msgid "Pick a project first — an OAuth token is granted to a project, not to the app."
 msgstr ""
 
+#: src/components/assets/context-folder-sources.tsx
+msgid "Pick any folder already on this machine"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Pick one to get started — it only takes a few seconds."
 #~ msgstr ""
@@ -10734,6 +10754,10 @@ msgstr ""
 msgid "Plugins"
 msgstr ""
 
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Point this project at another folder so agents can read it as background — code, docs or assets that live outside the project, without copying anything."
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Port"
 msgstr ""
@@ -10874,6 +10898,7 @@ msgstr ""
 msgid "Progress"
 msgstr ""
 
+#: src/components/assets/context-folder-sources.tsx
 #: src/components/code-editor/CodeEditor.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
@@ -10914,8 +10939,8 @@ msgid "Project Commands (.claude/commands/)"
 msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Project folder"
-msgstr ""
+#~ msgid "Project folder"
+#~ msgstr ""
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "Project Folder"
@@ -13797,6 +13822,10 @@ msgstr ""
 msgid "status: {0}"
 msgstr ""
 
+#: src/components/assets/context-folder-sources.tsx
+msgid "Stays on this machine only — the folder is never sent to anyone, even people this project is shared with."
+msgstr ""
+
 #: src/components/workflow-runner/detail/StepDetailPane.tsx
 #~ msgid "Step at line {0}"
 #~ msgstr ""
@@ -14774,6 +14803,10 @@ msgid "Transcripts"
 msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
+msgid "Travels with the project — everyone it is shared with gets this folder as context too."
+msgstr ""
+
+#: src/components/assets/context-folder-sources.tsx
 #~ msgid "Travels with the project when shared"
 #~ msgstr ""
 
@@ -15516,6 +15549,11 @@ msgstr ""
 #. placeholder {0}: tile.label
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "What is {0}?"
+msgstr ""
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "What is a context folder?"
 msgstr ""
 
 #: src/components/status-bar.tsx
