@@ -132,7 +132,13 @@ function getViewModeOverrideSnapshot(): ViewMode | null {
   return dockViewModeOverride;
 }
 
-function getEffectiveViewMode(): ViewMode {
+/**
+ * The active mode for non-React callers — the same value `useViewMode()`
+ * resolves to, without the hook. Non-component modules (e.g. the `notify()`
+ * dispatcher, which gates alert toasts on Dev) must read it through here so
+ * they see a dock-URL override, not just the persisted preference.
+ */
+export function getEffectiveViewMode(): ViewMode {
   return dockViewModeOverride ?? getViewMode();
 }
 
@@ -162,9 +168,11 @@ let lastMenuVisibleSent: boolean | null = null;
 function syncDesktopMenu(val: ViewMode): void {
   const visible = isAdvancedMode(val);
   if (visible === lastMenuVisibleSent) return;
-  const setMenuVisible = (window as unknown as {
-    electronAPI?: { setMenuVisible?: (visible: boolean) => void };
-  }).electronAPI?.setMenuVisible;
+  const setMenuVisible = (
+    window as unknown as {
+      electronAPI?: { setMenuVisible?: (visible: boolean) => void };
+    }
+  ).electronAPI?.setMenuVisible;
   if (typeof setMenuVisible !== 'function') return;
   lastMenuVisibleSent = visible;
   setMenuVisible(visible);
