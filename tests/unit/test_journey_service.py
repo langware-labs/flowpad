@@ -377,3 +377,58 @@ async def test_23_completed_project_journey_falls_back_to_system(tmp_path, only_
 
     j = await Journey.auto_launch_for(USER)
     assert j is not None and j.journey_id == system.id
+
+
+@async_context
+async def test_24_project_scoped_auto_launch_excludes_unrelated_projects(
+    tmp_path, only_my_journeys
+):
+    from flow_sdk.builtin.project import Project
+
+    project_a_root = tmp_path / "project-a"
+    project_b_root = tmp_path / "project-b"
+    content_root = tmp_path / "cloudnsite-content"
+    project_a_root.mkdir()
+    project_b_root.mkdir()
+    content_root.mkdir()
+    cloudnsite = await _make_auto(
+        content_root / "agentic-assets" / "journey", "cloudnsite-onboarding", "cloud"
+    )
+    unrelated = await _make_auto(
+        project_b_root / "agentic-assets" / "journey", "other-onboarding", "other"
+    )
+    project_a = Project(
+        name="project-a",
+        fs_storage_mount_path=str(project_a_root),
+        legacy_include_dirs_=[str(content_root)],
+    )
+    project_b = Project(name="project-b", fs_storage_mount_path=str(project_b_root))
+    await project_a.save()
+    await project_b.save()
+
+    selected = await Journey.auto_launch_for(USER, project_id=project_a.id)
+
+    assert selected is not None and selected.journey_id == cloudnsite.id
+    assert await unrelated.progress(USER) is None
+
+
+@async_context
+async def test_25_project_manifest_selects_its_named_auto_launch_journey(
+    tmp_path, only_my_journeys
+):
+    from flow_sdk.builtin.project import Project
+
+    root = tmp_path / "project-with-two-journeys"
+    (root / ".flowpad").mkdir(parents=True)
+    (root / ".flowpad" / "bootstrap.json").write_text(
+        json.dumps({"autolaunch_journey": "preferred"}), encoding="utf-8"
+    )
+    other = await _make_auto(root / "agentic-assets" / "journey", "other", "other")
+    preferred = await _make_auto(root / "agentic-assets" / "journey", "preferred", "preferred")
+    project = Project(name="two", fs_storage_mount_path=str(root))
+    await project.save()
+
+    selected = await Journey.auto_launch_for(OTHER, project_id=project.id)
+
+    assert selected is not None and selected.journey_id == preferred.id
+    assert await other.progress(OTHER) is None
