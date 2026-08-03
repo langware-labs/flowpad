@@ -210,7 +210,11 @@ class Entity(DBEntity):
     visitor_role: str | None = EntityField(default=None, sharing=Sharing.PRIVATE)
     labels: List[str] | None = APIField(default=None)
     tags: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
-    system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project", sharing=Sharing.PRIVATE)
+    system: bool = APIField(
+        default=False,
+        description="True when this entity belongs to an SDK-shipped system project",
+        sharing=Sharing.PRIVATE,
+    )
     remote: bool = APIField(
         sharing=Sharing.PRIVATE,
         default=False,
@@ -442,7 +446,8 @@ class Entity(DBEntity):
     )
     project_id: str | None = APIField(
         sharing=Sharing.PRIVATE,
-        default=None, description="Owning project id, when applicable. Stamped at index time from the FSRef walk."
+        default=None,
+        description="Owning project id, when applicable. Stamped at index time from the FSRef walk.",
     )
 
     def __init__(self, **kwargs):
@@ -2073,20 +2078,16 @@ class Entity(DBEntity):
         the every-sync re-convergence path does zero writes when converged.
         Returns True iff the edge exists after the call.
         """
-        from flow_sdk.db.rolerelationship import RoleRelationship  # noqa: PLC0415
-
         parent = await self.parent()
         if parent is None:
             return False
-        rel_filter = QueryFilter(
-            type=RoleRelationship.get_type(),
-            match=ExpressionNode(op=QueryOp.EQ, operands=["is_child", True]),
-        )
-        rels = await self.get_incoming_relationships(rel_filter)
-        parent_tid = str(parent.typeid)
-        if any(str(r.from_typeid) == parent_tid for r in rels if r.from_typeid):
+        if await parent._has_child_edge(self):
             return True
-        await parent.attach_child(self)
+        # notify=False: re-convergence is not an arrival. This seam runs on every
+        # live op and every catch-up pass, so the FIRST call is the only one that
+        # could be a real edge — and that one is announced by whoever created the
+        # child, not by the healer.
+        await parent.attach_child(self, notify=False)
         return True
 
     @classmethod
