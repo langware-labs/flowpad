@@ -378,8 +378,28 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
   }
 
-  private onDataOp(typeIdStr: string, op: DataOpType, data: IEntity) {
+  private onDataOp(typeIdStr: string, op: DataOpType, data: IEntity, fromEntityStr?: string | null) {
     const typeId = new TypeId(typeIdStr);
+
+    // child_* INVERTS the envelope: `typeId` is the PARENT, `data` is the CHILD.
+    // Handle and return before the switch below, which assumes they are the same
+    // entity — falling through would run castAndDeepAssign(child) into the
+    // parent's cache ref and corrupt it.
+    //
+    // A child op means "your subtree changed"; the authoritative membership is
+    // the parent's own projection, so refresh the parent rather than trying to
+    // splice the child in. That refetch is what makes a synced message appear in
+    // an already-open conversation without a manual Refresh.
+    if (op === 'child_created' || op === 'child_updated' || op === 'child_deleted') {
+      emitEntityTag(typeId, op, (data as IEntity) ?? null);
+      if (this.hasRef(typeId)) {
+        void this.fetchByTypeId(typeId).catch(() => {
+          /* best-effort wake-up: the next read repairs a failed refresh */
+        });
+      }
+      return;
+    }
+
     // Skip non-entity data (e.g., flow report elements that have element_type but no id)
     // These are handled by other listeners (e.g., instruction trace handlers)
     // Note: delete operations may have null/empty data, so we only skip for non-delete ops
