@@ -3,7 +3,7 @@
  *
  * Verifies:
  *   1. attach writes the asset into cli_config + embedded_asset_refs + additional_dirs,
- *      and materializes the agent .md under <record_dir>/assets/.claude/agents/<name>.md.
+ *      and materializes the SubAgent .md under <record_dir>/assets/.claude/agents/<name>.md.
  *   2. list returns the current ref set.
  *   3. detach reverses (ref gone, file gone).
  *
@@ -23,17 +23,16 @@ const TIMEOUT = 60_000;
 
 describe('AgenticProcess embeddedAssets (HTTP round-trip)', () => {
   let workdir: string;
-  let agentDir: string;
   let agentName: string;
   let agentMdPath: string;
-  let agentRecordId: string | null = null;
+  let subagentRecordId: string | null = null;
 
   beforeEach(async (ctx: any) => {
     await apiTestSetup(getTestSignupInfo(), ctx.task.name);
 
     workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'embedded-assets-test-'));
 
-    // Place an agent under ~/.claude/agents/<name>.md so AgentRecord.load_agent
+    // Place a SubAgent under ~/.claude/agents/<name>.md so the SubAgent loader
     // finds it by name. The uuid id is derived from the source_path (stable),
     // so the test can compute the same ref the server will resolve.
     agentName = `ea-test-agent-${Date.now()}`;
@@ -51,7 +50,6 @@ You are a test agent.
 `,
       'utf-8',
     );
-    agentDir = homeClaude;
   });
 
   afterEach(async () => {
@@ -60,35 +58,35 @@ You are a test agent.
     // Same for the temp workdir under $TMPDIR.
     try { fs.unlinkSync(agentMdPath); } catch { /* ignore */ }
     try { fs.rmSync(workdir, { recursive: true, force: true }); } catch { /* ignore */ }
-    // The forced reindex created a real agent entity for the fixture — delete
+    // The forced reindex created a real SubAgent entity for the fixture — delete
     // it too, or every run leaks an `ea-test-agent-<ts>` into the asset list.
     // fs-records DELETE = full purge (entity row + FTS + shadow record dir).
-    if (agentRecordId) {
-      await apiClient.delete(`/graph/compute_node/@local/fs-records/agent/${agentRecordId}`);
-      agentRecordId = null;
+    if (subagentRecordId) {
+      await apiClient.delete(`/graph/compute_node/@local/fs-records/subagent/${subagentRecordId}`);
+      subagentRecordId = null;
     }
   });
 
-  it('attach → list → detach round-trip for an agent by uuid id', async () => {
+  it('attach → list → detach round-trip for a SubAgent by uuid id', async () => {
     const proc = await new AgenticProcess({ workdir }).save([]);
 
-    // Force a reindex of agents so the fixture file is picked up by /search.
-    await apiClient.post('/graph/compute_node/@local/fs-records/index?type=agent', {});
+    // Force a reindex of SubAgents so the fixture file is picked up by /search.
+    await apiClient.post('/graph/compute_node/@local/fs-records/index?type=subagent', {});
 
-    // Resolve the agent's uuid via the configured API client so we use the same
+    // Resolve the SubAgent's uuid via the configured API client so we use the same
     // TypeId shape the UI sends. apiClient unwraps the standard response envelope.
     const searchData = (await apiClient.get('/search', {
-      params: { record_type: 'agent', q: agentName },
+      params: { record_type: 'subagent', q: agentName },
     })) as { results?: Array<{ record_id: string; name: string; record_type: string }> };
     const hit = searchData.results?.find((r) => r.name === agentName);
-    expect(hit, `search did not find agent "${agentName}" — ensure indexer picked it up`).toBeDefined();
-    agentRecordId = hit!.record_id;
+    expect(hit, `search did not find SubAgent "${agentName}" — ensure indexer picked it up`).toBeDefined();
+    subagentRecordId = hit!.record_id;
 
-    const agentRef = `agent-${hit!.record_id}`;
+    const subagentRef = `subagent-${hit!.record_id}`;
 
     // Attach
-    await proc.embeddedAssets.attach(agentRef);
-    expect(proc.embeddedAssets.list().map((r) => r.toString())).toEqual([agentRef]);
+    await proc.embeddedAssets.attach(subagentRef);
+    expect(proc.embeddedAssets.list().map((r) => r.toString())).toEqual([subagentRef]);
 
     // Read server-side to confirm persistence. Server appends the assets dir
     // to ``additional_dirs`` and pushes the update via WebSocket; the cached
@@ -103,14 +101,14 @@ You are a test agent.
       await new Promise((r) => setTimeout(r, 50));
     }
     const refreshedRefs = (refreshed?.embedded_asset_refs ?? []).map((r) => r.toString());
-    expect(refreshedRefs).toEqual([agentRef]);
+    expect(refreshedRefs).toEqual([subagentRef]);
     expect(
       (refreshed?.additional_dirs ?? []).some((d) => d.endsWith('/assets')),
       `additional_dirs should contain the assets path after attach (got: ${JSON.stringify(refreshed?.additional_dirs)})`,
     ).toBe(true);
 
     // Detach
-    await proc.embeddedAssets.detach(agentRef);
+    await proc.embeddedAssets.detach(subagentRef);
     expect(proc.embeddedAssets.list()).toEqual([]);
 
     const afterDetach = await dataManager.getByTypeId<AgenticProcess>(proc.typeId);

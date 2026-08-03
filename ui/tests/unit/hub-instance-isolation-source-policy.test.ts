@@ -36,7 +36,7 @@ const INBOX_VIEW = repoSource('ui/src/components/inbox-view/InboxView.tsx');
 
 const TWO_INSTANCE_FILES = [
   'asset_share_index_matrix.test.ts',
-  'community_two_client.test.ts',
+  'helpdesk_two_client.test.ts',
   'doc_comment_sync.test.ts',
   'git_artifact_bookmark_two_client.test.ts',
   'group_task_attachments_two_client.test.ts',
@@ -105,24 +105,31 @@ describe('hub launched-instance isolation source policy', () => {
     expect(source).not.toMatch(/getInstance\(['"]dev-1['"]\)/);
   });
 
-  it('discovers exact invitations through the lightweight pending-only sync', () => {
-    const helperStart = INSTANCES.indexOf('export async function findPendingInvitation(');
-    const helper = INSTANCES.slice(helperStart);
+  it('synchronizes exactly one immediately assigned conversation', () => {
+    const helperStart = HUB_HELPERS.indexOf('export async function syncAssignedConversationAt');
+    const helper = HUB_HELPERS.slice(helperStart);
     expect(helperStart).toBeGreaterThan(-1);
-    expect(helper).toContain('/api/v1/graph/invitation-sync');
+    expect(helper).toContain('/graph/conversation-message-sync');
     expect(helper).toContain('JSON.stringify({ conversation_id: convId })');
     expect(helper).toContain("body?.status !== 'SUCCESS'");
     expect(helper).not.toContain('await inst.sdk.fetchConversations()');
+    expect(helper).not.toContain('invitation-sync');
+    expect(INSTANCES).toContain(
+      'syncAssignedConversationAt(`${inst.apiUrl}/api/v1`, convId, inst.name)',
+    );
   });
 
-  it('keeps the staged asset matrix target-specific after invitation accept', () => {
-    const helperStart = ASSET_SHARE_MATRIX.indexOf('async function acceptAndFindMessage(');
+  it('keeps the staged asset matrix target-specific after immediate assignment', () => {
+    const helperStart = ASSET_SHARE_MATRIX.indexOf('async function syncAssignedMessage(');
     const helperEnd = ASSET_SHARE_MATRIX.indexOf("describe('asset share", helperStart);
     const helper = ASSET_SHARE_MATRIX.slice(helperStart, helperEnd);
     expect(helperStart).toBeGreaterThan(-1);
     expect(helperEnd).toBeGreaterThan(helperStart);
     expect(helper).toContain('/graph/conversation-message-sync');
     expect(helper).toContain('conversation_id: convId');
+    expect(helper).toContain("p.id === fmId");
+    expect(helper).not.toContain('findPendingInvitation');
+    expect(helper).not.toContain('acceptInvitation');
     expect(helper).not.toContain('bob.sdk.fetchConversations()');
     expect(ASSET_SHARE_MATRIX).toContain('const createdConversations:');
     expect(ASSET_SHARE_MATRIX).toContain('const createdAssets:');
@@ -132,10 +139,11 @@ describe('hub launched-instance isolation source policy', () => {
     expect(ASSET_SHARE_MATRIX).not.toContain("label.startsWith('e2etest-')");
   });
 
-  it('keeps group-task invitation discovery child-aware and pending-only', () => {
+  it('keeps group-task assignment child-aware without an invitation fallback', () => {
     expect(GROUP_TASK_ATTACHMENTS).toContain('created?.data?.children');
-    expect(GROUP_TASK_ATTACHMENTS).toContain("'/graph/invitation-sync'");
-    expect(GROUP_TASK_ATTACHMENTS).toContain('[task.id, ...memberTaskIds]');
+    expect(GROUP_TASK_ATTACHMENTS).toContain('memberTaskIds.length');
+    expect(GROUP_TASK_ATTACHMENTS).not.toContain("'/graph/invitation-sync'");
+    expect(GROUP_TASK_ATTACHMENTS).not.toContain('acceptInvitation');
     expect(GROUP_TASK_ATTACHMENTS).not.toContain('bob.sdk.fetchConversations()');
   });
 
@@ -208,25 +216,24 @@ describe('hub launched-instance isolation source policy', () => {
     }
   });
 
-  it('keeps paired invitation discovery target-specific on long-lived accounts', () => {
-    expect(PAIRED_HELPERS).toContain('/graph/invitation-sync');
-    expect(PAIRED_HELPERS).toContain('JSON.stringify({ conversation_id: convId })');
-    expect(PAIRED_HELPERS).toContain("body?.status !== 'SUCCESS'");
+  it('keeps paired assignment sync target-specific on long-lived accounts', () => {
+    expect(PAIRED_HELPERS).toContain('syncAssignedConversationAt(apiBase, convId)');
     for (const source of [MATRIX_BOB, PING_PONG_BOB, RENAME_BOB]) {
-      expect(source).toContain('syncPendingInvitation(config.SERVER_URL, convId)');
-      expect(source).toContain('pickPendingInvitation(all, convId)');
+      expect(source).toContain('syncAssignedConversation(config.SERVER_URL, convId)');
+      expect(source).not.toContain('pickPendingInvitation');
+      expect(source).not.toContain('acceptInvitation');
       expect(source).not.toContain('fetchConversations');
     }
   });
 
-  it('keeps the community staff path failing loudly when authorization is absent', () => {
-    const source = hubSource('community_two_client.test.ts');
+  it('keeps the helpdesk staff path failing loudly when authorization is absent', () => {
+    const source = hubSource('helpdesk_two_client.test.ts');
     expect(source).toContain('getAliceCreds');
     expect(source).toContain('getBobCreds');
     expect(source).toContain('hubLogin(guest.email, guestPassword)');
     expect(source).toContain('hubLogin(staff.email, staffPassword)');
     expect(source).toContain(
-      "throw new Error(\n        `[community test] staff '${staff.email}' cannot read the community queue;",
+      "throw new Error(\n        `[help desk test] staff '${staff.email}' cannot read the help desk queue;",
     );
     expect(source).not.toContain('`${staff.name}-pw-1234`');
   });
@@ -234,7 +241,7 @@ describe('hub launched-instance isolation source policy', () => {
   it('keeps multi-step share fixtures under file-level two-realm cleanup', () => {
     // The matrix carries workflow/conversation ids from A1 through A4. The
     // shared registry purges after every `it`, so registering those fixtures
-    // there destroys the scenario before the receiver can accept or download.
+    // there destroys the scenario before the receiver can download.
     expect(SHARE_MATRIX).toContain("import { testEntityName } from '../_cleanup';");
     expect(SHARE_MATRIX).not.toContain('trackForCleanup');
     expect(SHARE_MATRIX).not.toContain('trackTypeId');
@@ -247,24 +254,14 @@ describe('hub launched-instance isolation source policy', () => {
     expect(SHARE_MATRIX).toContain('/graph/compute_node/@local/fs-records/${type}/${r.id}');
   });
 
-  it('finishes the invitation-accept request before the matrix reuses the receiver page', () => {
-    const homeClick = BROWSER_HELPERS.indexOf(`page.locator('[data-rail-item="home"]').click()`);
-    const targetedSync = BROWSER_HELPERS.indexOf('/api/v1/graph/invitation-sync');
-    const inboxClick = BROWSER_HELPERS.indexOf(`page.locator('[data-rail-item="inbox"]').click()`);
-    expect(homeClick).toBeGreaterThan(-1);
-    expect(targetedSync).toBeGreaterThan(homeClick);
-    expect(inboxClick).toBeGreaterThan(targetedSync);
-    expect(BROWSER_HELPERS).toContain(`page.locator('[data-rail-item="inbox"]').click()`);
-    expect(BROWSER_HELPERS).toContain('JSON.stringify(conversationId ? { conversation_id: conversationId } : {})');
-    expect(BROWSER_HELPERS).not.toContain('page.goto(conversationId ?');
-    expect(BROWSER_HELPERS).toContain(
-      `const refresh = conversationId ? null : page.getByTestId('refresh-conversations-button')`,
-    );
-    expect(BROWSER_HELPERS).toContain('page.waitForResponse((candidate) => {');
-    expect(BROWSER_HELPERS).toContain("request.method() === 'POST'");
-    expect(BROWSER_HELPERS).toContain("new URL(candidate.url()).pathname === '/api/v1/graph/invitation-accept'");
-    expect(BROWSER_HELPERS).toContain("body?.status !== 'SUCCESS'");
-    expect(BROWSER_HELPERS).not.toMatch(/waitForResponse\([\s\S]{0,500}timeout\s*:/);
+  it('synchronizes the assignment before the matrix opens the receiver URL', () => {
+    const targetedSync = BROWSER_HELPERS.indexOf('await syncAssignedConversationAt(');
+    const openCall = BROWSER_HELPERS.indexOf('await openConversation(inst, conversationId)', targetedSync);
+    expect(targetedSync).toBeGreaterThan(-1);
+    expect(openCall).toBeGreaterThan(targetedSync);
+    expect(BROWSER_HELPERS).toContain('`${inst.apiUrl}/api/v1`, conversationId, inst.name');
+    expect(BROWSER_HELPERS).not.toContain('invitation-accept');
+    expect(BROWSER_HELPERS).not.toContain('accept-invitation-button');
   });
 
   it('keeps full-history inbox reconciliation behind the explicit refresh action', () => {
@@ -292,7 +289,8 @@ describe('hub launched-instance isolation source policy', () => {
     expect(TRANSCRIPT_SHARE).toContain('/graph/message_attachment/${ma.id}/install');
     expect(TRANSCRIPT_SHARE).toContain("scope: 'project'");
     expect(TRANSCRIPT_SHARE).toContain('project_id: project.id');
-    expect(TRANSCRIPT_SHARE).toContain("path.join(projectDir, '.claude', 'transcripts'");
+    expect(TRANSCRIPT_SHARE).toContain("getTypeInfo('claude_session')?.main_subdir");
+    expect(TRANSCRIPT_SHARE).toContain('path.posix.join(project.dir, mainSubdir');
     expect(TRANSCRIPT_SHARE).toContain('/graph/claude_session/${id}');
     expect(TRANSCRIPT_SHARE).toContain("method: 'DELETE'");
   });

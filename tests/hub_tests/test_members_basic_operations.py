@@ -34,6 +34,8 @@ from pathlib import Path
 import httpx
 import pytest
 
+from tests.hub_tests._assignment import assert_auto_assigned
+
 REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
 
 
@@ -88,17 +90,22 @@ async def _alice_and_bob(hub_base_url: str, hub_login_payload: dict):
     }
 
 
-async def _bob_join(hub_base_url: str, bob_token: str, bob_email: str, conv_id: str) -> None:
-    """Bob enters ``participants`` over raw HTTP.
-
-    There is no accept step: the hub grants the role at INVITE time
-    (``_maybe_auto_accept``, governed by ``invitation_auto_accept_on_invite``
-    for every target type since hub ``74694a30d``) and marks the invitation
-    accepted as it grants, so ``/invitation/pending`` is legitimately empty and
-    ``/members/accept`` has nothing left to do. Joining is still bob's own call
-    — ``share()`` joins the CALLER, and ``participants`` is what drives fanout.
-    """
+async def _bob_assert_assigned_and_join(
+    hub_base_url: str,
+    bob_token: str,
+    bob_id: str,
+    conv_id: str,
+) -> None:
+    """Prove Bob received the assignment, then idempotently join the thread."""
     headers_b = {"Authorization": f"Bearer {bob_token}", "Content-Type": "application/json"}
+    await assert_auto_assigned(
+        hub_base_url,
+        bob_token,
+        entity_type="conversation",
+        entity_id=conv_id,
+        user_id=bob_id,
+        expected_role="member",
+    )
     async with httpx.AsyncClient(timeout=5.0) as h:
         r = await h.post(
             f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/join",
@@ -112,7 +119,7 @@ async def _bob_join(hub_base_url: str, bob_token: str, bob_email: str, conv_id: 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
 async def test_members_after_share_lists_both_with_roles(hub_base_url, hub_login_payload, isolated_hub_keyring):
-    """alice.share(recipients=[bob]) → bob accepts+joins → GET members returns both with roles."""
+    """alice.share(recipients=[bob]) assigns Bob; GET members returns both roles."""
     from flow_sdk.builtin.conversation import Conversation
 
     actors = await _alice_and_bob(hub_base_url, hub_login_payload)
@@ -125,7 +132,7 @@ async def test_members_after_share_lists_both_with_roles(hub_base_url, hub_login
     await conv.share(recipients=[bob_email])
     assert conv.remote is True
 
-    await _bob_join(hub_base_url, actors["bob_token"], bob_email, conv.id)
+    await _bob_assert_assigned_and_join(hub_base_url, actors["bob_token"], bob_id, conv.id)
 
     # GET members directly against the hub — the same path the local-server
     # dispatcher would hit when reflecting the ``members`` action.
@@ -178,7 +185,7 @@ async def test_members_after_leave_excludes_leaver(hub_base_url, hub_login_paylo
     title = f"members-after-leave-{int(time.time())}"
     conv = Conversation(title=title)
     await conv.share(recipients=[bob_email])
-    await _bob_join(hub_base_url, actors["bob_token"], bob_email, conv.id)
+    await _bob_assert_assigned_and_join(hub_base_url, actors["bob_token"], bob_id, conv.id)
 
     members_url = f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/members"
     headers_a = {"Authorization": f"Bearer {actors['alice_token']}", "Accept": "application/json"}
@@ -227,7 +234,12 @@ async def test_members_action_returns_role_per_participant(hub_base_url, hub_log
     title = f"members-shape-{int(time.time())}"
     conv = Conversation(title=title)
     await conv.share(recipients=[bob_email])
-    await _bob_join(hub_base_url, actors["bob_token"], bob_email, conv.id)
+    await _bob_assert_assigned_and_join(
+        hub_base_url,
+        actors["bob_token"],
+        actors["bob_id"],
+        conv.id,
+    )
 
     members_url = f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/members"
     headers_a = {"Authorization": f"Bearer {actors['alice_token']}", "Accept": "application/json"}

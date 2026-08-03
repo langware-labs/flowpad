@@ -6,7 +6,6 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
-import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useProcessAssets } from './useProcessAssets';
 import {
   displayLabelForTypeid,
@@ -64,7 +63,7 @@ interface AssetPickerPopoverProps {
 }
 
 const DEFAULT_FILTER = (d: AssetDescriptor): boolean =>
-  d.typeid.startsWith('skill-') || d.typeid.startsWith('agent-');
+  d.typeid.startsWith('skill-') || d.typeid.startsWith('subagent-');
 
 /**
  * Single-select asset picker. Shares the data hook (`useProcessAssets`) and
@@ -113,11 +112,9 @@ export function AssetPickerPopover({
     return ids;
   }, [allProjects, scope]);
 
-  // process: null → useProcessAssets returns the synthetic Agent + Skill list
+  // process: null → useProcessAssets returns the synthetic SubAgent + Skill list
   // pulled from the global entity queries. No process needs to exist yet.
   const { descriptors, isLoading, refresh } = useProcessAssets(null, { enabled: open });
-  const { types: assetTypes } = useAssetTypes();
-
   // On open: refresh the list and start from "All" so every agent/skill is
   // visible by default (the project-scoped default would hide user assets).
   useEffect(() => {
@@ -144,7 +141,7 @@ export function AssetPickerPopover({
       if (!filter(d)) continue;
       counts.all = (counts.all ?? 0) + 1;
       const { type } = parseTypeid(d.typeid);
-      if (type === 'agent' || type === 'skill' || type === 'markdown' || type === 'spec') {
+      if (type === 'subagent' || type === 'skill' || type === 'markdown' || type === 'spec') {
         counts[type] = (counts[type] ?? 0) + 1;
       }
     }
@@ -155,7 +152,7 @@ export function AssetPickerPopover({
   // become toggles — keeps the bar from overflowing with types that can't appear.
   const allowedTypes = useMemo(
     () =>
-      (['agent', 'skill', 'markdown', 'spec'] as const).filter((t) => (typeCounts[t] ?? 0) > 0),
+      (['subagent', 'skill', 'markdown', 'spec'] as const).filter((t) => (typeCounts[t] ?? 0) > 0),
     [typeCounts],
   );
 

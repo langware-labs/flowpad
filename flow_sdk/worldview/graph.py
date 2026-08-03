@@ -69,6 +69,10 @@ async def build_worldview(
     """Project all Artifacts and Deployments without using the dep-graph cache."""
 
     artifacts, deployments = await asyncio.gather(Artifact.get_all(), Deployment.get_all())
+    # Agent deployments are runtime placements on a machine, not inventoried
+    # infrastructure. They have no Artifact parent, so projecting them would add
+    # one permanently unattached node per agent per instance.
+    deployments = [d for d in deployments if not str(getattr(d, "kind", "") or "").endswith(".agent")]
     artifacts.sort(key=lambda entity: entity.id)
     deployments.sort(key=lambda entity: entity.id)
     nodes = [_artifact_node(entity) for entity in artifacts]

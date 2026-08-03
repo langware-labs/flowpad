@@ -1,7 +1,6 @@
-import { Agent, dataManager, DynamicWorkflow, Layout, Markdown, Project, Prompt, Skill, Task, Whiteboard } from '@sdk';
+import { SubAgent, dataManager, DynamicWorkflow, Layout, Markdown, Project, Prompt, Skill, Task, Whiteboard } from '@sdk';
 import { PromptEditDialog } from '@src/components/prompt-library/PromptEditDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { BookMarked, Bot, Boxes, CheckSquare, FileText, Palette, Sparkles, type LucideIcon } from 'lucide-react';
 import type { ComponentType } from 'react';
 import type { HarnessKind, ScopeKind } from './ScopeSelection';
 
@@ -30,6 +29,14 @@ export interface QuickCreateCreateArgs {
   folderVfsPath?: string;
 }
 
+/**
+ * A creatable-type entry for the quick-create menu / panel.
+ *
+ * Deliberately carries NO icon: every per-type glyph comes from the backend
+ * registry (`TypeInfo.icon`) via `iconForType(descriptor.type)` at render time.
+ * A hardcoded `Icon` here is how the skill tile showed a Sparkles while the rest
+ * of the app drew the registry's FileBadge.
+ */
 export interface QuickCreateDescriptor {
   /** Matches server `AssetTypeInfo.type_name` so labels can be joined at render time. */
   type: string;
@@ -40,8 +47,6 @@ export interface QuickCreateDescriptor {
    *  wrong one silently shows a "create this page" prompt instead of help —
    *  making this optional is how a new type ships an untipped tile. */
   wikiword: string;
-  /** React icon component, rendered in the quick-create menu and dialog header. */
-  Icon: LucideIcon;
   /**
    * Last-resort sub-folder, used ONLY when the backend registry has not loaded
    * (an isolated unit test, or the dialog opening before bootstrap resolves).
@@ -114,7 +119,6 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'skill',
     label: 'Skill',
     wikiword: 'Skill assets',
-    Icon: Sparkles,
     fallbackSubFolder: '.claude/skills',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Skill.createInProject(project, name, folderVfsPath);
@@ -129,20 +133,19 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     },
   },
   {
-    type: 'agent',
+    type: 'subagent',
     label: 'Sub agent',
     wikiword: 'Sub agents',
-    Icon: Bot,
     fallbackSubFolder: '.claude/agents',
     create: async ({ project, name, folderVfsPath }) => {
-      const saved = await Agent.createInProject(project, name, folderVfsPath);
+      const saved = await SubAgent.createInProject(project, name, folderVfsPath);
       return {
         // Open a freshly-created agent ready to type into: edit mode, caret at the
         // start of the (empty) system-prompt body, right after the headline.
         pointer: saved.asset_ref
-          ? DockPointer.forAssetEditor('agent', saved.asset_ref, Layout.DOCK, { editorMode: 'editor', initialLine: '2' })
+          ? DockPointer.forAssetEditor('subagent', saved.asset_ref, Layout.DOCK, { editorMode: 'editor', initialLine: '2' })
           : undefined,
-        toastTitle: 'Agent created',
+        toastTitle: 'SubAgent created',
       };
     },
   },
@@ -150,7 +153,6 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'dynamic_workflow',
     label: 'Dynamic Workflow',
     wikiword: 'Dynamic workflows',
-    Icon: Boxes,
     fallbackSubFolder: '.claude/workflows',
     create: async ({ project, name }) => {
       const saved = await DynamicWorkflow.createInProject(project, name);
@@ -166,7 +168,6 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'task',
     label: 'Task',
     wikiword: 'Task assets',
-    Icon: CheckSquare,
     fallbackSubFolder: 'agentic-assets/task',
     create: async ({ project, name }) => {
       const task = await Task.createInProject(project, name);
@@ -180,7 +181,6 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'markdown',
     label: 'Markdown',
     wikiword: 'Markdown documents',
-    Icon: FileText,
     fallbackSubFolder: 'docs',
     create: async ({ project, name }) => {
       const md = await Markdown.createInProject(project, name);
@@ -194,7 +194,6 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'whiteboard',
     label: 'Whiteboard',
     wikiword: 'Whiteboard assets',
-    Icon: Palette,
     fallbackSubFolder: 'agentic-assets/whiteboard',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Whiteboard.createInProject(project, name, folderVfsPath);
@@ -208,7 +207,6 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'prompt',
     label: 'Prompt',
     wikiword: 'Prompt library',
-    Icon: BookMarked,
     // `prompts/` is Flowpad's own convention, not a harness one — no variants.
     fallbackSubFolder: 'agentic-assets/prompt',
     // A prompt is its text, so the library dialog creates it in one step.

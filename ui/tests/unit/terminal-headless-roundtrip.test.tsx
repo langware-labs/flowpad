@@ -301,6 +301,11 @@ const mockProcess = {
   sidecar_shell_id: null,
   shell_id: null,
   markdown_docs: [],
+  // The ribbon's artifacts chip reads the process property and hydrates it
+  // once; this stand-in has no server behind it.
+  artifacts: [],
+  loadArtifacts: () => Promise.resolve([]),
+  applyArtifactEvent: () => false,
   get pty_mode() {
     return !headless;
   },

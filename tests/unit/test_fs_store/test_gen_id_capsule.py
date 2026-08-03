@@ -84,7 +84,7 @@ def _mint(type_name: str, ref: FSRef) -> str:
 
 
 SPECS = {
-    "agent": (_agent, lambda r: _mint("agent", r), _capsule_id, None),
+    "subagent": (_agent, lambda r: _mint("subagent", r), _capsule_id, None),
     "whiteboard": (_whiteboard, lambda r: _mint("whiteboard", r), _capsule_id, None),
     "task": (_task, lambda r: _mint("task", r), _capsule_id, None),
     "dataset": (_dataset, lambda r: _mint("dataset", r), _capsule_id, None),
@@ -123,14 +123,14 @@ def test_no_id_mints_v4_persists_and_idempotent(tmp_path: Path, t: str) -> None:
 
 def test_agent_writes_uuid_not_name_into_capsule(tmp_path: Path) -> None:
     ref = _agent(tmp_path, None)
-    got = _mint("agent", ref)
+    got = _mint("subagent", ref)
     stored_id = _capsule_id(ref)
     assert stored_id == got and _ver(stored_id) == 4
     assert _frontmatter_id(ref._path) is None
     assert stored_id not in ("My Agent", "a")
     # self-heals: second index adopts the written UUID, no rewrite
     mtime = ref._path.stat().st_mtime
-    assert _mint("agent", ref) == got
+    assert _mint("subagent", ref) == got
     assert ref._path.stat().st_mtime == mtime
 
 

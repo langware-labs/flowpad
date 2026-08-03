@@ -37,7 +37,12 @@ export interface UseUserApiKeys {
   /** Set once by `generate`; the full secret, shown once and never re-fetchable. */
   generatedKey: ApiKeyCredentials | null;
   generate(): Promise<void>;
-  remove(keyId: string): Promise<void>;
+  /**
+   * Takes the key, not an identifier: the hub revokes by name while `UserApiKeyItem`
+   * carries both `id` and `name`, and passing the id fails silently (the button
+   * appears to do nothing). Handing over the whole row makes that a type error.
+   */
+  remove(key: Pick<UserApiKeyItem, 'name'>): Promise<void>;
 }
 
 const FLOWPAD_KEY_NAME = 'FLOWPAD_API_KEY';
@@ -62,10 +67,7 @@ export function useUserApiKeys(opts?: { onMutated?: () => void }): UseUserApiKey
 
   // Derived, not mirrored into state: the previous copies kept a `hasFlowPadApiKey`
   // boolean in sync with this via an effect, which could only ever lag it.
-  const flowpadKey = useMemo(
-    () => apiKeys.find((k) => k.name?.includes(FLOWPAD_KEY_NAME) && k.is_active),
-    [apiKeys],
-  );
+  const flowpadKey = useMemo(() => apiKeys.find((k) => k.name?.includes(FLOWPAD_KEY_NAME) && k.is_active), [apiKeys]);
 
   const generate = useCallback(async () => {
     if (!user?.typeId) {
@@ -89,13 +91,13 @@ export function useUserApiKeys(opts?: { onMutated?: () => void }): UseUserApiKey
   }, [user?.typeId, reload, onMutated, t]);
 
   const remove = useCallback(
-    async (keyId: string) => {
+    async (key: Pick<UserApiKeyItem, 'name'>) => {
       if (!user?.typeId) {
         notify.error({ title: t`Error`, message: t`User not found` });
         return;
       }
       try {
-        await ApiKey.deleteById(user.typeId, keyId);
+        await ApiKey.deleteByName(user.typeId, key.name);
         // No optimistic removal: the backend soft-deletes, so the row comes
         // back as Inactive rather than vanishing. Dropping it here would make
         // it disappear and then reappear when the reload lands.

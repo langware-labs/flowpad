@@ -51,16 +51,15 @@ beforeEach(async (context: any) => {
 
 describe(`hub: alice + bob ping-pong loop to ${STOP_AT}`, () => {
   it('alice ignites and increments on every reply from bob', async () => {
-    // 1. Create conv + invite bob via the SDK. The companion bob test polls
-    //    his pending invitations and accepts this one within ~seconds.
+    // 1. Create + assign the conversation via the SDK. The companion Bob test
+    //    synchronizes this exact id before starting the exchange.
     const conv = trackForCleanup(new Conversation({ title: testEntityName('conv') }));
     await conv.save();
     await conv.share([bobEmail!]);
     expect(conv.remote).toBe(true);
 
     // Publish the conv id via a rendezvous file so bob's vitest can target
-    // THIS run's invitation, not a stale one with matching recipient email
-    // from a prior run.
+    // THIS run's assignment, not a stale conversation from a prior run.
     const fs = await import('node:fs/promises');
     await fs.writeFile('/tmp/flowpad_pingpong_conv.txt', conv.id, 'utf-8');
 
@@ -96,7 +95,7 @@ describe(`hub: alice + bob ping-pong loop to ${STOP_AT}`, () => {
         log.push({ who: 'alice', kind: 'tx', n: next, t: Date.now() - tStart });
         // Await the final send so bob has time to receive STOP_AT before
         // vitest tears the WS down.
-        (async () => {
+        void (async () => {
           await conv.addMessage(String(next));
           if (next >= STOP_AT) {
             off();

@@ -163,7 +163,7 @@ class ScanActionsMixin:
         # scan-item now only serves a flat resource-type list (e.g. skills).
         _ITEM_TO_RESOURCE = {
             "skills": "skill",
-            "agents": "agent",
+            "agents": "subagent",
             "commands": "command",
             "hooks": "hook",
             "mcpServers": "mcp_server",

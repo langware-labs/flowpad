@@ -3,7 +3,7 @@
 Proves the hub-optional wire contract end-to-end with two real identities —
 alice (in-process SDK, the HOST) and bob (raw HTTP, the GUEST):
 
-  1. alice shares a conversation with bob (canonical invite → accept → join).
+  1. alice shares a conversation with bob (canonical assignment → join).
   2. GUEST → HOST: bob posts a prompt message carrying the guest-minted session
      id — the ``remote_worker_session-<id>`` TYPE_ID attachment is the
      authoritative carrier; the test asserts ``derive_session_fields`` recovers
@@ -49,6 +49,7 @@ from flow_sdk.builtin.remote_worker_session import (
 from flow_sdk.builtin.remote_worker_session import (
     RemoteWorkerSessionStatus as S,
 )
+from tests.hub_tests._assignment import assert_auto_assigned
 
 pytestmark = pytest.mark.timeout(60)  # do not increase timeout without approval
 
@@ -84,16 +85,26 @@ async def _bob_headers(hub_base_url: str) -> dict:
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
         "X-Bob-Email": bob_email,  # test-local convenience, stripped below
+        "X-Bob-Id": (data.get("user") or {})["id"],
     }
 
 
-async def _accept_and_join(hub_base_url: str, headers_b: dict, conv_id: str, bob_email: str) -> None:
-    """Canonical recipient flow: the invite already granted the role → join.
-
-    No accept step — ``_maybe_auto_accept`` grants at invite time for every
-    target type (hub 74694a30d) and marks the invitation accepted as it does,
-    so ``/invitation/pending`` is empty by design.
-    """
+async def _assert_assigned_and_join(
+    hub_base_url: str,
+    headers_b: dict,
+    conv_id: str,
+    bob_id: str,
+) -> None:
+    """Canonical recipient flow: immediate assignment → idempotent join."""
+    token = headers_b["Authorization"].removeprefix("Bearer ")
+    await assert_auto_assigned(
+        hub_base_url,
+        token,
+        entity_type="conversation",
+        entity_id=conv_id,
+        user_id=bob_id,
+        expected_role="member",
+    )
     async with httpx.AsyncClient(timeout=5.0) as h:
         r = await h.post(
             f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/join",
@@ -120,13 +131,14 @@ async def test_live_session_transport_loop(
 
     headers_b = await _bob_headers(hub_base_url)
     bob_email = headers_b.pop("X-Bob-Email")
+    bob_id = headers_b.pop("X-Bob-Id")
 
-    # ── 1. share the conversation (invite → accept → join) ──────────────────
+    # ── 1. share the conversation (assignment → join) ────────────────────
     conv = Conversation(title=f"live-session-loop-{int(time.time())}-{uuid.uuid4().hex[:6]}")
     await conv.share(recipients=[bob_email])
     assert conv.remote is True
     await conv.save(notify=False)  # persist remote=True for the local send path
-    await _accept_and_join(hub_base_url, headers_b, conv.id, bob_email)
+    await _assert_assigned_and_join(hub_base_url, headers_b, conv.id, bob_id)
 
     # The guest-minted live-session id (uuid4 — must pass validate-on-adopt).
     sid = str(uuid.uuid4())

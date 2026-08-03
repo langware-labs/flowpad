@@ -113,6 +113,30 @@ async function loadAgenticProcessRoute(pointer: string | undefined): Promise<voi
   }
 }
 
+/** Resolve the portal project so context is written URL-first, exactly as a
+ *  PROJECT dock does. The article (if any) is resolved by the view from the
+ *  pointer — it is a file path, not an entity, so there is nothing to load. */
+async function loadHelpdeskRoute(pointer: string | undefined): Promise<void> {
+  const { projectId } = DockPointer.parseHelpdeskPointer(pointer);
+  if (!projectId) return; // portal root with no project — the view renders its own empty state
+  try {
+    await loadProject(new TypeId(Project.type, projectId));
+  } catch (error) {
+    throw new DockLoadError(
+      'helpdesk_project_not_found',
+      'hard',
+      {
+        action: 'render_error',
+        title: 'Help desk unavailable',
+        message: 'The help desk files are missing. Open the help desk again to download them.',
+        retryable: true,
+      },
+      'helpdesk',
+      error,
+    );
+  }
+}
+
 function loadLiveSessionRoute(pointer: string | undefined): void {
   if (!pointer) return;
   // Identity validation only — the view watches the session entity live (a
@@ -233,6 +257,9 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         break;
       case ViewType.AGENTIC_PROCESS:
         await loadAgenticProcessRoute(dock.pointer);
+        break;
+      case ViewType.HELPDESK:
+        await loadHelpdeskRoute(dock.pointer);
         break;
       case ViewType.LIVE_SESSION:
         loadLiveSessionRoute(dock.pointer);

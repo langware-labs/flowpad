@@ -101,3 +101,24 @@ export async function refreshNotifications(projectPath?: string): Promise<void> 
   action.bodyParameters = { project_path: projectPath ?? '' };
   await dataManager.callAction(action);
 }
+
+
+/**
+ * Reply into the cloud channel a conversation came from (Gmail, later Slack).
+ *
+ * A separate endpoint from `sendReply`, not a flag on it: that path carries
+ * hub semantics — cloud-login gates, remote-send forks, body uploads, delivery
+ * receipts — none of which apply to an email.
+ *
+ * Resolves once DISPATCHED, not once delivered. An agent turn takes tens of
+ * seconds; the reply appears in the conversation by the ordinary ingest route
+ * when the worker records it.
+ */
+export async function sendToChannel(conversationId: string, text: string): Promise<void> {
+  if (!conversationId) {
+    throw new Error('sendToChannel requires a conversationId');
+  }
+  const action = new ActionInfo('send_external', 'conversation', conversationId, 'POST');
+  action.bodyParameters = { text };
+  await dataManager.callAction(action);
+}

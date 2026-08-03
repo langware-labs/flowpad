@@ -4,9 +4,8 @@ Runs against a real local hub (skipped by ``conftest`` when none is reachable).
 Verifies the two pieces that aren't conversation-shaped:
 
   * the login response embeds the user's organization + role, and
-  * the generic membership endpoint grants an org/team role to a second user
-    at INVITE time — since hub ``74694a30d`` there is no pending row to
-    accept, so the assertion is simply that they appear on the roster.
+  * the generic membership endpoint immediately assigns the invited org/team
+    role to the second user, leaving no manual-acceptance row pending.
 
 The conversation invite flow is covered by ``test_members_basic_operations.py``;
 this file reuses its two-actor setup (``_alice_and_bob``).
@@ -19,6 +18,7 @@ import time
 import httpx
 import pytest
 
+from tests.hub_tests._assignment import assert_auto_assigned
 from tests.hub_tests.test_members_basic_operations import _alice_and_bob
 
 
@@ -106,13 +106,11 @@ def _alice_password() -> str:
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_org_invitation_pending_target_and_accept_makes_member(
-    hub_base_url, hub_login_payload, isolated_hub_keyring
-):
-    """alice creates an org, invites bob → bob's pending shows an organization
-    target → bob accepts → GET members lists bob with a role."""
+async def test_org_invitation_auto_assigns_member(hub_base_url, hub_login_payload, isolated_hub_keyring):
+    """Alice invites Bob to an org; Bob is immediately assigned as a member."""
     actors = await _alice_and_bob(hub_base_url, hub_login_payload)
     alice_token = actors["alice_token"]
+    bob_token = actors["bob_token"]
     bob_id = actors["bob_id"]
     bob_email = actors["bob_email"]
 
@@ -121,42 +119,54 @@ async def test_org_invitation_pending_target_and_accept_makes_member(
     )
     await _invite(hub_base_url, alice_token, "organization", org_id, bob_email, role="member")
 
-    # The invite grants the role outright — no pending invitation, nothing to
-    # accept. ``_maybe_auto_accept`` (hub membership/services.py) is governed by
-    # ``invitation_auto_accept_on_invite`` alone and applies uniformly to EVERY
-    # target type since hub ``74694a30d`` removed the tasks-only allowlist; it
-    # marks the invitation accepted as it grants, so ``/invitation/pending`` is
-    # empty by design. Access is still gated on a verified email — an
-    # unverified address cannot authenticate at all — so the grant sits inert
-    # until the real owner signs in.
+    await assert_auto_assigned(
+        hub_base_url,
+        bob_token,
+        entity_type="organization",
+        entity_id=org_id,
+        user_id=bob_id,
+        expected_role="member",
+        members_token=alice_token,
+    )
+
     headers_a = {"Authorization": f"Bearer {alice_token}", "Accept": "application/json"}
     async with httpx.AsyncClient(timeout=5.0) as h:
         r = await h.get(f"{hub_base_url}/api/v1/graph/organization/{org_id}/members", headers=headers_a)
     assert r.status_code == 200, r.text
     members = r.json().get("data") or []
     by_id = {m.get("user_id"): m for m in members if isinstance(m, dict)}
-    assert bob_id in by_id, f"bob not in org members after accept: {members}"
+    assert bob_id in by_id, f"bob not in org members after assignment: {members}"
     assert by_id[bob_id].get("role"), "bob has no role on the organization"
 
 
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_team_invitation_accept_makes_member(hub_base_url, hub_login_payload, isolated_hub_keyring):
-    """Same invite→grant→member flow for a team target (no accept step)."""
+async def test_team_invitation_auto_assigns_member(hub_base_url, hub_login_payload, isolated_hub_keyring):
+    """The same immediate-assignment contract applies to a team target."""
     actors = await _alice_and_bob(hub_base_url, hub_login_payload)
     alice_token = actors["alice_token"]
+    bob_token = actors["bob_token"]
     bob_id = actors["bob_id"]
     bob_email = actors["bob_email"]
 
     team_id = await _create_membership_entity(hub_base_url, alice_token, "team", f"invite-team-{int(time.time())}")
     await _invite(hub_base_url, alice_token, "team", team_id, bob_email, role="member")
 
-    # As above: the invite grants outright, so there is no pending row to accept.
+    await assert_auto_assigned(
+        hub_base_url,
+        bob_token,
+        entity_type="team",
+        entity_id=team_id,
+        user_id=bob_id,
+        expected_role="member",
+        members_token=alice_token,
+    )
+
     headers_a = {"Authorization": f"Bearer {alice_token}", "Accept": "application/json"}
     async with httpx.AsyncClient(timeout=5.0) as h:
         r = await h.get(f"{hub_base_url}/api/v1/graph/team/{team_id}/members", headers=headers_a)
     assert r.status_code == 200, r.text
     members = r.json().get("data") or []
     by_id = {m.get("user_id"): m for m in members if isinstance(m, dict)}
-    assert bob_id in by_id, f"bob not in team members after accept: {members}"
+    assert bob_id in by_id, f"bob not in team members after assignment: {members}"

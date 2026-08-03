@@ -23,9 +23,9 @@ import { testEntityName, trackForCleanup } from '../_cleanup';
 import {
   HUB_INST_1 as INST_1,
   HUB_INST_2 as INST_2,
-  findPendingInvitation,
   getInstance,
   instanceAvailable,
+  syncAssignedConversation,
   type ResolvedInstance,
 } from './_instances';
 
@@ -66,17 +66,12 @@ describe('conversation member role change over the hub (realm per instance)', ()
     await conv.share([dev2.email]);
     expect(conv.remote).toBe(true);
 
-    // ── dev-2 (member): discover + accept the invitation. The accept grants
-    //    the `member` RoleRelationship — that's what puts dev-2 on the roster
-    //    (`GET members` is built from role relationships, not `join`). ──
-    const invitation = await pollUntil(
-      () => findPendingInvitation(dev2, conv.id!),
-      20_000,
-      'pending invitation on dev-2',
-    );
-    await dev2.sdk.acceptInvitation({ invitation_id: invitation.id! });
+    // ── dev-2 is assigned the `member` RoleRelationship at share time.
+    // Recover this exact authorized conversation if its best-effort live
+    // assignment frame raced or was missed. ──
+    await syncAssignedConversation(dev2, conv.id);
 
-    // Owner sees the post-accept roster: dev-1 owner, dev-2 member.
+    // Owner sees the assigned roster: dev-1 owner, dev-2 member.
     const initial = await pollUntil(
       async () => {
         const r = await roster(conv);
@@ -108,7 +103,7 @@ describe('conversation member role change over the hub (realm per instance)', ()
 
     // dev-2's own client reads the same hub-authoritative roster.
     const received = await pollUntil(
-      () => dev2.sdk.Conversation.getById(conv.id!).catch(() => null),
+      () => dev2.sdk.Conversation.getById(conv.id).catch(() => null),
       10_000,
       'conversation materialised on dev-2',
     );

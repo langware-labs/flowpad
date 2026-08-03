@@ -24,6 +24,7 @@ showing with two providers, not worth breaking because the hub is unreachable.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from flow_sdk.core.entity.entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
@@ -67,7 +68,19 @@ def _row_from_hub(item: dict[str, Any]) -> EnvVar | None:
     # scopes stay empty rather than being guessed.
     from flow_sdk.core.oauth.provider_registry import OAuthFlowKind  # noqa: PLC0415
 
-    return provider_env_var(name, name, ref_name, item.get("icon"), kind=OAuthFlowKind.CODE.value)
+    expires_at = item.get("expires_at")
+    return provider_env_var(
+        name,
+        name,
+        ref_name,
+        item.get("icon"),
+        kind=OAuthFlowKind.CODE.value,
+        # The hub carries these onto the provider row from the user's token row.
+        # They are the only signal the desktop gets that a hub-held credential
+        # has gone stale or been permanently refused.
+        expires_at=int(expires_at) if isinstance(expires_at, (int, float)) else None,
+        needs_reauth=bool(item.get("needs_reauth")),
+    )
 
 
 #: The hub's provider catalogue, cached per cloud user for the life of the
@@ -76,18 +89,36 @@ def _row_from_hub(item: dict[str, Any]) -> EnvVar | None:
 #: re-fetched over the network on every read of the USER env table (every focus,
 #: remount and invalidation) plus once per attach / detach / test.
 #:
-#: No TTL, so there is no window in which the list is knowably stale. Two things
-#: keep it honest: the key is the cloud user id, so signing in as someone else
-#: misses rather than reads the wrong catalogue (and while logged out there is no
-#: id, so nothing is cached at all); and `invalidate_hub_providers()` is called
-#: after a flow completes, which is the one moment the hub's answer changes
-#: because of something we did.
-_PROVIDER_CACHE: dict[str, EntityEnvVars] = {}
+#: The key is the cloud user id, so signing in as someone else misses rather than
+#: reads the wrong catalogue, and `invalidate_hub_providers()` covers the one
+#: change we cause ourselves. The TTL covers the one we do not: a connector
+#: deployed to the hub mid-session would otherwise stay invisible until restart,
+#: which reads as "the connector is broken" rather than "the list is old". It is
+#: a staleness bound for lack of a push channel — the desktop is not on the hub's
+#: websocket — not a correctness guarantee, so it is long: the event it catches
+#: is a deploy, and paying a round trip a minute to notice one is not a trade.
+_PROVIDER_TTL_SECONDS = 600.0
+_PROVIDER_CACHE: dict[str, tuple[float, EntityEnvVars]] = {}
 
 
 def invalidate_hub_providers() -> None:
     """Drop the cached catalogue. Called after a completed OAuth flow."""
     _PROVIDER_CACHE.clear()
+
+
+def _serve_stale(user_id: str, stale: EntityEnvVars | None) -> EntityEnvVars:
+    """Serve the expired copy rather than nothing when a refetch fails.
+
+    Expiry means "worth re-asking", not "known wrong" — the catalogue is
+    near-static. Dropping to empty on a hub blip would blank every hub provider
+    out of the Connections tab while a good copy sits right here and, because the
+    entry stays expired, would re-hit the network on every subsequent read.
+    Re-stamping bounds that to one failed fetch per TTL.
+    """
+    if stale is None:
+        return EntityEnvVars(values=[])
+    _PROVIDER_CACHE[user_id] = (time.monotonic(), stale)
+    return stale
 
 
 async def hub_provider_rows() -> EntityEnvVars:
@@ -101,7 +132,13 @@ async def hub_provider_rows() -> EntityEnvVars:
 
     cached = _PROVIDER_CACHE.get(user_id)
     if cached is not None:
-        return cached
+        cached_at, table = cached
+        # Monotonic: a wall-clock jump (NTP, sleep/wake) must not make a fresh
+        # entry look ancient or an ancient one look fresh.
+        if time.monotonic() - cached_at < _PROVIDER_TTL_SECONDS:
+            return table
+
+    stale = cached[1] if cached is not None else None
 
     try:
         from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
@@ -109,14 +146,14 @@ async def hub_provider_rows() -> EntityEnvVars:
         payload = await hub_get(BuiltinEntityType.USER, user_id, action="env-var", sub_path="table")
     except Exception as e:  # noqa: BLE001
         logger.debug("[oauth] hub provider fetch failed: %s", e)
-        return EntityEnvVars(values=[])
+        return _serve_stale(user_id, stale)
 
     if not isinstance(payload, dict):
-        return EntityEnvVars(values=[])
+        return _serve_stale(user_id, stale)
     data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
     values = data.get("values") if isinstance(data, dict) else None
     if not isinstance(values, list):
-        return EntityEnvVars(values=[])
+        return _serve_stale(user_id, stale)
 
     rows = []
     for item in values:
@@ -128,7 +165,7 @@ async def hub_provider_rows() -> EntityEnvVars:
         if row is not None:
             rows.append(row)
     table = EntityEnvVars(values=rows)
-    _PROVIDER_CACHE[user_id] = table
+    _PROVIDER_CACHE[user_id] = (time.monotonic(), table)
     return table
 
 

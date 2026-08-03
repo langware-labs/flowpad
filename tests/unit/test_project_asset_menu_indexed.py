@@ -26,7 +26,6 @@ import pytest
 
 # Register every walker + TypeInfo. Pytest does not run the server startup path.
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
-
 from flow_sdk.builtin.agentic_process.agentic_process import AssetSource
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.folder import Folder
@@ -162,7 +161,7 @@ async def test_root_totals(tree):
     root = (await _menu(tree))["root"]
     assert {g["type_name"]: g["count"] for g in root["groups"]} == {
         "skill": 3,
-        "agent": 3,
+        "subagent": 3,
         "markdown": 4,
         "task": 2,
     }
@@ -174,9 +173,9 @@ async def test_deepest_node_wins_for_nested_context_project(tree):
     agent there must be attributed to C alone, and only accumulate into B."""
     root = (await _menu(tree))["root"]
     b, c = _node(tree, root, "B"), _node(tree, root, "C")
-    assert _own(c, "agent") == 1
-    assert _own(b, "agent") == 0
-    assert _count(b, "agent") == 1
+    assert _own(c, "subagent") == 1
+    assert _own(b, "subagent") == 0
+    assert _count(b, "subagent") == 1
 
 
 async def test_three_level_nesting_and_depths(tree):

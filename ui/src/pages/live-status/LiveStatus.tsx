@@ -32,7 +32,6 @@ import {
   Clock,
   Command,
   Cpu,
-  DollarSign,
   FileText,
   FolderOpen,
   GitBranch,
@@ -207,7 +206,7 @@ export function LiveStatus() {
     { id: 'sessions', label: t`Sessions`, icon: Clock, badge: historyEntries.length },
     { id: 'skills', label: t`Skills`, icon: Sparkles, badge: filteredData?.skills.length },
     { id: 'commands', label: t`Commands`, icon: Command, badge: filteredData?.commands.length },
-    { id: 'agents', label: t`Agents`, icon: Bot, badge: filteredData?.agents.length },
+    { id: 'agents', label: t`Sub-agents`, icon: Bot, badge: filteredData?.agents.length },
     { id: 'plugins', label: t`Plugins`, icon: Plug, badge: filteredData?.plugins.length },
     { id: 'hooks', label: t`Hooks`, icon: Settings, badge: filteredData?.hooks.length },
     { id: 'directories', label: t`Directories`, icon: FolderOpen },
@@ -229,7 +228,6 @@ export function LiveStatus() {
 
   // Error state - but don't block projects tab which uses its own data fetching
   if ((error || !data) && !skipFullFetch) {
-    const { t } = useLingui();
     return (
       <div className="flex h-full flex-col items-center justify-center bg-background">
         <div className="text-center">
@@ -396,26 +394,6 @@ function formatNumber(num: number): string {
   if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
   if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
   return num.toLocaleString();
-}
-
-/**
- * Format bytes to human readable
- */
-function formatBytes(bytes: number): string {
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
-  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
-  if (bytes >= 1_024) return `${(bytes / 1_024).toFixed(1)} KB`;
-  return `${bytes} B`;
-}
-
-/**
- * Format currency
- */
-function formatCurrency(usd: number): string {
-  if (usd >= 100) return `$${usd.toFixed(0)}`;
-  if (usd >= 1) return `$${usd.toFixed(2)}`;
-  if (usd >= 0.01) return `$${usd.toFixed(2)}`;
-  return `$${usd.toFixed(4)}`;
 }
 
 /**
@@ -751,18 +729,6 @@ function TokenBar({
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
         <div className={`h-full ${colorClasses[color]} transition-all`} style={{ width: `${percentage}%` }} />
       </div>
-    </div>
-  );
-}
-
-/**
- * Cost Item Component
- */
-function CostItem({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded bg-muted/50 px-2 py-1">
-      <p className="text-[10px] text-muted-foreground">{label}</p>
-      <p className="text-xs font-medium">{formatCurrency(value)}</p>
     </div>
   );
 }

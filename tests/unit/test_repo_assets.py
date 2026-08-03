@@ -7,6 +7,7 @@ tree + index it", so the tests exercise: (1) placement/deploy nesting math, and
 A transient fixture REPO type (``repo_node``) is registered so the machinery is
 covered independent of which real types migrate to REPO.
 """
+
 import types
 
 import pytest
@@ -58,8 +59,7 @@ def test_repo_child_nests_recursively(repo_type, tmp_path):
 
     grand = FSRecord(type=repo_type, name="Grand").compute_asset_ref(child._path, _entity("Grand"))
     assert grand._path == (
-        parent_folder / AGENTIC_ASSETS_DIR / repo_type / "child"
-        / AGENTIC_ASSETS_DIR / repo_type / "grand"
+        parent_folder / AGENTIC_ASSETS_DIR / repo_type / "child" / AGENTIC_ASSETS_DIR / repo_type / "grand"
     )
 
 
@@ -169,9 +169,7 @@ def test_repo_walker_emits_only_requested_type_but_traverses_other_parents(
         IndexerOptions(types=[EntityType.SPEC]),
     )
 
-    assert [(ref._path, ref.record_type) for ref in refs] == [
-        (nested_spec / "spec.md", EntityType.SPEC)
-    ]
+    assert [(ref._path, ref.record_type) for ref in refs] == [(nested_spec / "spec.md", EntityType.SPEC)]
 
 
 def test_repo_walker_noop_when_no_repo_types(tmp_path, monkeypatch):
@@ -179,7 +177,7 @@ def test_repo_walker_noop_when_no_repo_types(tmp_path, monkeypatch):
     from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
     from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 
-    monkeypatch.setattr(SchemaRegistry, "repo_family_to_info", lambda: {})
+    monkeypatch.setattr(SchemaRegistry, "repo_family_to_info", dict)
     (tmp_path / AGENTIC_ASSETS_DIR / "spec" / "x").mkdir(parents=True)
     assert repo_assets_fn([FSRef(tmp_path)], IndexerOptions()) == []
 
@@ -228,17 +226,35 @@ async def test_index_attachments_widens_types_for_repo(tmp_path, monkeypatch):
 
     # A repo asset (spec) → reindex covers ALL repo types, not just spec.
     await index_attachments(
-        [ReceivedAsset(root=tmp_path, scope="project", asset_type="spec",
-                       asset_id="x", entry_key="spec-x", record_type=EntityType.SPEC)],
-        project_id=None, owner=None,
+        [
+            ReceivedAsset(
+                root=tmp_path,
+                scope="project",
+                asset_type="spec",
+                asset_id="x",
+                entry_key="spec-x",
+                record_type=EntityType.SPEC,
+            )
+        ],
+        project_id=None,
+        owner=None,
     )
     assert set(captured["types"]) == {"spec", "task"}
 
     # A non-repo asset (markdown) keeps the tight single-type scope.
     captured.clear()
     await index_attachments(
-        [ReceivedAsset(root=tmp_path, scope="project", asset_type="markdown",
-                       asset_id="y", entry_key="markdown-y", record_type=EntityType.MARKDOWN)],
-        project_id=None, owner=None,
+        [
+            ReceivedAsset(
+                root=tmp_path,
+                scope="project",
+                asset_type="markdown",
+                asset_id="y",
+                entry_key="markdown-y",
+                record_type=EntityType.MARKDOWN,
+            )
+        ],
+        project_id=None,
+        owner=None,
     )
     assert captured["types"] == ("markdown",)

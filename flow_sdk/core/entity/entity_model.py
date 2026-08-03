@@ -639,6 +639,15 @@ class Entity(DBEntity):
         end = opts.offset + opts.limit if opts.limit else None
         return results[opts.offset : end]
 
+    @staticmethod
+    def asset_owner_classes() -> list[type["Entity"]]:
+        """Entity types that own, rather than merely reference, an asset path."""
+        return [
+            entity_cls
+            for entity_cls in SchemaRegistry.get_all_entity_classes()
+            if "asset_ref" in getattr(entity_cls, "model_fields", {}) and getattr(entity_cls, "owns_asset_ref", True)
+        ]
+
     @classmethod
     async def get_by_asset_ref(cls, path: "str | Path", *, resolve_containing: bool = False) -> "Entity | None":
         """Resolve the single entity whose ``asset_ref`` equals ``path``.
@@ -661,9 +670,13 @@ class Entity(DBEntity):
         import asyncio  # noqa: PLC0415
 
         path_str = str(path)
-        candidates = [
-            ecls for ecls in SchemaRegistry.get_all_entity_classes() if "asset_ref" in getattr(ecls, "model_fields", {})
-        ]
+        # Only types that OWN their path may answer "who owns this path". A type
+        # that merely *references* an asset (``owns_asset_ref = False``, e.g.
+        # Artifact) carries the same ``asset_ref`` as the entity it points at, so
+        # enrolling it would let it shadow the real owner — and which one won
+        # would be decided by SchemaRegistry iteration order, i.e. correct for a
+        # type registered before it and silently wrong for one registered after.
+        candidates = cls.asset_owner_classes()
 
         async def _try(ecls: type) -> "Entity | None":
             try:
@@ -1448,22 +1461,25 @@ class Entity(DBEntity):
         # own skill; else run the declared built-in (e.g. "artifact-setup").
         skill_name = (getattr(self, "name", None) or self.id) if skill == self.get_type() else skill
         try:
-            from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+            from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
             from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
 
-            # ``project_id``/``workdir`` are binding-frozen — set in the ctor only.
-            ap = AgenticProcess(
+            prompt = f"Use the {skill_name} skill to set up {typeid_str}."
+            # ``project_id``/``workdir`` are binding-frozen — set in the ctor
+            # only, which is why they ride the launch call rather than being
+            # assigned after. The first turn is scheduled
+            # separately so this returns a DisplayTarget immediately.
+            deployment = await get_agent_local_deployment("artifact-setup")
+            ap = await deployment.build(
+                prompt,
                 workdir=workdir,
                 project_id=project_id,
                 target_typeid_str=(f"project-{project_id}" if project_id else typeid_str),
-                visible=False,
-                pty_mode=False,
                 process_type=ProcessKind.CHAT,
-                load_flowpad_assistant=True,
                 context_data={"source_artifact_id": self.id, "launched_from": "artifact_setup"},
             )
             await ap.save()
-            _schedule_setup_prompt(ap, f"Use the {skill_name} skill to set up {typeid_str}.")
+            _schedule_setup_prompt(ap, prompt)
             return _entity_payload(ap)
         except Exception:
             service_log.warn(
@@ -1784,7 +1800,7 @@ class Entity(DBEntity):
 
         path = build_hub_url(self.get_type())
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            resp = await client.post(path, body)
+            await client.post(path, body)
 
         # ``remote`` is opt-in per subclass. Flip it when present so callers
         # can branch on it. Subclasses without the field stay unchanged.

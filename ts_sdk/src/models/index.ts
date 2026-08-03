@@ -3,6 +3,7 @@ export * from './TypeId';
 export * from './asset-editor';
 export * from './ApiUrl';
 export * from './ActionInfo';
+export * from './CloudOrigin';
 export * from './BootstrapInfo';
 export * from './JobItem';
 export * from './LabelInfo';

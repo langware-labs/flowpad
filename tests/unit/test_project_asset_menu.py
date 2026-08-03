@@ -36,13 +36,13 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agentic_process.agentic_process import AssetSource
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.folder import Folder
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
+from flow_sdk.builtin.subagent import SubAgent
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase without approval
@@ -116,7 +116,7 @@ async def nested(tmp_path: Path, monkeypatch):
             id=str(uuid.uuid4()), name=f"c2_doc_{suffix}",
             asset_ref=canonical_posix_path(assets["c2_doc"]),
         )),
-        "c3_agent": await _save(Agent(
+        "c3_agent": await _save(SubAgent(
             id=str(uuid.uuid4()), name=f"c3_agent_{suffix}",
             asset_ref=canonical_posix_path(assets["c3_agent"]),
         )),
@@ -229,9 +229,9 @@ async def test_counts_accumulate_up_the_tree(nested):
     assert _own(root, "skill") == 1          # P's own
     assert _count(root, "skill") == 2        # + C1's
     assert _count(root, "markdown") == 2     # C2's + plain's
-    assert _count(root, "agent") == 1        # C3's, three levels down
+    assert _count(root, "subagent") == 1        # C3's, three levels down
     assert _total(root) == 5
-    assert _count(c3, "agent") == _own(c3, "agent") == 1
+    assert _count(c3, "subagent") == _own(c3, "subagent") == 1
     assert _total(c1) == 3                   # c1_skill + c2 doc + c3 agent
 
 
@@ -249,7 +249,7 @@ async def test_recursive_false_stops_at_direct_children(nested):
     menu = await _menu(nested["p"], recursive=False)
     root = menu["root"]
     assert root["children"] == []
-    assert _count(root, "agent") == 0        # C3 is three levels away
+    assert _count(root, "subagent") == 0        # C3 is three levels away
     assert _count(root, "skill") == 1        # only P's own
 
 
@@ -261,7 +261,7 @@ async def test_max_depth_caps_the_walk(nested):
     c2 = by_path[canonical_posix_path(nested["dirs"]["C2"])]
     # No phantom descendants folded into a node whose children were cut.
     assert _count(c2, "markdown") == _own(c2, "markdown") == 1
-    assert _count(c2, "agent") == 0
+    assert _count(c2, "subagent") == 0
 
 
 async def test_cycle_terminates(nested):

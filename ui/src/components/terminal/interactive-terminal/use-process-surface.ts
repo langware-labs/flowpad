@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { isReadyForInput, PrefKey, WorkerMode, type AgenticProcess } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { usePreferenceResolved } from '@src/hooks/use-preference';
@@ -11,6 +11,14 @@ interface UseProcessSurfaceOptions {
    *  mounted. Ref-free so this hook stays testable and has no opinion about who
    *  owns the terminal; omitted in vibe, where the backend picks defaults. */
   getDims?: () => { cols: number; rows: number } | undefined;
+  /** Whether a lifecycle mutation may start now. The always-mounted panel
+   *  keeps this false while its own `/open` is in flight: mode changes remain
+   *  pending in `lastReconciledMode`, then reconcile when startup is ready. */
+  canSwitch?: boolean;
+  /** Subscribe to the process inside this hook. Disable this when the owning
+   *  component already received `process` from `useEntity`: the same object is
+   *  then both the reactive render source and the lifecycle mutation target. */
+  subscribeToProcess?: boolean;
 }
 
 /**
@@ -44,10 +52,16 @@ export function resetSurfaceReconcileState(): void {
  * footer toggle, a `?viewMode=` URL, or `window.setView()`.
  *
  * Reconciles on a mode CHANGE only, never on first sight of a process: merely
- * opening a session must not kill or spawn a worker. Returns the reactive entity
- * it already subscribes to, so callers don't open a second subscription.
+ * opening a session must not kill or spawn a worker. By default it returns the
+ * reactive entity it subscribes to; an existing `useEntity` owner can disable
+ * that subscription and receive its own process back unchanged.
  */
-export function useProcessSurface({ process, getDims }: UseProcessSurfaceOptions): AgenticProcess | null {
+export function useProcessSurface({
+  process,
+  getDims,
+  canSwitch = true,
+  subscribeToProcess = true,
+}: UseProcessSurfaceOptions): AgenticProcess | null {
   const viewMode = useViewMode();
   // The preference may not have been read in yet (first load in a browser
   // profile, no localStorage boot seed). `useViewMode` serves the registry
@@ -55,13 +69,20 @@ export function useProcessSurface({ process, getDims }: UseProcessSurfaceOptions
   // the real value look like a user-driven change when it lands — spawning or
   // killing a worker purely because a preference resolved late.
   const modeResolved = usePreferenceResolved(PrefKey.VIEW_MODE);
-  const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
+  const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null, {
+    enabled: subscribeToProcess,
+  });
   const live = liveProcess ?? process ?? null;
   const ptyMode = !(live?.isHeadless ?? false);
   const awaitingUserInput = isReadyForInput(live ?? {});
   // Guards re-entry with the CURRENT value rather than a closed-over one, and
   // keeps a transport switch from re-rendering every mounted session twice.
   const switching = useRef(false);
+  // A URL mode can change while the previous lifecycle promise is still in
+  // flight. Ref completion alone does not re-run an effect that returned on
+  // `switching.current`; this revision drains the latest desired mode after a
+  // successful switch without immediately retrying failures.
+  const [reconcileRevision, setReconcileRevision] = useState(0);
 
   useEffect(() => {
     if (!modeResolved || !live || switching.current) return;
@@ -78,6 +99,10 @@ export function useProcessSurface({ process, getDims }: UseProcessSurfaceOptions
       lastReconciledMode.set(key, viewMode); // transport already matches
       return;
     }
+    // Keep `previous` unchanged while the owning panel finishes its startup
+    // mutation. A URL mode selected during that window is then still a real
+    // previous→current transition when readiness flips true.
+    if (!canSwitch) return;
     // The backend 409s a mid-turn switch. Deliberately do NOT record the mode
     // here: leaving it unrecorded means this effect retries the moment the
     // worker goes idle, instead of stranding the session on the wrong transport.
@@ -85,9 +110,11 @@ export function useProcessSurface({ process, getDims }: UseProcessSurfaceOptions
 
     switching.current = true;
     void (async () => {
+      let reconciled = false;
       try {
         await live.switchMode(wantPty ? WorkerMode.Interactive : WorkerMode.CLI, wantPty ? getDims?.() : undefined);
         lastReconciledMode.set(key, viewMode);
+        reconciled = true;
         // The transcript reconcile pulls in turns the other mode produced. It is
         // a VIEW concern and slow on a large session (backend transcript parse),
         // so it is never awaited — holding on it wedged rapid switching.
@@ -104,9 +131,10 @@ export function useProcessSurface({ process, getDims }: UseProcessSurfaceOptions
         });
       } finally {
         switching.current = false;
+        if (reconciled) setReconcileRevision((revision) => revision + 1);
       }
     })();
-  }, [viewMode, live, ptyMode, awaitingUserInput, modeResolved, getDims]);
+  }, [viewMode, live, ptyMode, awaitingUserInput, modeResolved, getDims, canSwitch, reconcileRevision]);
 
   return live;
 }

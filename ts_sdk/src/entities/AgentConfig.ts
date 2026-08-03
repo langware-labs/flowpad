@@ -1,7 +1,7 @@
-import { CheckpointMode, SearchMode, WorkerType } from './agent';
+import { CheckpointMode, SearchMode, WorkerType } from './subagent';
 
 /**
- * Default Agent Configuration with sensible defaults for testing and production
+ * Default SubAgent Configuration with sensible defaults for testing and production
  * Use this class to ensure consistent agent configuration across the application
  */
 export class AgentConfig {
@@ -200,7 +200,7 @@ export class AgentConfig {
   }
 
   /**
-   * Convert to the format expected by the Agent constructor
+   * Convert to the format expected by the SubAgent constructor
    */
   toAgentConstructor() {
     return {

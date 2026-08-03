@@ -8,12 +8,21 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
+from itertools import count
 from typing import Any, Optional
 from uuid import uuid4
 
 from fastapi.encoders import jsonable_encoder
 
 logger = logging.getLogger(__name__)
+
+
+# ``DataOpMessage`` still has multiple compatibility import paths, each with
+# its own producer-local ``BaseMessage._counter``. Those values cannot order a
+# mixed stream. Stamp the authoritative sequence at the one outbound funnel,
+# before per-connection send tasks can complete out of order. A reconnect gets
+# a new socket and the client resets its accepted-sequence map.
+_DATA_OP_WIRE_SEQUENCE = count(1)
 
 
 class DataOpMessage:
@@ -113,6 +122,13 @@ def _to_message_dict(op_message: Any) -> dict:
     return jsonable_encoder(data, exclude_none=True)
 
 
+def _prepare_data_op_message(op_message: Any) -> dict:
+    """Serialize one DataOp and assign its process-wide wire order."""
+    message = _to_message_dict(op_message)
+    message["instance_id"] = next(_DATA_OP_WIRE_SEQUENCE)
+    return message
+
+
 def _resolve_recipients(
     op: str,
     entity_type: str | None,
@@ -203,7 +219,7 @@ def _sync_handle_entity_op(op_message: DataOpMessage):
             logger.debug("No active connections, skipping notifications")
             return
 
-        message = _to_message_dict(op_message)
+        message = _prepare_data_op_message(op_message)
         op = str(message.get("op", "")).lower()
         entity_type, entity_id, type_id = _extract_entity_parts(message.get("to_entity"))
         if type_id:

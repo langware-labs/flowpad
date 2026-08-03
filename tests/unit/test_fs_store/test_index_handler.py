@@ -78,7 +78,7 @@ async def clean_target_types():
     targets = [
         RecordType.CLAUDE_SESSION, RecordType.PROJECT, RecordType.PLAN,
         RecordType.MARKDOWN, RecordType.CLAUDE_MD, RecordType.CLAUDE_RULES,
-        RecordType.SKILL, RecordType.AGENT,
+        RecordType.SKILL, RecordType.SUBAGENT,
         RecordType.COMMAND, RecordType.CLAUDE_MEMORY, RecordType.SPEC,
         RecordType.CLAUDE_HOOK, RecordType.TASK,
     ]

@@ -22,7 +22,7 @@ export function perfLog(label: string): void {
   console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms ${label}`);
 }
 
-export async function perfTime<T>(label: string, fn: () => Promise<T>): Promise<T> {
+export async function perfTime<T>(label: string, fn: () => T | Promise<T>): Promise<T> {
   const tagOn = toplog.isOn('process_load');
   if (!import.meta.env.DEV && !tagOn) return fn(); // zero-cost when nothing listens
   const t0 = readT0();

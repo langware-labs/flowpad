@@ -7,8 +7,11 @@ import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
+from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowDataType
 from flow_sdk.transcript_analyzer import AgentTranscriptFile, TranscriptFormat
+from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
+
+from .event_to_flowdata import _element_type_for_kind
 
 logger = logging.getLogger(__name__)
 
@@ -153,8 +156,50 @@ def load_transcript_history(
         return []
     history: list[FlowData] = []
     for entry in parsed.entries:
-        history.extend(entry.to_flow_data())
+        history.extend(_entry_to_replay_flow_data(entry))
     return history
+
+
+def _entry_to_replay_flow_data(entry) -> list[FlowData]:
+    """Wrap a parsed entry in the same envelope the live stream stamps.
+
+    Mirrors ``event_to_flowdata._wrap_live`` field for field, differing only in
+    ``observation_kind`` — so a reloaded session is row-for-row comparable with
+    what a live subscriber saw, the way claude and codex replay already are.
+
+    Without this a replayed frame carried no ``ProcessEntry``, no ``subtype``
+    and no ``observation-kind``, so every chip the UI builds off the typed entry
+    (a ``flow`` CLI call, a file write, a skill) silently degraded to a nameless
+    generic row after a page refresh — on copilot only.
+    """
+    process_entry = ProcessEntry(transcript_entry=entry, observation_kind="replay").to_dict()
+    frames = entry.to_flow_data()
+    if not frames:
+        # Entries whose ``to_flow_data()`` is deliberately empty still get one
+        # frame — ``_wrap_live`` does the same, so the two paths stay aligned.
+        return [
+            FlowData(
+                flow_value={},
+                created_time=entry.timestamp or "",
+                attributes={
+                    "element-type": _element_type_for_kind(entry.kind.value),
+                    "data-type": FlowDataType.OBJECT,
+                    "subtype": entry.kind.value,
+                    "observation-kind": "replay",
+                },
+                process_entry=process_entry,
+            )
+        ]
+
+    for frame in frames:
+        frame.process_entry = process_entry
+        frame.attributes.setdefault("element-type", _element_type_for_kind(entry.kind.value))
+        frame.attributes.setdefault("data-type", FlowDataType.OBJECT)
+        frame.attributes.setdefault("subtype", entry.kind.value)
+        frame.attributes.setdefault("observation-kind", "replay")
+        if getattr(entry, "virtual", False):
+            frame.attributes["is-virtual"] = "true"
+    return frames
 
 
 def _format_for_path(path: Path) -> TranscriptFormat:
@@ -173,9 +218,7 @@ def _read_workspace_cwd(path: Path) -> str | None:
         if not stripped.startswith("cwd:"):
             continue
         value = stripped.split(":", 1)[1].strip()
-        if (value.startswith('"') and value.endswith('"')) or (
-            value.startswith("'") and value.endswith("'")
-        ):
+        if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
             value = value[1:-1]
         return value or None
     return None

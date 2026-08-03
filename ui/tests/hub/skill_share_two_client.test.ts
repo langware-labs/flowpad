@@ -13,7 +13,7 @@
  * Test A proves isolation (the realm separation itself). Test B is the original
  * use case end-to-end, now in-process: dev-1 creates + shares a skill
  * conversation via the real SDK share path (mirrors `matrix.alice`), and dev-2's
- * SDK client discovers + accepts the invitation and materialises the shared
+ * SDK client receives the assignment and materialises the shared
  * conversation as a remote entity (mirrors `matrix.bob`).
  *
  * Requires the local hub (8093) + dev-1/dev-2 launched via
@@ -26,11 +26,11 @@ import { testEntityName, trackForCleanup } from '../_cleanup';
 import {
   HUB_INST_1 as INST_1,
   HUB_INST_2 as INST_2,
-  findPendingInvitation,
   getInstance,
   instanceAvailable,
   postApi,
   queryMessageAttachments,
+  syncAssignedConversation,
   type ResolvedInstance,
 } from './_instances';
 
@@ -67,15 +67,15 @@ describe('two SDK clients in one process (realm per instance)', () => {
     // Create a skill on dev-1 via ITS realm's entity class; it resolves on dev-1.
     const skill = trackForCleanup(await dev1.sdk.Skill.create(testEntityName('skill')));
     expect(skill.id).toBeTruthy();
-    const onDev1 = await dev1.sdk.Skill.getById(skill.id!).catch(() => null);
+    const onDev1 = await dev1.sdk.Skill.getById(skill.id).catch(() => null);
     expect(onDev1?.id).toBe(skill.id);
 
     // The same id on dev-2 (different backend, different realm) is NOT found.
-    const onDev2 = await dev2.sdk.Skill.getById(skill.id!).catch(() => null);
+    const onDev2 = await dev2.sdk.Skill.getById(skill.id).catch(() => null);
     expect(onDev2).toBeFalsy();
   });
 
-  it('dev-1 shares a skill; dev-2 accepts, downloads (staged), installs, uninstalls', async () => {
+  it('dev-1 shares a skill; dev-2 receives, downloads (staged), installs, uninstalls', async () => {
 
     // ── dev-1 (sender): real SDK share path (mirrors matrix.alice). ──
     const skill = trackForCleanup(await dev1.sdk.Skill.create(testEntityName('skill')));
@@ -99,23 +99,16 @@ describe('two SDK clients in one process (realm per instance)', () => {
     expect(upload.data?.body_status).toBe('ready');
 
     // dev-1's own realm resolves the skill it created.
-    expect((await dev1.sdk.Skill.getById(skill.id!).catch(() => null))?.id).toBe(skill.id);
+    expect((await dev1.sdk.Skill.getById(skill.id).catch(() => null))?.id).toBe(skill.id);
 
-    // ── dev-2 (receiver): discover + accept the invitation (mirrors matrix.bob).
-    //    The invitation has to sync down from the hub first — poll for it. ──
-    const invitation = await pollUntil(
-      () => findPendingInvitation(dev2, conv.id!),
-      20_000,
-      'pending invitation on dev-2',
-    );
-    const accepted = await dev2.sdk.acceptInvitation({ invitation_id: invitation.id! });
-    if (accepted.conversation_id) expect(accepted.conversation_id).toBe(conv.id);
+    // ── dev-2 (receiver): synchronize the immediate assignment. ──
+    await syncAssignedConversation(dev2, conv.id);
 
-    // Post-accept the conversation is materialised on dev-2 as a remote entity —
+    // The conversation is materialised on dev-2 as a remote entity —
     // two SDK clients exchanging over one hub in a single process, each in its
     // own realm.
     const received = await pollUntil(
-      () => dev2.sdk.Conversation.getById(conv.id!),
+      () => dev2.sdk.Conversation.getById(conv.id),
       10_000,
       'conversation materialised on dev-2',
     );
@@ -141,7 +134,7 @@ describe('two SDK clients in one process (realm per instance)', () => {
     expect(stagedMa.scope ?? null).toBeNull();
     expect(stagedMa.unpacked_path).toBeTruthy();
     // NOT installed: the skill entity does not exist on dev-2 yet.
-    expect(await dev2.sdk.Skill.getById(skill.id!).catch(() => null)).toBeFalsy();
+    expect(await dev2.sdk.Skill.getById(skill.id).catch(() => null)).toBeFalsy();
 
     // ── Install (user scope) → the skill entity materialises on dev-2. ──
     const install = await post(
@@ -151,11 +144,11 @@ describe('two SDK clients in one process (realm per instance)', () => {
     );
     expect(String(install.status)).toMatch(/success/i);
     const installedSkill = await pollUntil(
-      () => dev2.sdk.Skill.getById(skill.id!).catch(() => null),
+      () => dev2.sdk.Skill.getById(skill.id).catch(() => null),
       10_000,
       'installed skill entity on dev-2',
     );
-    expect(installedSkill!.id).toBe(skill.id);
+    expect(installedSkill.id).toBe(skill.id);
 
     // ── Uninstall → entity gone; attachment back to staged (re-installable). ──
     const uninstall = await post(
@@ -165,7 +158,7 @@ describe('two SDK clients in one process (realm per instance)', () => {
     );
     expect(String(uninstall.status)).toMatch(/success/i);
     await pollUntil(async () => {
-      const gone = await dev2.sdk.Skill.getById(skill.id!).catch(() => null);
+      const gone = await dev2.sdk.Skill.getById(skill.id).catch(() => null);
       return gone ? null : true;
     }, 10_000, 'skill entity removed on dev-2 after uninstall');
     const reset = await queryAttachments();

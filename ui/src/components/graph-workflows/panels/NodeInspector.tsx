@@ -94,7 +94,7 @@ export function NodeInspector({ node }: { node: GraphWorkflowDocNode }) {
           </Field>
           {asStr(nd.typeid) !== '' && (
             <p className="afl-note">
-              The Agent definition's model + system prompt lead; the fields below are
+              The SubAgent definition's model + system prompt lead; the fields below are
               per-node overrides / task addendum.
             </p>
           )}

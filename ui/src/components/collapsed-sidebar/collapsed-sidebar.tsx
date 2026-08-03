@@ -27,7 +27,8 @@ import { PageId, Project } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { WikiTip } from '@src/components/wiki-tip';
 import { useContext } from '@src/hooks/useContext';
-import { useInboxStore } from '@src/store/use-inbox-store';
+import { RUNTIME_CLASS } from '@src/components/environment-banner/runtime-appearance';
+import { useBannerMinimized } from '@src/components/environment-banner/use-banner-minimized';
 import { useProjectTasks } from '@src/hooks/use-project-tasks';
 import { useHasConversations } from '@src/hooks/use-has-conversations';
 import { useLastVibeChat } from '@src/pages/flow-page/use-last-vibe-chat';
@@ -57,7 +58,9 @@ import {
   FolderOpen,
   Home,
   Mail,
+  History,
   MessageCircle,
+  RadioTower,
   Search,
   Workflow,
   Webhook,
@@ -100,7 +103,14 @@ function NavBadge({ count }: { count: number }) {
 
 export function CollapsedSidebar() {
   const { navigation, currentDock } = useDockNavigation();
-  const { project } = useContext();
+  const { project, runtimeKind } = useContext();
+  // When the environment banner is minimized, the Home icon carries the runtime
+  // color in its place — the signal shrinks, it does not disappear. Stated once
+  // and used by BOTH rails (`home` exists on desk and hub alike), so the rule
+  // can't come to mean different things on the two surfaces.
+  const bannerMinimized = useBannerMinimized();
+  const homeTint = bannerMinimized ? RUNTIME_CLASS[runtimeKind] : '';
+  const railBtnClass = (id: string) => `relative w-full justify-center px-2 ${id === 'home' ? homeTint : ''}`;
   const navigate = useNavigate();
   const location = useLocation();
   const onDiscover = location.pathname === '/discover';
@@ -150,6 +160,8 @@ export function CollapsedSidebar() {
     files: { title: t`Files`, icon: FolderOpen, viewType: ViewType.EXPLORER },
     capabilities: { title: t`Capabilities`, icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
     'graph-workflows': { title: t`Graph Workflows`, icon: Workflow, viewType: ViewType.GRAPH_WORKFLOWS },
+    signals: { title: t`Signals`, icon: RadioTower, viewType: ViewType.SIGNALS },
+    'process-runs': { title: t`Runs`, icon: History, viewType: ViewType.PROCESS_RUNS },
   };
 
   // Hub page has its own minimal rail — Home + the browse entries. It bypasses
@@ -367,7 +379,7 @@ export function CollapsedSidebar() {
           data-rail-item={spec.id}
           isActive={isActiveId(spec.id)}
           onClick={() => handleRailClick(spec.id)}
-          className="relative w-full justify-center px-2"
+          className={railBtnClass(spec.id)}
         >
           <Icon className="h-5 w-5" />
           <NavBadge count={badgeForId(spec.id)} />
@@ -386,7 +398,7 @@ export function CollapsedSidebar() {
           isActive={hubActive(item)}
           onClick={() => handleClick(item.viewType, item.pointer)}
           data-rail-item={item.id}
-          className="relative w-full justify-center px-2"
+          className={railBtnClass(item.id)}
         >
           <Icon className="h-5 w-5" />
         </SidebarMenuButton>

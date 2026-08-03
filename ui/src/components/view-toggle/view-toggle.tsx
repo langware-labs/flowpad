@@ -59,8 +59,14 @@ export function resetRevealedModes() {
  * tooltip carries the name. Lives at the far left.
  */
 export function ViewToggle() {
-  const mode = useViewMode();
+  const persistedMode = useViewMode();
   const { currentDock, navigation } = useDockNavigation();
+  // URL-first: on a dock route the URL is already authoritative in the render
+  // that commits it; preference adoption follows in an effect. Reading the
+  // persisted mode here can therefore show/dedupe against the previous mode
+  // for one frame and drop a valid click. Pointerless routes have no URL mode,
+  // so they retain the preference as their source of truth.
+  const mode = currentDock?.viewMode ?? persistedMode;
   const [revealed, setRevealed] = useState(sessionRevealed);
   const reveal = (m: ViewMode) => {
     sessionRevealed = new Set([...sessionRevealed, m]);

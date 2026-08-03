@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Users } from 'lucide-react';
-import { ConversationKind, type ConversationParticipant } from '@sdk';
+import { ConversationKind, isHelpdeskKind, type ConversationParticipant } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -23,7 +23,7 @@ const MAX_INLINE_AVATARS = 4;
 interface ConversationParticipantsProps {
   participants: ConversationParticipant[];
   /**
-   * COMMUNITY rooms mask responder identity, so names aren't shown — we render
+   * HELPDESK rooms mask responder identity, so names aren't shown — we render
    * circles instead. DIRECT rooms allow names.
    */
   kind?: ConversationKind;
@@ -49,7 +49,7 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
   const others = participants.filter((p) => !participantIsUser(p, me));
   if (others.length === 0) return null;
 
-  const allowNames = kind !== ConversationKind.COMMUNITY;
+  const allowNames = !isHelpdeskKind(kind);
   const showNames = allowNames && others.length <= NAME_LIMIT;
 
   const trigger = showNames ? (

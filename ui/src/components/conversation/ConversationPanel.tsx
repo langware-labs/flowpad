@@ -49,6 +49,10 @@ interface ConversationPanelProps {
    * `selectedMessageId`. Omitted → local-state selection (embedded hosts).
    */
   onMessageNavigate?: (messageId: string) => void;
+  /** URL-carried thread filter (`?thread=<id>`); null = show every thread. */
+  threadId?: string | null;
+  /** Open a thread (id) or return to the packed list (null). */
+  onThreadNavigate?: (threadId: string | null) => void;
 }
 
 /**
@@ -156,6 +160,8 @@ export function ConversationPanel({
   className,
   selectedMessageId,
   onMessageNavigate,
+  threadId,
+  onThreadNavigate,
 }: ConversationPanelProps) {
   // One gate, two subject shapes. Remote provenance always lives on the
   // conversation; the gate stamps the task when present (task owns project_root
@@ -322,6 +328,10 @@ export function ConversationPanel({
           <div className={`${bodyWrapper} relative min-h-0 flex-1 overflow-y-auto`}>
             <ChipsExcludeProvider add={taskKeys}>
               <ConversationView
+                // Keyed so switching conversations RESETS the view's local
+                // state. Without it the instance is reused and an in-flight
+                // "composing…" line follows you into the next conversation.
+                key={conversationId}
                 conversationId={conversationId}
                 task={task}
                 senderName={senderName}
@@ -329,6 +339,8 @@ export function ConversationPanel({
                 selectedMessageIds={selectedMessageIds}
                 onSelectMessage={selectOneMessage}
                 onOpenRun={openRun}
+                threadId={threadId}
+                onThreadNavigate={onThreadNavigate}
               />
             </ChipsExcludeProvider>
           </div>

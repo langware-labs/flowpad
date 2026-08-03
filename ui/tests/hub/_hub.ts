@@ -122,3 +122,29 @@ export async function localBackendIsCloudLoggedIn(localApiBase: string): Promise
     return false;
   }
 }
+
+/** Materialize one immediately assigned conversation through a local backend.
+ * Callers supply that backend's `/api/v1` base so paired tests cannot drift to
+ * a different instance. */
+export async function syncAssignedConversationAt<T = unknown>(
+  apiV1Base: string,
+  convId: string,
+  instanceName?: string,
+): Promise<T | undefined> {
+  const response = await fetch(`${apiV1Base}/graph/conversation-message-sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversation_id: convId }),
+  });
+  const body = (await response.json().catch(() => null)) as {
+    status?: string;
+    data?: T;
+  } | null;
+  if (!response.ok || body?.status !== 'SUCCESS') {
+    const location = instanceName ? ` on ${instanceName}` : '';
+    throw new Error(
+      `conversation sync failed${location}: HTTP ${response.status} ${JSON.stringify(body)}`,
+    );
+  }
+  return body.data;
+}

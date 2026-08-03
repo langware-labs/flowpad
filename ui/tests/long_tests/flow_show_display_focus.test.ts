@@ -1,5 +1,5 @@
 /**
- * Agent → `flow show` → AgenticProcess.on_show → entity_event('on_show') → TS 'show' event.
+ * SubAgent → `flow show` → AgenticProcess.on_show → entity_event('on_show') → TS 'show' event.
  *
  * End-to-end, no mocks: a real Claude worker is created with standing
  * instructions (context_data.instructions → system-prompt append) telling it to
@@ -115,7 +115,7 @@ describe('flow show — agent-declared display focus reaches proc.onShow', () =>
     const outputs: FlowData[] = [];
     void (async () => {
       try {
-        for await (const item of proc!.output()) {
+        for await (const item of proc.output()) {
           outputs.push(item);
           if (outputs.length > 200) outputs.shift();
         }

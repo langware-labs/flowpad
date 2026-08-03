@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, ClassVar, List, NamedTuple, Optional
+from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optional
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.builtin.user import normalize_email
 from flow_sdk.core import Entity
+from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
 from flow_sdk.db.drivers.db_base_record import TypeId
 from flow_sdk.schema.types import EntityType
 
@@ -22,30 +23,49 @@ class MessageRef(NamedTuple):
     landed_at: Optional[datetime]
 
 
+def _ref_sort_key(ref: "MessageRef") -> tuple:
+    """Total order over message refs, oldest-first, that cannot raise.
+
+    Two hazards a bare ``landed_at`` key would hit: ``None`` (a missing or
+    unparseable projected timestamp) is not comparable, and a naive datetime
+    is not comparable to an aware one — both appear in real projections, and
+    either one raises TypeError inside ``max``. Timestamped refs always beat
+    untimestamped ones; everything is compared in UTC.
+    """
+    from datetime import timezone  # noqa: PLC0415
+
+    landed = ref.landed_at
+    if landed is None:
+        return (0, 0.0)
+    if landed.tzinfo is None:
+        landed = landed.replace(tzinfo=timezone.utc)
+    return (1, landed.timestamp())
+
+
 class ConversationKind(StrEnum):
     """How a conversation should be interpreted across the UI/hub.
 
-    ``DIRECT`` is the default 1:1 / group conversation. ``COMMUNITY`` marks a
-    support-center "ticket": a guest opens it against the canonical community
-    project, staff pick it up from a shared pool, and replies are displayed
-    under the project's single ``community.display_name`` identity rather than
-    the individual responder (see ``Project.community``). This field is
-    **hub-authoritative** — it is stamped by ``Project.start_guest_conversation``
-    and must never be honored from a client-supplied payload (anti-spoof).
+    ``DIRECT`` is the default 1:1 / group conversation. ``HELPDESK`` marks a
+    support "ticket": a guest opens it against a helpdesk project, staff pick
+    it up from a shared pool, and replies are displayed under the project's
+    single ``helpdesk.display_name`` identity rather than the individual
+    responder (see ``Project.helpdesk``). This field is **hub-authoritative**
+    — it is stamped by ``Project.start_guest_conversation`` and must never be
+    honored from a client-supplied payload (anti-spoof).
     """
 
     DIRECT = "direct"
-    COMMUNITY = "community"
+    HELPDESK = "helpdesk"
 
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.cloud_client.client import FlowpadClient
 
 
-# Sentinel used by ConversationRecord.sync_to_db to bypass the projection
-# guard on Conversation.message_ids / message_count. Application code never
-# imports this — it must call the projection writer on the record instead.
-_PROJECTION_SENTINEL = object()
+# Kept as module-level aliases: `fs_store/operations/conversation.py` imports
+# `_PROJECTION_SENTINEL` from here, and the guard itself now lives in the
+# shared `ProjectedFields` mixin (one sentinel for every projected entity).
+_PROJECTION_SENTINEL = PROJECTION_SENTINEL
 
 _PROJECTED_FIELDS = frozenset({"message_ids", "message_count"})
 
@@ -85,7 +105,7 @@ def _get_hub_client(api_key: str) -> "FlowpadClient":
 # are intentionally absent: the hub doesn't host them; they keep riding the
 # message bundle and stay local. (Ideally this becomes a ``hub_hostable`` flag on
 # the type's ``TypeInfo`` so a new type lights up without editing this tuple.)
-_HUB_SHAREABLE_ASSET_TYPES = (EntityType.SKILL.value, EntityType.AGENT.value)
+_HUB_SHAREABLE_ASSET_TYPES = (EntityType.SKILL.value, EntityType.SUBAGENT.value)
 
 
 def _coerce_context_typeid(ref) -> Optional[TypeId]:
@@ -105,7 +125,7 @@ def _coerce_context_typeid(ref) -> Optional[TypeId]:
     return None
 
 
-class Conversation(Entity):
+class Conversation(ProjectedFields, Entity):
     """A conversation composed into a Task (or other parent entity).
 
     message_ids is a JSON-encoded list of typed Pointers projected from the
@@ -121,8 +141,8 @@ class Conversation(Entity):
     type: str = APIField(default="conversation")
     title: Optional[str] = APIField(default=None)
     # Conversation interpretation. ``direct`` (default) is a normal 1:1/group
-    # conversation; ``community`` marks a support-center ticket whose responder
-    # identity is masked behind ``Project.community.display_name``. Stamped by
+    # conversation; ``helpdesk`` marks a support ticket whose responder
+    # identity is masked behind ``Project.helpdesk.display_name``. Stamped by
     # the hub's ``Project.start_guest_conversation`` — never trusted from a
     # client payload. See ``ConversationKind``.
     kind: ConversationKind = APIField(default=ConversationKind.DIRECT)
@@ -152,6 +172,8 @@ class Conversation(Entity):
     # side. Defaults False (copy) — the sender opts in per conversation via the
     # Share dialog's Git toggle. Plain-text replies never change it.
     git_sharing_enabled: bool = APIField(default=False)
+    projected_fields: ClassVar[FrozenSet[str]] = _PROJECTED_FIELDS
+    projection_writer: ClassVar[str] = "ConversationRecord.sync_to_db"
     # Strip-only dismissal. When set, the Recent Conversations strip hides
     # this row UNTIL a FlowMessage newer than ``dismissed_at`` is appended
     # (auto-revive on new activity). The Inbox ignores this field entirely.
@@ -371,6 +393,7 @@ class Conversation(Entity):
         riding the message bundle as before. Best-effort per asset; a failed
         push is logged and that asset simply isn't granted (no membership
         breakage)."""
+        from flow_sdk.core.urls.service_urls import hub_wire_type  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         targets: list[dict] = []
@@ -392,7 +415,11 @@ class Conversation(Entity):
                         await ent.save(None)
                     except Exception as e:  # noqa: BLE001
                         logging.warning("[conv.share] persist remote %s failed (non-fatal): %s", tid, e)
-                targets.append({"typeid": str(tid), "role": "reader"})
+                # The hub resolves this typeid against its OWN registry, so it
+                # needs the wire spelling (subagent → agent until the hub
+                # renames) — same map as build_hub_url.
+                wire = TypeId(type=hub_wire_type(tid.type), id=tid.id)
+                targets.append({"typeid": str(wire), "role": "reader"})
             except Exception as e:  # noqa: BLE001
                 logging.warning("[conv.share] host asset %s failed (non-fatal): %s", tid, e)
         return targets
@@ -550,6 +577,25 @@ class Conversation(Entity):
             refs.append(MessageRef(pid, landed_at))
         return refs
 
+    def latest_message_ref(self) -> "Optional[MessageRef]":
+        """The NEWEST message, by timestamp — not the last one appended.
+
+        ``message_ids`` is append-ordered, and appends are arrival-ordered.
+        That is the same thing only while messages arrive in the order they
+        were sent, which stops being true the moment anything backfills: an
+        ingested mailbox hands its history back newest-first, so the LAST
+        pointer is the OLDEST mail. Reading ``refs[-1]`` there silently
+        corrupts the unread count, the inbox preview line and the archive
+        auto-revive comparison at once.
+
+        Refs whose timestamp is missing/unparseable sort oldest, so they can
+        never win — a corrupt entry must not become "latest".
+        """
+        refs = self.message_refs()
+        if not refs:
+            return None
+        return max(refs, key=_ref_sort_key)
+
     def is_archived(self) -> bool:
         """Conversation-level archive with auto-revive (see ``archived_at``):
         True while the stamp is set and no message NEWER than it has landed.
@@ -558,8 +604,8 @@ class Conversation(Entity):
         revive."""
         if self.archived_at is None:
             return False
-        refs = self.message_refs()
-        latest_ts = refs[-1].landed_at if refs else None
+        latest = self.latest_message_ref()
+        latest_ts = latest.landed_at if latest else None
         if latest_ts is None:
             return True
         archived_at = self.archived_at
@@ -730,37 +776,6 @@ class Conversation(Entity):
         from flow_sdk.fs_store.operations.conversation import default_jsonl_path  # noqa: PLC0415
 
         return str(default_jsonl_path(self.id))
-
-    def __setattr__(self, key, value):
-        if key in _PROJECTED_FIELDS and not self.__dict__.get("_allow_projection_write", False):
-            raise AttributeError(
-                f"Conversation.{key} is a projection — write via ConversationRecord.sync_to_db, not directly"
-            )
-        return super().__setattr__(key, value)
-
-    def apply_field_updates(self, fields: dict):
-        """Silently drop projection fields from inbound PUT/PATCH bodies.
-
-        A typical client save round-trips the entire entity dump, which
-        includes ``message_ids`` / ``message_count``. Those are projections
-        of ``conversation.jsonl`` — re-applying the previous values would
-        be a no-op, but the projection guard refuses any direct write.
-        Stripping them here keeps generic graph CRUD working without making
-        the projection guard leaky.
-        """
-        if fields:
-            fields = {k: v for k, v in fields.items() if k not in _PROJECTED_FIELDS}
-        return super().apply_field_updates(fields)
-
-    def _set_projection(self, key: str, value, sentinel) -> None:
-        """Internal projection writer used by ConversationRecord.sync_to_db."""
-        if sentinel is not _PROJECTION_SENTINEL:
-            raise PermissionError("invalid projection sentinel")
-        object.__setattr__(self, "_allow_projection_write", True)
-        try:
-            setattr(self, key, value)
-        finally:
-            object.__setattr__(self, "_allow_projection_write", False)
 
     # NOTE: per-subclass project-id projection moved to
     # ``Entity.get_implicit_private_context_entities`` in the base. The

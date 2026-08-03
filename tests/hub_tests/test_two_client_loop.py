@@ -13,16 +13,14 @@ the sender on each broadcast, so the two clients naturally alternate:
 
 Stops when STOP_AT is reached on either side.
 
-This test exercises the *standard hub invitation pattern* end-to-end — no
+This test exercises the *standard hub assignment pattern* end-to-end — no
 ``start_guest_conversation`` shortcut:
 
     1. alice creates a Conversation on the hub via plain ``POST /graph/conversation``.
     2. alice invites bob via ``POST /graph/conversation/<id>/members`` with a
        ``MembershipRequest`` targeting the Conversation with role ``member``.
-    3. bob discovers the invitation via ``GET /graph/invitation/pending``.
-    4. bob accepts via ``GET /api/v1/members/accept?invitation-id=<id>`` —
-       grants bob ``member`` role on the conversation.
-    5. bob calls ``POST /graph/conversation/<id>/join`` — appends himself to
+    3. the hub immediately grants bob ``member`` with no pending row.
+    4. bob calls ``POST /graph/conversation/<id>/join`` — appends himself to
        ``participants`` so ``_fanout_message`` can deliver to his WS.
 
 Credentials come from the cycle's ``ALICE_*``/``BOB_*`` environment, with the
@@ -46,6 +44,8 @@ from pathlib import Path
 import httpx
 import pytest
 import websockets
+
+from tests.hub_tests._assignment import assert_auto_assigned
 
 REPO_OSS = Path(__file__).resolve().parents[2]
 REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
@@ -83,7 +83,7 @@ def _make_ws_url(hub_base_url: str) -> str:
 
 @pytest.mark.asyncio
 async def test_two_client_loop(hub_base_url):
-    """Alice + Bob ping-pong increment loop using the standard invite pattern, STOP_AT=20."""
+    """Alice + Bob ping-pong loop using immediate assignment, STOP_AT=20."""
     oss_env = _read_env_local(REPO_OSS)
     app_env = _read_env_local(REPO_APP)
     alice_email = os.environ.get("ALICE_EMAIL") or oss_env.get("FLOWPAD_CLOUD_USER_EMAIL")
@@ -143,20 +143,16 @@ async def test_two_client_loop(hub_base_url):
         r.raise_for_status()
         print(f"invite: sent to {bob_email}")
 
-        # 3) the invite ALREADY granted bob's role — there is nothing pending to
-        # accept. ``_maybe_auto_accept`` grants at invite time for every target
-        # type (hub 74694a30d) and marks the invitation accepted as it does, so
-        # ``/invitation/pending`` is empty by design. Assert the grant landed by
-        # reading the roster instead.
-        r = await h.get(
-            f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/members",
-            headers=headers_a,
+        # 3) the hub assigns Bob immediately and leaves no manual pending row.
+        await assert_auto_assigned(
+            hub_base_url,
+            bob_tok,
+            entity_type="conversation",
+            entity_id=conv_id,
+            user_id=bob_id,
+            expected_role="member",
         )
-        r.raise_for_status()
-        roster = r.json()["data"] or []
-        bob_rows = [m for m in roster if (m.get("user_email") or "").lower() == bob_email.lower()]
-        assert bob_rows, f"invite did not grant bob a role; roster={roster}"
-        print(f"grant: bob is {bob_rows[0].get('role')} / {bob_rows[0].get('status')}")
+        print("assignment: bob is a member")
 
         # 4) bob joins → adds himself to participants so fanout reaches him.
         r = await h.post(

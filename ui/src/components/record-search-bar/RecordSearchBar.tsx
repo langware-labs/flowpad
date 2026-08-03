@@ -8,7 +8,7 @@ import { KeyboardEvent, useCallback, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 export const RECORD_TYPES = [
-  'bookmark', 'claude_session', 'codex_session', 'copilot_session', RecordType.SKILL, RecordType.AGENT, 'claude_hook', RecordType.COMMAND,
+  'bookmark', 'claude_session', 'codex_session', 'copilot_session', RecordType.SKILL, RecordType.SUBAGENT, 'claude_hook', RecordType.COMMAND,
   RecordType.ANNOTATION, 'comment', RecordType.TASK, RecordType.MARKDOWN, RecordType.PLAN,
   RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules', RecordType.PROJECT, 'codex_project',
 ];

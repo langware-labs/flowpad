@@ -176,11 +176,44 @@ class Folder(Entity):
         origin = await cls.detect_origin(canonical)
         return await cls.mint_for_origin(origin, local_path=canonical)
 
+    @classmethod
+    async def borrowed_checkout_paths(cls) -> set:
+        """Canonical paths of every directory we materialized from a TRANSPORTABLE
+        origin — i.e. every checkout of somebody else's repo.
+
+        These are bytes we clone but do not author, and indexing must never
+        write into them: identity backends normally COMMIT the id they mint
+        back into the source (markdown gets a ``flowpad:capsule`` block
+        appended), which dirties every tracked file and makes the vendor's next
+        ``git pull`` abort on "local changes would be overwritten" — silently,
+        until somebody tries to update the folder.
+
+        Answered from the Folder rows rather than by a per-path probe because
+        the Folder IS the record of "this directory came from elsewhere". A
+        caller that has a root and wants to know whether it may write asks
+        here; it does not need to know how the directory was attached, which is
+        the whole reason this lives on the entity and not at the call sites
+        (there are at least three: context-folder add, folder resolve, and the
+        project walk that owns a checkout it did not attach).
+        """
+        paths = set()
+        for folder in await cls.get_all():
+            origin = folder.origin
+            if origin is None or not origin.transportable or not folder.path:
+                continue
+            paths.add(canonical_posix_path(folder.path))
+        return paths
+
     # ── Materialize ──────────────────────────────────────────────────────────
 
     @action.post(action_name="resolve-location")
-    async def resolve_location(self) -> "object":
+    async def resolve_location(self, *, preferred_root=None) -> "object":
         """Materialize this folder's origin into a local path on THIS machine.
+
+        ``preferred_root`` directs where a fresh checkout lands. Callers that
+        manage a folder on the user's behalf (a helpdesk portal, say) pass a
+        root outside the visible workspace; ordinary context folders pass
+        nothing and take the driver's default placement.
 
         For a ``local`` origin: verify base+rel exist, set ``path``. For a
         transportable origin (git/…): clone/pull via the kind's driver, join the
@@ -201,7 +234,9 @@ class Folder(Entity):
         if rel and not is_safe_rel_path(rel):
             return ApiSuccessResponse(data={"kind": "error", "message": "origin has an unsafe rel_path"})
         try:
-            local_root, _project_id = await get_origin_driver(origin.kind).materialize(origin)
+            local_root, _project_id = await get_origin_driver(origin.kind).materialize(
+                origin, preferred_root=preferred_root
+            )
         except FileNotFoundError as exc:
             return ApiSuccessResponse(data={"kind": "error", "message": f"not present: {exc}"})
         except Exception as exc:  # driver/materialize failure (clone error, etc.)
@@ -225,7 +260,15 @@ class Folder(Entity):
                 _index_additional_dir,
             )
 
-            await _index_additional_dir(self.path)
+            # A transportable origin means these bytes came from somewhere else
+            # — a repo we clone but do not author. Indexing normally COMMITS the
+            # id it mints back into the source (markdown gets a
+            # ``flowpad:capsule`` block appended), which dirties the whole
+            # checkout and makes the next ``git pull`` abort on "local changes
+            # would be overwritten". Owning the distinction here, at the one
+            # place that knows the origin, keeps every caller of
+            # ``resolve_location`` from having to remember it.
+            await _index_additional_dir(self.path, read_only=origin.transportable)
         except Exception:
             pass
         return ApiSuccessResponse(data={"kind": "ready", "path": self.path})

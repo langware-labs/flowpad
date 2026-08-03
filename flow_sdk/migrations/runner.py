@@ -245,7 +245,7 @@ async def _drive_migration(
     ``started`` record. We update it to ``running`` once the agent first
     writes its transcript, then to ``completed``/``error``.
     """
-    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agent_registry import get_agent_local_deployment
     from flow_sdk.core.capabilities.discovery import ensure_discovered
 
     cn = await _bootstrap_local()
@@ -266,16 +266,18 @@ async def _drive_migration(
         f"--- BEGIN RECIPE ---\n{skill_md}\n--- END RECIPE ---"
     )
 
-    ap = AgenticProcess(
+    # The `migration-runner` Agent owns the bundle (bypassPermissions, model);
+    # only the compute node and workdir are per-run.
+    deployment = await get_agent_local_deployment("migration-runner")
+    ap = await deployment.build(
+        prompt_text,
         compute_node_id=f"compute_node-{cn.id}",
-        cli_config={"permission_mode": "bypassPermissions"},
         workdir=str(Path.cwd()),
-        visible=False,
         name=f"Migration: {version}",
     )
-    # Note: NOT calling ap.save([]) — the exist_in_db gate at
-    # agentic_process.py:1088-1097 was dropped for visible=False precisely
-    # so the migration runner can spawn without a pre-saved record.
+    # NOT saved: the exist_in_db gate at agentic_process.py:1088-1097 was
+    # dropped for visible=False precisely so the migration runner can spawn
+    # without a pre-saved record.
 
     await ap.prompt(prompt_text)
 
