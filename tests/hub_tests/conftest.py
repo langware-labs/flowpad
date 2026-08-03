@@ -255,3 +255,166 @@ async def _close_shared_hub_client():
     from flow_sdk.cloud_client.transport.hub_http import close_hub_client
 
     await close_hub_client()
+
+
+# ---------------------------------------------------------------------------
+# Hub-side entity cleanup
+# ---------------------------------------------------------------------------
+
+
+def _cleanup_token(email: str | None, password: str | None) -> str | None:
+    """Log in for cleanup purposes only — never skips or fails the run."""
+    if not email or not password:
+        return None
+    try:
+        with httpx.Client(base_url=f"{_configured_hub_base_url()}/api/v1", timeout=10.0) as client:
+            r = client.post("/login", json={"email": email, "password": password})
+        if r.status_code != 200:
+            return None
+        data = r.json().get("data") or {}
+        return data.get("api_key") or data.get("token")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _cleanup_identities() -> list[str]:
+    """Tokens for every identity the tier creates hub rows as."""
+    alice, bob = _resolve_identities()
+    pairs = [
+        (
+            os.environ.get("ALICE_EMAIL") or alice,
+            os.environ.get("ALICE_PW") or os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD"),
+        ),
+        (os.environ.get("BOB_EMAIL") or bob, os.environ.get("BOB_PW")),
+    ]
+    return [t for t in (_cleanup_token(e, p) for e, p in pairs) if t]
+
+
+# Every hub entity type the tier creates and never reclaimed. Measured on a
+# real local hub after ~18 runs: 36 organizations (``login-org-*`` +
+# ``invite-org-*``, two per run), 18 teams, 17 skills, and the conversations
+# that started all this. Left alone they are not inert — see the budget note on
+# the fixture below, and ``test_org_login_and_invite`` has already had to weaken
+# an assertion ("which org is 'primary' is ambiguous once a user has several —
+# a test-only artifact of repeated runs") because of this exact pile.
+_CLEANUP_TYPES = ("conversation", "organization", "team", "skill", "task", "markdown")
+
+
+def _live_ids(token: str, entity_type: str) -> set[str]:
+    """Ids of this user's not-yet-deleted rows of ``entity_type``.
+
+    Returns an empty set on ANY failure — an unknown type, a 403, a hub blip.
+    An empty "before" snapshot means the diff finds nothing to delete, so a
+    read failure makes cleanup do less, never more.
+    """
+    try:
+        with httpx.Client(base_url=f"{_configured_hub_base_url()}/api/v1", timeout=30.0) as client:
+            r = client.get(f"/graph/{entity_type}", headers={"Authorization": f"Bearer {token}"})
+        if r.status_code != 200:
+            return set()
+        rows = r.json().get("data") or []
+        return {x["id"] for x in rows if isinstance(x, dict) and x.get("id") and not x.get("deleted_at")}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _delete_entity(base: str, entity_type: str, entity_id: str, tokens: list[str]) -> bool:
+    """Best-effort delete, trying each identity — the owner may be either."""
+    for tok in tokens:
+        try:
+            with httpx.Client(base_url=f"{base}/api/v1", timeout=15.0) as client:
+                r = client.request(
+                    "DELETE",
+                    f"/graph/{entity_type}/{entity_id}",
+                    headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json"},
+                    json={},
+                )
+            if r.status_code == 200:
+                return True
+        except Exception:  # noqa: BLE001
+            continue
+    return False
+
+
+_LEFTOVER_CACHE_KEY = "hub_tests/leftover_entities"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _reclaim_hub_entities_the_tier_creates(local_hub_available, request):
+    """Delete the PREVIOUS session's hub rows, and record this session's.
+
+    Nothing in the tier ever cleaned up after itself: each test mints a fresh
+    uniquely-named row (``f"share-recipients-{int(time.time())}"``,
+    ``f"invite-org-{int(time.time())}"``) precisely so runs can't collide, which
+    also guarantees nothing is reused or reclaimed. They accumulate forever, and
+    they are not inert:
+
+    * ``test_list_returns_local_immediately`` measures a COLD conversation-list
+      against a 5s budget, and the reconcile upserts every hub row at ~12ms, so
+      the tier breaks its own budget at ~427 accumulated conversations. It
+      really did — 417 rows, 4.87s in the upsert loop.
+    * ``test_login_returns_organization_and_role`` already gave up asserting
+      WHICH organization login returns, because repeated runs left the user
+      owning dozens and "primary" stopped being well-defined. A leak that
+      quietly erodes an assertion is worse than one that fails loudly.
+
+    **Clean at the START, not the end** — the hub's own suite does exactly this
+    (``session_db_driver`` calls ``clean_all_db()`` before its yield and nothing
+    after). Deleting in teardown destroys the evidence: a test fails, and the
+    rows you would inspect to find out why are gone by the time the summary
+    prints. Recording them and reclaiming them on the next run keeps the hub
+    bounded without ever racing the debugger — a failed run's wreckage sits
+    there for as long as you need it.
+
+    The hub can wipe wholesale because it points at a dedicated test database
+    (``DATABASE_DB_NAME_TEST``). This tier has no such isolation — it runs
+    against a real local hub holding real accounts and hand-made rows — so it
+    reclaims only ids it watched appear. Snapshot-diff rather than per-test
+    tracking: the tier creates rows through several paths
+    (``Conversation.share``, raw ``POST /graph/<type>``, invitation
+    materialization), and a diff catches all of them without every test opting
+    in.
+
+    The id list rides pytest's own cross-run cache (``.pytest_cache``), so no
+    new state file and no bookkeeping to forget.
+
+    Reclaiming is best-effort by design: a failure here must never turn a green
+    tier red. A row owned by an identity we hold no token for legitimately
+    survives, and anything unreclaimable is dropped from the ledger rather than
+    retried forever.
+    """
+    tokens = _cleanup_identities()
+    base = _configured_hub_base_url()
+    cache = request.config.cache
+
+    # Reclaim what the previous session left, before this one adds to it.
+    stale = cache.get(_LEFTOVER_CACHE_KEY, None) or []
+    reclaimed = 0
+    for entry in stale:
+        kind, entity_id = (entry.get("type"), entry.get("id")) if isinstance(entry, dict) else (None, None)
+        if kind and entity_id and _delete_entity(base, kind, entity_id, tokens):
+            reclaimed += 1
+    if stale:
+        # Cleared unconditionally: a row we could not delete (owner logged out,
+        # already gone) would otherwise be retried on every future run forever.
+        cache.set(_LEFTOVER_CACHE_KEY, [])
+        print(f"\n[hub-cleanup] reclaimed {reclaimed}/{len(stale)} row(s) left by the previous run")
+
+    before = {(t, kind): _live_ids(t, kind) for t in tokens for kind in _CLEANUP_TYPES}
+
+    yield
+
+    created: list[dict[str, str]] = []
+    for token in tokens:
+        for kind in _CLEANUP_TYPES:
+            for entity_id in _live_ids(token, kind) - before.get((token, kind), set()):
+                if not any(c["id"] == entity_id for c in created):
+                    created.append({"type": kind, "id": entity_id})
+    if created:
+        cache.set(_LEFTOVER_CACHE_KEY, created)
+        tally = ", ".join(
+            f"{sum(1 for c in created if c['type'] == k)} {k}"
+            for k in _CLEANUP_TYPES
+            if any(c["type"] == k for c in created)
+        )
+        print(f"\n[hub-cleanup] recorded {tally} for reclaim on the next run (left on the hub to debug)")
