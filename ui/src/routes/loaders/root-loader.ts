@@ -12,7 +12,7 @@
  * so this is safe even if a stale per-route loader still calls it.
  */
 
-import { dataContext, initSdk } from '@sdk';
+import { dataContext, initSdk, isBackendUnreachable } from '@sdk';
 import type { LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { applySupportedLocales } from '@src/contexts/locale-context';
 
@@ -33,7 +33,7 @@ export async function loadRoot(_args: LoaderArgs) {
     | { isServiceUnavailable?: boolean; type?: string; message?: string }
     | null
     | undefined;
-  if (bootstrapError?.isServiceUnavailable || bootstrapError?.type === 'network' || bootstrapError?.type === 'config') {
+  if (isBackendUnreachable(bootstrapError)) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw bootstrapError;
   }

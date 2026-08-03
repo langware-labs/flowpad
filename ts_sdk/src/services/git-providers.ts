@@ -1,4 +1,5 @@
 import { ActionInfo, dataContext, dataManager } from '../index';
+import { isHubOnly } from '../utils/hub-runtime';
 import type { GitOrigin } from '../models';
 
 /**
@@ -103,6 +104,17 @@ export async function getRepos(provider: GitProvider): Promise<RepoSummary[]> {
   return all;
 }
 
+/** Create an initialized private repository owned by the connected GitHub user. */
+export async function createPrivateRepo(provider: GitProvider, name: string): Promise<RepoSummary> {
+  const user = _userInfo();
+  const info = new ActionInfo('repo', user.type, user.id, 'POST');
+  info.subpath = 'create';
+  info.bodyParameters = { provider, name };
+  const res = await dataManager.callAction<unknown, { repo?: RepoSummary }>(info);
+  if (!res?.repo) throw new Error('Invalid /repo/create response');
+  return res.repo;
+}
+
 function _isBranchSummary(x: unknown): x is BranchSummary {
   if (!x || typeof x !== 'object') return false;
   const o = x as Record<string, unknown>;
@@ -130,6 +142,11 @@ export async function getBranches(repo: { git_origin: GitOrigin }): Promise<Bran
 }
 
 export async function getInvitations(provider: GitProvider): Promise<RepoInvitation[]> {
+  // The hub's `repo` action serves branches/list/create and nothing else, so
+  // asking it for invitations earns a 500 on every clone-dialog open. Gated
+  // here rather than at the call site so `respondInvitation` and any future
+  // caller inherit the same answer: on a hub there are no invitations to show.
+  if (isHubOnly()) return [];
   const user = _userInfo();
   const info = new ActionInfo('repo', user.type, user.id, 'POST');
   info.subpath = 'invitations';
@@ -143,6 +160,7 @@ export async function respondInvitation(
   invitationId: number,
   action: 'accept' | 'decline',
 ): Promise<void> {
+  if (isHubOnly()) return;
   const user = _userInfo();
   const subpath = action === 'accept' ? 'invitation-accept' : 'invitation-decline';
   const info = new ActionInfo('repo', user.type, user.id, 'POST');
