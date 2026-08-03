@@ -225,7 +225,7 @@ function artifactFieldsOf(event: FlowEvent, id: string): Partial<IArtifact> {
     return typeof value === 'string' && value ? value : undefined;
   };
   const fields: Record<string, unknown> = { id, type: Artifact.type };
-  for (const key of ['name', 'kind', 'asset_ref', 'generated_by', 'project_id', 'description']) {
+  for (const key of ['name', 'kind', 'asset_ref', 'target_type_id', 'generated_by', 'project_id', 'description']) {
     const value = str(key);
     if (value !== undefined) fields[key] = value;
   }

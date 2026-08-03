@@ -2360,13 +2360,20 @@ class AgenticProcess(Entity):
         deployments = await Deployment.get_all(QueryFilter.by_type(Deployment.get_type()), source_entity=source)
         return [deployment for deployment in deployments if kind_matches("local.runtime.web", deployment.kind)]
 
-    async def _artifact_asset_ref(self, payload: dict) -> str:
-        """The path of the asset a resolved display target points at.
+    async def _artifact_reference(self, payload: dict) -> tuple[str, str]:
+        """What a resolved display target points at: ``(asset_ref, entity_kind)``.
 
         An artifact REFERENCES an asset, so it records the same ``asset_ref`` the
         owning entity has — resolution back the other way is
-        ``Entity.get_by_asset_ref``. A target with no file behind it (a bare port)
-        has no ref; the runtime plane carries that instead.
+        ``Entity.get_by_asset_ref``. A target with no file behind it (a bare port,
+        or a row that was never a file) has no ref; ``target_type_id`` addresses
+        those instead.
+
+        The entity's own ontology ``kind`` rides back on the same lookup because
+        it is the better answer than anything this action can infer: a
+        ``source_item`` already knows it is ``content.message.email``, and
+        re-deriving that from a path — which it does not have — is impossible.
+        Returned rather than fetched separately so the entity is loaded once.
         """
         from flow_sdk.api.api_types.type_id import TypeId  # noqa: PLC0415
         from flow_sdk.core import Entity  # noqa: PLC0415
@@ -2374,17 +2381,20 @@ class AgenticProcess(Entity):
 
         kind = str(payload.get("kind") or "")
         if kind == DisplayTargetKind.VFS:
-            return str(payload.get("path") or "")
+            return str(payload.get("path") or ""), ""
         if kind == DisplayTargetKind.ENTITY:
             raw = str(payload.get("typeid") or "")
             if not raw:
-                return ""
+                return "", ""
             try:
                 entity = await Entity.get_by_typeid(TypeId(raw))
             except (ValueError, IndexError):
-                return ""
-            return str(getattr(entity, "asset_ref", "") or "")
-        return ""
+                return "", ""
+            return (
+                str(getattr(entity, "asset_ref", "") or ""),
+                str(getattr(entity, "kind", "") or ""),
+            )
+        return "", ""
 
     @action.post(action_name="register-artifact")
     async def _http_register_artifact(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -2405,6 +2415,7 @@ class AgenticProcess(Entity):
             InvalidDisplayTarget,
             resolve_display_target,
         )
+        from flow_sdk.worldview.ontology import normalize_kind  # noqa: PLC0415
 
         body = await _read_json_body()
         if isinstance(body, ApiFailResponse):
@@ -2426,12 +2437,22 @@ class AgenticProcess(Entity):
         except DisplayTargetNotFound as e:
             return ApiFailResponse(message=str(e), status_code=404)
 
-        asset_ref = await self._artifact_asset_ref(payload)
-        kind = (
-            "application.web"
-            if payload.get("kind") in (DisplayTargetKind.WEBAPP, DisplayTargetKind.APP)
-            else "content.file"
-        )
+        asset_ref, entity_kind = await self._artifact_reference(payload)
+        if payload.get("kind") in (DisplayTargetKind.WEBAPP, DisplayTargetKind.APP):
+            kind = "application.web"
+        else:
+            # An entity that declares its own ontology kind is the authority:
+            # `content.message.email` is what lets a consumer tell "this run sent
+            # a message" from "this run wrote a file". `content.file` stays the
+            # fallback for targets that declare nothing — and for a malformed
+            # kind, since a bad string here would fail the whole registration
+            # over a label.
+            kind = "content.file"
+            if entity_kind:
+                try:
+                    kind = normalize_kind(entity_kind)
+                except ValueError:
+                    logger.debug("register-artifact: unusable kind %r", entity_kind)
         name = (
             str(body.get("name") or "").strip()
             or str(payload.get("name") or "").strip()
@@ -2444,6 +2465,15 @@ class AgenticProcess(Entity):
             kind=kind,
             description=str(body.get("description") or "").strip() or None,
             asset_ref=asset_ref,
+            # Address the row as well as the path. For a file-less entity this
+            # is the ONLY pointer the artifact has; for a file-backed one it is
+            # the exact identity, where `asset_ref` is a path that has to be
+            # resolved back through `get_by_asset_ref`.
+            target_type_id=(
+                str(payload.get("typeid") or "") or None
+                if payload.get("kind") == DisplayTargetKind.ENTITY
+                else None
+            ),
             generated_by=str(self.typeid),
             project_id=await self.effective_project_id(),
         )
