@@ -285,15 +285,30 @@ export interface BroadcastMessage extends BaseMessage {
   broadcast_type?: string;
 }
 
-export type DataOpType = 'create' | 'update' | 'delete';
+export type DataOpType =
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'child_created'
+  | 'child_updated'
+  | 'child_deleted';
 
 /** Enum form of {@link DataOpType}. Use these members instead of bare
  *  'create' / 'update' / 'delete' string literals when matching a
- *  data_op frame's ``op``. */
+ *  data_op frame's ``op``.
+ *
+ *  The ``CHILD_*`` members INVERT the envelope: ``to_entity`` is the PARENT,
+ *  ``from_entity`` is the changed child, and ``data`` is the child. They exist
+ *  so a watcher of a parent learns its subtree changed without subscribing to
+ *  every child — which is how a new message reaches an open conversation.
+ *  Values match the hub's ``flowpad/hub/api/messages.py`` exactly. */
 export enum DataOp {
   CREATE = 'create',
   UPDATE = 'update',
   DELETE = 'delete',
+  CHILD_CREATED = 'child_created',
+  CHILD_UPDATED = 'child_updated',
+  CHILD_DELETED = 'child_deleted',
 }
 
 interface DataOpMessage extends EntityMessage {
@@ -741,7 +756,12 @@ export class ConnectionManager extends EventEmitter {
       console.warn('Ignoring data_op message with invalid to_entity:', data.to_entity);
       return;
     }
-    this.emit('on_data_op', typeId.toString(), data.op, data.data);
+    // ``from_entity`` rides as a trailing 4th argument so the six existing
+    // 3-arg listeners are untouched (JS ignores extra args). It is only
+    // meaningful for the child_* ops, where ``to_entity`` is the parent and
+    // this carries the child that actually changed.
+    const fromEntity = data.from_entity ? this.parseTypeId(data.from_entity) : null;
+    this.emit('on_data_op', typeId.toString(), data.op, data.data, fromEntity?.toString() ?? null);
   }
   onOAuthMessage(data: OAuthMessage) {
     this.emit('on_oauth_msg', data);

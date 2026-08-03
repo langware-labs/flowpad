@@ -6,6 +6,13 @@ const OP_TO_TAG: Record<string, string> = {
   create: 'app.entity.created',
   update: 'app.entity.updated',
   delete: 'app.entity.deleted',
+  // Subtree ops keep their own tags rather than collapsing into `updated`: the
+  // target is the PARENT but the thing that changed is a child, and a
+  // subscriber has to be able to tell those apart. Mirrors the backend's
+  // `_OP_TO_SUBTAG` in flow_sdk/db/entity_on_tag.py.
+  child_created: 'app.entity.child_created',
+  child_updated: 'app.entity.child_updated',
+  child_deleted: 'app.entity.child_deleted',
 };
 
 /**

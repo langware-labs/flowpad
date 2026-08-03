@@ -317,7 +317,19 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   private _ensureMessageTap(): void {
     if (this._msgTapOff) return;
     const cm = ConnectionManager.getInstance();
-    const handler = (typeIdStr: string, op: string, data: any) => {
+    const handler = (typeIdStr: string, op: string, data: any, fromEntityStr?: string | null) => {
+      // child_created addressed to THIS conversation: the envelope is inverted,
+      // so the type check below would reject it (typeIdStr is the conversation,
+      // not the message). A synced message arrives this way — the local
+      // catch-up announces it as a child of its parent — so without this branch
+      // `conv.on('message')` never fires for anything pulled in a sync.
+      if (op === DataOp.CHILD_CREATED) {
+        if (typeIdStr !== this.typeId.toString()) return;
+        const childType = (fromEntityStr ?? '').split('-')[0];
+        if (childType && childType !== FlowMessage.type) return;
+        if (data) this.emit(ConversationEvents.MESSAGE, data as IFlowMessage);
+        return;
+      }
       const dash = typeIdStr.indexOf('-');
       if (dash <= 0) return;
       if (typeIdStr.slice(0, dash) !== FlowMessage.type) return;

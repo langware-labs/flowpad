@@ -139,7 +139,11 @@ def _resolve_recipients(
     # Webhook fallback: when no explicit watchers exist (e.g. webhook endpoints
     # with no user session), broadcast to all local connections so the frontend
     # entity queries receive the update.  Safe in desktop mode (single user).
-    if not recipients and op in ("update", "delete"):
+    # child_* ops route like update/delete — addressed to the parent, delivered
+    # to whoever watches it — so they need the same fallback. Without them here
+    # a child frame with no explicit parent watcher resolves to zero recipients
+    # and is silently dropped.
+    if not recipients and op in ("update", "delete", "child_created", "child_updated", "child_deleted"):
         return set(active_connections.keys())
 
     return recipients
@@ -213,11 +217,21 @@ def _sync_handle_entity_op(op_message: DataOpMessage):
         # file→process cross-link (private_context_entities) never reaches the
         # watching client and its cached entity goes stale.
         from flow_sdk.app.actions.watch_registry import get_watched_by
+
         explicit_watchers: set[str] = set()
-        if entity_type and entity_id and op in ("update", "delete"):
-            explicit_watchers = {
-                c for c in get_watched_by(f"{entity_type}:{entity_id}") if c in active_connections
-            }
+        if (
+            entity_type
+            and entity_id
+            and op
+            in (
+                "update",
+                "delete",
+                "child_created",
+                "child_updated",
+                "child_deleted",
+            )
+        ):
+            explicit_watchers = {c for c in get_watched_by(f"{entity_type}:{entity_id}") if c in active_connections}
 
         # Skip notifications for non-API-visible entity types UNLESS an explicit
         # watcher asked for this entity. The create / broadcast-to-all fallback
@@ -225,6 +239,7 @@ def _sync_handle_entity_op(op_message: DataOpMessage):
         if entity_type and not explicit_watchers:
             try:
                 from flow_sdk.core.entity.entity_model import Entity
+
                 if not Entity.api_visible_by_type(entity_type):
                     logger.debug(f"Skipping WS notification for non-API-visible type: {entity_type}")
                     return
@@ -339,12 +354,14 @@ async def broadcast_progress(to_entity: str, flow_data: dict) -> None:
         active_connections = get_all_connections()
         if not active_connections:
             return
-        message = json.dumps({
-            "message_type": "flow_data_msg",
-            "message_id": str(uuid4()),
-            "to_entity": to_entity,
-            "flow_data": flow_data,
-        })
+        message = json.dumps(
+            {
+                "message_type": "flow_data_msg",
+                "message_id": str(uuid4()),
+                "to_entity": to_entity,
+                "flow_data": flow_data,
+            }
+        )
         for ws in active_connections.values():
             try:
                 await ws.send_text(message)
@@ -368,14 +385,17 @@ def make_flow_message_progress_emitter(fm_id: str, phase: str):
 
     async def _emit(bytes_done: int, bytes_total: int) -> None:
         try:
-            await broadcast_progress(to_entity, {
-                "element_type": element_type,
-                "attributes": {
-                    "flow_message_id": fm_id,
-                    "bytes_done": bytes_done,
-                    "bytes_total": bytes_total,
+            await broadcast_progress(
+                to_entity,
+                {
+                    "element_type": element_type,
+                    "attributes": {
+                        "flow_message_id": fm_id,
+                        "bytes_done": bytes_done,
+                        "bytes_total": bytes_total,
+                    },
                 },
-            })
+            )
         except Exception:  # noqa: BLE001
             pass
 

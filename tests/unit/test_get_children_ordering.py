@@ -6,10 +6,11 @@ wants "this conversation's messages, oldest first". Ordering is a generic driver
 capability here, not a conversation feature: the tests below use ``Comment`` children
 so nothing about the guarantee is message-specific.
 
-NULL handling is the sharp edge — a child with no ``created_date`` must not be
-compared against one that has a real datetime (the shared ``_apply_sorting`` helper
-coerces missing values to ``""`` and raises exactly that TypeError, which is why
-``get_children`` sorts with its own NULL-bucketing key).
+NULL handling is the sharp edge — a missing value must not be compared against a
+real datetime. The shared ``_apply_sorting`` helper coerces missing values to
+``""`` and raises exactly that TypeError, so ``get_children`` uses its own
+NULL-bucketing key. (Folding the two sorters together is worth doing, but it
+changes a helper shared with the main query path, so it is out of scope here.)
 """
 
 from __future__ import annotations
@@ -108,16 +109,32 @@ async def test_limit_and_offset_apply_after_ordering(records_root, blob_storage)
     assert _ordered_ids(page2) == [middle, newest]
 
 
-@pytest.mark.asyncio
-async def test_null_created_date_sorts_last_and_never_raises(records_root, blob_storage):
-    """A NULL stamp must bucket to the end, not blow up comparing str to datetime."""
-    conv, ids = await _parent_with_children([BASE + timedelta(minutes=1), None, BASE])
-    later, missing, earlier = ids
+def test_sort_key_buckets_missing_values_instead_of_coercing():
+    """NULL ordering, tested where a NULL is actually reachable.
 
-    kids = await conv.get_children(child_filter=QueryFilter(type=Comment.get_type(), order_by={"created_date": "asc"}))
-    ordered = _ordered_ids(kids)
-    assert ordered[-1] == missing, f"NULL should sort last, got {ordered}"
-    assert ordered[:2] == [earlier, later]
+    Not through ``get_children``: the driver stamps ``created_date`` on every
+    save, so a persisted entity can never have it NULL — a test that built one
+    and asserted on its position would be asserting on ``datetime.now()``, not
+    on NULL handling. The sort KEY is the thing with the NULL semantics, so it
+    is tested directly.
+
+    Two properties. It must never compare a missing value against a real one
+    (the previous ``getattr(e, f, "") or ""`` coerced NULL to ``""`` and then
+    raised ``str`` vs ``datetime``). And a missing value must sort FIRST on
+    ascending — where SQLite's ``ORDER BY ... ASC`` puts it — so this Python
+    fallback and the SQL path never disagree about the same rows.
+    """
+    from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
+
+    key = SQLiteDBDriver._sort_key
+    now = datetime(2026, 7, 30, 12, 0, 0, tzinfo=timezone.utc)
+
+    # The comparison that used to raise.
+    assert key(None) < key(now)
+    assert sorted([key(now), key(None)]) == [key(None), key(now)]
+    # Mixed types stay in separate buckets rather than being compared.
+    assert key(None) < key("a string")
+    assert key(None) < key(0)
 
 
 @pytest.mark.asyncio

@@ -81,9 +81,7 @@ async def ensure_conversation_entity(
         # create path uses. Falls back to a caller-supplied ``project_id``; a
         # pure entity-less cross-user chat stays project-less (None) by design.
         if parent_typeid is not None:
-            project_id = await Conversation.resolve_project_id(
-                [str(parent_typeid)], fallback=project_id
-            )
+            project_id = await Conversation.resolve_project_id([str(parent_typeid)], fallback=project_id)
         payload: dict = {"id": conversation_id}
         if created_by:
             payload["created_by"] = created_by
@@ -104,7 +102,7 @@ async def ensure_conversation_entity(
         conv = Conversation.model_validate(payload)
         conv.id = conversation_id
         # Remote bare row → reflect (preserve hub attribution); local → normal stamp.
-        with (remote_reflection() if remote else nullcontext()):
+        with remote_reflection() if remote else nullcontext():
             conv = await conv.save(someone_typeid, notify=False)
     else:
         dirty = False
@@ -144,7 +142,9 @@ async def ensure_conversation_entity(
 
     rec = from_jsonl(
         default_jsonl_path(conv.id),
-        parent_id, conv.id, parent_type=parent_record_type,
+        parent_id,
+        conv.id,
+        parent_type=parent_record_type,
     )
     rec.save()
     return conv
@@ -238,7 +238,7 @@ async def materialize_flow_message(
         derive_session_fields(fm)
         # Save with notify=False — the CREATE is emitted explicitly below. Remote
         # rows reflect (preserve hub attribution); local rows stamp normally.
-        with (remote_reflection() if remote else nullcontext()):
+        with remote_reflection() if remote else nullcontext():
             fm = await fm.save(someone_typeid, notify=False)
 
     # Emit the explicit local CREATE that drives entity-event subscribers
@@ -253,9 +253,8 @@ async def materialize_flow_message(
     if notify and (is_new or emit_live_create):
         from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
         from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
-        await handle_entity_op(
-            DataOpMessage(data=fm, op=OperationType.CREATE, to_entity=fm.typeid)
-        )
+
+        await handle_entity_op(DataOpMessage(data=fm, op=OperationType.CREATE, to_entity=fm.typeid))
 
     # Resolve parent (Task preferred, else Project) for the record's parent_ref.
     conv = await Conversation.get_one({"id": conversation_id})
@@ -265,7 +264,9 @@ async def materialize_flow_message(
         # hub message's created_by VERBATIM (never synthesize an owner from
         # sender_id/'system'), and never let the driver stamp the local user.
         conv = await ensure_conversation_entity(
-            conversation_id, parent_typeid=None, someone_typeid=someone_typeid,
+            conversation_id,
+            parent_typeid=None,
+            someone_typeid=someone_typeid,
             created_by=payload.get("created_by") if remote else None,
             remote=remote,
         )
@@ -280,8 +281,25 @@ async def materialize_flow_message(
 
     rec = from_jsonl(
         default_jsonl_path(conv.id),
-        parent_id, conv.id, parent_type=parent_type,
+        parent_id,
+        conv.id,
+        parent_type=parent_type,
     )
+
+    # The message IS a child of the conversation — model it as a real local edge,
+    # matching the hub (``Conversation.add_child`` inside ``add_message``).
+    # ``attach_child`` is silent on re-convergence, so the repeat materializations
+    # this function sees (live frame then catch-up, or a bundle re-unpack) emit at
+    # most one ``child_created``. notify rides the caller's flag: a live arrival
+    # announces, a bulk catch-up pass does not.
+    try:
+        if fm.parent_type_id != str(conv.typeid):
+            fm.parent_type_id = str(conv.typeid)
+            with remote_reflection() if getattr(fm, "remote", False) else nullcontext():
+                await fm.save(someone_typeid, notify=False)
+        await conv.attach_child(fm, notify=notify)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[materialize_flow_message] child edge conv=%s failed: %s", conv.id, e)
 
     ts = bundle_ts or datetime.now(UTC).isoformat()
     existing_ids = {p.id for p in message_pointers(rec)}

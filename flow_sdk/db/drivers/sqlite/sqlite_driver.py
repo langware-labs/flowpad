@@ -4,7 +4,6 @@ import json
 
 DEFAULT_BROWSE_LIMIT = 20
 import logging
-import os
 
 logger = logging.getLogger(__name__)
 import re
@@ -14,21 +13,20 @@ from contextvars import ContextVar
 from datetime import datetime
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Set, Tuple
 
-from flow_sdk._compat import UTC
-
 from fastapi import HTTPException
 from sqlalchemy import and_, asc, delete, desc, func, or_, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from flow_sdk._compat import UTC
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, DBBaseRelationship, EntityChild
 from flow_sdk.db.drivers.db_driver import (
     _DB_LIFECYCLE_LOCK,
-    _lifecycle_in_progress,
     DBConfig,
     DBDriver,
     DBResetProfile,
+    _lifecycle_in_progress,
 )
 from flow_sdk.db.drivers.path_model import NodeConnection, NodesPath
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
@@ -53,9 +51,7 @@ from .connection import (
     get_database_path,
     get_database_url,
     install_pragmas_and_immediate,
-    is_development,
 )
-
 
 _standalone_session_var: "ContextVar[Optional[AsyncSession]]" = ContextVar(
     "_sqlite_driver_standalone_session", default=None
@@ -321,9 +317,7 @@ class SQLiteDBDriver(DBDriver):
             # than returning a driver that can't create sessions — otherwise
             # callers hit ``'NoneType' object is not callable`` at session_factory().
             if self.session_factory is None:
-                self.session_factory = async_sessionmaker(
-                    self.engine, class_=AsyncSession, expire_on_commit=False
-                )
+                self.session_factory = async_sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
             if self.reader_session_factory is None:
                 self.reader_session_factory = self._make_reader_session_factory()
             return
@@ -408,7 +402,9 @@ class SQLiteDBDriver(DBDriver):
         # FTS5 doesn't support ALTER TABLE, so we drop and recreate.
         # The index is wiped; re-indexed on next POST /fs-records/index.
         try:
-            result = await conn.execute(text("SELECT sql FROM sqlite_master WHERE type='table' AND name='entities_fts'"))
+            result = await conn.execute(
+                text("SELECT sql FROM sqlite_master WHERE type='table' AND name='entities_fts'")
+            )
             row = result.fetchone()
             if row and row[0] and "title" not in row[0]:
                 await conn.execute(text("DROP TABLE IF EXISTS entities_fts"))
@@ -490,9 +486,7 @@ class SQLiteDBDriver(DBDriver):
             params: dict = {}
             for j, e in enumerate(chunk):
                 p = e.as_params()
-                value_rows.append(
-                    f"(:entity_id_{j}, :type_{j}, :name_{j}, :title_{j}, :description_{j}, :content_{j})"
-                )
+                value_rows.append(f"(:entity_id_{j}, :type_{j}, :name_{j}, :title_{j}, :description_{j}, :content_{j})")
                 params[f"entity_id_{j}"] = p["entity_id"]
                 params[f"type_{j}"] = p["type"]
                 params[f"name_{j}"] = p["name"]
@@ -525,12 +519,14 @@ class SQLiteDBDriver(DBDriver):
             return
 
         async with self._session_ctx() as session:
-            await session.execute(text("""
+            await session.execute(
+                text("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
                     entity_id, type, name, title, description, content,
                     tokenize='porter unicode61'
                 )
-            """))
+            """)
+            )
             await self._fts_delete_batch(session, [e.entity_id for e in entries], batch_size)
             await self._fts_insert_batch(session, entries, batch_size)
 
@@ -548,7 +544,7 @@ class SQLiteDBDriver(DBDriver):
         # Append * to each term for prefix matching (so "poin" matches "pointer").
         # Terms with FTS5 special chars (. + ^ : etc.) must be double-quoted so the
         # tokenizer sees them as phrase searches rather than syntax errors.
-        _FTS5_SPECIAL = frozenset('.+^(){}[]~?\\/:!-')
+        _FTS5_SPECIAL = frozenset(".+^(){}[]~?\\/:!-")
 
         def _fts_term(t: str) -> str:
             already_prefix = t.endswith("*")
@@ -562,12 +558,14 @@ class SQLiteDBDriver(DBDriver):
 
         fts_query = " ".join(_fts_term(t) for t in query.split())
         async with self._session_ctx(write=False) as session:
-            await session.execute(text("""
+            await session.execute(
+                text("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
                     entity_id, type, name, title, description, content,
                     tokenize='porter unicode61'
                 )
-            """))
+            """)
+            )
             # Build the SQL — snippet() on title (col 3) and content (col 5)
             # Columns: 0=entity_id, 1=type, 2=name, 3=title, 4=description, 5=content
             cal = calibration or SearchCalibration()
@@ -646,6 +644,7 @@ class SQLiteDBDriver(DBDriver):
         # Python-side recency blend: blended = bm25 / (1 + days_old * k)
         if cal.recency_factor and entities_with_score:
             from datetime import datetime  # noqa: PLC0415
+
             k = cal.recency_factor
             now = datetime.now(UTC)
 
@@ -788,9 +787,7 @@ class SQLiteDBDriver(DBDriver):
                 key = f"__sf_scoped_type_{i}"
                 bindings[key] = record_type
                 scoped_type_placeholders.append(f":{key}")
-            clauses.append(
-                f"({empty_scope} AND type NOT IN ({','.join(scoped_type_placeholders)}))"
-            )
+            clauses.append(f"({empty_scope} AND type NOT IN ({','.join(scoped_type_placeholders)}))")
         if keep_user:
             clauses.append("json_extract(data, '$.scope') = 'user'")
         if projects:
@@ -882,15 +879,10 @@ class SQLiteDBDriver(DBDriver):
         where_clause = base_where + scope_clause
         async with self._session_ctx() as session:
             await session.execute(
-                text(
-                    f"DELETE FROM entities_fts WHERE entity_id IN "
-                    f"(SELECT id FROM entities WHERE {where_clause})"
-                ),
+                text(f"DELETE FROM entities_fts WHERE entity_id IN (SELECT id FROM entities WHERE {where_clause})"),
                 bindings,
             )
-            result = await session.execute(
-                text(f"DELETE FROM entities WHERE {where_clause}"), bindings
-            )
+            result = await session.execute(text(f"DELETE FROM entities WHERE {where_clause}"), bindings)
             return result.rowcount or 0
 
     async def create_db(self):
@@ -1005,6 +997,7 @@ class SQLiteDBDriver(DBDriver):
         bound = None
         try:
             from flow_sdk.request_context.methods import get_current_transaction  # noqa: PLC0415
+
             bound = get_current_transaction()
         except Exception:
             bound = None
@@ -1073,9 +1066,7 @@ class SQLiteDBDriver(DBDriver):
             # Create new entity - _create_entity checks unique constraints
             return await self._create_entity(entity, owner, session)
 
-    async def stamp_last_active_at(
-        self, entity_id: str, timestamp_ms: int
-    ) -> tuple[DBBaseRecord | None, bool]:
+    async def stamp_last_active_at(self, entity_id: str, timestamp_ms: int) -> tuple[DBBaseRecord | None, bool]:
         """Atomically stamp recency without rewriting a stale entity snapshot.
 
         The writer transaction first hydrates the authoritative row so a stale
@@ -1084,9 +1075,7 @@ class SQLiteDBDriver(DBDriver):
         statement, preserving every other persisted field.
         """
         async with self._session_ctx() as session:
-            current_result = await session.execute(
-                select(EntitySchema).where(EntitySchema.id == entity_id)
-            )
+            current_result = await session.execute(select(EntitySchema).where(EntitySchema.id == entity_id))
             schema = current_result.scalar_one_or_none()
             if schema is None:
                 return None, False
@@ -1111,7 +1100,7 @@ class SQLiteDBDriver(DBDriver):
                         func.coalesce(EntitySchema.data, "{}"),
                         "$.last_active_at",
                         timestamp_ms,
-                    )
+                    ),
                 )
             )
             current.last_active_at = timestamp_ms
@@ -1189,9 +1178,7 @@ class SQLiteDBDriver(DBDriver):
         value: object,
     ) -> tuple[DBBaseRecord | None, bool]:
         """Patch one field only while it still holds ``expected_value``."""
-        return await self._patch_data_field(
-            entity_id, entity_type, field_name, value, expected_value=expected_value
-        )
+        return await self._patch_data_field(entity_id, entity_type, field_name, value, expected_value=expected_value)
 
     async def update_existing_data_field(
         self,
@@ -1298,9 +1285,7 @@ class SQLiteDBDriver(DBDriver):
         existing: set = set()
         for i in range(0, len(ids), batch_size):
             chunk = ids[i : i + batch_size]
-            result = await session.execute(
-                _select(EntitySchema.id).where(EntitySchema.id.in_(chunk))
-            )
+            result = await session.execute(_select(EntitySchema.id).where(EntitySchema.id.in_(chunk)))
             existing.update(row[0] for row in result)
         return existing
 
@@ -1347,9 +1332,7 @@ class SQLiteDBDriver(DBDriver):
         entities = list(by_id.values())
 
         async with self._session_ctx() as session:
-            existing_ids = await self._bulk_fetch_existing_ids(
-                session, list(by_id.keys()), batch_size
-            )
+            existing_ids = await self._bulk_fetch_existing_ids(session, list(by_id.keys()), batch_size)
             for entity in entities:
                 if entity.id in existing_ids:
                     await self._bulk_update_entity(session, entity)
@@ -1357,23 +1340,27 @@ class SQLiteDBDriver(DBDriver):
                     self.apply_create_fields(entity)
                     data_dict = self._get_entity_data_dict(entity)
                     entity_type = (entity.type or entity.get_type()).lower()
-                    stmt = sqlite_insert(EntitySchema).values(
-                        id=entity.id,
-                        type=entity_type,
-                        namespace=entity.namespace,
-                        key=entity.key,
-                        uname=entity.uname,
-                        type_uname=self._compute_type_uname(entity_type, entity.uname),
-                        created_by=entity.created_by,
-                        created_date=entity.created_date,
-                        updated_by=entity.updated_by,
-                        updated_date=entity.updated_date,
-                        created_through=entity.created_through,
-                        updated_through=entity.updated_through,
-                        schema_version=entity.schema_version if hasattr(entity, 'schema_version') else None,
-                        data=json.dumps(data_dict, cls=SafeJSONEncoder) if data_dict else None,
-                        record_data_ref=entity.record_data_ref if hasattr(entity, 'record_data_ref') else None,
-                    ).on_conflict_do_nothing(index_elements=['type_uname'])
+                    stmt = (
+                        sqlite_insert(EntitySchema)
+                        .values(
+                            id=entity.id,
+                            type=entity_type,
+                            namespace=entity.namespace,
+                            key=entity.key,
+                            uname=entity.uname,
+                            type_uname=self._compute_type_uname(entity_type, entity.uname),
+                            created_by=entity.created_by,
+                            created_date=entity.created_date,
+                            updated_by=entity.updated_by,
+                            updated_date=entity.updated_date,
+                            created_through=entity.created_through,
+                            updated_through=entity.updated_through,
+                            schema_version=entity.schema_version if hasattr(entity, "schema_version") else None,
+                            data=json.dumps(data_dict, cls=SafeJSONEncoder) if data_dict else None,
+                            record_data_ref=entity.record_data_ref if hasattr(entity, "record_data_ref") else None,
+                        )
+                        .on_conflict_do_nothing(index_elements=["type_uname"])
+                    )
                     await session.execute(stmt)
 
     async def create(self, entity: DBBaseRecord, owner: TypeId | None = None) -> DBBaseRecord:
@@ -2112,7 +2099,52 @@ class SQLiteDBDriver(DBDriver):
 
             children.append(EntityChild(value=child_entity))
 
+        if child_filter:
+            children = self._sort_children(children, child_filter.order_by)
+            if child_filter.offset:
+                children = children[child_filter.offset :]
+            if child_filter.limit is not None:
+                children = children[: child_filter.limit]
+
         return children
+
+    @staticmethod
+    def _sort_key(value):
+        """Comparable key that never compares a missing value against a real one.
+
+        Used by ``_apply_sorting`` (the Python fallback for JSON-blob sort fields)
+        AND by the child ordering that delegates to it — one rule, one place.
+
+        Bucket 0 = missing, so NULLs sort FIRST on ascending — the same place
+        SQLite's ``ORDER BY ... ASC`` puts them, so ordering children in Python
+        can't disagree with the SQL path.
+
+        Not reusing ``_apply_sorting``: its key is ``getattr(e, f, "") or ""``,
+        which coerces a missing value to ``""`` and then raises comparing ``str``
+        to ``datetime``. Children are ordered by ``created_date``, so that would
+        be a live hazard here. (Consolidating the two sorters is worth doing, but
+        it changes a helper shared with the main query path — left alone
+        deliberately rather than folded into this change.)
+        """
+        return (0, "") if value is None else (1, value)
+
+    def _sort_children(self, children: List[EntityChild], order_by) -> List[EntityChild]:
+        """Order children by a field on the child entity.
+
+        Delegates to ``_apply_sorting`` — one sorter, one set of NULL semantics
+        (missing values first on asc, matching SQLite's ``ORDER BY``). Children
+        arrive wrapped in ``EntityChild``, so values are unwrapped for the sort
+        and re-wrapped after.
+
+        The ``id`` pre-sort is the only addition: Python's sort is stable, so
+        seeding a deterministic order makes exact-timestamp collisions come back
+        identically on every run instead of following relationship-row order.
+        """
+        if not order_by or not children:
+            return children
+        values = [c.value for c in children]
+        values.sort(key=lambda v: getattr(v, "id", "") or "")
+        return [EntityChild(value=v) for v in self._apply_sorting(values, order_by)]
 
     async def get_children_sub_tree(
         self, root: TypeId, children_filter: QueryFilter | None = None, depth: int | None = None
@@ -2595,6 +2627,7 @@ class SQLiteDBDriver(DBDriver):
             return value.pattern  # Store just the pattern string
         # Handle TypeId - serialize to its string representation
         from flow_sdk.fs_store.type_id import TypeId as _TypeId
+
         if isinstance(value, _TypeId):
             return str(value)
         # Handle Pydantic models - use mode='json' to serialize enums properly
@@ -2871,7 +2904,7 @@ class SQLiteDBDriver(DBDriver):
             if isinstance(sort_spec, dict):
                 for field, direction in sort_spec.items():
                     reverse = direction == "desc"
-                    entities.sort(key=lambda e: getattr(e, field, "") or "", reverse=reverse)
+                    entities.sort(key=lambda e, f=field: self._sort_key(getattr(e, f, None)), reverse=reverse)
             elif isinstance(sort_spec, str):
                 if sort_spec.startswith("-"):
                     field = sort_spec[1:]
@@ -2879,7 +2912,7 @@ class SQLiteDBDriver(DBDriver):
                 else:
                     field = sort_spec
                     reverse = False
-                entities.sort(key=lambda e: getattr(e, field, "") or "", reverse=reverse)
+                entities.sort(key=lambda e, f=field: self._sort_key(getattr(e, f, None)), reverse=reverse)
 
         return entities
 

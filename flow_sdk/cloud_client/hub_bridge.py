@@ -17,10 +17,9 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-
-from flow_sdk import inbox
 from typing import Any, Callable, Optional
 
+from flow_sdk import inbox
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
 from flow_sdk.preferences import message_status_sharing_enabled
 
@@ -33,9 +32,15 @@ logger = logging.getLogger(__name__)
 # is clickable — otherwise the asset editor's ``useEntityByPath`` discover
 # step 404s. We eager-pull the bundle for these and skip the pull for
 # media-only FMs (FILE attachments stay manual).
-_ASSET_TYPEID_TYPES: frozenset[str] = frozenset({
-    "skill", "agent", "markdown", "spec", "whiteboard",
-})
+_ASSET_TYPEID_TYPES: frozenset[str] = frozenset(
+    {
+        "skill",
+        "agent",
+        "markdown",
+        "spec",
+        "whiteboard",
+    }
+)
 
 
 def _has_asset_typeid_attachment(attachments: Any) -> bool:
@@ -49,16 +54,10 @@ def _has_asset_typeid_attachment(attachments: Any) -> bool:
     if not attachments:
         return False
     for att in attachments:
-        att_type = (
-            att.get("attachment_type") if isinstance(att, dict)
-            else getattr(att, "attachment_type", None)
-        )
+        att_type = att.get("attachment_type") if isinstance(att, dict) else getattr(att, "attachment_type", None)
         if att_type != "type_id":
             continue
-        data = (
-            att.get("data") if isinstance(att, dict)
-            else getattr(att, "data", None)
-        )
+        data = att.get("data") if isinstance(att, dict) else getattr(att, "data", None)
         if not isinstance(data, str):
             continue
         dash = data.find("-")
@@ -78,16 +77,10 @@ def _has_session_carrier_attachment(attachments: Any) -> bool:
     if not attachments:
         return False
     for att in attachments:
-        att_type = (
-            att.get("attachment_type") if isinstance(att, dict)
-            else getattr(att, "attachment_type", None)
-        )
+        att_type = att.get("attachment_type") if isinstance(att, dict) else getattr(att, "attachment_type", None)
         if att_type != "type_id":
             continue
-        data = (
-            att.get("data") if isinstance(att, dict)
-            else getattr(att, "data", None)
-        )
+        data = att.get("data") if isinstance(att, dict) else getattr(att, "data", None)
         if isinstance(data, str) and data.startswith("remote_worker_session-"):
             return True
     return False
@@ -106,17 +99,11 @@ def _has_prompt_attachment(attachments: Any) -> bool:
     if not attachments:
         return False
     for att in attachments:
-        att_type = (
-            att.get("attachment_type") if isinstance(att, dict)
-            else getattr(att, "attachment_type", None)
-        )
+        att_type = att.get("attachment_type") if isinstance(att, dict) else getattr(att, "attachment_type", None)
         if att_type == "prompt":
             return True
         if att_type == "type_id":
-            data = (
-                att.get("data") if isinstance(att, dict)
-                else getattr(att, "data", None)
-            )
+            data = att.get("data") if isinstance(att, dict) else getattr(att, "data", None)
             if isinstance(data, str) and data.split("-", 1)[0] == "prompt":
                 return True
     return False
@@ -151,6 +138,7 @@ async def _maybe_eager_pull_bundle(
     _INFLIGHT_BUNDLE_PULLS.add(fm_id)
     try:
         from flow_sdk.app.actions.flow_message_action import _download_and_unpack_bundle
+
         await _download_and_unpack_bundle(fm_id, attachment_filename, body_status=body_status)
         logger.info("[bridge] eager bundle pulled fm=%s", fm_id)
     except Exception as e:  # noqa: BLE001
@@ -269,7 +257,6 @@ class HubWsBridge:
 
         Returns an unsubscribe callable. Safe to register from any task.
         """
-        from flow_sdk.cloud_client.events import EntityEvent  # noqa: PLC0415
 
         sub = _Subscription(
             callback=callback,
@@ -309,8 +296,14 @@ class HubWsBridge:
         # events relay under their OWN family — see hub_on_tag.py.
         from flow_sdk.cloud_client.hub_on_tag import emit_hub_entity
 
-        emit_hub_entity(op, entity_type, entity_id, parent_type, parent_id,
-                        str(data.get("actor")) if isinstance(data, dict) and data.get("actor") else None)
+        emit_hub_entity(
+            op,
+            entity_type,
+            entity_id,
+            parent_type,
+            parent_id,
+            str(data.get("actor")) if isinstance(data, dict) and data.get("actor") else None,
+        )
 
         if not self._subscriptions:
             return
@@ -482,6 +475,7 @@ class HubWsBridge:
             # ``User`` row uses a different per-machine id).
             try:
                 from flow_sdk.cli.app_config import get_user as _get_cloud_user
+
                 cloud_user = _get_cloud_user() or {}
                 cloud_user_id = cloud_user.get("id")
                 if cloud_user_id and payload.get("sender_id") == cloud_user_id:
@@ -529,7 +523,9 @@ class HubWsBridge:
             self.remember_hub_conversation(conversation_id)
             logger.info(
                 "[bridge] flow_message CREATE received fm=%s conv=%s sender=%s",
-                fm_id, conversation_id, payload.get("sender_id"),
+                fm_id,
+                conversation_id,
+                payload.get("sender_id"),
             )
 
             local_user = await User.get_local()
@@ -549,6 +545,7 @@ class HubWsBridge:
             async def _persist_inbound() -> None:
                 try:
                     from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
+
                     await materialize_flow_message(
                         payload,
                         conversation_id=conversation_id,
@@ -562,7 +559,9 @@ class HubWsBridge:
                         remote=True,
                     )
                     logger.info(
-                        "[bridge] inbound persisted fm=%s conv=%s", fm_id, conversation_id,
+                        "[bridge] inbound persisted fm=%s conv=%s",
+                        fm_id,
+                        conversation_id,
                     )
 
                     # Republish the unread projection now that the row + pointer
@@ -580,20 +579,14 @@ class HubWsBridge:
                     # own messages (self-sends the hub echoes back — same guard as
                     # the auto-ack below). Own try/except so a notify hiccup is
                     # never mistaken for a persist failure.
-                    if (
-                        local_user
-                        and payload.get("sender_id")
-                        and payload["sender_id"] != local_user.id
-                    ):
+                    if local_user and payload.get("sender_id") and payload["sender_id"] != local_user.id:
                         try:
                             from flow_sdk.notifications import notify_desktop
+
                             text = " ".join((payload.get("text") or "").split())
                             preview = text if len(text) <= 80 else text[:77] + "..."
                             if not preview:
-                                preview = (
-                                    (payload.get("attachment_filename") or "").strip()
-                                    or "Sent you a message"
-                                )
+                                preview = (payload.get("attachment_filename") or "").strip() or "Sent you a message"
                             # Message → generic payload flattening lives HERE
                             # (the Layer-2 consumer); the notification service
                             # renders it blind. The click target is the same
@@ -611,7 +604,8 @@ class HubWsBridge:
                         except Exception as _notify_err:
                             logger.warning(
                                 "[bridge] desktop notify failed fm=%s (non-fatal): %s",
-                                fm_id, _notify_err,
+                                fm_id,
+                                _notify_err,
                             )
 
                     # Auto-run a permitted contact's prompt (the receiver's local
@@ -632,15 +626,18 @@ class HubWsBridge:
                     if _has_prompt_attachment(payload.get("attachment")):
                         if payload.get("body_status") == "uploading":
                             logger.info(
-                                "[bridge] prompt body still uploading — deferring "
-                                "auto-run until READY fm=%s", fm_id,
+                                "[bridge] prompt body still uploading — deferring auto-run until READY fm=%s",
+                                fm_id,
                             )
                         else:
                             from flow_sdk.app.actions.execute_prompt import process_inbound_message
+
                             asyncio.create_task(process_inbound_message(fm_id, conversation_id))
                 except Exception as _err:
                     logger.warning(
-                        "[bridge] inbound persist failed fm=%s (non-fatal): %s", fm_id, _err,
+                        "[bridge] inbound persist failed fm=%s (non-fatal): %s",
+                        fm_id,
+                        _err,
                     )
 
             asyncio.create_task(_persist_inbound())
@@ -651,12 +648,14 @@ class HubWsBridge:
             # bridge saw the message); the READY transition for messages we
             # observed mid-upload arrives as an UPDATE op handled below.
             if payload.get("body_status") == "ready":
-                asyncio.create_task(_maybe_eager_pull_bundle(
-                    fm_id,
-                    (payload.get("attachment_filename") or "").strip(),
-                    payload.get("attachment") or [],
-                    body_status=payload.get("body_status"),
-                ))
+                asyncio.create_task(
+                    _maybe_eager_pull_bundle(
+                        fm_id,
+                        (payload.get("attachment_filename") or "").strip(),
+                        payload.get("attachment") or [],
+                        body_status=payload.get("body_status"),
+                    )
+                )
 
             # Auto-ack delivery only when this user chose to share message
             # status. The preference belongs to the reporting user, not to the
@@ -667,15 +666,17 @@ class HubWsBridge:
                 and payload.get("sender_id")
                 and payload["sender_id"] != local_user.id
             ):
-                self.manager.send({
-                    "message_type": "rest_api_msg",
-                    "message_id": str(uuid.uuid4()),
-                    "method": "POST",
-                    "scope": [],
-                    "direct_resource_type": "flow_message",
-                    "action": "mark_delivered",
-                    "body": {"flow_message_ids": [fm_id]},
-                })
+                self.manager.send(
+                    {
+                        "message_type": "rest_api_msg",
+                        "message_id": str(uuid.uuid4()),
+                        "method": "POST",
+                        "scope": [],
+                        "direct_resource_type": "flow_message",
+                        "action": "mark_delivered",
+                        "body": {"flow_message_ids": [fm_id]},
+                    }
+                )
             return
 
         if op == "update":
@@ -690,6 +691,7 @@ class HubWsBridge:
             someone_typeid = local_user.typeid if local_user else None
             prev_body_status = getattr(existing, "body_status", None)
             from flow_sdk.builtin.flow_message import delivery_advances  # noqa: PLC0415
+
             # ``is_read`` / ``is_archived`` are declared ``Sharing.HUB_WRITE`` (see
             # flow_message.py) — per-machine inbox state the hub must NOT
             # dictate. A body-READY UPDATE fans the full FlowMessage back to
@@ -729,23 +731,22 @@ class HubWsBridge:
             is_self_send = False
             try:
                 from flow_sdk.cli.app_config import get_user as _get_cloud_user
+
                 cloud_user_id = (_get_cloud_user() or {}).get("id")
                 sender_id = getattr(existing, "sender_id", None)
                 if cloud_user_id and sender_id and sender_id == cloud_user_id:
                     is_self_send = True
             except Exception:
                 pass
-            if (
-                new_body_status == "ready"
-                and prev_body_status != "ready"
-                and not is_self_send
-            ):
-                asyncio.create_task(_maybe_eager_pull_bundle(
-                    fm_id,
-                    (getattr(existing, "attachment_filename", "") or "").strip(),
-                    getattr(existing, "attachment", None) or [],
-                    body_status=new_body_status,
-                ))
+            if new_body_status == "ready" and prev_body_status != "ready" and not is_self_send:
+                asyncio.create_task(
+                    _maybe_eager_pull_bundle(
+                        fm_id,
+                        (getattr(existing, "attachment_filename", "") or "").strip(),
+                        getattr(existing, "attachment", None) or [],
+                        body_status=new_body_status,
+                    )
+                )
                 # A body-bearing prompt whose auto-run was deferred at CREATE (the
                 # body was still UPLOADING) runs now that body_status=READY —
                 # build_merged_prompt can download the body and resolve every
@@ -756,15 +757,27 @@ class HubWsBridge:
                 conv_id = parent_conv_id or getattr(existing, "conversation_id", None)
                 if conv_id and _has_prompt_attachment(getattr(existing, "attachment", None)):
                     from flow_sdk.app.actions.execute_prompt import process_inbound_message
+
                     asyncio.create_task(process_inbound_message(fm_id, conv_id))
             return
 
         if op == "delete":
             existing = await FlowMessage.get_one({"id": fm_id})
-            conv_id = parent_conv_id or (
-                getattr(existing, "conversation_id", None) if existing is not None else None
-            )
+            conv_id = parent_conv_id or (getattr(existing, "conversation_id", None) if existing is not None else None)
             if existing is not None:
+                # Detach the child edge first — membership is the edge, so the
+                # pointer prune below is not enough on its own, and after
+                # ``destroy()`` the child no longer resolves for the detach to
+                # find. Announces CHILD_DELETED to watchers of the conversation.
+                if conv_id:
+                    try:
+                        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+
+                        parent = await Conversation.get_one({"id": conv_id})
+                        if parent is not None:
+                            await parent.detach_child(existing.typeid, notify=True)
+                    except Exception:
+                        logger.exception("hub_bridge: child detach failed fm=%s conv=%s", fm_id, conv_id)
                 # Erase the message's entire existence — DB row + relationships
                 # AND the on-disk record folder (body bundle, metadata, .hash).
                 # ``delete_by_id`` would leave the folder behind.
@@ -776,6 +789,7 @@ class HubWsBridge:
                 from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
                 from flow_sdk.fs_store.operations.conversation import prune_message_pointer  # noqa: PLC0415
                 from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
                 try:
                     rec = FSRecord(type=RecordType.CONVERSATION, id=conv_id)
                     await prune_message_pointer(rec, fm_id, notify=True)
@@ -802,8 +816,13 @@ class HubWsBridge:
         # Strip fields not on the local model or guarded against direct write.
         _PROJECTED = {"message_count", "message_ids"}
         _LOCAL_FIELDS = {
-            "id", "type", "title", "remote_project_id", "remote_project_name",
-            "participants", "git_sharing_enabled",
+            "id",
+            "type",
+            "title",
+            "remote_project_id",
+            "remote_project_name",
+            "participants",
+            "git_sharing_enabled",
             "shared_context_entities",
         }
         clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS and k not in _PROJECTED}
@@ -841,8 +860,14 @@ class HubWsBridge:
             await Conversation.delete_by_id(conv_id)
             return
 
-        for field in ("title", "git_sharing_enabled", "members",
-                      "remote_project_id", "remote_project_name", "shared_context_entities"):
+        for field in (
+            "title",
+            "git_sharing_enabled",
+            "members",
+            "remote_project_id",
+            "remote_project_name",
+            "shared_context_entities",
+        ):
             if field in clean:
                 setattr(existing, field, clean[field])
         # Adopt the hub's owner when it carries one — keeps the local mirror
@@ -980,6 +1005,7 @@ class HubWsBridge:
         """Walk the ownership chain via HTTP /flow_message/<id>/parents_path
         and return the conversation entry, or None."""
         import httpx
+
         from flow_sdk.cli.auth.credentials import load_credentials
         from flow_sdk.cloud_client.client import ApiConfig
 
