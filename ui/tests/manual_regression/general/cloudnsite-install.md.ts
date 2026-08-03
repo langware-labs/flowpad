@@ -42,11 +42,11 @@ const REQUIRED_INPUTS = [
 
 const configured = Boolean(
   rawEnv.hubUrl &&
-    (rawEnv.storageState || (rawEnv.email && rawEnv.password)) &&
-    rawEnv.targetRepo &&
-    rawEnv.targetBranch &&
-    rawEnv.queueProjectId &&
-    rawEnv.githubToken,
+  (rawEnv.storageState || (rawEnv.email && rawEnv.password)) &&
+  rawEnv.targetRepo &&
+  rawEnv.targetBranch &&
+  rawEnv.queueProjectId &&
+  rawEnv.githubToken,
 );
 
 interface Config {
@@ -116,6 +116,10 @@ interface CleanupTarget {
   conversationId?: string;
 }
 
+function logPhase(phase: string): void {
+  console.log(`CloudNSite E2E phase: ${phase}`);
+}
+
 interface GitHubContent {
   content?: string;
   encoding?: string;
@@ -129,7 +133,10 @@ function githubRepoSlug(value: string): string | null {
   try {
     const url = new URL(trimmed);
     if (url.hostname.toLowerCase() !== 'github.com') return null;
-    const parts = url.pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/i, '').split('/');
+    const parts = url.pathname
+      .replace(/^\/+|\/+$/g, '')
+      .replace(/\.git$/i, '')
+      .split('/');
     if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
     return `${parts[0]}/${parts[1]}`.toLowerCase();
   } catch {
@@ -234,7 +241,10 @@ function installUrl(config: Config): string {
 }
 
 function setupResponsePredicate(response: { url(): string; request(): { method(): string } }): boolean {
-  return response.request().method() === 'POST' && /\/api\/v1\/graph\/compute_node\/[^/]+\/ops\/setup-git$/.test(new URL(response.url()).pathname);
+  return (
+    response.request().method() === 'POST' &&
+    /\/api\/v1\/graph\/compute_node\/[^/]+\/ops\/setup-git$/.test(new URL(response.url()).pathname)
+  );
 }
 
 function nodeIdFromSetupUrl(url: string): string {
@@ -276,6 +286,7 @@ async function runInstall(
   config: Config,
   onNodeCreated: (nodeId: string) => void,
 ): Promise<RunResult> {
+  logPhase('open install link');
   let consoleSecretLeak = false;
   const watchConsole = (target: Page) => {
     target.on('console', (message) => {
@@ -298,6 +309,7 @@ async function runInstall(
   await expect(dialog).toContainText(REVIEW_BRANCH);
   await expect(dialog).toContainText('default branch is not changed');
   await expect(dialog).toContainText('no pull request is opened automatically');
+  logPhase('install dialog ready');
 
   await page.getByTestId(`repo-picker-row-${config.targetRepo}`).click();
   await page.getByTestId(`branch-picker-row-${config.targetBranch}`).click();
@@ -305,13 +317,16 @@ async function runInstall(
   const confirmation = page.getByTestId('install-confirmation');
   await expect(confirmation).toContainText(config.targetRepo);
   await expect(confirmation).toContainText(config.targetBranch);
+  logPhase('target repository and branch selected');
 
   const popupPromise = context.waitForEvent('page');
-  const nodeResponsePromise = page.waitForResponse((response) =>
-    response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/api/v1/graph/compute_node'),
+  const nodeResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/api/v1/graph/compute_node'),
   );
   const setupResponsePromise = page.waitForResponse(setupResponsePredicate);
   await page.getByTestId('install-launch').click();
+  logPhase('install launched');
   const workspace = await popupPromise;
   const nodeResponse = await nodeResponsePromise;
   expect(nodeResponse.status(), 'workspace node creation succeeds').toBe(200);
@@ -320,6 +335,7 @@ async function runInstall(
   expect(nodeEnvelope.status).toBe('SUCCESS');
   expectEntityId(nodeEnvelope.data.id, 'created workspace node id');
   onNodeCreated(nodeEnvelope.data.id);
+  logPhase('workspace node created');
 
   const setupResponse = await setupResponsePromise;
   const nodeId = nodeIdFromSetupUrl(setupResponse.url());
@@ -327,6 +343,7 @@ async function runInstall(
 
   expect(new URL(setupResponse.url()).origin, 'setup-git stays on the configured Hub origin').toBe(config.hubUrl);
   expect(setupResponse.status(), 'setup-git succeeds').toBe(200);
+  logPhase('setup-git response received');
 
   const setupRequest = setupResponse.request().postDataJSON() as unknown;
   assertKnownSecretsAbsent(config, 'setup-git URL', setupResponse.url());
@@ -357,20 +374,27 @@ async function runInstall(
   expect(nodeReadEnvelope.status).toBe('SUCCESS');
   expect(nodeReadEnvelope.data.node_provider_id, 'created workspace exposes its exact sandbox id').toBeTruthy();
   const providerId = nodeReadEnvelope.data.node_provider_id!;
+  logPhase('workspace provider captured');
 
   await expect(page.getByTestId('install-progress')).toBeVisible();
   for (const step of ['launch', 'health', 'setup-git', 'open']) {
     await expect(page.getByTestId(`install-step-${step}`)).toHaveAttribute('data-status', 'success');
   }
+  logPhase('install progress complete');
 
   await workspace.waitForURL((url) => url.pathname === `/dock/project/${setup.install_result.target_project_id}`);
   const landed = new URL(workspace.url());
   expect(landed.searchParams.get('journeyId')).toBe(setup.install_result.auto_launch_journey_id);
+  logPhase('workspace opened on auto-launch journey');
 
   return { workspace, nodeId, providerId, setup, consoleSecretLeak: () => consoleSecretLeak };
 }
 
-function verifySetupContract(config: Config, setup: SetupData, expectedPreparation: 'installed' | 'already_installed'): void {
+function verifySetupContract(
+  config: Config,
+  setup: SetupData,
+  expectedPreparation: 'installed' | 'already_installed',
+): void {
   expectEntityId(setup.project.id, 'materialized Project id');
   expect(setup.install_preparation).toEqual({
     branch: REVIEW_BRANCH,
@@ -435,7 +459,10 @@ async function verifyWorkspace(
   await expect(workspace.getByTestId('journey-tray-steps-left')).toBeVisible();
   const welcome = workspace.getByTestId('html-preview');
   await expect(welcome).toBeVisible();
-  await expect(workspace.frameLocator('[data-testid="html-preview"]').getByText('CloudNSite agents are ready.')).toBeVisible();
+  await expect(
+    workspace.frameLocator('[data-testid="html-preview"]').getByText('CloudNSite agents are ready.'),
+  ).toBeVisible();
+  logPhase('journey visible');
 
   const project = await workspaceGraph<{ include_dirs?: string[] }>(workspace, `project/${install.target_project_id}`);
   expect((project.include_dirs ?? []).filter((path) => path === content.path)).toHaveLength(1);
@@ -458,10 +485,16 @@ async function verifyWorkspace(
     workspace,
     `project/${content.content_project_id}/agent`,
   );
-  expect(agents.some((agent) => agent.name === 'support'), 'the CloudNSite support agent is available').toBe(true);
+  expect(
+    agents.some((agent) => agent.name === 'support'),
+    'the CloudNSite support agent is available',
+  ).toBe(true);
+  logPhase('installed graph verified');
 
-  const ensureResponsePromise = workspace.waitForResponse((response) =>
-    response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/api/v1/graph/helpdesk-ensure'),
+  const ensureResponsePromise = workspace.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname.endsWith('/api/v1/graph/helpdesk-ensure'),
   );
   await workspace.getByTestId('footer-helpdesk-button').click();
   await expect(workspace.getByTestId('helpdesk-load-dialog')).toBeVisible();
@@ -478,6 +511,7 @@ async function verifyWorkspace(
     helpdesk_project_id: config.queueProjectId,
     project_id: content.content_project_id,
   });
+  logPhase('helpdesk adopted');
 
   const ticketText = `[${RUN_MARKER}] verify CloudNSite install routing`;
   const ticket = await workspaceGraph<{ conversation_id: string; project_id: string }>(
@@ -488,6 +522,7 @@ async function verifyWorkspace(
   expectEntityId(ticket.conversation_id, 'synthetic support conversation id');
   expect(ticket.project_id).toBe(config.queueProjectId);
   onTicketCreated(ticket.conversation_id);
+  logPhase('sample ticket created');
 
   const queue = await workspaceGraph<{
     project_id: string;
@@ -495,24 +530,22 @@ async function verifyWorkspace(
   }>(workspace, 'helpdesk-tickets-list', { project_id: install.target_project_id });
   expect(queue.project_id).toBe(config.queueProjectId);
   expect(
-    queue.tickets.some(
-      (row) => row.conversation_id === ticket.conversation_id && row.preview?.includes(RUN_MARKER),
-    ),
+    queue.tickets.some((row) => row.conversation_id === ticket.conversation_id && row.preview?.includes(RUN_MARKER)),
     'CloudNSite staff queue exposes the uniquely marked ticket',
   ).toBe(true);
+  logPhase('sample ticket routed');
 
   await workspace.waitForURL((url) => url.pathname === `/dock/helpdesk/${content.content_project_id}`);
   await expect(workspace.getByTestId('helpdesk-portal')).toBeVisible();
   await expect(workspace.getByTestId('helpdesk-brand-header')).toContainText('CloudNSite');
   await expect(workspace.getByTestId('helpdesk-guides')).toBeVisible();
+  logPhase('branded helpdesk visible');
 
-  const skillUrl = new URL(
-    `/dock/assets/editor/skill/typeid/skill-${triage!.id}`,
-    workspace.url(),
-  );
+  const skillUrl = new URL(`/dock/assets/editor/skill/typeid/skill-${triage!.id}`, workspace.url());
   await workspace.goto(skillUrl.toString());
   await expect(workspace.getByTestId('asset-editor-header')).toBeVisible();
   await expect(workspace.getByTestId('asset-editor-header')).toContainText('triage-ticket');
+  logPhase('sample skill visible');
 
   expect(result.consoleSecretLeak(), 'browser console output contains no known secret').toBe(false);
 }
@@ -521,7 +554,11 @@ function githubEndpoint(config: Config, path: string): string {
   return `${config.githubApiUrl}/${path.replace(/^\//, '')}`;
 }
 
-async function githubJson<T>(config: Config, path: string, allowed: number[] = [200]): Promise<{ status: number; data: T | null }> {
+async function githubJson<T>(
+  config: Config,
+  path: string,
+  allowed: number[] = [200],
+): Promise<{ status: number; data: T | null }> {
   const response = await fetch(githubEndpoint(config, path), {
     headers: {
       accept: 'application/vnd.github+json',
@@ -580,7 +617,9 @@ function verifyReviewManifest(config: Config, base: Record<string, unknown>, rev
 
   expect(installed).toHaveLength(1);
   expect(installed[0]).toMatchObject({ branch: config.contentBranch, scope: 'shared' });
-  expect(reviewEntries.filter((entry) => !isCloudNsite(entry))).toEqual(baseEntries.filter((entry) => !isCloudNsite(entry)));
+  expect(reviewEntries.filter((entry) => !isCloudNsite(entry))).toEqual(
+    baseEntries.filter((entry) => !isCloudNsite(entry)),
+  );
   expect(nonContentFields(review)).toEqual(nonContentFields(base));
 }
 
@@ -624,7 +663,10 @@ async function cleanupWorkspace(context: BrowserContext, target: CleanupTarget):
   expect(list.status(), 'Hub desktop list is readable after cleanup').toBe(200);
   const envelope = (await list.json()) as ApiEnvelope<Array<{ id?: string }>>;
   expect(envelope.status).toBe('SUCCESS');
-  expect(envelope.data.some((node) => node.id === nodeId), 'deleted workspace is absent from Hub').toBe(false);
+  expect(
+    envelope.data.some((node) => node.id === nodeId),
+    'deleted workspace is absent from Hub',
+  ).toBe(false);
 }
 
 test.describe.serial('CloudNSite install link — live Hub and E2B release gate', () => {
@@ -642,8 +684,12 @@ test.describe.serial('CloudNSite install link — live Hub and E2B release gate'
     cleanup = null;
   });
 
-  test('clean install creates a review branch and opens the complete CloudNSite experience', async ({ page, context }) => {
+  test('clean install creates a review branch and opens the complete CloudNSite experience', async ({
+    page,
+    context,
+  }) => {
     const config = loadConfig();
+    logPhase('clean scenario started');
     const baseBefore = await githubRef(config, config.targetBranch);
     expect(baseBefore, 'the selected target base branch exists').toBeTruthy();
     expect(await githubRef(config, REVIEW_BRANCH), 'the clean fixture has no review branch').toBeNull();
@@ -652,6 +698,7 @@ test.describe.serial('CloudNSite install link — live Hub and E2B release gate'
     const result = await runInstall(page, context, config, (nodeId) => {
       cleanup = { config, nodeId };
     });
+    logPhase('clean install returned');
     cleanup = { config, nodeId: result.nodeId, providerId: result.providerId, workspace: result.workspace };
     verifySetupContract(config, result.setup, 'installed');
     expect(result.setup.install_result.status).toBe('installed');
@@ -659,6 +706,7 @@ test.describe.serial('CloudNSite install link — live Hub and E2B release gate'
     await verifyWorkspace(config, result, (conversationId) => {
       cleanup = { ...cleanup!, conversationId };
     });
+    logPhase('clean workspace verified');
 
     const baseAfter = await githubRef(config, config.targetBranch);
     const reviewAfter = await githubRef(config, REVIEW_BRANCH);
@@ -669,10 +717,15 @@ test.describe.serial('CloudNSite install link — live Hub and E2B release gate'
     const reviewManifest = await githubManifest(config, REVIEW_BRANCH);
     verifyReviewManifest(config, baseManifestBefore.json, reviewManifest.json);
     await verifyReviewCommit(config, reviewAfter!);
+    logPhase('clean GitHub result verified');
   });
 
-  test('repeat install reuses the review branch without another commit or duplicate context', async ({ page, context }) => {
+  test('repeat install reuses the review branch without another commit or duplicate context', async ({
+    page,
+    context,
+  }) => {
     const config = loadConfig();
+    logPhase('repeat scenario started');
     const baseBefore = await githubRef(config, config.targetBranch);
     const reviewBefore = await githubRef(config, REVIEW_BRANCH);
     expect(baseBefore, 'the selected target base branch exists').toBeTruthy();
@@ -683,11 +736,13 @@ test.describe.serial('CloudNSite install link — live Hub and E2B release gate'
     const result = await runInstall(page, context, config, (nodeId) => {
       cleanup = { config, nodeId };
     });
+    logPhase('repeat install returned');
     cleanup = { config, nodeId: result.nodeId, providerId: result.providerId, workspace: result.workspace };
     verifySetupContract(config, result.setup, 'already_installed');
     await verifyWorkspace(config, result, (conversationId) => {
       cleanup = { ...cleanup!, conversationId };
     });
+    logPhase('repeat workspace verified');
 
     const baseAfter = await githubRef(config, config.targetBranch);
     const reviewAfter = await githubRef(config, REVIEW_BRANCH);
@@ -696,8 +751,11 @@ test.describe.serial('CloudNSite install link — live Hub and E2B release gate'
     const baseManifestAfter = await githubManifest(config, config.targetBranch);
     const reviewManifestAfter = await githubManifest(config, REVIEW_BRANCH);
     expect(baseManifestAfter.raw, 'repeat install leaves the base manifest unchanged').toBe(baseManifestBefore.raw);
-    expect(reviewManifestAfter.raw, 'repeat install leaves the review manifest unchanged').toBe(reviewManifestBefore.raw);
+    expect(reviewManifestAfter.raw, 'repeat install leaves the review manifest unchanged').toBe(
+      reviewManifestBefore.raw,
+    );
     verifyReviewManifest(config, baseManifestBefore.json, reviewManifestAfter.json);
     await verifyReviewCommit(config, reviewAfter!);
+    logPhase('repeat GitHub result verified');
   });
 });
