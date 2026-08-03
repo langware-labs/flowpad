@@ -42,11 +42,6 @@ export class FSRef {
     return this.typeId.type === 'compute_node' ? this.typeId.id : null;
   }
 
-  /** Entity or compute-node authority used by every standard VFS operation. */
-  get ownerTypeId(): TypeId {
-    return this.typeId;
-  }
-
   static fromJson(json: FSRefJson): FSRef {
     return new FSRef(json.path, new TypeId(json.type_id), json.ref_type, json.read_only);
   }

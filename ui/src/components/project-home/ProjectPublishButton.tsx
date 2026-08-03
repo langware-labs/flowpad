@@ -5,6 +5,7 @@ import { gitShareGateState } from '@src/components/share-to-conversation/git-sha
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { useGitPush } from '@src/hooks/use-git-push';
 import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
+import { errorMessage } from '@src/lib/error-message';
 import { hubPageUrl } from '@src/lib/hub-page-url';
 import { fetchGithubStatus } from '@src/lib/github-oauth-status';
 import { openExternal } from '@src/lib/open-external';
@@ -16,11 +17,6 @@ import { Trans, useLingui } from '@lingui/react/macro';
 
 interface ProjectPublishButtonProps {
   project: Project;
-}
-
-function errorText(error: unknown): string {
-  const envelope = (error as { response?: { data?: { message?: string; detail?: string } } })?.response?.data;
-  return envelope?.message || envelope?.detail || (error instanceof Error ? error.message : String(error));
 }
 
 /**
@@ -37,6 +33,8 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
   const published = project.remote === true;
   const projectTypeId = project.typeId;
   const preflight = useGitSharePreflight(projectTypeId, !hubMode && !published);
+  // The preflight owns Git truth, so nothing is actionable until it answers.
+  const checking = preflight.loading || !preflight.answered;
   const requireCloudLogin = useCloudLoginGate();
   const [gateOpen, setGateOpen] = useState(false);
   const [setupBusy, setSetupBusy] = useState(false);
@@ -74,7 +72,7 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
       setGateOpen(false);
       notify.success({ title: t`Project published`, message: t`This project is now available in the cloud.` });
     } catch (error) {
-      notify.error({ title: t`Could not publish project`, message: errorText(error) });
+      notify.error({ title: t`Could not publish project`, message: errorMessage(error, t`Publish failed.`) });
     } finally {
       publishInFlight.current = false;
       setPublishing(false);
@@ -105,7 +103,7 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
         notify.error({ title: t`Could not set up Git`, message: result.errorStr ?? undefined });
       }
     } catch (error) {
-      notify.error({ title: t`Could not set up Git`, message: errorText(error) });
+      notify.error({ title: t`Could not set up Git`, message: errorMessage(error, t`Git setup failed.`) });
     } finally {
       setSetupBusy(false);
       preflight.refetch();
@@ -147,7 +145,10 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
     } catch (error) {
       clearOAuthHandler();
       setOauthConnecting(false);
-      notify.error({ title: t`Could not connect GitHub`, message: errorText(error) });
+      notify.error({
+        title: t`Could not connect GitHub`,
+        message: errorMessage(error, t`GitHub authorization did not complete.`),
+      });
     }
   }, [clearOAuthHandler, oauthConnecting, publishReadyProject, t]);
 
@@ -170,32 +171,33 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
   // Publish intent sets this flag; an ordinary preflight on mount can never
   // auto-publish the Project.
   useEffect(() => {
-    if (!resumeWhenReady || preflight.loading || !preflight.answered || !preflight.available) return;
+    if (!resumeWhenReady || checking || !preflight.available) return;
     setResumeWhenReady(false);
     void checkGithubAndPublish();
-  }, [resumeWhenReady, preflight.loading, preflight.answered, preflight.available, checkGithubAndPublish]);
+  }, [resumeWhenReady, checking, preflight.available, checkGithubAndPublish]);
 
   const remediation = gitShareGateState(preflight.code);
   const busy = publishing || githubChecking || setupBusy || pushBusy || oauthConnecting;
+  const blocked = busy || checking;
   const gate = useMemo(
     () => ({
-      state: preflight.loading || busy || !preflight.answered ? 'checking' : remediation,
+      state: blocked ? 'checking' : remediation,
       reason: preflight.reason,
       busy,
       runSetup,
       runCommit,
     }),
-    [busy, preflight.answered, preflight.loading, preflight.reason, remediation, runCommit, runSetup],
+    [blocked, busy, preflight.reason, remediation, runCommit, runSetup],
   );
 
   const beginPublish = useCallback(() => {
-    if (busy || preflight.loading || !preflight.answered) return;
+    if (blocked) return;
     if (preflight.available) {
       void checkGithubAndPublish();
       return;
     }
     setGateOpen(true);
-  }, [busy, checkGithubAndPublish, preflight.answered, preflight.available, preflight.loading]);
+  }, [blocked, checkGithubAndPublish, preflight.available]);
 
   // The Hub Project page is read-only with respect to desktop publication.
   if (hubMode) return null;
@@ -242,19 +244,19 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
         type="button"
         size="sm"
         onClick={beginPublish}
-        disabled={busy || preflight.loading || !preflight.answered}
+        disabled={blocked}
         data-testid="project-publish"
         data-state="local"
         className="h-7 gap-1.5 px-2 text-xs"
       >
-        {busy || preflight.loading || !preflight.answered ? (
+        {blocked ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
         ) : (
           <CloudUpload className="h-3.5 w-3.5" aria-hidden />
         )}
         {publishing ? (
           <Trans>Publishing…</Trans>
-        ) : preflight.loading || !preflight.answered ? (
+        ) : checking ? (
           <Trans>Checking…</Trans>
         ) : (
           <Trans>Publish</Trans>
