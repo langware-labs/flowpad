@@ -18,6 +18,8 @@ import { LifeBuoy } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { useContext } from '@sdk/react/hooks';
+import { PageId } from '@sdk';
+import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { useColorPalette } from '../hooks/useColorPalette';
 
 interface FooterProps {
@@ -46,6 +48,15 @@ export function Footer({ className = '' }: FooterProps) {
   const { t } = useLingui();
   const { agentId } = useParams();
   const isVibe = useIsVibe();
+  // Same signal the rail uses (`collapsed-sidebar.tsx`), NOT `isHubOnly()`: this
+  // must also hold when a desktop is showing the hub page, and that case has a
+  // desk-serving backend. It hides the view-mode toggle (modes drive the DESK rail
+  // matrix and Assets browseability; the hub rail bypasses both) and Help desk
+  // (desk-only actions — `helpdesk-ticket-list` 404s on the hub, so the button
+  // could only fail). `useCurrentDock`, not `useDockNavigation`: only the page id
+  // is needed, and the latter also builds a NavigationActions and rewrites the
+  // `navigation` global on every URL change.
+  const hubMode = useCurrentDock()?.page === PageId.HUB;
   const agentTypeId = useMemo(() => (agentId ? new TypeId(SubAgent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<SubAgent>(agentTypeId);
   const [showHelpdesk, setShowHelpdesk] = useState(false);
@@ -66,7 +77,7 @@ export function Footer({ className = '' }: FooterProps) {
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:flex-nowrap sm:justify-between">
         {/* View toggle + Data-privacy mode + Warnings icons on the left */}
         <div className="flex shrink-0 items-center gap-1">
-          <ViewToggle />
+          {!hubMode && <ViewToggle />}
           {!isVibe && <PrivacyModePopover />}
           <WarningsPopover />
         </div>
@@ -87,33 +98,41 @@ export function Footer({ className = '' }: FooterProps) {
               stepped load flow, which materializes the helpdesk portal
               checkout and then navigates to its project home; the ticket
               dialog now lives on that screen's banner. */}
-          <button
-            type="button"
-            onClick={() => setShowHelpdesk(true)}
-            className="cq-helpdesk flex shrink-0 items-center gap-1 rounded-sm px-1.5 text-[10px] text-violet-600 transition-colors hover:bg-accent hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
-            title={t`Open the help desk`}
-            aria-label={t`Help desk`}
-            data-testid="footer-helpdesk-button"
-          >
-            <LifeBuoy className="h-3.5 w-3.5" />
-            <span className="cq-helpdesk-label"><Trans>Help desk</Trans></span>
-          </button>
+          {!hubMode && (
+            <button
+              type="button"
+              onClick={() => setShowHelpdesk(true)}
+              className="cq-helpdesk flex shrink-0 items-center gap-1 rounded-sm px-1.5 text-[10px] text-violet-600 transition-colors hover:bg-accent hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
+              title={t`Open the help desk`}
+              aria-label={t`Help desk`}
+              data-testid="footer-helpdesk-button"
+            >
+              <LifeBuoy className="h-3.5 w-3.5" />
+              <span className="cq-helpdesk-label"><Trans>Help desk</Trans></span>
+            </button>
+          )}
           {version && <VersionPopover currentVersion={version} />}
           <PoweredBy className="cq-powered" />
           <LanguageSelector />
         </div>
       </div>
       {/* A desk with no portal has nothing to load, so the load dialog hands
-          straight over to the ticket flow — which is what the button is for. */}
-      <HelpdeskLoadDialog
-        open={showHelpdesk}
-        onClose={() => setShowHelpdesk(false)}
-        onNoPortal={() => {
-          setShowHelpdesk(false);
-          setShowAskForHelp(true);
-        }}
-      />
-      <HelpdeskRequestDialog open={showAskForHelp} onClose={() => setShowAskForHelp(false)} />
+          straight over to the ticket flow — which is what the button is for.
+          Mounted with the button, not beside it: gating only the button would
+          leave both dialogs mounted on the hub with no way to ever open them. */}
+      {!hubMode && (
+        <>
+          <HelpdeskLoadDialog
+            open={showHelpdesk}
+            onClose={() => setShowHelpdesk(false)}
+            onNoPortal={() => {
+              setShowHelpdesk(false);
+              setShowAskForHelp(true);
+            }}
+          />
+          <HelpdeskRequestDialog open={showAskForHelp} onClose={() => setShowAskForHelp(false)} />
+        </>
+      )}
     </footer>
   );
 }
