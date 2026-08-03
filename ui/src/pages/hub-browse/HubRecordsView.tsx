@@ -1,7 +1,7 @@
 import { PageId, QueryRequest, ViewType } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useMemo } from 'react';
 import { Trans } from '@lingui/react/macro';
 
@@ -22,13 +22,22 @@ import { Trans } from '@lingui/react/macro';
 // SDK's canonical label getter, present on every hydrated entity).
 type Row = { id?: string; displayName?: string };
 
-// Plural list headings for the rail-reachable types; anything else falls back to
-// the raw type string.
-const TYPE_LABEL: Record<string, string> = {
-  conversation: 'Conversations',
+/**
+ * Headings for the types the RAIL points at — the rail's slot name, not the type's
+ * name, so the page reads as the icon the user clicked.
+ *
+ * These deliberately differ from the registry's `display_name`, which is the word
+ * for the *type* ("Documents" for markdown, "Task" for task) and is mirrored from
+ * flow_sdk so desk and hub agree. A rail slot is free to be called something else
+ * — "Inbox" is not what a `conversation` is — so this cannot be sourced from
+ * `labelForType`. It can't be sourced from the rail either: those titles come from
+ * a lingui macro tag, which returns an empty string once passed across a module
+ * boundary. Anything not listed falls back to the registry word.
+ */
+const RAIL_HEADING: Record<string, string> = {
+  conversation: 'Inbox',
   task: 'Tasks',
   markdown: 'Docs',
-  graph_workflow: 'Flows',
 };
 
 export function HubRecordsView({ type }: { type?: string }) {
@@ -57,7 +66,9 @@ export function HubRecordsView({ type }: { type?: string }) {
     }
   };
 
-  const label = (type && TYPE_LABEL[type]) || type || 'Records';
+  // `labelForType` (registry `display_name`, else the generic title-caser) rather
+  // than the raw type string, so a type with no rail slot still reads as a word.
+  const label = (type && (RAIL_HEADING[type] || labelForType(type))) || 'Records';
   const RowIcon = iconForType(type ?? '');
 
   return (
