@@ -888,8 +888,13 @@ msgid "Add comment..."
 msgstr "הוסף תגובה..."
 
 #: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Add context folder"
 msgstr "הוסיפו תיקיית הקשר"
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+#~ msgid "Add Context Folder"
+#~ msgstr ""
 
 #: src/components/label-select.tsx
 #~ msgid "Add custom label..."
@@ -1317,6 +1322,10 @@ msgstr "הערה נשלחה"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Annotations"
 msgstr "הערות"
+
+#: src/components/assets/context-folder-sources.tsx
+msgid "Another Flowpad project — its folder becomes context for this one"
+msgstr ""
 
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "Any detail that helps (optional)"
@@ -2560,6 +2569,10 @@ msgstr "שכפל @ {branch}"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Clone & Open"
 msgstr "שחזר ופתח"
+
+#: src/components/assets/context-folder-sources.tsx
+msgid "Clone a git repo (or reuse a local clone) as context"
+msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -5078,8 +5091,8 @@ msgid "Every skill, agent, spec, and document this project ships."
 msgstr "כל הכישורים, הסוכנים, המפרטים והמסמכים שהפרויקט הזה כולל."
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Everyone the project is shared with gets it"
-msgstr "כל מי שהפרויקט משותף איתו יקבל אותו"
+#~ msgid "Everyone the project is shared with gets it"
+#~ msgstr "כל מי שהפרויקט משותף איתו יקבל אותו"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Everything you can reach, as a live graph."
@@ -5975,6 +5988,10 @@ msgstr "במיקוד"
 msgid "Folder name"
 msgstr "שם התיקייה"
 
+#: src/components/assets/context-folder-sources.tsx
+msgid "Folder on this computer"
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Folder…"
 msgstr "תיקייה…"
@@ -6146,8 +6163,8 @@ msgstr "שינויים בגיט"
 #~ msgstr "העתקת Git נכשלה"
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Git folder"
-msgstr "תיקיית Git"
+#~ msgid "Git folder"
+#~ msgstr "תיקיית Git"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Git is required to share files"
@@ -6167,6 +6184,7 @@ msgid "Git repo (optional)"
 msgstr "מאגר Git (אופציונלי)"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/assets/context-folder-sources.tsx
 msgid "Git repository"
 msgstr "מאגר Git"
 
@@ -8470,7 +8488,6 @@ msgstr "קבצים חדשים ({0})"
 
 #: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/quick-create/DesktopSurface.tsx
-#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New folder"
 msgstr "תיקייה חדשה"
@@ -8502,8 +8519,8 @@ msgstr "אפשרות חדשה"
 
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
+#: src/components/project-starter-actions/project-starter-actions.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "New project"
 msgstr "פרויקט חדש"
 
@@ -9755,8 +9772,8 @@ msgid "Only harness entries here — enable “Show all” to view them."
 msgstr "כאן מוצגים רק ערכי harness — יש להפעיל את \"Show all\" כדי לראות את הכול."
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Only on this machine — never shared"
-msgstr "רק במחשב הזה — לעולם לא משותף"
+#~ msgid "Only on this machine — never shared"
+#~ msgstr "רק במחשב הזה — לעולם לא משותף"
 
 #: src/components/chat-input.tsx
 #~ msgid "Only one ZIP file can be uploaded at a time"
@@ -9894,7 +9911,7 @@ msgstr "פתח טרמינל Docker"
 msgid "Open dot-path ontology; custom descendants are welcome."
 msgstr "אונטולוגיה פתוחה מבוססת נתיבי-נקודה; מוזמנים ליצור צאצאים מותאמים אישית."
 
-#: src/pages/flow-page/vibe-new-chat.tsx
+#: src/components/project-starter-actions/project-starter-actions.tsx
 msgid "Open existing project"
 msgstr "לפתוח פרויקט קיים"
 
@@ -9925,8 +9942,7 @@ msgstr "פתח חיצונית: {childPath}"
 #~ msgid "Open Flowpad docs"
 #~ msgstr "פתיחת מסמכי Flowpad"
 
-#: src/components/assets/context-folder-sources.tsx
-#: src/pages/flow-page/vibe-new-chat.tsx
+#: src/components/project-starter-actions/project-starter-actions.tsx
 msgid "Open folder"
 msgstr "פתח תיקייה"
 
@@ -9938,7 +9954,7 @@ msgstr "פתח תיקייה"
 msgid "Open folder: {projectPath}"
 msgstr "פתיחת התיקייה: {projectPath}"
 
-#: src/pages/flow-page/vibe-new-chat.tsx
+#: src/components/project-starter-actions/project-starter-actions.tsx
 msgid "Open from git"
 msgstr "פתיחת פרויקט מ-Git"
 
@@ -10567,6 +10583,10 @@ msgstr "בחר פרויקט"
 msgid "Pick a project first — an OAuth token is granted to a project, not to the app."
 msgstr ""
 
+#: src/components/assets/context-folder-sources.tsx
+msgid "Pick any folder already on this machine"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Pick one to get started — it only takes a few seconds."
 #~ msgstr ""
@@ -10739,6 +10759,10 @@ msgstr "תוסף"
 msgid "Plugins"
 msgstr "תוספים"
 
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Point this project at another folder so agents can read it as background — code, docs or assets that live outside the project, without copying anything."
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Port"
 msgstr "יציאה"
@@ -10879,6 +10903,7 @@ msgstr "תמונת פרופיל:"
 msgid "Progress"
 msgstr "התקדמות"
 
+#: src/components/assets/context-folder-sources.tsx
 #: src/components/code-editor/CodeEditor.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
@@ -10919,8 +10944,8 @@ msgid "Project Commands (.claude/commands/)"
 msgstr "פקודות פרויקט (.claude/commands/)"
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Project folder"
-msgstr "תיקיית פרויקט"
+#~ msgid "Project folder"
+#~ msgstr "תיקיית פרויקט"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "Project Folder"
@@ -13806,6 +13831,10 @@ msgstr "סטטוס:"
 msgid "status: {0}"
 msgstr "סטטוס: {0}"
 
+#: src/components/assets/context-folder-sources.tsx
+msgid "Stays on this machine only — the folder is never sent to anyone, even people this project is shared with."
+msgstr ""
+
 #: src/components/workflow-runner/detail/StepDetailPane.tsx
 #~ msgid "Step at line {0}"
 #~ msgstr "שלב בשורה {0}"
@@ -14783,6 +14812,10 @@ msgid "Transcripts"
 msgstr "תמלילים"
 
 #: src/components/assets/context-folder-sources.tsx
+msgid "Travels with the project — everyone it is shared with gets this folder as context too."
+msgstr ""
+
+#: src/components/assets/context-folder-sources.tsx
 #~ msgid "Travels with the project when shared"
 #~ msgstr ""
 
@@ -15526,6 +15559,11 @@ msgstr ""
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "What is {0}?"
 msgstr "מה זה {0}?"
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "What is a context folder?"
+msgstr ""
 
 #: src/components/status-bar.tsx
 msgid "What is a Flowpad project?"
