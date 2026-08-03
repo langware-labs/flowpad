@@ -482,7 +482,13 @@ class CloudManager extends EventEmitter {
 
   private async _setLoggedIn(userDict: Record<string, unknown>): Promise<User> {
     const dm = await _dataManager();
-    const cloudUser = dm.updateEntityFromJson<User>({ type: User.type, ...userDict });
+    // `type` LAST, deliberately. The hub answers /current-user with the principal
+    // it actually authenticated, which for a deployed agent is `"type": "identity"`
+    // — a type `EntityFactory` has no constructor for, so a spread landing after
+    // `type` makes this throw and the sandbox silently falls back to its own local
+    // user. The cloud principal is always modelled here as a User; only its FIELDS
+    // (name, avatar, id) vary by principal kind.
+    const cloudUser = dm.updateEntityFromJson<User>({ ...userDict, type: User.type });
     if (this.isLoggedIn && this._currentUser?.typeId?.toString() === cloudUser.typeId?.toString()) {
       return this._currentUser;
     }

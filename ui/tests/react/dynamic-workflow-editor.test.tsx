@@ -12,7 +12,7 @@ vi.mock('@src/components/assets/editor/AssetEditorHeader', () => ({
   AssetEditorHeader: ({ actions }: { actions?: React.ReactNode }) => <div>{actions}</div>,
 }));
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
-// The "runs of this entity" panel is the shared surface (Agent/Skill reuse it) —
+// The "runs of this entity" panel is the shared surface (SubAgent/Skill reuse it) —
 // mock it to record the props this editor mounts it with.
 const panelProps: Record<string, unknown> = {};
 vi.mock('@src/components/entity-execution-panel/EntityExecutionPanel', () => ({

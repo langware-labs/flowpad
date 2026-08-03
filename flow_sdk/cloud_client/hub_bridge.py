@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 _ASSET_TYPEID_TYPES: frozenset[str] = frozenset(
     {
         "skill",
-        "agent",
+        "subagent",
         "markdown",
         "spec",
         "whiteboard",
@@ -203,6 +203,26 @@ async def _fill_empty_blobs(cls: Any, entity_type: str, entity_id: str, data: An
     return data
 
 
+async def _conversation_allows_inbound_materialization(conversation_id: str) -> bool:
+    """Authorize a message frame whose parent is absent from the local mirror.
+
+    Hub delivery and local cleanup can cross in flight: a queued FlowMessage
+    CREATE may execute after its Conversation was owner-deleted. Materializing
+    that stale frame would recreate the deleted parent. A locally present parent
+    is already authorized; otherwise the exact Hub row must still be readable
+    and live. Missed assignment frames remain recoverable, while tombstoned or
+    inaccessible parents reject the stale child.
+    """
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
+    from flow_sdk.utils.hub import hub_get  # noqa: PLC0415
+
+    if await Conversation.get_one({"id": conversation_id}) is not None:
+        return True
+    hub_conv = await hub_get(BuiltinEntityType.CONVERSATION, conversation_id)
+    return bool(isinstance(hub_conv, dict) and hub_conv.get("id") == conversation_id and not hub_conv.get("deleted_at"))
+
+
 class HubWsBridge:
     """Glue layer: hub WS frames ↔ local entity save path."""
 
@@ -213,6 +233,10 @@ class HubWsBridge:
         # used by the UI Reply path to decide whether to push outbound via
         # hub_ws_bridge.add_message() vs the local-only append path.
         self._hub_conv_ids: set[str] = set()
+        # Process-lifetime tombstones for conversations deleted locally. A
+        # detached inbound materializer may already be in flight when DELETE
+        # lands; this set lets it abort before write or roll its write back.
+        self._deleted_conv_ids: set[str] = set()
         # Generic subscribers — see ``subscribe()``. Used by
         # ``Entity.cloud_watch()`` to expose the hub event stream scoped to
         # any entity (its own UPDATEs + its children's CREATE/UPDATE/DELETE).
@@ -233,6 +257,15 @@ class HubWsBridge:
     def remember_hub_conversation(self, conversation_id: str) -> None:
         if conversation_id:
             self._hub_conv_ids.add(conversation_id)
+
+    def suppress_conversation_materialization(self, conversation_id: str) -> None:
+        """Prevent queued Hub children from recreating a locally deleted parent."""
+        if conversation_id:
+            self._deleted_conv_ids.add(conversation_id)
+            self._hub_conv_ids.discard(conversation_id)
+
+    def conversation_materialization_suppressed(self, conversation_id: str) -> bool:
+        return conversation_id in self._deleted_conv_ids
 
     def subscribe(
         self,
@@ -330,10 +363,11 @@ class HubWsBridge:
     async def _on_data_op(self, message: dict) -> None:
         """Inbound data_op_msg dispatcher.
 
-        Routes by the changed entity's type. Currently handles flow_message
-        (create + update), conversation (any op as a passive upsert), and
-        invitation (nudge → invitation-sync pull).
+        Routes by the changed entity's type. Membership-container assignments
+        use the same mirror materializer as invitation acceptance.
         """
+        from flow_sdk.app.actions.membership_sync import MEMBERSHIP_MIRROR_TYPES  # noqa: PLC0415
+
         op = str(message.get("op") or "").lower()
         etype, eid = _parse_to_entity(message.get("to_entity"))
         # Parent envelope: hub sends a flow_message CREATE with from_entity =
@@ -370,6 +404,8 @@ class HubWsBridge:
                 await self._handle_invitation_op(op, eid, data)
             elif etype == "task":
                 await self._handle_task_op(op, eid, data)
+            elif etype in MEMBERSHIP_MIRROR_TYPES:
+                await self._handle_membership_container_op(op, etype, eid, data)
             else:
                 logger.debug("hub_bridge: no handler for data_op_msg type=%s op=%s", etype, op)
         except Exception:
@@ -544,9 +580,23 @@ class HubWsBridge:
             # a full reload. Correctness wins — emit both through materialize.
             async def _persist_inbound() -> None:
                 try:
+                    if self.conversation_materialization_suppressed(conversation_id):
+                        logger.info(
+                            "[bridge] suppressed inbound skipped fm=%s conv=%s",
+                            fm_id,
+                            conversation_id,
+                        )
+                        return
+                    if not await _conversation_allows_inbound_materialization(conversation_id):
+                        logger.info(
+                            "[bridge] stale inbound skipped fm=%s conv=%s (parent absent/deleted)",
+                            fm_id,
+                            conversation_id,
+                        )
+                        return
                     from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
 
-                    await materialize_flow_message(
+                    materialized = await materialize_flow_message(
                         payload,
                         conversation_id=conversation_id,
                         someone_typeid=someone_typeid,
@@ -558,6 +608,25 @@ class HubWsBridge:
                         # Inbound from the hub: this row mirrors a hub counterpart.
                         remote=True,
                     )
+                    # DELETE can land while materialize_flow_message is doing
+                    # filesystem/DB work. Roll back deterministically if the
+                    # tombstone appeared after our pre-write check.
+                    if self.conversation_materialization_suppressed(conversation_id):
+                        try:
+                            await materialized.destroy()
+                            from flow_sdk.app.actions.flow_message_action import _hard_delete_local_conversation
+                            from flow_sdk.builtin.conversation import Conversation
+
+                            recreated = await Conversation.get_one({"id": conversation_id})
+                            if recreated is not None:
+                                await _hard_delete_local_conversation(recreated)
+                        except Exception:  # noqa: BLE001
+                            logger.exception(
+                                "hub_bridge: suppressed inbound rollback failed fm=%s conv=%s",
+                                fm_id,
+                                conversation_id,
+                            )
+                        return
                     logger.info(
                         "[bridge] inbound persisted fm=%s conv=%s",
                         fm_id,
@@ -813,8 +882,15 @@ class HubWsBridge:
         local_user = await User.get_local()
         someone_typeid = local_user.typeid if local_user else None
 
-        # Strip fields not on the local model or guarded against direct write.
-        _PROJECTED = {"message_count", "message_ids"}
+        if op == "delete" or data.get("deleted_at"):
+            self.suppress_conversation_materialization(conv_id)
+            await Conversation.delete_by_id(conv_id)
+            return
+        if self.conversation_materialization_suppressed(conv_id):
+            return
+
+        # Strip fields not on the local model. Projection-owned fields are
+        # deliberately absent from this allowlist.
         _LOCAL_FIELDS = {
             "id",
             "type",
@@ -825,8 +901,13 @@ class HubWsBridge:
             "git_sharing_enabled",
             "shared_context_entities",
         }
-        clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS and k not in _PROJECTED}
+        clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS}
         clean["id"] = conv_id
+        # A Conversation arriving over the hub bridge is, by definition, a
+        # hub-backed local mirror. Manual invitation acceptance used to repair
+        # this bit later; immediate assignment has no accept transition, so the
+        # bridge must establish the invariant at the ingest boundary.
+        clean["remote"] = True
         # Wire adapter: the hub sends the roster under the ``participants`` key
         # (its Conversation field + fanout contract); the local cache field is
         # ``members`` (generic, on the Entity base). Map it at ingest.
@@ -837,8 +918,6 @@ class HubWsBridge:
 
         existing = await Conversation.get_one({"id": conv_id})
         if existing is None:
-            if op == "delete":
-                return
             # Identity mirror — a remote row is a pure reflection of the hub
             # row. The hub's owner field (``initiated_by``) is the only
             # legitimate creator; when the hub doesn't carry one, fall back to
@@ -856,10 +935,6 @@ class HubWsBridge:
             await new_conv.save(someone_typeid, notify=True)
             return
 
-        if op == "delete":
-            await Conversation.delete_by_id(conv_id)
-            return
-
         for field in (
             "title",
             "git_sharing_enabled",
@@ -870,6 +945,7 @@ class HubWsBridge:
         ):
             if field in clean:
                 setattr(existing, field, clean[field])
+        existing.remote = True
         # Adopt the hub's owner when it carries one — keeps the local mirror
         # converged with the hub row (same rule as the HTTP sync path in
         # ``_upsert_hub_conversation_metadata``).
@@ -900,6 +976,49 @@ class HubWsBridge:
         if local_user is None:
             return
         await handle_invitation_sync(local_user.typeid)
+
+    async def _handle_membership_container_op(
+        self,
+        op: str,
+        entity_type: str,
+        entity_id: str,
+        data: dict,
+    ) -> None:
+        """Materialize an Organization, Team, or Project assignment locally.
+
+        The Hub grants these targets immediately and pushes their full payload;
+        there is no later invitation-accept transition to create the local
+        mirror. Project payloads also carry value-free shared context and secret
+        declarations, which the shared membership materializer expands.
+        """
+        from flow_sdk.app.actions.membership_sync import (  # noqa: PLC0415
+            materialize_remote_membership_entity,
+        )
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        cls = SchemaRegistry.get_entity_cls(entity_type)
+        if cls is None:
+            logger.debug("hub_bridge: membership op for unknown type %s", entity_type)
+            return
+        if op == "delete" or data.get("deleted_at"):
+            await cls.delete_by_id(entity_id)
+            return
+
+        local_user = await User.get_local()
+        someone_typeid = local_user.typeid if local_user else None
+        entity = await materialize_remote_membership_entity(
+            cls,
+            {**data, "id": entity_id},
+            someone_typeid,
+            notify=True,
+        )
+        logger.info(
+            "[bridge] membership op %s materialized %s-%s",
+            op,
+            entity_type,
+            getattr(entity, "id", None),
+        )
 
     async def _handle_task_op(self, op: str, task_id: str, data: dict) -> None:
         """A task was handed to this user — materialize it locally.

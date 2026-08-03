@@ -2,8 +2,7 @@
 
 Standard invite pattern (no shortcuts):
   1. alice creates a Conversation + joins (owner).
-  2. alice invites bob via /members — the invite grants the role outright
-     (hub 74694a30d), so bob only joins; there is nothing to accept.
+  2. alice invites bob via /members; bob is assigned immediately + joins.
   3. alice and bob each send a message (POST /conversation/<id>/add_message).
   4. Validate BOTH users' worldview on the hub: querying as alice AND as bob,
      the conversation exists and BOTH messages are visible to each.
@@ -20,6 +19,8 @@ from pathlib import Path
 
 import httpx
 import pytest
+
+from tests.hub_tests._assignment import assert_auto_assigned
 
 REPO_OSS = Path(__file__).resolve().parents[2]
 REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
@@ -87,7 +88,7 @@ async def test_conversation_worldview_consistent_for_both(hub_base_url):
             await h.post(f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/join", headers=headers_a, json={})
         ).raise_for_status()
 
-        # 2) alice invites bob; bob accepts + joins.
+        # 2) alice invites bob; the hub assigns bob immediately, then bob joins.
         r = await h.post(
             f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/members",
             headers=headers_a,
@@ -97,14 +98,13 @@ async def test_conversation_worldview_consistent_for_both(hub_base_url):
             },
         )
         r.raise_for_status()
-        # The invite grants the role outright (hub 74694a30d: invite-time
-        # auto-accept applies to every target type), so there is no pending
-        # invitation and nothing to accept — bob only has to join.
-        r = await h.get(f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/members", headers=headers_a)
-        r.raise_for_status()
-        roster = r.json()["data"] or []
-        assert any((m.get("user_email") or "").lower() == bob_email.lower() for m in roster), (
-            f"invite did not grant bob a role; roster={roster}"
+        await assert_auto_assigned(
+            hub_base_url,
+            bob_tok,
+            entity_type="conversation",
+            entity_id=conv_id,
+            user_id=bob_id,
+            expected_role="member",
         )
         (
             await h.post(f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/join", headers=headers_b, json={})

@@ -33,7 +33,7 @@ export interface AssetUsage {
 }
 
 export interface AssetDescriptor {
-  /** Serialized TypeId, e.g. "skill-<uuid>" or "agent-<uuid>". */
+  /** Serialized TypeId, e.g. "skill-<uuid>" or "subagent-<uuid>". */
   typeid: string;
   source: AssetSource;
   /** Canonical POSIX path; null for INLINE. */

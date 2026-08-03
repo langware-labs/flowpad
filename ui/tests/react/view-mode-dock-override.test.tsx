@@ -25,6 +25,18 @@ function Probe({ toggle = false }: { toggle?: boolean }) {
   );
 }
 
+function UrlOwnedToggleProbe() {
+  const location = useLocation();
+  const mode = useViewMode();
+  return (
+    <div>
+      <div data-testid="location">{location.pathname}{location.search}</div>
+      <div data-testid="effective-mode">{mode}</div>
+      <ViewToggle />
+    </div>
+  );
+}
+
 function renderAt(path: string, toggle = false) {
   const router = createMemoryRouter(
     [
@@ -101,5 +113,27 @@ describe('DockPointer viewMode override', () => {
     expect(screen.getByTestId('location').textContent).toContain('viewMode=vibe');
     expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('vibe');
     expect(document.documentElement.classList.contains('view-mode-glow-flicker')).toBe(true);
+  });
+
+  it('uses the dock URL for selection and click dedupe before preference adoption', async () => {
+    const router = createMemoryRouter(
+      [
+        { path: '/dock/:viewType', element: <UrlOwnedToggleProbe /> },
+        { path: '/dock/:viewType/*', element: <UrlOwnedToggleProbe /> },
+      ],
+      { initialEntries: ['/dock/settings?viewMode=advanced'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    // Persisted mode is deliberately still Standard: the URL must win in the
+    // first committed render, before useDockViewModeOverrideSync can adopt it.
+    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('standard');
+    expect(screen.getByTestId('effective-mode').textContent).toBe('advanced');
+    expect(screen.getByTestId('view-toggle-advanced').getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.click(screen.getByTestId('view-toggle-standard'));
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toContain('viewMode=standard'),
+    );
   });
 });

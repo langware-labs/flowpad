@@ -175,7 +175,7 @@ def _write_top_level_header(flow_message: "FlowMessage", tmp_root: Path) -> None
     )
     for att in msg_data.get("attachment", []):
         raw = att.get("data", "")
-        if raw.startswith(FILE_VFS_PREFIX) or raw.startswith(PROMPT_FILE_VFS_PREFIX):
+        if raw.startswith((FILE_VFS_PREFIX, PROMPT_FILE_VFS_PREFIX)):
             att["data"] = f"attachment/files/{Path(raw).name}"
     (tmp_root / _FLOW_MESSAGE_FILE).write_text(
         json.dumps(msg_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
@@ -195,7 +195,7 @@ def _pack_file_attachment(entry, flow_message: "FlowMessage", attachment_dir: Pa
     from flow_sdk.storage import get_entity_embedded_storage
 
     raw = entry.data or ""
-    if not (raw.startswith(FILE_VFS_PREFIX) or raw.startswith(PROMPT_FILE_VFS_PREFIX)):
+    if not raw.startswith((FILE_VFS_PREFIX, PROMPT_FILE_VFS_PREFIX)):
         return
     storage = get_entity_embedded_storage(flow_message.typeid)
     file_path = Path(storage.get_storage_path(raw))
@@ -822,10 +822,7 @@ def _mint_rendered_asset_identity(info, body_path: Path, entry_type: str, entry_
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
-    if info.main_layout == "folder":
-        asset_path = info.asset_ref_for(body_path.parent)
-    else:
-        asset_path = body_path
+    asset_path = info.asset_ref_for(body_path.parent) if info.main_layout == "folder" else body_path
     ref = FSRef(asset_path, record_type=RecordType(entry_type))
     return info.mint_id(ref, proposed_id=entry_id)
 
@@ -976,20 +973,11 @@ async def _reindex_git_origin_scopes(
         raw = origins_map.get(_entry_key(entry_type, entry_id))
         if not raw:
             continue
-        rel = str(raw.get("rel_path") or "").replace("\\", "/")
+        rel = str(raw.get("rel_path") or "")
         info = SchemaRegistry.get(entry_type)
-        main_subdir = getattr(info, "main_subdir", None) if info else None
-        if not rel or not main_subdir:
-            continue
-        # rel_path ends with "<main_subdir>/<leaf>"; the scope is everything above
-        # main_subdir. Strip those trailing components structurally (robust to a
-        # main_subdir token appearing earlier in the path than a substring search).
-        drop = len(PurePosixPath(main_subdir.replace("\\", "/")).parts) + 1  # main_subdir parts + leaf
-        rel_parts = PurePosixPath(rel).parts
-        prefix_parts = rel_parts[:-drop] if len(rel_parts) > drop else ()
-        if not prefix_parts:
+        scope = _git_origin_index_scope(project_root, rel, info)
+        if scope == project_root:
             continue  # canonical/top-level — the project-root walk already covers it
-        scope = project_root / PurePosixPath(*prefix_parts)
         try:
             scopes.setdefault(scope, set()).add(RecordType(entry_type))
         except ValueError:
@@ -1119,9 +1107,8 @@ async def _project_id_for_checkout(
     preferred_project_id: str | None,
 ) -> str | None:
     try:
-        if preferred_root is not None and preferred_project_id:
-            if checkout_root.resolve() == preferred_root.resolve():
-                return preferred_project_id
+        if preferred_root is not None and preferred_project_id and checkout_root.resolve() == preferred_root.resolve():
+            return preferred_project_id
     except OSError:
         pass
     try:
@@ -1771,9 +1758,8 @@ def file_attachment_rel_subdir(filename: str, *, origin: object | None = None) -
 
 
 def _should_stage_file_attachment(filename: str) -> bool:
-    if is_image_filename(filename) or PurePosixPath(filename).suffix.lower() in _INLINE_VIDEO_SUFFIXES:
-        return False  # renders inline as an image/video card
-    return True
+    # Images/videos render inline as media cards instead of staged file cards.
+    return not (is_image_filename(filename) or PurePosixPath(filename).suffix.lower() in _INLINE_VIDEO_SUFFIXES)
 
 
 async def _stage_file_attachments(

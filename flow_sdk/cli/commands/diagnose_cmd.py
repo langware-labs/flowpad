@@ -230,26 +230,28 @@ async def _load_recorded_diagnosis(diagnosis_cls, diagnosis_id: str | None):
     return last
 
 
-def _build_diagnose_process():
+async def _build_diagnose_process():
     """The diagnose worker process, exactly as `flow diagnose` launches it.
 
-    A single construction point so tests can exercise the real thing: the
-    process is never persisted, so it MUST select the headless transport —
-    ``prompt()`` routes on ``pty_mode`` and refuses an unsaved process on the
-    PTY branch ("not found in database") before any worker spawns.
-    """
-    from flow_sdk.builtin.agentic_process import AgenticProcess
+    Built from the named ``diagnose`` Agent, so the permission mode, model and
+    assistant flag are the ones a user can read off its card rather than
+    literals buried here. A single construction point so tests can exercise the
+    real thing.
 
-    ap = AgenticProcess(
-        cli_config={"permission_mode": "bypassPermissions"},
+    Deliberately neither saved nor started here: the process is never persisted (the exist_in_db gate was dropped for visible=False precisely so
+    this could spawn without a record), and the caller drives the turns itself
+    with ``ap.prompt``. Never persisted also means it MUST select the headless
+    transport — ``prompt()`` routes on ``pty_mode`` and the PTY branch would
+    refuse an unsaved process ("not found in database") before any worker
+    spawns.
+    """
+    from flow_sdk.builtin.agent_registry import get_agent_local_deployment
+
+    deployment = await get_agent_local_deployment("diagnose")
+    return await deployment.build(
         workdir=str(Path.cwd()),
-        visible=False,
-        # Headless transport — prompt() routes on pty_mode (NOT visible); the
-        # PTY branch would refuse this never-persisted process outright.
-        pty_mode=False,
+        name="flow diagnose",
     )
-    ap.enable_assistant()
-    return ap
 
 
 async def _run_diagnose(
@@ -324,7 +326,7 @@ async def _run_diagnose(
         f'sweep:\n"{message}"'
     )
 
-    ap = _build_diagnose_process()
+    ap = await _build_diagnose_process()
 
     # stream_transcript re-reads the transcript from the start on each call, so
     # track how many entries we've already printed and skip them on the re-stream

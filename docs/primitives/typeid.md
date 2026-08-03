@@ -14,7 +14,7 @@ A **TypeId** is the universal identifier format in flow-cli. It uniquely identif
 
 | Component | Description                                                                             |
 | --------- | --------------------------------------------------------------------------------------- |
-| `{type}`  | Entity type string, lowercase (e.g. `user`, `compute_node`, `agent`)                    |
+| `{type}`  | Entity type string, lowercase (e.g. `user`, `compute_node`, `subagent`)                    |
 | `-`       | Delimiter. Always the first hyphen — the split is on the **first dash only**.           |
 | `{id}`    | Entity identifier. One of four formats (see [Identifier Formats](#identifier-formats)). |
 

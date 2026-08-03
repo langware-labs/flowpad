@@ -66,6 +66,8 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
     upserts the trigger, guaranteeing the callback is in the registry when
     the first fire dispatches.
     """
+    from flow_sdk.ingest import flow_functions as _ingest_flow_fns  # noqa: F401  decorator side-effect
+    from flow_sdk.ingest import poller as _ingest_poller  # noqa: F401  decorator side-effect
     from flow_sdk.server import system_heartbeat as _heartbeat  # noqa: F401  decorator side-effect
     from flow_sdk.transcript_streamer.triggers import transcript_watcher_trigger_specs
     from flow_sdk.usage_report import callback as _usage_report_cb  # noqa: F401  decorator side-effect

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { AgenticProcess, MarkdownDoc } from '@sdk';
+import { Artifact, type AgenticProcess } from '@sdk';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -8,6 +9,7 @@ import { cn } from '@src/lib/utils';
 import { BookMarked, ChevronDown, FileText } from 'lucide-react';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { useIsAdvanced } from '@src/components/view-mode';
+import { compareArtifactsNewest } from '@src/hooks/use-process-artifacts';
 import { SideTabTooltipContent } from './LastPromptTooltip';
 import { SIDE_TABS, SideTabId, type SideTabId as SideTabIdType } from './side-windows';
 
@@ -22,10 +24,10 @@ interface TerminalBottomRibbonProps {
   onOpenSideTab: (tab: SideTabIdType) => void;
   hasLastPlan?: boolean;
   onOpenLastPlan?: () => void;
-  /** User-facing markdown docs this process authored, oldest-first (tail = latest). */
-  markdownDocs?: MarkdownDoc[];
-  /** Open a doc by path (docs viewer). */
-  onOpenMarkdown?: (path: string) => void;
+  /** Deliverables this run REGISTERED (`flow artifact …`), in any order. */
+  artifacts?: Artifact[];
+  /** Open an artifact's REFERENCED ASSET by path — never the artifact row. */
+  onOpenArtifact?: (assetRef: string) => void;
   /** Enables the Prompt Library button (prompt → queue needs a process). */
   process?: AgenticProcess | null;
   /** Chat composer rendered as the top tier of the ribbon (Standard/chat only). */
@@ -55,8 +57,8 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   onOpenSideTab,
   hasLastPlan = false,
   onOpenLastPlan,
-  markdownDocs = [],
-  onOpenMarkdown,
+  artifacts = [],
+  onOpenArtifact,
   process = null,
   composer,
 }) => {
@@ -96,8 +98,8 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
             </Tooltip>
           </TooltipProvider>
         )}
-        {markdownDocs.length > 0 && onOpenMarkdown && (
-          <MarkdownDocsChip docs={markdownDocs} onOpen={onOpenMarkdown} />
+        {artifacts.length > 0 && onOpenArtifact && (
+          <ArtifactsChip artifacts={artifacts} onOpen={onOpenArtifact} />
         )}
       </div>
 
@@ -182,20 +184,33 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
 };
 
 /**
- * "Open Doc" chip — mirrors the Open-Plan chip. Shows the latest authored
- * markdown doc (the list tail); when there is more than one, a subtle chevron
- * opens a popover listing all docs newest-first so any can be opened.
+ * "Open Artifact" chip — mirrors the Open-Plan chip, and replaces the
+ * markdown-docs chip it is modelled on: an authored `.md` was only ever a proxy
+ * for "the run produced something", while an Artifact is the run SAYING so.
+ *
+ * Shows the newest registration; when there is more than one, a subtle chevron
+ * opens a popover listing all of them newest-first.
+ *
+ * Clicking opens the artifact's REFERENCED ASSET, never the artifact row. An
+ * artifact points at a deliverable — it is not the deliverable — so an artifact
+ * with no `asset_ref` (a webapp registered by port, say) has nothing to open
+ * and the click is inert rather than routing somewhere wrong.
  */
-const DOC_CHIP_CLASSES =
-  'h-6 text-emerald-400 border-emerald-400/40 hover:border-emerald-400 hover:text-emerald-300';
+const ARTIFACT_CHIP_CLASSES =
+  'h-6 text-violet-400 border-violet-400/40 hover:border-violet-400 hover:text-violet-300';
 
-const MarkdownDocsChip: React.FC<{
-  docs: MarkdownDoc[];
-  onOpen: (path: string) => void;
-}> = ({ docs, onOpen }) => {
+const ArtifactsChip: React.FC<{
+  artifacts: Artifact[];
+  onOpen: (assetRef: string) => void;
+}> = ({ artifacts, onOpen }) => {
   const { t } = useLingui();
-  const latest = docs[docs.length - 1];
-  const hasMore = docs.length > 1;
+  const ArtifactIcon = iconForType(Artifact.type);
+  const ordered = [...artifacts].sort(compareArtifactsNewest);
+  const latest = ordered[0];
+  const hasMore = ordered.length > 1;
+  const open = (artifact: Artifact) => {
+    if (artifact.asset_ref) onOpen(artifact.asset_ref);
+  };
   return (
     <TooltipProvider delayDuration={400}>
       <div className="flex items-center">
@@ -204,19 +219,19 @@ const MarkdownDocsChip: React.FC<{
             <Button
               variant="outline"
               size="sm"
-              onClick={() => onOpen(latest.path)}
+              onClick={() => open(latest)}
               className={cn(
-                DOC_CHIP_CLASSES,
+                ARTIFACT_CHIP_CLASSES,
                 'gap-1.5 px-2 text-[11px]',
                 hasMore && 'rounded-r-none border-r-0',
               )}
             >
-              <FileText className="h-3.5 w-3.5" />
+              <ArtifactIcon className="h-3.5 w-3.5" />
               <span className="max-w-[10rem] truncate">{latest.name}</span>
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">
-            <Trans>Open the latest doc</Trans>
+            <Trans>Open the latest artifact</Trans>
           </TooltipContent>
         </Tooltip>
         {hasMore && (
@@ -225,26 +240,23 @@ const MarkdownDocsChip: React.FC<{
               <Button
                 variant="outline"
                 size="sm"
-                aria-label={t`Choose a doc to open`}
-                className={cn(DOC_CHIP_CLASSES, 'rounded-l-none px-1')}
+                aria-label={t`Choose an artifact to open`}
+                className={cn(ARTIFACT_CHIP_CLASSES, 'rounded-l-none px-1')}
               >
                 <ChevronDown className="h-3.5 w-3.5" />
               </Button>
             </PopoverTrigger>
             <PopoverContent align="start" side="top" className="w-64 p-1">
               <div className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
-                {[...docs].reverse().map((doc) => (
+                {ordered.map((artifact) => (
                   <button
-                    key={doc.path}
+                    key={String(artifact.id)}
                     type="button"
-                    onClick={() => onOpen(doc.path)}
+                    onClick={() => open(artifact)}
                     className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left hover:bg-accent"
                   >
-                    <FileText className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
-                    <span className="min-w-0 flex-1 truncate text-xs text-foreground">{doc.name}</span>
-                    <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
-                      {doc.change === 'create' ? t`new` : t`edit`}
-                    </span>
+                    <ArtifactIcon className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+                    <span className="min-w-0 flex-1 truncate text-xs text-foreground">{artifact.name}</span>
                   </button>
                 ))}
               </div>

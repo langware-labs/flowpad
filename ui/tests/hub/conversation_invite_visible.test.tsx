@@ -1,14 +1,13 @@
 /**
- * Hub: an invited conversation is visible (SDK + hook) before anyone accepts.
+ * Hub: an assigned conversation is visible immediately (SDK + hook).
  *
  * Pure SDK / hooks — no component mount, no router, no API stub/override:
  *   1. Alice creates a Conversation and ``share([invitee])`` — pushes it to the
- *      hub AND fires the /members invitation. The invitee NEVER accepts.
- *   2. SDK ``getMembers`` proves the premise: the invitee is NOT in the
- *      (approved) roster — i.e. the invite is still pending.
+ *      hub and assigns the recipient immediately.
+ *   2. SDK ``getMembers`` proves the recipient is an approved member.
  *   3. ``renderHook(useEntity(convTypeId))`` — the exact hook the conversation
  *      UI uses to load its conversation — resolves THIS conversation (same id +
- *      title). That hook resolving pre-accept is "the conversation is seen".
+ *      title). That hook resolving proves the conversation is seen.
  *
  * Gated like the sibling hub tests: skips when the hub is down or the local
  * backend isn't cloud-logged-in.
@@ -43,8 +42,7 @@ beforeAll(async () => {
     skipReason = 'missing ALICE_EMAIL/ALICE_PW';
     return;
   }
-  // Invite a real co-user when configured, else a synthetic address. Either
-  // way nobody accepts during this test — that is the point.
+  // Assign a real co-user when configured, else a synthetic address.
   const bob = await getBobCreds();
   inviteeEmail = bob?.email ?? `pending-invitee-${Date.now()}@local.test`;
 });
@@ -56,9 +54,9 @@ beforeEach(async (context: any) => {
   await apiTestSetup(signupInfo, context.task.name);
 });
 
-describe('hub: invited conversation is visible pre-accept (SDK + hook)', () => {
-  it('useEntity resolves the conversation while the invite is still pending', async () => {
-    // 1. Create + invite. share([email]) pushes to the hub and sends the invite.
+describe('hub: assigned conversation is visible immediately (SDK + hook)', () => {
+  it('useEntity resolves the conversation after immediate assignment', async () => {
+    // 1. Create + share. The recipient is assigned at the hub immediately.
     const title = testEntityName('conv');
     const conv = trackForCleanup(new Conversation({ title }));
     expect(conv.id).toBeTruthy();
@@ -68,24 +66,24 @@ describe('hub: invited conversation is visible pre-accept (SDK + hook)', () => {
 
     const convTypeId = new TypeId(Conversation.type, conv.id);
 
-    // 2. Premise check via SDK: the invitee is on the roster but PENDING, not
-    //    accepted. No raw HTTP — getMembers is the SDK's roster surface. (The
+    // 2. Premise check via SDK: the invitee is an approved member. No raw HTTP —
+    //    getMembers is the SDK's roster surface. (The
     //    roster row carries hub fields `user_email` + `status` that the lossy
     //    `Participant` type doesn't declare, so read them off the raw object.)
     const roster = (await getMembers(convTypeId)) as Array<
-      { email?: string | null; user_email?: string | null; status?: string | null }
+      { email?: string | null; user_email?: string | null; role?: string | null; status?: string | null }
     >;
     const inviteeRow = roster.find((m) => {
       const e = (m.user_email ?? m.email ?? '').toLowerCase();
       return e === inviteeEmail.toLowerCase();
     });
-    // The invitee must NOT be approved — the invite is still pending (or the
-    // row isn't present yet). Either way, nobody has accepted.
-    expect(inviteeRow?.status === 'approved').toBe(false);
+    expect(inviteeRow).toBeTruthy();
+    expect(inviteeRow?.status).toBe('approved');
+    expect(inviteeRow?.role).toBe('member');
 
     // 3. The conversation is *seen*: useEntity — the hook the conversation UI
-    //    uses to load its conversation — resolves THIS conversation by id while
-    //    the invite is still pending. Same id + title proves it's the one we
+    //    uses to load its conversation — resolves THIS conversation by id.
+    //    Same id + title proves it's the one we
     //    just shared, not a stale/empty hit.
     const { result } = renderHook(() => useEntity<Conversation>(convTypeId));
     await waitFor(

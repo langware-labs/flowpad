@@ -33,3 +33,20 @@ export function errorMessage(error: unknown, fallback: string): string {
 
   return e?.detail || e?.message || fallback;
 }
+
+/**
+ * Pull the HTTP status out of whatever a failed call threw, or 0 when there
+ * isn't one (client-side error, network failure before a response).
+ *
+ * Same motivation as {@link errorMessage}: the axios-error shape was being
+ * re-spelled at each call site that needed to branch on a status — most often
+ * to absorb an expected 409. `client.ts`'s interceptor also stamps `status`
+ * directly for the network-failure case, so both shapes are read here.
+ */
+export function errorStatus(error: unknown): number {
+  const e =
+    typeof error === 'object' && error !== null
+      ? (error as { status?: number; response?: { status?: number } })
+      : null;
+  return e?.response?.status ?? e?.status ?? 0;
+}

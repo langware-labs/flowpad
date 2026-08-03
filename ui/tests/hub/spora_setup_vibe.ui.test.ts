@@ -28,7 +28,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Browser } from 'playwright';
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { HUB_URL, getAliceCreds, hubAvailable, hubLogin } from './_hub';
 import { pollUntil } from './_matrix';
 import {
@@ -41,10 +41,9 @@ import {
   type ResolvedInstance,
 } from './_instances';
 import {
-  acceptInvitationInUI,
   launchBrowser,
+  openAssignedConversationInUI,
   openInstancePage,
-  realConsoleErrors,
   resetConsoleErrors,
   type InstancePage,
 } from './_browser';
@@ -77,7 +76,7 @@ function api(apiUrl: string, method: string, p: string, body?: unknown) {
 const post = (apiUrl: string, p: string, body?: unknown) => api(apiUrl, 'POST', p, body);
 const put = (apiUrl: string, p: string, body?: unknown) => api(apiUrl, 'PUT', p, body);
 
-async function backendGet(inst: ResolvedInstance, type: string, id: string): Promise<any | null> {
+async function backendGet(inst: ResolvedInstance, type: string, id: string): Promise<any> {
   const r = await fetch(`${inst.apiUrl}/api/v1/graph/${type}/${id}`)
     .then((x) => x.json())
     .catch(() => null);
@@ -148,7 +147,7 @@ function bundleNames(zipPath: string): string[] {
 }
 
 async function findReadyMessage(convId: string): Promise<string> {
-  // The UI acceptance already identifies one conversation. Pull only that
+  // The assigned UI conversation already identifies one conversation. Pull only that
   // conversation's messages; a global fetchConversations() leaves a long-lived
   // staff account reconciling historical bundles after this test has moved on.
   const sync = await post(bob.apiUrl, '/graph/conversation-message-sync', {
@@ -161,7 +160,7 @@ async function findReadyMessage(convId: string): Promise<string> {
       for (const p of (c?.conversationMessageIds ?? []) as any[]) {
         if (p.type !== 'flow_message') continue;
         const full = await bob.sdk.FlowMessage.getById(p.id).catch(() => null);
-        if (full && full.body_status === 'ready') return full;
+        if (full && String(full.body_status) === 'ready') return full;
       }
       return null;
     },
@@ -300,7 +299,7 @@ describe('spora copy-share → Vibe setup', () => {
 
     const conv = new alice.sdk.Conversation({ title: `e2etest-spora-${Date.now()}` });
     await conv.save();
-    createdConversations.push({ apiUrl: alice.apiUrl, id: conv.id! });
+    createdConversations.push({ apiUrl: alice.apiUrl, id: conv.id });
     await conv.share([bob.email]);
     expect(conv.remote).toBe(true);
 
@@ -326,9 +325,9 @@ describe('spora copy-share → Vibe setup', () => {
       browser = await launchBrowser();
       bobPage = await openInstancePage(browser, INST_2);
 
-      await acceptInvitationInUI(bobPage, conv.id!);
-      createdConversations.push({ apiUrl: bob.apiUrl, id: conv.id! });
-      const bobFmId = await findReadyMessage(conv.id!);
+      await openAssignedConversationInUI(bobPage, conv.id);
+      createdConversations.push({ apiUrl: bob.apiUrl, id: conv.id });
+      const bobFmId = await findReadyMessage(conv.id);
       const download = await post(bob.apiUrl, `/graph/flow_message/${bobFmId}/download_body`, {});
       expect(download.status, JSON.stringify(download.body)).toBeLessThan(400);
 

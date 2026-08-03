@@ -33,6 +33,12 @@ class EntryKind(str, Enum):
     # native ``Skill`` tool-use; Codex loads a skill by reading its
     # ``SKILL.md``. See ``SkillCallEntry``.
     SKILL_CALL = "skill_call"
+    # A registered deliverable. Unlike every kind above it, this is NOT parsed
+    # out of a worker transcript — the server SYNTHESIZES it when a
+    # `flow artifact` registration resolves, so the stream carries the artifact
+    # itself (id, name, referenced asset) and not merely the intent to make one.
+    # See ``entries/artifact.py`` and ``AgenticProcess._emit_artifact_entry``.
+    ARTIFACT = "artifact"
     SEARCH = "search"
     WEB_FETCH = "web_fetch"
     TODO_UPDATE = "todo_update"
@@ -71,7 +77,21 @@ class TranscriptEntry:
         entry_id: str | None = None,
         model: str | None = None,
         attribution_skill: str | None = None,
+        virtual: bool = False,
+        derived_from: str | None = None,
     ) -> None:
+        # ``virtual`` marks an entry the DERIVATION LAYER generated rather than
+        # a parser reading a vendor line — see ``derivation/``. Physical entries
+        # are transcript shape; virtual ones are meaning, and they are appended
+        # beside their source rather than replacing it. Outside the layer this
+        # is the only visible trace of it.
+        self.virtual = virtual
+        # The id of the entry this was generated FROM. ``virtual`` says "this
+        # was derived"; this says "from what" — which is what lets a consumer
+        # suppress a source whose refinement is present, without knowing any
+        # per-kind rules. Chains are possible (shell → flow_command → artifact),
+        # so only the leaf of a chain has no descendant pointing at it.
+        self.derived_from = derived_from
         self.id = id
         self.session_id = session_id
         self.timestamp = timestamp
@@ -162,16 +182,18 @@ class TranscriptEntry:
         }
         if extra:
             flow_value.update(extra)
-        return [FlowData(
-            flow_value=flow_value,
-            created_time=self.timestamp,
-            attributes={
-                "element-type": FlowElementType.TOOL_CALL,
-                "data-type": FlowDataType.OBJECT,
-                "tool-name": name,
-                "tool-use-id": tuid,
-            },
-        )]
+        return [
+            FlowData(
+                flow_value=flow_value,
+                created_time=self.timestamp,
+                attributes={
+                    "element-type": FlowElementType.TOOL_CALL,
+                    "data-type": FlowDataType.OBJECT,
+                    "tool-name": name,
+                    "tool-use-id": tuid,
+                },
+            )
+        ]
 
     def to_dict(self) -> dict:
         """Serialize the envelope fields for REST round-trip.
@@ -191,6 +213,12 @@ class TranscriptEntry:
             "entry_id": self.entry_id,
             "model": self.model,
             "attribution_skill": self.attribution_skill,
+            # These two must stay in lockstep with ``__init__``'s kwargs: the
+            # derivation layer rebuilds an entry's envelope by calling this
+            # method UNBOUND and splatting the result as constructor kwargs, so
+            # a key here with no matching kwarg is a TypeError at derive time.
+            "virtual": self.virtual,
+            "derived_from": self.derived_from,
         }
 
     # ── string rendering ─────────────────────────────────────────────────────

@@ -84,7 +84,7 @@ const RESOURCE_TYPE_META: Record<ProjectResourceType, ResourceTypeMeta> = {
   plugin: { label: 'Plugin', icon: Settings },
   hook: { label: 'Hook', icon: Terminal },
   command: { label: 'Command', icon: Command },
-  agent: { label: 'Agent', icon: Bot },
+  agent: { label: 'SubAgent', icon: Bot },
   session: { label: 'Session', icon: FolderOpen },
   todo: { label: 'Todo', icon: CheckSquare },
   claude_md: { label: 'CLAUDE.md', icon: FileText },

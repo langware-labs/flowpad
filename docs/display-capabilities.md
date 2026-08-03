@@ -117,8 +117,11 @@ diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
 - `flow app open` → discovers/starts a dev server → `register-webapp-artifact`
   action (creates/updates a project-scoped WEBAPP `Artifact`, `show:true` by
   default) — artifacts drive `WebappViewer`'s selector/restart chrome.
-- HTML deliverables (`.html` via show) are display-only; they are NOT
-  artifacts and have no registration/restart story.
+- `flow artifact file|entity|webapp` registers a deliverable as an `Artifact`
+  carrying `generated_by`, and presents it by default (`--no-show` suppresses).
+  So an `.html` report is no longer display-only: it gets the same durable
+  registration a webapp always had. `flow show` remains the display-only verb —
+  the two are distinct contracts, not one folded into the other.
 
 ## 5. Foreign HTML — the four trust tiers
 
@@ -205,9 +208,12 @@ No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
    (`vfsEditorEl`), and the explorer all route through it. Adding a viewer =
    one enum value + one table row + one `AssetEditorRouter` case.
    (`.jsonl` stays lens-routed by design.)
-5. **HTML deliverables as artifacts?** Webapps get registration, restart, and
-   history via WEBAPP artifacts; shown `.html` files get nothing. Should
-   there be an HTML/report artifact kind with the same lifecycle?
+5. ~~**HTML deliverables as artifacts?**~~ **ANSWERED — implemented.**
+   `flow artifact` registers any deliverable — file, entity or port — as an
+   `Artifact` with a `generated_by` edge back to the producing run, so an
+   `.html` report now has the registration and history a webapp always had.
+   Restart remains webapp-only, and deliberately: a file has nothing to restart.
+   See [agentic_process_outputs.md](agentic_process_outputs.md).
 6. **`/sdk` publishing**: build+ship `flowpad-sdk.js` into `server/static/sdk`
    (plus a slim non-React entry), or delete the mount?
 7. **Show feedback**: should `on_show` report back whether a display actually

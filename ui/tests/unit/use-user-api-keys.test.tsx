@@ -16,7 +16,7 @@ const USER_TYPE_ID = { type: 'user', id: USER_ID };
 const h = vi.hoisted(() => ({
   callAction: vi.fn(),
   generateSelfKey: vi.fn(),
-  deleteById: vi.fn(),
+  deleteByName: vi.fn(),
   notifyError: vi.fn(),
   notifySuccess: vi.fn(),
   user: { typeId: { type: 'user', id: '3f2504e0-4f89-41d3-9a0c-0305e82c3301' } } as { typeId: unknown } | null,
@@ -26,7 +26,7 @@ const h = vi.hoisted(() => ({
 // so replace only the three seams it actually calls.
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  ApiKey: { generateSelfKey: h.generateSelfKey, deleteById: h.deleteById },
+  ApiKey: { generateSelfKey: h.generateSelfKey, deleteByName: h.deleteByName },
   dataManager: { callAction: h.callAction },
 }));
 vi.mock('@sdk/react/hooks', () => ({ useAuth: () => ({ user: h.user }) }));
@@ -36,8 +36,20 @@ vi.mock('@src/notifications', () => ({
 
 import { useUserApiKeys, type UseUserApiKeys } from '@src/components/api-keys-view/use-user-api-keys';
 
-const ACTIVE = { id: 'k1', name: 'FLOWPAD_API_KEY', visible_value: '****abcd', target_typeid: `user-${USER_ID}`, is_active: true };
-const REVOKED = { id: 'k0', name: 'FLOWPAD_API_KEY', visible_value: '****old0', target_typeid: `user-${USER_ID}`, is_active: false };
+const ACTIVE = {
+  id: 'k1',
+  name: 'FLOWPAD_API_KEY',
+  visible_value: '****abcd',
+  target_typeid: `user-${USER_ID}`,
+  is_active: true,
+};
+const REVOKED = {
+  id: 'k0',
+  name: 'FLOWPAD_API_KEY',
+  visible_value: '****old0',
+  target_typeid: `user-${USER_ID}`,
+  is_active: false,
+};
 
 function renderHook(opts?: { onMutated?: () => void }) {
   const captured: { current: UseUserApiKeys | null } = { current: null };
@@ -55,7 +67,7 @@ describe('useUserApiKeys', () => {
     h.user = { typeId: USER_TYPE_ID };
     h.callAction.mockResolvedValue([ACTIVE]);
     h.generateSelfKey.mockResolvedValue({ api_key: 'sk-generated' });
-    h.deleteById.mockResolvedValue(undefined);
+    h.deleteByName.mockResolvedValue(undefined);
   });
   afterEach(() => cleanup());
 
@@ -83,10 +95,10 @@ describe('useUserApiKeys', () => {
     // very next render overwrites.
     h.callAction.mockResolvedValue([]);
     await act(async () => {
-      await hook.current!.remove('k1');
+      await hook.current!.remove({ name: 'k1' });
     });
 
-    expect(h.deleteById).toHaveBeenCalledWith(USER_TYPE_ID, 'k1');
+    expect(h.deleteByName).toHaveBeenCalledWith(USER_TYPE_ID, 'k1');
     expect(hook.current?.apiKeys).toEqual([]);
   });
 
@@ -100,7 +112,7 @@ describe('useUserApiKeys', () => {
     expect(hook.current?.generatedKey).toEqual({ api_key: 'sk-generated' });
 
     await act(async () => {
-      await hook.current!.remove('k1');
+      await hook.current!.remove({ name: 'k1' });
     });
     expect(hook.current?.generatedKey).toBeNull();
   });
@@ -114,19 +126,19 @@ describe('useUserApiKeys', () => {
       await hook.current!.generate();
     });
     await act(async () => {
-      await hook.current!.remove('k1');
+      await hook.current!.remove({ name: 'k1' });
     });
 
     expect(onMutated).toHaveBeenCalledTimes(2);
   });
 
   it('reports a failure instead of throwing at the caller', async () => {
-    h.deleteById.mockRejectedValue({ response: { data: { detail: 'nope' } } });
+    h.deleteByName.mockRejectedValue({ response: { data: { detail: 'nope' } } });
     const hook = renderHook();
     await act(async () => {});
 
     await act(async () => {
-      await hook.current!.remove('k1');
+      await hook.current!.remove({ name: 'k1' });
     });
 
     expect(h.notifyError).toHaveBeenCalledWith(expect.objectContaining({ message: 'nope' }));

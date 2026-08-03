@@ -112,11 +112,14 @@ async def hub_start_auth(provider: str) -> Optional[dict[str, Any]]:
 
 
 async def hub_holds_credential(credentials_name: str) -> bool:
-    """Whether the hub user's env table now carries ``credentials_name``.
+    """Whether the hub now holds the token stored under ``credentials_name``.
 
-    Read against the hub's own table rather than a status endpoint: the row
-    appearing IS the definition of "the flow completed and the token was
-    stored", so there is no second source to disagree with.
+    Read against the hub's own table rather than a status endpoint, so there is
+    no second source to disagree with — but read the RIGHT row. That table holds
+    PROVIDER rows (``googledrive``, ``github``), not the token rows credentials
+    are stored under, so the credentials name is never a row *name* in it. The
+    provider row carries both facts instead: ``ref_name`` IS the credentials
+    name, and ``var_status`` says whether the hub holds it.
     """
     from flow_sdk.core.oauth.hub_providers import _cloud_user_id  # noqa: PLC0415
 
@@ -133,7 +136,17 @@ async def hub_holds_credential(credentials_name: str) -> bool:
     values = data.get("values") if data is not None else None
     if not isinstance(values, list):
         return False
-    return any(isinstance(v, dict) and v.get("name") == credentials_name for v in values)
+    from flow_sdk.core.entity.entity_env.env_types import EnvStatusEnum  # noqa: PLC0415
+
+    # StrEnum, so this compares equal to the raw JSON string — but a rename moves
+    # both sides together. A literal here would fail closed exactly like the bug
+    # this replaced: the poll would spin its timeout and nothing would say why.
+    return any(
+        isinstance(v, dict)
+        and v.get("ref_name") == credentials_name
+        and v.get("var_status") == EnvStatusEnum.AVAILABLE
+        for v in values
+    )
 
 
 async def poll_hub_credential(credentials_name: str, timeout: int = OAUTH_CALLBACK_TIMEOUT) -> bool:

@@ -179,12 +179,10 @@ export const ShownTargetBadge: React.FC<{ processId: string }> = ({ processId })
 };
 
 /** "agentic_process" → "Agentic Process", "markdown" → "Markdown". */
-export function humanizeType(s: string): string {
-  return s
-    .replace(/[-_]/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .trim();
-}
+// Moved to `@src/utils/humanize` — a pure function does not belong in a React
+// module that leaf components need to import. Re-exported so callers here and
+// in `tabs/` keep their import path.
+export { humanizeType } from '@src/utils/humanize';
 
 /**
  * Info card for a non-terminal (content) tab — same chrome as

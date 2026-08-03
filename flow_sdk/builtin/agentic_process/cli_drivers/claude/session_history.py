@@ -22,8 +22,8 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowDataType,
     FlowElementType,
 )
-from flow_sdk.transcript_analyzer._helpers import extract_text
 from flow_sdk.transcript_analyzer import AgentTranscriptFile
+from flow_sdk.transcript_analyzer._helpers import extract_text
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 from flow_sdk.transcript_analyzer.resolver import (
     TranscriptNotFoundError,
@@ -33,11 +33,22 @@ from flow_sdk.transcript_analyzer.resolver import (
 logger = logging.getLogger(__name__)
 
 
-_TOOL_USE_KINDS = frozenset({
-    "tool_use", "shell_command", "flow_command", "file_write", "file_edit",
-    "file_read", "search", "web_fetch", "todo_update", "agent_spawn",
-    "exit_plan_mode", "skill_call",
-})
+_TOOL_USE_KINDS = frozenset(
+    {
+        "tool_use",
+        "shell_command",
+        "flow_command",
+        "file_write",
+        "file_edit",
+        "file_read",
+        "search",
+        "web_fetch",
+        "todo_update",
+        "agent_spawn",
+        "exit_plan_mode",
+        "skill_call",
+    }
+)
 
 
 def get_session_jsonl_path(session_id: str, project_path: Path | None = None) -> Path | None:
@@ -119,6 +130,8 @@ def entry_to_flowdata(entry, observation_kind: str = "replay") -> FlowData:
             fd.attributes.setdefault("data-type", FlowDataType.OBJECT)
             fd.attributes["subtype"] = kind
             fd.attributes["observation-kind"] = observation_kind
+            if getattr(entry, "virtual", False):
+                fd.attributes["is-virtual"] = "true"
             fd.process_entry = pe.to_dict()
             return fd
     attributes = {

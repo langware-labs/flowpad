@@ -14,12 +14,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from flow_sdk.builtin.agent import Agent
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agentic_process.agentic_process import AssetSource
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
 from flow_sdk.builtin.spec import Spec
+from flow_sdk.builtin.subagent import SubAgent
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
@@ -52,6 +53,7 @@ async def staging(tmp_path: Path, monkeypatch):
             p.mkdir(parents=True, exist_ok=True)
 
     from flow_sdk.instance_settings import reset_instance_settings
+
     monkeypatch.setenv("FLOW_INSTANCE", "test")
     monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(user_home))
     reset_instance_settings()
@@ -62,44 +64,65 @@ async def staging(tmp_path: Path, monkeypatch):
         await e.save()
         return e
 
-    project = await _save(Project(
-        id=str(uuid.uuid4()), name=f"staging_project_{suffix}",
-        fs_storage_mount_path=str(project_root),
-    ))
-    other_project_id = str(uuid.uuid4())
+    project = await _save(
+        Project(
+            id=mint_uuid(),
+            name=f"staging_project_{suffix}",
+            fs_storage_mount_path=str(project_root),
+        )
+    )
+    other_project_id = mint_uuid()
 
     ents = {
-        "u_skill": await _save(Skill(
-            id=str(uuid.uuid4()), name=f"u_skill_{suffix}",
-            asset_ref=canonical_posix_path(paths["u_skill"]),
-        )),
-        "doc_note": await _save(Docs(
-            id=str(uuid.uuid4()), name=f"doc_note_{suffix}",
-            asset_ref=canonical_posix_path(paths["doc_note"]),
-        )),
+        "u_skill": await _save(
+            Skill(
+                id=mint_uuid(),
+                name=f"u_skill_{suffix}",
+                asset_ref=canonical_posix_path(paths["u_skill"]),
+            )
+        ),
+        "doc_note": await _save(
+            Docs(
+                id=mint_uuid(),
+                name=f"doc_note_{suffix}",
+                asset_ref=canonical_posix_path(paths["doc_note"]),
+            )
+        ),
         # Project-scoped entity of ANOTHER project under the home catchall —
         # must be excluded by the _source_match_for_asset ownership rule.
-        "other_agent": await _save(Agent(
-            id=str(uuid.uuid4()), name=f"other_agent_{suffix}",
-            asset_ref=canonical_posix_path(paths["other_agent"]),
-            scope="project", project_id=other_project_id,
-        )),
-        "p_skill": await _save(Skill(
-            id=str(uuid.uuid4()), name=f"p_skill_{suffix}",
-            asset_ref=canonical_posix_path(paths["p_skill"]),
-            project_id=str(project.id),
-        )),
-        "spec_project": await _save(Spec(
-            id=str(uuid.uuid4()), title=f"spec_project_{suffix}",
-            project_id=str(project.id),
-        )),
-        "spec_user": await _save(Spec(
-            id=str(uuid.uuid4()), title=f"spec_user_{suffix}",
-        )),
+        "other_agent": await _save(
+            SubAgent(
+                id=mint_uuid(),
+                name=f"other_agent_{suffix}",
+                asset_ref=canonical_posix_path(paths["other_agent"]),
+                scope="project",
+                project_id=other_project_id,
+            )
+        ),
+        "p_skill": await _save(
+            Skill(
+                id=mint_uuid(),
+                name=f"p_skill_{suffix}",
+                asset_ref=canonical_posix_path(paths["p_skill"]),
+                project_id=str(project.id),
+            )
+        ),
+        "spec_project": await _save(
+            Spec(
+                id=mint_uuid(),
+                title=f"spec_project_{suffix}",
+                project_id=str(project.id),
+            )
+        ),
+        "spec_user": await _save(
+            Spec(
+                id=mint_uuid(),
+                title=f"spec_user_{suffix}",
+            )
+        ),
     }
 
-    yield {"project": project, "ents": ents, "user_home": user_home,
-           "project_root": project_root}
+    yield {"project": project, "ents": ents, "user_home": user_home, "project_root": project_root}
 
     for e in [project, *ents.values()]:
         try:
@@ -185,7 +208,13 @@ async def test_response_row_shape_matches_process_action(staging):
     # Process action keys + additive project_id; usage always present.
     for row in rows:
         assert set(row.keys()) == {
-            "typeid", "source", "posix_path", "source_dir", "project_id", "remote", "usage",
+            "typeid",
+            "source",
+            "posix_path",
+            "source_dir",
+            "project_id",
+            "remote",
+            "usage",
         }
         assert row["usage"] == []
 
@@ -205,7 +234,7 @@ async def test_ref_only_remote_hydration_batches_once_per_type(staging):
             posix_path=None,
         ),
         AssetDescriptor(
-            typeid=f"agent-{agent.id}",
+            typeid=f"subagent-{agent.id}",
             source=AssetSource.USER_DIR,
             posix_path=None,
         ),
@@ -217,22 +246,22 @@ async def test_ref_only_remote_hydration_batches_once_per_type(staging):
             new=AsyncMock(return_value=descriptors),
         ),
         patch.object(Skill, "get_all", new=AsyncMock(wraps=Skill.get_all)) as skill_get_all,
-        patch.object(Agent, "get_all", new=AsyncMock(wraps=Agent.get_all)) as agent_get_all,
+        patch.object(SubAgent, "get_all", new=AsyncMock(wraps=SubAgent.get_all)) as agent_get_all,
         patch.object(
             Skill,
             "get_one",
             new=AsyncMock(side_effect=AssertionError("get_one is not allowed")),
         ),
         patch.object(
-            Agent,
+            SubAgent,
             "get_one",
             new=AsyncMock(side_effect=AssertionError("get_one is not allowed")),
         ),
     ):
-        response = await staging["project"].get_assets_action(types="skill,agent")
+        response = await staging["project"].get_assets_action(types="skill,subagent")
 
     assert skill_get_all.await_count == 1
     assert agent_get_all.await_count == 1
     by_typeid = {row["typeid"]: row for row in response.data["assets"]}
     assert by_typeid[f"skill-{skill.id}"]["remote"] is True
-    assert by_typeid[f"agent-{agent.id}"]["remote"] is False
+    assert by_typeid[f"subagent-{agent.id}"]["remote"] is False

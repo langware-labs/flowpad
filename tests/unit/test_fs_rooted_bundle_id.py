@@ -30,7 +30,7 @@ def test_agent_and_whiteboard_are_file_backed():
     # not None), not a hardcoded type set — else their bytes never ride the
     # bundle and the receiver has nothing to materialize.
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-    for t in (EntityType.AGENT.value, EntityType.WHITEBOARD.value):
+    for t in (EntityType.SUBAGENT.value, EntityType.WHITEBOARD.value):
         info = SchemaRegistry.get(t)
         assert info is not None and info.main_subdir is not None, f"{t} must be file-backed"
 
@@ -231,10 +231,10 @@ async def test_pack_single_file_copies_md_and_js_byte_for_byte(tmp_path, monkeyp
     _stub_file_backed_lookup(monkeypatch, str(md_src), name="deploy")
     att_md = tmp_path / "bundle_md"
     att_md.mkdir()
-    await _pack_file_backed_attachment(EntityType.AGENT.value, ENTITY_ID, att_md)
+    await _pack_file_backed_attachment(EntityType.SUBAGENT.value, ENTITY_ID, att_md)
     md_dest = (
         att_md
-        / f"{EntityType.AGENT.value}-{ENTITY_ID}"
+        / f"{EntityType.SUBAGENT.value}-{ENTITY_ID}"
         / ".claude" / "agents" / "deploy.md"
     )
     assert md_dest.exists()

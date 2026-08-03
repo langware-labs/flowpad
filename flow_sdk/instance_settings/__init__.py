@@ -79,10 +79,22 @@ def get_instance_settings() -> BaseInstanceSettings:
 
 
 def reset_instance_settings() -> None:
-    """Drop the cache. Tests call this after monkeypatching env."""
+    """Drop the cache. Tests call this after monkeypatching env.
+
+    Also clears the per-instance memos that hang off these settings. They are
+    keyed by instance, so a test that switches instances through this function
+    alone would otherwise keep reading the previous instance's cookie-gate and
+    runtime assignment.
+    """
     _INSTANCES.clear()
     _WARNED_ALIASES.clear()
     _reset_sod_key_cache()
+    # Local imports: both modules import THIS one at module scope.
+    from .cookie_gate import reset_cache as _reset_cookie_gate_cache  # noqa: PLC0415
+    from .runtime import reset_cache as _reset_runtime_cache  # noqa: PLC0415
+
+    _reset_cookie_gate_cache()
+    _reset_runtime_cache()
 
 
 # Alias used by base_settings.py docstring + new test fixtures.

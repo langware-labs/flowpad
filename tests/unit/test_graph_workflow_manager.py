@@ -122,6 +122,65 @@ def test_graph_workflow_doc_rejects_bad_version():
         parse_graph_workflow_doc('{"version": 99}')
 
 
+# ── the bus twin (docs/flow-events.md phase 8, Tier B) ────────────────────────
+
+
+@async_context
+async def test_the_bus_twin_carries_everything_the_ws_dialect_did(tmp_path):
+    """The canvas is driven from the bus, so the twin must be sufficient alone.
+
+    Four things live ONLY in the legacy frames and are silently easy to drop:
+    the ``queued``/``active`` counters (read off the scheduler runtime at emit
+    time, nowhere else), ``detail`` (which is how ``process_id`` reaches
+    proc-watch), the run-internal ``kind: event`` beats (the edge-pulse input),
+    and the ``target``, without which a client cannot filter to one flow.
+    """
+    from flow_sdk.tags import on_tag
+
+    @graph_workflow_functions.register("v2_twin")
+    def _twin(event_name, data, ctx):
+        return {"x": 1}
+
+    runs: list[dict] = []
+    statuses: list[dict] = []
+    unsub = [
+        on_tag("graph_workflow.run.event", lambda e: runs.append(
+            {"data": e.data, "target": e.target, "scope": list(e.ctx.scope or [])})),
+        on_tag("graph_workflow.node.status", lambda e: statuses.append(
+            {"data": e.data, "target": e.target})),
+    ]
+    try:
+        flow = await _make_flow(tmp_path, "twin", [_fn("a", "v2_twin")],
+                                [_edge("e1", EXTERNAL_SOURCE, "go", "a")])
+        fm = GraphWorkflowManager()
+        fe = await fm.inject(flow.id, "go", {"hello": 1})
+        assert fe is not None
+        await _until(lambda: not fm.live_run_ids(), "run finalized")
+    finally:
+        for u in unsub:
+            u()
+
+    # 1. the run stream, including the internal beats the boundary tags lack
+    kinds = [r["data"]["kind"] for r in runs]
+    assert kinds[0] == "run_start" and kinds[-1] == "run_end", kinds
+    assert "event" in kinds, f"no run-internal beats on the bus: {kinds}"
+
+    # 2. the edge-pulse inputs ride on the internal beat
+    beat = next(r for r in runs if r["data"]["kind"] == "event")
+    assert "node" in beat["data"] and "event" in beat["data"]
+
+    # 3. addressable: target pins the flow, scope pins the run
+    assert beat["target"] == f"graph_workflow:{flow.id}"
+    assert f"graph_workflow_run:{fe.execution_id}" in beat["scope"]
+
+    # 4. the live counters and the proc-watch channel survive
+    assert statuses, "no node statuses reached the bus"
+    started = next(s for s in statuses if s["data"]["phase"] == "started")
+    assert {"node_id", "phase", "queued", "active", "detail"} <= set(started["data"])
+    assert started["target"] == f"graph_workflow:{flow.id}"
+    assert {s["data"]["phase"] for s in statuses} >= {"queued", "started", "finished"}
+
+
 # ── routing + run lifecycle (inline functions) ────────────────────────────────
 
 
@@ -542,7 +601,7 @@ async def test_agent_process_budget_trips_before_spawn(tmp_path):
     assert run.error and "max_processes" in run.error
 
 
-# ── agent node → Agent entity reference (definition alignment) ────────────────
+# ── agent node → SubAgent entity reference (definition alignment) ────────────────
 
 
 AGENT_MD = """---
@@ -556,19 +615,19 @@ You are the summarizer. Always answer in one line.
 
 @async_context
 async def test_agent_node_resolves_agent_entity_definition(tmp_path):
-    """An agent node referencing an Agent entity (node_data.typeid) resolves
+    """An agent node referencing a SubAgent entity (node_data.typeid) resolves
     the md definition: system prompt leads the instruction, md model applies,
     node model_size overrides it."""
-    from flow_sdk.builtin.agent import Agent
+    from flow_sdk.builtin.subagent import SubAgent
 
     md = tmp_path / "summarizer.md"
     md.write_text(AGENT_MD, encoding="utf-8")
-    agent = Agent(name="summarizer", asset_ref=str(md))
+    agent = SubAgent(name="summarizer", asset_ref=str(md))
     await agent.save()
 
     flow = await _make_flow(tmp_path, "agentref",
         [{"id": "a", "node_type": "agent",
-          "node_data": {"typeid": f"agent-{agent.id}", "prompt": "Summarize the payload."}}],
+          "node_data": {"typeid": f"subagent-{agent.id}", "prompt": "Summarize the payload."}}],
         [_edge("e1", EXTERNAL_SOURCE, "go", "a")])
     fm = GraphWorkflowManager()
     loaded = await fm.load_flow(flow.id)
@@ -598,7 +657,7 @@ async def test_agent_node_resolves_agent_entity_definition(tmp_path):
 async def test_agent_node_dangling_reference_fails_loudly(tmp_path):
     flow = await _make_flow(tmp_path, "agentdangle",
         [{"id": "a", "node_type": "agent",
-          "node_data": {"typeid": "agent-2c9f8e64-3b21-4b4e-9a10-5f37f3d1c111"}}],
+          "node_data": {"typeid": "subagent-2c9f8e64-3b21-4b4e-9a10-5f37f3d1c111"}}],
         [_edge("e1", EXTERNAL_SOURCE, "go", "a")])
     fm = GraphWorkflowManager()
     loaded = await fm.load_flow(flow.id)
@@ -610,7 +669,7 @@ def test_agent_node_without_definition_fails_validation():
     doc = parse_graph_workflow_doc(_doc(
         [{"id": "a", "node_type": "agent", "node_data": {}}], []))
     problems = "\n".join(doc.validate_graph())
-    assert "need an Agent reference" in problems
+    assert "need a SubAgent reference" in problems
     # Any one of typeid / program_ref / prompt satisfies it.
     ok = parse_graph_workflow_doc(_doc(
         [{"id": "a", "node_type": "agent", "node_data": {"prompt": "hi"}}], []))
@@ -646,7 +705,11 @@ async def test_run_boundaries_emit_flow_tags(tmp_path):
     finally:
         unsub()
 
-    tags = [e.tag for e in got]
+    # The run-INTERNAL twins (phase 8 Tier B) share this family but are not
+    # boundaries, so the ordering assertion below is over the boundaries only.
+    # The per-event invariants that follow deliberately still cover both.
+    internal = {"graph_workflow.run.event", "graph_workflow.node.status"}
+    tags = [e.tag for e in got if e.tag not in internal]
     assert tags[0] == "graph_workflow.started"
     assert "graph_workflow.output" in tags and tags[-1] == "graph_workflow.done"
     for e in got:
@@ -734,19 +797,17 @@ async def test_entry_reserve_survives_concurrent_finalize_sweep(tmp_path):
         [_edge("e1", "t1", "fired", "a")])
     fm = GraphWorkflowManager()
 
-    # Simulate the interleave at its WORST point: the sweep runs during
-    # _start_run's own awaits (row save/attach/broadcast) — the run is already
-    # registered but its entry event hasn't routed. Born-reserved pending=1
-    # must hold it alive.
-    orig_broadcast = fm._broadcast_run_event
+    # Simulate the interleave at its WORST point: the sweep runs inside
+    # _start_run, after the run is registered but before its entry event has
+    # routed. Born-reserved pending=1 must hold it alive.
+    orig_emit = fm._emit_run_event
 
-    async def sweeping_broadcast(run, kind, payload):
+    def sweeping_emit(run, kind, payload):
         if kind == "run_start":
             fm._maybe_finalize_all()      # the concurrent drain's sweep
-            await asyncio.sleep(0)        # let any wrongly-scheduled finalize land
-        await orig_broadcast(run, kind, payload)
+        orig_emit(run, kind, payload)
 
-    fm._broadcast_run_event = sweeping_broadcast
+    fm._emit_run_event = sweeping_emit
     run_ids = await fm.on_trigger_fired("2c9f8e64-3b21-4b4e-9a10-5f37f3d1c999")
     assert run_ids, "run should start"
     await _until(lambda: ran == ["fired"], "entry event delivered despite sweep")
@@ -915,6 +976,7 @@ async def test_flow_subscription_fanout_enters_every_subscribed_flow(tmp_path):
     dedup is per (flow, envelope), never global (regression: a global id set
     let the first flow consume the envelope for everyone)."""
     import json as _json
+
     from flow_sdk.tags import emit_tag
 
     entered: list[str] = []
@@ -947,6 +1009,7 @@ async def test_entry_envelope_id_and_actor_preserved(tmp_path):
     """Phase 7: a run entered from a bus envelope preserves its id + actor —
     into the journal event row AND the example provenance."""
     import json as _json
+
     from flow_sdk.tags import FlowEvent, event_bus
 
     @graph_workflow_functions.register("v2_prov")

@@ -8,9 +8,10 @@ Names should make that obvious.
 
 | Flowpad | Claude Code | OpenClaw |
 |---|---|---|
-| `Agent` (a `.md` prompt asset) | agent / subagent | — |
+| `SubAgent` (a `.md` prompt asset) | **subagent** | — |
 | `AgentOptions` | options | — |
-| `Agent` + `AgentOptions` together | — | **`agent`** |
+| `SubAgent` + `AgentOptions` together | — | **`agent`** |
+| `Agent` (launchable identity + bundle) | — | closest analogue: `agent` |
 | `AgenticProcess` (one run) | session | session |
 | `ClaudeSession` / `CodexSession` / `CopilotSession` | transcript | — |
 | `Skill` (`SKILL.md`) | skill | skill |
@@ -21,18 +22,24 @@ Names should make that obvious.
 
 ## The three rows that are not clean matches
 
-**OpenClaw's `agent` is not our `Agent`.** Theirs is a persistent tenant —
-`agents.entries.*` with `id`, `workspace`, `model`, `identity`, skill visibility, its own
-auth profile and session store, with channel bindings routing to it; many live in one
-Gateway process, and it has no subagent concept. Ours is a prompt asset. The real
-equivalent is our **`Agent` + `AgentOptions` pair**: `workspace`↔`workdir`,
-`model`↔`model`, `skills`↔`skill_names`/`agents_json`, session store↔`session_id`, auth
-profile↔`env_vars` + `cli_drivers/api_auth.py`.
+**OpenClaw's `agent` is not our `SubAgent`.** Theirs is a persistent tenant —
+`agents.entries.*` with `id`, workspace, model, identity, skill visibility, its own auth
+profile and session store, with channel bindings routing to it; many live in one Gateway
+process, and it has no subagent concept. Our `SubAgent` is only a provider-owned prompt
+asset. The closest Flowpad analogue is `Agent`: a native, launchable identity plus bundle
+stored at `agentic-assets/agent/<name>/agent.md`. It deploys through `AgentDeployment` and
+each launch becomes an `AgenticProcess`. Unlike OpenClaw's tenant, Flowpad keeps deployment
+placement and each run as separate entities.
 
-We keep our spelling because `.claude/agents/` is a **provider-owned path** — Claude Code
-reads it directly, so renaming the class would only make the entity and its directory
-disagree. And the mismatch is structural rather than lexical: OpenClaw fuses definition and
-launch config into one persistent noun; we split them and bind them only at spawn.
+That is why the provider prompt entity is spelled `SubAgent`: Claude Code calls these
+subagents, and our entity is a thin wrapper over its `.claude/agents/*.md` contract.
+`Agent` names Flowpad's launchable principal instead; it may reference SubAgents without
+absorbing their provider-owned format.
+
+**The type renamed; the directory did not.** `.claude/agents/` is a **provider-owned path**
+— Claude Code reads it directly — so `family` stays `"agents"` and the frontmatter spec
+(`AGENTS_SPEC_FIELDS`) still mirrors its `--agents` JSON verbatim. Entity `subagent`,
+directory `agents`: that disagreement is deliberate, and the code says so at both ends.
 
 **We have no `Tool` noun.** `EntityType` has no `TOOL` member — the concept is split across
 `MCP_SERVER` and `COMMAND`. Both Claude Code and OpenClaw make `tool` first-class.
@@ -51,7 +58,7 @@ Keep these apart when naming anything new:
 | `DynamicWorkflow` (`.claude/workflows/*.js`) | `GraphWorkflow` (`agentic-assets/graph_workflow/`) |
 | `WorkflowRun` (`wf_<runId>.json`, read-only) | `GraphWorkflowRun` |
 | `ClaudeSession` / `CodexSession` / `CopilotSession` | `AgenticProcess` |
-| `Agent` (`.claude/agents/`), `Skill`, `Command`, `ClaudeMd` | `Project`, `Task`, `Spec`, `Journey`, `Deck` |
+| `SubAgent` (`.claude/agents/`), `Skill`, `Command`, `ClaudeMd` | `Agent` (`agentic-assets/agent/`), `Project`, `Task`, `Spec`, `Journey`, `Deck` |
 
 A provider mirror is read-only-ish and its format is not ours to change. A native asset is
 a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
@@ -78,16 +85,23 @@ a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
   (`fs_store/placement.py`) picks the dot-directory; `WorkerType` is the runtime driver.
   They're deliberately distinct and bridged by `_WORKER_NAME_TO_TYPE`, but the industry word
   for both is *provider*.
+- **`DataSource` is the ingestion entity, not the trace enum.** `DataSource`
+  (`flow_sdk/builtin/data_source.py`) is a configured remote system of record we sync from —
+  a feed, later a mailbox. It is unrelated to `FlowDataSource`, the History/Stream/Sniffer
+  enum in `docs/trace-gutter.md`, and to `Connector`
+  (`flow_sdk/core/capabilities/connectors.py`), which is an intent→install-prompt catalog
+  entry, not a configured feed. The record a DataSource produces is a `SourceItem`, generic
+  and discriminated by `kind` (`content.feed.item`), deliberately not one entity type per
+  provider. Provider-specific knowledge lives only in `flow_sdk/ingest/drivers/`.
 
-## Known gap: no profile
+## Agent capability fields
 
-We have no persistent, named binding of *"this prompt + this model + these skills + these
-dirs."* That pairing exists only for the lifetime of a run, inside an `AgenticProcess`.
-OpenClaw's `agent`, OpenAI's Assistant, and Claude Code's `.claude/agents/*.md` frontmatter
-(`model:`, `tools:`) all have it. The ecosystem calls it a **profile**.
-
-Not built — it's a feature, and should be decided on its own merits rather than smuggled in
-with a rename.
+`Agent` is the persistent, named binding of identity, system prompt, worker/model choices,
+and launch configuration. `AgentDeployment` places it; `AgenticProcess` records one run.
+Some capability fields are currently declaration-only: `max_turns`, tool allow/deny lists,
+skills, MCP servers, and SubAgent references round-trip through `agent.md` but are not yet
+projected into the worker. They must not be presented as enforced controls until that
+projection exists.
 
 <!-- flowpad:capsule identity
 version: 1

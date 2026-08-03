@@ -6,6 +6,11 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, renderHook, waitFor, screen, fireEvent } from '@testing-library/react';
+
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => null,
+}));
+
 import { dataManager, ComputeNode } from '@sdk';
 import { useAssetRevisionStatus } from '@src/hooks/use-asset-revision-status';
 import { RevisionsPanel } from '@src/components/assets/editor/revisions/RevisionsPanel';
@@ -55,9 +60,9 @@ describe('useAssetRevisionStatus', () => {
   });
 
   it('no history but repo exists → probes is-init and reports hasRepo=true', async () => {
-    const spy = vi.spyOn(dataManager, 'callAction').mockImplementation(async (action: any) => {
-      if (action.subpath === 'is-init') return { isInit: true } as any;
-      return { revisions: [], version: null, unpushed: 0 } as any;
+    const spy = vi.spyOn(dataManager, 'callAction').mockImplementation((action: any) => {
+      if (action.subpath === 'is-init') return Promise.resolve({ isInit: true } as any);
+      return Promise.resolve({ revisions: [], version: null, unpushed: 0 } as any);
     });
     const { result } = renderHook(() => useAssetRevisionStatus(NODE, WORKDIR, FILE));
     await waitFor(() => expect(result.current.hasRepo).toBe(true));
@@ -66,9 +71,9 @@ describe('useAssetRevisionStatus', () => {
   });
 
   it('no history and no repo → is-init false → hasRepo=false', async () => {
-    vi.spyOn(dataManager, 'callAction').mockImplementation(async (action: any) => {
-      if (action.subpath === 'is-init') return { isInit: false } as any;
-      return { revisions: [], version: null, unpushed: 0 } as any;
+    vi.spyOn(dataManager, 'callAction').mockImplementation((action: any) => {
+      if (action.subpath === 'is-init') return Promise.resolve({ isInit: false } as any);
+      return Promise.resolve({ revisions: [], version: null, unpushed: 0 } as any);
     });
     const { result } = renderHook(() => useAssetRevisionStatus(NODE, WORKDIR, FILE));
     await waitFor(() => expect(result.current.hasRepo).toBe(false));
@@ -147,12 +152,25 @@ describe('RevisionsPanel no-repo state', () => {
 });
 
 describe('AssetGitPill publish', () => {
-  beforeEach(() => { vi.restoreAllMocks(); setViewMode(ViewMode.Standard); });
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    setViewMode(ViewMode.Standard);
+  });
 
   it('unpublished → Publish posts git-ops/push for the file repo', async () => {
-    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ ok: true, kind: 'pushed', branch: 'main', message: 'Pushed' } as any);
+    const spy = vi
+      .spyOn(dataManager, 'callAction')
+      .mockResolvedValue({ ok: true, kind: 'pushed', branch: 'main', message: 'Pushed' } as any);
     render(
-      <AssetGitPill version={3} unpushed={2} hasRepo computeNodeId={NODE} workdir={WORKDIR} onOpenHistory={vi.fn()} onAfterPublish={vi.fn()} />,
+      <AssetGitPill
+        version={3}
+        unpushed={2}
+        hasRepo
+        computeNodeId={NODE}
+        workdir={WORKDIR}
+        onOpenHistory={vi.fn()}
+        onAfterPublish={vi.fn()}
+      />,
     );
     const action = screen.getByTestId('publish-pill-action');
     expect(action).toHaveTextContent('Publish');
@@ -171,12 +189,16 @@ describe('AssetGitPill publish', () => {
     );
     expect(screen.getByTestId('publish-pill-action')).not.toHaveTextContent('2');
     setViewMode(ViewMode.Advanced);
-    rerender(<AssetGitPill version={3} unpushed={2} hasRepo computeNodeId={NODE} workdir={WORKDIR} onOpenHistory={vi.fn()} />);
+    rerender(
+      <AssetGitPill version={3} unpushed={2} hasRepo computeNodeId={NODE} workdir={WORKDIR} onOpenHistory={vi.fn()} />,
+    );
     expect(screen.getByTestId('publish-pill-action')).toHaveTextContent('2');
   });
 
   it('aligned (no unpushed) shows version, no Publish', () => {
-    render(<AssetGitPill version={3} unpushed={0} hasRepo computeNodeId={NODE} workdir={WORKDIR} onOpenHistory={vi.fn()} />);
+    render(
+      <AssetGitPill version={3} unpushed={0} hasRepo computeNodeId={NODE} workdir={WORKDIR} onOpenHistory={vi.fn()} />,
+    );
     expect(screen.getByTestId('publish-pill-primary')).toHaveTextContent('v3');
     expect(screen.queryByTestId('publish-pill-action')).toBeNull();
   });

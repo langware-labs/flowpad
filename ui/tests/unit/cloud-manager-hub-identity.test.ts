@@ -123,10 +123,13 @@ describe('CloudManager hub identity', () => {
     expect(post).not.toHaveBeenCalled();
     expect(secretProbe).not.toHaveBeenCalled();
 
-    // Post-logout the hub surface goes straight back to the provider login —
-    // there is no signed-out shell to land on.
+    // Logout is a top-level navigation to the hub's OWN /logout, not to
+    // /login: the hub chain (/logout → IdP /v2/logout → returnTo) is what
+    // actually ends the SSO session. Sending the browser straight to /login
+    // left that session alive, so the next /login silently re-authenticated
+    // the same account and logout appeared to do nothing.
     await sdk.cloudManager.logout();
-    expect(assign).toHaveBeenLastCalledWith('/api/v1/login');
+    expect(assign).toHaveBeenLastCalledWith('/api/v1/logout');
     expect(post).not.toHaveBeenCalled();
     expect(secretProbe).not.toHaveBeenCalled();
   });

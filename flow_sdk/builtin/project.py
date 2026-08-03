@@ -61,14 +61,75 @@ def _generate_session_code() -> str:
     return f"{left}-{right}"
 
 
+def _fresh_clone_slot(preferred_leaf: str) -> Path:
+    """An unused workspace directory named after ``preferred_leaf``.
+
+    Blocking (stats the workspace) — call via ``asyncio.to_thread``.
+
+    Deliberately NOT ``GitOrigin.next_clone_target``: that one reuses an
+    existing checkout when the origin matches, which is right when the repo IS
+    the project's identity and wrong when it is a template being instantiated
+    for the Nth time. This one always suffixes past a collision.
+    """
+    base = Path(AGENT_MOUNT_FOLDER)
+    base.mkdir(parents=True, exist_ok=True)
+    leaf = (
+        "".join(c if c.isalnum() or c in ("-", "_", ".") else "-" for c in (preferred_leaf or "")).strip("-. ")
+        or "project"
+    )
+    candidate = base / leaf
+    n = 2
+    # An EMPTY directory is not a collision — nothing there can be lost, and
+    # ``git clone`` is happy to write into one. This matters because a Project
+    # reserves ``<workspace>/<name>`` when it is constructed, so treating that
+    # as taken would push every engagement to ``<name>-2`` and strand the
+    # reserved directory as an empty stray (which the workspace scan then mints
+    # a second, empty project for).
+    while candidate.exists() and any(candidate.iterdir()):
+        candidate = base / f"{leaf}-{n}"
+        n += 1
+    return candidate
+
+
+def _detach_git_history(repo_root: Path) -> None:
+    """Replace a template checkout's history with an empty one, in place.
+
+    Blocking (rmtree + subprocess) — call via ``asyncio.to_thread``.
+
+    Deliberately narrow about what it will delete. It removes exactly one path,
+    ``<repo_root>/.git``, and only when that is a real directory INSIDE the
+    directory we just cloned into: a template repo controls its own contents,
+    and a ``.git`` symlink pointing at somebody else's repository is the one
+    way this could be turned into a delete-arbitrary-directory primitive. A
+    checkout with no ``.git`` (already detached, re-entered) is fine — this is
+    idempotent by design, since setup may be retried.
+    """
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    root = Path(repo_root).resolve()
+    git_dir = root / ".git"
+    if git_dir.is_symlink():
+        raise RuntimeError(f"refusing to detach: {git_dir} is a symlink")
+    if git_dir.is_dir():
+        # Confirm it really is under the root we resolved, not reached via one.
+        if git_dir.resolve().parent != root:
+            raise RuntimeError(f"refusing to detach: {git_dir} resolves outside {root}")
+        shutil.rmtree(git_dir)
+    # A fresh empty repo so the customer's first commit is theirs. No commit is
+    # made — that needs a configured identity, and failing setup on a missing
+    # ``user.email`` would be absurd.
+    subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True, timeout=30, check=False)
+
+
 class ProjectInitializeOptions(ComputeSourceControlInitializeOptions):
     model_config = ConfigDict(alias_generator=to_camel, validate_by_name=True)
 
     mcp_connector_init: bool = Field(default=True)
 
 
-class CommunityMode(StrEnum):
-    """Who answers community (support-center) conversations on this project.
+class HelpdeskMode(StrEnum):
+    """Who answers helpdesk (support) conversations on this project.
 
     Only ``HUMAN`` is wired in v1: staff pick tickets up from a shared pool and
     reply under the masked ``display_name``. ``AI`` / ``HYBRID`` are reserved
@@ -80,21 +141,26 @@ class CommunityMode(StrEnum):
     HYBRID = "hybrid"
 
 
-class CommunityConfig(BaseModel):
-    """Per-project "support center" configuration.
+class HelpdeskConfig(BaseModel):
+    """Per-project helpdesk (support center) configuration.
 
-    When ``enabled``, the project accepts guest-opened community conversations
+    When ``enabled``, the project accepts guest-opened helpdesk conversations
     (support tickets). All staff replies in those conversations are displayed
     under the single ``display_name`` identity regardless of which member
     actually replied — the responder's real ``sender_id`` is preserved on the
     wire, only the displayed ``sender_name`` is masked to ``display_name``.
+
+    ``portal_git_url`` is the desk's PORTAL repository — the help content a
+    requester clones and browses locally. Independent of the ticket queue: a
+    desk may have a queue and no portal, and the two are configured separately.
     """
 
     enabled: bool = False
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
     welcome_message: Optional[str] = None
-    mode: CommunityMode = CommunityMode.HUMAN
+    mode: HelpdeskMode = HelpdeskMode.HUMAN
+    portal_git_url: Optional[str] = None
 
 
 class Project(Entity):
@@ -104,13 +170,13 @@ class Project(Entity):
         default_factory=list,
         description="List of artifact IDs belonging to this project",
     )
-    # Support-center / community config. None on ordinary projects. Persisted
+    # Help-desk (support center) config. None on ordinary projects. Persisted
     # (persist=TRUE) so it round-trips FS<->DB and is readable on the hub at
-    # message-write time to mask responder identity. See ``CommunityConfig``.
-    community: Optional[CommunityConfig] = APIField(
+    # message-write time to mask responder identity. See ``HelpdeskConfig``.
+    helpdesk: Optional[HelpdeskConfig] = APIField(
         default=None,
         persist=Persist.TRUE,
-        description="Support-center configuration; set on the canonical community project.",
+        description="Help-desk configuration; set on a project that answers support tickets.",
     )
     last_mode: str | None = APIField(
         default=None,
@@ -118,7 +184,9 @@ class Project(Entity):
         "Applied on project load so the mode is remembered per project.",
     )
     fs_storage_provider: StorageProvider | None = EntityField(default=StorageProvider.SANDBOX, sharing=Sharing.PRIVATE)
-    fs_storage_mount_path: str | None = APIField(default=None, description="Full path to the project folder", sharing=Sharing.PRIVATE)
+    fs_storage_mount_path: str | None = APIField(
+        default=None, description="Full path to the project folder", sharing=Sharing.PRIVATE
+    )
     # Portable repository identity for a project shared through the hub. This
     # is never the sender's local worktree path; the recipient uses it to
     # clone/materialize its own checkout.
@@ -197,10 +265,7 @@ class Project(Entity):
     @property
     def protected_path(self) -> bool:
         """Whether this project's source path is forbidden as a delete target."""
-        return bool(
-            self.fs_storage_mount_path
-            and is_protected_path(self.fs_storage_mount_path)
-        )
+        return bool(self.fs_storage_mount_path and is_protected_path(self.fs_storage_mount_path))
 
     @model_validator(mode="before")
     @classmethod
@@ -258,23 +323,26 @@ class Project(Entity):
     @computed_field
     @property
     def customization(self) -> dict[str, Any]:
-        """Optional per-project home branding, read from ``.flow/customization/``.
+        """Optional per-project branding, read from ``.flow/customization/``.
 
-        A project (e.g. a launched template) can ship a ``.flow/customization/``
-        folder to brand the desktop home when it is the active project:
+        A project (e.g. a launched template, or a cloned helpdesk portal) can
+        ship a ``.flow/customization/`` folder to brand surfaces that render it:
         * ``string.json`` → ``{"home_title": "..."}`` overrides the greeting.
         * ``home.png`` present → the home renders it as a background.
+        * ``string.json`` → ``{"brand": {...}}`` names the project's identity —
+          see ``_read_brand``. Used by the helpdesk portal, ignored elsewhere.
 
         Strictly sync + best-effort (missing mount / dir / file / bad JSON →
         defaults), like ``include_dirs`` — it serializes into the Project
         payload the UI already receives, so no route or bootstrap change.
-        The image bytes are served on demand via the generic ``fs`` download
-        action; here we only surface a boolean so the UI knows to ask.
+        Image BYTES are served on demand via the generic ``fs`` download action;
+        here we surface only a flag (home background) or a repo-relative path
+        (brand logos) so the UI knows what to ask for.
         """
         import json  # noqa: PLC0415
         from pathlib import Path  # noqa: PLC0415
 
-        default = {"home_title": None, "has_home_background": False}
+        default = {"home_title": None, "has_home_background": False, "brand": None}
         root = self.fs_storage_mount_path
         if not root:
             return default
@@ -287,20 +355,78 @@ class Project(Entity):
         except OSError:
             return default
         home_title: str | None = None
+        brand: dict[str, Any] | None = None
         try:
             string_path = cust_dir / "string.json"
             if string_path.is_file():
                 data = json.loads(string_path.read_text(encoding="utf-8"))
-                raw = data.get("home_title") if isinstance(data, dict) else None
-                if isinstance(raw, str) and raw.strip():
-                    home_title = raw.strip()
+                if isinstance(data, dict):
+                    raw = data.get("home_title")
+                    if isinstance(raw, str) and raw.strip():
+                        home_title = raw.strip()
+                    brand = self._read_brand(data.get("brand"), Path(root))
         except (OSError, ValueError):
             pass
         try:
             has_bg = (cust_dir / "home.png").is_file()
         except OSError:
             has_bg = False
-        return {"home_title": home_title, "has_home_background": has_bg}
+        return {"home_title": home_title, "has_home_background": has_bg, "brand": brand}
+
+    @staticmethod
+    def _read_brand(raw: Any, root: "Path") -> dict[str, Any] | None:
+        """Validate a ``brand`` block from ``string.json``, or ``None``.
+
+        Shape (every key optional)::
+
+            {"name", "tagline", "accent", "logo", "logo_dark"}
+
+        ``logo`` / ``logo_dark`` are REPO-RELATIVE paths (e.g. ``brand/mark.svg``)
+        and are surfaced only when the file actually exists, so a consumer can
+        hand the path straight to the ``fs`` download action without a probe.
+        Unlike ``home.png`` this accepts any extension — the desk names the file,
+        which is what lets a portal ship an SVG.
+
+        Paths that escape the project root are dropped: this data comes from a
+        cloned third-party repo, and the download action would happily serve
+        ``../../.ssh/id_rsa``. Returns ``None`` when nothing usable survives, so
+        "has a brand" is a single truthiness check at every call site.
+        """
+        if not isinstance(raw, dict):
+            return None
+
+        def _text(key: str) -> str | None:
+            value = raw.get(key)
+            return value.strip() if isinstance(value, str) and value.strip() else None
+
+        # Resolved once, not per key: both logo lookups compare against it.
+        try:
+            root_resolved = root.resolve()
+        except OSError:
+            return None
+
+        def _asset(key: str) -> str | None:
+            rel = _text(key)
+            if not rel:
+                return None
+            candidate = (root / rel).resolve()
+            try:
+                # `is_relative_to` is the containment check; `resolve()` above
+                # collapses any `..` first so a traversal cannot slip past it.
+                if not candidate.is_relative_to(root_resolved) or not candidate.is_file():
+                    return None
+            except OSError:
+                return None
+            return rel.lstrip("/")
+
+        brand = {
+            "name": _text("name"),
+            "tagline": _text("tagline"),
+            "accent": _text("accent"),
+            "logo": _asset("logo"),
+            "logo_dark": _asset("logo_dark"),
+        }
+        return brand if any(brand.values()) else None
 
     @computed_field
     @property
@@ -399,9 +525,7 @@ class Project(Entity):
                 else:
                     os_root = os.sep
                 relative_name = self.name.lstrip("/\\")
-                self.fs_storage_mount_path = os.path.normpath(
-                    os.path.join(os_root, relative_name)
-                )
+                self.fs_storage_mount_path = os.path.normpath(os.path.join(os_root, relative_name))
                 self.name = os.path.basename(self.fs_storage_mount_path)
             else:
                 # Simple name like "my_first_project"
@@ -494,11 +618,7 @@ class Project(Entity):
         existing = await cls.get_all()
         for proj in existing:
             mp = proj.fs_storage_mount_path
-            if (
-                mp
-                and is_valid_project_cwd(mp, include_temp=True)
-                and canonical_posix_path(mp) == canonical
-            ):
+            if mp and is_valid_project_cwd(mp, include_temp=True) and canonical_posix_path(mp) == canonical:
                 return proj
         return None
 
@@ -756,10 +876,10 @@ class Project(Entity):
         no explicit join is needed — the roster derives from role edges.
         With ``recipients`` (emails): one ``MembershipRequest`` per recipient
         targets ``project-<id>`` with role ``member`` via
-        ``POST /graph/project/<id>/members`` — the recipient discovers it via
-        ``GET /graph/invitation/pending`` and accepts via the standard flow
-        (``flow_message_action.handle_invitation_accept`` →
-        ``_membership_cls('project')`` → local ``remote=True`` Project mirror).
+        ``POST /graph/project/<id>/members``. Under the Hub's assignment policy,
+        the recipient is granted immediately and receives the full Project over
+        the live bridge; explicit invitation acceptance remains the fallback
+        when Hub auto-accept is disabled.
         """
         from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
@@ -868,6 +988,96 @@ class Project(Entity):
             return ApiSuccessResponse(data=project)
         except Exception as exc:  # noqa: BLE001
             return ApiFailResponse(message=str(exc), status_code=400)
+
+    @action.post(action_name="setup-from-bootstrap-git")
+    async def setup_from_bootstrap_git(self, url: str, branch: str = "") -> ApiResponse:
+        """Seed this project from a TEMPLATE repo — files, not history.
+
+        The sibling of ``setup_from_git``, and deliberately its opposite in the
+        one way that matters. ``setup_from_git`` binds a project to a repo it
+        keeps tracking; this SEVERS the link: the checkout's ``.git`` is removed
+        and a fresh empty repo initialized in its place, so the customer's first
+        commit is their own and the vendor's history is not theirs to carry.
+        The template is a starting point, not an upstream.
+
+        Which leaves the obvious question — how does a template improve after it
+        is cloned? It doesn't. That is what ``.flowpad/bootstrap.json``'s
+        ``helpdesks`` are for: they are attached as ordinary context folders,
+        stay linked to the vendor's repo, and so keep updating in every
+        engagement long after the template that named them went stale. Anything
+        meant to keep improving belongs in a declared help desk, not in the
+        template body.
+
+        Not re-committed after init: an initial commit needs a git identity this
+        machine may not have configured, and failing setup on that would be
+        absurd. The customer gets their files staged for a first commit they
+        author.
+        """
+        if not url or not url.strip():
+            return ApiFailResponse(message="url is required")
+
+        origin = GitOrigin.from_url(url.strip(), branch=branch.strip(), rel_path=".")
+        if origin is None:
+            return ApiFailResponse(message=f"Not a recognizable git URL: {url}")
+
+        from flow_sdk.app.actions.oauth_action import (  # noqa: PLC0415
+            _get_github_token_for_current_user,
+        )
+        from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
+            _index_additional_dir,
+        )
+        from flow_sdk.builtin.bootstrap_manifest import read_bootstrap_manifest  # noqa: PLC0415
+
+        # A fresh slot every time, named after the ENGAGEMENT rather than the
+        # template. ``origin.next_clone_target`` is right for ``setup_from_git``
+        # (the repo is the project's identity, and reusing a matching checkout
+        # is correct) and wrong on both counts here: two engagements from one
+        # template are two independent working copies, and a customer whose
+        # folder is called ``cloudnsite-bootstrap`` has been handed the vendor's
+        # name for their own work.
+        target_dir = str(await asyncio.to_thread(_fresh_clone_slot, self.name or origin.name))
+        token, _ = await _get_github_token_for_current_user()
+        ok, message = await git_clone(origin.clone_url(), target_dir, branch=origin.branch or None, token=token)
+        if not ok:
+            return ApiFailResponse(message=message, status_code=502)
+
+        target = Path(target_dir)
+        # Read the manifest BEFORE severing history — the file itself stays, it
+        # is only the vendor's `.git` that goes.
+        manifest = read_bootstrap_manifest(target)
+        await asyncio.to_thread(_detach_git_history, target)
+
+        self.fs_storage_mount_path = canonical_posix_path(target_dir)
+        if not self.name:
+            self.name = os.path.basename(target_dir.rstrip(os.sep))
+        await self.save()
+        await self.setup_for_desktop()
+        await _index_additional_dir(target_dir)
+
+        attached: list[dict] = []
+        failed: list[dict] = []
+        for desk_url in manifest.helpdesks:
+            response = await self.add_context_dir_from_git(desk_url, scope="private")
+            record = {"url": desk_url}
+            if isinstance(response, ApiSuccessResponse):
+                record.update(response.data or {})
+                attached.append(record)
+            else:
+                # One unreachable desk must not undo a project that is already
+                # set up — report it and let the caller offer a retry.
+                record["error"] = getattr(response, "message", "attach failed")
+                failed.append(record)
+
+        return ApiSuccessResponse(
+            data={
+                "project_id": self.id,
+                "path": self.fs_storage_mount_path,
+                "template_url": origin.clone_url(),
+                "helpdesks": attached,
+                "helpdesks_failed": failed,
+                "autolaunch_journey": manifest.autolaunch_journey,
+            }
+        )
 
     @property
     def main_ref(self):
@@ -1026,7 +1236,7 @@ class Project(Entity):
             if types
             else [
                 "skill",
-                "agent",
+                "subagent",
                 "markdown",
                 "spec",
             ]
@@ -1094,7 +1304,7 @@ class Project(Entity):
             menu = await build_asset_menu(
                 self,
                 # Only narrow when the CALLER asked for types. ``requested``
-                # defaults to the flat staging list (skill/agent/markdown/spec);
+                # defaults to the flat staging list (skill/subagent/markdown/spec);
                 # the menu's own default is every browseable scannable type,
                 # because it stands in for the whole Assets navigator.
                 types=requested if types else None,
@@ -1262,9 +1472,7 @@ class Project(Entity):
             except Exception:  # noqa: BLE001
                 continue
             env_var = entry.get("env_var") or ""
-            found_in = await self._where_is_secret_value(
-                env_var, loc, driver, env_local_names, sodot_names
-            )
+            found_in = await self._where_is_secret_value(env_var, loc, driver, env_local_names, sodot_names)
             hint = driver.setup_hint(loc)
             rows.append(
                 {
@@ -1399,9 +1607,7 @@ class Project(Entity):
                 data={"error": "project_not_published"},
             )
 
-        response = await hub_delete(
-            BuiltinEntityType.PROJECT, str(self.id), action="env-var", sub_path=env_var
-        )
+        response = await hub_delete(BuiltinEntityType.PROJECT, str(self.id), action="env-var", sub_path=env_var)
         if response is None:
             return ApiFailResponse(message="could not reach the hub")
         return ApiSuccessResponse(data={"ok": True, "env_var": env_var})
@@ -1436,9 +1642,7 @@ class Project(Entity):
                 resolved = None
             if resolved is None:
                 continue
-            drifted = await asyncio.to_thread(
-                check_drift, str(self.id), env_var, resolved.get_secret_value()
-            )
+            drifted = await asyncio.to_thread(check_drift, str(self.id), env_var, resolved.get_secret_value())
             rows.append(
                 {
                     "typeid": entry.get("typeid"),
@@ -1530,8 +1734,7 @@ class Project(Entity):
         block = env_local_block(gitignore)
         declared = {row.get("env_var") for row in self.secret_origins if row.get("env_var")}
         keys = [
-            {"key": row["key"], "line": row["line"], "declared": row["key"] in declared}
-            for row in list_env_local(self)
+            {"key": row["key"], "line": row["line"], "declared": row["key"] in declared} for row in list_env_local(self)
         ]
         return ApiSuccessResponse(
             data={
@@ -1658,6 +1861,70 @@ class Project(Entity):
             schedule_auto_index(str(self.id), created=False)
         return resp
 
+    @action.post(action_name="add-context-dir-from-git")
+    async def add_context_dir_from_git(
+        self,
+        url: str,
+        branch: str = "",
+        scope: str = "private",
+        *,
+        preferred_root=None,
+    ) -> "ApiResponse":
+        """Clone a git repo and attach it to this project as a context folder.
+
+        The deterministic form of what the ``git-context-folder`` wizard does in
+        prose for its ``existing`` mode. It composes pieces that already exist
+        rather than reimplementing them:
+
+        * ``Folder.mint_for_origin`` keys the folder by ``origin.key()``, so the
+          SAME repo attached to a second project reuses one Folder and one
+          checkout — the second attach costs no download.
+        * ``Folder.resolve_location`` owns clone/reuse/pull and the post-clone
+          index, including the read-only guard that keeps the checkout pullable.
+        * ``add_context_dir`` owns the link, so ``already_linked`` / ``is_new``
+          and the legacy migration stay in exactly one place.
+
+        ``rel_path="."`` is deliberate: the whole repo is the context folder, and
+        a subfolder-scoped origin would never see a manifest at the repo root.
+
+        ``branch`` is pinned when given because ``_resolve_git_checkout`` only
+        pulls when the origin names a branch — an unpinned folder would freeze
+        at whatever it first cloned.
+        """
+        if not url or not url.strip():
+            return ApiFailResponse(message="url is required")
+        if scope not in ("private", "shared"):
+            return ApiFailResponse(message="scope must be 'private' or 'shared'")
+
+        origin = GitOrigin.from_url(url.strip(), branch=branch.strip(), rel_path=".")
+        if origin is None:
+            return ApiFailResponse(message=f"Not a recognizable git URL: {url}")
+
+        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
+
+        folder = await Folder.mint_for_origin(origin)
+        resolved = await folder.resolve_location(preferred_root=preferred_root)
+        data = getattr(resolved, "data", None) or {}
+        if data.get("kind") != "ready" or not folder.path:
+            # Surface the driver's own message — it names the actual failure
+            # (auth, unreachable host, unsafe rel_path) far better than we could.
+            return ApiFailResponse(
+                message=data.get("message") or "Could not materialize the repository",
+                status_code=502,
+            )
+
+        linked = await self.add_context_dir(folder.path, scope=scope)
+        if not isinstance(linked, ApiSuccessResponse):
+            return linked
+        return ApiSuccessResponse(
+            data={
+                "folder_id": folder.id,
+                "path": folder.path,
+                "scope": scope,
+                "cloned_url": origin.clone_url(),
+            }
+        )
+
     @action.post(action_name="add-context-dir")
     async def add_context_dir(self, path: str, scope: str = "private") -> "ApiResponse":
         """Attach a directory to this project as a context folder.
@@ -1711,7 +1978,16 @@ class Project(Entity):
                 _index_additional_dir,
             )
 
-            await _index_additional_dir(canonical)
+            # A transportable origin means these bytes came from a repo we clone
+            # but do not author. Indexing normally COMMITS the id it mints back
+            # into the source (markdown gets a ``flowpad:capsule`` block
+            # appended), which dirties every tracked file and makes the next
+            # ``git pull`` abort on "local changes would be overwritten" —
+            # silently, until someone tries to update the folder.
+            # ``Folder.resolve_location`` makes the same call for the same
+            # reason; both are needed, because a folder can be attached here
+            # without ever going through resolve (an already-local checkout).
+            await _index_additional_dir(canonical, read_only=origin.transportable)
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
     @action.post(action_name="folder-for-path")
@@ -2028,7 +2304,11 @@ class Project(Entity):
             await _destroy(meta)
 
         # 3. Delete the project's own source folder on disk (the user's files),
-        #    unless the dynamic path policy marks it as protected.
+        #    unless the dynamic path policy marks it as protected. That policy
+        #    also covers SDK-shipped system projects, so deleting the Flowpad
+        #    Assistant cannot rmtree the shipped docs/skills/agents out of the
+        #    install. Portal checkouts live under the workspace and stay
+        #    deletable.
         mount = self.fs_storage_mount_path
         if mount and not self.protected_path:
             try:

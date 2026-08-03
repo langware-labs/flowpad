@@ -71,12 +71,14 @@ from .routes import (
     git_router,
     graph_workflows_router,
     hooks_router,
+    ingest_router,
     journeys_router,
     markdown_index_router,
     navigate_router,
     privacy_router,
     project_router,
     pty_stream_router,
+    runs_router,
     search_router,
     semantic_checker_router,
     subgraph_router,
@@ -302,6 +304,12 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
         await get_graph_workflow_manager().arm_all_flow_subscriptions()
+        # Arm the inbox projection (ingested cloud records → conversations).
+        # A backend subscriber rather than a GraphWorkflow on purpose: it must
+        # not be possible to break your inbox by editing a graph.
+        from flow_sdk.inbox.projection import start_inbox_projection
+
+        start_inbox_projection()
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")
@@ -515,6 +523,8 @@ server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
 server.add_router(compute_register_router)
 server.add_router(debug_router)
+server.add_router(ingest_router)
+server.add_router(runs_router)
 server.add_router(tags_router)
 server.add_router(subgraph_router)
 server.add_router(navigate_router)

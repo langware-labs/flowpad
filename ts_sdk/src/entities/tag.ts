@@ -14,10 +14,12 @@ export const RESERVED_TAG_ROOTS: ReadonlySet<string> = new Set([
   'agent',
   'graph_workflow',
   'app',
+  'ingest',
   'application',
   'workload',
   'resource',
   'content',
+  'datasource',
   'gcp',
   'local',
 ]);

@@ -20,6 +20,31 @@ export interface ConversationMessage {
  * {typeid: "flow_message-<uuid>", ts: "<ISO>"} on disk, but call sites want
  * the bare id + type + ts triple — that's what this getter returns.
  */
+/**
+ * The newest pointer by `ts`, or null for an empty list. Exported so the
+ * surfaces that hold a raw pointer array (the inbox list, the recent strip)
+ * all share one rule — there must be exactly one definition of "latest" in
+ * the app, and it must agree with `Conversation.latest_message_ref()` on the
+ * backend, which computes the unread BADGE while this computes the unread ROW.
+ *
+ * Unparseable timestamps sort oldest, so a corrupt entry can never win.
+ */
+export function latestPointer(
+  pointers: readonly ConversationMessagePointer[] | undefined | null,
+): ConversationMessagePointer | null {
+  let best: ConversationMessagePointer | null = null;
+  let bestAt = -Infinity;
+  for (const p of pointers ?? []) {
+    const at = Date.parse(p.ts);
+    const rank = Number.isNaN(at) ? -Infinity : at;
+    if (best === null || rank > bestAt) {
+      best = p;
+      bestAt = rank;
+    }
+  }
+  return best;
+}
+
 export interface ConversationMessagePointer {
   /** Entity id (uuid). */
   id: string;
@@ -42,17 +67,22 @@ export interface ConversationParticipant {
 }
 
 /** Mirrors ``flow_sdk.builtin.conversation.ConversationKind`` exactly.
- *  ``community`` marks a support-center ticket whose responder identity is
- *  masked behind the project's ``community.display_name``. Hub-authoritative —
- *  never set client-side. */
+ *  ``helpdesk`` marks a support ticket whose responder identity is masked
+ *  behind the project's ``helpdesk.display_name``. Hub-authoritative — never
+ *  set client-side. */
 export enum ConversationKind {
   DIRECT = 'direct',
-  COMMUNITY = 'community',
+  HELPDESK = 'helpdesk',
+}
+
+/** True when `kind` denotes a helpdesk ticket. */
+export function isHelpdeskKind(kind?: ConversationKind | string | null): boolean {
+  return kind === ConversationKind.HELPDESK;
 }
 
 export interface IConversation extends IEntity {
   /** How this conversation is interpreted. Defaults to ``direct``; the hub sets
-   *  ``community`` for guest-opened support tickets. */
+   *  ``helpdesk`` for guest-opened support tickets. */
   kind?: ConversationKind;
   /** Local Project FK — receiver picks via the mapping dialog; sender's own
    *  project at send time. Null until the receiver maps. */
@@ -384,23 +414,23 @@ export async function createProjectConversation(
   return res!;
 }
 
-export interface StartCommunityTicketResult {
+export interface StartHelpdeskTicketResult {
   conversation_id: string;
   project_id: string;
 }
 
-/** Open a support ticket: a guest-authored ``community`` conversation under the
- *  hub's fixed community project (resolved server-side from ``/version``). The
+/** Open a support ticket: a guest-authored ``helpdesk`` conversation under the
+ *  resolved helpdesk project (resolved server-side from ``/version``). The
  *  backend routes through the hub and materializes the conversation locally,
  *  then returns its id for navigation. Requires cloud login. */
-export async function startCommunityTicket(text: string): Promise<StartCommunityTicketResult> {
-  const action = new ActionInfo('community-start-ticket', null, null, 'POST');
+export async function startHelpdeskTicket(text: string): Promise<StartHelpdeskTicketResult> {
+  const action = new ActionInfo('helpdesk-start-ticket', null, null, 'POST');
   action.bodyParameters = { text };
-  const res = await dataManager.callAction<{ text: string }, StartCommunityTicketResult>(action);
+  const res = await dataManager.callAction<{ text: string }, StartHelpdeskTicketResult>(action);
   return res!;
 }
 
-/** Staff-side: pick up (join) a community ticket so the caller receives its
+/** Staff-side: pick up (join) a helpdesk ticket so the caller receives its
  *  messages and can reply. Proxies to the hub ``pickup`` action and syncs the
  *  conversation locally. */
 export async function pickupConversation(conversationId: string): Promise<{ conversation_id: string }> {
@@ -410,9 +440,9 @@ export async function pickupConversation(conversationId: string): Promise<{ conv
   return res!;
 }
 
-/** One row in the staff community-ticket triage queue (lightweight; not a full
- *  Conversation entity). Sourced from the hub via the community project. */
-export interface CommunityTicket {
+/** One row in the staff helpdesk triage queue (lightweight; not a full
+ *  Conversation entity). Sourced from the hub via the helpdesk project. */
+export interface HelpdeskTicket {
   conversation_id: string;
   title?: string | null;
   /** First-message text, truncated. */
@@ -427,18 +457,18 @@ export interface CommunityTicket {
   updated_at?: string | null;
 }
 
-export interface ListCommunityTicketsResult {
-  tickets: CommunityTicket[];
+export interface ListHelpdeskTicketsResult {
+  tickets: HelpdeskTicket[];
   project_id: string;
 }
 
-/** Staff triage queue: list the community project's tickets, including ones the
+/** Staff triage queue: list the helpdesk project's tickets, including ones the
  *  caller hasn't picked up (which don't otherwise appear in their inbox).
  *  Members-only on the hub. */
-export async function listCommunityTickets(): Promise<ListCommunityTicketsResult> {
-  const action = new ActionInfo('community-tickets-list', null, null, 'POST');
+export async function listHelpdeskTickets(): Promise<ListHelpdeskTicketsResult> {
+  const action = new ActionInfo('helpdesk-tickets-list', null, null, 'POST');
   action.bodyParameters = {};
-  const res = await dataManager.callAction<Record<string, never>, ListCommunityTicketsResult>(action);
+  const res = await dataManager.callAction<Record<string, never>, ListHelpdeskTicketsResult>(action);
   return res ?? { tickets: [], project_id: '' };
 }
 

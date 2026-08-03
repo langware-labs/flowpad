@@ -7,7 +7,7 @@ Covers each condition of the unified ``conversation-list`` action:
   3. test_message_count_delta_dispatches_bg_fetch — diff triggers per-conv fetch + materialize
   4. test_updated_date_bumped_on_append       — projection writer bumps updated_date
   5. test_single_flight_per_conversation      — rapid calls don't pile up fetches
-  6. test_invitations_through_same_pipeline   — invitations come down in the same call
+  6. test_assignment_through_same_pipeline    — assigned conversations come down in the same call
   7. test_no_dupes_on_repeated_calls          — idempotent upsert
   8. test_ws_bridge_still_drives_realtime     — bridge path independent of fetch
   9. test_hub_unavailable_returns_local       — local list returned when hub down
@@ -219,10 +219,9 @@ async def test_message_count_delta_dispatches_bg_fetch(hub_base_url, hub_login_p
     FlowMessage materializes locally within a short polling window."""
     api_key = _stash_credentials(hub_login_payload)
     from flow_sdk.app.actions.flow_message_action import handle_conversation_list
-
-    conv_id = await _hub_create_conversation(hub_base_url, api_key, title=f"delta-{uuid.uuid4()}")
     from flow_sdk.builtin.flow_message import FlowMessage
 
+    conv_id = await _hub_create_conversation(hub_base_url, api_key, title=f"delta-{uuid.uuid4()}")
     fm_id = await _hub_add_message(hub_base_url, api_key, conv_id, "delta msg")
     assert fm_id
 
@@ -311,31 +310,23 @@ async def test_single_flight_per_conversation(hub_base_url, hub_login_payload):
 
 
 # ---------------------------------------------------------------------------
-# 6. Invitations come down through the same orchestrator
+# 6. Assigned conversations come down through the same orchestrator
 # ---------------------------------------------------------------------------
 
 
-async def test_invitations_through_same_pipeline(hub_base_url, hub_login_payload):
-    """A pending invitation should materialize a local Conversation (kind=
-    ``invitation`` on its first FlowMessage) after a single conversation-list
-    call. The hub embeds the real Conversation in the invitation response;
-    placeholder-id synthesis was removed in the conv refactor — we look up
-    the conversation by its embedded id instead."""
-    # Called for its side effect — persists the recipient's creds so
-    # handle_conversation_list runs as them. The returned key is unused:
-    # the sender is driven through the SDK below, not over raw HTTP.
+async def test_assignment_through_same_pipeline(hub_base_url, hub_login_payload):
+    """An immediately assigned conversation materializes after a single
+    conversation-list call by the recipient."""
     _stash_credentials(hub_login_payload)
-    from flow_sdk.app.actions.flow_message_action import handle_conversation_list
+    from flow_sdk.app.actions.flow_message_action import (
+        _hard_delete_local_conversation,
+        handle_conversation_list,
+    )
     from flow_sdk.builtin.conversation import Conversation
 
-    # The logged-in user (the stashed hub_login_payload user) must be the
-    # RECIPIENT of a pending invitation for handle_conversation_list to
-    # materialize it. The hub correctly SKIPS a self-invitation (POST members
-    # with recipient == sender returns 200 {"message":"Skipped
-    # self-invitation"} and invitation/pending stays empty), so a SECOND
-    # seeded user (bob, from the sibling flowpad-app checkout) must create the
-    # conversation and invite us. Resolve bob's creds the same way
-    # test_members_basic_operations.py does; skip if absent.
+    # A SECOND seeded user creates and shares the conversation so the stashed
+    # hub_login_payload user is its recipient. Self-share is intentionally
+    # skipped by the hub.
     user_info = hub_login_payload.get("user") or {}
     recipient_email = (user_info.get("email") or "").strip()
     if not recipient_email:
@@ -349,11 +340,8 @@ async def test_invitations_through_same_pipeline(hub_base_url, hub_login_payload
     if sender_email.strip().lower() == recipient_email.lower():
         pytest.skip("sender and recipient are the same hub user; need two distinct seeded users")
 
-    # Log bob (the sender) in and stash HIS creds so Conversation.share() runs
-    # as bob — the same SDK share() path test_members_basic_operations.py
-    # exercises (alice.share(recipients=[bob])), just with the roles flipped so
-    # the invitation is addressed to us (alice). We restore alice's creds
-    # before driving handle_conversation_list.
+    # Log Bob (the sender) in and stash his credentials so Conversation.share()
+    # runs as Bob. Restore Alice before driving handle_conversation_list.
     from tests.hub_tests._local_login import login_as
 
     async with httpx.AsyncClient(timeout=5.0) as h:
@@ -366,59 +354,26 @@ async def test_invitations_through_same_pipeline(hub_base_url, hub_login_payload
     conv = Conversation(title=f"inv-{uuid.uuid4()}")
     await conv.share(recipients=[recipient_email])
     if not getattr(conv, "remote", False):
-        pytest.skip("sender share() did not reach the hub; can't exercise the share pipeline")
+        pytest.skip("sender share() did not reach the hub; can't exercise assignment pipeline")
     conv_id = conv.id
-    # Put a REAL message in it. The pointer assertion below used to be satisfied
-    # by the synthesized invitation notice; with the hub granting outright there
-    # is no notice, and a conversation nobody has written to legitimately has
-    # zero messages — so asserting pointers without sending one would only ever
-    # re-test the placeholder.
-    await conv.add_message("hello from the sender")
 
-    # Restore the recipient's (alice's) credentials — handle_conversation_list
-    # must run as the invited user so its invitation/pending fetch returns the
-    # row bob just addressed to us.
+    # Sender and recipient share this in-process SQLite store. Remove the
+    # sender's local copy so the assertions below prove recipient catch-up,
+    # while leaving the hub entity untouched.
+    await _hard_delete_local_conversation(conv)
+    assert await Conversation.get_one({"id": conv_id}) is None
+
+    # Restore the recipient's credentials. Immediate assignment makes the
+    # conversation visible through the ordinary conversation list; no pending
+    # invitation fetch is involved.
     _stash_credentials(hub_login_payload)
 
     someone = await _local_user_typeid()
     await handle_conversation_list(someone)
 
-    # Await the DETACHED per-conversation message drain that conversation-list
-    # spawns at the end (``_dispatch_conversation_message_fetches`` →
-    # ``conv-msg-drain-<n>``). The messages land there, not in the foreground
-    # pass. This used to pass without waiting only because the invitation branch
-    # materialized its preview message SYNCHRONOUSLY — with the hub granting
-    # outright there is no invitation, so the drain IS the path now. Awaiting
-    # the task is deterministic; no sleep to tune.
-    while True:
-        drains = [t for t in asyncio.all_tasks() if (t.get_name() or "").startswith("conv-msg-drain-")]
-        if not drains:
-            break
-        await asyncio.gather(*drains, return_exceptions=True)
-
-    # NOT asserted: a pending Invitation row. With
-    # ``invitation_auto_accept_on_invite`` (hub default True since 74694a30d)
-    # the invite grants the role and marks itself accepted in the same breath,
-    # so ``/invitation/pending`` is empty and there is nothing for
-    # ``_materialize_invitation`` to materialize. That branch is NOT dead — the
-    # flag is configurable, and a hub with it off still produces pending rows —
-    # it is simply unreachable against this hub's config, so asserting it here
-    # would be testing the hub's settings rather than our pipeline. Its own
-    # coverage lives in tests/unit/test_invitation_membership_gate_and_prune.py
-    # and tests/unit/test_invitation_synth_no_fake_sender.py.
-    #
-    # What this test still proves, and what actually matters to the product:
-    # a conversation someone else shared with us shows up locally, with its
-    # messages, off the back of one ``conversation-list`` call.
     conv = await Conversation.get_one({"id": conv_id})
-    assert conv is not None, "shared conversation not materialized locally"
-
-    ptrs = []
-    try:
-        ptrs = [{"typeid": x["typeid"], "ts": x["ts"]} for x in __import__("json").loads(conv.message_ids or "[]")]
-    except Exception:
-        ptrs = []
-    assert ptrs, f"conversation {conv.id} has no message pointers"
+    assert conv is not None, "assigned Conversation not materialized locally"
+    assert conv.remote is True
 
 
 # ---------------------------------------------------------------------------

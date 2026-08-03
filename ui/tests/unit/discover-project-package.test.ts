@@ -42,11 +42,11 @@ describe('useProjectPackage', () => {
           ],
         });
       }
-      if (url.includes('record_type=agent')) {
+      if (url.includes('record_type=subagent')) {
         return Promise.resolve({
           results: [
             // no title → basename of file_path; no description → snippet
-            { record_id: 'a1', record_type: 'agent', name: '', snippet: 'a reviewer', scope: 'project', file_path: '/p/agents/reviewer.md' },
+            { record_id: 'a1', record_type: 'subagent', name: '', snippet: 'a reviewer', scope: 'project', file_path: '/p/agents/reviewer.md' },
           ],
         });
       }
@@ -70,7 +70,7 @@ describe('useProjectPackage', () => {
     const byId = Object.fromEntries(result.current.items.map((i) => [i.id, i]));
     expect(byId.s1).toMatchObject({ type: 'skill', name: 'Scrape', description: 'Scrape pages', scope: 'project', path: '/p/skills/scrape/SKILL.md' });
     // title/name empty → basename; description empty → snippet; path → file_path
-    expect(byId.a1).toMatchObject({ type: 'agent', name: 'reviewer.md', description: 'a reviewer', path: '/p/agents/reviewer.md' });
+    expect(byId.a1).toMatchObject({ type: 'subagent', name: 'reviewer.md', description: 'a reviewer', path: '/p/agents/reviewer.md' });
   });
 
   it('tolerates a failing type request (that type contributes nothing)', async () => {

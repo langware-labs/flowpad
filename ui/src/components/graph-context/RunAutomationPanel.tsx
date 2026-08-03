@@ -39,7 +39,7 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
     const { type } = parseTypeid(d.typeid);
     const name = displayLabelForTypeid(d.typeid);
     setInstruction(
-      type === 'agent'
+      type === 'subagent'
         ? t`Act as the "${name}" agent and work on the current context.`
         : t`Run the skill "${name}" on the current context.`,
     );
@@ -55,7 +55,7 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
       if (!d) return;
       try {
         const { type } = parseTypeid(d.typeid);
-        if (type === 'agent' && d.posix_path) {
+        if (type === 'subagent' && d.posix_path) {
           await proc.loadEmbeddedAgent(d.posix_path);
         } else {
           await proc.embeddedAssets.attach(d.typeid);

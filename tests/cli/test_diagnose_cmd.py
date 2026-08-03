@@ -49,6 +49,30 @@ def _isolate_cli_side_effects():
 # --------------------------------------------------------------------------- #
 
 
+
+def _diagnosis_type_only(stand_in):
+    """A ``get_entity_cls`` patch scoped to the diagnosis type.
+
+    These tests want to control how the FlowpadDiagnosis lookup behaves. A
+    blanket ``lambda _t: <stand_in>`` used to be harmless, but diagnose now
+    builds its process from the named `diagnose` Agent — so the runner resolves
+    Agent and Deployment through the registry too, and a blanket fake hands
+    those the stand-in as well (which then persists a half-built Deployment row
+    that poisons later tests in this file).
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    from flow_sdk.schema.types import EntityType
+
+    real = SchemaRegistry.get_entity_cls
+
+    def _patched(type_name):
+        if type_name == EntityType.FLOWPAD_DIAGNOSIS:
+            return stand_in
+        return real(type_name)
+
+    return _patched
+
+
 def test_diagnose_reads_message_from_stdin():
     with patch(_RUN, new=AsyncMock(return_value=0)) as mock_run:
         result = runner.invoke(app, ["diagnose"], input="backend keeps crashing\n")
@@ -251,7 +275,7 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
         ),
         patch(
             "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
-            lambda _t: None,
+            _diagnosis_type_only(None),
         ),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
         # This test is about prompt completion, not feed posting. Stub the always-on
@@ -322,6 +346,7 @@ async def test_run_diagnose_posts_loaded_diagnosis_summary_when_cross_link_fails
         async def get_by_id(cls, _id):
             return SimpleNamespace(summary="diagnosis summary", title="diagnosis title")
 
+
     post_feed = AsyncMock(return_value="feed-1")
 
     with (
@@ -332,7 +357,7 @@ async def test_run_diagnose_posts_loaded_diagnosis_summary_when_cross_link_fails
         ),
         patch(
             "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
-            lambda _t: _FakeDiagnosis,
+            _diagnosis_type_only(_FakeDiagnosis),
         ),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
         patch("flow_sdk.cli.commands.diagnose_cmd._post_home_feed_entry", new=post_feed),
@@ -395,7 +420,7 @@ async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
         ),
         patch(
             "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
-            lambda _t: None,
+            _diagnosis_type_only(None),
         ),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
     ):
@@ -472,7 +497,7 @@ async def test_run_diagnose_waits_for_slow_but_alive_worker():
             ),
             patch(
                 "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
-                lambda _t: None,
+                _diagnosis_type_only(None),
             ),
             patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
             # This test is about warmup/start detection, not feed posting. Stub the
@@ -516,7 +541,7 @@ async def test_diagnose_process_prompt_routes_headless_not_pty():
     from flow_sdk.cli.commands.diagnose_cmd import _build_diagnose_process
     from flow_sdk.responses.response import ApiFailResponse
 
-    ap = _build_diagnose_process()
+    ap = await _build_diagnose_process()
     try:
         resp = await ap.prompt("routing probe — end the turn immediately")
         assert not isinstance(resp, ApiFailResponse), (
@@ -692,7 +717,7 @@ async def test_feed_card_always_appears(label, has_issue, expect_conversation):
         ),
         patch(
             "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
-            lambda _t: None,
+            _diagnosis_type_only(None),
         ),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
         patch(

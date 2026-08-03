@@ -4,7 +4,6 @@ from typing import Any, ClassVar, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_request import APIRequest
 from flow_sdk.api.api_types.type_id import TypeId
 
@@ -28,36 +27,18 @@ class AuthContext:
 
 
 class WSMessageType(Enum):
-    ECHO = "echo"
     BROADCAST = "broadcast"
     PING = "ping"
     PONG = "pong"
-    HANGUP = "hangup"
     ENTITY_MSG = "entity_msg"
     DATA_OP_MSG = "data_op_msg"
     REST_API_MSG = "rest_api_msg"
-    STREAM_MSG = "stream_msg"
-    TRANSCRIPT = "transcript_msg"
-    EXE_MSG = "exe_msg"
-    CONTROL_MSG = "control_msg"
     OAUTH_MSG = "oauth_msg"
     RESPONSE_MSG = "response_msg"
-    CMD_STATUS_MSG = "cmd_status_msg"
-    CLIENT_NODE_READY_MSG = "client_node_ready_msg"
     PTY_OUTPUT_MSG = "pty_output_msg"
     PTY_SESSION_STATUS_MSG = "pty_session_status_msg"
     HUB_CLIENT_ERROR_MSG = "hub_client_error_msg"
     AUTH_EXPIRED_MSG = "auth_expired_msg"
-
-
-class ExeMessageSubType(StrEnum):
-    CONTROL = "control"
-    EXECUTION = "execution"
-
-
-class CtlMessageSubType(StrEnum):
-    READY = "ready"
-    START_SESSION = "session_start"
 
 
 class BaseMessage(BaseModel):
@@ -88,11 +69,6 @@ class BaseMessage(BaseModel):
         return cls._counter
 
 
-class EchoMessage(BaseMessage):
-    message_type: str = WSMessageType.ECHO.value
-    text: str
-
-
 class PingMessage(BaseMessage):
     message_type: str = WSMessageType.PING.value
     text: str
@@ -100,21 +76,6 @@ class PingMessage(BaseMessage):
 
 class PongMessage(BaseMessage):
     message_type: str = WSMessageType.PONG.value
-    text: str
-
-
-class HangupMessage(BaseMessage):
-    message_type: str = WSMessageType.HANGUP.value
-    text: str
-
-
-class StreamMessage(BaseMessage):
-    message_type: str = WSMessageType.STREAM_MSG.value
-    stream_id: int
-
-
-class TranscriptMessage(StreamMessage):
-    message_type: str = WSMessageType.TRANSCRIPT.value
     text: str
 
 
@@ -202,37 +163,6 @@ class APIMessage(BaseMessage, APIRequest):
 class ComputeMessage(BaseMessage):
     session_id: Optional[str] = None
     ack_required: bool = False
-
-
-class ComputeExeMessage(ComputeMessage):
-    message_type: str = WSMessageType.EXE_MSG.value
-    session_id: Optional[str] = None
-    cmd: str
-
-
-class ComputeCtrlMessage(ComputeMessage):
-    message_type: str = WSMessageType.CONTROL_MSG.value
-    subtype: CtlMessageSubType
-    content: str
-
-
-class CommandStatusMessage(ComputeMessage):
-    """
-    Represents a message that contains the status of a command execution.
-    This can be used to report the status of a command execution back to the client.
-    """
-
-    message_type: str = WSMessageType.CMD_STATUS_MSG.value
-    command_message_id: str
-    exit_code: Optional[int] = None
-    stdout: Optional[str] = None
-    stderr: Optional[str] = None
-
-
-class ClientReadyMessage(ComputeMessage):
-    message_type: str = WSMessageType.CLIENT_NODE_READY_MSG.value
-    node_id: str
-    default_session_id: Optional[str] = None
 
 
 class PtyOutputMessage(BaseMessage):

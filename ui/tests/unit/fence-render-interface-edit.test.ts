@@ -165,7 +165,7 @@ params:
 });
 
 describe('applyInterfaceEdit class member edits', () => {
-  const CLASS_SOURCE = `name: Agent
+  const CLASS_SOURCE = `name: SubAgent
 properties:
   status:
     type: ProcessStatus?

@@ -20,11 +20,11 @@ from __future__ import annotations
 
 import asyncio
 import os
-import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.app.actions.flow_message_action import (
     _conv_fetch_inflight,
     _drain_conversation_message_fetches,
@@ -185,6 +185,51 @@ async def test_in_sync_reconcile_leaves_jsonl_untouched():
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_ready_body_reconciles_even_when_metadata_is_current():
+    """Hub READY is pull-correctness work even with equal metadata clocks.
+
+    A receiver that missed the best-effort READY bridge frame can have the
+    exact current header at UPLOADING. Exact conversation sync must still route
+    that row through body recovery instead of letting the LWW skip hide it.
+    """
+    conv = "aaaa0011-1111-4111-8111-000000000011"
+    fm_id = "bbbb0011-1111-4111-8111-000000000011"
+    _write_jsonl(conv, [fm_id])
+    local = _fm(
+        fm_id,
+        updated_date=_TS,
+        body_status="uploading",
+        attachment_filename="body.flowmsg",
+    )
+    hub_child = {
+        **_hub_child(fm_id),
+        "body_status": "ready",
+        "attachment_filename": "body.flowmsg",
+    }
+    process = AsyncMock(return_value=fm_id)
+
+    with (
+        patch(
+            "flow_sdk.app.actions.flow_message_action.hub_get",
+            new=AsyncMock(return_value=[hub_child]),
+        ),
+        patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=local)),
+        patch(
+            "flow_sdk.app.actions.flow_message_action._process_single_hub_message",
+            new=process,
+        ),
+        patch(
+            "flow_sdk.app.actions.flow_message_action.project_pointers_to_entity",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        await _fetch_conversation_messages(conv, someone_typeid="user-x")
+
+    process.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_hub_side_delete_drops_stale_pointer():
     conv = "aaaa0002-1111-4111-8111-000000000002"
     kept = "bbbb0002-1111-4111-8111-000000000001"
@@ -310,7 +355,7 @@ def test_should_fetch_rule():
     later = "2026-06-01T11:00:00+00:00"
 
     def conv(count: int) -> Conversation:
-        c = Conversation.model_validate({"id": str(uuid.uuid4()), "updated_date": ts})
+        c = Conversation.model_validate({"id": mint_uuid(), "updated_date": ts})
         c._set_projection("message_count", count, _PROJECTION_SENTINEL)
         if count:
             c._set_projection(

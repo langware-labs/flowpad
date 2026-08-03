@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dataContext, ContextEntitiesEnum, TypeId, Agent } from '@sdk';
+import { dataContext, ContextEntitiesEnum, TypeId, SubAgent } from '@sdk';
 import { v4 as uuidv4 } from 'uuid';
 
 // We test the initSdk contract: after calling initSdk without params.agentId,
@@ -17,16 +17,16 @@ import { v4 as uuidv4 } from 'uuid';
 
 describe('initSdk - default_agent from bootstrap', () => {
   const agentId = uuidv4();
-  const agentTypeId = new TypeId(Agent.type, agentId);
+  const agentTypeId = new TypeId(SubAgent.type, agentId);
 
   beforeEach(async () => {
-    vi.spyOn(dataContext, 'loadContextEntity').mockImplementation(async (typeId) => {
-      if (typeId.type !== Agent.type || typeId.id !== agentId) {
-        return null as any;
+    vi.spyOn(dataContext, 'loadContextEntity').mockImplementation((typeId) => {
+      if (typeId.type !== SubAgent.type || typeId.id !== agentId) {
+        return Promise.resolve(null as any);
       }
-      const agent = new Agent({ id: agentId, type: Agent.type } as any);
+      const agent = new SubAgent({ id: agentId, type: SubAgent.type } as any);
       agent.markAsExpanded();
-      return agent;
+      return Promise.resolve(agent);
     });
 
     // Reset agent context to null before each test
@@ -46,7 +46,7 @@ describe('initSdk - default_agent from bootstrap', () => {
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentAgentTypeId, agentTypeId);
     expect(dataContext.agentTypeId).not.toBeNull();
     expect(dataContext.agentTypeId?.id).toBe(agentId);
-    expect(dataContext.agentTypeId?.type).toBe(Agent.type);
+    expect(dataContext.agentTypeId?.type).toBe(SubAgent.type);
   });
 
   it('initSdk does NOT set agentTypeId from bootstrapInfo.default_agent (the bug)', async () => {
@@ -56,11 +56,9 @@ describe('initSdk - default_agent from bootstrap', () => {
       user: undefined,
       default_project: undefined,
       default_workspace: undefined,
-      default_agent: { id: agentId, type: Agent.type },
+      default_agent: { id: agentId, type: SubAgent.type },
       schemas: [],
     } as any);
-
-    const { initSdk } = await import('@sdk/main');
 
     // Reset the singleton initPromise by reloading the module is not possible in vitest
     // Instead we directly test that after a fresh context reset, agentTypeId stays null
@@ -74,7 +72,7 @@ describe('initSdk - default_agent from bootstrap', () => {
 
     // The assertion below documents the expected (fixed) behavior:
     // After calling initSdk with no params.agentId but bootstrap returns default_agent,
-    // dataContext.agentTypeId should equal new TypeId(Agent.type, agentId).
+    // dataContext.agentTypeId should equal new TypeId(SubAgent.type, agentId).
     // Currently this assertion would FAIL because initSdk never reads default_agent.
     // After the fix, it should pass.
     //
@@ -82,7 +80,7 @@ describe('initSdk - default_agent from bootstrap', () => {
     // setContextEntityTypeId with default_agent data should work (proves the fix path works)
     await dataContext.setContextEntityTypeId(
       ContextEntitiesEnum.CurrentAgentTypeId,
-      new TypeId(Agent.type, agentId),
+      new TypeId(SubAgent.type, agentId),
     );
     expect(dataContext.agentTypeId?.id).toBe(agentId);
   });
@@ -97,7 +95,7 @@ describe('initSdk - missing default_agent branch (regression test)', () => {
     // This is a compile-time check expressed as a runtime assertion on the type shape.
     // The bootstrap endpoint returns: { default_agent: { id, type } }
     // The BootstrapInfo interface must include it for TypeScript to use it safely.
-    const { BootstrapInfo: _unused } = await import('@sdk/models').catch(() => ({ BootstrapInfo: null }));
+    await import('@sdk/models').catch(() => null);
     // We can verify this by checking if initSdk reads bootstrapInfo.default_agent.
     // The test below confirms that when no agentId is in params, agentTypeId stays null.
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentAgentTypeId, null);

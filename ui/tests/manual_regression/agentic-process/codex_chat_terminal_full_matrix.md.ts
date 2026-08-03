@@ -170,10 +170,6 @@ test.describe('Codex durable transcript projection', () => {
       join(repo, 'flow_sdk/builtin/agentic_process/agentic_process.py'),
       'utf8',
     );
-    const terminal = readFileSync(
-      join(repo, 'ui/src/components/terminal/interactive-terminal/InteractiveTerminal.tsx'),
-      'utf8',
-    );
     const terminalPanel = readFileSync(
       join(repo, 'ui/src/components/terminal/TabbedTerminal.tsx'),
       'utf8',
@@ -196,7 +192,7 @@ test.describe('Codex durable transcript projection', () => {
     expect(backend).toContain('@action.post(action_name="switch-mode")');
     expect(backend).toContain('restart_required');
     expect(backend).toContain('ensure_embedded_assets');
-    expect(terminal).toContain('useProcessSurface');
+    expect(terminalPanel).toContain('useProcessSurface');
     expect(modeSwitchHook).toContain('.switchMode(');
     expect(modeSwitchHook).toContain('loadHistory({ force: true })');
     expect(terminalPanel).toContain('data-pty-mode');

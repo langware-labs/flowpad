@@ -9,6 +9,7 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.wiki import Wiki, WikiEntry
+from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 from .parser import canonicalize_word
@@ -145,9 +146,9 @@ async def _implicit_project_assets(project: Project, canonical: str) -> list[Typ
     # Indexed local assets also carry the established project_id stamp. Some
     # legacy index paths predate Project child edges, so retain that local
     # ownership seam while the graph converges.
-    for entity_cls in SchemaRegistry.get_all_entity_classes():
+    for entity_cls in Entity.asset_owner_classes():
         fields = getattr(entity_cls, "model_fields", {})
-        if "project_id" not in fields or "asset_ref" not in fields:
+        if "project_id" not in fields:
             continue
         if entity_cls.get_type() in {"project", "wiki", "wiki_entry"}:
             continue
