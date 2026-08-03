@@ -31,12 +31,20 @@ def _server_json_path() -> Path:
 
 @dataclass
 class FlowpadServerInfo:
-    """Server connection information from port file."""
+    """Server connection information from port file.
+
+    Note this is a *different* type from ``flow_sdk.config.FlowpadServerInfo``
+    (a pydantic model that writes the file); this one is the read side and
+    carries only what discovery consumers need.
+    """
 
     port: int
     webhook_path: str
     health_path: str
     url: str  # Computed: http://localhost:{port}{webhook_path}
+    #: Optional: absent from files written by older servers. Used to tell a
+    #: live entry from one left behind by a crashed backend.
+    server_pid: Optional[int] = None
 
 
 class FlowpadStatus:
@@ -60,11 +68,16 @@ def _parse_server_json(path: Path) -> Optional[FlowpadServerInfo]:
     """Read one server.json and return its info, or None if missing/corrupt."""
     try:
         data = json.loads(path.read_text())
+        try:
+            server_pid = int(data["server_pid"])
+        except (KeyError, TypeError, ValueError):
+            server_pid = None
         return FlowpadServerInfo(
             port=data["port"],
             webhook_path=data["webhook_path"],
             health_path=data["health_path"],
             url=f"http://localhost:{data['port']}{data['webhook_path']}",
+            server_pid=server_pid,
         )
     except (json.JSONDecodeError, KeyError, OSError):
         return None
@@ -350,24 +363,65 @@ def _enumerate_server_json_paths() -> list[Path]:
     return paths
 
 
+def _server_pid_is_alive(pid: int | None) -> bool:
+    """Is this server.json's recorded backend still running?
+
+    ``os.kill(pid, 0)`` rather than psutil: this is on the hook-broadcast path,
+    which must stay import-cheap and must never raise.
+    """
+    if not pid or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists, owned by someone else
+    except OSError:
+        return False
+    return True
+
+
 def read_all_server_infos() -> list[FlowpadServerInfo]:
-    """Read every instance's server JSON file, return all valid entries.
+    """Read every instance's server JSON file, return the LIVE entries.
 
     Fast path — no health check. Skips missing or corrupt files.
 
-    Deduped by port: only one server can own a port, so a second file
-    claiming the same port is a leftover from a dead instance whose port
-    band was recycled. Without this, hook broadcasts POST the same payload
-    once per stale file into whichever live server holds the port now.
+    Two filters, and the order matters:
+
+    1. **Dead-PID filter.** ``clear_server_info`` only runs on a graceful
+       uvicorn shutdown, so a SIGKILL, a crash or a closed laptop leaves the
+       file behind; one developer machine had 27 such files against a single
+       live backend. A stale entry is not inert — ``flow hooks report`` POSTs to
+       every server.json it is handed, so once the port band recycles, a dead
+       instance's file delivers hook payloads into a live, unrelated backend.
+       Filtering on the recorded PID removes the entry at the source rather than
+       relying on the port-dedupe below to mask it.
+
+       Entries with no recorded ``server_pid`` are kept: older writers omitted
+       it, and dropping them would silently stop notifying a real backend.
+
+    2. **Port dedupe.** Only one server can own a port, so a second *live-looking*
+       file claiming the same port is still a leftover. Live entries are
+       preferred over pid-less ones when both claim a port.
 
     Returns:
         List of FlowpadServerInfo, one per distinct port.
     """
     by_port: dict[int, FlowpadServerInfo] = {}
+    pidless: list[FlowpadServerInfo] = []
     for path in _enumerate_server_json_paths():
         info = _parse_server_json(path)
-        if info is not None:
-            by_port.setdefault(info.port, info)
+        if info is None:
+            continue
+        if info.server_pid is None:
+            pidless.append(info)
+            continue
+        if not _server_pid_is_alive(info.server_pid):
+            continue
+        by_port[info.port] = info
+    for info in pidless:
+        by_port.setdefault(info.port, info)
     return list(by_port.values())
 
 
