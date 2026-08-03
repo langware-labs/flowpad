@@ -309,6 +309,19 @@ async function assertTargetRepoSelectable(context: BrowserContext, config: Confi
       { data: { provider: 'github', page: pageNumber } },
     );
     if (repoResponse.status() !== 200) {
+      let failure: { detail?: unknown } | null = null;
+      try {
+        failure = (await repoResponse.json()) as { detail?: unknown };
+      } catch {
+        // Preserve the status-only diagnostic when Hub did not return JSON.
+      }
+      if (failure) assertKnownSecretsAbsent(config, 'repo list failure', failure);
+      if (failure?.detail === 'GitHub not connected') {
+        throw new Error(
+          `CloudNSite E2E repo preflight failed: GitHub is not connected for the authenticated Flowpad account. ` +
+            `Connect GitHub for this account and grant write access to ${config.targetRepo}.`,
+        );
+      }
       throw new Error(
         `CloudNSite E2E repo preflight failed: the authenticated Hub user cannot list GitHub repositories ` +
           `(HTTP ${repoResponse.status()}). Connect GitHub for this Flowpad account and grant write access to ` +
