@@ -515,7 +515,7 @@ export function AssetsPage() {
     resolvedHeaderEntityTypeId,
     isEditorMode && !!editorSourcePath && headerEntity?.remote !== true,
   );
-  const assetCloudUrl = hubPageUrl(cloudManager.cloudUrl, resolvedHeaderEntityTypeId);
+  const assetCloudUrl = hubPageUrl(cloudManager.cloudAppUrl, resolvedHeaderEntityTypeId);
   // Reveal through the compute node the path actually belongs to — the VFS
   // pointer names it, so this keeps working for an asset on a remote node.
   // `localComputeNodeId` is the same gate the markdown editor's reveal uses.

@@ -237,7 +237,7 @@ export function HubHome() {
                     // Clicking opens the project dock, which sets CurrentProject
                     // context — the same navigation the footer's name button uses,
                     // so the footer follows the click. URL-first: only openDock.
-                    onClick={() => navigation.openDock(DockPointer.forProject(p.id))}
+                    onClick={() => navigation.openDock(DockPointer.forProject(p.id).withPage(PageId.HUB))}
                     className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:bg-accent ${
                       isCurrent ? 'border-primary bg-primary/5' : 'border-border bg-card'
                     }`}

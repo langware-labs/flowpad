@@ -240,25 +240,9 @@ async def _get_github_token(request_info: RequestInfo) -> Optional[str]:
     Desktop mode: attempts to read from SOD credentials.
     Returns None if no token is available (public repos still work).
     """
-    try:
-        from flow_sdk.builtin.user import User
-        from flow_sdk.request_context.methods import get_user_credentials
+    from flow_sdk.core.oauth.github_credentials import get_github_token
 
-        user = await User.get_by_typeid(request_info.user)
-        if not user:
-            return None
-
-        # foreign_key matches the write side in desktop_oauth.py (_save_github_token_to_sod)
-        # so the SOD lookup hits the same key whether or not the request has a
-        # cloud-side user_foreign_key bound to the context.
-        github_credentials = await get_user_credentials(user, "github_credentials", user.id)
-        if not github_credentials:
-            return None
-
-        return github_credentials
-    except Exception as e:
-        logger.warning(f"Could not get GitHub credentials: {e}")
-        return None
+    return await get_github_token(request_info.user)
 
 
 def _prepare_github_headers(token: Optional[str]) -> dict:

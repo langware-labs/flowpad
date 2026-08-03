@@ -1,4 +1,17 @@
 import type { TypeId } from '@sdk';
+import { PageId } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
+
+function trimHubHost(hubHost: string): string {
+  return hubHost.replace(/\/+$/, '');
+}
+
+/** Canonical cloud Project Home URL. */
+export function hubProjectUrl(hubAppUrl: string | null | undefined, projectId: string | null | undefined): string | null {
+  if (!hubAppUrl || !projectId) return null;
+  const dockPath = DockPointer.forProject(projectId).withPage(PageId.HUB).toUrl();
+  return `${trimHubHost(hubAppUrl)}${dockPath}`;
+}
 
 /**
  * Entity types the hub console has a page route for. Mirrors the hub router's
@@ -28,6 +41,7 @@ const HUB_PAGE_TYPES = new Set([
  */
 export function hubPageUrl(hubHost: string | null | undefined, ref: TypeId | null | undefined): string | null {
   if (!hubHost || !ref?.type || !ref?.id) return null;
+  if (ref.type === 'project') return hubProjectUrl(hubHost, ref.id);
   if (!HUB_PAGE_TYPES.has(ref.type)) return null;
-  return `${hubHost.replace(/\/+$/, '')}/${ref.type}/${encodeURIComponent(ref.id)}`;
+  return `${trimHubHost(hubHost)}/${ref.type}/${encodeURIComponent(ref.id)}`;
 }

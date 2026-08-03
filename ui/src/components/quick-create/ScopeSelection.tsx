@@ -21,7 +21,7 @@ export interface Scope {
   folderPath: string | null;
 }
 
-interface ScopeSelectionProps {
+export interface ScopeSelectionProps {
   scope: Scope;
   onScopeChange: (next: Scope) => void;
   harness: HarnessKind;
@@ -41,6 +41,8 @@ interface ScopeSelectionProps {
    * promising a destination the backend never writes.
    */
   harnessApplies?: boolean;
+  /** Scope chips available for this asset type. Omitted means all scopes. */
+  allowedScopes?: readonly ScopeKind[];
 }
 
 const SCOPE_OPTIONS: ScopeBarOption<ScopeKind>[] = [
@@ -67,15 +69,20 @@ export function ScopeSelection({
   onPickFolder,
   onOpenProjectPicker,
   harnessApplies = true,
+  allowedScopes,
 }: ScopeSelectionProps) {
   const { t } = useLingui();
+  const scopeOptions = allowedScopes
+    ? SCOPE_OPTIONS.filter((option) => allowedScopes.includes(option.value))
+    : SCOPE_OPTIONS;
 
   const handleScopeChange = useCallback(
     (next: ScopeKind) => {
       if (next === scope.kind) return;
+      if (allowedScopes && !allowedScopes.includes(next)) return;
       onScopeChange({ ...scope, kind: next });
     },
-    [scope, onScopeChange],
+    [allowedScopes, scope, onScopeChange],
   );
 
   const handleBrowseFolder = useCallback(async () => {
@@ -91,7 +98,7 @@ export function ScopeSelection({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
-        <ScopeBar value={scope.kind} options={SCOPE_OPTIONS} onChange={handleScopeChange} />
+        <ScopeBar value={scope.kind} options={scopeOptions} onChange={handleScopeChange} />
         {scope.kind === 'project' && (
           <Button
             variant="outline"
@@ -120,7 +127,9 @@ export function ScopeSelection({
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground"><Trans>Harness path</Trans></span>
+        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          <Trans>Harness path</Trans>
+        </span>
         <div className="flex items-center gap-1" role="radiogroup" aria-label={t`Harness path`}>
           {HARNESS_OPTIONS.map(({ value, title, Icon }) => {
             const active = value === harness;

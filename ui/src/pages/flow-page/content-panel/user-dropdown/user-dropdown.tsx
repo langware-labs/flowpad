@@ -5,6 +5,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { SettingsPane } from '@src/components/ui/settings-pane';
@@ -13,6 +14,7 @@ import { Cloud, HelpCircle, LogIn, LogOut, Settings, User as UserIcon, Wrench } 
 import { notify } from '@src/notifications';
 
 import { AccountInfo } from '@src/components/account/account-info';
+import { UserMenuHeader } from './user-menu-header';
 
 import { trackEvent } from '@src/utils/analytics';
 import { redirectToConsole } from '@src/utils/navigation';
@@ -198,24 +200,12 @@ export function UserDropdown() {
   // would put literal text in the avatar circle, so it falls through to initials.
   const pictureIsToken = !!picture && !pictureIsUrl && (isLucideName(picture) || !/^[\w .-]+$/.test(picture));
   const pictureIcon = pictureIsToken ? renderIconValue(picture, { className: 'h-5 w-5' }) : null;
-  // Subtitle under the name. `title` is what the hub sends for an agent
-  // principal (falling back to its description); a human has none, and the
-  // email is the useful second line there.
-  const profileTitle =
-    (currentUser as { title?: string } | null)?.title || currentUser?.email || null;
-  // A photo doubles as the backdrop, blurred behind the avatar. An icon token
-  // has no image to stretch, so those keep the flat gradient the class gives.
-  const profileBackdrop = pictureIsUrl
-    ? {
-        // Quoted: the value comes off the wire, and a bare url() would let a
-        // crafted `picture` close the function and inject further CSS.
-        backgroundImage: `url(${JSON.stringify(picture)})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        filter: 'blur(12px) saturate(1.2)',
-        transform: 'scale(1.2)',
-      }
-    : undefined;
+  // Subtitle under the name. `title` is a BASE-entity field in both repos
+  // (flow_sdk `Entity.title`, hub `Entity.title`, and `APIEntity.title` here),
+  // so it needs no cast and no per-type plumbing: the hub sends it for an agent
+  // principal, and a human's is whatever they set. Absent → the line is skipped
+  // and the email moves up. The email is its own line below, never this one.
+  const profileTitle = currentUser?.title || null;
   const agentTypeId = useMemo(() => (agentId ? new TypeId(SubAgent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<SubAgent>(agentTypeId, {
     query: user ? agentQuery : new ExpansionRequest({}),
@@ -416,35 +406,20 @@ export function UserDropdown() {
                   </TooltipTrigger>
                   <TooltipContent side="top">{cloudLoginTooltip(login.status, connection.status, cloudUrl, currentUser?.email)}</TooltipContent>
                   <DropdownMenuContent align="end" className="w-64 p-0">
-                {/* Who you are signed in AS, above the things you can do.
-                    A deployed agent holds its own credential, so this is the
-                    only place the box tells you it is the agent and not the
-                    person who launched it — hence a real profile, not a name. */}
-                <div className="relative mb-1 overflow-hidden rounded-t-md">
-                  <div
-                    className="h-14 w-full bg-gradient-to-br from-primary/30 via-primary/10 to-transparent"
-                    style={profileBackdrop}
-                    aria-hidden
-                  />
-                  <div className="flex items-center gap-3 px-3 pb-3 pt-2">
-                    <Avatar className="h-10 w-10 shrink-0 ring-2 ring-background">
-                      {pictureIsUrl && (
-                        <AvatarImage src={currentUser!.picture} alt={currentUser?.name ?? ''} />
-                      )}
-                      <AvatarFallback className="text-base">
-                        {pictureIcon ?? avatarInitials ?? <UserIcon className="h-5 w-5" />}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">
-                        {currentUser?.name ?? currentUser?.email ?? <Trans>Signed in</Trans>}
-                      </div>
-                      {profileTitle && (
-                        <div className="truncate text-xs text-muted-foreground">{profileTitle}</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                <UserMenuHeader
+                  name={currentUser?.name}
+                  title={profileTitle}
+                  email={currentUser?.email}
+                  pictureUrl={pictureIsUrl ? picture : null}
+                  pictureIcon={pictureIcon}
+                  initials={avatarInitials}
+                />
+                {/* Rule between who you are and what you can do. `mx-0` so it
+                    spans the full menu width — the header block is full-bleed
+                    (its backdrop reaches both edges) and an inset rule would
+                    read as belonging to the items rather than closing the
+                    identity block. */}
+                <DropdownMenuSeparator className="mx-0 my-0" />
                 <div className="p-1">
                 {isOwner && agentId && (
                   <>

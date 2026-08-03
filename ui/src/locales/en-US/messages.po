@@ -175,6 +175,11 @@ msgstr "{0} annotations on this row"
 msgid "{0} attachments"
 msgstr "{0} attachments"
 
+#. placeholder {0}: agent.name
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "{0} avatar"
+msgstr "{0} avatar"
+
 #. placeholder {0}: trigger.last_seen_size
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "{0} bytes"
@@ -1001,6 +1006,10 @@ msgstr "agent"
 msgid "Agent"
 msgstr "Agent"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Agent avatar"
+msgstr "Agent avatar"
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "Agent is taking a long time to respond"
 #~ msgstr "Agent is taking a long time to respond"
@@ -1624,6 +1633,7 @@ msgid "Attach asset"
 msgstr "Attach asset"
 
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Attach files"
 msgstr "Attach files"
 
@@ -2297,6 +2307,10 @@ msgstr "Choose an artifact to open"
 msgid "Choose another worker"
 msgstr "Choose another worker"
 
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "Choose avatar image"
+msgstr "Choose avatar image"
+
 #: src/components/quick-create/ScopeSelection.tsx
 msgid "Choose folder…"
 msgstr "Choose folder…"
@@ -2896,10 +2910,9 @@ msgstr "Completed"
 msgid "Completed 🎉"
 msgstr "Completed 🎉"
 
-#. placeholder {0}: channelLabel(channelOrigin?.kind)
 #: src/components/conversation/ConversationView.tsx
-msgid "Composing in {0}: “{sendingText}” — finish sending there"
-msgstr "Composing in {0}: “{sendingText}” — finish sending there"
+#~ msgid "Composing in {0}: “{sendingText}” — finish sending there"
+#~ msgstr "Composing in {0}: “{sendingText}” — finish sending there"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Compute Node ID:"
@@ -3351,6 +3364,10 @@ msgstr "Could not load source: {error}"
 msgid "Could not open skill"
 msgstr "Could not open skill"
 
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Could not publish asset"
+msgstr "Could not publish asset"
+
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "Could not reach support"
 msgstr "Could not reach support"
@@ -3441,6 +3458,11 @@ msgstr "Could not update"
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Could not update attached secrets"
 msgstr "Could not update attached secrets"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Could not upload avatar"
+msgstr "Could not upload avatar"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
@@ -6671,6 +6693,7 @@ msgid "I want…  (e.g. email, slack, calendar)"
 msgstr "I want…  (e.g. email, slack, calendar)"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
+#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/icon-picker.tsx
 msgid "Icon"
 msgstr "Icon"
@@ -6711,6 +6734,10 @@ msgstr "Ignore till now"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Ignored"
 msgstr "Ignored"
+
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "Image"
+msgstr "Image"
 
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/hooks-view/hooks-view.tsx
@@ -10739,6 +10766,10 @@ msgstr "plugin"
 msgid "Plugins"
 msgstr "Plugins"
 
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "PNG, JPEG, or WebP. Maximum 5 MiB and 4096 × 4096."
+msgstr "PNG, JPEG, or WebP. Maximum 5 MiB and 4096 × 4096."
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Port"
 msgstr "Port"
@@ -11102,9 +11133,30 @@ msgstr "PTY ID"
 msgid "PTY Viewer"
 msgstr "PTY Viewer"
 
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Publish"
+msgstr "Publish"
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Publish failed."
+msgstr "Publish failed."
+
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Publish this agent to the cloud and give it a machine that logs in as itself."
 msgstr "Publish this agent to the cloud and give it a machine that logs in as itself."
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Publish to cloud"
+msgstr "Publish to cloud"
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Published"
+msgstr "Published"
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Published to cloud"
+msgstr "Published to cloud"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull & Open"
@@ -11531,6 +11583,10 @@ msgstr "Remove"
 msgid "Remove attachment"
 msgstr "Remove attachment"
 
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "Remove avatar"
+msgstr "Remove avatar"
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Remove bookmark"
 msgstr "Remove bookmark"
@@ -11653,10 +11709,14 @@ msgstr "Replace"
 msgid "replay"
 msgstr "replay"
 
+#: src/components/conversation/ConversationView.tsx
+#~ msgid "Reply — drafted into {0}"
+#~ msgstr "Reply — drafted into {0}"
+
 #. placeholder {0}: channelLabel(channelOrigin.kind)
 #: src/components/conversation/ConversationView.tsx
-msgid "Reply — drafted into {0}"
-msgstr "Reply — drafted into {0}"
+msgid "Reply in {0}"
+msgstr "Reply in {0}"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Reply to sender…"
@@ -12854,6 +12914,11 @@ msgstr "Send message"
 msgid "Send the reply for just this message"
 msgstr "Send the reply for just this message"
 
+#. placeholder {0}: channelLabel(channelOrigin?.kind)
+#: src/components/conversation/ConversationView.tsx
+msgid "Sending in {0}: “{sendingText}”"
+msgstr "Sending in {0}: “{sendingText}”"
+
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Sending…"
@@ -13375,7 +13440,7 @@ msgid "Signals"
 msgstr "Signals"
 
 #: src/components/account/user-info.tsx
-#: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
+#: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "Signed in"
 
@@ -14204,6 +14269,10 @@ msgstr "The <0>flow-sdk-mcp</0> server is required to run with progress tracing.
 #~ msgid "The <0>flow-sdk-mcp</0> server is required to run workflows with progress tracing. Enable it to continue."
 #~ msgstr "The <0>flow-sdk-mcp</0> server is required to run workflows with progress tracing. Enable it to continue."
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "The Agent bundle is not available."
+msgstr "The Agent bundle is not available."
+
 #: src/components/agent-layout/not-found-screen/not-found-screen.tsx
 #~ msgid "The agent you're looking for doesn't exist or is not available."
 #~ msgstr "The agent you're looking for doesn't exist or is not available."
@@ -14219,6 +14288,10 @@ msgstr "The analysis completed but did not produce asset-scoped findings."
 #: src/components/artifacts/artifacts-list.tsx
 msgid "The artifact has been removed successfully."
 msgstr "The artifact has been removed successfully."
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "The asset is now available to project members."
+msgstr "The asset is now available to project members."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
@@ -15087,9 +15160,17 @@ msgstr "Upgrading…"
 msgid "Upload"
 msgstr "Upload"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Upload failed."
+msgstr "Upload failed."
+
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Upload files"
 msgstr "Upload files"
+
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "Upload image"
+msgstr "Upload image"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Upload message"

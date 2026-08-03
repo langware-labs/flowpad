@@ -16,6 +16,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from starlette.requests import Request
+from starlette.responses import Response
+
 from flow_sdk.actions.action_registry import Action
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.core.entity.entity_model import Entity
@@ -131,6 +134,40 @@ def _entity_type_enum(entity: Entity) -> BuiltinEntityType | None:
 # entity files are the write-through case — the bytes go to the hub AND stay in
 # local storage, which is the cache the headless agent reads by local path.
 REFLECT_CONTINUE_LOCAL = object()
+
+
+def is_git_backed_remote_fs(entity: Entity | None, action_name: str | None) -> bool:
+    """Whether an entity FS request must be replaced by a Hub request.
+
+    Git is authoritative for a published asset, so falling through to a local
+    cache after a rejected/offline Hub call would report a false success and
+    fork the asset. This gate intentionally does not require the caller to be
+    logged in: an unauthenticated proxy attempt must fail at Hub, never mutate
+    local state.
+    """
+
+    return bool(
+        action_name == "fs"
+        and entity is not None
+        and getattr(entity, "remote", False) is True
+        and getattr(entity, "git_origin", None) is not None
+        and not is_local_mode()
+    )
+
+
+async def proxy_git_backed_remote_fs(request: Request) -> Response:
+    """Forward one standard entity-VFS request to Hub with full HTTP fidelity."""
+
+    from flow_sdk.cloud_client import CloudProxy  # noqa: PLC0415
+
+    try:
+        return await CloudProxy()(request)
+    except HubError as exc:
+        # Missing Hub configuration/transport is a gateway failure. A concrete
+        # Hub rejection keeps its status. Either way this remains a replacement
+        # response; callers never fall through to local asset storage.
+        status = exc.status_code if exc.status_code >= 400 else 502
+        return Response(exc.reason.encode(), status_code=status, media_type="text/plain")
 
 
 async def _reflect_fs_to_hub(et, hub_id: str, sub_path: str | None) -> Any:

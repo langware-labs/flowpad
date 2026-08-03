@@ -31,8 +31,10 @@ import { DockLoadError } from './dock-load-error';
 import { loadAssetRoute } from './load-asset';
 
 function errorStatus(error: unknown): number | undefined {
-  return (error as { response?: { status?: number }; status?: number } | null)?.response?.status
-    ?? (error as { status?: number } | null)?.status;
+  return (
+    (error as { response?: { status?: number }; status?: number } | null)?.response?.status ??
+    (error as { status?: number } | null)?.status
+  );
 }
 
 function hasProjectTabSegment(pointer: string | undefined): boolean {
@@ -178,10 +180,7 @@ export async function loadProject(projectTypeId: TypeId): Promise<Project> {
   if (!project) {
     throw new ProjectLoadError('not_found', projectTypeId.id);
   }
-  await dataContext.setContextEntityTypeId(
-    ContextEntitiesEnum.CurrentProjectTypeId,
-    projectTypeId,
-  );
+  await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, projectTypeId);
   // Per-project view-mode memory: apply the project's remembered mode (or stamp
   // the current one onto a project that has none). After the context write, so
   // dataContext.project is this project before any recording. Synchronous apart
@@ -210,8 +209,7 @@ export async function loadProjectRoute(
   pointer: string | undefined,
   opts: { viewMode?: string | null } = {},
 ): Promise<void> {
-  const { projectTypeId, roomId, tabTypeId, conversationId } =
-    DockPointer.parseProjectPointer(pointer);
+  const { projectTypeId, roomId, tabTypeId, conversationId } = DockPointer.parseProjectPointer(pointer);
   const { assetSubPointer } = DockPointer.splitProjectPointer(pointer);
   const hasTabSegment = hasProjectTabSegment(pointer);
   if (!projectTypeId) {
@@ -253,9 +251,7 @@ export async function loadProjectRoute(
   if (roomId) {
     let room: CollaborationRoom | null = null;
     try {
-      room = await dataManager.getByTypeId<CollaborationRoom>(
-        new TypeId(CollaborationRoom.type, roomId),
-      );
+      room = await dataManager.getByTypeId<CollaborationRoom>(new TypeId(CollaborationRoom.type, roomId));
     } catch (cause) {
       throwRoomLoadError(cause, roomId);
     }

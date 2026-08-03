@@ -1,6 +1,8 @@
-import { ContextEntitiesEnum, dataContext, Project, QueryRequest } from '@sdk';
+import { ContextEntitiesEnum, dataContext, gitOriginFromUrl, Project, QueryRequest } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { isHubOnly } from '@src/navigation/hub-runtime';
+import { useDesktops } from '@src/hooks/use-desktops';
 import { useCallback } from 'react';
 
 export function canonicalPath(path: string): string {
@@ -114,8 +116,20 @@ export function useCloneGitProjectAndOpen(landing?: ProjectLanding) {
  * result contract it decodes so a new `kind` is handled in one place rather
  * than in every dialog that hosts the form.
  */
+/**
+ * The clone-dialog's submit, for whichever runtime is serving the app.
+ *
+ * **Desk** clones onto the local compute node — the path this hook has always
+ * taken. **Hub** has no compute node (its bootstrap ships no
+ * `default_compute_node`) and no local filesystem, so a clone there targets an
+ * E2B sandbox instead: `launch({gitSetup})` has the HUB clone the repo — with
+ * the user's token, which is why private repos work at all — and copy the tree
+ * into the box, which materializes it into an indexed Project. Same pipeline
+ * `InstallLanding` uses; nothing new on either side.
+ */
 export function useGitCloneDialogSubmit(computeNodeId: string | null | undefined, landing?: ProjectLanding) {
   const cloneAndOpen = useCloneGitProjectAndOpen(landing);
+  const { launch } = useDesktops();
 
   return useCallback(
     async (
@@ -123,6 +137,16 @@ export function useGitCloneDialogSubmit(computeNodeId: string | null | undefined
       acceptSuggested?: string,
       branch?: string,
     ): Promise<{ ok: true } | { ok: false; suggestedName: string; attemptedName: string }> => {
+      if (isHubOnly()) {
+        const gitOrigin = gitOriginFromUrl(url, branch ?? '');
+        if (!gitOrigin) throw new Error('Not a recognisable git URL');
+        // The repo name is the box-side folder/project name; `acceptSuggested`
+        // is the desk collision flow, which a fresh sandbox cannot hit.
+        const name = acceptSuggested || gitOrigin.name;
+        await launch({ name, gitSetup: { name, gitOrigin } });
+        return { ok: true };
+      }
+
       if (!computeNodeId) throw new Error('No compute node available');
       const result = await cloneAndOpen(computeNodeId, url, { targetName: acceptSuggested, branch });
       if (result.kind === 'ok') return { ok: true };
@@ -131,6 +155,6 @@ export function useGitCloneDialogSubmit(computeNodeId: string | null | undefined
       }
       throw new Error(result.message);
     },
-    [cloneAndOpen, computeNodeId],
+    [cloneAndOpen, computeNodeId, launch],
   );
 }

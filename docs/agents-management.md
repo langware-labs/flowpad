@@ -9,10 +9,43 @@ documents live in `docs/agent-management/`.
 
 ## Current Model
 
-Flowpad represents an agent run as an `AgenticProcess` entity. The entity is the
-durable control plane: it stores the workdir, instruction/context, CLI
-configuration, `session_id`, lifecycle `status`, visibility, and the linked
-`shell_id` when a terminal is open.
+Flowpad separates the persistent agent from each execution:
+
+- An `Agent` is a named, launchable identity and authoring bundle. Project
+  members create one with **New → Agent**, or create a personal Agent by
+  choosing the User scope.
+- An `AgentDeployment` records where an Agent is placed.
+- An `AgenticProcess` records one run. It stores the workdir,
+  instruction/context, CLI configuration, `session_id`, lifecycle `status`,
+  visibility, and linked `shell_id` when a terminal is open.
+
+Creating an Agent authors the definition only. Cloud deployment and sandbox
+identity provisioning are separate deployment phases.
+
+## Agent authoring bundle
+
+A project-scoped Agent is stored under the selected Project, using a
+backend-derived lowercase filesystem slug. For example, an Agent whose name is
+`Q` has this portable bundle:
+
+```text
+agentic-assets/agent/q/
+├── agent.md
+└── avatar.png
+```
+
+`name` is the addressable identity (`Q`) and supplies the filesystem slug
+(`q`). `title` is the human role shown in the profile (`QA manager`); it does
+not rename the Agent. Both values round-trip through `agent.md` frontmatter.
+
+An uploaded image is kept beside `agent.md`, and frontmatter stores only the
+portable bundle-relative reference `avatar: ./avatar.png`. Absolute paths,
+parent traversal such as `../avatar.png`, and generated download URLs are not
+portable identity data and are rejected by the authoring UI. Emoji and registry
+icon values remain supported for Agents that do not use an image.
+
+Creating another Agent whose normalized name resolves to an occupied bundle
+returns a conflict and never overwrites the existing Agent or its files.
 
 The same entity supports two execution modes:
 

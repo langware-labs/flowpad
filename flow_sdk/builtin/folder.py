@@ -207,7 +207,12 @@ class Folder(Entity):
     # ── Materialize ──────────────────────────────────────────────────────────
 
     @action.post(action_name="resolve-location")
-    async def resolve_location(self, *, preferred_root=None) -> "object":
+    async def resolve_location(
+        self,
+        *,
+        preferred_root=None,
+        strict_index: bool = False,
+    ) -> "object":
         """Materialize this folder's origin into a local path on THIS machine.
 
         ``preferred_root`` directs where a fresh checkout lands. Callers that
@@ -268,7 +273,14 @@ class Folder(Entity):
             # would be overwritten". Owning the distinction here, at the one
             # place that knows the origin, keeps every caller of
             # ``resolve_location`` from having to remember it.
-            await _index_additional_dir(self.path, read_only=origin.transportable)
-        except Exception:
-            pass
+            await _index_additional_dir(
+                self.path,
+                read_only=origin.transportable,
+                strict=strict_index,
+            )
+        except Exception as exc:
+            if strict_index:
+                return ApiSuccessResponse(
+                    data={"kind": "error", "message": f"Could not index content project: {exc}"}
+                )
         return ApiSuccessResponse(data={"kind": "ready", "path": self.path})

@@ -42,12 +42,12 @@ def _local_mode_share_blocked() -> bool:
 
 
 @action.post(action_name="share", types="all")
-async def share_entity() -> ApiSuccessResponse:
+async def share_entity() -> ApiResponse:
     """Generic ``share`` — forward this entity to the hub.
 
-    Body is the client's entity dump; URL carries ``<type>/<id>``. We
-    reconstruct the entity in-process (no DB save) and call ``.share()``
-    which POSTs to the hub and flips ``remote=True``.
+    The URL identifies the authoritative local row. Git-publishable assets use
+    their owning Project's path-scoped Git publication contract; every other
+    entity preserves the legacy hub-share behavior.
     """
     if _local_mode_share_blocked():
         raise HTTPException(status_code=403, detail=LOCAL_MODE_SHARE_MESSAGE)
@@ -61,14 +61,18 @@ async def share_entity() -> ApiSuccessResponse:
     if not entity_model:
         raise HTTPException(status_code=400, detail=f"share: unknown entity type {target.type}")
 
+    entity = await entity_model.get_one({"id": target.id})
+    if entity is None:
+        return ApiFailResponse(
+            status_code=404,
+            message="share: local entity not found",
+            data={"code": "entity_not_found"},
+        )
+
     try:
         body = await request_info.get_post_data() or {}
     except JSONDecodeError:
         body = {}
-
-    sanitized = {k: v for k, v in body.items() if entity_model.is_api_field(k)}
-    sanitized["id"] = target.id
-    entity = entity_model.model_validate(sanitized)
 
     # Optional ``recipients`` (list of email strings): the entity's ``share``
     # implementation forwards each to ``POST /graph/<type>/<id>/members`` as a
@@ -77,12 +81,125 @@ async def share_entity() -> ApiSuccessResponse:
     if recipients is not None and not isinstance(recipients, list):
         raise HTTPException(status_code=400, detail="share: 'recipients' must be a list")
 
+    project_git_origin = None
+    if isinstance(entity, Project):
+        actor = request_info.someone_typeid
+        if not actor:
+            return ApiFailResponse(
+                status_code=401,
+                message="Sign in before publishing a Project",
+                data={"code": "authenticated_user_required"},
+            )
+
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.core.oauth.github_credentials import get_github_token  # noqa: PLC0415
+
+        credentials = load_credentials()
+        if not credentials or not credentials.api_key:
+            return ApiFailResponse(
+                status_code=401,
+                message="Cloud login required before publishing a Project",
+                data={"code": "cloud_login_required"},
+            )
+        if not await get_github_token(actor):
+            return ApiFailResponse(
+                status_code=409,
+                message="Connect GitHub before publishing a Project",
+                data={"code": "github_not_connected"},
+            )
+
+        from flow_sdk.app.actions.git_share_preflight_action import (  # noqa: PLC0415
+            git_share_preflight,
+        )
+        from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+
+        try:
+            preflight = await git_share_preflight(Project.get_type(), str(entity.id))
+        except Exception:  # noqa: BLE001 — publication eligibility fails closed
+            logger.exception("[share] Project Git preflight failed for %s", entity.id)
+            preflight = {
+                "available": False,
+                "reason": "Couldn't read the repository's Git status.",
+                "code": "status-failure",
+                "git_origin": None,
+            }
+        if not preflight.get("available"):
+            code = str(preflight.get("code") or "status-failure")
+            return ApiFailResponse(
+                status_code=409,
+                message=str(preflight.get("reason") or "Project is not ready to publish"),
+                data={
+                    "code": code,
+                    "reason": preflight.get("reason"),
+                    "git_origin": preflight.get("git_origin"),
+                },
+            )
+        try:
+            project_git_origin = GitOrigin.model_validate(preflight.get("git_origin"))
+        except Exception:  # noqa: BLE001 — malformed success must fail closed
+            return ApiFailResponse(
+                status_code=409,
+                message="Couldn't determine a valid Git origin for this Project",
+                data={"code": "status-failure"},
+            )
+        # Carry the exact origin that passed the authoritative preflight into
+        # the share operation and, below, into the durable local row.
+        entity.git_origin = project_git_origin
+
+    type_info = SchemaRegistry.get(target.type)
+    if type_info is not None and type_info.git_publishable:
+        if recipients:
+            return ApiFailResponse(
+                status_code=400,
+                message="Invite members on the owning Project, not on an asset",
+                data={
+                    "code": "asset_recipients_not_allowed",
+                },
+            )
+        if not request_info.someone_typeid:
+            raise HTTPException(status_code=401, detail="share: authenticated user required")
+        from flow_sdk.assets.git_publish import (  # noqa: PLC0415
+            AssetPublishCode,
+            AssetPublishError,
+            publish_git_asset,
+        )
+
+        try:
+            result = await publish_git_asset(entity, request_info.someone_typeid)
+        except AssetPublishError as exc:
+            status_by_code = {
+                AssetPublishCode.NOT_GIT_BACKED: 400,
+                AssetPublishCode.PROJECT_NOT_PUBLISHED: 409,
+                AssetPublishCode.GITHUB_NOT_CONNECTED: 409,
+                AssetPublishCode.ORIGIN_INVALID: 409,
+                AssetPublishCode.BRANCH_AHEAD: 409,
+                AssetPublishCode.BRANCH_DIVERGED: 409,
+                AssetPublishCode.PUSH_REJECTED: 502,
+                AssetPublishCode.HUB_PUBLISH_FAILED: 502,
+            }
+            return ApiFailResponse(
+                status_code=status_by_code[exc.code],
+                message=str(exc),
+                data={"code": str(exc.code), **exc.data},
+            )
+        return ApiSuccessResponse(data=result.model_dump(mode="json"))
+
     # Conversation and Project both implement a ``share(recipients=...)`` fan-out
     # (per-recipient MembershipRequest). Other types share without invites.
-    if recipients and isinstance(entity, (Conversation, Project)):
-        await entity.share(recipients=recipients)
-    else:
-        await entity.share()
+    try:
+        if recipients and isinstance(entity, (Conversation, Project)):
+            await entity.share(recipients=recipients)
+        else:
+            await entity.share()
+    except Exception as exc:  # noqa: BLE001 — keep Project publish failures typed
+        if isinstance(entity, Project):
+            logger.warning("[share] publishing Project %s failed: %s", entity.id, exc)
+            return ApiFailResponse(
+                status_code=502,
+                message="The Hub could not publish this Project",
+                data={"code": "hub_publish_failed"},
+            )
+        raise
 
     # Send-side address-book reconcile (rule 4): learn every recipient — for ANY
     # shared entity type, not just conversations. A freshly-typed email carries no
@@ -99,21 +216,30 @@ async def share_entity() -> ApiSuccessResponse:
         except Exception as e:  # noqa: BLE001
             logger.warning("[share] address-book learning failed (non-fatal): %s", e)
 
-    # Persist ``remote=True`` on the on-disk row so downstream consumers
-    # (notably ``handle_add_message``'s ``is_remote_send`` gate) treat the
-    # entity as hub-bound. ``entity`` above is a transient instance built
-    # from the request body and not bound to a DB row, so we re-load by id
-    # and save THAT.
-    if "remote" in entity_model.model_fields:
+    # A Project publication is not complete until all three canonical markers
+    # survive a reload. Project.share() mutates them before returning, so this
+    # save is deliberately unconditional (checking remote first was the bug:
+    # remote was already true and the write was skipped).
+    if isinstance(entity, Project):
+        entity.git_origin = project_git_origin
         try:
-            local_row = await entity_model.get_one({"id": target.id})
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[share] local row lookup failed (non-fatal): %s", e)
-            local_row = None
-        if local_row is not None and getattr(local_row, "remote", None) is not True:
-            local_row.remote = True
+            await entity.save(request_info.someone_typeid)
+        except Exception:  # noqa: BLE001 — hub succeeded, local contract did not
+            logger.exception("[share] persisting published Project %s failed", entity.id)
+            return ApiFailResponse(
+                status_code=500,
+                message="Project was published, but its local publication state could not be saved",
+                data={"code": "local_persist_failed"},
+            )
+
+    # Persist ``remote=True`` on other local rows so downstream consumers
+    # (notably ``handle_add_message``'s ``is_remote_send`` gate) treat the
+    # entity as hub-bound.
+    elif "remote" in entity_model.model_fields:
+        if getattr(entity, "remote", None) is not True:
+            entity.remote = True
             try:
-                await local_row.save(request_info.someone_typeid)
+                await entity.save(request_info.someone_typeid)
             except Exception as e:  # noqa: BLE001
                 logger.warning(
                     "[share] persisting remote=True on local %s %s failed (non-fatal): %s",

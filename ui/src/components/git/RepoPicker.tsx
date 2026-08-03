@@ -4,7 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useGitRepos } from '@src/hooks/use-git-providers';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { GitFork, Loader2, Lock, RefreshCw, Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 interface RepoPickerProps {
   provider: GitProvider;
@@ -12,6 +12,10 @@ interface RepoPickerProps {
   enabled?: boolean;
   /** Restrict selectable rows without inventing a second repository picker. */
   allowedRoles?: ReadonlyArray<RepoSummary['role']>;
+  /** Fired with the full fetched list (pre-filter), so a host can describe what
+   *  the token actually reaches — e.g. whether private repos are visible —
+   *  without issuing its own request. */
+  onReposLoaded?: (repos: RepoSummary[]) => void;
 }
 
 function formatRelative(iso: string): string {
@@ -43,9 +47,15 @@ function roleBadgeClass(role: RepoSummary['role']): string {
  * provider. Click a row → ``onSelect(repo)``. Filtering is client-side over
  * the full fetched list (5-min query cache via useGitRepos).
  */
-export function RepoPicker({ provider, onSelect, enabled = true, allowedRoles }: RepoPickerProps) {
+export function RepoPicker({ provider, onSelect, enabled = true, allowedRoles, onReposLoaded }: RepoPickerProps) {
   const { t } = useLingui();
   const { data: repos, isLoading, isError, error, refetch, isFetching } = useGitRepos(provider, enabled);
+
+  // Hosts that want to describe the token's reach ("private repos included")
+  // learn it from the fetch that already happened, rather than asking again.
+  useEffect(() => {
+    if (repos) onReposLoaded?.(repos);
+  }, [repos, onReposLoaded]);
   const [query, setQuery] = useState('');
 
   const filtered = useMemo(() => {
