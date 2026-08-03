@@ -20,6 +20,7 @@ from functools import wraps
 from pathlib import Path
 
 from flow_sdk.actions.action_registry import action
+from flow_sdk.app.helpdesk_resolver import resolve_adopted_helpdesk
 from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.builtin.project import Project
 from flow_sdk.config import HELPDESK_PORTAL_UNAME, StorageProvider, helpdesk_project_dir
@@ -91,57 +92,6 @@ def _portal_paths(target) -> tuple[Path, str]:
     return mount_path, canonical_posix_path(str(mount_path))
 
 
-async def _adopted_desk_payload(project_id: str) -> dict | None:
-    """The desk THIS project adopted, or ``None`` to fall back to the hub's.
-
-    A project can carry a vendor's help desk as an ordinary context folder: the
-    folder is a repo the vendor publishes, and indexing it discovers the
-    ``Helpdesk`` inside (see ``builtin/helpdesk.py``). That desk is the one the
-    project's own people should reach — a customer working in an engagement
-    wants their vendor's desk, not ours. Only when a project has adopted
-    nothing do we fall through to the instance-wide desk the hub advertises.
-
-    Nothing is cloned or minted here. The context folder is already on disk
-    (attaching it is what put it there) and the workspace walk has already
-    minted the Project that owns that directory, so this is pure resolution —
-    which is also why it is safe to run on every open.
-    """
-    from flow_sdk.builtin.helpdesk import Helpdesk  # noqa: PLC0415
-
-    project = await Project.get_by_id(project_id)
-    if project is None:
-        return None
-    roots = [canonical_posix_path(d) for d in (project.include_dirs or [])]
-    if not roots:
-        return None
-
-    for desk in await Helpdesk.get_all():
-        if not desk.asset_ref:
-            continue
-        ref = canonical_posix_path(desk.asset_ref)
-        root = next((r for r in roots if ref == r or ref.startswith(r.rstrip("/") + "/")), None)
-        if root is None:
-            continue
-        portal = await Project.find_by_cwd(root)
-        if portal is None:
-            # The directory is attached but no Project owns it yet (the walk
-            # has not caught up). Fall back rather than minting one here —
-            # ``helpdesk-ensure`` is on the open path and must stay cheap.
-            continue
-        return {
-            "project_id": portal.id,
-            "helpdesk_project_id": desk.desk_project_id,
-            "mount_path": root,
-            "cloned": False,
-            "has_portal": True,
-            # Lets the caller skip the fetch/index steps: this checkout is a
-            # context folder the project already resolved and indexed, not a
-            # portal slot this action owns.
-            "adopted": True,
-        }
-    return None
-
-
 def _ensure_payload(target, *, project_id=None, mount_path=None, cloned=False) -> dict:
     """The ``helpdesk-ensure`` response. One builder so the has-portal and
     no-portal shapes cannot drift apart."""
@@ -179,9 +129,21 @@ async def helpdesk_ensure(project_id: str = "") -> ApiResponse:
         return ApiFailResponse(message="No authenticated user in request context")
 
     if project_id:
-        adopted = await _adopted_desk_payload(project_id)
+        adopted = await resolve_adopted_helpdesk(project_id)
         if adopted is not None:
-            return ApiSuccessResponse(data=adopted)
+            return ApiSuccessResponse(
+                data={
+                    "project_id": adopted.portal_project_id,
+                    "helpdesk_project_id": adopted.queue_project_id,
+                    "mount_path": adopted.mount_path,
+                    "cloned": False,
+                    "has_portal": True,
+                    # Lets the caller skip the fetch/index steps: this checkout
+                    # is a context folder the project already resolved and
+                    # indexed, not a portal slot this action owns.
+                    "adopted": True,
+                }
+            )
 
     target = await _require_target()
     if not target.portal_git_url:
