@@ -29,7 +29,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { UsageCell } from './connections-manager/usage-cell';
 import { USAGE_EAGER_LIMIT, useCredentialUsage } from './connections-manager/use-credential-usage';
 import { useProjects } from '@src/hooks/use-projects';
-import { isHubOnly } from '@src/navigation/hub-runtime';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 export interface ConnectionsManagerProps {
@@ -211,9 +210,6 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   const [togglingProjectId, setTogglingProjectId] = React.useState<string | null>(null);
   // The connection awaiting a delete confirmation (null = dialog closed).
   const [pendingDelete, setPendingDelete] = React.useState<ExtendedOAuthConnection | null>(null);
-  // Constant for the whole render, and a stable empty array so the usage cell's
-  // memo isn't invalidated by a fresh `[]` on every row of every render.
-  const hubOnly = isHubOnly();
 
   // Last probe result per connection. Deliberately NOT persisted: it is a
   // point-in-time answer about a token that can be revoked a second later, and a
@@ -532,14 +528,12 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       {/* A probe spends the token, so it runs as whoever is
-                          allowed to spend it. The hub REFUSES a test with no
-                          target entity ("a test must not become a way to
-                          exercise a credential the caller was never granted"),
-                          and `testConnection` sends the selected project as that
-                          target — so on a hub the button needs one. The
-                          desktop's probe is user-scoped and needs nothing.
-                          Offer it exactly where it can succeed. */}
-                      {held && (!hubOnly || Boolean(projectTypeId)) && (
+                          allowed to spend it — and the owner needs no grant to
+                          spend their own. Offered for any held credential: with
+                          a project selected the probe runs as that project (and
+                          the consent gate applies), without one it runs as the
+                          user. Both backends answer. */}
+                      {held && (
                         <Button
                           variant="ghost"
                           size="sm"
