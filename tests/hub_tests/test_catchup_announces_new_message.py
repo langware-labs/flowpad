@@ -146,3 +146,17 @@ async def test_catchup_announces_the_message_pointer_it_writes(hub_base_url, hub
         "never told, so it keeps rendering the previous message set until the "
         "user clicks Refresh"
     )
+
+    # And specifically the CHILD_CREATED announcement, not merely "some
+    # conversation event". Asserting only the latter is what let this test go
+    # green while the mechanism under test was dead: the reconcile emits plain
+    # ``updated`` frames for the conversation regardless, so an `entity.*`
+    # subscriber sees traffic whether or not the message was ever announced as
+    # a child. The whole refactor is that a synced message rides the EDGE, so
+    # the edge event is the thing worth pinning.
+    assert any(t.endswith("child_created") for t in announced), (
+        f"catch-up announced {sorted(set(announced))} for the conversation but "
+        "no child_created — the message landed without being announced as a "
+        "child of its conversation, which is the exact announcement the open "
+        "view's message tap listens for"
+    )

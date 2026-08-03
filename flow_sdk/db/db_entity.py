@@ -992,15 +992,66 @@ class DBEntity(DBBaseRecord):
         # those must be silent. ``notify=False`` is for bulk paths that announce
         # once at the end instead of once per child.
         if notify and is_new_edge:
-            child_op = DataOpMessage(
-                data=child_entity,
-                op=OperationType.CHILD_CREATED,
-                to_entity=self.typeid,
-                from_entity=child_entity.typeid,
-            )
-            await self.add_entity_op_notification(child_op)
+            await self.emit_child_op(child_entity, OperationType.CHILD_CREATED)
 
         return result
+
+    async def emit_child_op(self, child: DBEntity, op: OperationType) -> None:
+        """Announce a subtree change to watchers of THIS entity (the parent).
+
+        The one place a child op frame is built. Named after the hub's
+        ``_emit_child_op`` (hub ``graph_crud_actions``), which is likewise a
+        step of its own rather than something ``add_child`` does — worth
+        keeping the two vocabularies in step, since the frame shapes have to
+        match anyway.
+
+        The envelope is INVERTED on purpose and mirrors the hub's: ``to_entity``
+        is the PARENT (the thing watchers subscribed to), ``from_entity`` and
+        ``data`` are the child that actually changed.
+
+        Kept separate from ``attach_child`` because writing the edge and
+        declaring the parent ready to re-read are different moments whenever
+        there is more parent state to write in between. ``Conversation`` is the
+        case that proves it: a client reacts by re-reading the parent, so
+        announcing before ``message_ids``/``message_count`` are projected hands
+        it the pre-arrival row — and the projection write is silent, so nothing
+        ever corrects it. Attach silently, project, then call this.
+
+        Callers own the "did anything actually change" decision (probe with
+        ``_has_child_edge`` BEFORE attaching): re-convergence must stay silent,
+        since the kernel re-attaches the same pair on every live op and every
+        catch-up pass.
+        """
+        import logging as _logging  # noqa: PLC0415
+
+        # Best-effort: an announcement must NEVER fail the write that earned it.
+        # The edge is already committed by the time we get here, so raising would
+        # turn a cosmetic "the view didn't hear about it" into a lost message —
+        # trading a late bubble for no bubble and no row. Same rule the hub states
+        # on its own ``_emit_child_op`` ("never raises into the CRUD response")
+        # and that ``emit_entity_tag`` follows one layer up; ``attach_child`` /
+        # ``detach_child`` call this bare, so the guard has to live here.
+        try:
+            # Logged because the ONLY other evidence this fired is a WS frame on a
+            # live client. Without it, "the row landed but the open view never
+            # updated" cannot be split into "never announced" vs "announced and the
+            # client ignored it" after the fact.
+            _logging.getLogger(__name__).info(
+                "[child-edge] announced %s parent=%s child=%s",
+                getattr(op, "value", op),
+                str(self.typeid),
+                str(child.typeid),
+            )
+            await self.add_entity_op_notification(
+                DataOpMessage(data=child, op=op, to_entity=self.typeid, from_entity=child.typeid)
+            )
+        except Exception as e:  # noqa: BLE001
+            _logging.getLogger(__name__).warning(
+                "[child-edge] emit %s parent=%s failed (non-fatal): %s",
+                getattr(op, "value", op),
+                str(self.typeid),
+                e,
+            )
 
     async def remove_child(self, child_typeid: TypeId, notify: bool = True) -> None:
         await self.detach_child(child_typeid, notify=notify)
@@ -1022,13 +1073,7 @@ class DBEntity(DBBaseRecord):
         # deletes right after this returns) — a frame built afterwards would
         # carry a dangling reference the recipient cannot resolve.
         if notify and removed:
-            child_op = DataOpMessage(
-                data=child,
-                op=OperationType.CHILD_DELETED,
-                to_entity=self.typeid,
-                from_entity=child.typeid,
-            )
-            await self.add_entity_op_notification(child_op)
+            await self.emit_child_op(child, OperationType.CHILD_DELETED)
         return removed
 
     async def remove_role(self, removed_entity_typeid: TypeId, roles_filter: QueryFilter | None = None) -> int:

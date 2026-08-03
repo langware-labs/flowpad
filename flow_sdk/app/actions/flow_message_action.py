@@ -1859,6 +1859,10 @@ async def _process_single_hub_message(raw: dict) -> str | None:
         return None
     conv_id = (raw.get("conversation_id") or "").strip()
     if conv_id:
+        # Set before the edge block so the announcement below is well-defined
+        # even if that block raises (it is caught and logged, not fatal).
+        conv_for_edge = None
+        announce_child = False
         try:
             # The message IS a child of the conversation — make that a real local
             # edge, the way the hub already models it (``Conversation.add_child``
@@ -1878,7 +1882,18 @@ async def _process_single_hub_message(raw: dict) -> str | None:
             # flow_message CREATEs that already fire alongside them.
             conv_for_edge = await Conversation.get_one({"id": conv_id})
             if conv_for_edge is not None:
-                await conv_for_edge.attach_child(fm, notify=True)
+                # Attach SILENTLY here and announce after the projection below.
+                # Announcing at attach time is a race the client always loses:
+                # its handler re-reads the conversation the moment the frame
+                # lands, but ``message_ids``/``message_count`` are still the
+                # pre-arrival values until the projection write further down —
+                # so the refetch returns a row without this message, and the
+                # projection write is silent, so nobody ever corrects it. That
+                # is the "message synced but the open view never updated"
+                # report, reproduced live: the client's refetch fired in the
+                # same second as the announcement and came back stale.
+                announce_child = not await conv_for_edge._has_child_edge(fm)
+                await conv_for_edge.attach_child(fm, notify=False)
         except Exception as e:  # noqa: BLE001
             logger.warning("[fm-process] child edge conv=%s fm=%s failed: %s", conv_id[:8], fm_id[:8], e)
         try:
@@ -1901,11 +1916,18 @@ async def _process_single_hub_message(raw: dict) -> str | None:
                 append_message_pointer(rec, fm_id, ts)
                 await rec.sync_to_db(notify=False)
                 # notify=False — and it stays correct, unlike before. The
-                # announcement now rides the CHILD EDGE (``attach_child`` above),
-                # not this projection write, so suppressing it here no longer
-                # loses the event. The reconcile announces the conversation once
-                # at the end of the batch.
+                # announcement now rides the CHILD EDGE, not this projection
+                # write, so suppressing it here no longer loses the event. The
+                # reconcile announces the conversation once at the end of the
+                # batch.
                 await project_pointers_to_entity(rec, notify=False)
+                # NOW the parent is worth re-reading: the projection carries
+                # this message. Announcing here rather than at attach time is
+                # what makes the client's refetch return the new message.
+                if announce_child and conv_for_edge is not None:
+                    from flow_sdk.api.api_types.messages import OperationType  # noqa: PLC0415
+
+                    await conv_for_edge.emit_child_op(fm, OperationType.CHILD_CREATED)
         except Exception as e:  # noqa: BLE001
             logger.warning(
                 "[fm-process] pointer-append for conv=%s fm=%s failed: %s",
@@ -2552,7 +2574,7 @@ async def _materialize_invitation(
     # navigable window before the Accept gate appears).
     if notify:
         try:
-            from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
+            from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
             from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
 
             if inv_fm is not None:

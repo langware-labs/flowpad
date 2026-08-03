@@ -128,18 +128,38 @@ async def test_notify_false_suppresses_the_announcement(records_root, blob_stora
 
 @pytest.mark.asyncio
 async def test_child_op_vocabulary_matches_the_hub(records_root, blob_storage):
-    """Both local OperationType enums carry the hub's exact child values.
+    """One OperationType, carrying the hub's exact child values.
 
-    Two duplicate enums exist and both are imported across the codebase; a call
-    site that picked the wrong one could not express a child op if they drifted.
+    ``api.messages`` used to DECLARE its own copy of this enum (and of
+    ``DataOpMessage``) alongside ``api_types.messages``, kept in lockstep by
+    hand. Same name, different class — so pydantic rejected the "wrong" one and
+    a frame built with it was dropped with only a swallowed validation warning.
+    Asserting identity, not just equal values, is the point: two enums with
+    matching values would satisfy a value-only check and still fail at runtime.
     """
+    from flow_sdk.api.api_types.messages import DataOpMessage as CanonicalMsg
     from flow_sdk.api.api_types.messages import OperationType as CanonicalOps
+    from flow_sdk.api.messages import DataOpMessage as WireMsg
     from flow_sdk.api.messages import OperationType as WireOps
 
-    for ops in (CanonicalOps, WireOps):
-        assert ops.CHILD_CREATED.value == "child_created"
-        assert ops.CHILD_UPDATED.value == "child_updated"
-        assert ops.CHILD_DELETED.value == "child_deleted"
+    assert CanonicalOps is WireOps, "OperationType is declared twice again — the re-export was replaced by a copy"
+    assert CanonicalMsg is WireMsg, "DataOpMessage is declared twice again — the re-export was replaced by a copy"
+
+    assert CanonicalOps.CHILD_CREATED.value == "child_created"
+    assert CanonicalOps.CHILD_UPDATED.value == "child_updated"
+    assert CanonicalOps.CHILD_DELETED.value == "child_deleted"
+
+    # The failure that hid behind the duplication: a frame built with the other
+    # class validated as an enum mismatch and never reached the wire.
+    import uuid as _uuid
+
+    msg = WireMsg(
+        data=None,
+        op=WireOps.CHILD_CREATED,
+        to_entity=f"conversation-{_uuid.uuid4()}",
+        from_entity=f"flow_message-{_uuid.uuid4()}",
+    )
+    assert msg.op == "child_created"
 
 
 @pytest.mark.asyncio
