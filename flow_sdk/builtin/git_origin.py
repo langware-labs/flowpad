@@ -19,6 +19,7 @@ import uuid
 from pathlib import Path, PurePosixPath
 from typing import Literal, Optional
 
+from flow_sdk.assets.git_origin import PortableGitOrigin as PortableGitOrigin
 from flow_sdk.builtin.fs_origin import FSOrigin
 from flow_sdk.builtin.fs_origin import is_safe_rel_path as is_safe_rel_path  # canonical home; re-exported
 from flow_sdk.fs_store.identifier import mint_uuid

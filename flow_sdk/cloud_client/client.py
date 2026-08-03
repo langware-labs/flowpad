@@ -36,6 +36,23 @@ class ApiConfig(BaseModel):
         """Create ApiConfig from environment variables"""
         return cls()
 
+    @property
+    def app_base_url(self) -> Optional[str]:
+        """Hub browser-app origin corresponding to :attr:`api_base_url`.
+
+        ``FLOWPAD_HUB_URL`` names the Hub application.  ``ApiConfig`` appends
+        ``/api/v1`` for API traffic; browser links must use the application
+        origin instead of accidentally nesting dock routes below the API
+        prefix.  Explicit ``api_base_url`` values retain the same contract.
+        """
+        explicit_web_url = os.environ.get("FLOWPAD_HUB_WEB_URL", "").strip()
+        if explicit_web_url:
+            return explicit_web_url.rstrip("/")
+        if not self.api_base_url:
+            return None
+        normalized = self.api_base_url.rstrip("/")
+        return normalized[: -len(API_PREFIX)] if normalized.endswith(API_PREFIX) else normalized
+
     def _get_full_url(self, path: Optional[str]) -> str:
         """Combine api_base_url with a relative path, or return as-is if absolute."""
         if not path:

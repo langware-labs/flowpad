@@ -70,7 +70,7 @@ export const PublishPill: React.FC<PublishPillProps> = ({
           <GitPushIcon busy={busy} />
           <span>{publishLabel}</span>
           {showCount && pendingCount > 0 && (
-            <span className="tabular-nums rounded-full bg-sky-500/30 px-1 text-[10px]">{pendingCount}</span>
+            <span className="rounded-full bg-sky-500/30 px-1 text-[10px] tabular-nums">{pendingCount}</span>
           )}
         </button>
       )}

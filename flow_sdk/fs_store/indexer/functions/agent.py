@@ -23,6 +23,7 @@ from flow_sdk.fs_store.record_types import RecordType
 #: Frontmatter keys that round-trip onto the entity. Mirrors the Agent fields;
 #: `name` comes from the folder so a rename can't desync the two.
 AGENT_SPEC_FIELDS = (
+    "title",
     "description",
     "avatar",
     "worker_type",

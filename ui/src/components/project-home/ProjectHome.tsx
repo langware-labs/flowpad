@@ -1,6 +1,7 @@
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
 import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitChecksDialog';
 import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
+import { ProjectPublishButton } from '@src/components/project-home/ProjectPublishButton';
 import { GitShareGateDialog } from '@src/components/share-to-conversation/GitShareGateDialog';
 import type { GitShareGate } from '@src/hooks/use-git-share-gate';
 import apiClient from '@sdk/client';
@@ -29,6 +30,9 @@ interface ProjectHomeProps {
   /** Render only the "Create" body with no tab bar — the terminal empty state,
    *  whose whole point is to start something. The landing shows all three tabs. */
   createOnly?: boolean;
+  /** Hub-owned body rendered inside the shared Project Home shell. When set,
+   *  local Git/setup/create controls are omitted; the Hub body owns content. */
+  cloudContent?: React.ReactNode;
 }
 
 /**
@@ -102,8 +106,9 @@ const TAB_FOR_TAG: Record<string, string> = {
  *   - **Customize** — home title/background + the vibe agents layered on.
  *   - **Secrets**   — value-free secret references + setup wizard.
  */
-export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, createOnly = false }) => {
+export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, createOnly = false, cloudContent }) => {
   const dataCtx = useDataContext();
+  const cloudMode = cloudContent !== undefined;
 
   // Resolve the target project (explicit spawn pin, else the active project).
   const projectId = spawnProjectId ?? dataCtx.project?.id ?? null;
@@ -124,7 +129,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   const [gitGateState, setGitGateState] = useState<'setup' | 'blocked'>('setup');
   const [gitGateReason, setGitGateReason] = useState<string | null>(null);
   const beforeProjectInvite = useMemo<(() => Promise<boolean>) | undefined>(() => {
-    if (!projectId) return undefined;
+    if (!projectId || cloudMode) return undefined;
     return async () => {
       const result = await apiClient.post<{ result?: { available?: boolean; message?: string; details?: { reason?: string } } }>(
         '/graph/capabilities/test',
@@ -138,7 +143,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
       setGitGateOpen(true);
       return false;
     };
-  }, [projectId]);
+  }, [cloudMode, projectId]);
   const gitGate = useMemo<GitShareGate>(() => ({
     state: gitGateState,
     reason: gitGateReason,
@@ -179,7 +184,14 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
           data-testid="project-home-members"
         >
           <div className="flex min-w-0 items-center gap-3">
-            <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
+            {cloudMode ? (
+              <span className="truncate text-sm font-medium">{project?.displayName ?? project?.name ?? 'Project'}</span>
+            ) : (
+              <>
+                <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
+                {project && <ProjectPublishButton project={project} />}
+              </>
+            )}
           </div>
           <MembersAvatarStack
             typeId={projectTypeId}
@@ -189,7 +201,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
           />
         </div>
       )}
-      {gitChecks && (
+      {!cloudMode && gitChecks && (
         <ProjectGitChecksDialog
           open
           onOpenChange={(next) => !next && setGitChecks(null)}
@@ -197,7 +209,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
           onSetupRepo={gitGate.runSetup}
         />
       )}
-      {gitGateState === 'blocked' && gitGateReason && (
+      {!cloudMode && gitGateState === 'blocked' && gitGateReason && (
         <div className="border-b border-red-300 bg-red-50 px-4 py-2 text-xs text-red-800" data-testid="project-git-access-warning">
           {gitGateReason}
         </div>
@@ -205,7 +217,9 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full flex-col gap-6 px-4 py-6">
-          {createOnly ? (
+          {cloudMode ? (
+            cloudContent
+          ) : createOnly ? (
             createTab
           ) : (
             <Tabs value={tab} onValueChange={setTab} data-testid="project-home-tabs">
@@ -247,13 +261,15 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
         </div>
       </div>
 
-      <GitShareGateDialog
-        open={gitGateOpen}
-        onOpenChange={setGitGateOpen}
-        folderName={project?.name ?? 'Project'}
-        gate={gitGate}
-      />
-      {dialogs}
+      {!cloudMode && (
+        <GitShareGateDialog
+          open={gitGateOpen}
+          onOpenChange={setGitGateOpen}
+          folderName={project?.name ?? 'Project'}
+          gate={gitGate}
+        />
+      )}
+      {!cloudMode && dialogs}
     </div>
   );
 };

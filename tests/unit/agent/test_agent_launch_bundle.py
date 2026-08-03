@@ -130,3 +130,18 @@ def test_rendered_frontmatter_round_trips_through_the_parser():
     assert parsed["avatar"] == "🌐"
     assert parsed["cli_options"] == {"chrome": True}
     assert parsed["subagents"] == ["a", "b"]
+
+
+def test_q_identity_round_trips_as_a_portable_bundle():
+    """Name, display title, and sibling image ref survive a clean parse."""
+    from flow_sdk.fs_store.indexer.functions.agent import agent_default_body, parse_agent_markdown
+
+    rendered = agent_default_body(
+        Agent(name="Q", title="QA manager", avatar="./avatar.png")
+    )
+    parsed = parse_agent_markdown(rendered, "q")
+
+    assert parsed["name"] == "Q"
+    assert parsed["title"] == "QA manager"
+    assert parsed["avatar"] == "./avatar.png"
+    assert "/Users/" not in rendered and "\\Users\\" not in rendered

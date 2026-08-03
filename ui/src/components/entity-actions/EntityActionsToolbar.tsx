@@ -4,12 +4,10 @@ import { compactEntityActionClassName } from '@src/components/entity-actions/act
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { ShareButton } from '@src/components/entity-actions/ShareButton';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
-import {
-  agenticProcessShareSource,
-  genericEntityShareSource,
-} from '@src/hooks/share-sources';
+import { agenticProcessShareSource, genericEntityShareSource } from '@src/hooks/share-sources';
 import { useEntityShare } from '@src/hooks/use-entity-share';
 import { cn } from '@src/lib/utils';
+import { CloudAssetPublishButton } from './CloudAssetPublishButton';
 
 type Variant = 'prominent' | 'compact';
 
@@ -71,6 +69,7 @@ export function EntityActionsToolbar({
 
   return (
     <div className={cn('flex items-center gap-0.5', className)}>
+      <CloudAssetPublishButton typeId={typeId} variant={variant} />
       <ShareButton
         variant={variant}
         onClick={() => setShareOpen(true)}
@@ -85,22 +84,12 @@ export function EntityActionsToolbar({
         title={favoriteTitle}
         icon={favoriteIcon}
         size={variant === 'prominent' ? 16 : 14}
-        className={
-          variant === 'compact'
-            ? `${compactEntityActionClassName} p-0`
-            : undefined
-        }
+        className={variant === 'compact' ? `${compactEntityActionClassName} p-0` : undefined}
       />
 
       {trailing}
 
-      {shareOpen && (
-        <ShareToConversationDialog
-          open={shareOpen}
-          onClose={handleClose}
-          source={shareSource}
-        />
-      )}
+      {shareOpen && <ShareToConversationDialog open={shareOpen} onClose={handleClose} source={shareSource} />}
     </div>
   );
 }

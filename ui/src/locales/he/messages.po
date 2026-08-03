@@ -175,6 +175,11 @@ msgstr "{0} הערות בשורה זו"
 msgid "{0} attachments"
 msgstr "{0} קבצים מצורפים"
 
+#. placeholder {0}: agent.name
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "{0} avatar"
+msgstr ""
+
 #. placeholder {0}: trigger.last_seen_size
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "{0} bytes"
@@ -1001,6 +1006,10 @@ msgstr "סוכן"
 msgid "Agent"
 msgstr "סוכן"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Agent avatar"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "Agent is taking a long time to respond"
 #~ msgstr "הסוכן לוקח זמן רב מדי להשיב"
@@ -1624,6 +1633,7 @@ msgid "Attach asset"
 msgstr "צרף נכס"
 
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Attach files"
 msgstr "צרף קבצים"
 
@@ -2297,6 +2307,10 @@ msgstr ""
 msgid "Choose another worker"
 msgstr ""
 
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "Choose avatar image"
+msgstr ""
+
 #: src/components/quick-create/ScopeSelection.tsx
 msgid "Choose folder…"
 msgstr "בחר תיקייה…"
@@ -2896,10 +2910,9 @@ msgstr "הושלם"
 msgid "Completed 🎉"
 msgstr "הושלם 🎉"
 
-#. placeholder {0}: channelLabel(channelOrigin?.kind)
 #: src/components/conversation/ConversationView.tsx
-msgid "Composing in {0}: “{sendingText}” — finish sending there"
-msgstr ""
+#~ msgid "Composing in {0}: “{sendingText}” — finish sending there"
+#~ msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Compute Node ID:"
@@ -3351,6 +3364,10 @@ msgstr "לא ניתן לטעון מקור: {error}"
 msgid "Could not open skill"
 msgstr "לא הצליח לפתוח כישור"
 
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Could not publish asset"
+msgstr ""
+
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "Could not reach support"
 msgstr ""
@@ -3440,6 +3457,11 @@ msgstr "לא היה ניתן לעדכן"
 
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Could not update attached secrets"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Could not upload avatar"
 msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
@@ -6671,6 +6693,7 @@ msgid "I want…  (e.g. email, slack, calendar)"
 msgstr "אני רוצה…  (למשל אימייל, slack, יומן)"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
+#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/icon-picker.tsx
 msgid "Icon"
 msgstr "סמל"
@@ -6711,6 +6734,10 @@ msgstr "התעלם עד עכשיו"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Ignored"
 msgstr "התעלמות"
+
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "Image"
+msgstr ""
 
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/hooks-view/hooks-view.tsx
@@ -10739,6 +10766,10 @@ msgstr "תוסף"
 msgid "Plugins"
 msgstr "תוספים"
 
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "PNG, JPEG, or WebP. Maximum 5 MiB and 4096 × 4096."
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Port"
 msgstr "יציאה"
@@ -11102,8 +11133,29 @@ msgstr "מזהה PTY"
 msgid "PTY Viewer"
 msgstr "מציג PTY"
 
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Publish"
+msgstr ""
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Publish failed."
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Publish this agent to the cloud and give it a machine that logs in as itself."
+msgstr ""
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Publish to cloud"
+msgstr ""
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Published"
+msgstr ""
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Published to cloud"
 msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -11531,6 +11583,10 @@ msgstr "הסרה"
 msgid "Remove attachment"
 msgstr "הסרת קובץ מצורף"
 
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "Remove avatar"
+msgstr ""
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Remove bookmark"
 msgstr "הסר סימנייה"
@@ -11653,9 +11709,13 @@ msgstr "החלפה"
 msgid "replay"
 msgstr "השמעה חוזרת"
 
+#: src/components/conversation/ConversationView.tsx
+#~ msgid "Reply — drafted into {0}"
+#~ msgstr ""
+
 #. placeholder {0}: channelLabel(channelOrigin.kind)
 #: src/components/conversation/ConversationView.tsx
-msgid "Reply — drafted into {0}"
+msgid "Reply in {0}"
 msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
@@ -12854,6 +12914,11 @@ msgstr "שלח הודעה"
 msgid "Send the reply for just this message"
 msgstr "שלח את התשובה עבור הודעה זו בלבד"
 
+#. placeholder {0}: channelLabel(channelOrigin?.kind)
+#: src/components/conversation/ConversationView.tsx
+msgid "Sending in {0}: “{sendingText}”"
+msgstr ""
+
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Sending…"
@@ -13375,7 +13440,7 @@ msgid "Signals"
 msgstr ""
 
 #: src/components/account/user-info.tsx
-#: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
+#: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "התחברת"
 
@@ -14204,6 +14269,10 @@ msgstr "שרת <0>flow-sdk-mcp</0> נדרש כדי להריץ עם עקיבות 
 #~ msgid "The <0>flow-sdk-mcp</0> server is required to run workflows with progress tracing. Enable it to continue."
 #~ msgstr "שרת <0>flow-sdk-mcp</0> נדרש להרצת זרימות עבודה עם מעקב התקדמות. הפעל אותו להמשך."
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "The Agent bundle is not available."
+msgstr ""
+
 #: src/components/agent-layout/not-found-screen/not-found-screen.tsx
 #~ msgid "The agent you're looking for doesn't exist or is not available."
 #~ msgstr "הסוכן שאתה מחפש אינו קיים או אינו זמין."
@@ -14219,6 +14288,10 @@ msgstr "הניתוח הושלם אך לא הניב ממצאים בהיקף הנ�
 #: src/components/artifacts/artifacts-list.tsx
 msgid "The artifact has been removed successfully."
 msgstr "הקובץ הוסר בהצלחה."
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "The asset is now available to project members."
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
@@ -15087,9 +15160,17 @@ msgstr "משדרג…"
 msgid "Upload"
 msgstr "העלאה"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Upload failed."
+msgstr ""
+
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Upload files"
 msgstr "העלה קבצים"
+
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "Upload image"
+msgstr ""
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Upload message"

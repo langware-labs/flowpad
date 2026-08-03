@@ -1,4 +1,23 @@
-import { Agent, SubAgent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard } from '@sdk';
+import {
+  Agent,
+  SubAgent,
+  AgentTrace,
+  APIEntity,
+  AssetCleanupReport,
+  dataManager,
+  Deck,
+  DeckTemplate,
+  DynamicWorkflow,
+  FSRef,
+  Journey,
+  Skill,
+  Spreadsheet,
+  Task,
+  TypeId,
+  UsageReport,
+  VFSPath,
+  Whiteboard,
+} from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { lazy, Suspense, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -6,7 +25,13 @@ import { RefreshCw } from 'lucide-react';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { AssetEditor, AssetRoutingMethod, EDITOR_TYPES, editorForType, isFileOnlyEditor } from '@src/navigation/asset-doc-types';
+import {
+  AssetEditor,
+  AssetRoutingMethod,
+  EDITOR_TYPES,
+  editorForType,
+  isFileOnlyEditor,
+} from '@src/navigation/asset-doc-types';
 import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
 import { MediaViewer } from '@src/components/media-viewer/MediaViewer';
 import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
@@ -74,12 +99,7 @@ function ConnectingFallback() {
  * the FSRef straight from the compute-node-rooted path; `code` → raw CodeEditor.
  * Editors resolve/refresh the backing entity off the FSRef themselves.
  */
-export function AssetEditorRouter({
-  pointer,
-  fragment,
-  hubReflect = false,
-  wikiLinkTarget,
-}: AssetEditorRouterProps) {
+export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiLinkTarget }: AssetEditorRouterProps) {
   const ptr = (() => {
     try {
       const p = AssetDocPointer.parse(pointer);
@@ -92,10 +112,13 @@ export function AssetEditorRouter({
 
   // Hooks must run unconditionally — resolve the typeid entity (null otherwise).
   const typeId =
-    ptr && ptr.editor !== AssetEditor.CODE && ptr.method === AssetRoutingMethod.TYPEID
-      ? new TypeId(ptr.value)
-      : null;
-  const { data: typeIdEntity, isLoading: entityLoading, isError: entityError, refetch: refetchEntity } = useEntity(typeId);
+    ptr && ptr.editor !== AssetEditor.CODE && ptr.method === AssetRoutingMethod.TYPEID ? new TypeId(ptr.value) : null;
+  const {
+    data: typeIdEntity,
+    isLoading: entityLoading,
+    isError: entityError,
+    refetch: refetchEntity,
+  } = useEntity(typeId);
   const { computeNode, flow } = useAgentContext();
   const {
     data: entityRecord,
@@ -125,10 +148,7 @@ export function AssetEditorRouter({
       // entity storage without a compute-node or sender-local asset_ref.
       if (!mainRef) return null;
       return {
-        fsRef: recordContentRef(
-          mainRef,
-          !!dataManager.getTypeInfo(typeId!.type)?.folder_backed,
-        ),
+        fsRef: recordContentRef(mainRef, !!dataManager.getTypeInfo(typeId!.type)?.folder_backed),
         assetType: typeId!.type,
       };
     }
@@ -146,9 +166,7 @@ export function AssetEditorRouter({
 
   if (!ptr || !ptr.editor) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Invalid asset pointer
-      </div>
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Invalid asset pointer</div>
     );
   }
 
@@ -198,9 +216,7 @@ export function AssetEditorRouter({
     // a task created before this checkout was a folder asset) can self-heal
     // with one save. Offer that; hand-edited types (markdown/skill) get retry
     // only, since rebuilding from a template would clobber user content.
-    const ownsMainRef = !!dataManager
-      .getAllTypeInfos?.()
-      .find((t) => t.type_name === typeId.type)?.owns_main_ref;
+    const ownsMainRef = !!dataManager.getAllTypeInfos?.().find((t) => t.type_name === typeId.type)?.owns_main_ref;
     const orphan = typeIdEntity as APIEntity<never> | null;
     return (
       <MissingAssetCard
@@ -211,11 +227,7 @@ export function AssetEditorRouter({
           void refetchRecord();
         }}
         entity={typeIdEntity ?? null}
-        onRebuild={
-          ownsMainRef && orphan
-            ? () => void orphan.save().then(() => refetchEntity())
-            : undefined
-        }
+        onRebuild={ownsMainRef && orphan ? () => void orphan.save().then(() => refetchEntity()) : undefined}
       />
     );
   }
@@ -275,7 +287,7 @@ export function AssetEditorRouter({
           resolvedEntity={typeIdEntity as Agent | undefined}
           render={(agent) => (
             <AssetCollisionShell entity={agent}>
-              <AgentProfileEditor agent={agent} />
+              <AgentProfileEditor agent={agent} mainRef={mainRef!} onSaved={() => refetchEntity()} />
             </AssetCollisionShell>
           )}
         />

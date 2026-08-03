@@ -11,6 +11,7 @@ from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.drivers.query import QueryFilter
 from flow_sdk.flowpad_types.enums.auth_enums import AuthRole
+from flow_sdk.fs_store.fs_record import AssetPathCollisionError
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -242,9 +243,30 @@ async def handle_record_action():
     if rec is None:
         return ApiFailResponse(message="Record not found", status_code=404)
 
-    # Local record refs remain owned by their filesystem provider (normally
-    # compute_node-@local). Hub record refs target the asset entity instead.
-    # Never overwrite the ref's own transport identity here.
+    from flow_sdk.assets.entity_vfs import local_asset_vfs_binding
+
+    asset_binding = local_asset_vfs_binding(entity)
+    if asset_binding is not None:
+        type_id = str(entity.typeid)
+        return ApiSuccessResponse(
+            data={
+                "record_folder_ref": {
+                    "path": "/",
+                    "ref_type": "folder",
+                    "read_only": False,
+                    "type_id": type_id,
+                },
+                "main_ref": {
+                    "path": asset_binding.main_ref,
+                    "ref_type": "file",
+                    "read_only": False,
+                    "type_id": type_id,
+                },
+            }
+        )
+
+    # Other local records retain their filesystem provider (normally
+    # compute_node-@local); their refs are not entity-VFS assets.
     record_folder_ref_dict = rec.record_folder_ref.to_dict() if rec.record_folder_ref is not None else None
     main_ref_dict = rec.main_ref.to_dict() if rec.main_ref is not None else None
 
@@ -303,9 +325,21 @@ async def handle_create_entity(request: Request):
 
     # Get the entity model using the new helper function
     entity_model = get_entity_model_from_registry(request_info.direct_resource_type)
+    type_info = SchemaRegistry.get(request_info.direct_resource_type)
     try:
         sanitized_data = {}
         for key, value in data.items():
+            # Fresh user-authorable owned assets always derive placement fields
+            # from the addressed scope + TypeInfo. They are returned to clients
+            # for navigation/filtering, but accepting them on create would let
+            # a caller author outside (or mislabel) the selected Project/User.
+            if (
+                key in {"asset_ref", "parent_path", "project_id", "scope"}
+                and type_info is not None
+                and type_info.creatable
+                and type_info.owns_main_ref
+            ):
+                continue
             if not entity_model.is_api_field(key):
                 service_log.highlighted_error(
                     f"None API field !!!: {key} for entity type: {request_info.direct_resource_type}"
@@ -334,6 +368,8 @@ async def handle_create_entity(request: Request):
     # around the whole branch dispatch so every create path agrees.
     try:
         entity = await _dispatch_create_save(entity, request_info, someone_typeid)
+    except AssetPathCollisionError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     # TODO Turn off expand_permissions upon entity creation

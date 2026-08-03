@@ -1,11 +1,26 @@
 # QA Instructions & Learnings
 
+## Current portable browser policy — 2026-08-02
+
+- The operative browser automation contract is the standard MCP server named `playwright`, its `mcp__playwright__*` tools, and headless Linux Chromium.
+- Enforce **one browser owner at a time per {Playwright MCP server process, Flowpad instance}**. Fresh tabs isolate sequential tasks, not concurrent callers of one server process, because actions operate on its currently selected page.
+- Run browser agents concurrently only when each owns a distinct headless isolated Playwright MCP process/context, a distinct named Flowpad backend/frontend with explicit `APP_URL` and `API_URL`, and a private Playwright/result output directory. `--isolated` is an in-memory profile, not caller isolation; never use `--shared-browser-context`. If any boundary is shared, serialize browser work.
+- Treat every older DebugMCP, macOS, Canary, shared-session, and related browser entry below as historical evidence only, never as current executable instructions or a fallback contract.
+
 ## Cycle-Level Defaults
 
 - **Phase 3 (`tests/long_tests/`): always pass `--ignore=tests/long_tests/stress_matrix/`.** The `stress_matrix/` subdir requires `ANTHROPIC_API_KEY` AND Docker; its session-scoped conftest calls `pytest.exit("INVALID_API_KEY: ...", returncode=2)` on missing key, which aborts the ENTIRE Phase 3 collection before any test runs. Stress matrix is opt-in only (real API credits, real containers) — never include it in a routine QA cycle unless the user explicitly requests it (e.g. "run stress matrix" / "include stress matrix"). User confirmed default-off on 2026-05-24.
 
 ## Testing Environment
 
+- Focused run (2026-08-03, desktop Project publish → Hub visibility): dedicated
+  `publish-6` backend `http://localhost:6006`, frontend
+  `http://localhost:5008`, local Hub `http://localhost:8093`, and Playwright
+  Chromium on macOS. The instance was the sole writer and used the isolated
+  `publish-6@local.test` Hub identity. Project creation and the Hub's standard
+  Project query/render path worked; the requested flow failed because
+  ProjectHome had no standalone Publish control. Results:
+  `ui/tests/manual_regression/_results/2026-08-03T15-21-24Z/`.
 - Focused run (2026-07-28, Hub Wiki editor toolbar): OSS desktop UI
   `http://localhost:5025` configured directly against Hub
   `http://localhost:8093`, Playwright Chromium on macOS. The folder-backed
@@ -36,6 +51,20 @@
 - Last cycle (2026-05-30, record-removal branch): backend 9008 + frontend 4098 both reachable (HTTP 200) throughout. Phases 1-4 green (1522 / 441 / 51 / 907). 1 real fix (bootstrap `types` shape, 4 tests). No port conflicts this run.
 
 ## Learnings
+
+### 2026-08-03 — Desktop Project publish → Hub visibility
+
+- Project publication is implemented in the generic backend share action and
+  Hub Project query, but ProjectHome exposes only Git status and member/invite
+  controls. A direct diagnostic share made the Project appear in Hub, proving
+  the UI/orchestration seam is the missing user path.
+- `Project.share()` sets `remote=True` and `hub_published_at` before returning;
+  `share_action` currently saves only when `remote` is not already true, so it
+  skips persistence. The Hub bridge later restores `remote`, but the
+  sender-only `hub_published_at` remains null.
+- Raw Project share accepts `git_origin=None`. That proves entity visibility,
+  not a usable Git-backed cloud project. A real Publish contract must define
+  the Git/GitHub preflight or setup that precedes sharing.
 
 ### 2026-07-28 — Hub Wiki editor-toolbar stability
 

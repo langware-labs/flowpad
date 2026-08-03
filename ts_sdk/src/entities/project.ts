@@ -321,6 +321,8 @@ export class Project extends APIEntity<Project> {
   members: ConversationParticipant[] = [];
   /** Portable repository identity received with a shared project. */
   git_origin: GitOrigin | null = null;
+  /** When this desktop instance successfully published the Project to Hub. */
+  hub_published_at: string | null = null;
   /** Last UI view mode used in this project (vibe|standard|advanced|dev);
    *  applied on project load so the mode is remembered per project. */
   last_mode: string | null = null;
@@ -347,6 +349,8 @@ export class Project extends APIEntity<Project> {
   constructor(entity: Partial<Project> = {}) {
     super(entity);
     this.members = (entity.members as ConversationParticipant[] | undefined) ?? [];
+    this.git_origin = (entity.git_origin as GitOrigin | null | undefined) ?? null;
+    this.hub_published_at = (entity.hub_published_at as string | null | undefined) ?? null;
     this.last_mode = (entity.last_mode as string | null | undefined) ?? null;
     this.session_code = (entity.session_code as string | null | undefined) ?? null;
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;

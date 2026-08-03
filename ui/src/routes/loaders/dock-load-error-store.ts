@@ -45,10 +45,7 @@ function getSnapshot(): ReadonlyMap<string, DockLoadErrorEntry> {
   return snapshot;
 }
 
-export function setDockLoadError(
-  dock: DockPointer | null | undefined,
-  entry: DockLoadErrorEntry,
-): void {
+export function setDockLoadError(dock: DockPointer | null | undefined, entry: DockLoadErrorEntry): void {
   const key = dockLoadErrorKey(dock);
   if (!key) return;
   entries.set(key, entry);
@@ -63,17 +60,16 @@ export function clearDockLoadError(dock: DockPointer | null | undefined): void {
 
 export function getDockLoadError(dock: DockPointer | null | undefined): DockLoadErrorEntry | null {
   const key = dockLoadErrorKey(dock);
-  return key ? entries.get(key) ?? null : null;
+  return key ? (entries.get(key) ?? null) : null;
 }
 
 export function useDockLoadError(dock: DockPointer | null | undefined): DockLoadErrorEntry | null {
   const errorSnapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const key = dockLoadErrorKey(dock);
-  return key ? errorSnapshot.get(key) ?? null : null;
+  return key ? (errorSnapshot.get(key) ?? null) : null;
 }
 
 export function resetDockLoadErrorsForTests(): void {
   entries.clear();
   notifyListeners();
 }
-

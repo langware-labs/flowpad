@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from flow_sdk.capsules import CapsuleSpec
 from flow_sdk.fs_store.identity_backend import IdentityBackend, IdentityState
@@ -282,6 +282,11 @@ class TypeInfo:
     # FSRecord shadow. Such types have no disk→DB adopt path. Runtime-only; not
     # part of the schema hash.
     db_only: bool = field(default=False, compare=False, repr=False)
+    # Cloud delivery capability for file-backed assets. Serialized to the UI
+    # bootstrap but deliberately excluded from the local indexing schema hash.
+    cloud_file_transport: Literal["embedded", "git"] = field(
+        default="embedded", compare=False, repr=False
+    )
     # Per-type pydantic metadata model: the FS↔DB schema. Its field set defines
     # which entity fields with ``persist=DEFAULT`` are mirrored to metadata.json,
     # and ``FSRecord.meta_dict`` returns a typed instance when it is set.
@@ -345,6 +350,15 @@ class TypeInfo:
     # materializes (backend-only; never serialized).
     receive_policy: str | None = None
     receive_row_overrides: dict | None = None
+
+    @property
+    def git_publishable(self) -> bool:
+        """Whether this registered type can be re-parsed for Git publication."""
+        return (
+            self.cloud_file_transport == "git"
+            and self.from_disk_fn is not None
+            and self.identity_backend is not None
+        )
 
     def asset_ref_for(self, folder: Path) -> Path:
         """Where a folder-layout type's asset_ref points, given its folder.
@@ -545,6 +559,7 @@ class TypeInfo:
             "browseable_by": self.browseable_by_str,
             "creatable": self.creatable,
             "api_visible": self.api_visible,
+            "cloud_file_transport": self.cloud_file_transport,
             "icon": self.icon,
             "display_name": self.display_name,
             "parent_type": self.parent_type,
@@ -587,6 +602,7 @@ class TypeInfo:
             browseable_by=ViewMode(data["browseable_by"]) if data.get("browseable_by") else None,
             creatable=data.get("creatable", False),
             api_visible=data.get("api_visible", False),
+            cloud_file_transport=data.get("cloud_file_transport", "embedded"),
             icon=data.get("icon"),
             display_name=data.get("display_name"),
             parent_type=data.get("parent_type"),
@@ -687,6 +703,8 @@ class SchemaRegistry:
                 existing.main_file_is_asset_ref = True
             if info.main_ext != ".md":
                 existing.main_ext = info.main_ext
+            if info.cloud_file_transport == "git":
+                existing.cloud_file_transport = "git"
             if info.assignee_owned_fields:
                 existing.assignee_owned_fields = tuple(info.assignee_owned_fields)
             if info.pack_exclude:

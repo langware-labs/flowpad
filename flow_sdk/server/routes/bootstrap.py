@@ -1754,11 +1754,13 @@ async def get_desktop_info() -> LmInfo:
     # Build fully resolved paths
     app_paths = build_app_paths()
 
+    cloud_config = ApiConfig.from_env()
     return LmInfo(
         llm_providers=llm_providers,
         installed_agents=installed_agents,
         cloud_login_available=cloud_login_available,
-        cloud_url=ApiConfig.from_env().api_base_url,
+        cloud_url=cloud_config.api_base_url,
+        cloud_app_url=cloud_config.app_base_url,
         paths=app_paths,
         # Legacy fields for backward compatibility (deprecated)
         home=get_vfs_home_path(),
@@ -1774,12 +1776,22 @@ async def get_desktop_info() -> LmInfo:
 
 
 def entity_to_dict(entity) -> dict:
-    """Convert entity to dict for JSON response."""
+    """Convert entity to dict for JSON response.
+
+    ``name`` keeps its historic fallback to ``title`` so display sites that read
+    only ``name`` still get a label. But ``title`` is ALSO sent on its own:
+    collapsing the two made a real title unreachable, which is why the user menu
+    could never show one under the name. Both are base-``Entity`` fields, so
+    every type carries them; ``email`` is likewise absent on most and simply
+    serializes as null there.
+    """
     return {
         "id": entity.id,
         "type": entity.type,
         "uname": entity.uname,
         "name": getattr(entity, "name", None) or getattr(entity, "title", None),
+        "title": getattr(entity, "title", None),
+        "email": getattr(entity, "email", None),
         "visitor_role": entity.visitor_role,
     }
 
