@@ -50,6 +50,20 @@ The frontend runs at `http://localhost:$VITE_PORT` and calls the backend at `htt
 
 > **Hub at** **`$FLOWPAD_HUB_URL`** **(default** **`localhost:8093`) is served by the sibling checkout** **`../test_flowpad/FlowPad/`** **(run via** **`flowpad/run.py`, ships** **`flowpad/hub/routers/auth.py`** **with** **`/api/v1/login`) — NOT the minimal** **`flow-hub/`** **stub in this tree. Don't** **`pkill`/install into the wrong one.**
 
+### Validating the HUB UI (non-negotiable)
+
+**"Open the hub UI" means a frontend configured against the HUB server — never the local backend.** The hub page rendered against `localhost:$LOCAL_SERVER_PORT` is a *different runtime*: the local server declares `supported_pages: ["desk","hub"]`, so `isHubOnly()` is false, the full desktop API is present, and the type registry is populated. Every hub-only behavior — the API subset, `isHubOnly()` gates, missing `types` — is invisible there. Validating a hub change against the local backend proves nothing about the hub.
+
+Use the checked-in hub-mode env, which is exactly this:
+
+```bash
+cd ui && npx vite --mode hubtest      # .env.hubtest.local → :4098, API http://localhost:8093
+```
+
+`.env.hubtest.local` sets `VITE_API_URL=http://localhost:8093`, `LOCAL_SERVER_PORT=8093`, `VITE_FORCE_HUB=true`, `FLOW_INSTANCE=hubtest`. Open `http://localhost:4098/dock/hub/home`. Confirm the wiring before trusting a screenshot: in the page, `window.__API_URL__` must be the hub, and `GET /api/v1/graph/bootstrap` must return `supported_pages: ["hub"]`. If it returns `["desk","hub"]` you are on the local server and looking at the wrong runtime.
+
+Corollary: the hub's bootstrap ships `schemas` but **no `types`**, so the frontend SchemaRegistry is empty there and every `iconForType()` falls back to one generic glyph. Per-type icons cannot be validated on the hub until the hub publishes `types`.
+
 ### Spinning up an extra named instance (`scripts/instance_ctl.sh`)
 
 To run a second, fully-isolated backend+frontend pair out of **this** checkout — e.g. to
