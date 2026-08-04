@@ -346,16 +346,27 @@ async def test_hub_unavailable_leaves_local_state_untouched():
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_should_fetch_rule():
-    """The dispatch gate: updated_date LWW OR bidirectional count mismatch;
-    hub count None ⇒ date-only (old-hub compatible)."""
+    """The dispatch gate: hub-clock watermark OR bidirectional count mismatch;
+    hub count None ⇒ watermark-only (old-hub compatible).
+
+    The watermark is ``hub_updated_date`` (the hub revision we last reconciled),
+    NOT the local ``updated_date``. The two are different quantities: local
+    recency is rewritten from the messages' clocks and therefore sits
+    permanently behind the hub's parent stamp, so gating on it never converged
+    and re-dispatched a full hub fan-out on every call forever."""
     from flow_sdk.app.actions.flow_message_action import _should_fetch_messages
     from flow_sdk.builtin.conversation import Conversation
 
     ts = "2026-06-01T10:00:00+00:00"
     later = "2026-06-01T11:00:00+00:00"
+    # Local recency always trails the hub parent stamp — the real steady state,
+    # baked into the fixture so a gate that reads updated_date can't pass.
+    local_recency = "2026-06-01T09:59:59+00:00"
 
-    def conv(count: int) -> Conversation:
-        c = Conversation.model_validate({"id": mint_uuid(), "updated_date": ts})
+    def conv(count: int, *, watermark: str | None = ts) -> Conversation:
+        c = Conversation.model_validate(
+            {"id": mint_uuid(), "updated_date": local_recency, "hub_updated_date": watermark}
+        )
         c._set_projection("message_count", count, _PROJECTION_SENTINEL)
         if count:
             c._set_projection(
@@ -367,10 +378,14 @@ def test_should_fetch_rule():
 
     # No local row → fetch.
     assert _should_fetch_messages(None, {"updated_date": ts, "message_count": 1})
-    # Hub newer → fetch, regardless of count.
+    # Hub moved past our watermark → fetch, regardless of count.
     assert _should_fetch_messages(conv(3), {"updated_date": later, "message_count": 3})
-    # Equal date, equal count → in sync, no fetch.
+    # Watermark matches, equal count → in sync, no fetch. THE CONVERGENCE CASE:
+    # local updated_date (09:59:59) is behind the hub's (10:00:00) and always
+    # will be — that must not, on its own, mean "fetch".
     assert not _should_fetch_messages(conv(3), {"updated_date": ts, "message_count": 3})
+    # Never reconciled (pre-field row) → fetch once, then the watermark lands.
+    assert _should_fetch_messages(conv(3, watermark=None), {"updated_date": ts, "message_count": 3})
     # THE INCIDENT SHAPE: equal date, bare local (0) vs hub N → fetch.
     assert _should_fetch_messages(conv(0), {"updated_date": ts, "message_count": 3})
     # Reverse drift: local has a stale extra after a missed delete → fetch.
