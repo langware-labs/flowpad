@@ -28,6 +28,9 @@ router = APIRouter()
 
 _MODES = ("line", "block", "full")
 
+#: The halves of the join a caller can ask for. Omitting `parts` means all.
+_PARTS = ("header", "docs", "code", "mentions")
+
 
 def _doc_body(doc: dict[str, Any]) -> str:
     ref = doc.get("asset_ref") or ""
@@ -80,7 +83,16 @@ async def _mentions(header: dict[str, Any]) -> list[dict[str, Any]]:
 
 @router.post("/api/v1/tags/context")
 async def tag_context(request: Request):
-    """The join. Body: ``{name, mode?: line|block|full, root?: path}``."""
+    """The join. Body: ``{name, mode?: line|block|full, root?: path, parts?: [...]}``.
+
+    ``parts`` narrows the join to the halves the caller actually reads
+    (``header`` / ``docs`` / ``code`` / ``mentions``); omitted means all of
+    them, which is what ``flow tag get`` wants. The `breadcrumb` fence asks for
+    ``["code"]`` alone — without the filter it would also pay for the blessed
+    header plus one ancestor lookup each, a backlink query, and a full read and
+    summarise of every bound doc, which for a breadcrumb tag always includes
+    the very page being rendered.
+    """
     from flow_sdk.llm_index.sizes import FULL_MAX_BYTES, resolve_doc_summaries  # noqa: PLC0415
     from flow_sdk.tags.bindings import all_doc_bindings, scan_code_capsules  # noqa: PLC0415
     from flow_sdk.tags.grammar import normalize_tag  # noqa: PLC0415
@@ -99,11 +111,16 @@ async def tag_context(request: Request):
     except (TypeError, ValueError) as exc:
         return ApiFailResponse(message=f"invalid tag name: {exc}")
 
-    header = await _header(name)
+    raw_parts = (body or {}).get("parts")
+    parts = set(raw_parts) if isinstance(raw_parts, list) and raw_parts else set(_PARTS)
+    if not parts <= set(_PARTS):
+        return ApiFailResponse(message=f"parts must be a subset of {', '.join(_PARTS)}")
+
+    header = await _header(name) if "header" in parts else {"name": name, "blessed": False, "ancestors": []}
 
     docs_out: list[dict[str, Any]] = []
     budget = FULL_MAX_BYTES
-    for doc in await all_doc_bindings(name):
+    for doc in await all_doc_bindings(name) if "docs" in parts else []:
         doc_body = _doc_body(doc)
         line, block = resolve_doc_summaries(doc.get("asset_ref") or doc["title"], doc_body)
         item: dict[str, Any] = {
@@ -123,7 +140,7 @@ async def tag_context(request: Request):
         docs_out.append(item)
 
     code_out: list[dict[str, Any]] = []
-    if root_arg:
+    if root_arg and "code" in parts:
         root = Path(root_arg).expanduser()
         if root.is_dir():
             code_out = scan_code_capsules(root, name)
@@ -134,6 +151,6 @@ async def tag_context(request: Request):
             "mode": mode,
             "docs": docs_out,
             "code": code_out,
-            "mentions": await _mentions(header),
+            "mentions": await _mentions(header) if "mentions" in parts else [],
         }
     )

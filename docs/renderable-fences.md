@@ -75,7 +75,7 @@ ProseMirror's own editable check, so nothing else stops a user editing a
 read-only document (the vibe display, any `view`-mode asset). `commit` refuses
 the write too, as defence in depth.
 
-## The two renderers
+## The three renderers
 
 **`mermaid`** draws diagrams, lazily importing a heavy dependency and
 re-rendering on theme change. The whiteboard editor already writes these blocks
@@ -85,6 +85,9 @@ into documents, so this closes a loop the app was half-way through.
 editing: values are click-to-edit and the optional badge is a toggle. Edits
 rewrite the block through `yaml`'s Document API rather than regenerating it, so
 comments, key order and quoting survive.
+
+**`breadcrumb`** renders the tests a rules doc governs — see [Live refresh](#live-refresh)
+below, and the `tagit` skill that writes these blocks.
 
 The Code pane is the authoritative structural editor in Editor mode: it is the
 real ProseMirror code-block content, not a detached textarea, so typing, undo,
@@ -153,6 +156,60 @@ which mounts the real editor read-only, so scroll-to-line and the deep-link
 marker are the same code the full editor runs. The chip is deliberately **not**
 gated on `ctx.editable` — navigating is a read action, and a read-only surface
 is where following a contract to its source matters most.
+
+## Live refresh
+
+`breadcrumb` is the first fence whose content is not entirely in the block. It
+names a tag and carries the sites the `tagit` skill knew about:
+
+```breadcrumb
+tag: breadcrumb.test.catchup_login.rules
+sites:
+  - rel_path: tests/unit/test_catchup.py
+    line: 41
+    note: FAILING? read this tag's rules before editing
+```
+
+Those rows draw immediately; the tag index is then asked what is bound *now*
+(`POST /api/v1/tags/context`, the same join behind `flow tag get`) and its
+answer replaces them. The authored list is a cache of something the index owns,
+so it is never authoritative — but it is what makes the card useful with no
+backend, and what a test rename cannot invalidate.
+
+Both halves produce the same row shape, which is the point: `scan_code_capsules`
+walks one root and reports paths relative to it, exactly like a hand-authored
+`rel_path`. `resolveRelPath` in `source-location.ts` is the single join rule
+they share — extracted from `resolveSourceLocation`, whose only difference is
+that an *origin* picks its root while a breadcrumb site is handed one.
+
+Four constraints shape `breadcrumb-context.ts`, and none of them are optional:
+
+* **`render()` is synchronous.** It is re-invoked on every theme change, every
+  editable flip, and every 150 ms debounce tick while the author types — and is
+  handed a fresh host each time. Nothing survives in a renderer closure, so the
+  join lives at module scope keyed by `(tag, root)`. A theme toggle then costs
+  zero requests and N fences sharing a tag cost one walk.
+* **The fetch never throws.** A rejection reaching the NodeView would trip
+  `lastRenderFailed` and blank the authored rows — punishing the author for a
+  backend being down. Failures surface in the card's own status line instead;
+  the `fence-render-error` chip keeps meaning "your source is wrong".
+* **Failures are cached too**, on the same TTL. The `code` half of that route is
+  a live gitignore-respecting filesystem walk; without negative caching an
+  unreachable backend turns the typing debounce into a storm against the most
+  expensive endpoint in the join.
+* **An empty answer does not clear the rows.** `root` is the *document's*
+  project, which may not be the repo holding the test. "I looked here" is not
+  "there are none".
+
+The repaint is a one-shot callback guarded on `host.isConnected` — the NodeView
+attaches a host only after a successful render, so a superseded render's host
+stays detached forever and its callback is a no-op. That is what makes this safe
+without a `destroy()` hook on `FenceRenderer`.
+
+The response's `docs[]` is deliberately **not** rendered. For a
+`breadcrumb.test.*` tag that list is exactly one document — the page you are
+reading — so a chip there links to itself. The section is titled "Bound tests";
+if a tag ever needs its whole join drawn, that is a different fence.
 
 <!-- flowpad:capsule identity
 version: 1
