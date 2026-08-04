@@ -48,18 +48,34 @@ export function useTranscriptSession(
 
   const startLaunch = useCallback(
     async (worker: ConversationWorkerType) => {
-      if (!sessionId || !target || starting) return;
+      // Every path that returns without a terminal logs why. "Click does
+      // nothing and we stay on the transcript page" is the shared symptom of
+      // all of them, so the console line is the only way to tell them apart.
+      const LOG = '[useTranscriptSession]';
+      if (!sessionId || !target || starting) {
+        console.warn(
+          `${LOG} launch click did NOT open a session — ` +
+            `sessionId=${sessionId ?? 'null'} target=${target ?? 'null'} starting=${starting}` +
+            (starting ? ' (a previous launch is still in flight and never settled)' : ''),
+        );
+        return;
+      }
       const project = dataContext.project;
       const workdir = project?.fs_storage_mount_path ?? undefined;
       if (!workdir) {
+        console.warn(
+          `${LOG} launch click did NOT open a session — the active project has no folder on this machine. ` +
+            `project=${project?.id ?? 'null'} name=${project?.name ?? 'null'} fs_storage_mount_path=${String(project?.fs_storage_mount_path)}`,
+        );
         notify.error({ title: 'No active project', message: 'Open a project to analyze this transcript.' });
         return;
       }
       setStarting(true);
+      console.debug(`${LOG} launching ${worker} for ${target} in ${workdir}…`);
       try {
         const sessTypeId = new TypeId(sessionType, sessionId);
         const ctx = buildSharedAndPrivateContextSection([sessTypeId], []);
-        await AgenticProcess.launch({
+        const proc = await AgenticProcess.launch({
           workerType: worker,
           workdir,
           projectId: project?.id ?? undefined,
@@ -69,8 +85,9 @@ export function useTranscriptSession(
           sharedContextEntities: [sessTypeId.toString()],
           target,
         });
+        console.debug(`${LOG} launched process ${proc?.id ?? 'null'} — terminal dock opened`);
       } catch (err) {
-        console.error('[useTranscriptSession] start session failed', err);
+        console.error(`${LOG} launch click did NOT open a session — AgenticProcess.launch threw`, err);
         notify.error({ title: 'Failed to start session' });
       } finally {
         setStarting(false);
@@ -90,7 +107,13 @@ export function useTranscriptSession(
   );
 
   const open = useCallback(() => {
-    if (!process?.id) return;
+    if (!process?.id) {
+      console.warn(
+        '[useTranscriptSession] Open click did NOT open a session — no analysis process resolved for this transcript',
+      );
+      return;
+    }
+    console.debug(`[useTranscriptSession] opening existing analysis process ${process.id}`);
     void navigation.openShellProcess(process.id);
   }, [process, navigation]);
 
