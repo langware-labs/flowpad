@@ -89,7 +89,6 @@ async def test_a_graph_workflow_receives_ingested_records(feed_server, tmp_path)
     url = f"{feed_server}/atom"
     account = f"acct-{uuid.uuid4().hex[:8]}"
     src = DataSource(
-        id=DataSource.allocate_deterministic_id("rss", account),
         provider="rss",
         kind="datasource.feed.rss",
         account_key=account,

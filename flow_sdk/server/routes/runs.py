@@ -95,6 +95,10 @@ SCOPES: dict[str, str] = {
     "flow_run_id": "context_data.flow_run_id",
     "node_id": "context_data.node_id",
     "agent": "context_data.launched_by_agent",
+    # An ingest worker has no spawning entity to browse from — the whole reason
+    # this list exists. Its source is the only handle anyone has on it, stamped
+    # by `ingest_run_context` (flow_sdk/ingest/driver.py), which owns the key.
+    "data_source_id": "context_data.data_source_id",
 }
 
 

@@ -30,7 +30,6 @@ async def _source(**kw) -> DataSource:
     }
     fields.update(kw)
     src = DataSource(
-        id=DataSource.allocate_deterministic_id(fields["provider"], fields["account_key"]),
         **fields,
     )
     await src.save()

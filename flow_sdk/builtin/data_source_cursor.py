@@ -20,7 +20,6 @@ from datetime import datetime
 from typing import ClassVar, Optional
 
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.core import Entity
 from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.schema.types import EntityType
@@ -52,26 +51,27 @@ class DataSourceCursor(Entity):
 
     _api_visible: ClassVar[bool] = True
 
-    @staticmethod
-    def allocate_deterministic_id(data_source_id: str, stream_key: str) -> str:
-        """v5 id from (source, stream) — re-declaring a stream upserts its cursor
-        rather than resetting it, so adding a feed twice cannot lose sync state."""
-        return mint_uuid(f"data_source_cursor:{data_source_id}:{stream_key}")
-
     @classmethod
     async def ensure_for(
         cls, data_source_id: str, stream_key: str, *, stream_label: str = ""
     ) -> "DataSourceCursor":
-        """Get-or-create. Never resets an existing cursor's position."""
-        cid = cls.allocate_deterministic_id(data_source_id, stream_key)
-        existing = await cls.get_one({"id": cid})
+        """Get-or-create, keyed on ``(data_source_id, stream_key)``.
+
+        Never resets an existing cursor's position — re-declaring a stream finds
+        the row that already tracks it, so adding a feed twice cannot lose sync
+        state. The identity is the lookup below, not the id: ids are ``uuid4``,
+        and a cursor written before that change resolves here exactly the same.
+        """
+        existing = await cls.get_one({
+            "data_source_id": data_source_id,
+            "stream_key": stream_key,
+        })
         if existing is not None:
             if stream_label and existing.stream_label != stream_label:
                 existing.stream_label = stream_label
                 await existing.save()
             return existing
         row = cls(
-            id=cid,
             data_source_id=data_source_id,
             stream_key=stream_key,
             stream_label=stream_label,
