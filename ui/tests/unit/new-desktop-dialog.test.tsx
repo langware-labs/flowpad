@@ -1,10 +1,13 @@
 /**
- * Launching a sandbox with a project and asset packages.
+ * Launching a desktop with a project and asset packages.
  *
  * The dialog decides WHAT the launch will do; the pipeline turns that into
  * computeNodeTools calls. So what matters here is the payload it hands over:
- * the sandbox project (the one you're working on unless you change it), and the
- * assets that become context folders of it.
+ * the project it loads (the one you're working on unless you change it), and
+ * the assets that become context folders of it.
+ *
+ * Both fields are the same control, so each test that drives one is also
+ * covering the other's behaviour.
  *
  * It must also not probe repo access. `/api/v1/git/remote-access` is a flow_sdk
  * route the hub doesn't register, so the old probe 404'd for every repo and
@@ -19,11 +22,16 @@ const h = vi.hoisted(() => ({
   onLaunch: vi.fn(),
   githubStatus: vi.fn(() => Promise.resolve(true)),
   repoAccess: vi.fn(() => Promise.resolve({ hasAccess: true })),
+  connect: vi.fn(() => Promise.resolve(undefined)),
 }));
 
 vi.mock('@src/lib/github-oauth-status', () => ({ fetchGithubStatus: h.githubStatus }));
 vi.mock('@src/utils/gitUtils', () => ({ hasGitHubRepoAccess: h.repoAccess }));
 vi.mock('@sdk/react/hooks', () => ({ useOAuthFlowComplete: () => undefined }));
+vi.mock('@sdk', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, oauthService: { connect: h.connect } };
+});
 
 import { NewDesktopDialog } from '@src/pages/hub-home/NewDesktopDialog';
 
@@ -68,10 +76,10 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('new desktop: project + asset packages', () => {
-  it('opens on the project you are working on, without being asked', async () => {
+  it('loads the project you are working on, without being asked', async () => {
     renderDialog();
 
-    expect(within(screen.getByTestId('sandbox-project-row')).getByText('flowpad-hub')).toBeInTheDocument();
+    expect(within(screen.getByTestId('loaded-project-values')).getByText('flowpad-hub')).toBeInTheDocument();
 
     await userEvent.click(screen.getByTestId('launch-desktop'));
 
@@ -85,7 +93,7 @@ describe('new desktop: project + asset packages', () => {
   it('carries an added asset package as a context project', async () => {
     renderDialog();
 
-    await userEvent.click(screen.getByTestId('add-asset-package'));
+    await userEvent.click(screen.getByTestId('assets-chip-project'));
     await userEvent.click(screen.getByRole('button', { name: /acme-support/ }));
     await userEvent.click(screen.getByTestId('launch-desktop'));
 
@@ -97,17 +105,39 @@ describe('new desktop: project + asset packages', () => {
   it('does not offer a project with no repository as an asset', async () => {
     renderDialog();
 
-    await userEvent.click(screen.getByTestId('add-asset-package'));
+    await userEvent.click(screen.getByTestId('assets-chip-project'));
 
-    const picker = screen.getByTestId('source-picker');
-    expect(within(picker).queryByText('scratch-notes')).not.toBeInTheDocument();
-    expect(within(picker).getByText('acme-support')).toBeInTheDocument();
+    const list = screen.getByTestId('assets-projects');
+    expect(within(list).queryByText('scratch-notes')).not.toBeInTheDocument();
+    expect(within(list).getByText('acme-support')).toBeInTheDocument();
+  });
+
+  it('hides the project chip when there is nothing to choose between', () => {
+    renderDialog({ projects: [withRepo] });
+
+    // One project is already loaded — a "select project" list of one is noise.
+    expect(screen.queryByTestId('loaded-project-chip-project')).not.toBeInTheDocument();
+    // A git URL is still a way in.
+    expect(screen.getByTestId('loaded-project-chip-url')).toBeInTheDocument();
+  });
+
+  it('opens each chip panel under its own field, one at a time', async () => {
+    renderDialog();
+
+    await userEvent.click(screen.getByTestId('loaded-project-chip-url'));
+    expect(screen.getByTestId('loaded-project-url-input')).toBeInTheDocument();
+    // The other field is untouched — the panels are per-field.
+    expect(screen.queryByTestId('assets-url-input')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('loaded-project-chip-project'));
+    expect(screen.queryByTestId('loaded-project-url-input')).not.toBeInTheDocument();
+    expect(screen.getByTestId('loaded-project-projects')).toBeInTheDocument();
   });
 
   it('still lets a project with no repository BE the sandbox project', async () => {
     renderDialog();
 
-    await userEvent.click(screen.getByTestId('change-sandbox-project'));
+    await userEvent.click(screen.getByTestId('loaded-project-chip-project'));
     await userEvent.click(screen.getByRole('button', { name: /scratch-notes/ }));
     await userEvent.click(screen.getByTestId('launch-desktop'));
 
@@ -117,11 +147,11 @@ describe('new desktop: project + asset packages', () => {
     expect(sandboxProject.gitOrigin).toBeUndefined();
   });
 
-  it('accepts a repo URL for the sandbox project', async () => {
+  it('accepts a repo URL for the project it loads', async () => {
     renderDialog({ currentProject: null, projects: [] });
 
-    await userEvent.click(screen.getByTestId('change-sandbox-project'));
-    await userEvent.type(screen.getByTestId('source-git-url'), 'https://github.com/octocat/Hello-World');
+    await userEvent.click(screen.getByTestId('loaded-project-chip-url'));
+    await userEvent.type(screen.getByTestId('loaded-project-url-input'), 'https://github.com/octocat/Hello-World');
     await userEvent.click(screen.getByRole('button', { name: 'Use' }));
     await userEvent.click(screen.getByTestId('launch-desktop'));
 
@@ -134,7 +164,7 @@ describe('new desktop: project + asset packages', () => {
   it('an asset can be removed before launching', async () => {
     renderDialog();
 
-    await userEvent.click(screen.getByTestId('add-asset-package'));
+    await userEvent.click(screen.getByTestId('assets-chip-project'));
     await userEvent.click(screen.getByRole('button', { name: /acme-support/ }));
     await userEvent.click(screen.getByRole('button', { name: /Remove acme-support/ }));
     await userEvent.click(screen.getByTestId('launch-desktop'));
@@ -153,8 +183,8 @@ describe('new desktop: project + asset packages', () => {
   it('never probes repo access — that route 404s on the hub', async () => {
     renderDialog();
 
-    await userEvent.click(screen.getByTestId('change-sandbox-project'));
-    await userEvent.type(screen.getByTestId('source-git-url'), 'https://github.com/octocat/Hello-World');
+    await userEvent.click(screen.getByTestId('loaded-project-chip-url'));
+    await userEvent.type(screen.getByTestId('loaded-project-url-input'), 'https://github.com/octocat/Hello-World');
     await userEvent.click(screen.getByRole('button', { name: 'Use' }));
     await userEvent.click(screen.getByTestId('launch-desktop'));
 
@@ -162,10 +192,24 @@ describe('new desktop: project + asset packages', () => {
     expect(launched().sandboxProject.gitOrigin).toBeDefined();
   });
 
-  it('offers the GitHub connection only when there is not one', async () => {
+  it('makes the GitHub chip the connect action when there is no connection', async () => {
     h.githubStatus.mockResolvedValue(false);
     renderDialog();
 
-    expect(await screen.findByText(/connect GitHub to use private repos/i)).toBeInTheDocument();
+    const chip = await screen.findByTestId('loaded-project-chip-github');
+    expect(chip).toHaveAttribute('aria-label', 'Connect GitHub');
+    await userEvent.click(chip);
+
+    expect(h.connect).toHaveBeenCalledWith('github');
+  });
+
+  it('reports a connection instead of asking for one', async () => {
+    renderDialog();
+
+    const chip = await screen.findByTestId('assets-chip-github');
+    expect(chip).toHaveAttribute('aria-label', 'GitHub connected');
+    await userEvent.click(chip);
+
+    expect(h.connect).not.toHaveBeenCalled();
   });
 });
