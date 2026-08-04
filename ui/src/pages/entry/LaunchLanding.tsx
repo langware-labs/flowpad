@@ -51,7 +51,7 @@ export default function LaunchLanding() {
     // Inside the click gesture — `launch` claims the new tab synchronously.
     // The hub sets the sandbox up (it holds the token, so a private repo works
     // here too) and the tab lands inside the project it created.
-    void launch({ name, gitSetup: { gitOrigin, name } });
+    void launch({ name, sandboxProject: { gitOrigin, name } });
   };
 
   const body = (

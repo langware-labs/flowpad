@@ -116,10 +116,26 @@ async function launchWithGit(overrides: Record<string, unknown> = {}) {
   await act(async () => {
     await result.current.launch({
       name: 'flowpad-hub',
-      gitSetup: { name: 'flowpad-hub', gitOrigin: ORIGIN as never, ...overrides },
+      sandboxProject: { name: 'flowpad-hub', gitOrigin: ORIGIN as never, ...overrides },
     });
   });
   return result;
+}
+
+/** A sandbox project with no repository behind it — nothing to clone. */
+async function launchWithoutRepo(overrides: Record<string, unknown> = {}) {
+  const { result } = renderHook(() => useDesktops());
+  await act(async () => {
+    await result.current.launch({
+      name: 'scratch',
+      sandboxProject: { name: 'scratch', ...overrides },
+    });
+  });
+  return result;
+}
+
+function rows(result: { current: { steps: { id: string }[] } }): string[] {
+  return result.current.steps.map((s) => s.id);
 }
 
 describe('sandbox provisioning composes computeNodeTools', () => {
@@ -218,6 +234,53 @@ describe('sandbox provisioning composes computeNodeTools', () => {
     expect(h.calls.filter((c) => c.op === 'clone-project')).toHaveLength(1);
   });
 
+  it('mounts a repo-less project instead of cloning it', async () => {
+    answers({
+      'init-empty-project': { project: { id: PROJECT_ID }, path: '/root/workspace/scratch' },
+    });
+
+    const result = await launchWithoutRepo();
+
+    expect(ops()).toEqual(['setup', 'workspace-ready', 'init-empty-project', 'index-project', 'set-default-project']);
+    expect(ops()).not.toContain('clone-project');
+    expect(ops()).not.toContain('validate-project-name');
+    // Still the project the tab opens on, and still indexed by path.
+    expect(bodyOf('set-default-project')?.project_id).toBe(PROJECT_ID);
+    expect(bodyOf('index-project')?.path).toBe('/root/workspace/scratch');
+    expect(h.openedUrl).toContain(PROJECT_ID);
+    expect(rows(result)).toEqual(['launch', 'health', 'init', 'index', 'default', 'open']);
+  });
+
+  it('shows the rows the launch will actually run, not a fixed list', async () => {
+    const result = await launchWithGit();
+
+    // A git-backed project can declare context projects only the clone reveals,
+    // so its `context` row is planned even when none turn up.
+    expect(rows(result)).toEqual([
+      'launch',
+      'health',
+      'validate',
+      'clone',
+      'index',
+      'context',
+      'default',
+      'open',
+    ]);
+  });
+
+  it('plans a context row for a repo-less project only when assets were asked for', async () => {
+    answers({
+      'init-empty-project': { project: { id: PROJECT_ID }, path: '/root/workspace/scratch' },
+    });
+
+    const result = await launchWithoutRepo({
+      contextProjects: [{ gitOrigin: ORIGIN, name: 'acme-support', scope: 'shared' }],
+    });
+
+    expect(rows(result)).toContain('context');
+    expect(bodyOf('attach-context-project')).toMatchObject({ project_id: PROJECT_ID, scope: 'shared' });
+  });
+
   it('skips every git command when launching a bare desktop', async () => {
     const { result } = renderHook(() => useDesktops());
     await act(async () => {
@@ -226,5 +289,6 @@ describe('sandbox provisioning composes computeNodeTools', () => {
 
     expect(ops()).toEqual(['setup', 'workspace-ready']);
     expect(h.openedUrl).toBe('https://box.e2b.dev/?next=/');
+    expect(result.current.steps.map((s) => s.id)).toEqual(['launch', 'health', 'open']);
   });
 });

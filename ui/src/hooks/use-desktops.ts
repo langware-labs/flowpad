@@ -43,30 +43,64 @@ const WORKSPACE_FLAVOR = 'workspace';
 // (see paintTab) — something the generic runner has no concept of.
 import type { Step as GenericStep } from './use-step-flow';
 
-export type StepId = 'launch' | 'health' | 'validate' | 'clone' | 'index' | 'context' | 'default' | 'open';
+export type StepId =
+  | 'launch'
+  | 'health'
+  | 'validate'
+  | 'clone'
+  | 'init'
+  | 'index'
+  | 'context'
+  | 'default'
+  | 'open';
 export type Step = GenericStep<StepId>;
 
-/** Steps for the launch progress list. Everything from `validate` to `default`
- *  is one `computeNodeTools` command, so a row finishing IS a command
- *  returning — the checklist needs no separate progress channel. The git rows
- *  are only present when launching from a repo. */
+/** Every row from `validate` to `default` is one `computeNodeTools` command, so
+ *  a row finishing IS a command returning — the checklist needs no separate
+ *  progress channel. Which rows appear is decided by {@link plannedSteps}. */
 const STEP_LABELS: Record<StepId, string> = {
   launch: 'Launching desktop',
   health: 'Starting FlowPad and signing in',
   validate: 'Checking the project name',
   clone: 'Cloning the repository',
+  init: 'Setting up the project',
   index: 'Indexing the project',
   context: 'Attaching context projects',
   default: 'Choosing the project to open',
   open: 'Opening desktop',
 };
 
-const GIT_STEP_IDS: StepId[] = ['validate', 'clone', 'index', 'context', 'default'];
+/**
+ * Could this setup have context projects to attach?
+ *
+ * A git-backed project can declare them in its manifest, which only the clone
+ * can reveal — so the answer is "maybe" for anything with a repo, and the step
+ * reports "none declared" when it turns out there were none. Shared by the row
+ * planner and the runner so a row can never be planned without its step, or a
+ * step run without its row.
+ */
+function hasContextWork(setup: SandboxSetup): boolean {
+  return Boolean(setup.install || setup.contextProjects?.length || setup.gitOrigin);
+}
 
-function initialSteps(withGit: boolean): Step[] {
-  const ids: StepId[] = withGit
-    ? ['launch', 'health', ...GIT_STEP_IDS, 'open']
-    : ['launch', 'health', 'open'];
+/**
+ * The rows for THIS launch, in the order they will run.
+ *
+ * Derived rather than declared: a launch is a sequence of computeNodeTools
+ * calls, and which calls happen depends on what the user asked for. A fixed
+ * list would show a "Cloning" row for a project with no repository, and every
+ * new flow would hand-maintain its own copy.
+ */
+function plannedSteps(setup?: SandboxSetup): Step[] {
+  const ids: StepId[] = ['launch', 'health'];
+  if (setup) {
+    // No repo to fetch → the box mounts the project empty instead.
+    ids.push(...(setup.gitOrigin ? (['validate', 'clone'] as StepId[]) : (['init'] as StepId[])));
+    ids.push('index');
+    if (hasContextWork(setup)) ids.push('context');
+    ids.push('default');
+  }
+  ids.push('open');
   return ids.map((id) => ({ id, label: STEP_LABELS[id], status: 'idle' }));
 }
 
@@ -161,12 +195,17 @@ async function resolveHostUrl(nodeId: string): Promise<string> {
 }
 
 /**
- * A git repo to set up in a freshly launched desktop. After the box is up, the
- * hub clones the repo (authed when private, which is the only way a private one
- * is reachable) and copies it into the box, which places, indexes and links it.
+ * The project a freshly launched desktop is set up with — usually the one the
+ * user is working on.
+ *
+ * With a `gitOrigin` the hub clones it (authed when private, which is the only
+ * way a private repo is reachable) and copies it into the box. Without one
+ * there is nothing to fetch, so the box mounts it empty: a project that was
+ * never cloned from anywhere still gets its directory and its identity.
  */
-export interface GitSetup {
-  gitOrigin: GitOrigin;
+export interface SandboxSetup {
+  /** Absent for a project with no repository behind it. */
+  gitOrigin?: GitOrigin;
   /** Folder/display name for the set-up project. */
   name: string;
   /** Adopted by the box, so one project id spans hub and sandbox. */
@@ -175,9 +214,13 @@ export interface GitSetup {
    *  Defaults to whatever the cloned repo's own manifest declares. */
   contextProjects?: ContextProject[];
   /** Review-branch content installation, applied to the hub's checkout before
-   *  the tree is copied in, then reconciled on the box. */
+   *  the tree is copied in, then reconciled on the box. Git-backed only. */
   install?: ContentInstallSpec;
 }
+
+/** @deprecated Kept while call sites migrate: a sandbox project used to be
+ *  git-only, so this was its name. */
+export type GitSetup = SandboxSetup;
 
 /** A repo that becomes its own project on the box AND a context folder of the
  *  main one — how a help desk's skills and assets come into scope. */
@@ -225,63 +268,86 @@ type RunStep = <T>(id: StepId, fn: () => Promise<T>) => Promise<T>;
 type PatchStep = (id: StepId, next: Partial<Step>) => void;
 
 /**
- * Clone a repo into a running box and make it the project that opens.
+ * Set the sandbox up with its project and make that the project it opens on.
  *
- * Extracted from `launch` so the launch reads as its sequence of steps and
- * `cloned` can be a return value rather than a mutated `let` every later step
- * has to non-null-assert.
+ * Extracted from `launch` so the launch reads as its sequence of steps and the
+ * result can be a return value rather than a mutated `let` every later step has
+ * to non-null-assert.
  */
-async function provisionGitProject(
+async function provisionSandboxProject(
   nodeId: string,
-  gitSetup: GitSetup,
+  setup: SandboxSetup,
   run: RunStep,
   patch: PatchStep,
 ): Promise<CloneResult> {
-  await run('validate', async () => {
-    const check = await opsCall<NameCheck>(nodeId, 'validate-project-name', { name: gitSetup.name });
-    if (check && check.available === false) {
-      throw new Error(`"${gitSetup.name}" already exists — try "${check.suggested}".`);
-    }
-    return check;
-  });
-
-  const cloned = await run('clone', async () => {
-    patch('clone', { detail: `cloning ${gitSetup.name}…` });
-    const result = await opsCall<CloneResult>(nodeId, 'clone-project', {
-      git_origin: gitSetup.gitOrigin,
-      name: gitSetup.name,
-      project_id: gitSetup.projectId ?? '',
-      ...(gitSetup.install ? { install: gitSetup.install } : {}),
-    });
-    if (!result?.project?.id) throw new Error('Clone did not return a project');
-    return result;
-  });
+  const cloned = setup.gitOrigin
+    ? await cloneSandboxProject(nodeId, setup, run, patch)
+    : await run('init', async () => {
+        // No repository behind this project — the box mounts it empty, which
+        // is still what gives the directory its identity.
+        const result = await opsCall<CloneResult>(nodeId, 'init-empty-project', {
+          name: setup.name,
+          project_id: setup.projectId ?? '',
+        });
+        if (!result?.project?.id) throw new Error('Setup did not return a project');
+        return result;
+      });
 
   const projectId = cloned.project!.id!;
   await run('index', () => opsCall(nodeId, 'index-project', { path: cloned.path, project_id: projectId }));
 
-  await run('context', async () => {
-    // A declarative install converges its own dependencies through the
-    // manifest, so driving them from here too would attach each twice.
-    if (gitSetup.install) {
-      // The box answers with the reconcile result itself, which is what names
-      // the project (and journey) the install wants opened.
-      const reconciled = await opsCall<CloneResult['install_result']>(nodeId, 'reconcile-manifest', {
-        project_id: projectId,
-      });
-      if (reconciled) cloned.install_result = reconciled;
-      patch('context', { detail: 'from the install manifest' });
-      return reconciled;
-    }
-    // What the caller asked for, else what the repo itself declares.
-    const contextProjects = gitSetup.contextProjects ?? manifestContextProjects(cloned);
-    const attached = await attachContextProjects(nodeId, projectId, contextProjects);
-    patch('context', { detail: attached.length ? attached.join(', ') : 'none declared' });
-    return attached;
-  });
+  if (hasContextWork(setup)) {
+    await run('context', async () => {
+      // A declarative install converges its own dependencies through the
+      // manifest, so driving them from here too would attach each twice.
+      if (setup.install) {
+        // The box answers with the reconcile result itself, which is what names
+        // the project (and journey) the install wants opened.
+        const reconciled = await opsCall<CloneResult['install_result']>(nodeId, 'reconcile-manifest', {
+          project_id: projectId,
+        });
+        if (reconciled) cloned.install_result = reconciled;
+        patch('context', { detail: 'from the install manifest' });
+        return reconciled;
+      }
+      // What the caller asked for, else what the repo itself declares.
+      const contextProjects = setup.contextProjects ?? manifestContextProjects(cloned);
+      const attached = await attachContextProjects(nodeId, projectId, contextProjects);
+      patch('context', { detail: attached.length ? attached.join(', ') : 'none declared' });
+      return attached;
+    });
+  }
 
   await run('default', () => opsCall(nodeId, 'set-default-project', { project_id: projectId }));
   return cloned;
+}
+
+/** Ask the box whether the name is free, then have the hub clone into it. */
+async function cloneSandboxProject(
+  nodeId: string,
+  setup: SandboxSetup,
+  run: RunStep,
+  patch: PatchStep,
+): Promise<CloneResult> {
+  await run('validate', async () => {
+    const check = await opsCall<NameCheck>(nodeId, 'validate-project-name', { name: setup.name });
+    if (check && check.available === false) {
+      throw new Error(`"${setup.name}" already exists — try "${check.suggested}".`);
+    }
+    return check;
+  });
+
+  return run('clone', async () => {
+    patch('clone', { detail: `cloning ${setup.name}…` });
+    const result = await opsCall<CloneResult>(nodeId, 'clone-project', {
+      git_origin: setup.gitOrigin,
+      name: setup.name,
+      project_id: setup.projectId ?? '',
+      ...(setup.install ? { install: setup.install } : {}),
+    });
+    if (!result?.project?.id) throw new Error('Clone did not return a project');
+    return result;
+  });
 }
 
 /**
@@ -364,7 +430,7 @@ export function useDesktops() {
   }, [desktops, probeDetails]);
 
   // ---- launch ----
-  const [steps, setSteps] = useState<Step[]>(() => initialSteps(false));
+  const [steps, setSteps] = useState<Step[]>(() => plannedSteps());
   const [launching, setLaunching] = useState(false);
   const [launchUrl, setLaunchUrl] = useState<string | null>(null);
   const launchingRef = useRef(false);
@@ -373,9 +439,9 @@ export function useDesktops() {
     setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, ...next } : s)));
   }, []);
 
-  const launch = useCallback(async (opts?: { name?: string; gitSetup?: GitSetup }) => {
+  const launch = useCallback(async (opts?: { name?: string; sandboxProject?: SandboxSetup }) => {
     if (launchingRef.current) return;
-    const gitSetup = opts?.gitSetup;
+    const sandboxProject = opts?.sandboxProject;
     // Prefer the workspace scope (hub does workspace.add_child); fall back to
     // owner scope ([]) when hub mode exposes no workspace — the node is still
     // owned by the caller and listed by the role-scoped query.
@@ -383,7 +449,7 @@ export function useDesktops() {
     launchingRef.current = true;
     setLaunching(true);
     setLaunchUrl(null);
-    setSteps(initialSteps(!!gitSetup));
+    setSteps(plannedSteps(sandboxProject));
 
     // Claim the tab while we still hold the click gesture, but DON'T load the
     // desktop into it yet — show a "preparing" placeholder and only navigate to
@@ -449,7 +515,7 @@ export function useDesktops() {
       // The HUB clones (its token is the only one that reaches a private repo)
       // and copies the tree in; the box places, indexes and links it. Runs after
       // the box is up so copy_folder has a target.
-      const cloned = gitSetup ? await provisionGitProject(node.id, gitSetup, run, patch) : null;
+      const cloned = sandboxProject ? await provisionSandboxProject(node.id, sandboxProject, run, patch) : null;
 
       const url = await run('open', async () => {
         const host = await resolveHostUrl(node.id);

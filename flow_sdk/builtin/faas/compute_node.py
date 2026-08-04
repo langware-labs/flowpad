@@ -1190,6 +1190,42 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         project = await self._materialize_project(target_dir, project_id)
         return ApiSuccessResponse(data={"project": project.model_dump(mode="json"), "path": target_dir})
 
+    @action.post(action_name="init-empty-project")
+    async def _init_empty_project_action(self) -> ApiResponse:
+        """Mount a project on this node that has no repository behind it.
+
+        Body: ``{ "name": "<leaf>", "project_id": "<optional uuid v4/v5>" }`` →
+        ``{ project, path }`` — the same shape ``materialize-project`` answers
+        with, so a caller sequences the two identically.
+
+        The sibling of materialize for a project that was never cloned from
+        anywhere: same placement, same adoption gate, same minting; it creates
+        the directory instead of moving a delivered tree, and runs no index —
+        there is nothing in it yet to find.
+
+        The identity is what makes this more than ``mkdir``. A project's id is
+        resolved from the record whose canonical cwd matches the path (see
+        ``project_type_info``: ``derived_identity(existing_project_record_id)``),
+        so minting the row against this directory is what makes a later scan of
+        it resolve to THIS project rather than mint a second one.
+        """
+        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        leaf = str(body.get("name") or "").strip()
+        if not leaf:
+            return ApiFailResponse(message="name is required", status_code=400)
+        try:
+            project_id = self._adopted_project_id(body.get("project_id"))
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+
+        target_dir = os.path.join(AGENT_MOUNT_FOLDER, self._next_free_leaf(leaf))
+        os.makedirs(target_dir, exist_ok=True)
+        project = await self._materialize_project(target_dir, project_id)
+        return ApiSuccessResponse(data={"project": project.model_dump(mode="json"), "path": target_dir})
+
     @action.post(action_name="validate-project-name")
     async def _validate_project_name_action(self) -> ApiResponse:
         """Is this project name free on this node, and if not, what is?
