@@ -12,10 +12,11 @@ import { Tabs, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { ChevronDown, KeyRound } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
-import { credentialsPointer, parseCredentialsPointer } from './credentials-pointer';
+import { credentialsPointer, credentialsTabs, parseCredentialsPointer } from './credentials-pointer';
 import { LoginRequiredPanel } from './LoginRequiredPanel';
 
 /**
@@ -32,13 +33,24 @@ import { LoginRequiredPanel } from './LoginRequiredPanel';
  */
 export const CredentialsView: React.FC = () => {
   const { t } = useLingui();
+  // In-component, like `statusLabel` in connections-manager: a module-level map
+  // of raw strings would escape lingui extraction.
+  const tabLabel = (id: CredentialsSubview): string =>
+    id === CredentialsSubview.CONNECTIONS
+      ? t`Connections`
+      : id === CredentialsSubview.API_KEYS
+        ? t`API Keys`
+        : t`Environment`;
   const { user } = useAuth();
   const { navigation, currentDock } = useDockNavigation();
   const { projects, isLoading } = useProjects();
   const { project: contextProject } = useContext();
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const { tab, projectId } = parseCredentialsPointer(currentDock?.pointer);
+  // The leading tab is also where a bare `/credentials` lands — stated here, at
+  // the one place that knows the runtime, rather than inside the URL helper.
+  const tabs = credentialsTabs(isHubOnly());
+  const { tab, projectId } = parseCredentialsPointer(currentDock?.pointer, tabs[0]);
 
   const items = useMemo(() => projectEntitiesToSelectorItems(projects), [projects]);
 
@@ -63,9 +75,7 @@ export const CredentialsView: React.FC = () => {
 
   if (!user?.id) {
     // One guard for the whole view rather than three near-identical ones.
-    return (
-      <LoginRequiredPanel message={<Trans>Please log in to view and manage credentials.</Trans>} />
-    );
+    return <LoginRequiredPanel message={<Trans>Please log in to view and manage credentials.</Trans>} />;
   }
 
   const showPicker = tab !== CredentialsSubview.API_KEYS;
@@ -83,7 +93,12 @@ export const CredentialsView: React.FC = () => {
         {showPicker && (
           <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="ml-auto h-7 gap-1 text-xs" data-testid="credentials-project-picker">
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-auto h-7 gap-1 text-xs"
+                data-testid="credentials-project-picker"
+              >
                 {selected?.name ?? t`Select a project`}
                 <ChevronDown className="h-3 w-3" />
               </Button>
@@ -109,15 +124,11 @@ export const CredentialsView: React.FC = () => {
       <Tabs value={tab} onValueChange={(v) => go(v as CredentialsSubview)} className="flex min-h-0 flex-1 flex-col">
         <div className="border-b px-2">
           <TabsList className="h-8">
-            <TabsTrigger value={CredentialsSubview.ENVIRONMENT} className="h-7 text-xs">
-              <Trans>Environment</Trans>
-            </TabsTrigger>
-            <TabsTrigger value={CredentialsSubview.CONNECTIONS} className="h-7 text-xs">
-              <Trans>Connections</Trans>
-            </TabsTrigger>
-            <TabsTrigger value={CredentialsSubview.API_KEYS} className="h-7 text-xs">
-              <Trans>API Keys</Trans>
-            </TabsTrigger>
+            {tabs.map((id) => (
+              <TabsTrigger key={id} value={id} className="h-7 text-xs">
+                {tabLabel(id)}
+              </TabsTrigger>
+            ))}
           </TabsList>
         </div>
 
