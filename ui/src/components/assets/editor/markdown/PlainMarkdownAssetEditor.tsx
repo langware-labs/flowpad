@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { MarkdownEditor, type WikiLinkTarget } from './MarkdownEditor';
-import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
+import { AssetManagerPopover, RUNNABLE_ASSETS } from '@src/components/asset-manager/AssetManagerPopover';
 import { RunButton } from '@src/components/assets/editor/run/RunButton';
 import { useRunOnFile } from '@src/components/assets/editor/run/useRunOnFile';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
@@ -52,6 +53,7 @@ export function PlainMarkdownAssetEditor({
   fragment,
   wikiLinkTarget,
 }: PlainMarkdownAssetEditorProps) {
+  const { t } = useLingui();
   const { entity: pathEntity } = useEntityByPath<APIEntity<APIEntity<any>>>(
     resolvedEntity ? null : assetType,
     resolvedEntity ? null : fsRef,
@@ -83,11 +85,7 @@ export function PlainMarkdownAssetEditor({
   // Memoize: useFSRefContent's load effect is keyed on fsRef identity, so a
   // fresh FrontMatterFsRef every render re-downloads the file on every re-render.
   const baseEditorRef = useMemo(
-    () => (
-      !resolvedEntity && assetRef && localTypeId
-        ? new FrontMatterFsRef(assetRef, localTypeId)
-        : fsRef
-    ),
+    () => (!resolvedEntity && assetRef && localTypeId ? new FrontMatterFsRef(assetRef, localTypeId) : fsRef),
     [resolvedEntity, assetRef, localTypeId, fsRef],
   );
 
@@ -133,9 +131,7 @@ export function PlainMarkdownAssetEditor({
       if (typeof d === 'string') return new Date(d).getTime() || 0;
       return 0;
     };
-    const sorted = [...pastRunProcesses].sort(
-      (a, b) => toMs(b.created_date) - toMs(a.created_date),
-    );
+    const sorted = [...pastRunProcesses].sort((a, b) => toMs(b.created_date) - toMs(a.created_date));
     const liveId = processEntry?.process.id;
     return sorted.map((p) => (liveId && p.id === liveId ? processEntry : { process: p }));
   }, [pastRunProcesses, processEntry]);
@@ -143,7 +139,7 @@ export function PlainMarkdownAssetEditor({
   const isRunning = !!processEntry;
 
   const toolbar = isAdvanced ? (
-    <AssetPickerPopover
+    <AssetManagerPopover
       trigger={
         <RunButton
           iconOnly
@@ -153,6 +149,8 @@ export function PlainMarkdownAssetEditor({
           title={!chatTarget ? 'No backing entity yet' : undefined}
         />
       }
+      filter={RUNNABLE_ASSETS}
+      searchPlaceholder={t`Search agents and skills…`}
       onPick={(d) => void runWithAsset(d)}
     />
   ) : undefined;
@@ -162,12 +160,7 @@ export function PlainMarkdownAssetEditor({
     label: runHistory.length > 0 ? `Runs ${runHistory.length}` : 'Runs',
     icon: History,
     description: 'Runs on this file',
-    panel: (
-      <ProcessRunsPanel
-        entries={runHistory}
-        currentEntry={processEntry}
-      />
-    ),
+    panel: <ProcessRunsPanel entries={runHistory} currentEntry={processEntry} />,
   };
 
   return (
