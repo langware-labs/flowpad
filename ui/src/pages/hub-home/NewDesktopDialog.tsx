@@ -1,4 +1,4 @@
-import { gitOriginFromUrl, OAUTH_PROVIDERS, OAuthStatus, oauthService } from '@sdk';
+import { gitOriginFromUrl, OAUTH_PROVIDERS, OAuthStatus, oauthService, type GitOrigin, type Project } from '@sdk';
 import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import {
@@ -10,35 +10,68 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
-import { hasGitHubRepoAccess } from '@src/utils/gitUtils';
-import type { GitSetup } from '@src/hooks/use-desktops';
-import { AlertTriangle, Github, Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { fetchGithubStatus } from '@src/lib/github-oauth-status';
+import type { ContextProject, SandboxSetup } from '@src/hooks/use-desktops';
+import { Briefcase, CheckCircle2, GitBranch, Github, Loader2, Plus, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
+
+/** What the user picked as a source — a project they already have, or a repo URL. */
+type Source =
+  | { kind: 'project'; project: Project }
+  | { kind: 'git'; gitOrigin: GitOrigin; name: string };
 
 interface NewDesktopDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultName: string;
-  /** Pre-fill the git URL (e.g. from a ?setup_git= deep link). */
+  /** Pre-fill the sandbox project from a repo URL (e.g. a ?setup_git= deep link). */
   initialGitUrl?: string;
-  /** Launch a desktop; when a repo is given, the hub sets it up in the box. */
-  onLaunch: (opts: { name: string; gitSetup?: GitSetup }) => void;
+  /** The project the user is working on — the sandbox's project unless changed. */
+  currentProject?: Project | null;
+  /** Everything they could pick instead, and everything they can add as an asset. */
+  projects?: Project[];
+  onLaunch: (opts: { name: string; sandboxProject?: SandboxSetup }) => void;
+}
+
+/** A source's git origin, when it has one. A project that was never cloned from
+ *  anywhere has none — it can still BE the sandbox project (the box mounts it
+ *  empty), but there is nothing to clone for it as an asset. */
+function originOf(source: Source): GitOrigin | null {
+  return source.kind === 'git' ? source.gitOrigin : (source.project.git_origin ?? null);
+}
+
+function nameOf(source: Source): string {
+  return source.kind === 'git' ? source.name : (source.project.name ?? 'project');
 }
 
 /**
- * Start a desktop — name + an optional git repo. A public repo is set up
- * directly; a private/inaccessible repo gates on "connect GitHub to continue"
- * (the existing device-auth), re-validates, then launches. On submit we hand
- * off to `useDesktops().launch`, which runs the hub's setup-git (clone → copy
- * into the box → materialize).
+ * Start a desktop: name it, say which project it opens on, and add any asset
+ * packages — help desks or skills repos that get cloned in, indexed, and
+ * attached as context folders of that project.
+ *
+ * Every row here is one `computeNodeTools` command at launch time; this dialog
+ * only decides which. It deliberately does NOT probe repo access first: that
+ * probe (`/api/v1/git/remote-access`) is a flow_sdk route the hub does not
+ * register, so it 404s for every repo and asked people to connect GitHub for
+ * public ones. The clone step reports the real failure, and the banner below
+ * still offers the connection a private repo actually needs.
  */
-export function NewDesktopDialog({ open, onOpenChange, defaultName, initialGitUrl, onLaunch }: NewDesktopDialogProps) {
+export function NewDesktopDialog({
+  open,
+  onOpenChange,
+  defaultName,
+  initialGitUrl,
+  currentProject,
+  projects,
+  onLaunch,
+}: NewDesktopDialogProps) {
   const { t } = useLingui();
   const [name, setName] = useState(defaultName);
-  const [url, setUrl] = useState(initialGitUrl ?? '');
-  const [checking, setChecking] = useState(false);
-  const [needsGithub, setNeedsGithub] = useState(false);
+  const [sandboxSource, setSandboxSource] = useState<Source | null>(null);
+  const [assets, setAssets] = useState<Source[]>([]);
+  const [picking, setPicking] = useState<null | 'sandbox' | 'asset'>(null);
+  const [githubConnected, setGithubConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState('');
 
@@ -48,67 +81,73 @@ export function NewDesktopDialog({ open, onOpenChange, defaultName, initialGitUr
   useEffect(() => {
     if (!open) return;
     setName(defaultName);
-    setUrl(initialGitUrl ?? '');
-    setNeedsGithub(false);
+    const fromUrl = initialGitUrl ? gitOriginFromUrl(initialGitUrl) : null;
+    setSandboxSource(
+      fromUrl
+        ? { kind: 'git', gitOrigin: fromUrl, name: fromUrl.name }
+        : currentProject
+          ? { kind: 'project', project: currentProject }
+          : null,
+    );
+    setAssets([]);
+    setPicking(null);
     setConnecting(false);
     setError('');
-    setChecking(false);
+    void fetchGithubStatus().then((r) => setGithubConnected(r === true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const finish = useCallback(
-    (gitSetup?: GitSetup) => {
-      onOpenChange(false);
-      onLaunch({ name: name.trim() || defaultName, gitSetup });
-    },
-    [onLaunch, name, defaultName, onOpenChange],
+  // An asset has to be cloned, so a project with no repository behind it can't
+  // be one — it would attach an empty folder with nothing to index.
+  const assetCandidates = useMemo(
+    () => (projects ?? []).filter((p) => !!p.git_origin),
+    [projects],
   );
 
-  // Validate the repo, then either launch (accessible) or reveal the connect
-  // gate (private/inaccessible). Returns true when it launched.
-  const validateAndMaybeLaunch = useCallback(async (): Promise<boolean> => {
-    const gitOrigin = gitOriginFromUrl(url.trim());
-    if (!gitOrigin) {
-      setError(t`Enter a valid GitHub repository URL.`);
-      return false;
-    }
-    setError('');
-    setChecking(true);
-    try {
-      const access = await hasGitHubRepoAccess(url.trim());
-      if (access?.hasAccess) {
-        finish({ gitOrigin, name: name.trim() || defaultName });
-        return true;
+  const pick = useCallback(
+    (source: Source) => {
+      if (picking === 'sandbox') setSandboxSource(source);
+      else if (picking === 'asset') {
+        const origin = originOf(source);
+        if (origin) setAssets((prev) => [...prev, source]);
       }
-      setNeedsGithub(true);
-      return false;
-    } finally {
-      setChecking(false);
-    }
-  }, [url, name, defaultName, finish, t]);
+      setPicking(null);
+      setError('');
+    },
+    [picking],
+  );
 
   const handleSubmit = useCallback(() => {
-    if (!url.trim()) {
-      finish(); // name-only → plain desktop
+    const desktopName = name.trim() || defaultName;
+    if (!sandboxSource) {
+      onOpenChange(false);
+      onLaunch({ name: desktopName }); // name-only → plain desktop
       return;
     }
-    void validateAndMaybeLaunch();
-  }, [url, finish, validateAndMaybeLaunch]);
+    const origin = originOf(sandboxSource);
+    const contextProjects: ContextProject[] = assets.flatMap((asset) => {
+      const assetOrigin = originOf(asset);
+      // Scope is `shared` for asset packages: they travel with the project.
+      return assetOrigin ? [{ gitOrigin: assetOrigin, name: nameOf(asset), scope: 'shared' as const }] : [];
+    });
+    onOpenChange(false);
+    onLaunch({
+      name: desktopName,
+      sandboxProject: {
+        name: nameOf(sandboxSource),
+        ...(origin ? { gitOrigin: origin } : {}),
+        ...(sandboxSource.kind === 'project' ? { projectId: sandboxSource.project.id } : {}),
+        ...(contextProjects.length ? { contextProjects } : {}),
+      },
+    });
+  }, [name, defaultName, sandboxSource, assets, onLaunch, onOpenChange]);
 
-  // Only listen while a connect is pending — a device flow the user abandons
-  // never completes, so an always-on listener would outlive the dialog.
   useOAuthFlowComplete(
     OAUTH_PROVIDERS.GITHUB,
     (msg) => {
-      if (msg.status === OAuthStatus.SUCCESS) {
-        void validateAndMaybeLaunch().then((launched) => {
-          if (!launched) setError(t`Connected, but still no access to this repo.`);
-          setConnecting(false);
-        });
-      } else {
-        setConnecting(false);
-        setError(t`GitHub connection failed.`);
-      }
+      setConnecting(false);
+      if (msg.status === OAuthStatus.SUCCESS) setGithubConnected(true);
+      else setError(t`GitHub connection failed.`);
     },
     connecting,
   );
@@ -125,15 +164,13 @@ export function NewDesktopDialog({ open, onOpenChange, defaultName, initialGitUr
     });
   }, [t]);
 
-  const busy = checking || connecting;
-
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!busy) onOpenChange(o); }}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={open} onOpenChange={(o) => { if (!connecting) onOpenChange(o); }}>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle><Trans>New desktop</Trans></DialogTitle>
           <DialogDescription>
-            <Trans>Name it, and optionally set it up from a git repo.</Trans>
+            <Trans>Choose the project it opens on, and any asset packages to load with it.</Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -146,39 +183,184 @@ export function NewDesktopDialog({ open, onOpenChange, defaultName, initialGitUr
           autoFocus
         />
 
-        <label className="mb-1 block text-xs font-medium text-muted-foreground"><Trans>Git repo (optional)</Trans></label>
-        <Input
-          value={url}
-          onChange={(e) => { setUrl(e.target.value); setNeedsGithub(false); setError(''); }}
-          placeholder={t`https://github.com/owner/repo`}
-          className="font-mono text-xs"
-          spellCheck={false}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !busy) handleSubmit(); }}
-        />
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+          <Trans>Sandbox project</Trans>
+        </label>
+        <div
+          className="mb-3 flex items-center justify-between gap-2 rounded-md border border-border px-2.5 py-1.5 text-sm"
+          data-testid="sandbox-project-row"
+        >
+          {sandboxSource ? (
+            <SourceLabel source={sandboxSource} />
+          ) : (
+            <span className="text-xs text-muted-foreground"><Trans>No project — an empty desktop</Trans></span>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 shrink-0 px-2 text-xs"
+            onClick={() => setPicking(picking === 'sandbox' ? null : 'sandbox')}
+            data-testid="change-sandbox-project"
+          >
+            <Trans>Change</Trans>
+          </Button>
+        </div>
 
-        {needsGithub && (
-          <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
-            <span className="flex items-center gap-1.5">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-              <Trans>Repo is not public — connect GitHub to continue.</Trans>
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+          <Trans>Additional assets</Trans>
+        </label>
+        <div className="mb-1 flex flex-col gap-1" data-testid="asset-list">
+          {assets.map((asset, i) => (
+            <div
+              key={`${nameOf(asset)}-${i}`}
+              className="flex items-center justify-between gap-2 rounded-md border border-border/60 px-2.5 py-1 text-xs"
+            >
+              <SourceLabel source={asset} />
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => setAssets((prev) => prev.filter((_, at) => at !== i))}
+                aria-label={t`Remove ${nameOf(asset)}`}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={() => setPicking(picking === 'asset' ? null : 'asset')}
+          data-testid="add-asset-package"
+        >
+          <Plus className="mr-1 h-3 w-3" />
+          <Trans>Add asset package</Trans>
+        </Button>
+
+        {picking && (
+          <SourcePicker
+            projects={picking === 'asset' ? assetCandidates : (projects ?? [])}
+            onPick={pick}
+            onInvalidUrl={() => setError(t`Enter a valid GitHub repository URL.`)}
+          />
+        )}
+
+        {!githubConnected && (
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs">
+            <span className="text-muted-foreground">
+              <Trans>Tip: connect GitHub to use private repos.</Trans>
             </span>
-            <Button size="sm" variant="outline" className="h-6 shrink-0 px-2 text-xs" onClick={handleConnectGithub} disabled={connecting}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 shrink-0 px-2 text-xs"
+              onClick={handleConnectGithub}
+              disabled={connecting}
+            >
               {connecting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Github className="h-3 w-3" />}
               <span className="ml-1.5"><Trans>Connect</Trans></span>
             </Button>
           </div>
         )}
+        {githubConnected && (
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+            <Trans>GitHub connected.</Trans>
+          </p>
+        )}
 
         {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
 
         <DialogFooter className="mt-4">
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}><Trans>Cancel</Trans></Button>
-          <Button onClick={handleSubmit} disabled={busy}>
-            {checking ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={connecting}>
+            <Trans>Cancel</Trans>
+          </Button>
+          <Button onClick={handleSubmit} disabled={connecting} data-testid="launch-desktop">
             <Trans>Launch</Trans>
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function SourceLabel({ source }: { source: Source }) {
+  const origin = originOf(source);
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      {source.kind === 'project' ? (
+        <Briefcase className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      ) : (
+        <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      )}
+      <span className="truncate">{nameOf(source)}</span>
+      {!origin && (
+        <span className="shrink-0 rounded bg-muted px-1.5 py-px text-[10px] uppercase text-muted-foreground">
+          <Trans>no repo</Trans>
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Pick a project you already have, or paste a repo URL. One panel, used for
+ *  both the sandbox project and each asset — the only difference is which
+ *  projects the caller passes in. */
+function SourcePicker({
+  projects,
+  onPick,
+  onInvalidUrl,
+}: {
+  projects: Project[];
+  onPick: (source: Source) => void;
+  onInvalidUrl: () => void;
+}) {
+  const { t } = useLingui();
+  const [url, setUrl] = useState('');
+
+  const submitUrl = () => {
+    const gitOrigin = gitOriginFromUrl(url.trim());
+    if (!gitOrigin) {
+      onInvalidUrl();
+      return;
+    }
+    setUrl('');
+    onPick({ kind: 'git', gitOrigin, name: gitOrigin.name });
+  };
+
+  return (
+    <div className="mt-2 rounded-md border border-border p-2" data-testid="source-picker">
+      {projects.length > 0 && (
+        <ul className="mb-2 max-h-40 overflow-y-auto">
+          {projects.map((project) => (
+            <li key={project.id}>
+              <button
+                type="button"
+                className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs hover:bg-accent"
+                onClick={() => onPick({ kind: 'project', project })}
+              >
+                <Briefcase className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{project.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex items-center gap-1.5">
+        <Input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder={t`https://github.com/owner/repo`}
+          className="font-mono text-xs"
+          spellCheck={false}
+          onKeyDown={(e) => { if (e.key === 'Enter') submitUrl(); }}
+          data-testid="source-git-url"
+        />
+        <Button size="sm" variant="outline" className="h-8 shrink-0 px-2 text-xs" onClick={submitUrl}>
+          <Trans>Use</Trans>
+        </Button>
+      </div>
+    </div>
   );
 }
