@@ -76,11 +76,12 @@ async def test_start_ticket_posts_to_target_projects_adopted_queue(tmp_path: Pat
         response = await fma.helpdesk_start_ticket()
 
     assert response.status == ApiResponseStatus.FAIL.value
-    hub.assert_awaited_once_with(
-        "POST",
-        f"/graph/project/{ROOT_QUEUE}/start_guest_conversation",
-        {"text": "Need help"},
-    )
+    # Route only. The body grows as tickets carry more context (project /
+    # session ids, a transcript excerpt); pinning it whole here would make a
+    # ROUTING test fail for a payload change it does not care about.
+    method, path, body = hub.await_args.args
+    assert (method, path) == ("POST", f"/graph/project/{ROOT_QUEUE}/start_guest_conversation")
+    assert body["text"].startswith("Need help")
     fallback.assert_not_awaited()
 
 
@@ -175,8 +176,6 @@ async def test_valid_project_without_desk_posts_to_hub_default_queue(tmp_path: P
         await fma.helpdesk_start_ticket()
 
     fallback.assert_awaited_once_with()
-    hub.assert_awaited_once_with(
-        "POST",
-        f"/graph/project/{DEFAULT_QUEUE}/start_guest_conversation",
-        {"text": "Fallback request"},
-    )
+    method, path, body = hub.await_args.args
+    assert (method, path) == ("POST", f"/graph/project/{DEFAULT_QUEUE}/start_guest_conversation")
+    assert body["text"].startswith("Fallback request")
