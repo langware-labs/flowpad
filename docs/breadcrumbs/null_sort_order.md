@@ -2,7 +2,7 @@
 title: NULL sort order in the SQLite driver
 tags: ''
 description: A missing sort value buckets FIRST and is never compared against a real
-version: 3
+version: 4
 ---
 
 # NULL sort order in the SQLite driver
@@ -61,9 +61,3 @@ sites:
     line: 112
     note: "FAILING? read this tag's rules \u2014 missing sorts FIRST; never coerce it to \"\""
 ```
-
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 6319f8e0-ad5f-489f-95f7-2ad8e9fe95f0
-flowpad:endcapsule identity -->
