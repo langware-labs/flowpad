@@ -1400,27 +1400,33 @@ async def resolve_helpdesk(project_id: Optional[str] = None) -> Optional[Helpdes
     return await _hub_default_helpdesk()
 
 
-async def _ticket_context_typeids(project_id: Optional[str]) -> list[str]:
-    """TypeIds a desk needs to triage a ticket: the requester's project, and
-    the agent session they were running when they asked.
+async def _ticket_context_typeids(project_id: Optional[str]) -> tuple[list[str], Optional[str]]:
+    """``(context_typeids, session_typeid)`` for a ticket.
+
+    The context list is what the desk needs to triage: the requester's project,
+    the agent session they were running when they asked, and that session's
+    transcript. The session typeid is returned separately because it is also
+    the thing whose BYTES get attached — naming a transcript and shipping one
+    are different jobs, and only the second gives the assignee something to
+    open.
 
     Best-effort by design — a ticket must never fail to open because context
-    could not be gathered. Returns ``[]`` rather than raising.
+    could not be gathered. Returns ``([], None)`` rather than raising.
 
     The session is resolved as the project's most recently active
     ``AgenticProcess``, which is what "what was I doing when this went wrong"
-    means from the requester's side; its ``claude_session`` is the transcript
-    the assignee will pull after pickup.
+    means from the requester's side.
     """
     out: list[str] = []
+    session_typeid: Optional[str] = None
     if not project_id:
-        return out
+        return out, session_typeid
     try:
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
         project = await Project.get_by_id(project_id)
         if project is None:
-            return out
+            return out, session_typeid
         out.append(str(project.typeid))
 
         from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
@@ -1439,10 +1445,81 @@ async def _ticket_context_typeids(project_id: Optional[str]) -> list[str]:
             out.append(str(latest.typeid))
             session_id = getattr(latest, "session_id", None)
             if session_id:
-                out.append(f"claude_session-{session_id}")
+                session_typeid = f"claude_session-{session_id}"
+                out.append(session_typeid)
     except Exception as e:  # noqa: BLE001
         logger.info("[helpdesk-start-ticket] context gather skipped: %s", e)
-    return out
+    return out, session_typeid
+
+
+#: How much transcript rides with a ticket. Enough for an assignee to see what
+#: the agent actually tried; short enough that a desk is not handed a customer's
+#: entire working session. The tail, not the head — the failure is at the end.
+TICKET_TRANSCRIPT_CHARS = 4000
+
+
+async def _ticket_transcript_excerpt(session_typeid: Optional[str]) -> Optional[str]:
+    """A readable tail of the requester's session, for the ticket body.
+
+    A support ticket cannot carry the transcript as BYTES. The requester holds
+    the ``guest`` role on someone else's desk, and that role is deliberately
+    narrow — it permits ``start_guest_conversation`` and nothing else. A guest
+    can read the conversation they opened but cannot list its child messages
+    (the children route 401s), so there is no local message to attach a body
+    to and no way to address one on the hub. The bundle path
+    (``agenticProcessShareSource`` → ``upload_body``) needs both.
+
+    Sending the text is what makes the ticket answerable inside the permissions
+    that exist. The ``type_id`` attachment still travels alongside it, so once
+    the assignee picks the ticket up — and both sides are participants — the
+    full session can be pulled through the ordinary share path.
+
+    Best-effort: an unreadable or missing transcript yields ``None``.
+    """
+    if not session_typeid or not session_typeid.startswith("claude_session-"):
+        return None
+    try:
+        import json as _json  # noqa: PLC0415
+        from pathlib import Path  # noqa: PLC0415
+
+        from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: PLC0415
+
+        session_id = session_typeid.split("-", 1)[1]
+        session = await ClaudeSession.get_by_id(session_id)
+        # ``asset_ref`` IS the transcript jsonl — a session is a file-backed
+        # entity whose id is the Claude session id.
+        ref = getattr(session, "asset_ref", None) if session else None
+        path = Path(ref) if ref else None
+        if path is None or not path.is_file():
+            return None
+
+        turns: list[str] = []
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                row = _json.loads(line)
+            except ValueError:
+                continue
+            message = row.get("message") or {}
+            role = message.get("role") or row.get("type") or "?"
+            content = message.get("content")
+            if isinstance(content, list):
+                text = " ".join(
+                    part.get("text", "") for part in content if isinstance(part, dict)
+                ).strip()
+            else:
+                text = str(content or "").strip()
+            if text:
+                turns.append(f"{role}: {text}")
+        if not turns:
+            return None
+
+        excerpt = "\n".join(turns)
+        if len(excerpt) > TICKET_TRANSCRIPT_CHARS:
+            excerpt = "…\n" + excerpt[-TICKET_TRANSCRIPT_CHARS:]
+        return excerpt
+    except Exception as e:  # noqa: BLE001
+        logger.info("[helpdesk-start-ticket] transcript excerpt skipped: %s", e)
+        return None
 
 
 @action.post(action_name="helpdesk-start-ticket", types=None)
@@ -1486,9 +1563,27 @@ async def helpdesk_start_ticket() -> ApiResponse:
         # (``agenticProcessShareSource`` → ``upload_body``) — the assignee
         # pulls them once they pick the ticket up.
         hub_body: dict = {"text": text}
-        ticket_context = await _ticket_context_typeids(project_id or None)
+        ticket_context, session_typeid = await _ticket_context_typeids(project_id or None)
         if ticket_context:
             hub_body["context"] = ticket_context
+
+        # The session rides two ways, because neither alone is enough. The
+        # ``type_id`` attachment is the durable reference the assignee resolves
+        # after pickup; the excerpt is what makes the ticket answerable BEFORE
+        # then, since a guest cannot upload a body bundle to someone else's
+        # desk (see ``_ticket_transcript_excerpt``).
+        excerpt = await _ticket_transcript_excerpt(session_typeid)
+        if session_typeid:
+            hub_body["attachment"] = [
+                # Lowercase: the wire value is the enum VALUE (``type_id``),
+                # not its Python name. The hub validates strictly and rejects
+                # ``TYPE_ID`` with a 400.
+                {"attachment_type": "type_id", "data": session_typeid}
+            ]
+        if excerpt:
+            hub_body["text"] = (
+                f"{text}\n\n--- agent session (last {TICKET_TRANSCRIPT_CHARS} chars) ---\n{excerpt}"
+            )
 
         resp = await _hub_action(
             "POST", f"/graph/project/{helpdesk_id}/start_guest_conversation", hub_body
@@ -1545,7 +1640,15 @@ async def helpdesk_start_ticket() -> ApiResponse:
             with remote_reflection():
                 await conv.save(someone_typeid, notify=False)
 
-        return ApiSuccessResponse(data={"conversation_id": conv_id, "project_id": helpdesk_id})
+        return ApiSuccessResponse(
+            data={
+                "conversation_id": conv_id,
+                "project_id": helpdesk_id,
+                "context": ticket_context,
+                "session": session_typeid,
+                "transcript_included": bool(excerpt),
+            }
+        )
     except Exception as e:
         logger.error("[flow_message_action] helpdesk-start-ticket error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed to start support ticket: {str(e)}")
