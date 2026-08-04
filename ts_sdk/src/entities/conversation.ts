@@ -471,10 +471,30 @@ export interface ListHelpdeskTicketsResult {
 /** Staff triage queue: list the helpdesk project's tickets, including ones the
  *  caller hasn't picked up (which don't otherwise appear in their inbox).
  *  Members-only on the hub. */
-export async function listHelpdeskTickets(projectId?: string | null): Promise<ListHelpdeskTicketsResult> {
+/**
+ * Tickets for a desk. Two callers, opposite questions:
+ *
+ * - a REQUESTER passes `projectId` — "which desk serves the project I'm in?"
+ * - STAFF pass `deskProjectId` — "what is queued on MY desk?" — and it is used
+ *   verbatim.
+ *
+ * Staff need the second form: a desk owner's own project has no desk of its
+ * own, so resolving from it walks past their queue to whatever desk serves
+ * *them*, and the hub rejects them as a guest on someone else's desk.
+ */
+export async function listHelpdeskTickets(
+  projectId?: string | null,
+  deskProjectId?: string | null,
+): Promise<ListHelpdeskTicketsResult> {
   const action = new ActionInfo('helpdesk-tickets-list', null, null, 'POST');
-  action.bodyParameters = { project_id: projectId ?? '' };
-  const res = await dataManager.callAction<{ project_id: string }, ListHelpdeskTicketsResult>(action);
+  action.bodyParameters = {
+    project_id: projectId ?? '',
+    desk_project_id: deskProjectId ?? '',
+  };
+  const res = await dataManager.callAction<
+    { project_id: string; desk_project_id: string },
+    ListHelpdeskTicketsResult
+  >(action);
   return res ?? { tickets: [], project_id: '' };
 }
 
