@@ -71,6 +71,10 @@ def clear_sharing_cache() -> None:
     _BLOB_FIELDS_CACHE.clear()
 
 
+# Per-class cache for ``get_blob_fields_names`` — see that method.
+_BLOB_FIELDS_CACHE: "dict[type, List[str]]" = {}
+
+
 class DBBaseRecord(BaseModel):
     model_config = ConfigDict(from_attributes=True, arbitrary_types_allowed=True, use_enum_values=True)
     type: str = APIField("", description="The type of the entity")
