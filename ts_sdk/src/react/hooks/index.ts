@@ -16,6 +16,7 @@ export * from './useFS';
 export * from './useFSStore';
 export * from './useGlobalEvnets';
 export * from './useOAuthConnection';
+export * from './useOAuthFlowComplete';
 export * from './useProject';
 export * from './useWarnings';
 
