@@ -71,6 +71,36 @@ class TestSessionIdGate:
         )
 
 
+class TestExeStemIsHostIndependent:
+    """These are the cases that only fail off-Windows.
+
+    ``os.path`` follows the *host's* convention, so an earlier version of this
+    code split Windows argv with ``posixpath`` on Linux CI and matched nothing
+    — every Windows case below silently passed on a dev machine and failed in
+    CI. Worker identity belongs to the target's path convention, so the parse
+    must not depend on which machine is asking.
+    """
+
+    def test_windows_path_splits_on_a_posix_host(self):
+        assert Shell._exe_stem(r"C:\WINDOWS\system32\cmd.exe") == "cmd"
+
+    def test_posix_path_splits(self):
+        assert Shell._exe_stem("/usr/local/bin/node") == "node"
+
+    def test_case_and_extension_are_normalized(self):
+        assert Shell._exe_stem(r"C:\bin\CODEX.EXE") == "codex"
+
+    def test_bare_name_survives(self):
+        assert Shell._exe_stem("codex") == "codex"
+
+    def test_leading_dot_name_keeps_its_dot(self):
+        """Matches os.path.splitext: ".bashrc" is all stem, no extension."""
+        assert Shell._exe_stem(".bashrc") == ".bashrc"
+
+    def test_multi_dot_name_drops_only_the_last_suffix(self):
+        assert Shell._exe_stem("/opt/a.b.c") == "a.b"
+
+
 class TestStripCmdShim:
     def test_strips_slash_c_and_slash_k(self):
         assert Shell._strip_cmd_shim([r"C:\WINDOWS\system32\cmd.exe", "/c", "codex.CMD"]) == ["codex.CMD"]
