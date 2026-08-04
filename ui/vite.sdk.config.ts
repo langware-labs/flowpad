@@ -1,6 +1,6 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
-import { SHARED_DEDUPE, sharedAliases } from './vite.shared';
+import { SHARED_DEDUPE, sdkVersion, sharedAliases } from './vite.shared';
 
 /**
  * Builds the ts_sdk as a standalone library for `/sdk/flowpad-sdk.js`.
@@ -42,6 +42,7 @@ export default defineConfig(({ mode }) => {
       __CHECK_REFRESH_TOKEN__: JSON.stringify(false),
       __FLOWPAD_APP_HOST__: JSON.stringify(env.MICRO_APP_DOMAIN_CONFIG__APP_DOMAIN || 'flowpad.app'),
       __FLOWPAD_APP_PORT__: JSON.stringify(env.MICRO_APP_DOMAIN_CONFIG__PORT || ''),
+      __UI_VERSION__: JSON.stringify(sdkVersion(envDir)),
     },
     resolve: {
       preserveSymlinks: true,

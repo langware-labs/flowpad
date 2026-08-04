@@ -8,6 +8,7 @@ declare const __FLOWPAD_APP_HOST__: string;
 declare const __FLOWPAD_APP_PORT__: string;
 declare const __FLOWPAD_DEV__: boolean;
 declare const __CHECK_REFRESH_TOKEN__: boolean;
+declare const __UI_VERSION__: string;
 
 function parseApiConnectionPrimitives(apiUrl?: string): { api_protocol: string; api_host: string; api_port: number } {
   if (!apiUrl) {
@@ -47,6 +48,7 @@ export function load_config(): SDKConfig {
   const flowpadAppPort =
     typeof __FLOWPAD_APP_PORT__ !== 'undefined' && __FLOWPAD_APP_PORT__ ? parseInt(__FLOWPAD_APP_PORT__) : undefined;
   const checkRefreshToken = typeof __CHECK_REFRESH_TOKEN__ !== 'undefined' ? __CHECK_REFRESH_TOKEN__ : false;
+  const uiVersion = typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '';
 
   const { api_protocol, api_host, api_port } = parseApiConnectionPrimitives(apiUrl);
 
@@ -59,6 +61,7 @@ export function load_config(): SDKConfig {
     flowpad_app_host: flowpadAppHost,
     flowpad_app_port: flowpadAppPort,
     check_refresh_token: checkRefreshToken,
+    ui_version: uiVersion,
   };
 
   return new SDKConfig(configData);
