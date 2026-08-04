@@ -1,10 +1,8 @@
 ---
 title: NULL sort order in the SQLite driver
-tags:
-- breadcrumb.test.null_sort_order.rules
+tags: ''
 description: A missing sort value buckets FIRST and is never compared against a real
-  one — coercing it to "" raises str-vs-datetime.
-version: 2
+version: 3
 ---
 
 # NULL sort order in the SQLite driver
