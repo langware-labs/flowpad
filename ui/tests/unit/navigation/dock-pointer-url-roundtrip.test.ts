@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Layout, PageId, TypeId, ViewType } from '@sdk';
 import { projectScope } from '@src/lib/scope-filter';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { CAPABILITY_PARAM, DockPointer } from '@src/navigation/DockPointer';
 
 const LAYOUTS = [Layout.DOCK, Layout.DEV, Layout.WIN] as const;
 const BASE_PATHS = [
@@ -25,10 +25,7 @@ function expectRootUrlRoundTrip(pointer: DockPointer): void {
 function expectBaseUrlRoundTrip(pointer: DockPointer, currentPath: string): void {
   const url = pointer.toUrl(currentPath);
   const rebuiltUrl = DockPointer.fromUrl(url).toUrl(url);
-  expect(
-    rebuiltUrl,
-    `Expected ${pointer.toString()} to round-trip under base path ${currentPath}`,
-  ).toBe(url);
+  expect(rebuiltUrl, `Expected ${pointer.toString()} to round-trip under base path ${currentPath}`).toBe(url);
 }
 
 function seededRandom(seed: number): () => number {
@@ -183,5 +180,26 @@ describe('DockPointer URL round trip', () => {
       expectRootUrlRoundTrip(pointer);
       expectBaseUrlRoundTrip(pointer, pick(rand, BASE_PATHS));
     }
+  });
+});
+
+describe('Capabilities dock carries the capability the user asked for', () => {
+  const codexDock = () => DockPointer.forTab(ViewType.CAPABILITIES, { [CAPABILITY_PARAM]: 'harness.codex.cli' });
+
+  it('reads the intent back off the URL so the view can re-probe that kind', () => {
+    const rebuilt = DockPointer.fromUrl(codexDock().toUrl());
+
+    expect(rebuilt.capabilityKind).toBe('harness.codex.cli');
+    expectRootUrlRoundTrip(codexDock());
+  });
+
+  it('reports no intent when the param is absent', () => {
+    expect(DockPointer.forTab(ViewType.CAPABILITIES).capabilityKind).toBeNull();
+  });
+
+  it('keeps one Capabilities tab regardless of the intent', () => {
+    // The param is transient state, not tab identity — arriving from "Start
+    // Codex" must reuse the Capabilities tab rather than mint a second one.
+    expect(codexDock().tabHash).toBe(DockPointer.forTab(ViewType.CAPABILITIES).tabHash);
   });
 });
