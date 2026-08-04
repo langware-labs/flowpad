@@ -1149,6 +1149,31 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             raise ValueError(f"project_id must be a UUID v4 or v5 entity id: {candidate}")
         return candidate
 
+    async def _place_project(self, leaf: str, raw_project_id: object, deliver) -> ApiResponse:
+        """Put a project at a free slot under ``AGENT_MOUNT_FOLDER`` and mint it.
+
+        Everything the ways of getting a project onto this box agree on: where it
+        lands, that a name clash auto-suffixes rather than fails (the caller has
+        already paid for a sandbox), the v4/v5 adoption gate for an id minted
+        off-box, and the ``{project, path}`` answer. ``deliver`` is the only
+        difference between them — move a staged tree in, or create the directory.
+
+        ``path`` rides in the response because the caller's next step is usually
+        to attach this checkout to another project as a context folder, and only
+        this side knows where it landed.
+        """
+        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
+
+        try:
+            project_id = self._adopted_project_id(raw_project_id)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+
+        target_dir = os.path.join(AGENT_MOUNT_FOLDER, self._next_free_leaf(leaf))
+        deliver(target_dir)
+        project = await self._materialize_project(target_dir, project_id)
+        return ApiSuccessResponse(data={"project": project.model_dump(mode="json"), "path": target_dir})
+
     @action.post(action_name="materialize-project")
     async def _materialize_project_action(self) -> ApiResponse:
         """Materialize a Project from a directory delivered into this node (e.g.
@@ -1169,8 +1194,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         """
         import shutil  # noqa: PLC0415
 
-        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
-
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else {}) or {}
         staging_path = body.get("staging_path")
@@ -1179,16 +1202,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         leaf = (str(body.get("name") or os.path.basename(staging_path.rstrip("/")))).strip()
         if not leaf:
             return ApiFailResponse(message="could not derive a project name", status_code=400)
-        try:
-            project_id = self._adopted_project_id(body.get("project_id"))
-        except ValueError as exc:
-            return ApiFailResponse(message=str(exc), status_code=400)
 
-        target_dir = os.path.join(AGENT_MOUNT_FOLDER, self._next_free_leaf(leaf))
-        os.makedirs(AGENT_MOUNT_FOLDER, exist_ok=True)
-        shutil.move(staging_path, target_dir)
-        project = await self._materialize_project(target_dir, project_id)
-        return ApiSuccessResponse(data={"project": project.model_dump(mode="json"), "path": target_dir})
+        def deliver(target_dir: str) -> None:
+            os.makedirs(os.path.dirname(target_dir), exist_ok=True)
+            shutil.move(staging_path, target_dir)
+
+        return await self._place_project(leaf, body.get("project_id"), deliver)
 
     @action.post(action_name="init-empty-project")
     async def _init_empty_project_action(self) -> ApiResponse:
@@ -1209,22 +1228,15 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         so minting the row against this directory is what makes a later scan of
         it resolve to THIS project rather than mint a second one.
         """
-        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
-
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else {}) or {}
         leaf = str(body.get("name") or "").strip()
         if not leaf:
             return ApiFailResponse(message="name is required", status_code=400)
-        try:
-            project_id = self._adopted_project_id(body.get("project_id"))
-        except ValueError as exc:
-            return ApiFailResponse(message=str(exc), status_code=400)
 
-        target_dir = os.path.join(AGENT_MOUNT_FOLDER, self._next_free_leaf(leaf))
-        os.makedirs(target_dir, exist_ok=True)
-        project = await self._materialize_project(target_dir, project_id)
-        return ApiSuccessResponse(data={"project": project.model_dump(mode="json"), "path": target_dir})
+        # `_next_free_leaf` already proved the path is free, so this only has to
+        # create it (parents included).
+        return await self._place_project(leaf, body.get("project_id"), lambda target_dir: os.makedirs(target_dir))
 
     @action.post(action_name="validate-project-name")
     async def _validate_project_name_action(self) -> ApiResponse:

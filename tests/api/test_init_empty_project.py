@@ -15,9 +15,7 @@ import pytest
 
 from flow_sdk.builtin.project import Project
 
-
-def _cn_id(bootstrap_payload: dict) -> str:
-    return bootstrap_payload["data"]["default_compute_node"]["id"]
+from .conftest import default_compute_node_id
 
 
 async def _init(client, cn_id: str, name: str, project_id: str | None = None):
@@ -30,9 +28,8 @@ async def _init(client, cn_id: str, name: str, project_id: str | None = None):
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_creates_the_directory_and_a_project_that_points_at_it(bootstrapped_client):
-    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
-    r = await _init(bootstrapped_client, _cn_id(bootstrap.json()), "empty-engagement")
+async def test_creates_the_directory_and_a_project_that_points_at_it(bootstrapped_client, bootstrap_payload):
+    r = await _init(bootstrapped_client, default_compute_node_id(bootstrap_payload), "empty-engagement")
 
     assert r.status_code == 200, r.text
     data = r.json()["data"]
@@ -44,10 +41,9 @@ async def test_creates_the_directory_and_a_project_that_points_at_it(bootstrappe
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_the_directory_resolves_back_to_the_same_project(bootstrapped_client):
+async def test_the_directory_resolves_back_to_the_same_project(bootstrapped_client, bootstrap_payload):
     """The point of the row: scanning that path later must not mint a second project."""
-    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
-    r = await _init(bootstrapped_client, _cn_id(bootstrap.json()), "identity-holds")
+    r = await _init(bootstrapped_client, default_compute_node_id(bootstrap_payload), "identity-holds")
     data = r.json()["data"]
 
     found = await Project.find_by_cwd(data["path"])
@@ -59,11 +55,10 @@ async def test_the_directory_resolves_back_to_the_same_project(bootstrapped_clie
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_adopts_an_id_minted_off_box(bootstrapped_client):
-    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+async def test_adopts_an_id_minted_off_box(bootstrapped_client, bootstrap_payload):
     wanted = str(uuid.uuid4())
 
-    r = await _init(bootstrapped_client, _cn_id(bootstrap.json()), "adopted-empty", wanted)
+    r = await _init(bootstrapped_client, default_compute_node_id(bootstrap_payload), "adopted-empty", wanted)
 
     assert r.json()["data"]["project"]["id"] == wanted
 
@@ -71,13 +66,12 @@ async def test_adopts_an_id_minted_off_box(bootstrapped_client):
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_refuses_a_foreign_id(bootstrapped_client):
-    """Same adoption gate as materialize: a v7 is a UUID and not an entity id."""
-    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
-
+async def test_refuses_a_foreign_id(bootstrapped_client, bootstrap_payload):
+    """Routes through the same adoption gate as materialize (which covers the
+    gate itself): a v7 is a UUID and not an entity id."""
     r = await _init(
         bootstrapped_client,
-        _cn_id(bootstrap.json()),
+        default_compute_node_id(bootstrap_payload),
         "foreign-empty",
         "018f4b1e-7c3a-7f2b-9c1d-2e5a6b7c8d9e",
     )
@@ -88,10 +82,9 @@ async def test_refuses_a_foreign_id(bootstrapped_client):
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_a_second_project_of_the_same_name_gets_its_own_folder(bootstrapped_client):
+async def test_a_second_project_of_the_same_name_gets_its_own_folder(bootstrapped_client, bootstrap_payload):
     """Auto-suffix rather than collide — the launch has already paid for a box."""
-    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
-    cn_id = _cn_id(bootstrap.json())
+    cn_id = default_compute_node_id(bootstrap_payload)
 
     first = await _init(bootstrapped_client, cn_id, "twice")
     second = await _init(bootstrapped_client, cn_id, "twice")
@@ -105,9 +98,7 @@ async def test_a_second_project_of_the_same_name_gets_its_own_folder(bootstrappe
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_name_is_required(bootstrapped_client):
-    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
-
-    r = await _init(bootstrapped_client, _cn_id(bootstrap.json()), "   ")
+async def test_name_is_required(bootstrapped_client, bootstrap_payload):
+    r = await _init(bootstrapped_client, default_compute_node_id(bootstrap_payload), "   ")
 
     assert r.json()["status"] == "FAIL"

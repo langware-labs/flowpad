@@ -111,28 +111,21 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function launchWithGit(overrides: Record<string, unknown> = {}) {
+/** Launch with a sandbox project of whatever shape the test needs. */
+async function launchWith(sandboxProject: Record<string, unknown>) {
   const { result } = renderHook(() => useDesktops());
   await act(async () => {
-    await result.current.launch({
-      name: 'flowpad-hub',
-      sandboxProject: { name: 'flowpad-hub', gitOrigin: ORIGIN as never, ...overrides },
-    });
+    await result.current.launch({ name: String(sandboxProject.name), sandboxProject: sandboxProject as never });
   });
   return result;
 }
 
+const launchWithGit = (overrides: Record<string, unknown> = {}) =>
+  launchWith({ name: 'flowpad-hub', gitOrigin: ORIGIN, ...overrides });
+
 /** A sandbox project with no repository behind it — nothing to clone. */
-async function launchWithoutRepo(overrides: Record<string, unknown> = {}) {
-  const { result } = renderHook(() => useDesktops());
-  await act(async () => {
-    await result.current.launch({
-      name: 'scratch',
-      sandboxProject: { name: 'scratch', ...overrides },
-    });
-  });
-  return result;
-}
+const launchWithoutRepo = (overrides: Record<string, unknown> = {}) =>
+  launchWith({ name: 'scratch', ...overrides });
 
 function rows(result: { current: { steps: { id: string }[] } }): string[] {
   return result.current.steps.map((s) => s.id);
@@ -241,14 +234,15 @@ describe('sandbox provisioning composes computeNodeTools', () => {
 
     const result = await launchWithoutRepo();
 
-    expect(ops()).toEqual(['setup', 'workspace-ready', 'init-empty-project', 'index-project', 'set-default-project']);
+    expect(ops()).toEqual(['setup', 'workspace-ready', 'init-empty-project', 'set-default-project']);
     expect(ops()).not.toContain('clone-project');
     expect(ops()).not.toContain('validate-project-name');
-    // Still the project the tab opens on, and still indexed by path.
+    // Nothing was fetched, so there is nothing to scan — no index step, no row.
+    expect(ops()).not.toContain('index-project');
+    expect(rows(result)).toEqual(['launch', 'health', 'init', 'default', 'open']);
+    // Still the project the tab opens on.
     expect(bodyOf('set-default-project')?.project_id).toBe(PROJECT_ID);
-    expect(bodyOf('index-project')?.path).toBe('/root/workspace/scratch');
     expect(h.openedUrl).toContain(PROJECT_ID);
-    expect(rows(result)).toEqual(['launch', 'health', 'init', 'index', 'default', 'open']);
   });
 
   it('shows the rows the launch will actually run, not a fixed list', async () => {
