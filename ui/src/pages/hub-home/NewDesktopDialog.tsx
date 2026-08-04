@@ -1,4 +1,5 @@
-import { connectionManager, gitOriginFromUrl, oauthService } from '@sdk';
+import { gitOriginFromUrl, OAUTH_PROVIDERS, OAuthStatus, oauthService } from '@sdk';
+import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -94,14 +95,12 @@ export function NewDesktopDialog({ open, onOpenChange, defaultName, initialGitUr
     void validateAndMaybeLaunch();
   }, [url, finish, validateAndMaybeLaunch]);
 
-  // Connect GitHub, then re-validate on the device-flow success broadcast.
-  const handleConnectGithub = useCallback(() => {
-    setConnecting(true);
-    setError('');
-    const handler = (msg: { auth_method?: string; status?: string }) => {
-      if (msg.auth_method !== 'github') return;
-      connectionManager.off('on_llm_config_msg', handler);
-      if (msg.status === 'success') {
+  // Only listen while a connect is pending — a device flow the user abandons
+  // never completes, so an always-on listener would outlive the dialog.
+  useOAuthFlowComplete(
+    OAUTH_PROVIDERS.GITHUB,
+    (msg) => {
+      if (msg.status === OAuthStatus.SUCCESS) {
         void validateAndMaybeLaunch().then((launched) => {
           if (!launched) setError(t`Connected, but still no access to this repo.`);
           setConnecting(false);
@@ -110,17 +109,21 @@ export function NewDesktopDialog({ open, onOpenChange, defaultName, initialGitUr
         setConnecting(false);
         setError(t`GitHub connection failed.`);
       }
-    };
-    connectionManager.on('on_llm_config_msg', handler);
-    void oauthService.connect('github').catch((e: unknown) => {
-      connectionManager.off('on_llm_config_msg', handler);
+    },
+    connecting,
+  );
+
+  const handleConnectGithub = useCallback(() => {
+    setConnecting(true);
+    setError('');
+    void oauthService.connect(OAUTH_PROVIDERS.GITHUB).catch((e: unknown) => {
       setConnecting(false);
       // Prefer the backend's ApiFailResponse message over axios's generic
       // "Request failed with status code 500" (same unwrap NewProjectFromGitDialog does).
       const ax = e as { response?: { data?: { message?: string } }; message?: string };
       setError(ax.response?.data?.message ?? ax.message ?? t`Couldn't start GitHub connection.`);
     });
-  }, [validateAndMaybeLaunch, t]);
+  }, [t]);
 
   const busy = checking || connecting;
 

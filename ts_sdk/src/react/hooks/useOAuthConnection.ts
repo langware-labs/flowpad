@@ -11,6 +11,7 @@ import {
   type EntityEnvVars,
   type EnvVarStatus,
   type OAuthDetachResult,
+  type OAuthFlowCompletePayload,
   type OAuthProvider,
   type OAuthTestResult,
 } from '@sdk';
@@ -260,7 +261,7 @@ export const useOAuthConnection = ({
 
   // Listen for OAuth flow completion (auth + attach) via custom event
   useEffect(() => {
-    const handleOAuthFlowComplete = (data: { status: OAuthStatus; attachSuccess?: boolean }) => {
+    const handleOAuthFlowComplete = (data: OAuthFlowCompletePayload) => {
       if (data.status === OAuthStatus.SUCCESS && currentOAuthFlow) {
         // Store connection ID before clearing the flow
         const connectionId = currentOAuthFlow.connectionId;

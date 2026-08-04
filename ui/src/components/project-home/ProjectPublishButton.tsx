@@ -1,4 +1,5 @@
-import { OAUTH_PROVIDERS, cloudManager, connectionManager, launchWizard, oauthService, type Project } from '@sdk';
+import { OAUTH_PROVIDERS, OAuthStatus, cloudManager, launchWizard, oauthService, type Project } from '@sdk';
+import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { GitShareGateDialog } from '@src/components/share-to-conversation/GitShareGateDialog';
 import { gitShareGateState } from '@src/components/share-to-conversation/git-share-gate-state';
@@ -43,17 +44,8 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
   const [oauthConnecting, setOauthConnecting] = useState(false);
   const [resumeWhenReady, setResumeWhenReady] = useState(false);
   const publishInFlight = useRef(false);
-  const oauthHandler = useRef<((message: { auth_method?: string; status?: string }) => void) | null>(null);
 
   const { push, busy: pushBusy } = useGitPush('@local', project.fs_storage_mount_path ?? null, preflight.refetch);
-
-  const clearOAuthHandler = useCallback(() => {
-    if (!oauthHandler.current) return;
-    connectionManager.off('on_llm_config_msg', oauthHandler.current);
-    oauthHandler.current = null;
-  }, []);
-
-  useEffect(() => clearOAuthHandler, [clearOAuthHandler]);
 
   const publishReadyProject = useCallback(async () => {
     if (publishInFlight.current || project.remote === true) return;
@@ -115,42 +107,40 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
     await push();
   }, [push]);
 
+  // Subscribed only while this button's own connect is pending, so an abandoned
+  // flow can't leave a listener behind and someone else's connect can't publish.
+  useOAuthFlowComplete(
+    OAUTH_PROVIDERS.GITHUB,
+    (message) => {
+      setOauthConnecting(false);
+      if (message.status !== OAuthStatus.SUCCESS) {
+        notify.error({ title: t`Could not connect GitHub`, message: t`GitHub authorization did not complete.` });
+        return;
+      }
+      void fetchGithubStatus().then((connected) => {
+        if (connected === false) {
+          notify.error({ title: t`Could not connect GitHub`, message: t`GitHub authorization did not complete.` });
+          return;
+        }
+        void publishReadyProject();
+      });
+    },
+    oauthConnecting,
+  );
+
   const connectGitHub = useCallback(async () => {
     if (oauthConnecting) return;
-    clearOAuthHandler();
     setOauthConnecting(true);
-    const handler = (message: { auth_method?: string; status?: string }) => {
-      if (message.auth_method !== OAUTH_PROVIDERS.GITHUB) return;
-      clearOAuthHandler();
-      setOauthConnecting(false);
-      if (message.status === 'success') {
-        void fetchGithubStatus().then((connected) => {
-          if (connected === false) {
-            notify.error({
-              title: t`Could not connect GitHub`,
-              message: t`GitHub authorization did not complete.`,
-            });
-            return;
-          }
-          void publishReadyProject();
-        });
-      } else {
-        notify.error({ title: t`Could not connect GitHub`, message: t`GitHub authorization did not complete.` });
-      }
-    };
-    oauthHandler.current = handler;
-    connectionManager.on('on_llm_config_msg', handler);
     try {
       await oauthService.connect(OAUTH_PROVIDERS.GITHUB);
     } catch (error) {
-      clearOAuthHandler();
       setOauthConnecting(false);
       notify.error({
         title: t`Could not connect GitHub`,
         message: errorMessage(error, t`GitHub authorization did not complete.`),
       });
     }
-  }, [clearOAuthHandler, oauthConnecting, publishReadyProject, t]);
+  }, [oauthConnecting, t]);
 
   const checkGithubAndPublish = useCallback(async () => {
     if (githubChecking || oauthConnecting || publishing) return;
