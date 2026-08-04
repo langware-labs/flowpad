@@ -26,8 +26,8 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 }));
 vi.mock('@src/tabs/all-tabs-store', () => ({ getAllTabsSnapshot: () => h.allTabs }));
 // Capture the picker's onPick; render its trigger so we can find the row.
-vi.mock('@src/components/asset-manager/AssetPickerPopover', () => ({
-  AssetPickerPopover: (p: { onPick: (d: unknown) => void }) => {
+vi.mock('@src/components/asset-manager/AssetManagerPopover', () => ({
+  AssetManagerPopover: (p: { onPick: (d: unknown) => void }) => {
     h.onPick = p.onPick;
     return null;
   },
@@ -93,10 +93,7 @@ describe('FavoritesAddRow — build into the level it sits under', () => {
 
     fireEvent.click(screen.getByLabelText(/what's open/i));
 
-    expect(h.addFavorite).toHaveBeenCalledWith(
-      { entityType: 'markdown', entityId: ACTIVE, title: 'Welcome' },
-      '',
-    );
+    expect(h.addFavorite).toHaveBeenCalledWith({ entityType: 'markdown', entityId: ACTIVE, title: 'Welcome' }, '');
   });
 
   it('bookmarks the current DOCK when no entity is open (any view)', () => {

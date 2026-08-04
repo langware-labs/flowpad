@@ -3,11 +3,7 @@ import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 import type { AssetDescriptor } from '@sdk';
 import { TooltipProvider } from '@src/components/ui/tooltip';
-import {
-  AddModeRow,
-  AssetRow,
-} from '@src/components/asset-manager/AssetManagerPopover';
-import { PickRow } from '@src/components/asset-manager/AssetPickerPopover';
+import { AssetRow } from '@src/components/asset-manager/AssetManagerPopover';
 import { assetScope } from '@src/components/asset-manager/asset-scope';
 import {
   DirTreeItemIconButton,
@@ -43,50 +39,49 @@ describe('entity location text owned by interactive hosts', () => {
           descriptor={row}
           scope={assetScope(row)}
           label="Remote kit"
-          attached={false}
-          used={false}
+          selected={false}
           improvable={false}
           busy={false}
-          onDetach={vi.fn()}
+          onPick={vi.fn()}
+          onUnpick={vi.fn()}
           onImprove={vi.fn()}
         />
       </Host>,
     );
 
+    // The name chip is the select control, and it is what carries the entity
+    // icon — "open" is its own button alongside it.
     const host = screen.getByTestId(`asset-manager-row-${row.typeid}-${row.source}`);
-    const open = within(host).getByRole('button', {
-      name: 'Open Remote kit, Available on cloud',
+    const pick = within(host).getByRole('button', {
+      name: 'Select Remote kit, Available on cloud',
     });
-    expect(open).toHaveAttribute('title', 'Open Remote kit\nAvailable on cloud');
-    expect(open.querySelector('[data-entity-location="cloud"]')).toBeTruthy();
+    expect(pick).toHaveAttribute('title', 'Select Remote kit\nAvailable on cloud');
+    expect(pick.querySelector('[data-entity-location="cloud"]')).toBeTruthy();
+    expect(within(host).getByTestId(`asset-manager-open-${row.typeid}-${row.source}`)).toHaveAccessibleName(
+      'Open Remote kit',
+    );
   });
 
-  it('PickRow appends local state to its select title and explicit action label', () => {
+  it('AssetRow appends local state to its select title and explicit action label', () => {
     const row = descriptor(false);
     render(
       <Host>
-        <PickRow descriptor={row} onPick={vi.fn()} onPreview={vi.fn()} />
+        <AssetRow
+          descriptor={row}
+          scope={assetScope(row)}
+          label={row.typeid}
+          selected={false}
+          improvable={false}
+          busy={false}
+          onPick={vi.fn()}
+        />
       </Host>,
     );
 
-    const host = screen.getByTestId(`asset-picker-row-${row.typeid}`);
-    expect(host).toHaveAccessibleName(`Select ${row.typeid}, Local only`);
-    expect(host).toHaveAttribute('title', `Select ${row.typeid}\nLocal only`);
-    expect(host.querySelector('[data-entity-location="local"]')).toBeTruthy();
-  });
-
-  it('AddModeRow exposes known state through checkbox-associated sr-only copy', () => {
-    const row = descriptor(true);
-    render(
-      <Host>
-        <AddModeRow descriptor={row} checked={false} onToggle={vi.fn()} />
-      </Host>,
-    );
-
-    expect(screen.getByRole('checkbox')).toHaveAccessibleName(
-      new RegExp(`${row.typeid}.*Available on cloud`, 'i'),
-    );
-    expect(screen.getByText('Available on cloud')).toHaveClass('sr-only');
+    const host = screen.getByTestId(`asset-manager-row-${row.typeid}-${row.source}`);
+    const pick = within(host).getByRole('button', { name: `Select ${row.typeid}, Local only` });
+    expect(pick).toHaveAttribute('title', `Select ${row.typeid}\nLocal only`);
+    expect(pick.querySelector('[data-entity-location="local"]')).toBeTruthy();
   });
 
   it('SimpleDirTree icon button owns cloud title and accessible label', () => {
@@ -99,35 +94,36 @@ describe('entity location text owned by interactive hosts', () => {
     };
     render(
       <Host>
-        <DirTreeItemIconButton
-          item={{ name: 'notes.md' }}
-          asset={asset}
-          childPath="/tmp/notes.md"
-          onClick={vi.fn()}
-        />
+        <DirTreeItemIconButton item={{ name: 'notes.md' }} asset={asset} childPath="/tmp/notes.md" onClick={vi.fn()} />
       </Host>,
     );
 
     const button = screen.getByRole('button', {
       name: 'Open markdown: notes.md, /tmp/notes.md, Available on cloud',
     });
-    expect(button).toHaveAttribute(
-      'title',
-      'Open markdown: notes.md\n/tmp/notes.md\nAvailable on cloud',
-    );
+    expect(button).toHaveAttribute('title', 'Open markdown: notes.md\n/tmp/notes.md\nAvailable on cloud');
   });
 
   it('does not invent a local/cloud host claim for unknown state', () => {
     const row = descriptor();
     render(
       <Host>
-        <PickRow descriptor={row} onPick={vi.fn()} onPreview={vi.fn()} />
+        <AssetRow
+          descriptor={row}
+          scope={assetScope(row)}
+          label={row.typeid}
+          selected={false}
+          improvable={false}
+          busy={false}
+          onPick={vi.fn()}
+        />
       </Host>,
     );
 
-    const host = screen.getByTestId(`asset-picker-row-${row.typeid}`);
-    expect(host.getAttribute('aria-label')).not.toMatch(/Available on cloud|Local only/);
-    expect(host.getAttribute('title')).not.toMatch(/Available on cloud|Local only/);
-    expect(host.querySelector('[data-entity-location="unknown"]')).toBeTruthy();
+    const host = screen.getByTestId(`asset-manager-row-${row.typeid}-${row.source}`);
+    const pick = within(host).getByRole('button', { name: `Select ${row.typeid}` });
+    expect(pick.getAttribute('aria-label')).not.toMatch(/Available on cloud|Local only/);
+    expect(pick.getAttribute('title')).not.toMatch(/Available on cloud|Local only/);
+    expect(pick.querySelector('[data-entity-location="unknown"]')).toBeTruthy();
   });
 });

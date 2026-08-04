@@ -43,12 +43,28 @@ export function basename(path: string): string {
 
 /**
  * Canonicalize a filesystem/VFS path for comparison and basename extraction:
- * backslashes → `/`, collapse repeated `/`, drop a trailing `/`. Shared by the
- * asset-manager popover (its `dirname`/`descriptorKey`) and `improvableMainFile`
- * so the normalization can't drift between the two.
+ * backslashes → `/`, collapse repeated `/`, drop a trailing `/`. Shared by
+ * `dirname`/`descriptorKey` below and `improvableMainFile` so the normalization
+ * can't drift between them.
  */
 export function normalizePath(path: string | null | undefined): string {
   return (path ?? '').replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '');
+}
+
+/** The directory containing `path`, normalized. `.` when there is no separator. */
+export function dirname(path: string): string {
+  const n = normalizePath(path);
+  const idx = n.lastIndexOf('/');
+  return idx >= 0 ? n.slice(0, idx) || '/' : '.';
+}
+
+/**
+ * Stable identity for a descriptor's *asset* (not its row): typeid + normalized
+ * path. The improve flow keys its busy state on this, so the host that launches
+ * an improvement and the row that renders the spinner agree on one key.
+ */
+export function descriptorKey(descriptor: { typeid: string; posix_path?: string | null }): string {
+  return `${descriptor.typeid}@${normalizePath(descriptor.posix_path)}`;
 }
 
 /** The subset of a type's TypeInfo that decides its improvable main file. */
@@ -74,6 +90,6 @@ export function improvableMainFile(
   if (!assetPath) return null;
   const { type } = parseTypeid(descriptor.typeid);
   const ti = typeInfoByName.get(type);
-  const file = ti?.folder_backed ? ti.main_file ?? '' : basename(assetPath);
+  const file = ti?.folder_backed ? (ti.main_file ?? '') : basename(assetPath);
   return file || null;
 }

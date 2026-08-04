@@ -878,8 +878,8 @@ msgid "Add Artifact"
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Add asset"
-msgstr ""
+#~ msgid "Add asset"
+#~ msgstr ""
 
 #: src/components/skills-viewer/amd-editor/components/BlockPicker.tsx
 #~ msgid "Add Block"
@@ -1299,7 +1299,7 @@ msgstr ""
 msgid "Analyze"
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Analyze and improve"
@@ -1313,7 +1313,7 @@ msgstr ""
 msgid "analyzed"
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Analyzing asset"
 msgstr ""
 
@@ -1572,7 +1572,7 @@ msgstr ""
 msgid "Asset compare"
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Asset has changes"
 msgstr ""
 
@@ -1589,13 +1589,14 @@ msgid "asset_ref is unset — has this MarkdownIndex ever been built?"
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Asset…"
-msgstr ""
+#~ msgid "Asset…"
+#~ msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "assets"
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
@@ -1659,8 +1660,8 @@ msgid "Attach an asset (skill, agent, doc, spec)"
 msgstr ""
 
 #: src/components/asset-manager/AssetPickerPopover.tsx
-msgid "Attach asset"
-msgstr ""
+#~ msgid "Attach asset"
+#~ msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -2072,8 +2073,8 @@ msgstr ""
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
-#: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/AddGitFolderDialog.tsx
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
@@ -2156,9 +2157,9 @@ msgstr ""
 msgid "Cannot edit"
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Cannot improve asset"
 msgstr ""
 
@@ -4253,7 +4254,7 @@ msgstr ""
 msgid "Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the result."
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Describe the issue to analyze and improve…"
 msgstr ""
 
@@ -4320,8 +4321,8 @@ msgid "Desktops"
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Detach"
-msgstr ""
+#~ msgid "Detach"
+#~ msgstr ""
 
 #: src/components/workflow-runner/header/ViewModeToggle.tsx
 #~ msgid "Detailed view"
@@ -6903,7 +6904,7 @@ msgstr ""
 msgid "Improve"
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Improve failed"
 msgstr ""
 
@@ -6915,11 +6916,11 @@ msgstr ""
 msgid "Improve skipped"
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Improvement ready"
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Improving asset"
 msgstr ""
 
@@ -7942,7 +7943,6 @@ msgstr ""
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
-#: src/components/asset-manager/AssetPickerPopover.tsx
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/MarkdownIndexPanel.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
@@ -8824,6 +8824,10 @@ msgstr ""
 msgid "No asset editor is registered for this Wiki target."
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "No assets available."
+msgstr ""
+
 #: src/pages/discover-page/discover-page.tsx
 msgid "No assets match those filters."
 msgstr ""
@@ -8833,12 +8837,12 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/asset-manager/AssetPickerPopover.tsx
-msgid "No assets to run."
-msgstr ""
+#~ msgid "No assets to run."
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "No assets visible to this process."
-msgstr ""
+#~ msgid "No assets visible to this process."
+#~ msgstr ""
 
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "No assistance requests yet"
@@ -9066,7 +9070,7 @@ msgstr ""
 msgid "No files or folders"
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "No findings found"
 msgstr ""
 
@@ -9197,7 +9201,6 @@ msgstr ""
 msgid "No matches found in the Flowpad known-issues database."
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/spotlight/Spotlight.tsx
@@ -9834,7 +9837,7 @@ msgstr ""
 msgid "Nothing to push"
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Nothing to save"
 msgstr ""
 
@@ -9980,7 +9983,6 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/asset-manager/AssetPickerPopover.tsx
 msgid "Open {label}"
 msgstr ""
 
@@ -10445,7 +10447,7 @@ msgstr ""
 msgid "OPENAI_API_KEY"
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Opened Asset compare."
 msgstr ""
 
@@ -11487,8 +11489,8 @@ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetPickerPopover.tsx
-msgid "Read-only source"
-msgstr ""
+#~ msgid "Read-only source"
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #~ msgid "Read-only source. Attach to get a private editable copy."
@@ -11770,8 +11772,14 @@ msgstr ""
 #~ msgid "Remind in {count} {0}"
 #~ msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Remove"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Remove {label}"
 msgstr ""
 
 #: src/components/connections-manager/usage-cell.tsx
@@ -12158,8 +12166,8 @@ msgid "Reveal in Finder"
 msgstr ""
 
 #: src/components/asset-manager/AssetPickerPopover.tsx
-msgid "Reveal in Finder/Explorer"
-msgstr ""
+#~ msgid "Reveal in Finder/Explorer"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
@@ -12457,7 +12465,7 @@ msgstr ""
 
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -12487,7 +12495,7 @@ msgstr ""
 msgid "Save Changes"
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Save failed"
@@ -12501,7 +12509,7 @@ msgstr ""
 msgid "Save failed."
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Save the current asset changes as a version before running improvement."
 msgstr ""
 
@@ -12684,7 +12692,8 @@ msgstr ""
 msgid "Search (⌘K)"
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/editor/markdown/PlainMarkdownAssetEditor.tsx
+#: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Search agents and skills…"
 msgstr ""
 
@@ -12883,7 +12892,7 @@ msgstr ""
 msgid "Select {0}"
 msgstr ""
 
-#: src/components/asset-manager/AssetPickerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Select {label}"
 msgstr ""
 
@@ -12989,8 +12998,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/asset-manager/AssetPickerPopover.tsx
-msgid "Select Asset"
-msgstr ""
+#~ msgid "Select Asset"
+#~ msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Select capability…"
@@ -13057,6 +13066,10 @@ msgstr ""
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 msgid "Select…"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Selected assets"
 msgstr ""
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
@@ -14499,7 +14512,7 @@ msgstr ""
 #~ msgid "The agent you're looking for doesn't exist or is not available."
 #~ msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "The analysis completed but did not produce asset-scoped findings."
 msgstr ""
 
@@ -14515,7 +14528,7 @@ msgstr ""
 msgid "The asset is now available to project members."
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "The asset matches HEAD."
 msgstr ""
@@ -14684,7 +14697,7 @@ msgstr ""
 msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
 msgstr ""
 
@@ -14725,7 +14738,7 @@ msgstr ""
 msgid "This folder can't be shared yet"
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This folder-backed asset has no main file metadata."
 msgstr ""
 
@@ -14761,7 +14774,7 @@ msgstr ""
 msgid "This permanently removes the saved context snapshot. This cannot be undone."
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This process has no transcript session yet."
 msgstr ""
 
@@ -15636,7 +15649,6 @@ msgid "View"
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/asset-manager/AssetPickerPopover.tsx
 msgid "View {label} (read-only)"
 msgstr ""
 
@@ -15919,7 +15931,7 @@ msgstr ""
 #~ msgid "What would you like to build?"
 #~ msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "What would you like to fix?"
 msgstr ""
 
