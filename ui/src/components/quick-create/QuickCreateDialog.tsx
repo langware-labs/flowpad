@@ -127,19 +127,30 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
   const projectItems = useMemo(() => projectListToSelectorItems(allProjects), [allProjects]);
 
   const currentProjectKey = useMemo(
-    () => canonicalPath(project?.fs_storage_mount_path ?? ''),
-    [project?.fs_storage_mount_path],
+    () => canonicalPath(scope.project?.fs_storage_mount_path ?? ''),
+    [scope.project?.fs_storage_mount_path],
   );
 
   const ensureProject = useEnsureProject();
+
+  const applyProjectScope = useCallback(
+    (selectedProject: Project) => {
+      if (!descriptor) return;
+      const next: Scope = { kind: 'project', project: selectedProject, folderPath: null };
+      setScope(next);
+      setPath(defaultPathFor(next, descriptor, harness));
+    },
+    [descriptor, harness],
+  );
 
   const handleProjectPick = useCallback(
     async (pickedKey: string) => {
       const picked = allProjects.find((p) => canonicalPath(p.cwd) === pickedKey);
       if (!picked?.cwd) return;
-      await ensureProject(picked.cwd);
+      const selectedProject = await ensureProject(picked.cwd, { select: false });
+      applyProjectScope(selectedProject);
     },
-    [allProjects, ensureProject],
+    [allProjects, applyProjectScope, ensureProject],
   );
 
   const handleCreateProject = useCallback(
@@ -147,9 +158,10 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
       const cleanName = rawName.trim();
       const cleanParent = rawParent.trim().replace(/\\/g, '/').replace(/\/+$/, '');
       if (!cleanName || !cleanParent) throw new Error('Name and parent folder required');
-      await ensureProject(`${cleanParent}/${cleanName}`);
+      const selectedProject = await ensureProject(`${cleanParent}/${cleanName}`, { select: false });
+      applyProjectScope(selectedProject);
     },
-    [ensureProject],
+    [applyProjectScope, ensureProject],
   );
 
   const handlePickFolder = useCallback(async (): Promise<string | null> => {
@@ -175,10 +187,12 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
 
   const handleCreate = useCallback(async () => {
     if (!descriptor || !name.trim() || isSubmitting) return;
+    if (descriptor.allowedScopes && !descriptor.allowedScopes.includes(scope.kind)) return;
     setIsSubmitting(true);
     try {
+      const selectedProject = scope.kind === 'project' ? scope.project : null;
       const res = await descriptor.create({
-        project: dataContext.project ?? null,
+        project: selectedProject,
         name,
         absolutePath: path,
         scope: scope.kind,
@@ -195,7 +209,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
     } finally {
       setIsSubmitting(false);
     }
-  }, [descriptor, name, path, scope.kind, harness, folderVfsPath, isSubmitting, commit, navigation, onOpenChange, t]);
+  }, [descriptor, name, path, scope, harness, folderVfsPath, isSubmitting, commit, navigation, onOpenChange, t]);
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
@@ -208,7 +222,8 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
   if (!descriptor) return null;
   // Backend type registry owns the glyph (TypeInfo.icon).
   const Icon = iconForType(descriptor.type);
-  const canCreate = !!name.trim() && !!path.trim() && !isSubmitting;
+  const scopeAllowed = !descriptor.allowedScopes || descriptor.allowedScopes.includes(scope.kind);
+  const canCreate = !!name.trim() && !!path.trim() && scopeAllowed && !isSubmitting;
 
   return (
     <>
@@ -251,6 +266,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
                 onPickFolder={handlePickFolder}
                 onOpenProjectPicker={() => setProjectPickerOpen(true)}
                 harnessApplies={!!descriptor && harnessAppliesTo(descriptor.type)}
+                allowedScopes={descriptor.allowedScopes}
               />
             </div>
           </div>

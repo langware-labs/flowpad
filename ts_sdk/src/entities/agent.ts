@@ -1,8 +1,12 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { ActionInfo } from '../models';
+import type { TypeId } from '../models/TypeId';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 import { dataContext } from '../FlowSync/context';
+import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
+
+export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 
 /**
  * The launchable agent — identity (name / avatar / system prompt) plus the
@@ -38,7 +42,7 @@ export class Agent extends APIEntity<Agent> {
   description?: string;
   /** Emoji (`🩺`) or a lucide icon name — the same one-string contract
    *  `IconPicker` stores and `renderIconValue()` renders. */
-  avatar?: string;
+  avatar?: string | null;
   /** Who this agent is. Delivered to the worker via `context_data.instructions`;
    *  on disk it is the markdown body of `agent.md`. */
   system_prompt?: string;
@@ -126,6 +130,38 @@ export class Agent extends APIEntity<Agent> {
     const typeId = dataContext.computeNodeTypeId;
     if (!typeId || !this.asset_ref) return null;
     return new FrontMatterFsRef(this.asset_ref, typeId);
+  }
+
+  /** Directory containing the portable Agent bundle. */
+  get bundleDirectory(): string | null {
+    const normalized = this.asset_ref?.replace(/\\/g, '/').replace(/\/+$/, '');
+    if (!normalized) return null;
+    if (normalized === 'agent.md') return '.';
+    if (!normalized.endsWith('/agent.md')) return null;
+    return normalized.slice(0, -'/agent.md'.length) || '/';
+  }
+
+  /** Resolved carrier path for the canonical portable avatar reference. */
+  get avatarAssetRef(): string | null {
+    const directory = this.bundleDirectory;
+    if (this.avatar !== AGENT_AVATAR_REF || !directory) return null;
+    if (directory === '/') return `/${AGENT_AVATAR_FILE}`;
+    return `${directory}/${AGENT_AVATAR_FILE}`;
+  }
+
+  /**
+   * Create an Agent in the selected project, or in user scope when null.
+   * Placement remains backend-owned; the optional folder is intentionally
+   * reserved for compatibility with the shared Quick Create interface.
+   */
+  static async createInProject(
+    project: { typeId?: TypeId } | null,
+    name: string,
+    _folderVfsPath?: string,
+  ): Promise<Agent> {
+    const scopeIds = project?.typeId ? [project.typeId] : [];
+    const agent = new Agent({ name: name.trim() });
+    return agent.save(scopeIds);
   }
 
   /**

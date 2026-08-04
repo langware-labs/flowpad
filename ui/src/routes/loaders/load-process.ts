@@ -9,15 +9,7 @@
  * decides how to recover (redirect URL, recovery skips, etc).
  */
 
-import {
-  AgenticProcess,
-  ContextEntitiesEnum,
-  dataContext,
-  Project,
-  Shell,
-  systemTools,
-  TypeId,
-} from '@sdk';
+import { AgenticProcess, ContextEntitiesEnum, dataContext, Project, Shell, systemTools, TypeId } from '@sdk';
 import { stampTabRecencyForTarget } from '@src/tabs/tab-recency';
 import { perfLog, perfTime } from './_perf';
 import { loadProject } from './load-project';
@@ -43,20 +35,17 @@ import { loadProject } from './load-project';
  * silently jumped to a stale cached sibling.
  */
 export type ProcessLoadErrorKind =
-  | 'entity_not_found'      // hard — entity row is gone
-  | 'network_error'         // hard — fetch failed (non-404). URL still valid; show Retry.
-  | 'runtime_terminated'    // soft — backend ``open`` returned null (process stopped/orphan)
-  | 'shell_entity_missing'  // soft — start succeeded but Shell entity can't be resolved
-  | 'pty_attach_failed'     // soft — PTY couldn't attach (compute node, mismatched pty_id, …)
-  | 'project_missing'       // soft — process.project_id points at a deleted Project
-  | 'failed_to_start';      // soft — worker exits instantly; backend latched, auto-relaunch paused
+  | 'entity_not_found' // hard — entity row is gone
+  | 'network_error' // hard — fetch failed (non-404). URL still valid; show Retry.
+  | 'runtime_terminated' // soft — backend ``open`` returned null (process stopped/orphan)
+  | 'shell_entity_missing' // soft — start succeeded but Shell entity can't be resolved
+  | 'pty_attach_failed' // soft — PTY couldn't attach (compute node, mismatched pty_id, …)
+  | 'project_missing' // soft — process.project_id points at a deleted Project
+  | 'failed_to_start'; // soft — worker exits instantly; backend latched, auto-relaunch paused
 
 export type ProcessLoadErrorSeverity = 'hard' | 'soft';
 
-const HARD_KINDS: ReadonlySet<ProcessLoadErrorKind> = new Set([
-  'entity_not_found',
-  'network_error',
-]);
+const HARD_KINDS: ReadonlySet<ProcessLoadErrorKind> = new Set(['entity_not_found', 'network_error']);
 
 export class ProcessLoadError extends Error {
   readonly severity: ProcessLoadErrorSeverity;
@@ -77,16 +66,11 @@ export class ProcessLoadError extends Error {
  * server-supplied error messages — those are the only signals available
  * without rewiring the SDK to throw typed errors of its own.
  */
-export function classifyRuntimeFailure(
-  processId: string,
-  process: AgenticProcess,
-  cause: unknown,
-): ProcessLoadError {
+export function classifyRuntimeFailure(processId: string, process: AgenticProcess, cause: unknown): ProcessLoadError {
   // ApiFailResponse bodies surface through axios as a generic "Request
   // failed with status code 500" Error.message — the server's actual
   // message lives in response.data.message. Prefer it when present.
-  const responseMsg = (cause as { response?: { data?: { message?: string } } })?.response?.data
-    ?.message;
+  const responseMsg = (cause as { response?: { data?: { message?: string } } })?.response?.data?.message;
   const msg = responseMsg ?? (cause instanceof Error ? cause.message : String(cause ?? ''));
   if (/failed to start/i.test(msg)) {
     // Backend `open` refused: the worker exited instantly on its last
@@ -131,9 +115,7 @@ export function describeProcessStartError(error: unknown): { title: string; desc
  *
  * Throws ProcessLoadError on any failure. Never redirects.
  */
-export async function loadProcess(
-  processId: string,
-): Promise<{ process: AgenticProcess; shell: Shell | null }> {
+export async function loadProcess(processId: string): Promise<{ process: AgenticProcess; shell: Shell | null }> {
   // ── Entity phase (hard errors only) ────────────────────────────────────
   // Split the fetch catch so a real network failure (timeout, abort,
   // non-404 5xx) reports as ``network_error`` instead of being silently
@@ -152,8 +134,9 @@ export async function loadProcess(
     } catch (cause) {
       // 404 → entity is genuinely gone; anything else → transient fetch
       // failure that doesn't mean the URL is dead.
-      const status = (cause as { response?: { status?: number }; status?: number })?.response?.status
-        ?? (cause as { status?: number })?.status;
+      const status =
+        (cause as { response?: { status?: number }; status?: number })?.response?.status ??
+        (cause as { status?: number })?.status;
       if (status === 404) {
         throw new ProcessLoadError('entity_not_found', processId, null, cause);
       }
@@ -170,14 +153,13 @@ export async function loadProcess(
   // cannot observe the previously-active project.
   if (process.project_id) {
     try {
-      await perfTime('loadProject', () =>
-        loadProject(new TypeId(Project.type, process.project_id!)),
-      );
+      await perfTime('loadProject', () => loadProject(new TypeId(Project.type, process.project_id!)));
     } catch (cause) {
       // The stored project_id can dangle when the project was deleted under
       // us. Recover via the backend's 3-phase recover_by_path, then continue.
-      const status = (cause as { response?: { status?: number }; status?: number })?.response?.status
-        ?? (cause as { status?: number })?.status;
+      const status =
+        (cause as { response?: { status?: number }; status?: number })?.response?.status ??
+        (cause as { status?: number })?.status;
       if (status !== 404) throw cause;
       const recovered = await process.recoverProject().catch(() => null);
       if (!recovered) {
@@ -220,9 +202,7 @@ export async function loadProcess(
     // not the AgenticProcess row, so without this close-to-most-recently-active
     // falls back to tab_order.
     stampTabRecencyForTarget(AgenticProcess.type, processId);
-    dataContext.setWorkdir(
-      process.workdir ?? shell?.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
-    );
+    dataContext.setWorkdir(process.workdir ?? shell?.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   });
   await perfTime('setContextEntityTypeId(CurrentProcessTypeId)', () =>
     dataContext.setContextEntityTypeId(

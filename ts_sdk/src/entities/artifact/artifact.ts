@@ -16,6 +16,12 @@ export interface IArtifact extends IEntity {
   project_id?: string | null;
   /** Path of the asset this artifact REFERENCES. It never owns the path. */
   asset_ref?: string;
+  /**
+   * TypeId of the entity this artifact references, e.g. `source_item-<uuid>`.
+   * `asset_ref` addresses a deliverable that is a file; this addresses one that
+   * is a row — a sent message, a created record — which has no path at all.
+   */
+  target_type_id?: string | null;
   /** TypeId of the run that produced it, e.g. `agentic_process-<uuid>`. */
   generated_by?: string | null;
 }
@@ -75,6 +81,7 @@ export class Artifact extends APIEntity<Artifact> implements IArtifact {
   origin: FSOriginField | null;
   project_id: string | null;
   asset_ref: string;
+  target_type_id: string | null;
   /**
    * Provenance. Deliberately NOT a revival of the retired `generating_flow_id`
    * (which stays in RETIRED_ARTIFACT_KEYS and is deleted, never aliased):
@@ -93,6 +100,7 @@ export class Artifact extends APIEntity<Artifact> implements IArtifact {
     this.origin = normalizeFSOrigin((entity.origin ?? legacy.git_origin ?? metadataOrigin) as FSOriginInput | null);
     this.project_id = entity.project_id ?? null;
     this.asset_ref = entity.asset_ref ?? '';
+    this.target_type_id = entity.target_type_id ?? null;
     this.generated_by = entity.generated_by ?? null;
 
     // APIEntity.deepAssign intentionally accepts open wire payloads. Remove
@@ -118,6 +126,7 @@ export class Artifact extends APIEntity<Artifact> implements IArtifact {
     json.kind = this.kind;
     json.origin = this.origin;
     json.asset_ref = this.asset_ref;
+    json.target_type_id = this.target_type_id;
     json.generated_by = this.generated_by;
     return json;
   }

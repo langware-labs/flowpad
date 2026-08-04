@@ -501,21 +501,6 @@ export class OAuthService {
     }
   }
 
-  public async delete(provider: string, targetEntity: TypeId): Promise<void> {
-    try {
-      const actionInfo = new ActionInfo('oauth');
-      actionInfo.subpath = [provider, 'disconnect'];
-      actionInfo.targetEntity = targetEntity;
-
-      await dataManager.callAction<unknown, void>(actionInfo);
-    } catch (error) {
-      console.error(`[OAuthService] OAuth delete failed for ${provider}:`, error);
-      throw new Error(
-        `Failed to delete ${provider} from entity: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
-    }
-  }
-
   public async getConnectionStatus(provider: string, targetEntity: TypeId): Promise<ConnectionStatus> {
     try {
       const actionInfo = new ActionInfo('oauth');

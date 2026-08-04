@@ -1,0 +1,242 @@
+import '@testing-library/jest-dom/vitest';
+
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Project } from '@sdk';
+
+import { ProjectPublishButton } from '@src/components/project-home/ProjectPublishButton';
+
+const mocks = vi.hoisted(() => ({
+  project: {
+    id: '004f3ab7-d33b-48c0-ae0e-6e61e181a343',
+    typeId: {
+      type: 'project',
+      id: '004f3ab7-d33b-48c0-ae0e-6e61e181a343',
+      toString: () => 'project:004f3ab7-d33b-48c0-ae0e-6e61e181a343',
+    },
+    name: 'Demo project',
+    displayName: 'Demo project',
+    remote: false,
+    fs_storage_mount_path: '/workspace/demo-project',
+    share: vi.fn(),
+  },
+  preflight: {
+    loading: false,
+    available: true,
+    reason: null as string | null,
+    code: null as string | null,
+    answered: true,
+    origin: 'git@github.com:flowpad/demo-project.git' as string | null,
+    refetch: vi.fn(),
+  },
+  cloudLogin: vi.fn(),
+  push: vi.fn(),
+  pushBusy: false,
+  launchWizard: vi.fn(),
+  oauthConnect: vi.fn(),
+  oauthStatus: vi.fn(),
+  connectionHandlers: [] as Array<(message: { auth_method?: string; status?: string }) => void>,
+  connectionOn: vi.fn(),
+  connectionOff: vi.fn(),
+  openExternal: vi.fn(),
+  hubPageUrl: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+  hubMode: false,
+}));
+
+vi.mock('@sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@sdk')>();
+  return {
+    ...actual,
+    cloudManager: { cloudAppUrl: 'https://app.flowpad.test' },
+    dataContext: {
+      userTypeId: {
+        type: 'user',
+        id: 'a230187d-e13f-46eb-b606-e39a21830e9c',
+      },
+    },
+    dataManager: { callAction: mocks.oauthStatus },
+    connectionManager: {
+      on: mocks.connectionOn,
+      off: mocks.connectionOff,
+    },
+    launchWizard: mocks.launchWizard,
+    oauthService: { connect: mocks.oauthConnect },
+    OAUTH_PROVIDERS: { ...actual.OAUTH_PROVIDERS, GITHUB: 'github' },
+  };
+});
+
+vi.mock('@src/hooks/use-cloud-login-gate', () => ({
+  useCloudLoginGate: () => mocks.cloudLogin,
+}));
+
+vi.mock('@src/hooks/use-git-push', () => ({
+  useGitPush: () => ({ push: mocks.push, busy: mocks.pushBusy }),
+}));
+
+vi.mock('@src/hooks/use-git-share-preflight', () => ({
+  useGitSharePreflight: () => mocks.preflight,
+}));
+
+vi.mock('@src/lib/hub-page-url', () => ({
+  hubPageUrl: mocks.hubPageUrl,
+}));
+
+vi.mock('@src/lib/open-external', () => ({
+  openExternal: mocks.openExternal,
+}));
+
+vi.mock('@src/navigation/hub-runtime', () => ({
+  isHubOnly: () => mocks.hubMode,
+}));
+
+vi.mock('@src/notifications', () => ({
+  notify: { success: mocks.success, error: mocks.error },
+}));
+
+vi.mock('@src/components/share-to-conversation/GitShareGateDialog', () => ({
+  GitShareGateDialog: ({
+    open,
+    gate,
+  }: {
+    open: boolean;
+    gate: { state: string; runSetup: () => void; runCommit: () => void };
+  }) =>
+    open ? (
+      <div data-testid="git-share-gate" data-state={gate.state}>
+        {gate.state === 'setup' && <button onClick={gate.runSetup}>Set up Git</button>}
+        {gate.state === 'commit' && <button onClick={gate.runCommit}>Commit and push</button>}
+      </div>
+    ) : null,
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.project.remote = false;
+  mocks.preflight.loading = false;
+  mocks.preflight.available = true;
+  mocks.preflight.reason = null;
+  mocks.preflight.code = null;
+  mocks.preflight.answered = true;
+  mocks.preflight.origin = 'git@github.com:flowpad/demo-project.git';
+  mocks.pushBusy = false;
+  mocks.hubMode = false;
+  mocks.connectionHandlers.length = 0;
+  mocks.connectionOn.mockImplementation((_event, handler) => {
+    mocks.connectionHandlers.push(handler);
+  });
+  mocks.cloudLogin.mockResolvedValue({ ok: true });
+  mocks.push.mockResolvedValue(undefined);
+  mocks.launchWizard.mockResolvedValue({ status: 'done' });
+  mocks.oauthConnect.mockResolvedValue(undefined);
+  mocks.oauthStatus.mockResolvedValue({ has_token: true });
+  mocks.hubPageUrl.mockReturnValue('https://app.flowpad.test/projects/004f3ab7-d33b-48c0-ae0e-6e61e181a343');
+  mocks.project.share.mockImplementation(() => {
+    mocks.project.remote = true;
+    return Promise.resolve(mocks.project);
+  });
+});
+
+afterEach(cleanup);
+
+describe('ProjectPublishButton', () => {
+  const project = mocks.project as unknown as Project;
+
+  it('cloud-logs in and publishes through the canonical Project share action', async () => {
+    render(<ProjectPublishButton project={project} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    await waitFor(() => expect(mocks.project.share).toHaveBeenCalledTimes(1));
+    expect(mocks.oauthStatus).toHaveBeenCalledTimes(1);
+    expect(mocks.cloudLogin).toHaveBeenCalledTimes(1);
+    expect(mocks.cloudLogin.mock.invocationCallOrder[0]).toBeLessThan(mocks.project.share.mock.invocationCallOrder[0]);
+    expect(screen.getByRole('link', { name: 'Published' })).toBeInTheDocument();
+    expect(mocks.success).toHaveBeenCalled();
+  });
+
+  it('does not share when cloud login does not complete', async () => {
+    mocks.cloudLogin.mockResolvedValue({ ok: false, error: 'Cloud login required' });
+    render(<ProjectPublishButton project={project} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    await waitFor(() => expect(mocks.error).toHaveBeenCalled());
+    expect(mocks.project.share).not.toHaveBeenCalled();
+    expect(screen.getByTestId('project-publish')).toHaveAttribute('data-state', 'local');
+  });
+
+  it('runs exact-folder Git setup for a missing repository or remote', async () => {
+    mocks.preflight.available = false;
+    mocks.preflight.code = 'missing-remote';
+    mocks.preflight.reason = 'A GitHub origin is required.';
+    render(<ProjectPublishButton project={project} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    expect(screen.getByTestId('git-share-gate')).toHaveAttribute('data-state', 'setup');
+    await userEvent.click(screen.getByRole('button', { name: 'Set up Git' }));
+
+    await waitFor(() => expect(mocks.launchWizard).toHaveBeenCalledTimes(1));
+    expect(mocks.launchWizard).toHaveBeenCalledWith(
+      'git-context-folder',
+      expect.objectContaining({
+        targetTypeId: mocks.project.typeId.toString(),
+        payload: expect.objectContaining({
+          projectId: mocks.project.id,
+          path: mocks.project.fs_storage_mount_path,
+        }),
+      }),
+    );
+    expect(mocks.preflight.refetch).toHaveBeenCalled();
+  });
+
+  it('uses the shared whole-repository push path for dirty or unpushed Git state', async () => {
+    mocks.preflight.available = false;
+    mocks.preflight.code = 'dirty';
+    mocks.preflight.reason = 'Commit and push the repository.';
+    render(<ProjectPublishButton project={project} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    expect(screen.getByTestId('git-share-gate')).toHaveAttribute('data-state', 'commit');
+    await userEvent.click(screen.getByRole('button', { name: 'Commit and push' }));
+
+    expect(mocks.push).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts GitHub OAuth and rechecks its status before sharing after authorization', async () => {
+    mocks.oauthStatus.mockResolvedValueOnce({ has_token: false });
+    render(<ProjectPublishButton project={project} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+    expect(mocks.oauthConnect).toHaveBeenCalledWith('github');
+    expect(mocks.connectionOn).toHaveBeenCalledWith('on_llm_config_msg', expect.any(Function));
+    act(() => {
+      mocks.connectionHandlers.at(-1)?.({ auth_method: 'github', status: 'success' });
+    });
+    await waitFor(() => expect(mocks.project.share).toHaveBeenCalledTimes(1));
+    expect(mocks.oauthStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it('renders a Published cloud link and opens it externally', async () => {
+    mocks.project.remote = true;
+    render(<ProjectPublishButton project={project} />);
+
+    const link = screen.getByRole('link', { name: 'Published' });
+    expect(mocks.hubPageUrl).toHaveBeenCalledWith('https://app.flowpad.test', mocks.project.typeId);
+    expect(link).toHaveAttribute('href', 'https://app.flowpad.test/projects/004f3ab7-d33b-48c0-ae0e-6e61e181a343');
+    await userEvent.click(link);
+    expect(mocks.openExternal).toHaveBeenCalledWith(
+      'https://app.flowpad.test/projects/004f3ab7-d33b-48c0-ae0e-6e61e181a343',
+    );
+  });
+
+  it('is hidden on the Hub Project page', () => {
+    mocks.hubMode = true;
+    render(<ProjectPublishButton project={project} />);
+
+    expect(screen.queryByTestId('project-publish')).not.toBeInTheDocument();
+  });
+});

@@ -45,19 +45,22 @@ export type RailItemId =
 /**
  * Hub-page rail ids (page=hub). A SEPARATE union, not more members of
  * {@link RailItemId}: the hub rail is a fixed list that bypasses the mode matrix
- * and the gates entirely, so keeping the two apart is what stops a hub id being
- * written into RAIL_ITEMS (where it would resolve to a silent `null` at render).
+ * entirely, so keeping the two apart is what stops a hub id being written into
+ * RAIL_ITEMS (where it would resolve to a silent `null` at render). It does gate
+ * its `project` entry, but on its own input rather than through {@link RailGate}
+ * — that entry needs the project *id* as a dock pointer, not just a boolean.
  * `home` and `tasks` exist on both surfaces and mean different things on each —
  * another reason not to share one union.
  */
 export type HubRailItemId =
   | 'home'
+  /** The active project's home — present only while one is selected. */
+  | 'project'
   | 'world'
   | 'organization'
-  | 'conversations'
+  | 'inbox'
   | 'tasks'
   | 'docs'
-  | 'flows'
   | 'credentials';
 
 export type RailPlacement =

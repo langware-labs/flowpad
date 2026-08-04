@@ -45,14 +45,17 @@ def _dump(journal: Any) -> Optional[dict]:
 
 
 @router.get("/auto-launch")
-async def auto_launch():
+async def auto_launch(project_id: str = ""):
     """The journey to enter on project load (`{"journey_id": … | null}`).
 
     One cheap call the home loader makes before render, so entering a journey is
     a load-time REDIRECT to `?journeyId=` rather than a post-render hijack."""
     from flow_sdk.builtin.journey import Journey
 
-    journal = await Journey.auto_launch_for(await _acting_user_id())
+    journal = await Journey.auto_launch_for(
+        await _acting_user_id(),
+        project_id=project_id.strip() or None,
+    )
     return ApiSuccessResponse(data={"journey_id": journal.journey_id if journal else None})
 
 

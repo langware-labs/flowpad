@@ -1,7 +1,8 @@
+import { Github } from 'lucide-react';
 import * as React from 'react';
 
 /**
- * Bespoke provider marks — currently just Slack.
+ * Bespoke provider marks.
  *
  * Everything else resolves through the existing seam: the backend publishes an
  * icon NAME (`provider_registry.icon`) and `lucideByName` maps it, either to a
@@ -10,9 +11,17 @@ import * as React from 'react';
  * showed a generic sparkle because the backend said `"Sparkles"`, not because a
  * mark was missing.
  *
- * Slack cannot go through that seam: its mark IS its four colours, so it is not
- * a `currentColor` glyph, and the icon the hub publishes for it is a path
- * relative to the hub's own static root that 404s here.
+ * Two kinds live here, and the difference is THEME:
+ *
+ *  - **Multicolour brands** (Slack) must ship their own colours; a
+ *    `currentColor` glyph would be wrong at any theme.
+ *  - **Monochrome brands** (GitHub) must NOT ship colours: the asset the hub
+ *    publishes is a black octocat, which disappears against a dark background.
+ *    They map to a `currentColor` lucide glyph so they invert with the theme
+ *    like every other icon in the table.
+ *
+ * A mark here also wins over the hub's published icon path, which is what makes
+ * this the place to fix a provider whose asset renders badly.
  */
 
 export type ProviderMark = React.FC<{ className?: string }>;
@@ -39,7 +48,10 @@ const SlackMark: ProviderMark = ({ className }) => (
   </svg>
 );
 
-const MARKS: Record<string, ProviderMark> = { slack: SlackMark };
+/** GitHub's mark is monochrome — take the theme's foreground colour. */
+const GithubMark: ProviderMark = ({ className }) => <Github className={className} aria-hidden="true" />;
+
+const MARKS: Record<string, ProviderMark> = { slack: SlackMark, github: GithubMark };
 
 /** The bespoke mark for a provider, or `null` — callers then fall back to the
  *  backend's published icon name. */

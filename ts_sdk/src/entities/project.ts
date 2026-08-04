@@ -29,6 +29,33 @@ export interface ResolveProjectResult {
   members_count: number;
 }
 
+export interface InstalledContentProject {
+  url: string;
+  branch: string;
+  content_project_id: string | null;
+  folder_id: string | null;
+  path: string;
+  scope: 'private' | 'shared';
+  status: 'installed' | 'already_installed';
+}
+
+export interface ReconcileBootstrapResult {
+  target_project_id: string;
+  content_projects: InstalledContentProject[];
+  status: 'installed' | 'already_installed';
+  helpdesk_id: string | null;
+  journey_ids: string[];
+  skill_ids: string[];
+  auto_launch_journey_id: string | null;
+  failed: Array<{
+    error: string;
+    url?: string;
+    branch?: string;
+    scope?: 'private' | 'shared';
+    path?: string;
+  }>;
+}
+
 export type SecretPointerScope = 'private' | 'shared';
 
 export interface LocalSecretRef {
@@ -294,6 +321,8 @@ export class Project extends APIEntity<Project> {
   members: ConversationParticipant[] = [];
   /** Portable repository identity received with a shared project. */
   git_origin: GitOrigin | null = null;
+  /** When this desktop instance successfully published the Project to Hub. */
+  hub_published_at: string | null = null;
   /** Last UI view mode used in this project (vibe|standard|advanced|dev);
    *  applied on project load so the mode is remembered per project. */
   last_mode: string | null = null;
@@ -320,6 +349,8 @@ export class Project extends APIEntity<Project> {
   constructor(entity: Partial<Project> = {}) {
     super(entity);
     this.members = (entity.members as ConversationParticipant[] | undefined) ?? [];
+    this.git_origin = (entity.git_origin as GitOrigin | null | undefined) ?? null;
+    this.hub_published_at = (entity.hub_published_at as string | null | undefined) ?? null;
     this.last_mode = (entity.last_mode as string | null | undefined) ?? null;
     this.session_code = (entity.session_code as string | null | undefined) ?? null;
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
@@ -509,6 +540,13 @@ export class Project extends APIEntity<Project> {
     const actionInfo = new ActionInfo('add-context-dir', Project.type, this.typeId.id, 'POST');
     actionInfo.bodyParameters = { path, scope };
     this.adoptContextDirs(await dataManager.callAction(actionInfo));
+  }
+
+  /** Converge the live content dependencies declared by this Project's
+   * `.flowpad/bootstrap.json`. The backend owns clone/link/index idempotency. */
+  async reconcileBootstrap(): Promise<ReconcileBootstrapResult> {
+    const actionInfo = new ActionInfo('reconcile-bootstrap', Project.type, this.typeId.id, 'POST');
+    return dataManager.callAction<Record<string, never>, ReconcileBootstrapResult>(actionInfo);
   }
 
   /** Get-or-create the `Folder` entity for a directory, WITHOUT attaching it as

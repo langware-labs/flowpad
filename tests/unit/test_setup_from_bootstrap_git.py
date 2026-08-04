@@ -27,7 +27,11 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.bootstrap_manifest import BootstrapManifest, read_bootstrap_manifest
+from flow_sdk.builtin.bootstrap_manifest import (
+    BootstrapContentProject,
+    BootstrapManifest,
+    read_bootstrap_manifest,
+)
 from flow_sdk.builtin.project import Project
 from flow_sdk.schema.type_info import register_all
 
@@ -129,6 +133,47 @@ def test_declared_helpdesks_are_bounded_and_deduped(tmp_path: Path) -> None:
     assert len(desks) <= 8
 
 
+def test_manifest_reads_bounded_content_projects_without_hiding_conflicts(tmp_path: Path) -> None:
+    (tmp_path / ".flowpad").mkdir()
+    entries = [
+        {"url": "https://github.com/acme/support", "branch": "main", "scope": "shared"},
+        {"url": "https://github.com/acme/support", "branch": "main", "scope": "shared"},
+        {"url": "https://github.com/acme/support", "branch": "other", "scope": "private"},
+        {"url": "https://github.com/acme/private", "scope": "private"},
+        {"url": "https://github.com/acme/invalid", "scope": "everyone"},
+    ] + [{"url": f"https://github.com/acme/{i}"} for i in range(30)]
+    (tmp_path / ".flowpad" / "bootstrap.json").write_text(
+        json.dumps({"content_projects": entries}), encoding="utf-8"
+    )
+
+    content = read_bootstrap_manifest(tmp_path).content_projects
+
+    assert content[0] == BootstrapContentProject(
+        url="https://github.com/acme/support", branch="main", scope="shared"
+    )
+    assert content[1] == BootstrapContentProject(
+        url="https://github.com/acme/support", branch="other", scope="private"
+    )
+    assert content[2] == BootstrapContentProject(
+        url="https://github.com/acme/private", branch="", scope="private"
+    )
+    declarations = {(entry.url, entry.branch, entry.scope) for entry in content}
+    assert len(content) == len(declarations), "exact repeated declarations must be deduped"
+    assert len(content) <= 8
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [None, "repo", [], {}, {"url": ""}, {"url": 1}, {"url": "https://x", "scope": "bad"}],
+)
+def test_manifest_ignores_malformed_content_projects(tmp_path: Path, entry) -> None:
+    (tmp_path / ".flowpad").mkdir()
+    (tmp_path / ".flowpad" / "bootstrap.json").write_text(
+        json.dumps({"content_projects": [entry]}), encoding="utf-8"
+    )
+    assert read_bootstrap_manifest(tmp_path).content_projects == ()
+
+
 # ── the flow ────────────────────────────────────────────────────────────────
 
 
@@ -226,6 +271,208 @@ async def test_a_template_with_no_manifest_is_an_ordinary_template(tmp_path: Pat
     assert (Path(response.data["path"]) / "README.md").is_file()
     assert response.data["helpdesks"] == []
     assert response.data["autolaunch_journey"] is None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_bootstrap_attaches_content_project_once(
+    tmp_path: Path, helpdesk_repo: str
+) -> None:
+    target_root = tmp_path / "customer-project"
+    (target_root / ".flowpad").mkdir(parents=True)
+    (target_root / ".flowpad" / "bootstrap.json").write_text(
+        json.dumps(
+            {
+                "content_projects": [
+                    {"url": helpdesk_repo, "branch": "", "scope": "shared"}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    project = Project(name="customer-project", fs_storage_mount_path=str(target_root))
+    await project.save()
+
+    first = await project.reconcile_bootstrap()
+    second = await project.reconcile_bootstrap()
+
+    assert first.status == "SUCCESS", first
+    assert first.data["status"] == "installed"
+    assert len(first.data["content_projects"]) == 1
+    assert first.data["content_projects"][0]["scope"] == "shared"
+    assert first.data["helpdesk_id"]
+    assert second.status == "SUCCESS", second
+    assert second.data["status"] == "already_installed"
+    assert len(project.include_dirs) == 1
+
+
+@pytest.mark.asyncio
+async def test_reconcile_rejects_aliases_with_conflicting_branch_before_mutation(
+    tmp_path: Path,
+) -> None:
+    target_root = tmp_path / "customer-conflicting-content"
+    (target_root / ".flowpad").mkdir(parents=True)
+    (target_root / ".flowpad" / "bootstrap.json").write_text(
+        json.dumps(
+            {
+                "content_projects": [
+                    {
+                        "url": "https://github.com/acme/cloudnsite-content",
+                        "branch": "main",
+                        "scope": "shared",
+                    },
+                    {
+                        "url": "git@github.com:acme/cloudnsite-content.git",
+                        "branch": "release",
+                        "scope": "shared",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    project = Project(name="customer-conflicting-content", fs_storage_mount_path=str(target_root))
+    await project.save()
+
+    response = await project.reconcile_bootstrap()
+
+    assert response.status == "FAIL"
+    assert response.status_code == 409
+    assert "conflicting" in response.message
+    assert project.include_dirs == []
+
+
+@pytest.mark.asyncio
+async def test_reconcile_dedupes_equivalent_git_url_aliases(
+    tmp_path: Path, monkeypatch
+) -> None:
+    target_root = tmp_path / "customer-aliased-content"
+    (target_root / ".flowpad").mkdir(parents=True)
+    (target_root / ".flowpad" / "bootstrap.json").write_text(
+        json.dumps(
+            {
+                "content_projects": [
+                    {
+                        "url": "https://github.com/acme/cloudnsite-content",
+                        "branch": "main",
+                        "scope": "shared",
+                    },
+                    {
+                        "url": "git@github.com:acme/cloudnsite-content.git",
+                        "branch": "main",
+                        "scope": "shared",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    project = Project(name="customer-aliased-content", fs_storage_mount_path=str(target_root))
+    await project.save()
+
+    calls: list[str] = []
+
+    async def install_once(_self, url: str, **_kwargs):
+        calls.append(url)
+        from flow_sdk.responses.response import ApiFailResponse
+
+        return ApiFailResponse(message="stop after preflight")
+
+    monkeypatch.setattr(Project, "add_context_dir_from_git", install_once)
+
+    response = await project.reconcile_bootstrap()
+
+    assert response.status == "FAIL"
+    assert calls == ["https://github.com/acme/cloudnsite-content"]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_fails_when_every_declared_content_project_fails(tmp_path: Path) -> None:
+    target_root = tmp_path / "customer-missing-content"
+    missing_url = f"file://{tmp_path / 'missing-content'}"
+    (target_root / ".flowpad").mkdir(parents=True)
+    (target_root / ".flowpad" / "bootstrap.json").write_text(
+        json.dumps(
+            {
+                "content_projects": [
+                    {"url": missing_url, "branch": "", "scope": "shared"}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    project = Project(name="customer-missing-content", fs_storage_mount_path=str(target_root))
+    await project.save()
+
+    response = await project.reconcile_bootstrap()
+
+    assert response.status == "FAIL"
+    assert response.data["content_projects"] == []
+    assert response.data["failed"][0]["url"] == missing_url
+    assert project.include_dirs == []
+
+
+@pytest.mark.asyncio
+async def test_reconcile_reports_partial_install_as_failure(
+    tmp_path: Path, helpdesk_repo: str
+) -> None:
+    target_root = tmp_path / "customer-partial-content"
+    missing_url = f"file://{tmp_path / 'missing-second-content'}"
+    (target_root / ".flowpad").mkdir(parents=True)
+    (target_root / ".flowpad" / "bootstrap.json").write_text(
+        json.dumps(
+            {
+                "content_projects": [
+                    {"url": helpdesk_repo, "branch": "", "scope": "shared"},
+                    {"url": missing_url, "branch": "", "scope": "shared"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    project = Project(name="customer-partial-content", fs_storage_mount_path=str(target_root))
+    await project.save()
+
+    response = await project.reconcile_bootstrap()
+
+    assert response.status == "FAIL"
+    assert len(response.data["content_projects"]) == 1
+    assert response.data["content_projects"][0]["url"] == helpdesk_repo
+    assert response.data["failed"][0]["url"] == missing_url
+    assert len(project.include_dirs) == 1
+
+
+@pytest.mark.asyncio
+async def test_reconcile_does_not_link_content_when_indexing_fails(
+    tmp_path: Path, helpdesk_repo: str, monkeypatch
+) -> None:
+    target_root = tmp_path / "customer-index-failure"
+    (target_root / ".flowpad").mkdir(parents=True)
+    (target_root / ".flowpad" / "bootstrap.json").write_text(
+        json.dumps(
+            {
+                "content_projects": [
+                    {"url": helpdesk_repo, "branch": "", "scope": "shared"}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    project = Project(name="customer-index-failure", fs_storage_mount_path=str(target_root))
+    await project.save()
+
+    async def fail_index(*_args, **_kwargs) -> None:
+        raise RuntimeError("forced indexing failure")
+
+    monkeypatch.setattr(
+        "flow_sdk.builtin.agentic_process.agentic_process._index_additional_dir",
+        fail_index,
+    )
+
+    response = await project.reconcile_bootstrap()
+
+    assert response.status == "FAIL"
+    assert "forced indexing failure" in response.data["failed"][0]["error"]
+    assert project.include_dirs == []
 
 
 @pytest.mark.asyncio

@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import os
 import time
+import uuid
 from pathlib import Path
 
 import httpx
@@ -173,7 +174,14 @@ def test_group_task_member_status_reaches_owner(three_backends):
         m1_email = _email(c, m1)
         m2_email = _email(c, m2)
         # 1) Owner creates a task and fans it out to the two members as a group task.
-        parent_id = _u(c.post(f"{owner}/api/v1/graph/task", json={"type": "task", "title": "Quarterly audit"}))["id"]
+        # Unique per run: task titles are unique-per-scope on the backend ("An
+        # task named '<title>' already exists in this scope" → 409), the
+        # instances are long-lived (instance_ctl keeps each DB across launches),
+        # and nothing here deletes the parent afterwards. A fixed title would let
+        # this test pass exactly once per instance DB and 409 on the create for
+        # every run after that.
+        title = f"Quarterly audit {uuid.uuid4().hex[:8]}"
+        parent_id = _u(c.post(f"{owner}/api/v1/graph/task", json={"type": "task", "title": title}))["id"]
         res = _u(
             c.post(
                 f"{owner}/api/v1/graph/task/{parent_id}/create-group-task",

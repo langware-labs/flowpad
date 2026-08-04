@@ -1,10 +1,7 @@
 import { DockLoadError } from './dock-load-error';
 import { describeProcessStartError, type ProcessLoadError } from './load-process';
 
-export function processLoadErrorToDockError(
-  error: ProcessLoadError,
-  source: string,
-): DockLoadError {
+export function processLoadErrorToDockError(error: ProcessLoadError, source: string): DockLoadError {
   if (error.kind === 'entity_not_found') {
     return new DockLoadError(
       'session_not_found',
@@ -32,11 +29,7 @@ export function processLoadErrorToDockError(
       error,
     );
   }
-  if (
-    error.kind === 'runtime_terminated' ||
-    error.kind === 'pty_attach_failed' ||
-    error.kind === 'failed_to_start'
-  ) {
+  if (error.kind === 'runtime_terminated' || error.kind === 'pty_attach_failed' || error.kind === 'failed_to_start') {
     const { title, description } = describeProcessStartError(error.cause ?? error);
     return new DockLoadError(
       `session_${error.kind}`,

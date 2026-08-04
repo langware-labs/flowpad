@@ -70,6 +70,7 @@ async def resolve_reply_target(conversation_id: str) -> ReplyTarget:
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
     from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
 
     # Newest-first and bounded: the DB does the ordering, and one page is
@@ -81,9 +82,27 @@ async def resolve_reply_target(conversation_id: str) -> ReplyTarget:
             "limit": RECENT_WINDOW,
         }
     )
-    target = next((m for m in recent if m.origin and m.origin.kind), None)
-    if target is None:
+    channel_messages = [m for m in recent if m.origin and m.origin.kind]
+    if not channel_messages:
         raise ChannelSendUnavailable("this conversation did not come from a channel")
+
+    # Reply to the last person who wrote to US, not simply to the last message.
+    # Our own sent copies are ingested back into the thread, so the newest
+    # message is frequently our own — and addressing that one mails the reply
+    # to ourselves. `_sender_for` already resolved this at projection time: a
+    # message we authored carries the local user's id, an external one carries
+    # `<channel>:<address>`. So this is an exact test, not a heuristic.
+    local = await User.get_local()
+    local_id = str(getattr(local, "id", "") or "")
+    target = next(
+        (m for m in channel_messages if local_id and str(m.sender_id or "") != local_id),
+        None,
+    )
+    if target is None:
+        # Every message here is ours — a thread we started and nobody answered.
+        # The original recipient is not recorded anywhere, and guessing one is
+        # how a reply reaches the wrong person.
+        raise ChannelSendUnavailable("no one else has written in this thread yet")
 
     # Defensive reads end here: these are typed entities.
     origin = target.origin
@@ -154,11 +173,12 @@ async def _run_send(conversation_id: str, target: ReplyTarget, text: str) -> Non
             in_reply_to=target.in_reply_to,
         )
         logger.info(
-            "[channel-send] %s → %s %s (id=%s)",
+            "[channel-send] %s → %s %s (id=%s, artifact=%s)",
             target.channel,
             target.to,
             outcome.status.value,
             outcome.external_id or "?",
+            outcome.artifact_id or "-",
         )
         if not outcome.drafted and not outcome.recorded:
             # Only meaningful for a real send: the mail IS gone, and only the

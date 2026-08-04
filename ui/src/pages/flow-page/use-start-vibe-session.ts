@@ -3,7 +3,7 @@ import { useProject } from '@sdk/react/hooks';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { uploadFilesToProcessInputDir } from '@src/utils/upload-to-input-dir';
+import { appendUploadedFileRefs } from '@src/utils/upload-to-input-dir';
 import { useLingui } from '@lingui/react/macro';
 import { useCallback } from 'react';
 import { VIBE_MODEL_DEFAULT, type VibeModelTier } from './vibe-model-select';
@@ -184,16 +184,13 @@ export async function launchVibeSessionForProject(opts: {
   // Attachments (if any) must land in the process input dir BEFORE the first
   // turn starts — the agent reads the referenced paths immediately. Upload
   // failure degrades to a text-only prompt rather than losing the message.
-  let refLines: string[] = [];
-  if (files?.length) {
-    try {
-      refLines = await uploadFilesToProcessInputDir(proc.id, files);
-    } catch (e) {
-      console.error('[Vibe] attachment upload failed', e);
-      onAttachmentError?.();
-    }
+  let fullMessage = message;
+  try {
+    fullMessage = await appendUploadedFileRefs(proc.id, message, files);
+  } catch (e) {
+    console.error('[Vibe] attachment upload failed', e);
+    onAttachmentError?.();
   }
-  const fullMessage = refLines.length ? `${message}\n${refLines.join('\n')}` : message;
   proc.prompt(fullMessage).catch((e) => console.error('[Vibe] prompt failed', e));
   return proc.id;
 }

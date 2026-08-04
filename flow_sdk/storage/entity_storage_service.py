@@ -56,8 +56,10 @@ def get_entity_storage(
     """Get filesystem storage driver for an entity.
 
     Resolution order:
-    1. If entity has fs_storage_provider set, use configured storage mount
-    2. Otherwise, fall back to embedded storage (temp folder)
+    1. File-backed Git-publishable assets use their entity VFS rooted at the
+       local asset checkout.
+    2. If entity has fs_storage_provider set, use configured storage mount.
+    3. Otherwise, fall back to embedded storage (temp folder).
 
     Simple and deterministic - no database lookups. Entity only used if already available.
 
@@ -68,8 +70,21 @@ def get_entity_storage(
     Returns:
         LocalStorageDriver for the entity's filesystem storage
     """
-    # Check entity for storage provider configuration (only if entity is passed in)
+    # Everything below needs an entity; without one the embedded fallback at the
+    # bottom is the only answer.
     if entity is not None:
+        # Git-publishable file assets always expose their checkout through their
+        # own entity VFS. The same refs therefore address local files on desktop
+        # and the bound Git driver on Hub.
+        from flow_sdk.assets.entity_vfs import local_asset_vfs_binding
+
+        asset_binding = local_asset_vfs_binding(entity)
+        if asset_binding is not None:
+            driver = LocalStorageDriver(mount_path=str(asset_binding.root))
+            driver.root_entity_typeid = typeid
+            return driver
+
+        # Check entity for storage provider configuration
         storage_provider = getattr(entity, "fs_storage_provider", None)
         provider_value = getattr(storage_provider, "value", storage_provider)
 

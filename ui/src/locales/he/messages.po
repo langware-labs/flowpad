@@ -175,6 +175,11 @@ msgstr "{0} הערות בשורה זו"
 msgid "{0} attachments"
 msgstr "{0} קבצים מצורפים"
 
+#. placeholder {0}: agent.name
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "{0} avatar"
+msgstr ""
+
 #. placeholder {0}: trigger.last_seen_size
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "{0} bytes"
@@ -182,7 +187,13 @@ msgstr "{0} בתים"
 
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
+#: src/components/connections-manager.tsx
 msgid "{0} connection failed"
+msgstr ""
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "{0} could not be updated for this project."
 msgstr ""
 
 #. placeholder {0}: summary.current
@@ -192,6 +203,11 @@ msgstr ""
 #: src/components/machine-overview/service-status-led.tsx
 msgid "{0} current · {1} stale · {2} partial · {3} error"
 msgstr "{0} עדכני · {1} מיושן · {2} חלקי · {3} שגיאה"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "{0} deleted"
+msgstr ""
 
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
@@ -422,6 +438,11 @@ msgstr "{name} עדיין לא מותקן על המחשב הזה. יש לעקו�
 #: src/components/conversation/LiveSessionGroup.tsx
 msgid "{promptCount} prompts · {replyCount} replies"
 msgstr "{promptCount} הודעות · {replyCount} תגובות"
+
+#. placeholder {0}: names.length
+#: src/components/connections-manager.tsx
+msgid "{provider} is used by {0} project(s): {list}. Deleting removes access for all of them, and you'll have to sign in again."
+msgstr ""
 
 #. placeholder {0}: remaining !== 1 ? 's' : ''
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
@@ -947,6 +968,10 @@ msgstr "הוסף למועדפים"
 msgid "Add to Private Context"
 msgstr "הוסף להקשר פרטי"
 
+#: src/components/connections-manager.tsx
+msgid "Add to project"
+msgstr ""
+
 #: src/components/conversation/chips/MessageChips.tsx
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Add to queue"
@@ -1005,6 +1030,10 @@ msgstr "סוכן"
 #: src/components/environment-banner/EnvironmentBanner.tsx
 msgid "Agent"
 msgstr "סוכן"
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Agent avatar"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "Agent is taking a long time to respond"
@@ -1571,6 +1600,7 @@ msgstr "נכסים"
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/pages/hub-project/HubProjectPage.tsx
 msgid "Assets"
 msgstr "נכסים"
 
@@ -1633,6 +1663,7 @@ msgid "Attach asset"
 msgstr "צרף נכס"
 
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Attach files"
 msgstr "צרף קבצים"
 
@@ -1765,6 +1796,10 @@ msgstr "חזור לפרויקטים פתוחים"
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
 #~ msgid "Back to projects"
 #~ msgstr "חזור לפרויקטים"
+
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Back to repositories"
+msgstr ""
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
@@ -2094,6 +2129,7 @@ msgstr "לא ניתן לעדכן — מוצגים הנתונים מהסנכרו�
 #: src/components/triggers-view/TriggerEditor.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
+#: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
@@ -2274,6 +2310,7 @@ msgstr "בדיקה…"
 #~ msgid "Checking..."
 #~ msgstr "בודק..."
 
+#: src/components/project-home/ProjectPublishButton.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Checking…"
 msgstr "בבדיקה…"
@@ -2304,6 +2341,10 @@ msgstr ""
 
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "Choose another worker"
+msgstr ""
+
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "Choose avatar image"
 msgstr ""
 
 #: src/components/quick-create/ScopeSelection.tsx
@@ -2909,10 +2950,9 @@ msgstr "הושלם"
 msgid "Completed 🎉"
 msgstr "הושלם 🎉"
 
-#. placeholder {0}: channelLabel(channelOrigin?.kind)
 #: src/components/conversation/ConversationView.tsx
-msgid "Composing in {0}: “{sendingText}” — finish sending there"
-msgstr ""
+#~ msgid "Composing in {0}: “{sendingText}” — finish sending there"
+#~ msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Compute Node ID:"
@@ -3298,6 +3338,12 @@ msgstr "לא ניתן היה לשנות את שיטת ההתחברות"
 msgid "Could not check sign-in"
 msgstr "לא ניתן היה לבדוק את מצב ההתחברות"
 
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Could not connect GitHub"
+msgstr ""
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 msgid "Could not connect to {0}."
@@ -3314,6 +3360,11 @@ msgstr ""
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not delete"
 msgstr "לא היה ניתן למחוק"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "Could not delete {0}"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Could not deploy"
@@ -3352,6 +3403,15 @@ msgstr "שגיאה בהקפאת ההקשר"
 msgid "Could not generate a link"
 msgstr "לא ניתן ליצור קישור"
 
+#: src/components/connections-manager.tsx
+msgid "Could not give access"
+msgstr ""
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "Could not give this project access to {0}."
+msgstr ""
+
 #: src/components/EnvVarsManager.tsx
 msgid "Could not load environment variables"
 msgstr ""
@@ -3364,8 +3424,21 @@ msgstr "לא ניתן לטעון מקור: {error}"
 msgid "Could not open skill"
 msgstr "לא הצליח לפתוח כישור"
 
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Could not publish asset"
+msgstr ""
+
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Could not publish project"
+msgstr ""
+
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "Could not reach support"
+msgstr ""
+
+#: src/components/connections-manager.tsx
+msgid "Could not remove access"
 msgstr ""
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
@@ -3413,6 +3486,11 @@ msgstr ""
 msgid "Could not send report to the Flowpad team"
 msgstr ""
 
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Could not set up Git"
+msgstr ""
+
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
@@ -3455,6 +3533,11 @@ msgstr "לא היה ניתן לעדכן"
 msgid "Could not update attached secrets"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Could not upload avatar"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
 msgstr "לא ניתן לבדוק עדכונים: {error}"
@@ -3463,9 +3546,17 @@ msgstr "לא ניתן לבדוק עדכונים: {error}"
 msgid "Couldn't finish preparing your sandbox"
 msgstr "הכנת ארגז החול לא הושלמה"
 
+#: src/pages/entry/InstallLanding.tsx
+msgid "Couldn't finish preparing your workspace"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
 msgstr "לא ניתן לטעון את התמליל"
+
+#: src/components/git/RepoPicker.tsx
+msgid "Couldn’t load your repos."
+msgstr ""
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Couldn't open the help desk"
@@ -3554,6 +3645,14 @@ msgstr "צור {0} חדש."
 #~ msgid "Create a new artifact in this project."
 #~ msgstr "צור ארטיפקט חדש בפרויקט זה."
 
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Create a private GitHub repository"
+msgstr ""
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Create a private repository"
+msgstr ""
+
 #: src/components/hooks-manager/HookForm.tsx
 #~ msgid "Create Agent Hook"
 #~ msgstr "צור Agent Hook"
@@ -3607,6 +3706,10 @@ msgstr "צור חדש…"
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1> frontmatter into a docs folder and running <2>flow record index <path></2>."
 msgstr "צור אחד על ידי שמיטת <0>index.md</0> עם frontmatter מסוג <1>type: markdown_index</1> לתוך תיקיית תיעוד והפעלת <2>flow record index <path></2>."
+
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Create private repo"
+msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Create Project"
@@ -3890,6 +3993,11 @@ msgstr "מחק {0}"
 msgid "Delete {0} contexts?"
 msgstr "מחק {0} הקשרים?"
 
+#. placeholder {0}: pendingDelete?.provider ?? ''
+#: src/components/connections-manager.tsx
+msgid "Delete {0} credential?"
+msgstr ""
+
 #. placeholder {0}: request?.name ?? 'asset'
 #: src/components/assets/delete-asset-modal.tsx
 msgid "Delete {0}?"
@@ -3954,6 +4062,11 @@ msgstr "מחק הקשר"
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Delete context?"
 msgstr "מחק הקשר?"
+
+#: src/components/connections-manager.tsx
+#: src/components/connections-manager.tsx
+msgid "Delete credential"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Delete desktop"
@@ -4368,7 +4481,6 @@ msgstr "בטל שינויים שלא נשמרו וחזור לתיבה הנכנס
 
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/collaboration/SharedSessionView.tsx
-#: src/components/connections-manager.tsx
 msgid "Disconnect"
 msgstr "התנתק"
 
@@ -5938,6 +6050,10 @@ msgstr "אבחון Flowpad"
 #~ msgid "Flowpad docs"
 #~ msgstr "מסמכי Flowpad"
 
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "FlowPad Server Status"
 msgstr "מצב שרת FlowPad"
@@ -6188,8 +6304,18 @@ msgstr "מאגר Git (אופציונלי)"
 msgid "Git repository"
 msgstr "מאגר Git"
 
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Git setup failed."
+msgstr ""
+
 #: src/components/project-home/ProjectGitChip.tsx
 msgid "Git tooling installed"
+msgstr ""
+
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "GitHub authorization did not complete."
 msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
@@ -6197,8 +6323,20 @@ msgid "GitHub connected"
 msgstr "GitHub מחובר"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
-msgid "GitHub connected — you can clone private repos."
-msgstr "GitHub מחובר — אתה יכול לשבוט מאגרים פרטיים."
+msgid "GitHub connected — no private repos visible to this token."
+msgstr ""
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "GitHub connected — private repos included."
+msgstr ""
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+#~ msgid "GitHub connected — you can clone private repos."
+#~ msgstr "GitHub מחובר — אתה יכול לשבוט מאגרים פרטיים."
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "GitHub connected."
+msgstr ""
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "GitHub connection failed."
@@ -6215,6 +6353,10 @@ msgstr "GitHub לא זמין"
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "gitignore"
 msgstr "gitignore"
+
+#: src/components/connections-manager/usage-cell.tsx
+msgid "Give this project access"
+msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "glob"
@@ -6689,6 +6831,7 @@ msgid "I want…  (e.g. email, slack, calendar)"
 msgstr "אני רוצה…  (למשל אימייל, slack, יומן)"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
+#: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/icon-picker.tsx
 msgid "Icon"
 msgstr "סמל"
@@ -6729,6 +6872,10 @@ msgstr "התעלם עד עכשיו"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Ignored"
 msgstr "התעלמות"
+
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "Image"
+msgstr ""
 
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/hooks-view/hooks-view.tsx
@@ -7330,6 +7477,10 @@ msgstr "הפעל סדרה תחילה"
 msgid "Launch sandbox"
 msgstr "הפעלת ארגז חול"
 
+#: src/pages/entry/InstallLanding.tsx
+msgid "Launch workspace"
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Launching…"
 msgstr "בהפעלה…"
@@ -7814,6 +7965,7 @@ msgstr "טוען..."
 #: src/pages/discover-page/discover-page.tsx
 #: src/pages/hub-browse/HubEntityView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
+#: src/pages/hub-project/HubProjectPage.tsx
 msgid "Loading…"
 msgstr "טוען…"
 
@@ -8244,6 +8396,7 @@ msgstr "שונה"
 msgid "more"
 msgstr "עוד"
 
+#: src/components/connections-manager.tsx
 #: src/components/helpdesk/HelpdeskGuides.tsx
 #: src/components/ui/breadcrumb.tsx
 msgid "More"
@@ -8517,9 +8670,9 @@ msgstr "שם חדש"
 msgid "New option"
 msgstr "אפשרות חדשה"
 
+#: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
-#: src/components/project-starter-actions/project-starter-actions.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "New project"
 msgstr "פרויקט חדש"
@@ -9182,7 +9335,6 @@ msgid "No project open"
 msgstr "אין פרויקט פתוח"
 
 #: src/components/collaboration/StartRoomDialog.tsx
-#: src/components/connections-manager.tsx
 msgid "No project selected"
 msgstr "לא נבחר פרויקט"
 
@@ -9206,6 +9358,10 @@ msgstr "אין פרויקטים עדיין"
 
 #: src/components/credentials-view/CredentialsView.tsx
 msgid "No projects yet — create one from the desktop app, then pick it here."
+msgstr ""
+
+#: src/components/connections-manager/usage-cell.tsx
+msgid "No projects yet — the connection is saved to your account; attach it when you create one."
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
@@ -9233,6 +9389,10 @@ msgstr "אין בקשות עדיין — צור אחת למטה."
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "No PTY events have fired yet."
 msgstr "לא הופעלו אירועי PTY עדיין."
+
+#: src/pages/hub-project/HubProjectPage.tsx
+msgid "No published assets yet."
+msgstr ""
 
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 msgid "No recent activity"
@@ -9608,6 +9768,10 @@ msgstr "אין התחברות פעילה — יש להתחבר מחדש"
 msgid "Not started — your first prompt will request access to {hostName}'s machine."
 msgstr "טרם התחיל — גישה למכונה של {hostName} תתבקש עם ההנחיה הראשונה שלך."
 
+#: src/components/connections-manager/usage-cell.tsx
+msgid "Not used yet"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Note (optional)"
 msgstr "הערה (אופציונלי)"
@@ -9680,6 +9844,10 @@ msgstr "אין מה לשמור"
 #: src/pages/hub-browse/HubEntityView.tsx
 msgid "Nothing to show."
 msgstr "אין מה להציג"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Nothing was installed. You can close this tab."
+msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Nothing was launched. You can close this tab."
@@ -9912,8 +10080,8 @@ msgid "Open dot-path ontology; custom descendants are welcome."
 msgstr "אונטולוגיה פתוחה מבוססת נתיבי-נקודה; מוזמנים ליצור צאצאים מותאמים אישית."
 
 #: src/components/project-starter-actions/project-starter-actions.tsx
-msgid "Open existing project"
-msgstr "לפתוח פרויקט קיים"
+#~ msgid "Open existing project"
+#~ msgstr "לפתוח פרויקט קיים"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "Open Existing Project"
@@ -9942,7 +10110,7 @@ msgstr "פתח חיצונית: {childPath}"
 #~ msgid "Open Flowpad docs"
 #~ msgstr "פתיחת מסמכי Flowpad"
 
-#: src/components/project-starter-actions/project-starter-actions.tsx
+#: src/components/open-project-component/project-actions-row.tsx
 msgid "Open folder"
 msgstr "פתח תיקייה"
 
@@ -9954,7 +10122,7 @@ msgstr "פתח תיקייה"
 msgid "Open folder: {projectPath}"
 msgstr "פתיחת התיקייה: {projectPath}"
 
-#: src/components/project-starter-actions/project-starter-actions.tsx
+#: src/components/open-project-component/project-actions-row.tsx
 msgid "Open from git"
 msgstr "פתיחת פרויקט מ-Git"
 
@@ -10108,6 +10276,10 @@ msgstr "פתח תוכנית"
 msgid "Open process"
 msgstr "פתח תהליך"
 
+#: src/components/open-project-component/project-actions-row.tsx
+msgid "Open project"
+msgstr ""
+
 #: src/pages/flow-page/content-panel/unified-tab-strip.tsx
 msgid "Open Project"
 msgstr "פתח פרויקט"
@@ -10120,6 +10292,10 @@ msgstr "פתיחת קבצי הפרויקט — {0}"
 #: src/pages/flow-page/vibe-new-chat.tsx
 #~ msgid "Open project folder"
 #~ msgstr ""
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Open project in cloud"
+msgstr ""
 
 #: src/components/status-bar.tsx
 #: src/components/status-bar.tsx
@@ -10203,6 +10379,10 @@ msgstr "פתיחת הסשן החי"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Open the live session in a terminal"
 msgstr "פתח את החילוק החי בטרמינל"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Open the project"
+msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #~ msgid "Open the raw JSONL in a new tab"
@@ -10410,7 +10590,6 @@ msgid "Parent directory"
 msgstr "תיקייה אב"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/project-selector/NewProjectDialog.tsx
 msgid "Parent folder"
 msgstr "תיקייה הורית"
 
@@ -10580,8 +10759,8 @@ msgid "Pick a project"
 msgstr "בחר פרויקט"
 
 #: src/components/connections-manager.tsx
-msgid "Pick a project first — an OAuth token is granted to a project, not to the app."
-msgstr ""
+#~ msgid "Pick a project first — an OAuth token is granted to a project, not to the app."
+#~ msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
 msgid "Pick any folder already on this machine"
@@ -10759,6 +10938,10 @@ msgstr "תוסף"
 msgid "Plugins"
 msgstr "תוספים"
 
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "PNG, JPEG, or WebP. Maximum 5 MiB and 4096 × 4096."
+msgstr ""
+
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Point this project at another folder so agents can read it as background — code, docs or assets that live outside the project, without copying anything."
 msgstr ""
@@ -10798,6 +10981,10 @@ msgstr "העדפות"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Preparing your sandbox…"
 msgstr "ארגז החול בהכנה…"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Preparing your workspace…"
+msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Preparing…"
@@ -10943,9 +11130,9 @@ msgstr "נכסי פרויקט"
 msgid "Project Commands (.claude/commands/)"
 msgstr "פקודות פרויקט (.claude/commands/)"
 
-#: src/components/assets/context-folder-sources.tsx
-#~ msgid "Project folder"
-#~ msgstr "תיקיית פרויקט"
+#: src/components/project-selector/NewProjectDialog.tsx
+msgid "Project folder"
+msgstr "תיקיית פרויקט"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "Project Folder"
@@ -10979,6 +11166,14 @@ msgstr "פרויקט לא נמצא"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Project not found locally"
 msgstr "הפרויקט לא נמצא באופן מקומי"
+
+#: src/pages/hub-project/HubProjectPage.tsx
+msgid "Project not found."
+msgstr ""
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Project published"
+msgstr ""
 
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Project renamed"
@@ -11127,8 +11322,36 @@ msgstr "מזהה PTY"
 msgid "PTY Viewer"
 msgstr "מציג PTY"
 
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Publish"
+msgstr ""
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Publish failed."
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Publish this agent to the cloud and give it a machine that logs in as itself."
+msgstr ""
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Publish to cloud"
+msgstr ""
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Published"
+msgstr ""
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Published to cloud"
+msgstr ""
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Publishing…"
 msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -11289,8 +11512,8 @@ msgid "Ready"
 msgstr "מוכן"
 
 #: src/components/connections-manager.tsx
-msgid "Ready to connect"
-msgstr ""
+#~ msgid "Ready to connect"
+#~ msgstr ""
 
 #: src/components/connections-manager.tsx
 #~ msgid "Ready to Connect"
@@ -11371,6 +11594,10 @@ msgstr "סשנים אחרונים"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Recent Transcripts"
 msgstr "תמלילים אחרונים"
+
+#: src/components/connections-manager.tsx
+msgid "Reconnect"
+msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "Reconnect needed"
@@ -11552,9 +11779,17 @@ msgstr "טען מחדש את רשימת MarkdownIndex."
 msgid "Remove"
 msgstr "הסרה"
 
+#: src/components/connections-manager/usage-cell.tsx
+msgid "Remove access"
+msgstr ""
+
 #: src/components/conversation/MessageComposer.tsx
 msgid "Remove attachment"
 msgstr "הסרת קובץ מצורף"
+
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "Remove avatar"
+msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Remove bookmark"
@@ -11580,6 +11815,10 @@ msgstr "הסר קובץ"
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "הסרה מהתיקייה"
+
+#: src/components/connections-manager.tsx
+msgid "Remove from project"
+msgstr ""
 
 #: src/components/entity-execution-panel/QueueChip.tsx
 #: src/components/entity-execution-panel/QueueChip.tsx
@@ -11678,9 +11917,13 @@ msgstr "החלפה"
 msgid "replay"
 msgstr "השמעה חוזרת"
 
+#: src/components/conversation/ConversationView.tsx
+#~ msgid "Reply — drafted into {0}"
+#~ msgstr ""
+
 #. placeholder {0}: channelLabel(channelOrigin.kind)
 #: src/components/conversation/ConversationView.tsx
-msgid "Reply — drafted into {0}"
+msgid "Reply in {0}"
 msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
@@ -11739,6 +11982,7 @@ msgid "Repository and remote configured"
 msgstr ""
 
 #: src/components/assets/AddGitFolderDialog.tsx
+#: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Repository name"
 msgstr "שם המאגר"
 
@@ -12879,6 +13123,11 @@ msgstr "שלח הודעה"
 msgid "Send the reply for just this message"
 msgstr "שלח את התשובה עבור הודעה זו בלבד"
 
+#. placeholder {0}: channelLabel(channelOrigin?.kind)
+#: src/components/conversation/ConversationView.tsx
+msgid "Sending in {0}: “{sendingText}”"
+msgstr ""
+
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Sending…"
@@ -13201,6 +13450,7 @@ msgid "Should I allow this tool? Respond with JSON: {0}"
 msgstr "האם להרשות כלי זה? הגב ב-JSON: {0}"
 
 #: src/components/claude-terminal/claude-terminal.tsx
+#: src/components/connections-manager/usage-cell.tsx
 msgid "Show"
 msgstr "הצג"
 
@@ -13363,9 +13613,17 @@ msgstr "היכנסו"
 #~ msgid "Sign in to a coding assistant"
 #~ msgstr ""
 
+#: src/pages/entry/InstallLanding.tsx
+msgid "Sign in to choose one of your GitHub repositories."
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sign in to create desktops"
 msgstr "יש להתחבר לצורך יצירת שולחנות עבודה"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Sign in to Flowpad"
+msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Sign in to see who's a member"
@@ -13400,7 +13658,7 @@ msgid "Signals"
 msgstr ""
 
 #: src/components/account/user-info.tsx
-#: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
+#: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "התחברת"
 
@@ -14233,6 +14491,10 @@ msgstr "שרת <0>flow-sdk-mcp</0> נדרש כדי להריץ עם עקיבות 
 #~ msgid "The <0>flow-sdk-mcp</0> server is required to run workflows with progress tracing. Enable it to continue."
 #~ msgstr "שרת <0>flow-sdk-mcp</0> נדרש להרצת זרימות עבודה עם מעקב התקדמות. הפעל אותו להמשך."
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "The Agent bundle is not available."
+msgstr ""
+
 #: src/components/agent-layout/not-found-screen/not-found-screen.tsx
 #~ msgid "The agent you're looking for doesn't exist or is not available."
 #~ msgstr "הסוכן שאתה מחפש אינו קיים או אינו זמין."
@@ -14249,6 +14511,10 @@ msgstr "הניתוח הושלם אך לא הניב ממצאים בהיקף הנ�
 msgid "The artifact has been removed successfully."
 msgstr "הקובץ הוסר בהצלחה."
 
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "The asset is now available to project members."
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "The asset matches HEAD."
@@ -14257,6 +14523,18 @@ msgstr "הנכס תואם את HEAD"
 #: src/pages/discover-page/discover-page.tsx
 msgid "The assets published with this project — its skills, agents, specs, and docs."
 msgstr "הנכסים שפורסמו עם הפרויקט הזה — הכישורים, הסוכנים, המפרטים והמסמכים שלו."
+
+#: src/components/connections-manager.tsx
+msgid "The credential could not be removed."
+msgstr ""
+
+#: src/components/connections-manager.tsx
+msgid "The credential is removed from your account. No project is using it right now, and you'll have to sign in again to use {provider}."
+msgstr ""
+
+#: src/components/connections-manager.tsx
+msgid "The credential was removed from your account."
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."
@@ -14493,6 +14771,10 @@ msgstr "לפרויקט הזה עדיין אין נכסים."
 
 #: src/components/machine-overview/node-secrets.tsx
 msgid "This project has no secrets declared yet."
+msgstr ""
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "This project is now available in the cloud."
 msgstr ""
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
@@ -15120,9 +15402,17 @@ msgstr "משדרג…"
 msgid "Upload"
 msgstr "העלאה"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Upload failed."
+msgstr ""
+
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Upload files"
 msgstr "העלה קבצים"
+
+#: src/components/ui/agent-avatar-picker.tsx
+msgid "Upload image"
+msgstr ""
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Upload message"
@@ -15198,6 +15488,10 @@ msgstr "בשימוש"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Used assets"
 msgstr "נכסים בשימוש"
+
+#: src/components/connections-manager.tsx
+msgid "Used by"
+msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
@@ -15850,6 +16144,10 @@ msgstr "מפתחות ה-API שלך"
 
 #: src/components/graph-view/webglSupport.tsx
 msgid "Your browser could not create a WebGL context, so the graph cannot render. This usually means graphics acceleration is disabled or the GPU process crashed."
+msgstr ""
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Your CloudNSite workspace is ready"
 msgstr ""
 
 #: src/components/collaboration/StartRoomDialog.tsx

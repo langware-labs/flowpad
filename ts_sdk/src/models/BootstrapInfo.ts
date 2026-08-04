@@ -1,5 +1,5 @@
 import { Project, User, Visitor, Workspace } from '../entities';
-import { TypeInfo } from '../FlowSync/schema';
+import { JSONSchemaProperty, TypeInfo } from '../FlowSync/schema';
 import { ComputeNode } from '../entities/compute_node';
 import { AgentHook } from '../entities/agent-hook';
 import { WebDomain } from '../entities/web-domain';
@@ -61,6 +61,8 @@ export interface LmInfo {
   cloud_login_available: boolean;
   /** Cloud (FLOWPAD_HUB_URL) base URL — shown in login button tooltip */
   cloud_url?: string | null;
+  /** Hub browser application origin; unlike cloud_url this has no /api/v1 suffix. */
+  cloud_app_url?: string | null;
   /** Application paths - all absolute, ready to use */
   paths?: AppPaths;
   /** @deprecated Use paths.home instead - Filesystem root (/ on Unix, C:\ on Windows) */
@@ -112,6 +114,8 @@ export interface BootstrapInfo {
   // nested JSON schema, one entry per registered type. Loaded into the
   // frontend SchemaRegistry (dataManager.typeInfos) at startup.
   types?: TypeInfo[];
+  /** Compatibility payload emitted by older Hub backends before TypeInfo. */
+  schemas?: JSONSchemaProperty[];
   user?: User;
   domain?: WebDomain;
   visitor?: Visitor;

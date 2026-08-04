@@ -29,6 +29,7 @@ class RepoActions:
     BRANCHES = "branches"
     # Picker UI v1 — repo listing + pending invitations.
     LIST = "list"
+    CREATE = "create"
     INVITATIONS = "invitations"
     INVITATION_ACCEPT = "invitation-accept"
     INVITATION_DECLINE = "invitation-decline"
@@ -55,11 +56,13 @@ class RequestFields:
     PROVIDER = "provider"
     PAGE = "page"
     INVITATION_ID = "invitation_id"
+    NAME = "name"
 
 
 allowed_repo_actions = [
     RepoActions.BRANCHES,
     RepoActions.LIST,
+    RepoActions.CREATE,
     RepoActions.INVITATIONS,
     RepoActions.INVITATION_ACCEPT,
     RepoActions.INVITATION_DECLINE,
@@ -237,25 +240,9 @@ async def _get_github_token(request_info: RequestInfo) -> Optional[str]:
     Desktop mode: attempts to read from SOD credentials.
     Returns None if no token is available (public repos still work).
     """
-    try:
-        from flow_sdk.builtin.user import User
-        from flow_sdk.request_context.methods import get_user_credentials
+    from flow_sdk.core.oauth.github_credentials import get_github_token
 
-        user = await User.get_by_typeid(request_info.user)
-        if not user:
-            return None
-
-        # foreign_key matches the write side in desktop_oauth.py (_save_github_token_to_sod)
-        # so the SOD lookup hits the same key whether or not the request has a
-        # cloud-side user_foreign_key bound to the context.
-        github_credentials = await get_user_credentials(user, "github_credentials", user.id)
-        if not github_credentials:
-            return None
-
-        return github_credentials
-    except Exception as e:
-        logger.warning(f"Could not get GitHub credentials: {e}")
-        return None
+    return await get_github_token(request_info.user)
 
 
 def _prepare_github_headers(token: Optional[str]) -> dict:
@@ -392,34 +379,59 @@ async def list_user_repos(request_info: RequestInfo, page: int = 1) -> ApiRespon
         return classified
 
     raw_repos = response.json() or []
-    repos = []
-    for r in raw_repos:
-        owner_obj = r.get("owner") or {}
-        owner = owner_obj.get("login", "")
-        name = r.get("name", "")
-        default_branch = r.get("default_branch") or "main"
-        repos.append({
-            "provider": GITHUB_PROVIDER,
-            "owner": owner,
-            "name": name,
-            "full_name": r.get("full_name", ""),
-            "private": bool(r.get("private")),
-            "default_branch": default_branch,
-            "pushed_at": r.get("pushed_at") or "",
-            "role": _role_from_permissions(r.get("permissions")),
-            "html_url": r.get("html_url", ""),
-            "description": r.get("description") or "",
-            "fork": bool(r.get("fork")),
-            "git_origin": GitOrigin(
-                provider=GITHUB_PROVIDER,
-                owner=owner,
-                name=name,
-                branch=default_branch,
-                rel_path=".",
-            ).model_dump(mode="json"),
-        })
+    repos = [_repo_summary(r) for r in raw_repos]
     next_page = _parse_next_page_from_link(response.headers.get("Link"))
     return ApiSuccessResponse(data={"repos": repos, "next_page": next_page, "page": page})
+
+
+def _repo_summary(raw: dict, *, default_role: str = "read") -> dict:
+    owner = (raw.get("owner") or {}).get("login", "")
+    name = raw.get("name", "")
+    default_branch = raw.get("default_branch") or "main"
+    return {
+        "provider": GITHUB_PROVIDER,
+        "owner": owner,
+        "name": name,
+        "full_name": raw.get("full_name", ""),
+        "private": bool(raw.get("private")),
+        "default_branch": default_branch,
+        "pushed_at": raw.get("pushed_at") or "",
+        "role": _role_from_permissions(raw.get("permissions")) if raw.get("permissions") else default_role,
+        "html_url": raw.get("html_url", ""),
+        "description": raw.get("description") or "",
+        "fork": bool(raw.get("fork")),
+        "git_origin": GitOrigin(
+            provider=GITHUB_PROVIDER,
+            owner=owner,
+            name=name,
+            branch=default_branch,
+            rel_path=".",
+        ).model_dump(mode="json"),
+    }
+
+
+async def create_private_repo(request_info: RequestInfo, name: str) -> ApiResponse:
+    """Create one initialized private GitHub repository for install targeting."""
+    safe_name = _safe_slug(name)
+    if not safe_name or len(safe_name) > 100:
+        return ApiFailResponse(message="name must be a valid GitHub repository name", status_code=400)
+    token = await _get_github_token(request_info)
+    if not token:
+        return ApiFailResponse(message="GitHub not connected")
+    try:
+        response = await asyncio.to_thread(
+            requests.post,
+            GithubApiRequestConsts.USER_REPOS_URL,
+            headers=_prepare_github_headers(token),
+            json={"name": safe_name, "private": True, "auto_init": True},
+            timeout=GithubApiRequestConsts.REQUEST_TIMEOUT,
+        )
+    except requests.exceptions.RequestException as exc:
+        return ApiFailResponse(message=f"Failed to create repo: {exc}")
+    classified = _classify_github_error(response)
+    if classified is not None:
+        return classified
+    return ApiSuccessResponse(data={"repo": _repo_summary(response.json() or {}, default_role="admin")})
 
 
 async def list_invitations(request_info: RequestInfo) -> ApiResponse:
@@ -527,6 +539,7 @@ async def repo() -> ApiResponse:
         except (TypeError, ValueError):
             return ApiFailResponse(message="page must be a positive integer", status_code=400)
         invitation_id = body.get(RequestFields.INVITATION_ID)
+        repo_name = str(body.get(RequestFields.NAME) or "").strip()
         provider = _provider_from_body(body)
 
         repo_info = get_request_repo_info()
@@ -545,6 +558,8 @@ async def repo() -> ApiResponse:
             return await get_branches_list(current_request_info, repo_info)
         if repo_info.repo_action == RepoActions.LIST:
             return await list_user_repos(current_request_info, page=page)
+        if repo_info.repo_action == RepoActions.CREATE:
+            return await create_private_repo(current_request_info, repo_name)
         if repo_info.repo_action == RepoActions.INVITATIONS:
             return await list_invitations(current_request_info)
         if repo_info.repo_action in (RepoActions.INVITATION_ACCEPT, RepoActions.INVITATION_DECLINE):

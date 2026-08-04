@@ -9,7 +9,7 @@ import {
   type FlowData,
 } from '@sdk';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
-import { uploadFilesToProcessInputDir } from '@src/utils/upload-to-input-dir';
+import { appendUploadedFileRefs, uploadFilesToProcessInputDir } from '@src/utils/upload-to-input-dir';
 import { useEntity } from '@sdk/react/hooks';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
@@ -130,6 +130,13 @@ interface EntityExecutionPanelProps {
   /** Placeholder for the composer textbox. Defaults to "Ask about this doc…". */
   placeholder?: string;
   /**
+   * Opt-in composer file attachments (a "+" picker, drag-and-drop, chips).
+   * Picked files upload into the process input dir at send time and ride
+   * along on the prompt as path-reference lines — the same convention as
+   * image paste. Off by default so other panel surfaces are unchanged.
+   */
+  allowAttachments?: boolean;
+  /**
    * Render TOOL_CALL/TOOL_RESULT/REASONING/STATUS/ERROR events as compact
    * "dense" rows between text messages, with an expand toggle that reveals
    * the full payload. Default false — the asset-editor surfaces (Skill,
@@ -247,6 +254,7 @@ export function EntityExecutionPanel({
   headerLabel,
   leadingSlot,
   placeholder,
+  allowAttachments = false,
   dense = false,
   defaultProjectId,
   defaultWorkdir,
@@ -536,19 +544,27 @@ export function EntityExecutionPanel({
     }
   }, [activeProcess]);
 
-  const handleSend = useCallback(async (text: string, opts?: { forceNewProcess?: boolean }) => {
+  const handleSend = useCallback(async (text: string, opts?: { forceNewProcess?: boolean; files?: File[] }) => {
     if (!targetStr) return;
-    inputHistory.addToHistory(text);
+    if (text) inputHistory.addToHistory(text);
     const mustCreateNew = opts?.forceNewProcess === true || forceNewRef.current;
+
+    // The full prompt for this turn: host-supplied context first (consumed
+    // after the send so it doesn't leak into later prompts), then the typed
+    // text, then one path-reference line per composer attachment — uploaded
+    // here because it needs a live process id (i.e. AFTER lazy-create). An
+    // upload failure throws and aborts the send: silently dropping the files
+    // the user attached would be worse than a retriable error.
+    const compose = (procId: string): Promise<string> =>
+      appendUploadedFileRefs(procId, promptContext ? `${promptContext.text}\n\n${text}` : text, opts?.files);
 
     // Mid-turn sends ENQUEUE instead of racing a second turn: the backend
     // owns the queue and auto-drains it as the worker frees up (the composer
     // stays usable while busy; the queue chip shows the pending count).
     const turnBusy = !!activeProcess && isBusy(activeProcess);
     if (!mustCreateNew && activeProcess && (turnBusy || sending)) {
-      const composed = promptContext ? `${promptContext.text}\n\n${text}` : text;
       try {
-        await activeProcess.enqueue(composed);
+        await activeProcess.enqueue(await compose(activeProcess.id));
         if (promptContext) onPromptContextConsumed?.();
       } catch (err) {
         console.error('[EntityExecutionPanel] enqueue failed', err);
@@ -604,12 +620,9 @@ export function EntityExecutionPanel({
 
       if (!proc) throw new Error('process creation failed');
 
-      // Prepend host-supplied context (e.g. a selected web-app element) to this
-      // turn, then consume it so it doesn't leak into later prompts.
-      const composed = promptContext ? `${promptContext.text}\n\n${text}` : text;
       // One method, both transports: the backend's prompt action routes by the
       // process's `visible` flag (PTY-transcript poll vs print-mode stream).
-      await proc.prompt(composed);
+      await proc.prompt(await compose(proc.id));
       if (promptContext) onPromptContextConsumed?.();
     } catch (err) {
       console.error('[EntityExecutionPanel] prompt failed', err);
@@ -618,6 +631,14 @@ export function EntityExecutionPanel({
       setSending(false);
     }
   }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, effectiveModel, effectiveWorkerType, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed, selectedProcessId, inputHistory, t]);
+
+  // Stable adapter between the composer's (text, files) shape and handleSend's
+  // options bag — an inline arrow here would invalidate the composer's
+  // callbacks on every streamed-item render.
+  const handleComposerSend = useCallback(
+    (text: string, files?: File[]) => handleSend(text, files?.length ? { files } : undefined),
+    [handleSend],
+  );
 
   const handleStop = useCallback(async () => {
     if (!activeProcess) return;
@@ -854,13 +875,14 @@ export function EntityExecutionPanel({
         </div>
       )}
       <CompactExecutionInput
-        onSend={handleSend}
+        onSend={handleComposerSend}
         disabled={sendDisabled}
         running={busy}
         onStop={handleStop}
         statusSlot={statusSlot}
         placeholder={placeholder}
         onPasteImages={handlePasteImages}
+        allowAttachments={allowAttachments}
         leadingSlot={<QueueChip process={activeProcess} />}
         history={inputHistory}
         animateEnqueue

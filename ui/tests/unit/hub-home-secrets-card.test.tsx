@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const h = vi.hoisted(() => ({
   openPage: vi.fn(),
   openDock: vi.fn(),
+  projects: [] as Array<{ id: string; displayName: string }>,
 }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
@@ -20,13 +21,17 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
     navigation: { openPage: h.openPage, openDock: h.openDock },
     currentDock: { page: 'hub' },
   }),
+  // The Projects section renders the shared ProjectActionsRow, which reaches
+  // view-mode/home-surface hooks built on these.
+  useCurrentDock: () => ({ page: 'hub' }),
+  useIsHomeSurface: () => true,
 }));
 vi.mock('@sdk/react/hooks', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useAuth: () => ({ currentUser: { id: 'u1', name: 'Ada' } }),
 }));
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: null }) }));
-vi.mock('@src/hooks/use-projects', () => ({ useProjects: () => ({ projects: [], isLoading: false }) }));
+vi.mock('@src/hooks/use-projects', () => ({ useProjects: () => ({ projects: h.projects, isLoading: false }) }));
 vi.mock('@src/hooks/use-desktops', () => ({
   useDesktops: () => ({
     desktops: [{ id: 'node-1', name: 'Desk One' }],
@@ -52,7 +57,10 @@ import { TooltipProvider } from '@src/components/ui/tooltip';
 import { HubHome } from '@src/pages/hub-home/HubHome';
 
 describe('HubHome desktop secrets button', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.projects.length = 0;
+  });
   afterEach(() => cleanup());
 
   it('opens Credentials on the hub page, never a page-less dock', async () => {
@@ -69,5 +77,19 @@ describe('HubHome desktop secrets button', () => {
 
     expect(h.openDock).not.toHaveBeenCalled();
     expect(h.openPage).toHaveBeenCalledWith(PageId.HUB, ViewType.CREDENTIALS, 'environment');
+  });
+
+  it('opens a project on its canonical Hub page', async () => {
+    h.projects.push({ id: '12345678-0000-4000-8000-000000000000', displayName: 'Project One' });
+    render(
+      <TooltipProvider>
+        <HubHome />
+      </TooltipProvider>,
+    );
+
+    await userEvent.click(screen.getByText('Project One'));
+
+    expect(h.openDock).toHaveBeenCalledOnce();
+    expect(h.openDock.mock.calls[0][0].toUrl()).toBe('/dock/hub/project/12345678-0000-4000-8000-000000000000');
   });
 });

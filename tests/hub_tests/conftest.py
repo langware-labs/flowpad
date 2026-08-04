@@ -84,6 +84,26 @@ def configure_desktop_hub(hub_base_url):
 
 
 @pytest.fixture(autouse=True)
+async def _reset_shared_hub_client():
+    """Close the process-shared hub HTTP client after each test.
+
+    ``hub_http._shared_client`` is a deliberate module global (pooled
+    connections + TLS context), correct for the server's single lifelong loop.
+    Under ``asyncio_mode = auto`` each test gets its OWN loop, so the pooled
+    client outlives the loop that built it and every later hub call raises
+    ``RuntimeError: Event loop is closed`` — which ``hub_get``/``hub_post``
+    swallow, returning ``None``. The failure is therefore SILENT (a bare
+    ``assert (None)`` / "row never arrived"), not an error, and lands on
+    whichever test follows the last client rebuild. Closing it here, while its
+    loop is still alive, forces each test to build its own.
+    """
+    from flow_sdk.cloud_client.transport.hub_http import close_hub_client
+
+    yield
+    await close_hub_client()
+
+
+@pytest.fixture(autouse=True)
 def _reset_hub_error_reporter():
     """Reset the module-singleton hub-error rate-limiter between tests.
 
