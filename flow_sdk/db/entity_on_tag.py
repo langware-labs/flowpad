@@ -18,6 +18,7 @@ machinery.
 ``entity.*`` is deliberately NOT in the WS forward allowlist — the app keeps
 ``data_op_msg`` until a frontend consumer wants the tag form (phase 8).
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,6 +33,13 @@ _OP_TO_SUBTAG = {
     "create": "created",
     "update": "updated",
     "delete": "deleted",
+    # Subtree ops keep their own subtag rather than collapsing into
+    # ``updated``: the target is the PARENT but the thing that changed is the
+    # child, so a subscriber must be able to tell the two apart. Mirrors the
+    # TS-side ``OP_TO_TAG`` in ``ts_sdk/src/FlowSync/entity.onTag.ts``.
+    "child_created": "child_created",
+    "child_updated": "child_updated",
+    "child_deleted": "child_deleted",
 }
 
 

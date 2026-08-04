@@ -5,6 +5,7 @@ from typing import Any, ClassVar, Dict, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from flow_sdk.api.api_request import APIRequest
+from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: F401  (re-export)
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.request_context.auth_info import AuthContext
 
@@ -100,6 +101,7 @@ class AuthExpiredMessage(BaseMessage):
 class PrivacyModeMessage(BaseMessage):
     """Broadcast when this instance's data-privacy mode changes, so every open
     client updates the footer control + cloud-access guards without a reload."""
+
     message_type: str = WSMessageType.PRIVACY_MODE_MSG.value
     privacy_mode: str  # "local" | "connected"
 
@@ -107,6 +109,7 @@ class PrivacyModeMessage(BaseMessage):
 class ToplogStateMessage(BaseMessage):
     """Broadcast when this instance's toplog state changes, so every open client
     updates its in-memory tag set live (no reload). See flow_sdk/toplog.py."""
+
     message_type: str = WSMessageType.TOPLOG_STATE_MSG.value
     enabled: bool
     filter: Dict[str, bool]
@@ -139,27 +142,11 @@ class EntityMessage(BaseMessage):
     to_entity: TypeId
 
 
-class OperationType(Enum):
-    CREATE = "create"
-    UPDATE = "update"
-    DELETE = "delete"
-
-
 class HttpMethod(Enum):
     GET = "GET"
     POST = "POST"
     PUT = "PUT"
     DELETE = "DELETE"
-
-
-class DataOpMessage(EntityMessage):
-    model_config = ConfigDict(use_enum_values=True)
-    message_type: str = WSMessageType.DATA_OP_MSG.value
-    op: OperationType
-    data: Any = None  # AppLayerMessage
-
-    def handle(self):
-        raise NotImplementedError("This method must be implemented in a subclass")
 
 
 class APIMessage(BaseMessage, APIRequest):

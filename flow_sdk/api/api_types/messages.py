@@ -114,6 +114,15 @@ class OperationType(Enum):
     CREATE = "create"
     UPDATE = "update"
     DELETE = "delete"
+    # Subtree ops — vocabulary and values identical to the hub's
+    # ``flowpad/hub/api/messages.py`` so a frame means the same thing on both
+    # sides of the bridge. The envelope INVERTS relative to the ops above:
+    # ``to_entity`` is the PARENT, ``from_entity`` is the changed child, and
+    # ``data`` is the child — so watchers of a parent learn about its subtree
+    # without subscribing to every child.
+    CHILD_CREATED = "child_created"
+    CHILD_UPDATED = "child_updated"
+    CHILD_DELETED = "child_deleted"
 
 
 class HttpMethod(Enum):
