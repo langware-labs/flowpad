@@ -1,7 +1,8 @@
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
-import { isAllScope, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
+import { type ScopeFilter } from '@src/lib/scope-filter';
+import { ruleInScope } from '@src/components/events/feed-model';
 import { ActionInfo, dataManager, type ITrigger } from '@sdk';
 import { HelpCircle, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -36,36 +37,6 @@ function groupByScope(triggers: ITrigger[]): Record<string, ITrigger[]> {
   return grouped;
 }
 
-/**
- * Uniform visibility rule applied to all trigger types. The ScopeFilter
- * controls `user` + `project` visibility (same as every other ScopeFilterBar
- * consumer). System triggers ride on a separate `includeSystem` boolean,
- * because the unified ScopeFilter shape is `{user, projects}` and other
- * consumers depend on that shape — adding system there would force a schema
- * change across FsRecordsScannerViewer / SweepOrphansDialog / browseable-tree.
- */
-function filterTriggers(
-  triggers: ITrigger[],
-  scope: ScopeFilter,
-  includeSystem: boolean,
-): ITrigger[] {
-  return triggers.filter((t) => {
-    const s = t.scope || 'user';
-    if (s === 'system') return includeSystem;
-    // "All" shows everything (user + every project); system still rides the
-    // separate `includeSystem` toggle (handled above).
-    if (isAllScope(scope)) return true;
-    if (s === 'project') {
-      // Project-scoped triggers without a project_id are unreachable via the
-      // chip picker — hide them rather than leaking into the list.
-      const pid = t.project_id ?? '';
-      return pid !== '' && scopeProjectIds(scope).includes(pid);
-    }
-    // Anything else (legacy / unknown / 'user') goes through the user toggle.
-    return scopeIncludesUser(scope);
-  });
-}
-
 export function TriggersList({
   triggers,
   selectedTrigger,
@@ -78,7 +49,7 @@ export function TriggersList({
 }: Props) {
   const { t } = useLingui();
   const visibleTriggers = useMemo(
-    () => filterTriggers(triggers, scope, includeSystem),
+    () => triggers.filter((t) => ruleInScope(t, scope, includeSystem)),
     [triggers, scope, includeSystem],
   );
 
@@ -94,7 +65,7 @@ export function TriggersList({
     <div>
       {/* Schedule Triggers section (always rendered — empty state shows a "Create one" affordance). */}
       <TypeSection
-        title={t`Schedule Triggers`}
+        title={t`On schedule`}
         grouped={scheduleGrouped}
         count={scheduleTriggers.length}
         trailing={
@@ -134,7 +105,7 @@ export function TriggersList({
           section types are discoverable; each header carries a `?` popover
           explaining the type-specific creation flow. */}
       <TypeSection
-        title={t`FSOp Triggers`}
+        title={t`On file change`}
         grouped={fsopGrouped}
         count={fsopTriggers.length}
         trailing={<FsopHelpPopover />}
@@ -154,7 +125,7 @@ export function TriggersList({
         )}
       />
       <TypeSection
-        title={t`Hook Triggers`}
+        title={t`On agent hook`}
         grouped={hookGrouped}
         count={hookTriggers.length}
         trailing={<HookHelpPopover />}

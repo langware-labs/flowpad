@@ -88,10 +88,15 @@ export enum ViewType {
   PREFERENCES = 'preferences', // User preferences screen (registry-driven, category tabs)
   AGENTIC_PROCESS = 'agentic_process', // Process terminal view (Layer 3)
   SEARCH = 'search', // Record semantic search view
-  TRIGGERS = 'triggers', // Activation rules browser + editor
+  // The merged rules+events screen. TRIGGERS / SIGNALS / CRON are kept as
+  // ALIASES onto it (same body, same navigator) rather than redirects, so every
+  // bookmarked URL keeps working — the pattern CRON already used for TRIGGERS.
+  EVENTS = 'events', // Rules and the events they fire on - /dock/events[?rule=<id>]
+  TRIGGERS = 'triggers', // Alias of EVENTS (was: activation rules browser + editor)
   CAPABILITIES = 'capabilities', // System capability checks/install/test
   GRAPH_WORKFLOWS = 'graph-workflows', // Flow-graph editor/observatory (GraphWorkflowManager) — dev mode
-  SIGNALS = 'signals', // Global event-bus monitor + injector + data sources — dev mode
+  SIGNALS = 'signals', // Alias of EVENTS (was: global event-bus monitor + injector)
+  DATA_SOURCES = 'data-sources', // Configured ingestion sources — /dock/data-sources
   PROCESS_RUNS = 'process-runs', // AgenticProcess execution history — /dock/process-runs[/<processId>]
   PLAN = 'plan', // Plan viewer with Milkdown editor
   CRON = 'cron', // Scheduled cron jobs manager

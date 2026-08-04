@@ -30,6 +30,25 @@ export type ViewSlot = (typeof VIEW_SLOTS)[keyof typeof VIEW_SLOTS];
 export type ViewTypeValue = `${ViewType}`;
 
 /**
+ * The merged Events screen and the three view types that are ALIASES of it.
+ *
+ * `triggers`, `signals` and `cron` used to be separate screens; they now render
+ * the same body and the same navigator. They are kept as aliases rather than
+ * deleted so bookmarked URLs and persisted tabs keep resolving — the pattern
+ * `cron` already used for `triggers`.
+ *
+ * Anything that switches on "is this the events screen" must consult THIS set,
+ * not `=== ViewType.EVENTS`, or old URLs silently lose their navigator, their
+ * rail highlight, or their scope seeding.
+ */
+export const EVENTS_VIEW_TYPES: ReadonlySet<ViewType> = new Set([
+  ViewType.EVENTS,
+  ViewType.TRIGGERS,
+  ViewType.SIGNALS,
+  ViewType.CRON,
+]);
+
+/**
  * Viewer metadata registry
  * Single source of truth for all viewer information
  */
@@ -74,6 +93,7 @@ export interface ViewerMeta {
     | 'Users'
     | 'Mail'
     | 'Stethoscope'
+    | 'Antenna'
     | 'History';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
@@ -350,9 +370,16 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  [ViewType.EVENTS]: {
+    title: 'Events',
+    iconName: 'RadioTower',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  // Aliases of EVENTS — same screen, kept so old URLs and old tabs resolve.
   [ViewType.TRIGGERS]: {
-    title: 'Triggers',
-    iconName: 'Zap',
+    title: 'Events',
+    iconName: 'RadioTower',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
@@ -369,8 +396,16 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     canAddAsTab: true,
   },
   [ViewType.SIGNALS]: {
-    title: 'Signals',
+    title: 'Events',
     iconName: 'RadioTower',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  // `Antenna` matches DATA_SOURCE.icon in the backend TypeInfo, so the tab chip
+  // and the type glyph (which comes from the registry via iconForType) agree.
+  [ViewType.DATA_SOURCES]: {
+    title: 'Data sources',
+    iconName: 'Antenna',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
@@ -387,8 +422,8 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     canAddAsTab: false,
   },
   [ViewType.CRON]: {
-    title: 'Cron',
-    iconName: 'Zap',
+    title: 'Events',
+    iconName: 'RadioTower',
     tabLocation: 'dedicated',
     canAddAsTab: false, // Only accessible via direct URL /dock/cron
   },

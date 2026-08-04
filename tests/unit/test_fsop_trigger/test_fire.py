@@ -201,3 +201,68 @@ async def test_fire_writes_trigger_log_entry(trigger_log_dir):
     assert "log_test" in content
     assert "/tmp/x" in content
     assert "modified" in content
+
+
+# ── bus emission ──────────────────────────────────────────────────────────────
+
+
+async def test_fire_emits_exactly_one_envelope_per_batch(trigger_log_dir):
+    """ONE `trigger.fired` per debounce window, matching the one log row.
+
+    awatch's debounce IS the rate guard for fsop; a per-file emission would be
+    the per-write lane that keeps `entity.*` off the forwarding allowlist.
+    Falsifiable: move the emit into the raw-changes loop in `_run_watch_for`
+    and this yields 50.
+    """
+    from flow_sdk.tags import event_bus
+
+    t = _make_trigger(name="batch_test", watch_path="/tmp/x")
+    fired = []
+    unsub = event_bus.on("trigger.fired", fired.append)
+    try:
+        batch = [ChangeEvent(path=Path(f"/tmp/f{i}"), change_type="modified")
+                 for i in range(50)]
+        await _fire(t, batch)
+    finally:
+        unsub()
+
+    assert len(fired) == 1, f"expected 1 envelope for a 50-file batch, got {len(fired)}"
+    ev = fired[0]
+    assert ev.target == "trigger:id-batch_test"
+    assert ev.data["detail"]["changes_total"] == 50
+    assert ev.data["detail"]["first_path"] == "/tmp/f0"
+    assert ev.ctx.actor == "system"
+
+
+async def test_log_row_and_envelope_are_the_same_fact(trigger_log_dir):
+    """The row carries the envelope's id, so either side joins to the other.
+    This is what `make_tag_event`/`publish` buy over `emit` — with emit's
+    zero-subscriber fast path, `event_id` would be null whenever nobody was
+    listening, and the join would work only half the time."""
+    import json
+
+    from flow_sdk.tags import event_bus
+
+    t = _make_trigger(name="join_test", watch_path="/tmp/x")
+    fired = []
+    unsub = event_bus.on("trigger.fired", fired.append)
+    try:
+        await _fire(t, [ChangeEvent(path=Path("/tmp/x"), change_type="modified")])
+    finally:
+        unsub()
+
+    row = json.loads((trigger_log_dir / "join_test" / "calls.jsonl").read_text().strip())
+    assert row["event_id"] == fired[0].id
+    assert row["trigger_id"] == "id-join_test"
+    assert row["trigger_type"] == "fsop"
+
+
+async def test_event_id_is_recorded_even_with_no_subscribers(trigger_log_dir):
+    """The join key must not depend on whether anyone happened to be listening."""
+    import json
+
+    t = _make_trigger(name="nosub_test", watch_path="/tmp/x")
+    await _fire(t, [ChangeEvent(path=Path("/tmp/x"), change_type="modified")])
+
+    row = json.loads((trigger_log_dir / "nosub_test" / "calls.jsonl").read_text().strip())
+    assert row["event_id"], "event_id must be present with zero bus subscribers"

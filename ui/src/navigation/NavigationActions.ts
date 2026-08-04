@@ -14,6 +14,7 @@ import {
   ViewType,
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
+import { EVENTS_VIEW_TYPES } from '@src/types/ViewType';
 import type { ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer, HIGHLIGHT_PARAM, JOURNEY_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
@@ -55,7 +56,12 @@ let pendingDockNavigation: PendingDockNavigation | null = null;
 // session's identity is unaffected).
 export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
   ViewType.ASSETS,
-  ViewType.TRIGGERS,
+  // Events (+ its aliases): ONE ScopeFilter drives both halves of the screen —
+  // which rules the navigator lists and which events the feed shows. The old
+  // Signals screen was deliberately global; folding it in trades that for the
+  // filter the user already knows, with `all` scope still available from the
+  // scope bar when an instance-wide view is wanted.
+  ...EVENTS_VIEW_TYPES,
   ViewType.EXPLORER,
   ViewType.SHELL,
 ]);
