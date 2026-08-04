@@ -63,8 +63,13 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
       // A warned opener (capability check failed) can't launch — route to the
       // Capabilities screen (check/install) instead of creating a doomed tab.
       // Single enforcement point for inline buttons and menu rows alike.
+      // The opener's own kind rides along so the view re-probes THAT capability
+      // on arrival: the warning may be stale (discovery only sweeps at backend
+      // start, so a CLI installed since then still reads as missing).
       if (opener.warning) {
-        navigation.openTab(ViewType.CAPABILITIES);
+        navigation.openTab(ViewType.CAPABILITIES, {
+          ...(opener.capabilityKind ? { capabilityKind: opener.capabilityKind } : {}),
+        });
         return;
       }
       rememberOpened(opener.id);
