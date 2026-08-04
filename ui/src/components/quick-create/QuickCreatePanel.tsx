@@ -22,7 +22,7 @@ import { cn } from '@src/lib/utils';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openNewChat } from '@src/navigation/open-new-chat';
-import { Info, KeyRound, MessageSquarePlus } from 'lucide-react';
+import { Info, KeyRound, Loader2, MessageSquarePlus } from 'lucide-react';
 import {
   Fragment,
   forwardRef,
@@ -57,16 +57,21 @@ const TILE_TIP_DELAY = 500;
 /** Icon components accept a className — both lucide icons and the brand SVGs. */
 type TileIcon = ComponentType<{ className?: string }>;
 
-type DesktopTileProps = {
+export type DesktopTileProps = {
   Icon: TileIcon;
   label: string;
   iconClassName?: string;
   disabled?: boolean;
+  /** In-flight: show a spinner instead of `Icon` and refuse clicks. Lives here
+   *  rather than in each caller so every tile spells "working" the same way. */
+  loading?: boolean;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'disabled'>;
 
 /**
- * A single desktop-style icon tile — sized to match the home MiniDesktop /
- * favorites grid (square tile, icon over a single-line label).
+ * The square icon-over-label tile every "New …" affordance on project home
+ * uses — sized to match the home MiniDesktop / favorites grid. Exported so
+ * sibling surfaces (hub home's projects and desktops) present the same shape
+ * rather than inventing a second look for the same kind of act.
  *
  * Forwards its ref and spreads the rest of its props onto the real `<button>`
  * so it can be a Radix `asChild` trigger: `Slot` clones this element to merge
@@ -77,27 +82,33 @@ type DesktopTileProps = {
  * natively disabled button drops pointer events, which would take its WikiTip
  * with it, and an unavailable tile is exactly the one worth explaining.
  */
-const DesktopTile = forwardRef<HTMLButtonElement, DesktopTileProps>(function DesktopTile(
-  { Icon, label, iconClassName, disabled, className, onClick, ...rest },
+export const DesktopTile = forwardRef<HTMLButtonElement, DesktopTileProps>(function DesktopTile(
+  { Icon, label, iconClassName, disabled, loading, className, onClick, ...rest },
   ref,
 ) {
+  const inert = disabled || loading;
   return (
     <button
       ref={ref}
       type="button"
-      onClick={disabled ? undefined : onClick}
-      aria-disabled={disabled || undefined}
+      onClick={inert ? undefined : onClick}
+      aria-disabled={inert || undefined}
+      aria-busy={loading || undefined}
       aria-label={label}
       className={cn(
         'flex h-20 w-20 flex-col items-center justify-center gap-1.5 rounded-md border border-border bg-background text-muted-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        disabled
+        inert
           ? 'cursor-not-allowed opacity-50'
           : 'cursor-pointer hover:border-primary hover:bg-accent hover:text-foreground',
         className,
       )}
       {...rest}
     >
-      <Icon className={cn('h-7 w-7', iconClassName)} />
+      {loading ? (
+        <Loader2 className={cn('h-7 w-7 animate-spin', iconClassName)} />
+      ) : (
+        <Icon className={cn('h-7 w-7', iconClassName)} />
+      )}
       {/* Two lines, not one truncated one: a multi-word label ("Folder on this
           computer") is unreadable clipped, and two 10px lines still clear the
           tile's height. */}

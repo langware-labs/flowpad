@@ -18,6 +18,7 @@ AGENT = TypeMetadata(
     creatable=True,
     indexed_by_default=True,
     api_visible=True,
+    cloud_file_transport="git",
     index_fields=["description"],
     asset_class="repo",
     family="agent",

@@ -69,6 +69,18 @@ class Artifact(Entity):
     owns_asset_ref: ClassVar[bool] = False
 
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
+    target_type_id: str | None = APIField(
+        default=None,
+        description=(
+            "TypeId of the entity this artifact references, e.g. "
+            "``source_item-<uuid>``. ``asset_ref`` addresses a deliverable that "
+            "is a *file*; this addresses one that is a *row*. A message an agent "
+            "sent, a task it opened, a record it created — none of them have a "
+            "path, and without this the artifact would carry an empty "
+            "``asset_ref`` and point at nothing at all. Both may be set: a "
+            "file-backed entity has a path AND an identity."
+        ),
+    )
     generated_by: str | None = APIField(
         default=None,
         description=(

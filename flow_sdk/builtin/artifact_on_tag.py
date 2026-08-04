@@ -64,6 +64,10 @@ def emit_artifact_tag(artifact: "Artifact", action: str) -> None:
                 "artifact_id": str(artifact.id),
                 "generated_by": producer or None,
                 "asset_ref": str(getattr(artifact, "asset_ref", "") or "") or None,
+                # A file-less artifact carries no `asset_ref`, so without this a
+                # subscriber would receive an event it cannot resolve to
+                # anything. Still lean by law — a pointer, never the row.
+                "target_type_id": str(getattr(artifact, "target_type_id", "") or "") or None,
                 "kind": str(getattr(artifact, "kind", "") or "") or None,
                 "name": str(getattr(artifact, "name", "") or "") or None,
             },

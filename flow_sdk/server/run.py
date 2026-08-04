@@ -131,6 +131,21 @@ def _acquire_singleton_lock() -> bool:
 def _release_singleton_lock() -> None:
     if _lock and _lock.is_locked:
         _lock.release()
+        # Deliberately does NOT unlink server.lock. Deleting a lock file after
+        # releasing it is the classic filelock footgun: between release() and
+        # unlink() another backend can acquire the same inode, we then delete
+        # the file it holds, a third creates a fresh file and acquires that —
+        # and two backends are both "the singleton". `restart-backend` (old
+        # backend exiting while the new one starts) is exactly that window.
+        #
+        # Leftover lock/pid files are harmless: _acquire_singleton_lock already
+        # treats them as stale by checking the recorded pid, and
+        # `flow instance ctl reconcile` removes them, gated on no live process
+        # holding them. Hygiene belongs in the layer whose job is clearing
+        # control-plane facts that are provably false — not in a shutdown path
+        # that cannot know whether someone has already taken over.
+        pid_path = get_port_file_path().with_suffix(".pid")
+        pid_path.unlink(missing_ok=True)
         logging.info("[singleton] Lock released: pid=%d", os.getpid())
 
 

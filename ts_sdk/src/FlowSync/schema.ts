@@ -53,6 +53,9 @@ export interface TypeInfo {
   browseable_by: ViewMode | null;
   creatable: boolean;
   api_visible: boolean;
+  /** Storage authority for shared asset bytes. Git-backed types publish their
+   *  source tree and use entity VFS refs in cloud; embedded is the legacy path. */
+  cloud_file_transport?: 'embedded' | 'git';
   icon: string | null;
   /** UX-friendly label for the type (e.g. "Skills"); backend-owned, null when the
    *  type has no curated label — callers fall back to `humanizeType(type_name)`. */

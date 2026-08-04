@@ -34,10 +34,13 @@ import uuid
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 from weakref import WeakValueDictionary
 
 from flow_sdk.fs_store.fs_ref import FSRef
+
+if TYPE_CHECKING:
+    from flow_sdk.fs_store.schema_registry import TypeInfo
 
 
 M = TypeVar("M")  # meta model — dict view by default; Pydantic models opt-in via TypeInfo.meta_model
@@ -69,6 +72,75 @@ _RECORD_SYNC_LOCKS: "WeakValueDictionary[tuple[object, str, str], asyncio.Lock]"
 _HELD_RECORD_SYNC_KEYS: "ContextVar[frozenset[tuple[object, str, str]]]" = ContextVar(
     "_held_record_sync_keys", default=frozenset()
 )
+
+# Fresh file-backed entities are keyed by their carrier path, not their random
+# entity id.  Serializing that path closes the create race where two requests
+# compute the same slug, both observe a missing file, and the later store
+# overwrites the first.  Loop-scoped locks match ``record_sync_guard`` and are
+# weakly held so the server does not retain every path it has ever created.
+_CREATE_TARGET_LOCKS: "WeakValueDictionary[tuple[object, str], asyncio.Lock]" = (
+    WeakValueDictionary()
+)
+
+
+class AssetPathCollisionError(ValueError):
+    """A fresh owned asset would overwrite another entity's carrier."""
+
+
+def assert_create_target_available(
+    info: "TypeInfo",
+    asset_ref: FSRef,
+    *,
+    entity_type: str,
+    name: str,
+) -> None:
+    """Reject a fresh owned-asset target that already carries user data.
+
+    ``asset_ref`` is not always the writable file: folder-backed types point at
+    their directory and declare an inner ``main_file``.  TypeInfo owns that
+    convention, so collision detection resolves the same carrier as the writer.
+    An empty folder is adoptable; any non-empty folder or existing carrier is
+    somebody else's bundle and must remain byte-identical.
+    """
+    carrier = info.body_path_for(asset_ref._path)
+    collision = carrier.exists() or carrier.is_symlink()
+
+    if not collision and info.main_layout == "folder":
+        target_folder = info.folder_for(asset_ref._path)
+        if target_folder.is_symlink():
+            collision = True
+        elif target_folder.exists():
+            if not target_folder.is_dir():
+                collision = True
+            else:
+                try:
+                    collision = next(target_folder.iterdir(), None) is not None
+                except OSError:
+                    # An unreadable pre-existing folder is never safe to adopt.
+                    collision = True
+
+    if collision:
+        raise AssetPathCollisionError(
+            f"An {entity_type} named '{name}' already exists in this scope"
+        )
+
+
+@asynccontextmanager
+async def create_target_guard(info: "TypeInfo", asset_ref: FSRef):
+    """Serialize the collision check and first carrier write for one path."""
+    loop = asyncio.get_running_loop()
+    carrier = info.body_path_for(asset_ref._path)
+    try:
+        path_key = str(carrier.resolve(strict=False))
+    except OSError:
+        path_key = str(carrier.absolute())
+    lock_key = (loop, path_key)
+    lock = _CREATE_TARGET_LOCKS.get(lock_key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _CREATE_TARGET_LOCKS[lock_key] = lock
+    async with lock:
+        yield
 
 
 @asynccontextmanager
@@ -694,7 +766,11 @@ class FSRecord(Generic[M]):
             target = info.asset_ref_for(base / safe)
         else:
             target = base / f"{safe}{info.main_ext}"
-        return FSRef(target)
+        resolved_root = Path(scope_root).resolve()
+        resolved_target = target.resolve()
+        if not resolved_target.is_relative_to(resolved_root):
+            raise ValueError(f"Derived {self.type} asset path escapes its scope root")
+        return FSRef(resolved_target)
 
     @staticmethod
     def _safe_name(entity) -> str:

@@ -10,6 +10,11 @@ import {
   TypeId,
 } from '@sdk';
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
+import {
+  type ContentInstallSpec,
+  type InstallNavigationResult,
+  installProjectLandingUrl,
+} from '@src/lib/content-install';
 import { notify } from '@src/notifications';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -154,6 +159,12 @@ export interface GitSetup {
   gitOrigin: GitOrigin;
   /** Folder/display name for the set-up project. */
   name: string;
+  /** Optional review-branch content installation performed by the Hub. */
+  install?: ContentInstallSpec;
+}
+
+interface GitSetupResult extends InstallNavigationResult {
+  message?: string;
 }
 
 /**
@@ -311,14 +322,17 @@ export function useDesktops() {
       // Set up the git repo: the HUB clones it (authed when private) and copies
       // the tree into the now-running box, which materializes + indexes it into
       // a Project. Runs after the box is up so copy_folder has a target.
+      let gitSetupResult: GitSetupResult | null = null;
       if (gitSetup) {
         await run('setup-git', async () => {
           patch('setup-git', { detail: `cloning ${gitSetup.name}…` });
-          const result = await opsCall<{ project?: unknown; message?: string }>(node.id, 'setup-git', {
+          const result = await opsCall<GitSetupResult>(node.id, 'setup-git', {
             git_origin: gitSetup.gitOrigin,
             name: gitSetup.name,
+            ...(gitSetup.install ? { install: gitSetup.install } : {}),
           });
           if (!result?.project) throw new Error(result?.message || 'Git setup did not return a project');
+          gitSetupResult = result;
           return result;
         });
       }
@@ -327,7 +341,9 @@ export function useDesktops() {
         const host = await resolveHostUrl(node.id);
         // The box clones the repo itself on its landing (public repos) — the
         // deep link rides the URL we were opening anyway.
-        return gitLanding ? withGitSetupLanding(host, gitLanding) : host;
+        if (gitLanding) return withGitSetupLanding(host, gitLanding);
+        if (!gitSetup?.install || !gitSetupResult) return host;
+        return installProjectLandingUrl(host, gitSetupResult) ?? host;
       });
 
       // The just-launched sandbox is up — seed its status so the list effect

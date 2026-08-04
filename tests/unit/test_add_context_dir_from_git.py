@@ -36,6 +36,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.folder import Folder
+from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.builtin.helpdesk import Helpdesk
 from flow_sdk.builtin.project import Project
 from flow_sdk.fs_store.path_utils import canonical_posix_path
@@ -269,3 +270,61 @@ async def test_a_bad_url_fails_without_linking_anything(tmp_path: Path) -> None:
     assert response.status != "SUCCESS"
     refreshed = await Project.get_by_id(project.id)
     assert not any(str(missing) in d for d in refreshed.include_dirs)
+
+
+@pytest.mark.asyncio
+async def test_existing_checkout_for_another_branch_fails_before_materializing(
+    tmp_path: Path,
+) -> None:
+    project = await _project(tmp_path, "customer-branch-conflict")
+    repo_name = f"support-{tmp_path.name}"
+    existing_origin = GitOrigin.from_url(
+        f"https://github.com/acme/{repo_name}", branch="main", rel_path="."
+    )
+    assert existing_origin is not None
+    await Folder.mint_for_origin(existing_origin)
+
+    response = await project.add_context_dir_from_git(
+        f"git@github.com:acme/{repo_name}.git",
+        branch="release",
+        scope="shared",
+    )
+
+    assert response.status == "FAIL"
+    assert response.status_code == 409
+    assert "main" in response.message
+    assert "release" in response.message
+    assert project.include_dirs == []
+
+
+@pytest.mark.asyncio
+async def test_reattaching_in_another_scope_moves_one_link(
+    tmp_path: Path, vendor_repo: str
+) -> None:
+    project = await _project(tmp_path, "customer-scope-move")
+
+    first = await project.add_context_dir_from_git(vendor_repo, scope="private")
+    moved = await project.add_context_dir_from_git(vendor_repo, scope="shared")
+    repeated = await project.add_context_dir_from_git(vendor_repo, scope="shared")
+
+    folder_typeid = (await Folder.get_by_id(first.data["folder_id"])).typeid
+    assert moved.data["scope_changed"] is True
+    assert moved.data["already_linked"] is False
+    assert repeated.data["scope_changed"] is False
+    assert repeated.data["already_linked"] is True
+    assert str(folder_typeid) not in {
+        str(tid) for tid in project.context_of_type("folder", bucket="private")
+    }
+    assert str(folder_typeid) in {
+        str(tid) for tid in project.context_of_type("folder", bucket="shared")
+    }
+    assert project.include_dirs.count(first.data["path"]) == 1
+
+    moved_back = await project.add_context_dir_from_git(vendor_repo, scope="private")
+    assert moved_back.data["scope_changed"] is True
+    assert str(folder_typeid) in {
+        str(tid) for tid in project.context_of_type("folder", bucket="private")
+    }
+    assert str(folder_typeid) not in {
+        str(tid) for tid in project.context_of_type("folder", bucket="shared")
+    }

@@ -1,22 +1,21 @@
 import type { GitProvider, RepoSummary } from '@sdk';
 import { Input } from '@src/components/ui/input';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@src/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { useGitRepos } from '@src/hooks/use-git-providers';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { GitFork, Loader2, Lock, RefreshCw, Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 interface RepoPickerProps {
   provider: GitProvider;
   onSelect: (repo: RepoSummary) => void;
   enabled?: boolean;
+  /** Restrict selectable rows without inventing a second repository picker. */
+  allowedRoles?: ReadonlyArray<RepoSummary['role']>;
+  /** Fired with the full fetched list (pre-filter), so a host can describe what
+   *  the token actually reaches — e.g. whether private repos are visible —
+   *  without issuing its own request. */
+  onReposLoaded?: (repos: RepoSummary[]) => void;
 }
 
 function formatRelative(iso: string): string {
@@ -48,25 +47,32 @@ function roleBadgeClass(role: RepoSummary['role']): string {
  * provider. Click a row → ``onSelect(repo)``. Filtering is client-side over
  * the full fetched list (5-min query cache via useGitRepos).
  */
-export function RepoPicker({ provider, onSelect, enabled = true }: RepoPickerProps) {
+export function RepoPicker({ provider, onSelect, enabled = true, allowedRoles, onReposLoaded }: RepoPickerProps) {
   const { t } = useLingui();
   const { data: repos, isLoading, isError, error, refetch, isFetching } = useGitRepos(provider, enabled);
+
+  // Hosts that want to describe the token's reach ("private repos included")
+  // learn it from the fetch that already happened, rather than asking again.
+  useEffect(() => {
+    if (repos) onReposLoaded?.(repos);
+  }, [repos, onReposLoaded]);
   const [query, setQuery] = useState('');
 
   const filtered = useMemo(() => {
     if (!repos) return [];
     const q = query.trim().toLowerCase();
+    const allowed = allowedRoles?.length ? repos.filter((repo) => allowedRoles.includes(repo.role)) : repos;
     const matched = q
-      ? repos.filter(
+      ? allowed.filter(
           (r) =>
             r.full_name.toLowerCase().includes(q) ||
             r.owner.toLowerCase().includes(q) ||
             r.name.toLowerCase().includes(q),
         )
-      : repos;
+      : allowed;
     // Sort: pushed_at desc (most recent first).
     return [...matched].sort((a, b) => (b.pushed_at || '').localeCompare(a.pushed_at || ''));
-  }, [repos, query]);
+  }, [repos, query, allowedRoles]);
 
   return (
     <div className="flex flex-col gap-2">
@@ -96,9 +102,13 @@ export function RepoPicker({ provider, onSelect, enabled = true }: RepoPickerPro
           <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> <Trans>Loading your repos…</Trans>
           </div>
-        ) : isError ? (
+        ) : isError || !repos ? (
+          // `!repos` counts as a failure, not as an empty account. Without it a
+          // failed fetch fell through to the empty state and asserted "No repos
+          // accessible with this token" — blaming the user's token for what was
+          // really a refused request.
           <div className="px-3 py-4 text-xs text-destructive">
-            Failed to load repos: {(error as Error)?.message ?? 'unknown error'}
+            <Trans>Couldn’t load your repos.</Trans> {error?.message ?? ''}
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">
@@ -109,10 +119,21 @@ export function RepoPicker({ provider, onSelect, enabled = true }: RepoPickerPro
             <TableHeader>
               <TableRow>
                 <TableHead className="w-7"></TableHead>
-                <TableHead><Trans>Owner</Trans></TableHead>
-                <TableHead><Trans>Repo</Trans></TableHead>
-                <TableHead className="w-20"><Trans>Role</Trans></TableHead>
-                <TableHead className="w-20"><Trans>Pushed</Trans></TableHead>
+                {/* The repo name is what the user is looking for, so it leads
+                    and it is the biggest thing in the row; the owner is a
+                    qualifier and rides behind it. */}
+                <TableHead>
+                  <Trans>Repo</Trans>
+                </TableHead>
+                <TableHead className="w-32">
+                  <Trans>Owner</Trans>
+                </TableHead>
+                <TableHead className="w-20">
+                  <Trans>Role</Trans>
+                </TableHead>
+                <TableHead className="w-20">
+                  <Trans>Pushed</Trans>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -121,14 +142,17 @@ export function RepoPicker({ provider, onSelect, enabled = true }: RepoPickerPro
                   key={repo.full_name}
                   className="cursor-pointer hover:bg-accent"
                   onClick={() => onSelect(repo)}
+                  data-testid={`repo-picker-row-${repo.full_name}`}
                 >
                   <TableCell className="text-muted-foreground">
                     {repo.private ? <Lock className="h-3 w-3" /> : repo.fork ? <GitFork className="h-3 w-3" /> : null}
                   </TableCell>
-                  <TableCell className="text-xs">{repo.owner}</TableCell>
-                  <TableCell className="text-xs font-medium">{repo.name}</TableCell>
+                  <TableCell className="text-sm font-semibold">{repo.name}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{repo.owner}</TableCell>
                   <TableCell>
-                    <span className={`rounded px-1.5 py-px text-[10px] font-medium uppercase ${roleBadgeClass(repo.role)}`}>
+                    <span
+                      className={`rounded px-1.5 py-px text-[10px] font-medium uppercase ${roleBadgeClass(repo.role)}`}
+                    >
                       {repo.role}
                     </span>
                   </TableCell>

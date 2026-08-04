@@ -13,6 +13,8 @@ ui/.swc/
 /*.png
 /page-*.png
 /.playwright-mcp/
+/.claude/transcripts/
+/header.json
 old_flowpad_repo/
 
 # GraphWorkflowManager run journals — execution output that today lands next to

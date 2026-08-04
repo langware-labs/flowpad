@@ -11,9 +11,9 @@ TeamCreate(team_name="e2e-qa-analyze") # for analyze mode
 
 ## Spawning Teammates
 
-**qa-tester** (up to 3 for run mode; 1 for debug/validate):
+**qa-tester** (up to 3 for run mode; 1 for debug/validate; one browser-capable tester by default unless truly isolated):
 
-> **Per-test tab allocation is mandatory.** A qa-tester does NOT use a single tab for its whole run. Instead, EVERY time it claims a task, it allocates a brand-new Chrome tab dedicated to that task — and keeps the tab open for the full task lifecycle (run → debug → fix → re-validate). The tab is closed only when the task is fully resolved (passed, fail accepted, or skip confirmed) and a new task begins. This prevents (a) cross-tester hijack on a shared Chrome session, and (b) cross-test contamination from leftover state of a prior test on the same tab. See `.claude/skills/e2e-qa/agents/qa-tester.md` "Per-test tab — one tab per task, lifecycle-bound" for the full protocol. The spawn prompt below points the tester at that protocol.
+> **Browser ownership and per-test tab allocation are mandatory.** The rule is **one browser owner at a time per {Playwright MCP server process, Flowpad instance}**. A fresh tab prevents sequential task contamination but cannot isolate concurrent clients of one MCP process because actions use its currently selected page. Spawn one browser-capable tester whenever a queue can fall back to full `.md` MCP execution. More than one tester, up to the existing maximum of three, is allowed only when each owns a distinct headless isolated Playwright MCP process/context (never `--shared-browser-context`), a distinct named Flowpad backend/frontend with explicit `APP_URL` and `API_URL`, and a private Playwright/result output directory. `--isolated` does not make multiple callers of one process independent. If any boundary is shared, serialize. Bash/API-only work may overlap only when it neither writes/resets the same instance nor shares a runner output directory. See `.claude/skills/e2e-qa/agents/qa-tester.md` for the full lifecycle protocol.
 
 ```
 Task(
@@ -24,7 +24,7 @@ Task(
     Read your full instructions at .claude/skills/e2e-qa/agents/qa-tester.md.
     Environment: APP_URL=http://localhost:${VITE_PORT}, API_URL=http://localhost:${LOCAL_SERVER_PORT}
     Output dir: <output-dir>/<timestamp>/
-    Per-test tab allocation: For EACH task you claim (Run:/Validate:/etc.), allocate a NEW browser tab via mcp__debugMcp__browser_tabs(new) (or tabs_create_mcp) and bind it as MY_TASK_TAB_ID for that task. Every browser_* call for that task must select MY_TASK_TAB_ID first. Keep this tab open through the task's full lifecycle — Run → (any) Debug → Fix → re-Validate — so the same DOM state can be inspected across iterations. Close MY_TASK_TAB_ID only when the task is completed (or marked skip-confirmed). Then claim the next task and allocate a fresh tab. Never reuse another tester's tab.
+    Browser allocation: You are the sole browser owner for your assigned Playwright MCP process and Flowpad instance. For EACH task you claim (Run:/Validate:/etc.), allocate a NEW browser tab via mcp__playwright__browser_tabs(action="new") and bind its returned index as MY_TASK_TAB_INDEX. Before EVERY browser action, call browser_tabs(action="select", index=MY_TASK_TAB_INDEX). Keep this tab open through the task's full lifecycle — Run → (any) Debug → Fix → re-Validate — so the same DOM state can be inspected across iterations. Close each scenario-created tab with browser_tabs(action="close", index=SCENARIO_TAB_INDEX), then, only when the task is completed (or marked skip-confirmed), close the task tab with browser_tabs(action="close", index=MY_TASK_TAB_INDEX). Then claim the next task and allocate a fresh tab. Never reuse another tester's tab or fall back to another browser MCP.
     Check TaskList and claim available 'Run:' or 'Validate:' tasks. Work through them until none remain.
     On shutdown_request, close any open task tabs before exiting.",
   run_in_background=true
@@ -59,6 +59,8 @@ Task(
 ```
 
 **testing_analysis_expert** (analyze mode; parallel in debug mode for first-time failures):
+
+When its task needs a skip challenge or live browser investigation, `testing_analysis_expert` takes the same exclusive browser-owner slot. Do not run it in parallel with a qa-tester on the same Playwright MCP process or Flowpad instance.
 ```
 Task(
   subagent_type="general-purpose",

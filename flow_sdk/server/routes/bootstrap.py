@@ -1203,9 +1203,42 @@ async def _reap_protected_path_projects() -> None:
     project_shadows = settings.records_root / "project"
     projects = await Project.get_all()
     rows_by_id = {str(project.id): project for project in projects}
+
+    # A system project is never stale: ``_ensure_system_projects`` runs immediately
+    # before this reaper and re-creates it every time. Its root lives INSIDE the
+    # install (``<checkout>/flow_sdk/system_projects/<name>``), which
+    # ``is_protected_path`` reports as protected — so without an exemption the
+    # reaper deleted the Flowpad Assistant project microseconds after it was
+    # created, on EVERY startup and every ``desktop-db/clear``. The symptom was
+    # silent: the row vanished, ``project/@flowpad_assistant`` answered "Invalid
+    # request", and the assistant docs surface had nothing to resolve.
+    #
+    # Rows carry the answer already — ``_ensure_system_projects`` stamps
+    # ``system=True`` — so ask the row rather than re-deriving it from the path.
     protected_row_ids = {
-        str(project.id) for project in projects if project.fs_storage_mount_path and project.protected_path
+        str(project.id)
+        for project in projects
+        if project.fs_storage_mount_path and project.protected_path and not project.system
     }
+
+    # Shadows are the exception: their ``metadata.json`` carries no ``system``
+    # key, so the flag above is unavailable and the shape of the path is the only
+    # evidence. Resolved once here, outside the per-shadow loop below.
+    shipped_system_root = system_projects_root().resolve()
+
+    def _is_shipped_system_project(mount: str | None) -> bool:
+        """True for ``<running-install>/flow_sdk/system_projects/<name>``.
+
+        Deliberately the RUNNING install only: a copy under some OTHER install is
+        genuinely stale and must still be reaped. (``config.is_system_project_path``
+        answers the any-install question and is the wrong one here.)
+        """
+        if not mount:
+            return False
+        try:
+            return Path(mount).resolve().parent == shipped_system_root
+        except OSError:
+            return False
 
     # Orphan shadows are independent evidence: their DB row may already be
     # gone, but protected-path metadata must not survive to be re-adopted.
@@ -1225,7 +1258,7 @@ async def _reap_protected_path_projects() -> None:
             name = data.get("name")
             if not mount and isinstance(name, str) and (os.path.isabs(name) or ntpath.isabs(name)):
                 mount = name
-            if mount and is_protected_path(mount):
+            if mount and is_protected_path(mount) and not _is_shipped_system_project(mount):
                 protected_shadow_ids.add(project_id)
                 shadow_by_id[project_id] = shadow
 
@@ -1754,11 +1787,13 @@ async def get_desktop_info() -> LmInfo:
     # Build fully resolved paths
     app_paths = build_app_paths()
 
+    cloud_config = ApiConfig.from_env()
     return LmInfo(
         llm_providers=llm_providers,
         installed_agents=installed_agents,
         cloud_login_available=cloud_login_available,
-        cloud_url=ApiConfig.from_env().api_base_url,
+        cloud_url=cloud_config.api_base_url,
+        cloud_app_url=cloud_config.app_base_url,
         paths=app_paths,
         # Legacy fields for backward compatibility (deprecated)
         home=get_vfs_home_path(),
@@ -1774,12 +1809,22 @@ async def get_desktop_info() -> LmInfo:
 
 
 def entity_to_dict(entity) -> dict:
-    """Convert entity to dict for JSON response."""
+    """Convert entity to dict for JSON response.
+
+    ``name`` keeps its historic fallback to ``title`` so display sites that read
+    only ``name`` still get a label. But ``title`` is ALSO sent on its own:
+    collapsing the two made a real title unreachable, which is why the user menu
+    could never show one under the name. Both are base-``Entity`` fields, so
+    every type carries them; ``email`` is likewise absent on most and simply
+    serializes as null there.
+    """
     return {
         "id": entity.id,
         "type": entity.type,
         "uname": entity.uname,
         "name": getattr(entity, "name", None) or getattr(entity, "title", None),
+        "title": getattr(entity, "title", None),
+        "email": getattr(entity, "email", None),
         "visitor_role": entity.visitor_role,
     }
 

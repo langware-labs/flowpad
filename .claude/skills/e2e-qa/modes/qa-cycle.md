@@ -89,11 +89,19 @@ python -m pytest tests/api/ -v
 # which times out the real-CLI matrix tests for reasons that are pure
 # environment, not code. (The long tests now REQUIRE an explicit FLOWPAD_HUB_URL
 # and skip if unset — they will no longer silently target localhost:9008.)
-scripts/instance_ctl.sh status | grep -q '^  qa-cycle .*UP' || scripts/instance_ctl.sh launch qa-cycle
-QA_BE=$(grep -oE 'backend :[0-9]+' <(scripts/instance_ctl.sh status) | grep -A0 qa-cycle | grep -oE '[0-9]+' | head -1)
-# (or read the port from the launch output / .env.qa-cycle.local — instance_ctl assigns 600X)
+uv run flow instance ctl is-up qa-cycle || scripts/instance_ctl.sh launch qa-cycle
+QA_BE=$(uv run flow instance ctl port qa-cycle --role backend)
+[ -n "$QA_BE" ] || { echo "FATAL: no live backend port for qa-cycle"; exit 1; }
 DEEP_TESTING=1 FLOWPAD_HUB_URL="http://localhost:${QA_BE}" python -m pytest tests/long_tests/ -v
 ```
+
+> **Never parse `status` text for a port or for "is it up".** The old recipe here
+> did (`grep -oE 'backend :[0-9]+' | grep -A0 qa-cycle`) and was silently broken:
+> the first `grep -o` strips the instance name from every line *before* the
+> second grep looks for it, so `QA_BE` was always empty and `FLOWPAD_HUB_URL`
+> became `http://localhost:`. The long tests then skipped and the phase read as
+> a pass. `port` prints nothing and exits non-zero when there is no live
+> backend, so the guard above can actually fire.
 
 - Always set `DEEP_TESTING=1` (not `=true` — pydantic BaseSettings parses booleans inconsistently).
 - `FLOWPAD_HUB_URL` MUST point at the dedicated instance you launched, not `${LOCAL_SERVER_PORT}` (the main backend). The matrix/streaming long tests skip cleanly when it is unset.

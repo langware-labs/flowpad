@@ -26,7 +26,7 @@ def _new_id() -> str:
     return str(uuid.uuid4())
 
 
-async def _make_task(bootstrapped_client, title: str = "reconcile-test") -> dict:
+async def _make_task(bootstrapped_client, title: str) -> dict:
     resp = await bootstrapped_client.post("/api/v1/graph/task", json={"title": title})
     assert resp.status_code == 200, resp.text
     return resp.json()["data"]
@@ -46,7 +46,7 @@ async def test_reconcile_keeps_dangling_ref_when_hub_unknown(bootstrapped_client
     hub down / unreachable / non-404), a locally missing ref is NOT deleted; it
     might be a remote entity not yet synced. Patched to keep the test hermetic
     (no real network call to the configured hub)."""
-    task = await _make_task(bootstrapped_client)
+    task = await _make_task(bootstrapped_client, "reconcile-hub-unknown")
     dangling = f"spec-{_new_id()}"  # known type, no local row
 
     async def _indeterminate(_typeid):
@@ -75,7 +75,7 @@ async def test_reconcile_keeps_dangling_ref_when_hub_unknown(bootstrapped_client
 async def test_reconcile_removes_ref_absent_on_hub(bootstrapped_client, monkeypatch):
     """Hub returns a definitive 404 for the target → truly gone → pruned from a
     local-origin holder, and a ``context_refs_cleaned`` mutation is persisted."""
-    task = await _make_task(bootstrapped_client)
+    task = await _make_task(bootstrapped_client, "reconcile-hub-absent")
     dangling = f"spec-{_new_id()}"
     await _share(bootstrapped_client, task["id"], dangling)
 
@@ -102,7 +102,7 @@ async def test_reconcile_removes_ref_absent_on_hub(bootstrapped_client, monkeypa
 async def test_reconcile_keeps_ref_present_on_hub(bootstrapped_client, monkeypatch):
     """Hub HAS the target (it's a remote entity, not yet materialized locally) →
     leave it. This is the user's correction: local-miss != gone."""
-    task = await _make_task(bootstrapped_client)
+    task = await _make_task(bootstrapped_client, "reconcile-hub-present")
     remote_ref = f"spec-{_new_id()}"
     await _share(bootstrapped_client, task["id"], remote_ref)
 

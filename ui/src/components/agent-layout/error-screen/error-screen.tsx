@@ -4,6 +4,7 @@ import { Button } from '@src/components/ui/button';
 import { ChevronDown, ChevronUp, Home } from 'lucide-react';
 import { useState } from 'react';
 import { useRouteError } from 'react-router';
+import { isBackendUnreachable } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 const ErrorScreen = () => {
@@ -13,16 +14,16 @@ const ErrorScreen = () => {
 
   // ERROR HIERARCHY (check in this exact order):
 
-  // 1. Check if service is unavailable (backend not responding)
-  const errorAny = error as any;
-  const errorStatus = errorAny?.status ?? errorAny?.response?.status;
-  const isServiceUnavailable =
-    errorAny?.isServiceUnavailable ||
-    (typeof errorStatus === 'number' && errorStatus >= 500) ||
-    errorAny?.code === 'ERR_NETWORK' ||
-    errorAny?.code === 'ERR_CONNECTION_REFUSED' ||
-    errorAny?.message?.includes('Failed to fetch') ||
-    errorAny?.message?.includes('Network request failed');
+  // 1. Is the BACKEND actually unreachable?
+  //
+  // Only a connectivity failure earns this screen. It used to treat any status
+  // >= 500 as "backend not responding", so a single unsupported action — a hub
+  // answering 500 "Action list is not allowed" to one repo call — blanked the
+  // whole app and told the user to check whether their server was running,
+  // while every other request on the page was succeeding. A 5xx means one
+  // request failed; it does not mean the server is gone. The classification
+  // lives with the interceptor that makes it (ts_sdk/client.ts).
+  const isServiceUnavailable = isBackendUnreachable(error);
 
   const [dismissed, setDismissed] = useState(false);
 
@@ -41,8 +42,12 @@ const ErrorScreen = () => {
                 />
               </svg>
             </div>
-            <h1 className="mb-2 text-2xl font-bold"><Trans>Service Unavailable</Trans></h1>
-            <p className="text-muted-foreground"><Trans>Backend server is not responding. Please try again later.</Trans></p>
+            <h1 className="mb-2 text-2xl font-bold">
+              <Trans>Service Unavailable</Trans>
+            </h1>
+            <p className="text-muted-foreground">
+              <Trans>Backend server is not responding. Please try again later.</Trans>
+            </p>
           </div>
           <Button onClick={() => setDismissed(true)} className="w-full" variant="outline">
             <Trans>OK</Trans>
@@ -76,7 +81,9 @@ const ErrorScreen = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </div>
-            <h1 className="mb-2 text-2xl font-bold text-foreground"><Trans>SubAgent not found</Trans></h1>
+            <h1 className="mb-2 text-2xl font-bold text-foreground">
+              <Trans>SubAgent not found</Trans>
+            </h1>
             <p className="text-muted-foreground">
               {errorAny?.response?.data?.message || errorAny?.message || t`The requested agent could not be found.`}
             </p>
@@ -136,7 +143,9 @@ const ErrorScreen = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </div>
-          <h1 className="mb-2 text-2xl font-bold text-foreground"><Trans>Error</Trans></h1>
+          <h1 className="mb-2 text-2xl font-bold text-foreground">
+            <Trans>Error</Trans>
+          </h1>
           <p className="text-muted-foreground">{errorMessage}</p>
         </div>
 

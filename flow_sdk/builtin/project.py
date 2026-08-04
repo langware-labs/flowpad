@@ -37,6 +37,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.path_utils import (
     canonical_posix_path,
+    is_path_under,
     is_protected_path,
     is_valid_project_cwd,
 )
@@ -319,6 +320,26 @@ class Project(Entity):
                 seen.add(p)
                 out.append(p)
         return out
+
+    def direct_context_roots(self) -> list[str]:
+        """Canonical Project root followed by its direct context roots.
+
+        This is the shared scope boundary for project-owned features such as
+        Journey auto-launch and adopted Helpdesk resolution. Ordering is
+        meaningful: the Project itself wins, then context links in declaration
+        order. Duplicate paths are removed without sorting.
+        """
+        roots: list[str] = []
+        for path in (self.fs_storage_mount_path, *self.include_dirs):
+            if not path:
+                continue
+            try:
+                canonical = canonical_posix_path(path)
+            except OSError:
+                continue
+            if canonical not in roots:
+                roots.append(canonical)
+        return roots
 
     @computed_field
     @property
@@ -1054,19 +1075,21 @@ class Project(Entity):
         await self.setup_for_desktop()
         await _index_additional_dir(target_dir)
 
-        attached: list[dict] = []
-        failed: list[dict] = []
-        for desk_url in manifest.helpdesks:
-            response = await self.add_context_dir_from_git(desk_url, scope="private")
-            record = {"url": desk_url}
-            if isinstance(response, ApiSuccessResponse):
-                record.update(response.data or {})
-                attached.append(record)
-            else:
-                # One unreachable desk must not undo a project that is already
-                # set up — report it and let the caller offer a retry.
-                record["error"] = getattr(response, "message", "attach failed")
-                failed.append(record)
+        # One semantic owner for manifest convergence. A template that already
+        # finished copying remains usable when a dependency is unreachable, so
+        # this setup action maps reconciliation failure into its historical
+        # per-dependency report instead of undoing the new Project.
+        reconciled = await self.reconcile_bootstrap()
+        reconcile_data = dict(getattr(reconciled, "data", None) or {})
+        installed = list(reconcile_data.get("content_projects") or [])
+        install_failed = list(reconcile_data.get("failed") or [])
+        legacy_urls = set(manifest.helpdesks)
+        attached = [record for record in installed if record.get("url") in legacy_urls]
+        failed = [record for record in install_failed if record.get("url") in legacy_urls]
+        content_projects = [record for record in installed if record.get("url") not in legacy_urls]
+        content_projects_failed = [
+            record for record in install_failed if record.get("url") not in legacy_urls
+        ]
 
         return ApiSuccessResponse(
             data={
@@ -1075,6 +1098,8 @@ class Project(Entity):
                 "template_url": origin.clone_url(),
                 "helpdesks": attached,
                 "helpdesks_failed": failed,
+                "content_projects": content_projects,
+                "content_projects_failed": content_projects_failed,
                 "autolaunch_journey": manifest.autolaunch_journey,
             }
         )
@@ -1903,7 +1928,20 @@ class Project(Entity):
         from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
 
         folder = await Folder.mint_for_origin(origin)
-        resolved = await folder.resolve_location(preferred_root=preferred_root)
+        existing_branch = str(getattr(folder.origin, "branch", "") or "")
+        requested_branch = str(origin.branch or "")
+        if existing_branch != requested_branch:
+            return ApiFailResponse(
+                message=(
+                    f"Repository is already materialized for branch {existing_branch or '(unpinned)'}; "
+                    f"requested {requested_branch or '(unpinned)'}"
+                ),
+                status_code=409,
+            )
+        resolved = await folder.resolve_location(
+            preferred_root=preferred_root,
+            strict_index=True,
+        )
         data = getattr(resolved, "data", None) or {}
         if data.get("kind") != "ready" or not folder.path:
             # Surface the driver's own message — it names the actual failure
@@ -1913,6 +1951,12 @@ class Project(Entity):
                 status_code=502,
             )
 
+        requested_bucket = "shared" if scope == "shared" else "private"
+        opposite_bucket = "private" if scope == "shared" else "shared"
+        requested_ids = {str(tid) for tid in self.context_of_type("folder", bucket=requested_bucket)}
+        opposite_ids = {str(tid) for tid in self.context_of_type("folder", bucket=opposite_bucket)}
+        already_linked = str(folder.typeid) in requested_ids and str(folder.typeid) not in opposite_ids
+        scope_changed = str(folder.typeid) in opposite_ids
         linked = await self.add_context_dir(folder.path, scope=scope)
         if not isinstance(linked, ApiSuccessResponse):
             return linked
@@ -1922,6 +1966,218 @@ class Project(Entity):
                 "path": folder.path,
                 "scope": scope,
                 "cloned_url": origin.clone_url(),
+                "already_linked": already_linked,
+                "scope_changed": scope_changed,
+            }
+        )
+
+    @action.post(action_name="reconcile-bootstrap")
+    async def reconcile_bootstrap(self) -> "ApiResponse":
+        """Converge this Project to the live dependencies in its manifest.
+
+        The manifest is declarative; this action is deliberately a thin
+        composition over ``add_context_dir_from_git``. Folder materialization,
+        Git authentication, shared-context validation, indexing, and link
+        idempotency therefore keep their single existing owners.
+        """
+        if not self.fs_storage_mount_path:
+            return ApiFailResponse(message="Project has no local working directory")
+
+        from flow_sdk.builtin.bootstrap_manifest import (  # noqa: PLC0415
+            BootstrapContentProject,
+            read_bootstrap_manifest,
+        )
+        from flow_sdk.builtin.helpdesk import Helpdesk  # noqa: PLC0415
+        from flow_sdk.builtin.journey import Journey  # noqa: PLC0415
+        from flow_sdk.builtin.skill import Skill  # noqa: PLC0415
+
+        manifest = read_bootstrap_manifest(Path(self.fs_storage_mount_path))
+        dependencies = list(manifest.content_projects)
+        # Legacy manifests remain useful and converge through the exact same
+        # context-folder primitive. They are private because that was their
+        # original contract.
+
+        # Canonical Git identity ignores URL spelling and branch. Use it for a
+        # mutation-free preflight so aliases cannot bypass conflict detection.
+        declared: dict[str, tuple[str, str]] = {}
+        content_keys: set[str] = set()
+        canonical_dependencies: list[BootstrapContentProject] = []
+        for dependency in dependencies:
+            origin = GitOrigin.from_url(
+                dependency.url,
+                branch=dependency.branch,
+                rel_path=".",
+            )
+            if origin is None:
+                return ApiFailResponse(
+                    message=f"Not a recognizable git URL: {dependency.url}",
+                    status_code=400,
+                )
+            key = origin.key()
+            previous = declared.get(key)
+            requested = (str(origin.branch or ""), dependency.scope)
+            if previous is not None and previous != requested:
+                return ApiFailResponse(
+                    message=(
+                        f"Content project {origin.clone_url()} has conflicting "
+                        "branches or scopes"
+                    ),
+                    status_code=409,
+                )
+            if previous is not None:
+                # Different URL spellings of the same repository declaration
+                # are one dependency, not two install result rows.
+                continue
+            declared[key] = requested
+            content_keys.add(key)
+            canonical_dependencies.append(dependency)
+
+        dependencies = canonical_dependencies
+
+        for url in manifest.helpdesks:
+            origin = GitOrigin.from_url(url, branch="", rel_path=".")
+            if origin is None:
+                return ApiFailResponse(message=f"Not a recognizable git URL: {url}", status_code=400)
+            # The richer content_projects declaration wins over its legacy
+            # URL-only alias; never attach the same repository twice.
+            if origin.key() in content_keys:
+                continue
+            dependencies.append(BootstrapContentProject(url=url, scope="private"))
+
+        attached: list[tuple[BootstrapContentProject, dict, str]] = []
+        failed: list[dict] = []
+        for dependency in dependencies:
+            response = await self.add_context_dir_from_git(
+                dependency.url,
+                branch=dependency.branch,
+                scope=dependency.scope,
+            )
+            if not isinstance(response, ApiSuccessResponse):
+                failed.append(
+                    {
+                        "url": dependency.url,
+                        "branch": dependency.branch,
+                        "scope": dependency.scope,
+                        "error": getattr(response, "message", "attach failed"),
+                    }
+                )
+                continue
+            data = dict(response.data or {})
+            root = canonical_posix_path(data.get("path") or "")
+            attached.append((dependency, data, root))
+
+        # One Project table read for every attached root. The old per-root
+        # find/recover sequence scanned the same table repeatedly.
+        projects_by_mount = await Project.index_by_mount()
+        installed: list[dict] = []
+        for dependency, data, root in attached:
+            content_project = projects_by_mount.get(root) if root else None
+            if content_project is None and root:
+                content_project = await Project.recover_by_path(root)
+                if content_project is not None:
+                    projects_by_mount[root] = content_project
+            installed.append(
+                {
+                    "url": dependency.url,
+                    "branch": dependency.branch,
+                    "content_project_id": content_project.id if content_project else None,
+                    "folder_id": data.get("folder_id"),
+                    "path": root,
+                    "scope": dependency.scope,
+                    "status": "already_installed" if data.get("already_linked") else "installed",
+                }
+            )
+
+        install_status = (
+            "installed"
+            if any(record["status"] == "installed" for record in installed)
+            else "already_installed"
+        )
+        roots = list(dict.fromkeys(record["path"] for record in installed if record["path"]))
+
+        def result_data(failures: list[dict]) -> dict:
+            return {
+                "target_project_id": self.id,
+                "content_projects": installed,
+                "status": install_status,
+                "failed": failures,
+            }
+
+        if failed:
+            return ApiFailResponse(
+                message="Could not install every declared content project",
+                data=result_data(failed),
+                status_code=502,
+            )
+
+        def assets_in_roots(entities: list[Any]) -> list[Any]:
+            scoped: list[tuple[str, str, Any]] = []
+            for entity in entities:
+                if not entity.asset_ref:
+                    continue
+                asset_ref = canonical_posix_path(entity.asset_ref)
+                if any(is_path_under(asset_ref, root) for root in roots):
+                    scoped.append((asset_ref, str(entity.id), entity))
+            return [entity for _asset_ref, _entity_id, entity in sorted(scoped)]
+
+        all_journeys, all_skills, all_desks = await asyncio.gather(
+            Journey.get_all({}),
+            Skill.get_all({}),
+            Helpdesk.get_all({}),
+        )
+        journeys = assets_in_roots(all_journeys)
+        skills = assets_in_roots(all_skills)
+        desks = assets_in_roots(all_desks)
+
+        declared_journeys = [
+            (root, preferred)
+            for root in roots
+            if (preferred := read_bootstrap_manifest(Path(root)).autolaunch_journey)
+        ]
+        journey_matches = {
+            selector: next(
+                (journey for journey in journeys if journey.matches_selector(selector)),
+                None,
+            )
+            for _root, selector in declared_journeys
+        }
+        preferred_journey = next(
+            (
+                journey_matches[selector]
+                for _root, selector in declared_journeys
+                if journey_matches[selector] is not None
+            ),
+            None,
+        )
+        preferred_journey_id = preferred_journey.id if preferred_journey else None
+        if preferred_journey_id is None:
+            preferred_journey_id = next(
+                (journey.id for journey in journeys if journey.enabled and journey.auto_launch_enabled()),
+                None,
+            )
+
+        missing_journeys = [
+            {
+                "path": root,
+                "error": f"Declared auto-launch Journey was not indexed: {selector}",
+            }
+            for root, selector in declared_journeys
+            if journey_matches[selector] is None
+        ]
+        if missing_journeys:
+            return ApiFailResponse(
+                message="Installed content is missing its declared auto-launch Journey",
+                data=result_data(missing_journeys),
+                status_code=502,
+            )
+
+        return ApiSuccessResponse(
+            data={
+                **result_data([]),
+                "helpdesk_id": desks[0].id if desks else None,
+                "journey_ids": [journey.id for journey in journeys],
+                "skill_ids": [skill.id for skill in skills],
+                "auto_launch_journey_id": preferred_journey_id,
             }
         )
 
@@ -1960,14 +2216,20 @@ class Project(Entity):
                 "or use a folder inside a git repository."
             )
         bucket = "shared" if scope == "shared" else "private"
-        already_linked = any(
-            (self.get_context_entry_data(tid) or {}).get("path") == canonical
-            for tid in self.context_of_type("folder", bucket=bucket)
-        )
+        opposite = "private" if scope == "shared" else "shared"
+        folder = await Folder.mint_for_origin(origin, local_path=canonical)
+        requested_ids = {str(tid) for tid in self.context_of_type("folder", bucket=bucket)}
+        opposite_ids = {str(tid) for tid in self.context_of_type("folder", bucket=opposite)}
+        already_linked = str(folder.typeid) in requested_ids
+        linked_opposite = str(folder.typeid) in opposite_ids
         is_new = canonical not in self.include_dirs
-        if not already_linked:
-            folder = await Folder.mint_for_origin(origin, local_path=canonical)
+        if not already_linked or linked_opposite:
             entry_data = {"path": canonical, "origin_kind": origin.kind}
+            if linked_opposite:
+                if opposite == "shared":
+                    self.remove_shared_context_entities(folder.typeid)
+                else:
+                    self.remove_private_context_entities(folder.typeid)
             if scope == "shared":
                 self.add_shared_context_entities(folder.typeid, data=entry_data)
             else:

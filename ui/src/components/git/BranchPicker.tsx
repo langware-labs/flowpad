@@ -41,7 +41,9 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
           <ArrowLeft className="h-3.5 w-3.5" />
         </Button>
         <span className="font-medium">{repo.full_name}</span>
-        <span className="text-muted-foreground"><Trans>· pick a branch</Trans></span>
+        <span className="text-muted-foreground">
+          <Trans>· pick a branch</Trans>
+        </span>
       </div>
 
       <div className="relative">
@@ -79,10 +81,14 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
                 <GitBranch className="h-3 w-3 text-muted-foreground" />
                 <span className="flex-1 font-mono">{branch.name}</span>
                 {branch.name === repo.default_branch && (
-                  <span className="rounded bg-muted px-1.5 py-px text-[10px] uppercase text-muted-foreground"><Trans>default</Trans></span>
+                  <span className="rounded bg-muted px-1.5 py-px text-[10px] uppercase text-muted-foreground">
+                    <Trans>default</Trans>
+                  </span>
                 )}
                 {branch.protected && (
-                  <span className="rounded bg-amber-500/15 px-1.5 py-px text-[10px] uppercase text-amber-700 dark:text-amber-300"><Trans>protected</Trans></span>
+                  <span className="rounded bg-amber-500/15 px-1.5 py-px text-[10px] uppercase text-amber-700 dark:text-amber-300">
+                    <Trans>protected</Trans>
+                  </span>
                 )}
               </li>
             ))}

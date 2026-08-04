@@ -19,6 +19,9 @@ dependencies = [
     "httpx[http2]",
     "dpath~=2.2.0",
     "typer>=0.9.0",
+    # Installed transitively by typer, but `flow instance ctl` imports it
+    # directly to render instance/group tables — declare what we import.
+    "rich",
     "python-dotenv",
     "keyring",
     "keyrings.alt",

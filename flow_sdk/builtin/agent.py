@@ -148,36 +148,39 @@ class Agent(Entity):
 
     # ── publish ───────────────────────────────────────────────────────────
 
-    async def ensure_on_hub(self) -> bool:
-        """Push this agent to the hub if it isn't there. Returns whether it published.
+    async def ensure_on_hub(self, actor: TypeId) -> bool:
+        """Publish this repository-backed agent through the canonical Git path.
 
-        Deploying is a cloud act, so the definition has to exist on the hub
-        first. Mirrors ``ensure_task_on_hub`` (``app/actions/task_assign_action.py``),
-        the working precedent for this shape.
+        An Agent is not a loose deployment payload. It is an asset inside its
+        owning Project's repository, so publication must commit that asset path,
+        push it, and register its ``GitOrigin`` under the already-published
+        Project. The Hub can then clone the whole repository into the sandbox.
 
-        Only the fields travel. ``asset_ref`` is ``Sharing.PRIVATE`` so the local
-        absolute path is stripped, and the hub renders its own ``agent.md`` from
-        the fields it receives (``Agent.render_markdown``) — the deployed sandbox
-        then indexes an ordinary file and nothing downstream learns a second
-        shape. The id travels verbatim: one agent, one id, both sides.
-
-        ``share()`` deliberately does not save, so persisting ``remote`` is ours
-        to do — without it every deploy would re-publish.
+        ``remote=True`` without ``git_origin`` is legacy partial state produced by
+        the old field-only share path. Treat it as unpublished so the next deploy
+        repairs the row rather than preserving a deployment that cannot load its
+        files (notably ``avatar.png``).
         """
-        if self.remote:
+        if self.remote and self.git_origin:
             return False
-        await self.share()
-        self.remote = True
-        await self.save()
+
+        from flow_sdk.assets.git_publish import publish_git_asset  # noqa: PLC0415
+
+        await publish_git_asset(self, actor)
         return True
 
     @action.post(action_name="publish")
     async def publish_action(self):
-        """`POST /agent/<id>/publish` — make this agent exist on the hub."""
+        """`POST /agent/<id>/publish` — commit, push, and register this agent."""
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
+        request_info = get_current_request_info()
+        actor = request_info.someone_typeid if request_info else None
+        if not actor:
+            return ApiFailResponse(message="publish requires an authenticated user", status_code=401)
         try:
-            published = await self.ensure_on_hub()
+            published = await self.ensure_on_hub(actor)
         except Exception as exc:
             return ApiFailResponse(message=f"publish failed: {exc}")
         return ApiSuccessResponse(
@@ -186,7 +189,7 @@ class Agent(Entity):
 
     # ── deploy to the cloud ───────────────────────────────────────────────
 
-    async def deploy_to_cloud(self) -> dict:
+    async def deploy_to_cloud(self, actor: TypeId) -> dict:
         """Give this agent a machine of its own on the hub.
 
         Publish is implicit: a deploy names an agent the hub has to already
@@ -210,7 +213,7 @@ class Agent(Entity):
         if not creds or not creds.api_key:
             raise RuntimeError("Cloud login required before deploy")
 
-        await self.ensure_on_hub()
+        await self.ensure_on_hub(actor)
         path = build_hub_url(self, action="deploy")
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
             # `post` already unwraps the envelope, and raises on a non-success
@@ -228,11 +231,16 @@ class Agent(Entity):
         already exists, not a longer client timeout.
         """
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
 
         if not self.enabled:
             return ApiFailResponse(message=f"agent {self.name!r} is disabled")
+        request_info = get_current_request_info()
+        actor = request_info.someone_typeid if request_info else None
+        if not actor:
+            return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
         try:
-            data = await self.deploy_to_cloud()
+            data = await self.deploy_to_cloud(actor)
         except Exception as exc:
             return ApiFailResponse(message=f"deploy failed: {exc}")
         return ApiSuccessResponse(data={"agent_id": self.id, **data})

@@ -34,7 +34,11 @@ async def _assign(client, task_id: str, **body):
 
 
 async def test_assign_shares_the_task_and_grants_the_assignee_editor(bootstrapped_client, hub_faked):
-    task = await _create(bootstrapped_client, "task", {"type": "task", "title": "Fix Login"})
+    task = await _create(
+        bootstrapped_client,
+        "task",
+        {"type": "task", "title": "Fix Login Assignment"},
+    )
 
     data = await _assign(
         bootstrapped_client, task["id"], email="Bob@X.com", name="Bob", message="please take a look"
@@ -67,7 +71,11 @@ async def test_assign_shares_the_task_and_grants_the_assignee_editor(bootstrappe
 
 
 async def test_assign_is_idempotent(bootstrapped_client, hub_faked):
-    task = await _create(bootstrapped_client, "task", {"type": "task", "title": "Fix Login"})
+    task = await _create(
+        bootstrapped_client,
+        "task",
+        {"type": "task", "title": "Fix Login Idempotently"},
+    )
     await _assign(bootstrapped_client, task["id"], email="bob@x.com")
     await _assign(bootstrapped_client, task["id"], email="bob@x.com")
 
@@ -78,7 +86,11 @@ async def test_assign_is_idempotent(bootstrapped_client, hub_faked):
 
 
 async def test_reassigning_moves_the_task_to_someone_else(bootstrapped_client, hub_faked):
-    task = await _create(bootstrapped_client, "task", {"type": "task", "title": "Fix Login"})
+    task = await _create(
+        bootstrapped_client,
+        "task",
+        {"type": "task", "title": "Fix Login Reassignment"},
+    )
     await _assign(bootstrapped_client, task["id"], email="bob@x.com")
     await _assign(bootstrapped_client, task["id"], email="carol@x.com")
 
@@ -108,7 +120,11 @@ async def test_assigning_to_yourself_stays_local(bootstrapped_client, hub_faked)
 
 
 async def test_assign_requires_an_email(bootstrapped_client, hub_faked):
-    task = await _create(bootstrapped_client, "task", {"type": "task", "title": "Fix Login"})
+    task = await _create(
+        bootstrapped_client,
+        "task",
+        {"type": "task", "title": "Fix Login Email Requirement"},
+    )
     resp = await bootstrapped_client.post(f"{GRAPH}/task/{task['id']}/assign-task", json={})
     assert resp.status_code == 400
     assert "email" in resp.text
