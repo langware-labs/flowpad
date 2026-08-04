@@ -182,6 +182,14 @@ Phase 12 vacuous (zero orphans). 11 test-side fixes + 1 REAL PRODUCT FIX. Result
   repository through the authenticated `gh` capability, but Hub publication
   still requires a browser GitHub OAuth session. A successful Git push is not
   proof that Project or Agent publication completed.
+- After interactive GitHub OAuth succeeded for the correct Hub user, the Hub
+  exchanged the authorization code successfully but the desktop could not
+  adopt the token: `GET user/<id>/env-var/GITHUB_OAUTH_USER_TOKEN/value`
+  returned 404. `wait-callback` still returned success while the standard
+  GitHub status stayed `missing`, so Project Publish reopened OAuth and never
+  issued the Project share request. Validate all three states independently:
+  provider callback, desktop credential availability, and the final share
+  network request.
 - Reopening the newly created Agent from the Project navigator after Git setup
   failed in `AgentProfileEditor` because `parent` was null; the error fallback
   also failed because `errorAny` was undefined. A fresh TypeId URL recovered

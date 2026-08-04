@@ -228,3 +228,9 @@ existed only in the live stream and vanished on refresh.
 * [display-capabilities.md](display-capabilities.md) — how a target becomes a rendered view
 * [tags.md](tags.md), [flow-events.md](flow-events.md) — the bus envelope and the forward allowlist
 * [data-management/transcript-indexing.md](data-management/transcript-indexing.md) — the side-effect pass over parsed entries
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: f0ecd3aa-ccdb-4b61-8793-418858a98e7d
+flowpad:endcapsule identity -->
