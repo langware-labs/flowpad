@@ -269,10 +269,11 @@ export const useOAuthConnection = ({
         setCurrentOAuthFlow(null);
         setConnectingConnectionId(null);
 
-        // Invalidate queries to get updated statuses
-        void queryClient.invalidateQueries({
-          queryKey: entityEnvQueryKey(projectTypeId),
-        });
+        // The grant lands on the USER's table, which every status here is
+        // derived from — invalidating only the project key left it cached, so a
+        // provider read "Not connected" until a reload, and with no project
+        // selected the key holds nothing at all and the refresh was a no-op.
+        void queryClient.invalidateQueries({ queryKey: entityEnvQueryKeyRoot });
 
         // Call the appropriate callback based on the operation result
         if (data.attachSuccess === true) {
