@@ -93,7 +93,6 @@ export interface ColVisibility {
   annotations: boolean;
 }
 
-
 // An empty bracketed paste (RFC 6093 start+end markers, no payload) — the exact
 // signal an image paste delivers to the PTY, which the CLI reads the system
 // clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
@@ -107,6 +106,7 @@ import {
   openTerminalLink,
   registerOsc52ClipboardWrite,
 } from './terminalConfig';
+import { workerCliVendor } from './process-cli-presentation';
 import { isTextInputTarget } from '@src/utils/isTextInputTarget';
 
 // Focus the terminal WITHOUT yanking focus from a text field the user is editing
@@ -829,7 +829,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
       try {
         term.open(container);
-        applyRtlGridContract(container);
         terminalRef.current = term;
         fitAddonRef.current = fit;
         container.addEventListener('paste', onDomPaste, true);
@@ -942,6 +941,16 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, isHeadless]);
+
+  // Which RTL/bidi contract a terminal follows depends on the CLI running in
+  // it, and worker_type arrives with the subscribed process — i.e. after
+  // term.open() has already run. Deciding in its own layout effect re-applies
+  // the contract the moment the vendor resolves, so a codex session never
+  // paints a frame under Claude Code's contract (and back, if it ever swaps).
+  useLayoutEffect(() => {
+    const container = xtermContainerRef.current;
+    if (container) applyRtlGridContract(container, workerCliVendor(process?.worker_type));
+  }, [process?.worker_type]);
 
   // Intercept Cmd+F / Ctrl+F at the native DOM level so we can call preventDefault()
   // before the browser opens its own find bar. xterm's attachCustomKeyEventHandler
