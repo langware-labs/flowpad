@@ -35,7 +35,7 @@ it. This is ground truth, and it changes only with the user's approval.
 | tag | `breadcrumb.test.<slug>.rules` — `<slug>` is **≤3 words**, snake_case, a *topic*, not the pytest function name |
 | capsule | name `tag`, on top of the failing test, one per test |
 | doc | `docs/breadcrumbs/<slug>.md`, frontmatter `tags: [<tag>]` |
-| fence | a ```` ```breadcrumb ```` block under `## Bound tests` — renders the bound tests as clickable chips |
+| fence | a ```` ```breadcrumb ```` block at the TOP of the doc — renders the bound tests as clickable chips |
 
 The slug is a topic so a test rename does not orphan the tag. `breadcrumb` is
 not a reserved root, so the tag can be blessed.
@@ -68,22 +68,27 @@ description: <one line — this is ALL that `--mode line` shows, make it carry w
 
 > Ground truth. Proven by RCA on <YYYY-MM-DD>. Do not edit without the user's approval.
 
-## Expected behavior
-## Internals
-## Invariants
-## Failure modes
-## Bound tests
-
 ```breadcrumb
 tag: breadcrumb.test.<slug>.rules
 sites: <paste from step 4 — leave the fence out until you have it>
 ```
+
+## Expected behavior
+## Internals
+## Invariants
+## Failure modes
 ````
 
-The `breadcrumb` fence renders as a card of the bound tests, each one a chip
-that peeks at the test at its capsule's line. `sites` is the fallback it draws
-before the tag index answers, so it must match the capsule exactly — which is
-why step 5 hands it to you rather than you retyping it.
+**The fence goes at the TOP**, directly under the banner — not in a section at
+the bottom. Whoever opens this doc arrived from a failing test, so the first
+thing on screen should be the way back to it: the fence renders as a card of
+bound tests, each a chip that peeks at its test at the capsule's line. The
+rules are what they read next, and prose below a card still reads in order;
+a card below four sections of prose does not get seen.
+
+`sites` is the fallback the card draws before the tag index answers, so it must
+match the capsule exactly — which is why step 4 hands it to you rather than you
+retyping it.
 
 If the doc already exists, **diff and ask** — never overwrite a rules doc
 silently.
@@ -106,7 +111,7 @@ of which fail *silently* when done by hand (an indented or duplicated block
 removes the whole file from `flow tag get` with no error anywhere).
 
 `--print-fence` emits the doc's ```breadcrumb block, already carrying the line
-it just wrote. **Paste it verbatim** into the doc's `## Bound tests` section.
+it just wrote. **Paste it verbatim** at the top of the doc, under the banner.
 Retyping it by hand is how the capsule and the card drift apart — the same
 reason the capsule itself goes through the script.
 

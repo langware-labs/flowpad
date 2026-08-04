@@ -104,7 +104,7 @@ def main() -> int:
     parser.add_argument(
         "--print-fence",
         action="store_true",
-        help="Also print the ```breadcrumb block to paste under the doc's Bound tests heading",
+        help="Also print the ```breadcrumb block to paste at the top of the rules doc",
     )
     args = parser.parse_args()
 
@@ -137,7 +137,7 @@ def main() -> int:
 
 
 def render_fence(path: Path, line: int, tag: str, note: str) -> str:
-    """The ```breadcrumb block for the rules doc's `## Bound tests` heading.
+    """The ```breadcrumb block for the top of the rules doc.
 
     `rel_path` is relative to the repo root, because that is what the card
     resolves against (the document's project root) and what the tag index

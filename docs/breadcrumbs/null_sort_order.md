@@ -1,13 +1,22 @@
 ---
 title: NULL sort order in the SQLite driver
-tags: ''
+tags:
+- breadcrumb.test.null_sort_order.rules
 description: A missing sort value buckets FIRST and is never compared against a real
-version: 4
+  one — coercing it to "" raises str-vs-datetime.
 ---
 
 # NULL sort order in the SQLite driver
 
 > Ground truth. Proven on 2026-08-04. Do not edit without the user's approval.
+
+```breadcrumb
+tag: breadcrumb.test.null_sort_order.rules
+sites:
+  - rel_path: "tests/unit/test_get_children_ordering.py"
+    line: 112
+    note: "FAILING? read this tag's rules \u2014 missing sorts FIRST; never coerce it to \"\""
+```
 
 ## Expected behavior
 
@@ -52,12 +61,8 @@ test that built one and asserted on its position would be asserting on
 `datetime.now()`. The sort key is what carries the NULL semantics, so it is
 tested directly.
 
-## Bound tests
-
-```breadcrumb
-tag: breadcrumb.test.null_sort_order.rules
-sites:
-  - rel_path: "tests/unit/test_get_children_ordering.py"
-    line: 112
-    note: "FAILING? read this tag's rules \u2014 missing sorts FIRST; never coerce it to \"\""
-```
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: 6319f8e0-ad5f-489f-95f7-2ad8e9fe95f0
+flowpad:endcapsule identity -->
