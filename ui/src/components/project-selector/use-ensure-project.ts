@@ -140,8 +140,10 @@ export function useGitCloneDialogSubmit(computeNodeId: string | null | undefined
       if (isHubOnly()) {
         const gitOrigin = gitOriginFromUrl(url, branch ?? '');
         if (!gitOrigin) throw new Error('Not a recognisable git URL');
-        // The repo name is the box-side folder/project name; `acceptSuggested`
-        // is the desk collision flow, which a fresh sandbox cannot hit.
+        // The repo name is the box-side folder/project name. A fresh sandbox
+        // can't collide, but a re-used one can — the launch pipeline asks the
+        // box before it clones, and reports the clash the same way the desk
+        // path does so the dialog's existing banner handles both.
         const name = acceptSuggested || gitOrigin.name;
         await launch({ name, gitSetup: { name, gitOrigin } });
         return { ok: true };

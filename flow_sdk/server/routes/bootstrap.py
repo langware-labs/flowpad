@@ -1866,14 +1866,19 @@ def invalidate_bootstrap_cache() -> None:
     _bootstrap_cache_ts = 0.0
 
 
-def _with_runtime(info: BootstrapInfo, electron: bool) -> ApiSuccessResponse[BootstrapInfo]:
-    """Stamp the per-request runtime onto a (possibly cached) payload.
+async def _with_runtime(info: BootstrapInfo, electron: bool) -> ApiSuccessResponse[BootstrapInfo]:
+    """Stamp the per-request fields onto a (possibly cached) payload.
 
-    ``runtime`` is the one field that belongs to the CALLER rather than to the
-    server: the same instance answers ``desktop`` to the Electron shell and
-    ``browser`` to a localhost tab, concurrently. Baking it into
-    ``_bootstrap_cache`` would serve whichever client happened to miss the cache
-    first to everyone else for the next 30 seconds.
+    ``runtime`` belongs to the CALLER rather than to the server: the same
+    instance answers ``desktop`` to the Electron shell and ``browser`` to a
+    localhost tab, concurrently. Baking it into ``_bootstrap_cache`` would serve
+    whichever client happened to miss the cache first to everyone else for the
+    next 30 seconds.
+
+    ``default_project`` is per-caller for a different reason: a freshly
+    provisioned box carries a one-shot instruction to open the project the hub
+    just set up, and it must reach exactly one bootstrap. Through the cached
+    payload it would either be served repeatedly for 30s or skipped entirely.
 
     ``model_copy`` leaves the cached object untouched — mutating ``info`` in
     place would write through to the cache, which is the same bug wearing a
@@ -1881,7 +1886,35 @@ def _with_runtime(info: BootstrapInfo, electron: bool) -> ApiSuccessResponse[Boo
     """
     from flow_sdk.instance_settings.runtime import resolve_runtime  # noqa: PLC0415
 
-    return ApiSuccessResponse[BootstrapInfo](data=info.model_copy(update={"runtime": resolve_runtime(electron=electron)}))
+    update: dict = {"runtime": resolve_runtime(electron=electron)}
+    opening_project = await _take_opening_project()
+    if opening_project is not None:
+        update["default_project"] = opening_project
+    return ApiSuccessResponse[BootstrapInfo](data=info.model_copy(update=update))
+
+
+async def _take_opening_project() -> Optional[dict]:
+    """The one-shot "open this project" instruction, resolved to an entity dict.
+
+    A pending id that no longer resolves (project deleted between provisioning
+    and first load) is dropped rather than raised: it has already been consumed,
+    and failing bootstrap over it would make the box unusable instead of merely
+    landing on the ordinary default.
+    """
+    from flow_sdk.server.state import take_pending_default_project  # noqa: PLC0415
+
+    project_id = take_pending_default_project()
+    if not project_id:
+        return None
+    try:
+        project = await Project.get_by_id(project_id)
+    except Exception as e:  # noqa: BLE001
+        logging.warning(f"[bootstrap] pending default project {project_id} could not be loaded: {e}")
+        return None
+    if project is None:
+        logging.warning(f"[bootstrap] pending default project {project_id} no longer exists")
+        return None
+    return entity_to_dict(project)
 
 
 @router.get("/api/v1/graph/bootstrap")
@@ -1914,12 +1947,12 @@ async def bootstrap(electron: bool = False) -> ApiSuccessResponse[BootstrapInfo]
 
     # Fast path: return cached result without acquiring the lock
     if _bootstrap_cache is not None and time.monotonic() - _bootstrap_cache_ts < _BOOTSTRAP_CACHE_TTL:
-        return _with_runtime(_bootstrap_cache, electron)
+        return await _with_runtime(_bootstrap_cache, electron)
 
     async with _bootstrap_lock:
         # Re-check inside the lock (another coroutine may have just finished)
         if _bootstrap_cache is not None and time.monotonic() - _bootstrap_cache_ts < _BOOTSTRAP_CACHE_TTL:
-            return _with_runtime(_bootstrap_cache, electron)
+            return await _with_runtime(_bootstrap_cache, electron)
 
         from flow_sdk.utils import TimeIt  # noqa: PLC0415
 
@@ -2119,4 +2152,4 @@ async def bootstrap(electron: bool = False) -> ApiSuccessResponse[BootstrapInfo]
         # Release any background backfills that deferred to the first bootstrap.
         first_bootstrap_served.set()
 
-    return _with_runtime(_bootstrap_cache, electron)
+    return await _with_runtime(_bootstrap_cache, electron)
