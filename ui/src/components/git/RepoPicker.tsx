@@ -1,14 +1,9 @@
 import type { GitProvider, RepoSummary } from '@sdk';
+import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@src/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { useGitRepos } from '@src/hooks/use-git-providers';
+import { errorMessage } from '@src/lib/error-message';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { GitFork, Loader2, Lock, RefreshCw, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -18,6 +13,11 @@ interface RepoPickerProps {
   onSelect: (repo: RepoSummary) => void;
   enabled?: boolean;
   allowedRoles?: RepoSummary['role'][];
+  connectionAction?: {
+    label: string;
+    pending: boolean;
+    onClick: () => void;
+  };
 }
 
 function formatRelative(iso: string): string {
@@ -49,7 +49,7 @@ function roleBadgeClass(role: RepoSummary['role']): string {
  * provider. Click a row → ``onSelect(repo)``. Filtering is client-side over
  * the full fetched list (5-min query cache via useGitRepos).
  */
-export function RepoPicker({ provider, onSelect, enabled = true, allowedRoles }: RepoPickerProps) {
+export function RepoPicker({ provider, onSelect, enabled = true, allowedRoles, connectionAction }: RepoPickerProps) {
   const { t } = useLingui();
   const { data: repos, isLoading, isError, error, refetch, isFetching } = useGitRepos(provider, enabled);
   const [query, setQuery] = useState('');
@@ -99,8 +99,23 @@ export function RepoPicker({ provider, onSelect, enabled = true, allowedRoles }:
             <Loader2 className="h-4 w-4 animate-spin" /> <Trans>Loading your repos…</Trans>
           </div>
         ) : isError ? (
-          <div className="px-3 py-4 text-xs text-destructive">
-            Failed to load repos: {error?.message ?? 'unknown error'}
+          <div className="flex items-center justify-between gap-3 px-3 py-4 text-xs text-destructive">
+            <span>
+              <Trans>Failed to load repos: {errorMessage(error, t`unknown error`)}</Trans>
+            </span>
+            {connectionAction && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 shrink-0 px-2 text-xs"
+                disabled={connectionAction.pending}
+                onClick={connectionAction.onClick}
+                data-testid="repo-picker-connect"
+              >
+                {connectionAction.pending ? <Trans>Connecting…</Trans> : connectionAction.label}
+              </Button>
+            )}
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">
@@ -111,10 +126,18 @@ export function RepoPicker({ provider, onSelect, enabled = true, allowedRoles }:
             <TableHeader>
               <TableRow>
                 <TableHead className="w-7"></TableHead>
-                <TableHead><Trans>Owner</Trans></TableHead>
-                <TableHead><Trans>Repo</Trans></TableHead>
-                <TableHead className="w-20"><Trans>Role</Trans></TableHead>
-                <TableHead className="w-20"><Trans>Pushed</Trans></TableHead>
+                <TableHead>
+                  <Trans>Owner</Trans>
+                </TableHead>
+                <TableHead>
+                  <Trans>Repo</Trans>
+                </TableHead>
+                <TableHead className="w-20">
+                  <Trans>Role</Trans>
+                </TableHead>
+                <TableHead className="w-20">
+                  <Trans>Pushed</Trans>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -131,7 +154,9 @@ export function RepoPicker({ provider, onSelect, enabled = true, allowedRoles }:
                   <TableCell className="text-xs">{repo.owner}</TableCell>
                   <TableCell className="text-xs font-medium">{repo.name}</TableCell>
                   <TableCell>
-                    <span className={`rounded px-1.5 py-px text-[10px] font-medium uppercase ${roleBadgeClass(repo.role)}`}>
+                    <span
+                      className={`rounded px-1.5 py-px text-[10px] font-medium uppercase ${roleBadgeClass(repo.role)}`}
+                    >
                       {repo.role}
                     </span>
                   </TableCell>

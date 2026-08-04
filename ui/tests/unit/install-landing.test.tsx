@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   launch: vi.fn(),
+  oauthConnect: vi.fn(),
   allowedRoles: [] as string[],
 }));
 
@@ -45,8 +46,10 @@ vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
+    connectionManager: { on: vi.fn(), off: vi.fn() },
     isHubOnly: () => true,
     navigator: { getLoginWithCallbackUrl: vi.fn(() => '/login') },
+    oauthService: { connect: mocks.oauthConnect },
   };
 });
 
@@ -61,12 +64,26 @@ vi.mock('@src/hooks/use-desktops', () => ({
 vi.mock('@src/components/git/RepoPicker', async () => {
   const React = await import('react');
   return {
-    RepoPicker: (props: { allowedRoles?: string[]; onSelect: (repo: typeof existingRepo) => void }) => {
+    RepoPicker: (props: {
+      allowedRoles?: string[];
+      onSelect: (repo: typeof existingRepo) => void;
+      connectionAction?: { onClick: () => void };
+    }) => {
       mocks.allowedRoles = props.allowedRoles ?? [];
       return React.createElement(
-        'button',
-        { type: 'button', onClick: () => props.onSelect(existingRepo), 'data-testid': 'choose-existing-repo' },
-        'Choose existing repo',
+        React.Fragment,
+        null,
+        React.createElement(
+          'button',
+          { type: 'button', onClick: () => props.onSelect(existingRepo), 'data-testid': 'choose-existing-repo' },
+          'Choose existing repo',
+        ),
+        props.connectionAction &&
+          React.createElement(
+            'button',
+            { type: 'button', onClick: props.connectionAction.onClick, 'data-testid': 'connect-github' },
+            'Connect GitHub',
+          ),
       );
     },
   };
@@ -78,7 +95,11 @@ vi.mock('@src/components/git/BranchPicker', async () => {
     BranchPicker: (props: { onSelect: (branch: { name: string; protected: boolean }) => void }) =>
       React.createElement(
         'button',
-        { type: 'button', onClick: () => props.onSelect({ name: 'develop', protected: false }), 'data-testid': 'choose-branch' },
+        {
+          type: 'button',
+          onClick: () => props.onSelect({ name: 'develop', protected: false }),
+          'data-testid': 'choose-branch',
+        },
         'Choose develop',
       ),
   };
@@ -104,6 +125,8 @@ const INSTALL_QUERY =
 describe('/install landing', () => {
   beforeEach(() => {
     mocks.launch.mockReset();
+    mocks.oauthConnect.mockReset();
+    mocks.oauthConnect.mockResolvedValue(null);
     mocks.allowedRoles = [];
     window.history.replaceState({}, '', `/install${INSTALL_QUERY}`);
   });
@@ -164,5 +187,14 @@ describe('/install landing', () => {
 
     expect(screen.getByText('Nothing was installed. You can close this tab.')).toBeTruthy();
     expect(mocks.launch).not.toHaveBeenCalled();
+  });
+
+  it('starts GitHub connection from the repository picker', async () => {
+    const user = userEvent.setup();
+    render(<InstallLanding />);
+
+    await user.click(screen.getByTestId('connect-github'));
+
+    expect(mocks.oauthConnect).toHaveBeenCalledWith('github');
   });
 });

@@ -1,8 +1,10 @@
 import {
   type BranchSummary,
   type RepoSummary,
+  connectionManager,
   isHubOnly,
   navigator as sdkNavigator,
+  oauthService,
 } from '@sdk';
 import { BranchPicker } from '@src/components/git/BranchPicker';
 import { CreatePrivateRepoForm } from '@src/components/git/CreatePrivateRepoForm';
@@ -20,13 +22,15 @@ import { StepList } from '@src/components/ui/step-list';
 import { useDesktops } from '@src/hooks/use-desktops';
 import { useAuth } from '@src/hooks/useAuth';
 import { contentInstallSpec, parseInstallIntent } from '@src/lib/content-install';
-import { Trans } from '@lingui/react/macro';
+import { errorMessage } from '@src/lib/error-message';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { ExternalLink, GitBranch, Lock, PackagePlus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type PickerView = 'repos' | 'branches' | 'create' | 'confirm';
 
 export default function InstallLanding() {
+  const { t } = useLingui();
   const parsed = useMemo(() => parseInstallIntent(window.location.search), []);
   const { user } = useAuth();
   const { launch, steps, launchUrl } = useDesktops();
@@ -35,10 +39,42 @@ export default function InstallLanding() {
   const [branch, setBranch] = useState<BranchSummary | null>(null);
   const [started, setStarted] = useState(false);
   const [cancelled, setCancelled] = useState(false);
+  const [connectingGithub, setConnectingGithub] = useState(false);
+  const [githubConnectionError, setGithubConnectionError] = useState('');
+  const [repoPickerRevision, setRepoPickerRevision] = useState(0);
   const failed = steps.some((step) => step.status === 'error');
 
+  useEffect(() => {
+    const handleGithubConnection = (message: { auth_method?: string; status?: string }) => {
+      if (message.auth_method !== 'github') return;
+      setConnectingGithub(false);
+      if (message.status === 'success') {
+        setGithubConnectionError('');
+        setRepoPickerRevision((revision) => revision + 1);
+      } else {
+        setGithubConnectionError(t`GitHub connection failed. Please try again.`);
+      }
+    };
+    connectionManager.on('on_llm_config_msg', handleGithubConnection);
+    return () => connectionManager.off('on_llm_config_msg', handleGithubConnection);
+  }, [t]);
+
+  const connectGithub = useCallback(() => {
+    setConnectingGithub(true);
+    setGithubConnectionError('');
+    void oauthService.connect('github').catch((error: unknown) => {
+      setConnectingGithub(false);
+      setGithubConnectionError(errorMessage(error, t`GitHub connection failed.`));
+    });
+  }, [t]);
+
   if (!isHubOnly()) {
-    return <EntryMessage title="Open this link on Flowpad Hub" detail="Content installation launches a cloud desktop from the Hub." />;
+    return (
+      <EntryMessage
+        title="Open this link on Flowpad Hub"
+        detail="Content installation launches a cloud desktop from the Hub."
+      />
+    );
   }
   if (!parsed.ok) {
     return <EntryMessage title="Invalid install link" detail={parsed.message} />;
@@ -97,7 +133,9 @@ export default function InstallLanding() {
             )}
           </div>
         ) : cancelled ? (
-          <p className="text-sm text-muted-foreground"><Trans>Nothing was installed. You can close this tab.</Trans></p>
+          <p className="text-sm text-muted-foreground">
+            <Trans>Nothing was installed. You can close this tab.</Trans>
+          </p>
         ) : null}
       </div>
     </div>
@@ -114,21 +152,38 @@ export default function InstallLanding() {
               Where do you want to install {intent.name}?
             </DialogTitle>
             <DialogDescription>
-              Flowpad will propose the install on <code>flowpad/install-cloudnsite-agents</code>. Your default branch is not changed and no pull request is opened automatically.
+              Flowpad will propose the install on <code>flowpad/install-cloudnsite-agents</code>. Your default branch is
+              not changed and no pull request is opened automatically.
             </DialogDescription>
           </DialogHeader>
 
           {!user ? (
             <div className="rounded-md border border-border bg-muted/30 p-4 text-sm">
-              <p className="mb-3"><Trans>Sign in to choose one of your GitHub repositories.</Trans></p>
-              <Button onClick={() => window.location.assign(sdkNavigator.getLoginWithCallbackUrl(window.location.href))}>
+              <p className="mb-3">
+                <Trans>Sign in to choose one of your GitHub repositories.</Trans>
+              </p>
+              <Button
+                onClick={() => window.location.assign(sdkNavigator.getLoginWithCallbackUrl(window.location.href))}
+              >
                 <Trans>Sign in to Flowpad</Trans>
               </Button>
             </div>
           ) : view === 'repos' ? (
             <div className="flex flex-col gap-3">
-              <RepoPicker provider="github" allowedRoles={['admin', 'write']} onSelect={selectRepo} />
-              <Button variant="outline" className="w-full gap-2" onClick={() => setView('create')} data-testid="install-create-private">
+              <RepoPicker
+                key={repoPickerRevision}
+                provider="github"
+                allowedRoles={['admin', 'write']}
+                onSelect={selectRepo}
+                connectionAction={{ label: t`Connect GitHub`, pending: connectingGithub, onClick: connectGithub }}
+              />
+              {githubConnectionError && <p className="text-xs text-destructive">{githubConnectionError}</p>}
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                onClick={() => setView('create')}
+                data-testid="install-create-private"
+              >
                 <Lock className="h-4 w-4" /> <Trans>Create a private repository</Trans>
               </Button>
             </div>
@@ -138,7 +193,10 @@ export default function InstallLanding() {
             <CreatePrivateRepoForm onBack={() => setView('repos')} onCreated={createdRepo} />
           ) : repo && branch ? (
             <div className="rounded-md border border-border bg-muted/30 p-4 text-sm" data-testid="install-confirmation">
-              <div className="flex items-center gap-2 font-medium"><GitBranch className="h-4 w-4" />{repo.full_name}</div>
+              <div className="flex items-center gap-2 font-medium">
+                <GitBranch className="h-4 w-4" />
+                {repo.full_name}
+              </div>
               <div className="mt-1 font-mono text-xs text-muted-foreground">{branch.name}</div>
               <p className="mt-3 text-xs text-muted-foreground">
                 {intent.name} stays linked as shared project context after the workspace opens.
@@ -147,7 +205,9 @@ export default function InstallLanding() {
           ) : null}
 
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setCancelled(true)} data-testid="install-cancel"><Trans>Cancel</Trans></Button>
+            <Button variant="ghost" onClick={() => setCancelled(true)} data-testid="install-cancel">
+              <Trans>Cancel</Trans>
+            </Button>
             {user && view === 'confirm' && (
               <Button onClick={startInstall} disabled={!repo || !branch} data-testid="install-launch">
                 <Trans>Launch workspace</Trans>

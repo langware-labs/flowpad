@@ -2961,6 +2961,7 @@ msgstr "Connect"
 #~ msgstr "Connect a harness"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/pages/entry/InstallLanding.tsx
 msgid "Connect GitHub"
 msgstr "Connect GitHub"
 
@@ -3015,10 +3016,9 @@ msgstr "Connecting"
 #~ msgid "Connecting..."
 #~ msgstr "Connecting..."
 
-#: src/components/assets/editor/WikiResolveView.tsx
-#: src/components/assets/editor/WikiResolveView.tsx
-#~ msgid "Connecting…"
-#~ msgstr "Connecting…"
+#: src/components/git/RepoPicker.tsx
+msgid "Connecting…"
+msgstr "Connecting…"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -5465,6 +5465,11 @@ msgstr "Failed to load projects"
 msgid "Failed to load report: {error}"
 msgstr "Failed to load report: {error}"
 
+#. placeholder {0}: errorMessage(error, t`unknown error`)
+#: src/components/git/RepoPicker.tsx
+msgid "Failed to load repos: {0}"
+msgstr "Failed to load repos: {0}"
+
 #: src/components/account/secrets-section.tsx
 msgid "Failed to load secrets"
 msgstr "Failed to load secrets"
@@ -6225,9 +6230,14 @@ msgstr "GitHub connected"
 msgid "GitHub connected — you can clone private repos."
 msgstr "GitHub connected — you can clone private repos."
 
+#: src/pages/entry/InstallLanding.tsx
 #: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "GitHub connection failed."
 msgstr "GitHub connection failed."
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "GitHub connection failed. Please try again."
+msgstr "GitHub connection failed. Please try again."
 
 #: src/components/icons/CopilotRestoreIcon.tsx
 msgid "GitHub Copilot (restored session)"
@@ -15024,6 +15034,10 @@ msgstr "Unknown"
 #: src/components/skills-viewer/amd-editor/components/ElementBlock.tsx
 #~ msgid "Unknown block"
 #~ msgstr "Unknown block"
+
+#: src/components/git/RepoPicker.tsx
+msgid "unknown error"
+msgstr "unknown error"
 
 #: src/components/assets/editor/EntityResolutionGate.tsx
 #: src/components/hooks-manager/index.tsx
