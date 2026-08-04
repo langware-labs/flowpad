@@ -195,6 +195,29 @@ async def connect_hub_websocket(
         raise
 
 
+async def _catch_up_after_reconnect() -> None:
+    """Pull messages the hub announced while this client's socket was down.
+
+    The hub fans each message out once and never replays, so a reconnect that
+    only re-registers watches leaves a permanent hole. ``handle_conversation_list``
+    is the same entry point the conversation view uses on open — reusing it keeps
+    one (already idempotent) sync path instead of inventing a second.
+
+    Best-effort: a catch-up hiccup must never take down the connection that just
+    came back.
+    """
+    try:
+        from flow_sdk.app.actions.flow_message_action import handle_conversation_list
+        from flow_sdk.builtin.user import User
+
+        user = await User.get_local()
+        if user is None:
+            return
+        await handle_conversation_list(user.typeid)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hub WS reconnect catch-up failed (non-fatal): %s", e)
+
+
 class HubWebSocketManager:
     """Small background manager for the desktop-to-hub WebSocket session."""
 
@@ -350,7 +373,12 @@ class HubWebSocketManager:
                 try:
                     await asyncio.wait_for(self._connected_event.wait(), timeout=HUB_WS_START_TIMEOUT_SECONDS)
                 except asyncio.TimeoutError:
-                    await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error="Timed out connecting hub WebSocket.")
+                    await self._set_state(
+                        HubConnectionStatus.ERROR,
+                        connected=False,
+                        verified=False,
+                        error="Timed out connecting hub WebSocket.",
+                    )
             return self.status_payload()
 
         try:
@@ -370,7 +398,12 @@ class HubWebSocketManager:
             try:
                 await asyncio.wait_for(self._connected_event.wait(), timeout=HUB_WS_START_TIMEOUT_SECONDS)
             except asyncio.TimeoutError:
-                await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error="Timed out connecting hub WebSocket.")
+                await self._set_state(
+                    HubConnectionStatus.ERROR,
+                    connected=False,
+                    verified=False,
+                    error="Timed out connecting hub WebSocket.",
+                )
         return self.status_payload()
 
     async def stop(self) -> dict[str, Any]:
@@ -451,6 +484,25 @@ class HubWebSocketManager:
                         from flow_sdk.cloud_client.context_watch import browser_context_watch
 
                         asyncio.create_task(browser_context_watch.resync())
+                        # Re-READ what arrived while the socket was down.
+                        #
+                        # The hub announces each FlowMessage exactly ONCE, live, to
+                        # whoever is connected at that instant
+                        # (``Conversation._fanout_message``) — there is no replay and
+                        # no ack. Re-registering watches above only restores FUTURE
+                        # frames; without this, every disconnect is a window whose
+                        # messages are lost to this client until the user happens to
+                        # open that conversation. Production drops this socket on a
+                        # ~10-minute cadence, so that window is routine, not exotic.
+                        #
+                        # Same catch-up the conversation view runs on open, so a
+                        # reconnect converges on exactly the state a manual refresh
+                        # would have produced.
+                        logger.info(
+                            "Hub WS connected (conn=%s) — syncing messages missed while down",
+                            self._connection_id,
+                        )
+                        asyncio.create_task(_catch_up_after_reconnect())
                         # Fresh queue per connection — prior queued frames from
                         # a dead session don't leak across reconnects.
                         self._outbound = asyncio.Queue(maxsize=HUB_WS_OUTBOUND_QUEUE_MAX)
@@ -482,14 +534,18 @@ class HubWebSocketManager:
                     raise
                 except HubWebSocketLoginRequiredError as exc:
                     self._fail_pending(exc)
-                    await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=str(exc))
+                    await self._set_state(
+                        HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=str(exc)
+                    )
                     return
                 except HubWebSocketAuthError as exc:
                     self._fail_pending(exc)
                     # Hub rejected our credentials at the WS layer. Stop the
                     # reconnect loop and surface AUTH_REJECTED — login state
                     # is left alone (see `_handle_ws_auth_exception`).
-                    await self._set_state(HubConnectionStatus.AUTH_REJECTED, connected=False, verified=False, error=str(exc))
+                    await self._set_state(
+                        HubConnectionStatus.AUTH_REJECTED, connected=False, verified=False, error=str(exc)
+                    )
                     return
                 except (ConnectionClosedError, ConnectionClosed) as exc:
                     self._fail_pending(exc)
@@ -542,7 +598,12 @@ class HubWebSocketManager:
         local_user = get_user() or {}
         local_user_id = local_user.get("id")
         if not local_user_id:
-            await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error="Cloud login required before connecting hub WebSocket.")
+            await self._set_state(
+                HubConnectionStatus.DISCONNECTED,
+                connected=False,
+                verified=False,
+                error="Cloud login required before connecting hub WebSocket.",
+            )
             raise HubWebSocketLoginRequiredError("Cloud login required before connecting hub WebSocket.")
 
         try:
@@ -552,7 +613,12 @@ class HubWebSocketManager:
                 # ``connect_hub_websocket`` — the next frame is the reply.
                 raw_message = await asyncio.wait_for(websocket.recv(), timeout=HUB_WS_VERIFY_TIMEOUT_SECONDS)
         except HubWebSocketAuthError:
-            await self._set_state(HubConnectionStatus.AUTH_REJECTED, connected=False, verified=False, error="Hub WebSocket authentication failed.")
+            await self._set_state(
+                HubConnectionStatus.AUTH_REJECTED,
+                connected=False,
+                verified=False,
+                error="Hub WebSocket authentication failed.",
+            )
             raise
         except Exception as exc:
             await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error=str(exc))
@@ -561,7 +627,9 @@ class HubWebSocketManager:
         try:
             response = json.loads(raw_message)
         except json.JSONDecodeError as exc:
-            await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error="Hub WebSocket returned invalid JSON.")
+            await self._set_state(
+                HubConnectionStatus.ERROR, connected=False, verified=False, error="Hub WebSocket returned invalid JSON."
+            )
             raise HubWebSocketVerificationError("Hub WebSocket returned invalid JSON.") from exc
 
         # The hub wraps rest_api_msg replies in a response_msg envelope;
@@ -576,7 +644,9 @@ class HubWebSocketManager:
 
         data = response.get("data")
         hub_users = data if isinstance(data, list) else [data] if isinstance(data, dict) else []
-        matching_user = next((user for user in hub_users if isinstance(user, dict) and user.get("id") == local_user_id), None)
+        matching_user = next(
+            (user for user in hub_users if isinstance(user, dict) and user.get("id") == local_user_id), None
+        )
         if not matching_user:
             hub_ids = [user.get("id") for user in hub_users if isinstance(user, dict) and user.get("id")]
             message = f"Hub WebSocket user mismatch: local={local_user_id}, hub={hub_ids or 'none'}"
