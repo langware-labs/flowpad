@@ -145,7 +145,6 @@ def test_tick_summarises_a_cycle_without_touching_the_record_store():
 async def _item(*, external_id: str, occurred_at, score: int, title: str) -> SourceItem:
     source_id = "src-hn"
     row = SourceItem(
-        id=SourceItem.allocate_deterministic_id(source_id, "updates", external_id),
         data_source_id=source_id,
         provider="hackernews",
         kind="content.feed.item",

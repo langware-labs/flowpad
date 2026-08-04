@@ -80,9 +80,11 @@ async def test_creating_the_same_item_twice_is_an_upsert_not_a_duplicate():
     )
 
     rows = await SourceItem.get_all({"data_source_id": item.source_id})
-    assert len(rows) == 1, f"{len(rows)} rows for one email — identity is not deterministic"
-    assert rows[0].id == SourceItem.allocate_deterministic_id(
-        item.source_id, item.stream_key, item.external_id
+    assert len(rows) == 1, f"{len(rows)} rows for one email — the natural key did not resolve"
+    found = await SourceItem.find_existing(item.source_id, item.stream_key, item.external_id)
+    assert found is not None and found.id == rows[0].id, (
+        "the row must be reachable by (source, stream, external_id) — that lookup "
+        "is what makes a re-delivery an upsert instead of a duplicate"
     )
 
 

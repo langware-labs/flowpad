@@ -84,6 +84,5 @@ def make_data_source(provider: str = "rss", **fields):
     }
     resolved.update(fields)
     return DataSource(
-        id=DataSource.allocate_deterministic_id(resolved["provider"], resolved["account_key"]),
         **resolved,
     )

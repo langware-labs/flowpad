@@ -39,7 +39,6 @@ async def test_fetch_copy_index_emit_then_a_silent_repeat(feed_server):
     url = f"{feed_server}/atom"
     account = f"acct-{uuid.uuid4().hex[:8]}"
     src = DataSource(
-        id=DataSource.allocate_deterministic_id("rss", account),
         provider="rss",
         kind="datasource.feed.rss",
         account_key=account,

@@ -18,7 +18,9 @@ export interface IDataSource extends IEntity {
   name: string;
   kind?: string;
   provider?: string;
+  channel?: string;
   account_key?: string;
+  account_identities?: string[];
   required_capabilities?: string[];
   config?: Record<string, unknown>;
   enabled?: boolean;
@@ -38,7 +40,14 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   name: string = '';
   kind: string = '';
   provider: string = '';
+  /** The user-facing channel (gmail | slack | …), which is NOT `provider`: the
+   *  agent transport's provider is literally "agent" while its channel is the
+   *  connector it reaches. Backend-owned — `sync_source` writes it from the
+   *  driver on every poll, so never set it from a form. */
+  channel: string = '';
   account_key: string = '';
+  /** Addresses that are ME on this source. Display/round-trip only. */
+  account_identities: string[] = [];
   required_capabilities: string[] = [];
   config: Record<string, unknown> = {};
   enabled: boolean = true;
@@ -55,7 +64,9 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     this.name = entity.name ?? this.name;
     this.kind = entity.kind ?? this.kind;
     this.provider = entity.provider ?? this.provider;
+    this.channel = entity.channel ?? this.channel;
     this.account_key = entity.account_key ?? this.account_key;
+    this.account_identities = entity.account_identities ?? this.account_identities;
     this.required_capabilities = entity.required_capabilities ?? this.required_capabilities;
     this.config = entity.config ?? this.config;
     this.enabled = entity.enabled ?? this.enabled;
@@ -76,10 +87,10 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return new Date(this.next_poll_at).getTime() <= Date.now();
   }
 
-  private post<R>(action: string): Promise<R> {
-    return dataManager.callAction<undefined, R>(
-      new ActionInfo(action, DataSource.type, this.id, 'POST' as HttpMethod),
-    );
+  private post<R>(action: string, body?: Record<string, unknown>): Promise<R> {
+    const info = new ActionInfo(action, DataSource.type, this.id, 'POST' as HttpMethod);
+    if (body) info.bodyParameters = body;
+    return dataManager.callAction<undefined, R>(info);
   }
 
   /**
@@ -101,9 +112,35 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.post('reset_cursors');
   }
 
-  /** Drop this source's records. Re-ingest rebuilds identical ids; local state
-   *  (read / starred) is the real thing lost. */
+  /** Drop this source's records. Re-ingest rebuilds equivalent rows (new ids —
+   *  identity is the natural key, not the id); local state (read / starred) is
+   *  the real thing lost. */
   async purgeItems(): Promise<{ status: string; removed: number }> {
     return this.post('purge_items');
+  }
+
+  /**
+   * Re-fetch: drop the records AND clear the cursor position, then go.
+   *
+   * The composite the UI should call, because either primitive alone is
+   * invisible — clearing position re-reads records that are already present and
+   * digest-identical, and dropping records without clearing position means the
+   * next poll never re-reads them.
+   *
+   * `since` (ISO-8601) bounds it: only records at or after that instant are
+   * dropped, and the window is widened if needed so the driver can actually
+   * reach back that far. Undated records are kept — they cannot be shown to
+   * fall inside the range. Omit it to replay everything.
+   */
+  async replay(since?: string): Promise<{
+    status: string;
+    removed: number;
+    streams: number;
+    since: string | null;
+    window_days: number;
+    window_widened: boolean;
+    detail: string;
+  }> {
+    return this.post('replay', since ? { since } : undefined);
   }
 }

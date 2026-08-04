@@ -44,7 +44,7 @@ class CloudOrigin(BaseModel):
     # The local cache row, 1:1. `source_item-<id>`'s bare uuid.
     source_item_id: str = ""
     # The provider's own id for the record. Stable across re-polls; the third
-    # component of `SourceItem.allocate_deterministic_id`.
+    # component of the natural key `SourceItem.find_existing` resolves.
     external_id: str = ""
     # Permalink into the origin system — what "Open in Gmail" opens. Empty when
     # the provider gives no addressable URL.
