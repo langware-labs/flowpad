@@ -13128,6 +13128,7 @@ msgstr "Send the reply for just this message"
 msgid "Sending in {0}: “{sendingText}”"
 msgstr "Sending in {0}: “{sendingText}”"
 
+#: src/components/conversation/SendProgressNotice.tsx
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Sending…"
@@ -14110,6 +14111,14 @@ msgstr "Steps taken"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Still signed in"
 msgstr "Still signed in"
+
+#: src/components/conversation/SendProgressNotice.tsx
+msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
+msgstr "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
+
+#: src/components/conversation/SendProgressNotice.tsx
+msgid "Still working — waiting on the cloud. This can take a minute."
+msgstr "Still working — waiting on the cloud. This can take a minute."
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx

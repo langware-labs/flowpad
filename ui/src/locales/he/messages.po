@@ -13128,6 +13128,7 @@ msgstr "שלח את התשובה עבור הודעה זו בלבד"
 msgid "Sending in {0}: “{sendingText}”"
 msgstr ""
 
+#: src/components/conversation/SendProgressNotice.tsx
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Sending…"
@@ -14110,6 +14111,14 @@ msgstr "שלבים בוצעו"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Still signed in"
 msgstr "ההתחברות עדיין פעילה"
+
+#: src/components/conversation/SendProgressNotice.tsx
+msgid "Still working — packing and uploading the attachments. A session transcript or large files can take a minute."
+msgstr "עדיין עובד — אורז ומעלה את הקבצים המצורפים. תמליל הפעלה או קבצים גדולים עשויים לקחת דקה."
+
+#: src/components/conversation/SendProgressNotice.tsx
+msgid "Still working — waiting on the cloud. This can take a minute."
+msgstr "עדיין עובד — ממתין לענן. זה עשוי לקחת דקה."
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
