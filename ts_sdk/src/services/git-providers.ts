@@ -27,6 +27,9 @@ export interface RepoSummary {
 export interface BranchSummary {
   name: string;
   protected: boolean;
+  /** ISO timestamp of the branch's last commit; '' when the backend fell back
+   *  to REST, which reports no date at all. */
+  updated_at: string;
 }
 
 export interface RepoInvitation {
@@ -135,6 +138,7 @@ export async function getBranches(repo: { git_origin: GitOrigin }): Promise<Bran
     return res.filter(_isBranchSummary).map((b) => ({
       name: b.name,
       protected: Boolean(b.protected),
+      updated_at: typeof b.updated_at === 'string' ? b.updated_at : '',
     }));
   }
   console.warn('[git-providers] unexpected /repo/branches response shape', res);
