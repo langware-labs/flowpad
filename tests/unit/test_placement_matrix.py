@@ -185,6 +185,7 @@ GOLDEN = {
     "claude_rules": (".claude/rules", AssetClass.HARNESS),
     "dynamic_workflow": (".claude/workflows", AssetClass.HARNESS),
     # Flowpad-native assets: the recursive agentic-assets/<type> hierarchy.
+    "agent": ("agentic-assets/agent", AssetClass.REPO),
     "spec": ("agentic-assets/spec", AssetClass.REPO),
     "task": ("agentic-assets/task", AssetClass.REPO),
     "dataset": ("agentic-assets/dataset", AssetClass.REPO),
@@ -341,6 +342,34 @@ def test_repo_supports_both_scopes():
     assert layout.supports(Scope.PROJECT) is True
     assert layout.supports(Scope.SYSTEM) is False
     assert layout.fan_out is False
+
+
+def test_agent_main_ref_uses_backend_slug_and_bundle_layout(tmp_path):
+    from flow_sdk.builtin.agent import Agent
+    from flow_sdk.fs_store.fs_record import FSRecord
+
+    ref = FSRecord(type="agent").compute_asset_ref(tmp_path, Agent(name="Q"))
+
+    assert ref is not None
+    assert ref._path == tmp_path / "agentic-assets" / "agent" / "q" / "agent.md"
+
+
+def test_owned_create_target_rejects_a_nonempty_agent_bundle(tmp_path):
+    from flow_sdk.fs_store.fs_record import (
+        AssetPathCollisionError,
+        assert_create_target_available,
+    )
+    from flow_sdk.fs_store.fs_ref import FSRef
+
+    bundle = tmp_path / "agentic-assets" / "agent" / "q"
+    bundle.mkdir(parents=True)
+    (bundle / "avatar.png").write_bytes(b"approved-image")
+    info = SchemaRegistry.get("agent")
+
+    with pytest.raises(AssetPathCollisionError, match="already exists in this scope"):
+        assert_create_target_available(
+            info, FSRef(bundle / "agent.md"), entity_type="agent", name="Q"
+        )
 
 
 @pytest.mark.parametrize("scope", [Scope.USER, Scope.PROJECT])

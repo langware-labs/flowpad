@@ -65,6 +65,7 @@ export type HubWsStatus = HubConnectionStatus;
 interface DesktopInfoSeed {
   cloud_login_available?: boolean;
   cloud_url?: string | null;
+  cloud_app_url?: string | null;
   // New nested shape (preferred).
   login?: { status: HubLoginStatus; user: Record<string, unknown> | null; reason: string | null };
   connection?: { status: HubConnectionStatus; error: string | null };
@@ -117,6 +118,12 @@ export interface CloudWsControlResult {
   };
 }
 
+/** Convert the SDK API base to the browser-app origin used for dock links. */
+export function hubAppUrlFromApiUrl(apiUrl: string | null | undefined): string {
+  const normalized = (apiUrl ?? '').replace(/\/+$/, '');
+  return normalized.endsWith(API_PREFIX) ? normalized.slice(0, -API_PREFIX.length) : normalized;
+}
+
 function legacyConnectionStatus(d: Partial<DesktopInfoSeed | CloudWsControlResult>): HubConnectionStatus | null {
   if (d.hub_ws_status) return d.hub_ws_status as HubConnectionStatus;
   if (d.hub_ws_verified) return 'verified';
@@ -128,6 +135,7 @@ class CloudManager extends EventEmitter {
   private _login: LoginSlot<HubLoginStatus> = makeLoginSlot<HubLoginStatus>('logged_out');
   private _currentUser: User | null = null;
   private _cloudUrl = '';
+  private _cloudAppUrl = '';
   private _connection: ConnectionSlot<HubConnectionStatus> = makeConnectionSlot<HubConnectionStatus>('disconnected');
   private _lastHubError: HubClientErrorInfo | null = null;
   private _pending: { resolve: (r: CloudLoginResult) => void; reject: (e: Error) => void; off: () => void } | null =
@@ -143,6 +151,10 @@ class CloudManager extends EventEmitter {
       // Hub-mode API traffic uses the configured hub origin directly. Keep the
       // status tooltip truthful when the UI is served by a separate Vite port.
       this._cloudUrl = sdkConfig.apiUrl;
+      // In Hub mode the browser is already on the application origin. This is
+      // also correct for the mandated split local harness (UI :4098, API
+      // :8093), where deriving an app URL from the API origin would be wrong.
+      this._cloudAppUrl = window.location.origin;
 
       const { ConnectionManager } = await import('../websocket');
       const cm = ConnectionManager.getInstance();
@@ -166,6 +178,7 @@ class CloudManager extends EventEmitter {
 
     const seed = bootstrap.desktop_info;
     this._cloudUrl = seed?.cloud_url ?? '';
+    this._cloudAppUrl = seed?.cloud_app_url ?? hubAppUrlFromApiUrl(this._cloudUrl);
 
     if (seed?.login) {
       this._applyLoginStatus(seed.login.status, seed.login.user, seed.login.reason, false);
@@ -385,6 +398,9 @@ class CloudManager extends EventEmitter {
   get cloudUrl() {
     return this._cloudUrl;
   }
+  get cloudAppUrl() {
+    return this._cloudAppUrl;
+  }
   /** Manual bridge controls exist only on the desktop backend. */
   get connectionControlsAvailable() {
     return !isHubOnly();
@@ -422,6 +438,7 @@ class CloudManager extends EventEmitter {
       logged_in: this.isLoggedIn,
       user: this._currentUser ? (this._currentUser as unknown as Record<string, unknown>) : null,
       cloud_url: this._cloudUrl,
+      cloud_app_url: this._cloudAppUrl,
       // new nested
       login: { status: this._login.status, user: this._login.user, reason: this._login.reason },
       connection: { status: this._connection.status, error: this._connection.error },
@@ -566,6 +583,8 @@ class CloudManager extends EventEmitter {
     try {
       const data = await apiClient.get<CloudStatusData>('/cloud/status');
       if (data?.cloud_url) this._cloudUrl = data.cloud_url;
+      if (data?.cloud_app_url) this._cloudAppUrl = data.cloud_app_url;
+      else if (data?.cloud_url) this._cloudAppUrl = hubAppUrlFromApiUrl(data.cloud_url);
 
       // Prefer nested shape; fall back to legacy aliases.
       if (data?.connection) {

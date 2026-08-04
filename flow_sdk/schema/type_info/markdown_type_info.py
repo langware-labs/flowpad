@@ -24,12 +24,13 @@ def _markdown_default_body(entity) -> str:
 
 MARKDOWN = TypeMetadata(
     type=EntityType.MARKDOWN,
-    icon="WikiW",
+    icon="FileText",
     displayName="Documents",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,
     api_visible=True,
+    cloud_file_transport="git",
     index_fields=["title", "tags", "links"],
     asset_class="docs",
     family="docs",

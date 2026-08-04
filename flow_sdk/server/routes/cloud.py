@@ -174,7 +174,8 @@ async def status():
 
         logged_in = is_logged_in()
         user_info = get_user() if logged_in else None
-        cloud_url = ApiConfig.from_env().api_base_url
+        cloud_config = ApiConfig.from_env()
+        cloud_url = cloud_config.api_base_url
 
         login_status = current_login_status()
         # Heal in-memory mirror if disk and memory disagree (e.g. fresh boot
@@ -195,6 +196,7 @@ async def status():
             },
             "connection": connection_payload,
             "cloud_url": cloud_url,
+            "cloud_app_url": cloud_config.app_base_url,
             # Deprecated aliases — kept for one release while UI migrates.
             "logged_in": logged_in,
             "user": user_info,

@@ -1,5 +1,5 @@
-import { ViewType, WorldViewProjection } from '@sdk';
-import { Building2, Globe, Home, KeyRound } from 'lucide-react';
+import { Project, ViewType, WorldViewProjection } from '@sdk';
+import { Building2, Globe, Home, KeyRound, Mail } from 'lucide-react';
 import type React from 'react';
 
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -29,32 +29,53 @@ export type HubItem = {
  * into `RAIL_ITEMS` where it would render a silent `null`.
  *
  * `t` is passed in so the caller's `useLingui` owns re-translation on locale change.
+ * `projectId` is the ACTIVE project (null when none is selected): the project
+ * entry addresses its destination by id, so it can only exist once there is one —
+ * the same "gate on the thing existing" rule `RAIL_ITEMS` applies on the desk.
  *
- * The record-browser entries take their glyph from the backend type registry via
- * `iconForType(pointer)` — their pointer IS the entity type, and the view each
- * one opens resolves its icon the same way, so a hardcoded glyph here could
- * disagree with the destination it leads to. The remaining four are views, not
- * entity types, and have no registry entry to read.
+ * Glyphs come from the backend type registry via `iconForType(pointer)` wherever
+ * the entry IS a type — the view it opens resolves its rows the same way, so a
+ * hardcoded glyph would disagree with the destination it leads to. Entries that
+ * name a lucide icon directly are the ones that are a PLACE rather than a type
+ * (Home, WorldView, Credentials) — and Inbox, deliberately: it happens to open a
+ * `conversation` list, but the slot is the desk's Inbox, so it keeps that slot's
+ * `Mail` (see `navMeta` in `collapsed-sidebar.tsx`) rather than the type's glyph.
  */
-export function buildHubRailItems(t: (s: TemplateStringsArray) => string): readonly HubItem[] {
+export function buildHubRailItems(
+  t: (s: TemplateStringsArray) => string,
+  projectId?: string | null,
+): readonly HubItem[] {
   return [
     { id: 'home', title: t`Home`, icon: Home, viewType: ViewType.HOME },
+    // Project home — `ViewType.PROJECT` renders `ProjectHome`, the same component
+    // the desk project item lands on (`HubProjectPage`). Its pointer is the
+    // project id, which `DockPointer.splitProjectPointer` reads; without one the
+    // page renders "Project not found", hence the gate.
+    ...(projectId
+      ? [
+          {
+            id: 'project' as const,
+            title: t`Project`,
+            icon: iconForType(Project.type),
+            viewType: ViewType.PROJECT,
+            pointer: projectId,
+          },
+        ]
+      : []),
+    // Inbox, matching the desk's Inbox slot (same `Mail` glyph). It lists the
+    // hub's `conversation` entities over `graph/conversation`; the desk
+    // `InboxView` is NOT reusable here, because everything it reads is desk-only
+    // (`conversation-list` action → 404 on the hub, `inbox_manager` → 422), so it
+    // would render an empty shell. That also means no unread badge on the hub.
     {
-      id: 'conversations',
-      title: t`Conversations`,
-      icon: iconForType('conversation'),
+      id: 'inbox',
+      title: t`Inbox`,
+      icon: Mail,
       viewType: ViewType.HUB_RECORDS,
       pointer: 'conversation',
     },
     { id: 'tasks', title: t`Tasks`, icon: iconForType('task'), viewType: ViewType.HUB_RECORDS, pointer: 'task' },
     { id: 'docs', title: t`Docs`, icon: iconForType('markdown'), viewType: ViewType.HUB_RECORDS, pointer: 'markdown' },
-    {
-      id: 'flows',
-      title: t`Flows`,
-      icon: iconForType('graph_workflow'),
-      viewType: ViewType.HUB_RECORDS,
-      pointer: 'graph_workflow',
-    },
     {
       id: 'world',
       title: t`Your world`,
@@ -69,8 +90,8 @@ export function buildHubRailItems(t: (s: TemplateStringsArray) => string): reado
       viewType: ViewType.WORLDVIEW,
       pointer: WorldViewProjection.ORGANIZATION,
     },
-    // Last: the seven above are content browsers and stay contiguous; this is a
-    // settings-flavoured destination.
+    // Last: everything above is a place to look at content and stays contiguous;
+    // this is a settings-flavoured destination.
     //
     // Deliberately POINTER-LESS. `hubActive` matches pointer-carrying items on
     // viewType AND pointer, so a pointer here would unlight the icon the moment

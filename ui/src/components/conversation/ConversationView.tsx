@@ -778,9 +778,15 @@ export function ConversationView({
           bubble with Send/Discard — but it must not block composing a fresh reply.
           The plain composer never auto-creates a draft, so there's no duplication
           loop. */}
+      {/* Deliberately does NOT name the outcome. Whether a reply is delivered
+          or parked as a draft is the transport's business — Agentmail sends,
+          the Gmail connector can only draft — and the composer learns which
+          only when the send resolves. Copy that promised "drafted" was simply
+          wrong half the time. The reply itself arrives in the feed by the
+          ordinary ingest route once it exists. */}
       {sendingText && (
         <SessionEventLine
-          text={t`Composing in ${channelLabel(channelOrigin?.kind)}: “${sendingText}” — finish sending there`}
+          text={t`Sending in ${channelLabel(channelOrigin?.kind)}: “${sendingText}”`}
         />
       )}
       <MessageComposer
@@ -789,9 +795,7 @@ export function ConversationView({
         // A source-backed conversation replies into its channel, not the hub.
         channel={channelOrigin?.kind}
         onChannelSent={setSendingText}
-        placeholder={
-          channelOrigin ? t`Reply — drafted into ${channelLabel(channelOrigin.kind)}` : undefined
-        }
+        placeholder={channelOrigin ? t`Reply in ${channelLabel(channelOrigin.kind)}` : undefined}
       />
 
       {executeTarget && (

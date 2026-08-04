@@ -1,4 +1,4 @@
-import { startHelpdeskTicket } from '@sdk';
+import { dataContext, startHelpdeskTicket } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -58,7 +58,7 @@ export function HelpdeskRequestDialog({ open, onClose }: HelpdeskRequestDialogPr
 
       let conversationId: string;
       try {
-        const res = await startHelpdeskTicket(message.trim());
+        const res = await startHelpdeskTicket(message.trim(), dataContext.project?.id);
         conversationId = res.conversation_id;
       } catch (err) {
         console.error('[HelpdeskRequestDialog] failed to open support ticket', err);

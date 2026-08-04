@@ -1,6 +1,6 @@
 import { SessionInput } from '@src/components/session-input/session-input';
 import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/components/home-customization';
-import { ProjectStarterActions } from '@src/components/project-starter-actions';
+import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
 import { useAuth } from '@sdk/react/hooks';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -60,7 +60,7 @@ export function VibeNewChat() {
             onSubmit={(msg, files) => startVibe(msg, files, model)}
           />
         </div>
-        <ProjectStarterActions className="self-start" />
+        <ProjectActionsRow className="w-full self-start" />
         <VibeRecentSessions />
       </div>
     </div>

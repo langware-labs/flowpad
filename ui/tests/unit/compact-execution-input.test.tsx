@@ -11,11 +11,13 @@ function Harness({
   onStop,
   onSend = () => {},
   seed = [] as string[],
+  allowAttachments = false,
 }: {
   running?: boolean;
   onStop?: () => void;
-  onSend?: (t: string) => void;
+  onSend?: (t: string, files?: File[]) => void;
   seed?: string[];
+  allowAttachments?: boolean;
 }) {
   const history = useInputHistory();
   useEffect(() => {
@@ -23,11 +25,17 @@ function Harness({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
-    <CompactExecutionInput onSend={onSend} running={running} onStop={onStop} history={history} />
+    <CompactExecutionInput
+      onSend={onSend}
+      running={running}
+      onStop={onStop}
+      history={history}
+      allowAttachments={allowAttachments}
+    />
   );
 }
 
-const input = () => screen.getByTestId('entity-execution-input') as HTMLTextAreaElement;
+const input = () => screen.getByTestId('entity-execution-input');
 
 describe('CompactExecutionInput', () => {
   afterEach(cleanup);
@@ -93,10 +101,53 @@ describe('CompactExecutionInput', () => {
     render(<Harness running onStop={() => {}} onSend={onSend} />);
     fireEvent.change(input(), { target: { value: 'queued prompt' } });
     fireEvent.keyDown(input(), { key: 'Enter' });
-    expect(onSend).toHaveBeenCalledWith('queued prompt');
+    expect(onSend).toHaveBeenCalledWith('queued prompt', []);
     // Both affordances visible mid-turn: Send (enqueue) came back for the
     // non-empty draft, and Stop is present.
     expect(screen.getByTestId('entity-execution-stop')).toBeTruthy();
+  });
+});
+
+describe('CompactExecutionInput attachments', () => {
+  afterEach(cleanup);
+
+  const pickFile = (name = 'notes.txt') => {
+    const file = new File(['hello'], name, { type: 'text/plain' });
+    fireEvent.change(screen.getByTestId('entity-execution-attach-input'), { target: { files: [file] } });
+    return file;
+  };
+
+  it('the "+" picker is absent by default and present when opted in', () => {
+    const { rerender } = render(<Harness />);
+    expect(screen.queryByTestId('entity-execution-attach')).toBeNull();
+    rerender(<Harness allowAttachments />);
+    expect(screen.getByTestId('entity-execution-attach')).toBeTruthy();
+  });
+
+  it('picked files render as removable chips', () => {
+    render(<Harness allowAttachments />);
+    pickFile();
+    expect(screen.getByText('notes.txt')).toBeTruthy();
+    fireEvent.click(screen.getByText('notes.txt').closest('li')!.querySelector('button')!);
+    expect(screen.queryByText('notes.txt')).toBeNull();
+  });
+
+  it('send hands the files to onSend and clears the chips; files-only send works', () => {
+    const onSend = vi.fn();
+    render(<Harness allowAttachments onSend={onSend} />);
+    const file = pickFile();
+    // No text typed — the Send button is enabled by the pending file alone.
+    fireEvent.mouseDown(screen.getByTestId('entity-execution-send'));
+    expect(onSend).toHaveBeenCalledWith('', [file]);
+    expect(screen.queryByText('notes.txt')).toBeNull();
+  });
+
+  it('text-only send passes an empty files list', () => {
+    const onSend = vi.fn();
+    render(<Harness allowAttachments onSend={onSend} />);
+    fireEvent.change(input(), { target: { value: 'hi' } });
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    expect(onSend).toHaveBeenCalledWith('hi', []);
   });
 });
 

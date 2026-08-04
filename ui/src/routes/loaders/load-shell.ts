@@ -53,18 +53,9 @@ import { ViewType } from '@sdk';
 import { projectScope, scopeFilterEqual, type ScopeFilter } from '@src/lib/scope-filter';
 import { replace } from 'react-router';
 import { perfLog, perfTime } from './_perf';
-import {
-  describeProcessStartError,
-  loadProcess,
-  ProcessLoadError,
-} from './load-process';
+import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
 import { loadProject } from './load-project';
-import {
-  buildProcessCleanup,
-  loadNextProcess,
-  type CleanupRecord,
-  type LoadedNext,
-} from './load-next-process';
+import { buildProcessCleanup, loadNextProcess, type CleanupRecord, type LoadedNext } from './load-next-process';
 
 // ── typed error (for plain-Shell loads) ─────────────────────────────────────
 
@@ -106,10 +97,7 @@ export async function loadShell(shellId: string): Promise<Shell> {
   const cached = Shell.getByIdFromCache<Shell>(shellId);
   perfLog(`loadShell cache=${cached ? 'hit' : 'miss'} shellId=${shellId.slice(0, 8)}`);
   const shell =
-    cached ??
-    (await perfTime('Shell.getById (network)', () =>
-      Shell.getById<Shell>(shellId).catch(() => null),
-    ));
+    cached ?? (await perfTime('Shell.getById (network)', () => Shell.getById<Shell>(shellId).catch(() => null)));
   if (!shell) {
     throw new ShellLoadError('not_found', shellId);
   }
@@ -174,9 +162,7 @@ function handleCleanups(cleaned: CleanupRecord[]): void {
 }
 
 function loadedToPointer(loaded: LoadedNext): string {
-  return loaded.kind === 'process'
-    ? loaded.process.terminalDockPointer.pointer
-    : loaded.shell.dockPointer.pointer;
+  return loaded.kind === 'process' ? loaded.process.terminalDockPointer.pointer : loaded.shell.dockPointer.pointer;
 }
 
 // ── ROUTE: internal branches ────────────────────────────────────────────────
@@ -250,19 +236,13 @@ async function routeDefaultShell(shellUrl: ShellUrlBuilder): Promise<void> {
  * soft-failure, a stale-instance unexpected throw, or success all land on the
  * correctly-scoped URL (the runtime then attaches on the redirected re-run).
  */
-async function reconcileProcessScope(
-  processId: string,
-  requestPath: string,
-  carry?: ProcessRouteCarry,
-): Promise<void> {
+async function reconcileProcessScope(processId: string, requestPath: string, carry?: ProcessRouteCarry): Promise<void> {
   // Resolve identity only (cache-first; a cheap get-by-id on cold nav).
   const proc =
     AgenticProcess.getByIdFromCache<AgenticProcess>(processId) ??
     (await AgenticProcess.getById<AgenticProcess>(processId).catch(() => null));
   if (!proc) return;
-  const pathProject = !proc.project_id && proc.workdir
-    ? await Project.getProjectByPath(proc.workdir)
-    : null;
+  const pathProject = !proc.project_id && proc.workdir ? await Project.getProjectByPath(proc.workdir) : null;
   const ownerProjectId = proc.project_id ?? pathProject?.id ?? null;
   const base = new DockPointer(
     ViewType.SHELL,
@@ -317,9 +297,7 @@ async function routeProcessPointer(
     // sibling class of bugs after a backend restart. (Scope is already
     // aligned above, before this phase ran.)
     if (e.severity === 'soft') {
-      dataContext.setActiveTerminalTargetTypeId(
-        new TypeId(AgenticProcess.type, processId),
-      );
+      dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
       dataContext.setTerminalRuntimeError({
         kind: e.kind as Exclude<typeof e.kind, 'entity_not_found'>,
         processId,
@@ -349,8 +327,8 @@ async function routeProcessPointer(
     const requestedName = requestedProc?.name ?? requestedProc?.displayName ?? `${processId.slice(0, 8)}…`;
     const fallbackName =
       next.loaded.kind === 'process'
-        ? next.loaded.process.name ?? next.loaded.process.displayName ?? fallbackPointer
-        : next.loaded.shell.name ?? fallbackPointer;
+        ? (next.loaded.process.name ?? next.loaded.process.displayName ?? fallbackPointer)
+        : (next.loaded.shell.name ?? fallbackPointer);
     notify.error({
       title: `Terminal "${requestedName}" not found`,
       message: `${directCleanup.title} — opened "${fallbackName}" instead.`,
@@ -361,15 +339,11 @@ async function routeProcessPointer(
 }
 
 async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder): Promise<void> {
-  const shellId = pointer.startsWith(Shell.type + '-')
-    ? pointer.slice(Shell.type.length + 1)
-    : pointer;
+  const shellId = pointer.startsWith(Shell.type + '-') ? pointer.slice(Shell.type.length + 1) : pointer;
 
   // If a process owns this shell, send the user to the process URL instead —
   // that path handles open({ visible: true }) + PTY reconnect for us.
-  const linkedProcess = cachedEntitiesByType<AgenticProcess>(AgenticProcess.type).find(
-    (p) => p.shell_id === shellId,
-  );
+  const linkedProcess = cachedEntitiesByType<AgenticProcess>(AgenticProcess.type).find((p) => p.shell_id === shellId);
   if (linkedProcess) {
     // Use replace so BACK from the process URL doesn't pop back to the bare
     // shell URL (which would just re-bounce here → flicker).
@@ -431,9 +405,19 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
 async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupRecord> {
   switch (e.kind) {
     case 'not_found':
-      return { kind: 'shell_not_found', shellId: e.shellId, title: 'Shell not found', description: 'This terminal no longer exists.' };
+      return {
+        kind: 'shell_not_found',
+        shellId: e.shellId,
+        title: 'Shell not found',
+        description: 'This terminal no longer exists.',
+      };
     case 'error_status':
-      return { kind: 'shell_error_status', shellId: e.shellId, title: 'Shell unavailable', description: e.errorMessage ?? 'Shell error' };
+      return {
+        kind: 'shell_error_status',
+        shellId: e.shellId,
+        title: 'Shell unavailable',
+        description: e.errorMessage ?? 'Shell error',
+      };
     case 'start_failed': {
       await closeTerminalTab(new TypeId(Shell.type, e.shellId)).catch(() => {});
       const desc = describeProcessStartError(e.cause ?? e);
@@ -460,8 +444,7 @@ export async function loadShellRoute(
 
   // All redirects below preserve the request's layout keyword (dock/dev/win)
   // so a /win/shell focus window never falls back into full-app chrome (§7).
-  const shellUrl: ShellUrlBuilder = (p?: string) =>
-    buildShellRedirectUrl(requestPath, p, carry?.options);
+  const shellUrl: ShellUrlBuilder = (p?: string) => buildShellRedirectUrl(requestPath, p, carry?.options);
 
   // A process URL resolves identity/context only. Its mounted TerminalPanel
   // owns the WS-bound start/attach, so do not hold this route on realtime
@@ -477,9 +460,7 @@ export async function loadShellRoute(
   // FlowSync readiness gate and budget. On timeout we surface a toast and let
   // the existing failure/recovery chain decide what to render.
   try {
-    await perfTime('connectionManager.waitForConnected', () =>
-      connectionManager.waitForConnected(5000),
-    );
+    await perfTime('connectionManager.waitForConnected', () => connectionManager.waitForConnected(5000));
   } catch {
     notify.error({
       title: 'No realtime connection',

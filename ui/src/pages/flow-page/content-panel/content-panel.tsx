@@ -22,6 +22,7 @@ import { HomeLanding } from '@src/pages/home-landing';
 import { HubHome } from '@src/pages/hub-home/HubHome';
 import { HubRecordsView } from '@src/pages/hub-browse/HubRecordsView';
 import { HubEntityView } from '@src/pages/hub-browse/HubEntityView';
+import { HubProjectPage } from '@src/pages/hub-project/HubProjectPage';
 import { LiveStatus } from '@src/pages/live-status';
 import { SearchView } from '@src/pages/search-view/SearchView';
 
@@ -251,6 +252,8 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return <ConversationRoute />;
       case ViewType.ASSETS:
         return <HubAssetsPage />;
+      case ViewType.PROJECT:
+        return <HubProjectPage />;
       case ViewType.CREDENTIALS:
         return <CredentialsView />;
       case ViewType.HOME:

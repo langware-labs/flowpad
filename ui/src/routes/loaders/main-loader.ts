@@ -6,7 +6,17 @@
  * Shell/process loading lives in `./load-shell` and `./load-process`.
  */
 
-import { AgenticProcess, cloudManager, ContextEntitiesEnum, dataContext, initSdk, Project, systemTools, TypeId } from '@sdk';
+import {
+  AgenticProcess,
+  cloudManager,
+  ContextEntitiesEnum,
+  dataContext,
+  initSdk,
+  isBackendUnreachable,
+  Project,
+  systemTools,
+  TypeId,
+} from '@sdk';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation';
 import { canonicalProcessDockPath } from '@src/navigation/process-dock-canonicalization';
@@ -21,6 +31,9 @@ import { ProjectLoadError, loadProject } from './load-project';
 import { describeProcessStartError } from './load-process';
 import { markPerfT0, perfLog, perfTime } from './_perf';
 import { loadDockPointer } from './load-dock-pointer';
+import { runLoadRedirects } from './load-redirects';
+// Side-effect import: feature-owned redirect resolvers register themselves.
+import '@src/journey/journey-load-redirect';
 
 // Re-export kept for existing consumers (unit tests import from here).
 export { describeProcessStartError };
@@ -130,7 +143,7 @@ export async function loadAgentApp(args: LoaderArgs) {
   // Check if service is unavailable - throw error so ErrorBoundary catches it.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const bootstrapError = dataContext.bootstrapError as any;
-  if (bootstrapError?.isServiceUnavailable || bootstrapError?.type === 'network') {
+  if (isBackendUnreachable(bootstrapError)) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw dataContext.bootstrapError;
   }
@@ -268,7 +281,8 @@ export async function loadAgentApp(args: LoaderArgs) {
       };
       // Timed: tab materialization gates the URL commit, so a slow ensure-tab
       // is felt as a slow navigation.
-      if (dockForSetup) await perfTime('setupTabAndAdopt', () => setupTabAndAdopt(dockForSetup, { setupContent: wrappedSetup }));
+      if (dockForSetup)
+        await perfTime('setupTabAndAdopt', () => setupTabAndAdopt(dockForSetup, { setupContent: wrappedSetup }));
       else await wrappedSetup();
       t.time(label);
     };
@@ -276,6 +290,13 @@ export async function loadAgentApp(args: LoaderArgs) {
     if (dockForSetup) {
       const dock = dockForSetup;
       await runSetup(() => loadDockPointer(dock, { requestPath: requestUrl.pathname }));
+      if (dock.viewType === ViewType.PROJECT) {
+        const loadRedirect = await runLoadRedirects(args.request);
+        if (loadRedirect) {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error
+          throw loadRedirect;
+        }
+      }
     }
 
     if (dockForSetup && !setupHandled) {

@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Annotated
@@ -43,139 +44,103 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 # ── path helpers ──────────────────────────────────────────────────────────────
-# Resolve the instance dir through BaseInstanceSettings (the single source of
-# truth for the `<flow_home>/instances/<name>` layout) rather than re-deriving
-# `~/.flow/...` here — which base_settings' module docstring explicitly forbids.
-# `from_env` keys purely off the passed name for the dir join, so it targets the
-# named instance regardless of the caller's ambient FLOW_INSTANCE.
+# Thin aliases over `flow_sdk.instances.paths` / `.env`, which own the
+# `<flow_home>/instances/<name>` layout and the repo-root env-file location for
+# the whole launcher. Keeping local copies here meant two answers to "where does
+# this instance live" — and only the package's version validates the name, so
+# the delete paths below were the ones missing the traversal guard.
 def _instance_dir(name: str) -> Path:
-    from flow_sdk.instance_settings.base_settings import BaseInstanceSettings
+    from flow_sdk.instances import paths
 
-    return BaseInstanceSettings.from_env(name).instance_dir
+    return paths.instance_dir(name)
 
 
 def _env_file(name: str) -> Path:
-    return REPO_ROOT / f".env.{name}.local"
+    from flow_sdk.instances import paths
+
+    return paths.env_file(name)
 
 
 def _read_json(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text())
-    except Exception:
-        return {}
+    from flow_sdk.instances.atomic import read_json
+
+    return read_json(path)
 
 
 def _read_env_file(name: str) -> dict[str, str]:
     """Parse `.env.<name>.local` into a dict without mutating `os.environ`."""
-    from dotenv import dotenv_values
+    from flow_sdk.instances.env import read_env_file
 
-    ef = _env_file(name)
-    if not ef.exists():
-        return {}
-    return {k: v for k, v in dotenv_values(ef).items() if v is not None}
+    return read_env_file(name)
 
 
 # ── kill ────────────────────────────────────────────────────────────────────
 def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
     """Kill ONLY this instance's processes. Returns the PIDs we terminated.
 
-    Sources, most-authoritative first: launcher.json (backend/frontend PID),
-    server.json (server/monitor PID), then a scoped psutil sweep matching
-    ``FLOW_INSTANCE==<name>`` exactly, then a port-listener fallback. Never a
-    broad ``pkill flow_sdk.server.run`` (that would hit sibling instances).
+    An adapter over ``flow_sdk.instances.procs.kill_owned``, which is the single
+    choke point every signal in the launcher passes through. This used to be a
+    parallel implementation with its own psutil sweep and — critically — a
+    port-listener fallback that killed whatever held the port recorded in
+    ``.env.<name>.local``, with no ownership check at all. That is the exact
+    ``kill tmpl-3`` → SIGTERM-dev-2's-frontend hazard the instances package was
+    written to close, and leaving a second copy here meant ``reset`` and
+    ``restart-backend`` — the two commands a QA cycle runs unattended on a
+    machine with a recycled port band — still had it.
 
-    Killing is **batched** (collect all targets → SIGTERM all → wait once →
-    SIGKILL survivors) so a degraded instance with dozens of leaked PTY/claude
-    children reaps in seconds, not minutes.
+    Ports from the env file are still swept, but through ``kill_port_if_owned``,
+    which refuses unless every listener is ownership-verified as this instance's.
     """
-    import psutil
+    from flow_sdk.instances import liveness, procs
+    from flow_sdk.instances.errors import KillFailed
+    from flow_sdk.instances.model import Role
 
-    gone = (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess)
-    self_pid = os.getpid()
     idir = _instance_dir(name)
     launcher = _read_json(idir / "launcher.json")
     server = _read_json(idir / "server.json")
     env = _read_env_file(name)
 
-    ports: set[int] = set()
-    if env.get("LOCAL_SERVER_PORT", "").isdigit():
-        ports.add(int(env["LOCAL_SERVER_PORT"]))
-    if not backend_only and env.get("VITE_PORT", "").isdigit():
-        ports.add(int(env["VITE_PORT"]))
+    table = liveness.scan()
+    # Let this instance's own records vouch for PIDs whose environ we cannot
+    # read (a backend that took FLOW_INSTANCE from dotenv rather than the env).
+    table.adopt_server_json(name, _as_int(server.get("server_pid")), _as_int(server.get("port")))
+    for key in ("backend_pid", "frontend_pid", "monitor_pid"):
+        pid = _as_int(launcher.get(key) or server.get(key))
+        if pid is not None:
+            table.adopt_recorded(name, pid, _proc_create_time(pid))
 
-    targets: dict[int, psutil.Process] = {}
+    roles = frozenset({Role.BACKEND}) if backend_only else None
+    result = procs.kill_owned(name, table, roles=roles)
 
-    def _add(pid) -> None:
-        try:
-            pid = int(pid)
-        except (TypeError, ValueError):
-            return
-        if pid <= 0 or pid == self_pid or pid in targets:
-            return
-        try:
-            targets[pid] = psutil.Process(pid)
-        except gone:
-            pass
+    port_keys = ("LOCAL_SERVER_PORT",) if backend_only else ("LOCAL_SERVER_PORT", "VITE_PORT")
+    for key in port_keys:
+        raw = env.get(key, "")
+        if raw.isdigit():
+            extra = procs.kill_port_if_owned(int(raw), name, table)
+            result.killed.extend(extra.killed)
+            result.survivors.extend(extra.survivors)
 
-    # 1. Recorded PIDs + the backend's PTY/claude child tree.
-    for pid in (server.get("server_pid"), server.get("monitor_pid"), launcher.get("backend_pid")):
-        _add(pid)
-    if not backend_only:
-        _add(launcher.get("frontend_pid"))
-    for pid in list(targets):
-        try:
-            for child in targets[pid].children(recursive=True):
-                _add(child.pid)
-        except gone:
-            pass
-
-    # 2. Scoped stray sweep by exact FLOW_INSTANCE env match (environ() is cheap).
-    for proc in psutil.process_iter(["pid", "cmdline"]):
-        pid = proc.info["pid"]
-        if pid == self_pid or pid in targets:
-            continue
-        try:
-            if proc.environ().get("FLOW_INSTANCE") != name:
-                continue
-        except (*gone, OSError):
-            continue
-        # backend_only must spare the vite frontend (which also has FLOW_INSTANCE set).
-        if backend_only and "flow_sdk.server.run" not in " ".join(proc.info.get("cmdline") or []):
-            continue
-        _add(pid)
-
-    # 3. Port-listener fallback (ports are instance-unique).
-    if ports:
-        try:
-            for conn in psutil.net_connections(kind="inet"):
-                if (
-                    conn.status == psutil.CONN_LISTEN and conn.laddr
-                    and conn.laddr.port in ports and conn.pid and conn.pid != self_pid
-                ):
-                    _add(conn.pid)
-        except (psutil.AccessDenied, OSError):
-            pass
-
-    # Batched terminate → wait → kill.
-    procs = list(targets.values())
-    for p in procs:
-        try:
-            p.terminate()
-        except gone:
-            pass
-    _gone, alive = psutil.wait_procs(procs, timeout=3)
-    for p in alive:
-        try:
-            p.kill()
-        except gone:
-            pass
-    _gone, survivors = psutil.wait_procs(alive, timeout=2)
-    if survivors:
-        survivor_pids = sorted(p.pid for p in survivors)
-        raise RuntimeError(
-            f"instance '{name}' still owns live process(es) after SIGKILL: {survivor_pids}"
+    if result.survivors:
+        raise KillFailed(
+            f"instance '{name}' still owns live process(es) after SIGKILL: "
+            f"{sorted(set(result.survivors))}"
         )
-    return sorted(targets)
+    return sorted(set(result.killed))
+
+
+def _as_int(value) -> int | None:
+    from flow_sdk.instances.model import int_or_none
+
+    return int_or_none(value)
+
+
+def _proc_create_time(pid: int) -> float | None:
+    import psutil
+
+    try:
+        return psutil.Process(pid).create_time()
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return None
 
 
 # ── wipe ──────────────────────────────────────────────────────────────────────
@@ -447,3 +412,287 @@ def reset(
         )
     if relaunch and ready is False:
         raise typer.Exit(code=1)
+
+
+# ── `flow instance ctl …` ─────────────────────────────────────────────────────
+# The launcher surface, backed by ``flow_sdk.instances``.
+# ``scripts/instance_ctl.sh`` is a literal argv passthrough into this app, so the
+# verb names and flags here ARE that script's public CLI. Six programmatic
+# callers exec it — four TS harnesses, a verification script and a QA skill — and
+# several run with ``stdio: 'ignore'``, which makes an interactive prompt an
+# infinite hang rather than an error. No command reachable from ``launch`` may
+# read stdin.
+ctl_app = typer.Typer(
+    name="ctl",
+    help=(
+        "Launcher control surface: allocate, inspect and tear down named dev/QA "
+        "instances (and instance groups)."
+    ),
+    add_completion=False,
+    no_args_is_help=True,
+)
+instance_app.add_typer(ctl_app, name="ctl")
+
+
+@ctl_app.callback()
+def _ctl_main() -> None:
+    """Restore default SIGPIPE handling for the whole ``ctl`` surface.
+
+    Python's default turns a closed downstream pipe into a ``BrokenPipeError``
+    traceback on exit. Three callers pipe this command's stdout, and one of the
+    consumers we are migrating uses ``| head`` — a failure mode the bash
+    implementation never had, so it must be closed before the tables land.
+    """
+    import signal
+
+    if hasattr(signal, "SIGPIPE"):
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+
+def _ctl_fail(exc: Exception) -> typer.Exit:
+    """Report an instance error on stderr with its typed exit code.
+
+    Errors never go to stdout: ``PORT=$(flow instance ctl port x)`` must yield an
+    empty variable on failure, never a diagnostic that a caller then treats as
+    a port number.
+    """
+    from flow_sdk.instances.errors import InstanceError
+
+    code = exc.exit_code if isinstance(exc, InstanceError) else 1
+    typer.echo(str(exc), err=True)
+    return typer.Exit(code=code)
+
+
+def _role(value: str):
+    """Parse a --role option into a Role, or raise the typed CLI failure."""
+    from flow_sdk.instances.errors import NoSuchRole
+    from flow_sdk.instances.model import Role
+
+    try:
+        return Role(value)
+    except ValueError:
+        raise NoSuchRole(f"unknown role {value!r}: expected backend|frontend") from None
+
+
+@ctl_app.command("status")
+def ctl_status(
+    name: Annotated[str | None, typer.Argument(help="Instance name. Omit for all.")] = None,
+    group: Annotated[str | None, typer.Option("--group", "-g", help="Only this group.")] = None,
+    quiet: Annotated[bool, typer.Option("--quiet", "-q", help="No output; exit 0 iff the instance is up and owned.")] = False,
+    all_: Annotated[bool, typer.Option("--all", "-a", help="Include stale and never-allocated instances.")] = False,
+    json_out: Annotated[bool, typer.Option("--json", help="Emit the machine-readable report.")] = False,
+    fmt: Annotated[str | None, typer.Option("--format", help="rich | plain | json. Default: rich on a tty, plain when piped.")] = None,
+    legend: Annotated[bool, typer.Option("--legend", help="Explain the status glyphs.")] = False,
+) -> None:
+    """Show instance state, grouped.
+
+    Liveness here means ownership-verified: a process counts only when it is
+    provably this instance's. A port that merely has *a* listener is reported,
+    never counted as up.
+    """
+    from flow_sdk.instances import manager, render
+    from flow_sdk.instances.errors import InstanceError
+
+    try:
+        if quiet:
+            if name is None:
+                raise typer.BadParameter("--quiet requires an instance name")
+            raise typer.Exit(code=0 if manager.is_up(name) else 1)
+        report = manager.status([name] if name else None, group=group, all_=all_)
+    except InstanceError as exc:
+        raise _ctl_fail(exc) from None
+
+    typer.echo(render.render(report, "json" if json_out else fmt, legend=legend), nl=False)
+
+
+@ctl_app.command("list")
+def ctl_list(
+    group: Annotated[str | None, typer.Option("--group", "-g", help="Only this group.")] = None,
+    all_: Annotated[bool, typer.Option("--all", "-a", help="Include stale and never-allocated instances.")] = False,
+    json_out: Annotated[bool, typer.Option("--json", help="Emit the machine-readable report.")] = False,
+    fmt: Annotated[str | None, typer.Option("--format", help="rich | plain | json. Default: rich on a tty, plain when piped.")] = None,
+    legend: Annotated[bool, typer.Option("--legend", help="Explain the status glyphs.")] = False,
+) -> None:
+    """List every known instance, grouped. Alias of `status` with no name."""
+    # Delegates rather than duplicating the body: the two had already drifted
+    # (different --format help text) before either shipped.
+    ctl_status(
+        name=None, group=group, quiet=False, all_=all_,
+        json_out=json_out, fmt=fmt, legend=legend,
+    )
+
+
+@ctl_app.command("port")
+def ctl_port(
+    name: Annotated[str, typer.Argument(help="Instance name.")],
+    role: Annotated[str, typer.Option("--role", help="backend | frontend.")] = "backend",
+) -> None:
+    """Print the live port for an instance's role, or fail.
+
+    Prints nothing on failure, so `PORT=$(… port x)` yields an empty variable
+    and a non-zero status rather than a stale port pointing at another
+    instance's backend.
+    """
+    from flow_sdk.instances import manager
+    from flow_sdk.instances.errors import InstanceError
+
+    try:
+        typer.echo(manager.port_of(name, _role(role)))
+    except InstanceError as exc:
+        raise _ctl_fail(exc) from None
+
+
+@ctl_app.command("is-up")
+def ctl_is_up(
+    name: Annotated[str, typer.Argument(help="Instance name.")],
+    role: Annotated[str | None, typer.Option("--role", help="Check only this role.")] = None,
+) -> None:
+    """Exit 0 iff the instance is registered and ownership-verified live.
+
+    An orphan (live processes, no registry) is NOT up: nothing about it has been
+    verified. That distinction is the whole reason this predicate exists instead
+    of grepping `status` for the word UP.
+    """
+    from flow_sdk.instances import manager
+    from flow_sdk.instances.errors import InstanceError
+
+    try:
+        ok = manager.is_up(name, _role(role) if role else None)
+    except InstanceError as exc:
+        raise _ctl_fail(exc) from None
+    raise typer.Exit(code=0 if ok else 1)
+
+
+@ctl_app.command("reconcile")
+def ctl_reconcile(
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report without changing anything.")] = False,
+    json_out: Annotated[bool, typer.Option("--json", help="Emit a machine-readable summary.")] = False,
+) -> None:
+    """Make on-disk control state agree with the machine.
+
+    Clears recorded PIDs that are not alive, deletes `server.json` files naming
+    a dead backend, removes singleton locks nobody holds, and drops leases
+    nothing is using. Never touches a database, a sodot or a keychain entry.
+    """
+    from flow_sdk.instances.reconcile import reconcile
+
+    report = reconcile(dry_run=dry_run)
+    if json_out:
+        typer.echo(json.dumps(report.to_json()))
+        return
+    if not report.changed:
+        typer.echo("nothing to reconcile — on-disk state matches the machine")
+        return
+    prefix = "would clear" if dry_run else "cleared"
+    for item in report.cleared_pids:
+        typer.echo(f"  {prefix} dead pid: {item}")
+    for name in report.removed_server_json:
+        typer.echo(f"  {prefix} stale server.json: {name}")
+    for name in report.removed_locks:
+        typer.echo(f"  {prefix} stale singleton lock: {name}")
+    for port in report.dropped_leases:
+        typer.echo(f"  {prefix} unused port lease: {port}")
+
+
+@ctl_app.command("reap")
+def ctl_reap(
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="List what would be killed, kill nothing.")] = False,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Do not prompt.")] = False,
+    include_protected: Annotated[bool, typer.Option("--include-protected", help="Also reap protected instances.")] = False,
+    json_out: Annotated[bool, typer.Option("--json", help="Emit a machine-readable summary.")] = False,
+) -> None:
+    """Kill live processes belonging to instances nothing accounts for.
+
+    An orphan is a process this launcher can prove belongs to an instance that
+    has no registry and no live backend of its own — the population that the old
+    `gc` created by deleting registries without killing anything, and that the
+    old `kill` could not name because it needed a registry to find its ports.
+    """
+    from flow_sdk.instances import manager
+
+    plan = manager.reap(dry_run=True, include_protected=include_protected)
+    if json_out and dry_run:
+        typer.echo(json.dumps(plan))
+        return
+
+    if not plan["orphans"]:
+        if json_out:
+            typer.echo(json.dumps(plan))
+        else:
+            typer.echo("no orphan processes")
+        return
+
+    from flow_sdk.instances.render import format_age
+
+    for o in plan["orphans"]:
+        typer.echo(
+            f"  pid {o['pid']:>7}  {o['instance']}  role={o['role'] or '?'}  "
+            f"port={o['port'] or '-'}  age={format_age(o['age_s'])}  {o['cmd'][:70]}"
+        )
+    if plan["skipped_protected"]:
+        typer.echo(f"  (skipping protected: {', '.join(plan['skipped_protected'])})")
+
+    if dry_run:
+        typer.echo(f"\n{len(plan['orphans'])} process(es) would be killed (dry run)")
+        return
+
+    # Confirmation is gated on an interactive stdin as well as --yes: `launch`
+    # reconciles on the way in, and four callers run it with stdio:'ignore',
+    # where a prompt is an infinite hang rather than an error.
+    if not yes and sys.stdin.isatty():
+        typer.confirm(f"Kill {len(plan['orphans'])} orphan process(es)?", abort=True)
+
+    result = manager.reap(include_protected=include_protected)
+    if json_out:
+        typer.echo(json.dumps(result))
+    else:
+        typer.echo(
+            f"reaped {len(result['killed'])} process(es) across "
+            f"{len(result['instances'])} instance(s)"
+        )
+    for note in result["refused"]:
+        typer.echo(f"  refused: {note}", err=True)
+    if result["survivors"]:
+        typer.echo(f"  survivors after SIGKILL: {result['survivors']}", err=True)
+        raise typer.Exit(code=1)
+
+
+@ctl_app.command("gc")
+def ctl_gc(
+    age_days: Annotated[int, typer.Option("--age", help="Only remove dirs untouched for this many days.")] = 14,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report without deleting anything.")] = False,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Do not prompt.")] = False,
+    include_protected: Annotated[bool, typer.Option("--include-protected", help="Also consider protected instances.")] = False,
+    json_out: Annotated[bool, typer.Option("--json", help="Emit a machine-readable summary.")] = False,
+) -> None:
+    """Delete the DATA DIRECTORY of dead, abandoned instances.
+
+    Reaps orphan processes first, so it can never delete the directory of a
+    still-running instance. Age gates data destruction only — liveness, not
+    mtime, decides whether anything is running.
+    """
+    from flow_sdk.instances import manager
+
+    plan = manager.gc(age_days=age_days, dry_run=True, include_protected=include_protected)
+    removable = plan["removed_dirs"]
+    if json_out and dry_run:
+        typer.echo(json.dumps(plan))
+        return
+    if not removable:
+        typer.echo(f"nothing to collect (dead + untouched for {age_days}d)")
+        return
+
+    for name in removable:
+        typer.echo(f"  {name}")
+    if dry_run:
+        typer.echo(f"\n{len(removable)} data dir(s) would be deleted (dry run)")
+        return
+
+    if not yes and sys.stdin.isatty():
+        typer.confirm(f"Delete {len(removable)} instance data dir(s)?", abort=True)
+
+    result = manager.gc(age_days=age_days, include_protected=include_protected)
+    if json_out:
+        typer.echo(json.dumps(result))
+    else:
+        typer.echo(f"removed {len(result['removed_dirs'])} data dir(s)")

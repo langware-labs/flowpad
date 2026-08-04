@@ -88,9 +88,7 @@ export function handleDockLoadError(error: unknown, dock: DockPointer | null): v
       if (error.resolution.notify) emitNotification(error.resolution.notify);
       clearDockLoadError(dock);
       // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw (error.resolution.replace ?? true)
-        ? replace(error.resolution.to)
-        : redirect(error.resolution.to);
+      throw (error.resolution.replace ?? true) ? replace(error.resolution.to) : redirect(error.resolution.to);
     case 'notify':
       emitNotification(error.resolution.notification);
       clearDockLoadError(dock);

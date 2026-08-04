@@ -451,7 +451,7 @@ async def test_hub_unavailable_returns_local(hub_base_url, hub_login_payload, mo
 # ---------------------------------------------------------------------------
 
 
-async def test_hub_401_surfaces_clearly(hub_base_url, monkeypatch):
+async def test_hub_401_surfaces_clearly(hub_base_url, hub_login_payload, monkeypatch):
     """Wipe credentials → hub returns 401 → action sets auth_required=True
     so the UI can route to the LoginDialog rather than showing a generic
     'Hub unavailable' toast."""
@@ -465,19 +465,26 @@ async def test_hub_401_surfaces_clearly(hub_base_url, monkeypatch):
         # Some installs no-op when there's nothing to clear; that's fine.
         pass
 
-    someone = await _local_user_typeid()
-    resp = await handle_conversation_list(someone)
+    try:
+        someone = await _local_user_typeid()
+        resp = await handle_conversation_list(someone)
 
-    # The action must not raise; it returns SUCCESS with structured flags.
-    assert resp.status == "SUCCESS"
-    data = resp.data or {}
-    # ``auth_required`` is the load-bearing flag for UI gating. The hub
-    # might respond 401 in slightly different shapes across versions, so
-    # we accept either auth_required=True OR hub_reachable=False here —
-    # both are correct UI signals.
-    assert (data.get("auth_required") is True) or (data.get("hub_reachable") is False), (
-        f"expected auth_required=True or hub_reachable=False, got {data}"
-    )
+        # The action must not raise; it returns SUCCESS with structured flags.
+        assert resp.status == "SUCCESS"
+        data = resp.data or {}
+        # ``auth_required`` is the load-bearing flag for UI gating. The hub
+        # might respond 401 in slightly different shapes across versions, so
+        # we accept either auth_required=True OR hub_reachable=False here —
+        # both are correct UI signals.
+        assert (data.get("auth_required") is True) or (data.get("hub_reachable") is False), (
+            f"expected auth_required=True or hub_reachable=False, got {data}"
+        )
+    finally:
+        # `clear_credentials()` wipes the KEYRING plus the process-wide cache —
+        # state that outlives this module. Later tests in this file happen to
+        # re-stash before they need it, but tests in later FILES do not, and
+        # they inherit a logged-out process. Restore what this test destroyed.
+        _stash_credentials(hub_login_payload)
 
 
 # ---------------------------------------------------------------------------

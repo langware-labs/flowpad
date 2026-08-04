@@ -156,8 +156,22 @@ class Journey(Entity):
             return False
         return any(is_system_project_path(p) for p in Path(self.asset_ref).parents)
 
+    def matches_selector(self, selector: str) -> bool:
+        """Whether a manifest selector names this Journey."""
+        return bool(
+            selector
+            and (
+                self.id == selector
+                or self.name == selector
+                or (self.asset_ref and Path(self.asset_ref).name == selector)
+            )
+        )
+
     @staticmethod
-    async def auto_launch_for(user_id: str) -> Optional["JourneyJournal"]:
+    async def auto_launch_for(
+        user_id: str,
+        project_id: Optional[str] = None,
+    ) -> Optional["JourneyJournal"]:
         """The JOURNAL to enter on project load, or None — launched if needed.
 
         Auto-LAUNCH, not merely auto-show: an existing active journal is
@@ -165,14 +179,58 @@ class Journey(Entity):
         fresh one is started. A journey the user already completed is never
         re-entered.
 
-        A user's OWN project's journey always beats a shipped system one: a
-        repo that carries an onboarding journey must not lose the race to
-        ``flowpad_assistant``'s getting-started just because of DB row order.
-        The system journey stays the fallback for projects with none."""
+        With ``project_id``, only journeys rooted in that Project or one of its
+        direct context folders are eligible. This is the install-link contract:
+        opening Project B must never launch Project A's vendor onboarding.
+        Without it, retain the legacy home-loader behavior where a user's own
+        journey beats a shipped system journey.
+        """
         from flow_sdk.builtin.journey_journal import JourneyStatus
 
-        # Stable sort → project journeys first, original order kept within each group.
-        candidates = sorted(await Journey.get_all({}), key=lambda j: j.is_system())
+        candidates = await Journey.get_all({})
+        if project_id:
+            from flow_sdk.builtin.bootstrap_manifest import read_bootstrap_manifest  # noqa: PLC0415
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            from flow_sdk.fs_store.path_utils import (  # noqa: PLC0415
+                canonical_posix_path,
+                is_path_under,
+            )
+
+            project = await Project.get_by_id(project_id)
+            if project is None:
+                return None
+            roots = project.direct_context_roots()
+
+            preferred: dict[str, str] = {}
+            for root in roots:
+                declared = read_bootstrap_manifest(Path(root)).autolaunch_journey
+                if declared:
+                    preferred[root] = declared
+
+            def scope_rank(journey: Journey) -> tuple[int, int]:
+                if not journey.asset_ref:
+                    return (2, len(roots))
+                try:
+                    ref = canonical_posix_path(journey.asset_ref)
+                except OSError:
+                    return (2, len(roots))
+                for index, root in enumerate(roots):
+                    if is_path_under(ref, root):
+                        selector = preferred.get(root)
+                        is_preferred = journey.matches_selector(selector or "")
+                        return (0 if is_preferred else 1, index)
+                return (2, len(roots))
+
+            ranked = [(scope_rank(journey), journey) for journey in candidates]
+            candidates = [
+                journey
+                for rank, journey in sorted(ranked, key=lambda item: item[0])
+                if rank[0] < 2
+            ]
+        else:
+            # Stable sort → project journeys first, original order kept within
+            # each group. This preserves the existing home-page behavior.
+            candidates.sort(key=lambda journey: journey.is_system())
         for journey in candidates:
             if not journey.enabled or not journey.auto_launch_enabled():
                 continue
