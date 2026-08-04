@@ -66,6 +66,11 @@ msgstr "· בחר ענף"
 msgid "\"{0}\" is over {MAX_FILE_SIZE_LABEL} and was not attached."
 msgstr "\"{0}\" חורג מ-{MAX_FILE_SIZE_LABEL} ולא צורף."
 
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
+msgstr ""
+
 #. placeholder {0}: pendingDelete?.title ?? ''
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "\"{0}\" will be removed. This cannot be undone."
@@ -716,6 +721,10 @@ msgstr "כבר פועל סשן חי בשיחה זו"
 msgid "A project with that name exists"
 msgstr "כבר קיים פרויקט בשם הזה"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
+msgstr ""
+
 #: src/components/triggers-view/TriggersList.tsx
 msgid "About FSOp triggers"
 msgstr "אודות עירובי FSOp"
@@ -738,6 +747,10 @@ msgstr "מקבל..."
 
 #: src/components/connections-manager.tsx
 msgid "Access requested"
+msgstr ""
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Account key"
 msgstr ""
 
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -842,6 +855,10 @@ msgstr "הוסף הערה..."
 msgid "Add a comment…"
 msgstr "הוסף תגובה…"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Add a data source"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Add a key in \"LLM API keys\" above to use it here"
 msgstr "יש להוסיף מפתח ב\"מפתחות LLM API\" למעלה כדי להשתמש בו כאן"
@@ -921,6 +938,10 @@ msgstr "הוסיפו תיקיית הקשר"
 #~ msgid "Add custom label..."
 #~ msgstr "הוסף תווית מותאמת אישית..."
 
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Add data source"
+msgstr ""
+
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/components/wiki-toolbar/WikiToolbar.tsx
 msgid "Add entity link"
@@ -954,6 +975,10 @@ msgstr "הוסף Hook חדש"
 #: src/components/account/secrets-section.tsx
 msgid "Add secret"
 msgstr "הוסף סוד"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Add source"
+msgstr ""
 
 #: src/components/assets/TagFilterBar.tsx
 msgid "Add tag…"
@@ -993,6 +1018,11 @@ msgstr "הוסף טריגר"
 msgid "Add Variable"
 msgstr ""
 
+#. placeholder {0}: source.name
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Added {0}"
+msgstr ""
+
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Added vibe agent"
 msgstr "סוכן Vibe נוסף"
@@ -1000,6 +1030,10 @@ msgstr "סוכן Vibe נוסף"
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Adding…"
 msgstr "מוסיף…"
+
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Additional assets"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Additional directories"
@@ -1015,6 +1049,7 @@ msgstr "ספר כתובות"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/conversation/ExecutePromptDialog.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 msgid "Advanced"
 msgstr "מתקדם"
 
@@ -2086,6 +2121,8 @@ msgstr "לא ניתן לעדכן — מוצגים הנתונים מהסנכרו�
 #: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/cron-view/CronForm.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/ReplayDialog.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -2350,6 +2387,10 @@ msgstr ""
 #: src/components/quick-create/ScopeSelection.tsx
 msgid "Choose folder…"
 msgstr "בחר תיקייה…"
+
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Choose the project it loads, and any asset packages to bring with it."
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Choose which model each tier uses, or add your own — per assistant and provider."
@@ -2987,7 +3028,6 @@ msgstr "אישור"
 #: src/components/connections-manager.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/journey/JourneyTray.tsx
-#: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Connect"
 msgstr "התחבר"
 
@@ -2996,6 +3036,7 @@ msgstr "התחבר"
 #~ msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Connect GitHub"
 msgstr "חבר את GitHub"
 
@@ -3031,8 +3072,8 @@ msgid "Connected to GitHub"
 msgstr "מחובר ל-GitHub"
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "Connected, but still no access to this repo."
-msgstr "החיבור הצליח, אך עדיין אין גישה למאגר הזה."
+#~ msgid "Connected, but still no access to this repo."
+#~ msgstr "החיבור הצליח, אך עדיין אין גישה למאגר הזה."
 
 #: src/components/chat-input.tsx
 #~ msgid "Connected: {0}"
@@ -3837,6 +3878,11 @@ msgstr "גזור"
 msgid "Data privacy mode"
 msgstr "מצב פרטיות הנתונים"
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Data sources"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "Database Backed Up"
 msgstr "בסיס הנתונים גובה"
@@ -3954,6 +4000,7 @@ msgstr "הגדר את התנאים שחייבים להתאים כדי שטריג
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/data-sources/DataSourceCard.tsx
 #: src/components/directory-tree/DirectoryTree.tsx
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -4157,6 +4204,10 @@ msgstr "למחוק שיחה זו?"
 msgid "Delete this conversation"
 msgstr "מחק שיחה זו"
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Delete this data source?"
+msgstr ""
+
 #: src/components/account/system-diagnoses.tsx
 msgid "Delete this diagnosis? This cannot be undone."
 msgstr "מחק אבחנה זו? לא ניתן לבטל זאת."
@@ -4192,6 +4243,10 @@ msgstr "נמחקו {ok}, {0} נכשלו"
 #: src/components/inbox-view/InboxView.tsx
 msgid "Deleted 1 conversation"
 msgstr "נמחקה שיחה אחת"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Deleted."
+msgstr ""
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Deleting a project is permanent: it removes the project folder and every Flowpad record inside it. Projects are never pre-selected — check them deliberately."
@@ -4240,6 +4295,10 @@ msgstr "מבט־על של הפריסה"
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "depth"
 msgstr "עומק"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "derived from the fields above"
+msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Deriving task…"
@@ -4441,6 +4500,10 @@ msgstr "כבה הכל"
 #: src/components/hooks/EventSnifferChip.tsx
 msgid "Disable sniffer"
 msgstr "השבת סניפר"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Disable this source"
+msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/components/triggers-view/TriggerListItem.tsx
@@ -4696,6 +4759,21 @@ msgstr "שחרר קבצים כאן"
 msgid "Drop items here"
 msgstr "ניתן לשחרר פריטים כאן"
 
+#. placeholder {0}: result.removed
+#. placeholder {1}: result.streams
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Dropped {0} records across {1} streams; re-fetch on the next poll."
+msgstr ""
+
+#. placeholder {0}: result.removed
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Dropped {0} records since {since}; re-fetch on the next poll."
+msgstr ""
+
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Drops this source's records and clears its sync position, so the next poll re-reads them. Local state — read and starred — does not come back."
+msgstr ""
+
 #: src/components/task-bar/TaskDetailPanel.tsx
 #~ msgid "Due date"
 #~ msgstr "תאריך יעד"
@@ -4752,6 +4830,7 @@ msgstr "קצוות לפי סוג"
 
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/data-sources/DataSourceCard.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Edit"
 msgstr "ערוך"
@@ -4771,6 +4850,10 @@ msgstr "ערוך בכל זאת"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Edit attached prompt"
 msgstr "ערוך prompt מצורף"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Edit data source"
+msgstr ""
 
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Edit favorite"
@@ -4869,6 +4952,10 @@ msgstr "ריק"
 msgid "Empty folder"
 msgstr "תיקייה ריקה"
 
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Empty replays everything. With a date, only records from then on are dropped — undated records are kept, and the sync window is widened if it does not reach that far back."
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
 msgid "Empty trace"
 msgstr "עקבה ריקה"
@@ -4908,16 +4995,25 @@ msgstr "הפעל סניפר"
 #~ msgid "Enable the sniffer to start capturing hook traffic"
 #~ msgstr "הפעל את ה-sniffer כדי להתחיל לתפוס תעבורת וו"
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Enable this source"
+msgstr ""
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Enable/Disable hook"
 msgstr "הפעלה או השבתה של הוק"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Enabled"
 msgstr "מופעל"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Enabled — it will poll on the next tick."
+msgstr ""
 
 #: src/components/collaboration/RoomHeader.tsx
 msgid "End room"
@@ -5182,9 +5278,14 @@ msgstr "אירוע *"
 msgid "Event: "
 msgstr "אירוע: "
 
+#: src/components/data-sources/DataSourceCard.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Events"
 msgstr "אירועים"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Events from this source"
+msgstr ""
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Every {scopeType} row has a source file on disk."
@@ -6296,8 +6397,8 @@ msgid "Git readiness"
 msgstr ""
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "Git repo (optional)"
-msgstr "מאגר Git (אופציונלי)"
+#~ msgid "Git repo (optional)"
+#~ msgstr "מאגר Git (אופציונלי)"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/context-folder-sources.tsx
@@ -6312,6 +6413,10 @@ msgstr ""
 msgid "Git tooling installed"
 msgstr ""
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Git URL"
+msgstr ""
+
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
@@ -6319,6 +6424,7 @@ msgid "GitHub authorization did not complete."
 msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "GitHub connected"
 msgstr "GitHub מחובר"
 
@@ -6345,6 +6451,10 @@ msgstr "החיבור ל-GitHub נכשל."
 #: src/components/icons/CopilotRestoreIcon.tsx
 msgid "GitHub Copilot (restored session)"
 msgstr "GitHub Copilot (סשן מחודש)"
+
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "GitHub is connected — private repos are available."
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "GitHub unavailable"
@@ -6556,6 +6666,10 @@ msgstr ""
 msgid "Help desk files removed"
 msgstr ""
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Help desks or skills repos to load alongside it."
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "Helpers used"
 msgstr "עוזרים ששימשו"
@@ -6582,6 +6696,10 @@ msgstr "הסתר {0}"
 #: src/components/graph-view/ui/FilterChips.tsx
 msgid "Hide {type}"
 msgstr "הסתר {type}"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Hide advanced"
+msgstr ""
 
 #: src/components/graph-view/ui/FilterChips.tsx
 msgid "Hide all types"
@@ -6805,6 +6923,10 @@ msgstr "https://github.com/owner/repo.git"
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
 msgstr "Hub"
+
+#: src/components/version-popover/hub-release-label.tsx
+msgid "Hub release, and the UI build serving it"
+msgstr ""
 
 #: src/components/account/user-info.tsx
 msgid "Hub WebSocket connected."
@@ -7436,6 +7558,10 @@ msgstr "ההתחברות האחרונה:"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Last message"
 msgstr "הודעה אחרונה"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Last successful sync"
+msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "last triggered"
@@ -8334,6 +8460,10 @@ msgstr ""
 msgid "Minimize to the journey icon"
 msgstr "מזעור לסמל המסע"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Minimum 60 — the heartbeat only ticks once a minute."
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
 msgstr "Mis-Sc"
@@ -8475,6 +8605,7 @@ msgstr "לא זמין"
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/EnvVarsManager.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -8504,8 +8635,8 @@ msgid "Name is required"
 msgstr "שם הוא חובה"
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "Name it, and optionally set it up from a git repo."
-msgstr "יש לתת לו שם, וניתן לאתחל אותו ממאגר Git."
+#~ msgid "Name it, and optionally set it up from a git repo."
+#~ msgstr "יש לתת לו שם, וניתן לאתחל אותו ממאגר Git."
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "Name this entity"
@@ -8744,6 +8875,11 @@ msgstr ""
 msgid "Next"
 msgstr "הבא"
 
+#. placeholder {0}: timeUntil(source.next_poll_at)
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "next {0}"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "התאמה הבאה (Enter)"
@@ -8751,6 +8887,10 @@ msgstr "התאמה הבאה (Enter)"
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Next prompt — injected when the agent next goes idle. Press Enter to add."
 msgstr "הודעה הבאה — תוזרק כשהסוכן יהיה רגוע. לחץ Enter כדי להוסיף."
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Next scheduled poll"
+msgstr ""
 
 #: src/components/ui/carousel.tsx
 #~ msgid "Next slide"
@@ -8969,9 +9109,17 @@ msgstr "אין סוגים שניתן ליצור"
 #~ msgid "No current project available. Please create a project first before connecting OAuth providers."
 #~ msgstr "אין פרויקט זמין. אנא צור פרויקט לפני שתחבר ספקי OAuth."
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "No cursors yet — this source has not polled."
+msgstr ""
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No data available"
 msgstr "אין נתונים זמינים"
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "No data sources configured yet. Add one and it starts syncing within a minute."
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "No data."
@@ -9429,6 +9577,10 @@ msgstr "לא נמצאו רשומות בדיסק."
 msgid "No records of this type"
 msgstr "אין רשומות מסוג זה"
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "no repo"
+msgstr ""
+
 #: src/components/git/RepoPicker.tsx
 msgid "No repos accessible with this token"
 msgstr "אין מאגרים נגישים עם הטוקן הזה"
@@ -9808,6 +9960,10 @@ msgstr "אין שינויים חדשים לדחיפה — ההודעה נשלח�
 msgid "Nothing open to bookmark"
 msgstr "אין דבר פתוח לסימון"
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Nothing selected — launches an empty desktop."
+msgstr ""
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Nothing shared in this conversation."
 msgstr "אין שום דבר משותף בשיחה זו."
@@ -9934,6 +10090,10 @@ msgstr "איפוס הכנה ראשונית"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "one is enough to get started"
 #~ msgstr ""
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
@@ -10601,6 +10761,10 @@ msgstr "תיקייה הורית"
 msgid "Parent folder to clone into…"
 msgstr "תיקייה הורה לשחזור לתוכה…"
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Parked: a <0>config_error</0> source is skipped by the scheduler, so it will not poll again on its own. <1>Pull changes</1> clears the latch."
+msgstr ""
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Participants"
 msgstr "משתתפים"
@@ -10686,9 +10850,17 @@ msgstr "דפוס"
 msgid "Pause"
 msgstr "השהה"
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "paused"
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Paused"
 msgstr "מושהה"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Paused."
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "peak"
@@ -10946,6 +11118,10 @@ msgstr ""
 msgid "Point this project at another folder so agents can read it as background — code, docs or assets that live outside the project, without copying anything."
 msgstr ""
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Poll interval (seconds)"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Port"
 msgstr "יציאה"
@@ -11187,6 +11363,10 @@ msgstr "פרויקט נדרש"
 msgid "Project secrets on this machine"
 msgstr ""
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Project to load"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "projected"
 msgstr "משוער"
@@ -11289,6 +11469,7 @@ msgstr "מוגן"
 #~ msgstr "ספק סוד"
 
 #: src/components/connections-manager.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Provider"
 msgstr "ספק"
@@ -11361,6 +11542,10 @@ msgstr "משוך ופתח"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull and open task"
 msgstr "משוך ופתח משימה"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Pull changes"
+msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull failed."
@@ -11779,6 +11964,11 @@ msgstr "טען מחדש את רשימת MarkdownIndex."
 msgid "Remove"
 msgstr "הסרה"
 
+#. placeholder {0}: nameOf(source)
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Remove {0}"
+msgstr ""
+
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Remove access"
 msgstr ""
@@ -11917,6 +12107,23 @@ msgstr "החלפה"
 msgid "replay"
 msgstr "השמעה חוזרת"
 
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Replay {0}"
+msgstr ""
+
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Replay everything"
+msgstr ""
+
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Replay since {since}"
+msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Replay…"
+msgstr ""
+
 #: src/components/conversation/ConversationView.tsx
 #~ msgid "Reply — drafted into {0}"
 #~ msgstr ""
@@ -11935,8 +12142,8 @@ msgid "Repo"
 msgstr "מאגר"
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "Repo is not public — connect GitHub to continue."
-msgstr "המאגר אינו ציבורי — יש להתחבר ל-GitHub כדי להמשיך."
+#~ msgid "Repo is not public — connect GitHub to continue."
+#~ msgstr "המאגר אינו ציבורי — יש להתחבר ל-GitHub כדי להמשיך."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -12421,6 +12628,7 @@ msgid "Running…"
 msgstr "הפעלה..."
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/data-sources/DataSourceCard.tsx
 msgid "Runs"
 msgstr "הרצות"
 
@@ -12466,6 +12674,7 @@ msgstr "סביבה לא זמינה"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/cron-view/CronForm.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -13026,6 +13235,7 @@ msgstr "בחר תיקייה הורית"
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Select project"
 msgstr "בחר פרויקט"
 
@@ -13670,6 +13880,10 @@ msgstr ""
 msgid "Simple actions — click to show all git operations"
 msgstr "פעולות פשוטות — לחץ להצגת כל פעולות ה-git"
 
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Since (optional)"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Size"
@@ -14146,6 +14360,10 @@ msgstr "שמור →"
 msgid "stored line"
 msgstr "שורה שמורה"
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Streams"
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Structure"
 msgstr "מבנה"
@@ -14299,6 +14517,11 @@ msgstr "עבור למצב אור"
 msgid "Sync {0} changes"
 msgstr "סנכרן {0} שינויים"
 
+#. placeholder {0}: timeSince(source.last_synced_at)
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "synced {0}"
+msgstr ""
+
 #: src/components/graph-view/GraphView.tsx
 #~ msgid "Syncing…"
 #~ msgstr "מסנכרן…"
@@ -14394,7 +14617,6 @@ msgstr "משימה לא נמצאה"
 msgid "Tasked"
 msgstr "בעל משימה"
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Tasks"
 msgstr "משימות"
@@ -14822,6 +15044,10 @@ msgstr "ישיבה זו עדיין לא נבדקה, אז אין מה לדווח.
 #: src/components/collaboration/SharedSessionView.tsx
 msgid "This session is running remotely by {guestName} on your machine."
 msgstr "ההפעלה מתבצעת כרגע מרחוק על ידי {guestName} במחשב שלך."
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "This source's remote identity — one source per account."
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "This trace is not linked to a worker session."
@@ -15380,6 +15606,11 @@ msgstr "עדכן תכנית"
 msgid "Update plan based on <plan-note> sections"
 msgstr "עדכן תכנית בהתאם לסעיפי <plan-note>"
 
+#. placeholder {0}: editing.name
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Updated {0}"
+msgstr ""
+
 #. placeholder {0}: data.generated
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Updated: {0}"
@@ -15457,6 +15688,7 @@ msgstr "השימוש לא זמין"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
+#: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Use"
 msgstr "השתמש"
 
@@ -15952,6 +16184,10 @@ msgstr "Whiteboard נוצרה"
 msgid "Who this agent is. Becomes its system prompt."
 msgstr ""
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Window (days)"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <0>not</0> touched. After clearing, click <1>Fast</1> to re-index changed entries, or <2>Full</2> to re-index everything."
 msgstr "מוחק שורות DB + רשומות FTS עבור כל סוג ניתן לאינדוקס. האינדקס יתרוקן עד שתמלא אותו מחדש. קבצים בדיסק <0>אינם</0> נגועים. לאחר ניקוי, לחץ <1>מהיר</1> לאינדוקס מחדש של ערכים שהשתנו, או <2>מלא</2> לאינדוקס מחדש של הכול."
@@ -15975,6 +16211,10 @@ msgstr "עובד"
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Worker options{0}"
 msgstr "אפשרויות עובד{0}"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Worker runs this source spawned"
+msgstr ""
 
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 #~ msgid "Worker Sessions"
