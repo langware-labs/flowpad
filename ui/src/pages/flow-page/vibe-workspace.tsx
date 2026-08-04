@@ -15,6 +15,7 @@ import { AssetEditor, editorForPath, editorForType } from '@src/navigation/asset
 import { DisplayHistoryButton } from './display-history-button';
 import { AgenticProcess, dataContext, type DisplayEntry, FlowData, fsStore, TypeId, ViewType } from '@sdk';
 import { resolveProcessInputDir } from '@src/utils/upload-to-input-dir';
+import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { shellIdFromShowTarget } from '@src/navigation/shell-show-target';

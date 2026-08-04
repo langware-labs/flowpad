@@ -20,6 +20,7 @@ import { Project, Tab } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { TabStrip } from '@src/components/tabs/TabStrip';
+import { isTypeIdLikeName } from '@src/components/terminal/rename-rules';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
@@ -190,6 +191,11 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     (key: string, newName: string) => {
       const tab = tabByKey.get(key);
       if (!tab) return;
+      // The strip owns the input UI; validation is the OWNER's job (see
+      // TabStrip's header). A TypeId-shaped name (`shell-<v4-uuid>`) is an
+      // ADDRESS, not a label — suppress it and keep the existing name rather
+      // than writing a name that reads like a pointer.
+      if (isTypeIdLikeName(newName)) return;
       void Tab.renameById(tab.id, newName).then(() => void refreshAllTabs());
     },
     [tabByKey],

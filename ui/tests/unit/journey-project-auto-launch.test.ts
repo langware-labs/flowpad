@@ -11,6 +11,13 @@ const JOURNEY_ID = '00000000-0000-5000-8000-000000000002';
 
 beforeEach(() => {
   localStorage.clear();
+  // `autoLaunchRedirect` short-circuits on the session-scoped "user closed the
+  // journey" flag (`flowpad.journey.dismissed`, sessionStorage — see
+  // journey-dismissed.ts). The unit tier runs every file in one thread, so a
+  // flag another file leaves set makes this file's redirect return null before
+  // it ever calls the API — which reads as "expected spy to be called, 0 calls"
+  // here, and as a silent false-pass in the Hub-route test above it.
+  sessionStorage.clear();
   vi.mocked(apiClient.get).mockReset();
 });
 

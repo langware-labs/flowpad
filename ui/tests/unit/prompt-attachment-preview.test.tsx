@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TypeId } from '@sdk';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import { useEntity } from '@sdk/react/hooks';
@@ -105,8 +105,8 @@ describe('PromptAttachmentPreview', () => {
   });
 
   it('thumbnails a not-yet-uploaded image in the composer from its backing File', async () => {
-    // jsdom has no object-URL API; install harmless mocks (left in place so the
-    // component's unmount cleanup can still call revokeObjectURL).
+    // jsdom has no object-URL API; mocked here and removed in the afterAll below
+    // (kept through this file's afterEach so unmount can still revokeObjectURL).
     const createObjectURL = vi.fn(() => 'blob:pasted');
     (URL as unknown as { createObjectURL: typeof createObjectURL }).createObjectURL = createObjectURL;
     (URL as unknown as { revokeObjectURL: (u: string) => void }).revokeObjectURL = vi.fn();
@@ -119,4 +119,17 @@ describe('PromptAttachmentPreview', () => {
     expect(img.tagName).toBe('IMG');
     expect(createObjectURL).toHaveBeenCalledWith(file);
   });
+});
+
+// These were assigned onto the real `URL` rather than through `vi.stubGlobal`,
+// so neither `unstubAllGlobals` nor `restoreAllMocks` takes them back off. The
+// unit tier is `singleThread`, so a leftover `URL.createObjectURL` follows every
+// later file and flips code that branches on jsdom NOT having the object-URL API
+// — `prepareAvatarImage` then stops skipping its browser decode and awaits an
+// `Image` load jsdom never fires, hanging that test to its timeout. It reproduced
+// only when the sequencer happened to order this file first, which is what made
+// it look like flake. Restore the original state (absent) once the file is done.
+afterAll(() => {
+  delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+  delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
 });

@@ -26,8 +26,13 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
 def _request_info_with_user() -> SimpleNamespace:
-    # helpdesk_tickets_list only checks someone_typeid is truthy.
-    return SimpleNamespace(someone_typeid="user-aaaaaaaa-0000-0000-0000-000000000001")
+    # helpdesk_tickets_list checks someone_typeid is truthy, then reads the POST
+    # body for an optional `project_id` override (empty body → default helpdesk).
+    # `get_post_data` is async on the real RequestInfo, so the fake must be too.
+    return SimpleNamespace(
+        someone_typeid="user-aaaaaaaa-0000-4000-8000-000000000001",
+        get_post_data=AsyncMock(return_value={}),
+    )
 
 
 @pytest.mark.asyncio
