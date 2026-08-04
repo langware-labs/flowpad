@@ -10,3 +10,9 @@ flowchart TD
 
 _Auto-generated from board.json — edits inside this block are overwritten on next save._
 <!-- END whiteboard:auto -->
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: 1b2e3671-1fec-4c34-bc21-a014ba6d5a15
+flowpad:endcapsule identity -->
