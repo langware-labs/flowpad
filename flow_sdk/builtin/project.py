@@ -1912,9 +1912,18 @@ class Project(Entity):
         ``rel_path="."`` is deliberate: the whole repo is the context folder, and
         a subfolder-scoped origin would never see a manifest at the repo root.
 
-        ``branch`` is pinned when given because ``_resolve_git_checkout`` only
-        pulls when the origin names a branch — an unpinned folder would freeze
-        at whatever it first cloned.
+        **The branch is always pinned**, to the caller's when given and to the
+        remote's default (``git ls-remote --symref … HEAD``) otherwise. An
+        unpinned origin is not merely "freezes at whatever it first cloned" —
+        it silently adopts a checkout it never made. ``matches_repo`` skips its
+        branch check when the origin names no branch
+        (``if require_branch and self.branch``), so ANY checkout of this URL
+        anywhere on disk matches, on any branch, at any commit; and
+        ``_resolve_git_checkout`` gates its pull on ``if origin.branch`` too, so
+        nothing brings it up to date afterwards. The result is a vendor folder
+        whose contents depend on what some unrelated flow happened to leave in
+        the workspace. Resolving the default branch costs one ``ls-remote`` (no
+        objects fetched) and makes both the match and the pull real.
         """
         if not url or not url.strip():
             return ApiFailResponse(message="url is required")
@@ -1924,6 +1933,22 @@ class Project(Entity):
         origin = GitOrigin.from_url(url.strip(), branch=branch.strip(), rel_path=".")
         if origin is None:
             return ApiFailResponse(message=f"Not a recognizable git URL: {url}")
+
+        if not origin.branch:
+            from flow_sdk.app.actions.oauth_action import (  # noqa: PLC0415
+                _get_github_token_for_current_user,
+            )
+            from flow_sdk.utils.git import git_remote_access  # noqa: PLC0415
+
+            token, _ = await _get_github_token_for_current_user()
+            reachable, default_branch = await git_remote_access(origin.clone_url(), token)
+            if not reachable:
+                return ApiFailResponse(
+                    message=f"Cannot read {origin.clone_url()} — check the URL and your access",
+                    status_code=502,
+                )
+            if default_branch:
+                origin = origin.model_copy(update={"branch": default_branch})
 
         from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
 

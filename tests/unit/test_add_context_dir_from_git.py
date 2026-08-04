@@ -328,3 +328,41 @@ async def test_reattaching_in_another_scope_moves_one_link(
     assert str(folder_typeid) not in {
         str(tid) for tid in project.context_of_type("folder", bucket="shared")
     }
+
+
+@pytest.mark.asyncio
+async def test_an_unpinned_attach_still_pins_the_remote_default_branch(
+    tmp_path: Path, vendor_repo: str
+) -> None:
+    """An unpinned origin is not merely "freezes at what it first cloned".
+
+    ``matches_repo`` skips its branch check when the origin names no branch
+    (``if require_branch and self.branch``), so ANY checkout of this URL
+    anywhere on disk matches — on any branch, at any commit — and
+    ``_resolve_git_checkout`` gates its pull on the same condition, so nothing
+    corrects it afterwards. The attach then silently adopts a checkout it never
+    made, and a desk resolved from it carries whatever queue id that stale copy
+    happens to hold.
+
+    Observed live: a months-old clone on an unrelated branch was adopted in
+    place of the vendor repo, and its ``desk_project_id: null`` made the
+    project fall back to the wrong help desk with nothing reported.
+
+    Resolving the remote default (one ``ls-remote``, no objects) is what makes
+    both the match and the pull real, so it is the branch on the Folder — not
+    the empty string — that this asserts.
+    """
+    project = await _project(tmp_path, "customer-a")
+    response = await project.add_context_dir_from_git(vendor_repo, scope="private")
+    assert response.status == "SUCCESS", response
+
+    folder = await Folder.get_by_id(response.data["folder_id"])
+    branch = str(getattr(folder.origin, "branch", "") or "")
+    assert branch, "an unpinned attach must resolve and pin the remote default branch"
+
+    expected = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=vendor_repo.removeprefix("file://"),
+        capture_output=True, text=True, timeout=20,
+    ).stdout.strip()
+    assert branch == expected
