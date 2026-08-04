@@ -1,9 +1,10 @@
 /**
  * CloudNSite install-link release gate.
  *
- * This is intentionally opt-in: it launches two real cloud workspaces and
- * reads a purpose-built GitHub fixture. The verification token is used only by
- * Node's fetch below; it is never put in the browser context or sent to Hub.
+ * This is intentionally opt-in: it launches two real cloud workspaces against
+ * a fresh, private, auto-initialized GitHub repository created for this CI run.
+ * Within this spec, the verification token is used only by Node's fetch below;
+ * it is never put in the browser context, page data, or trace.
  */
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
@@ -109,6 +110,24 @@ interface RepoAccessPage {
   repos?: RepoAccessSummary[];
   next_page?: number | null;
   page?: number;
+}
+
+interface GitHubRepository {
+  full_name?: string;
+  private?: boolean;
+  default_branch?: string;
+}
+
+interface GitHubCommit {
+  sha?: string;
+  commit?: { message?: string };
+  parents?: Array<{ sha?: string }>;
+  files?: Array<{ filename?: string; previous_filename?: string; status?: string }>;
+}
+
+interface GitHubManifest {
+  raw: string;
+  json: Record<string, unknown>;
 }
 
 interface RunResult {
@@ -292,6 +311,21 @@ async function authenticate(context: BrowserContext, config: Config): Promise<vo
 }
 
 async function assertTargetRepoSelectable(context: BrowserContext, config: Config): Promise<void> {
+  const repository = await githubJson<GitHubRepository>(config, `repos/${config.targetRepo}`);
+  expect(repository.data?.full_name?.toLowerCase(), 'the verifier resolves the exact ephemeral repository').toBe(
+    config.targetRepo.toLowerCase(),
+  );
+  expect(repository.data?.private, 'the ephemeral install target is private').toBe(true);
+  expect(repository.data?.default_branch, 'the auto-initialized default branch is the selected base branch').toBe(
+    config.targetBranch,
+  );
+
+  const baseSha = await githubRef(config, config.targetBranch);
+  expect(baseSha, 'the ephemeral repository was auto-initialized').toBeTruthy();
+  const initialCommit = await githubJson<GitHubCommit>(config, `repos/${config.targetRepo}/commits/${baseSha}`);
+  expect(initialCommit.data?.sha).toBe(baseSha);
+  expect(initialCommit.data?.parents, 'the selected base starts at the auto-initialized root commit').toHaveLength(0);
+
   const currentUserResponse = await context.request.get(`${config.hubUrl}/api/v1/current-user`);
   expect(currentUserResponse.status(), 'authenticated Flowpad user resolves before repository selection').toBe(200);
   const currentUserEnvelope = (await currentUserResponse.json()) as ApiEnvelope<{ id?: string }>;
@@ -319,13 +353,12 @@ async function assertTargetRepoSelectable(context: BrowserContext, config: Confi
       if (failure?.detail === 'GitHub not connected') {
         throw new Error(
           `CloudNSite E2E repo preflight failed: GitHub is not connected for the authenticated Flowpad account. ` +
-            `Connect GitHub for this account and grant write access to ${config.targetRepo}.`,
+            `Connect the CI GitHub identity before selecting ${config.targetRepo}.`,
         );
       }
       throw new Error(
         `CloudNSite E2E repo preflight failed: the authenticated Hub user cannot list GitHub repositories ` +
-          `(HTTP ${repoResponse.status()}). Connect GitHub for this Flowpad account and grant write access to ` +
-          `${config.targetRepo}.`,
+          `(HTTP ${repoResponse.status()}). Connect the CI GitHub identity before running the install gate.`,
       );
     }
 
@@ -334,7 +367,7 @@ async function assertTargetRepoSelectable(context: BrowserContext, config: Confi
     if (envelope.status !== 'SUCCESS' || !Array.isArray(envelope.data?.repos)) {
       throw new Error(
         `CloudNSite E2E repo preflight failed: the authenticated Hub user has no usable GitHub connection. ` +
-          `Connect GitHub for this Flowpad account and grant write access to ${config.targetRepo}.`,
+          `Connect the CI GitHub identity before running the install gate.`,
       );
     }
 
@@ -349,16 +382,16 @@ async function assertTargetRepoSelectable(context: BrowserContext, config: Confi
   if (!targetRepo) {
     throw new Error(
       `CloudNSite E2E repo preflight failed: ${config.targetRepo} is not visible to the authenticated Hub user. ` +
-        `Grant that user's GitHub connection write access to the fixture repository.`,
+        `The temporary credential and ephemeral repository owner must be the same GitHub identity.`,
     );
   }
-  if (targetRepo.role !== 'admin' && targetRepo.role !== 'write') {
+  if (targetRepo.role !== 'admin') {
     throw new Error(
       `CloudNSite E2E repo preflight failed: ${config.targetRepo} is ${targetRepo.role ?? 'not writable'} for the ` +
-        `authenticated Hub user; the install target requires write or admin access.`,
+        `authenticated Hub user; the ephemeral repository owner must have admin access.`,
     );
   }
-  logPhase('target repository write access verified');
+  logPhase('private ephemeral repository ownership verified');
 }
 
 async function runInstall(
@@ -667,15 +700,22 @@ async function githubRef(config: Config, branch: string): Promise<string | null>
   return sha!;
 }
 
-async function githubManifest(config: Config, ref: string): Promise<{ raw: string; json: Record<string, unknown> }> {
+async function githubManifest(config: Config, ref: string): Promise<GitHubManifest | null> {
   const result = await githubJson<GitHubContent>(
     config,
     `repos/${config.targetRepo}/contents/.flowpad/bootstrap.json?ref=${encodeURIComponent(ref)}`,
+    [200, 404],
   );
+  if (result.status === 404) return null;
   expect(result.data?.encoding).toBe('base64');
   expect(typeof result.data?.content).toBe('string');
   const raw = Buffer.from(result.data!.content!.replace(/\s/g, ''), 'base64').toString('utf8');
   return { raw, json: record(JSON.parse(raw) as unknown, '.flowpad/bootstrap.json') };
+}
+
+function requireManifest(manifest: GitHubManifest | null, label: string): GitHubManifest {
+  expect(manifest, label).not.toBeNull();
+  return manifest!;
 }
 
 function contentEntries(manifest: Record<string, unknown>): Record<string, unknown>[] {
@@ -705,12 +745,22 @@ function verifyReviewManifest(config: Config, base: Record<string, unknown>, rev
   expect(nonContentFields(review)).toEqual(nonContentFields(base));
 }
 
-async function verifyReviewCommit(config: Config, reviewSha: string): Promise<void> {
-  const commit = await githubJson<{ commit?: { message?: string } }>(
-    config,
-    `repos/${config.targetRepo}/commits/${reviewSha}`,
-  );
+async function verifyReviewCommit(config: Config, baseSha: string, reviewSha: string): Promise<void> {
+  const commit = await githubJson<GitHubCommit>(config, `repos/${config.targetRepo}/commits/${reviewSha}`);
+  expect(commit.data?.sha, 'the review ref resolves to the verified install commit').toBe(reviewSha);
   expect(commit.data?.commit?.message?.split(/\r?\n/, 1)[0]).toBe('chore(flowpad): install CloudNSite agents');
+  expect(
+    commit.data?.parents?.map((parent) => parent.sha),
+    'the install commit is based directly on the unchanged auto-init commit',
+  ).toEqual([baseSha]);
+  expect(
+    commit.data?.files?.map(({ filename, previous_filename, status }) => ({
+      filename,
+      previous_filename,
+      status,
+    })),
+    'the install commit only adds the review manifest',
+  ).toEqual([{ filename: '.flowpad/bootstrap.json', previous_filename: undefined, status: 'added' }]);
 
   const [owner] = config.targetRepo.split('/');
   const pulls = await githubJson<unknown[]>(
@@ -722,33 +772,54 @@ async function verifyReviewCommit(config: Config, reviewSha: string): Promise<vo
 
 async function cleanupWorkspace(context: BrowserContext, target: CleanupTarget): Promise<void> {
   const { config, nodeId, providerId, workspace, conversationId } = target;
-  if (conversationId && workspace) {
-    await workspaceGraph(workspace, 'conversation-delete', {
-      conversation_id: conversationId,
-      mode: 'delete_for_all',
+  const failures: unknown[] = [];
+  const attempt = async (operation: () => Promise<void>): Promise<void> => {
+    try {
+      await operation();
+    } catch (error) {
+      failures.push(error);
+    }
+  };
+
+  if (conversationId) {
+    await attempt(async () => {
+      expect(workspace && !workspace.isClosed(), 'ticket cleanup still has its exact workspace page').toBe(true);
+      await workspaceGraph(workspace!, 'conversation-delete', {
+        conversation_id: conversationId,
+        mode: 'delete_for_all',
+      });
     });
   }
 
   const base = `${config.hubUrl}/api/v1/graph/compute_node/${nodeId}`;
   if (providerId) {
-    const before = await context.request.get(base);
-    expect(before.status(), 'captured workspace still resolves before cleanup').toBe(200);
-    const envelope = (await before.json()) as ApiEnvelope<{ node_provider_id?: string }>;
-    expect(envelope.data.node_provider_id, 'cleanup targets the captured sandbox only').toBe(providerId);
+    await attempt(async () => {
+      const before = await context.request.get(base);
+      expect(before.status(), 'captured workspace still resolves before cleanup').toBe(200);
+      const envelope = (await before.json()) as ApiEnvelope<{ node_provider_id?: string }>;
+      expect(envelope.data.node_provider_id, 'cleanup targets the captured sandbox only').toBe(providerId);
+    });
   }
-  const shutdown = await context.request.post(`${base}/ops/shutdown`, { data: {} });
-  expect(shutdown.status(), 'the exact test workspace shuts down').toBe(200);
-  const remove = await context.request.delete(base);
-  expect(remove.status(), 'the exact test workspace entity is deleted').toBe(200);
+  await attempt(async () => {
+    const shutdown = await context.request.post(`${base}/ops/shutdown`, { data: {} });
+    expect(shutdown.status(), 'the exact test workspace shuts down').toBe(200);
+  });
+  await attempt(async () => {
+    const remove = await context.request.delete(base);
+    expect(remove.status(), 'the exact test workspace entity is deleted').toBe(200);
+  });
+  await attempt(async () => {
+    const list = await context.request.get(`${config.hubUrl}/api/v1/graph/compute_node`);
+    expect(list.status(), 'Hub desktop list is readable after cleanup').toBe(200);
+    const envelope = (await list.json()) as ApiEnvelope<Array<{ id?: string }>>;
+    expect(envelope.status).toBe('SUCCESS');
+    expect(
+      envelope.data.some((node) => node.id === nodeId),
+      'deleted workspace is absent from Hub',
+    ).toBe(false);
+  });
 
-  const list = await context.request.get(`${config.hubUrl}/api/v1/graph/compute_node`);
-  expect(list.status(), 'Hub desktop list is readable after cleanup').toBe(200);
-  const envelope = (await list.json()) as ApiEnvelope<Array<{ id?: string }>>;
-  expect(envelope.status).toBe('SUCCESS');
-  expect(
-    envelope.data.some((node) => node.id === nodeId),
-    'deleted workspace is absent from Hub',
-  ).toBe(false);
+  if (failures.length) throw new AggregateError(failures, `CloudNSite workspace cleanup failed for ${nodeId}`);
 }
 
 test.describe.serial('CloudNSite install link — live Hub and E2B release gate', () => {
@@ -774,8 +845,9 @@ test.describe.serial('CloudNSite install link — live Hub and E2B release gate'
     logPhase('clean scenario started');
     const baseBefore = await githubRef(config, config.targetBranch);
     expect(baseBefore, 'the selected target base branch exists').toBeTruthy();
-    expect(await githubRef(config, REVIEW_BRANCH), 'the clean fixture has no review branch').toBeNull();
+    expect(await githubRef(config, REVIEW_BRANCH), 'the fresh target has no review branch').toBeNull();
     const baseManifestBefore = await githubManifest(config, config.targetBranch);
+    expect(baseManifestBefore, 'the fresh auto-init branch has no Flowpad manifest').toBeNull();
 
     const result = await runInstall(page, context, config, (nodeId) => {
       cleanup = { config, nodeId };
@@ -795,10 +867,13 @@ test.describe.serial('CloudNSite install link — live Hub and E2B release gate'
     expect(baseAfter, 'the install never changes the selected base ref').toBe(baseBefore);
     expect(reviewAfter, 'the install creates the fixed review ref').toBeTruthy();
     const baseManifestAfter = await githubManifest(config, config.targetBranch);
-    expect(baseManifestAfter.raw, 'the selected base manifest is byte-for-byte unchanged').toBe(baseManifestBefore.raw);
-    const reviewManifest = await githubManifest(config, REVIEW_BRANCH);
-    verifyReviewManifest(config, baseManifestBefore.json, reviewManifest.json);
-    await verifyReviewCommit(config, reviewAfter!);
+    expect(baseManifestAfter, 'the selected base still has no Flowpad manifest').toBeNull();
+    const reviewManifest = requireManifest(
+      await githubManifest(config, REVIEW_BRANCH),
+      'the review branch contains the installed Flowpad manifest',
+    );
+    verifyReviewManifest(config, {}, reviewManifest.json);
+    await verifyReviewCommit(config, baseBefore!, reviewAfter!);
     logPhase('clean GitHub result verified');
   });
 
@@ -813,7 +888,11 @@ test.describe.serial('CloudNSite install link — live Hub and E2B release gate'
     expect(baseBefore, 'the selected target base branch exists').toBeTruthy();
     expect(reviewBefore, 'the repeat case starts from the clean case review branch').toBeTruthy();
     const baseManifestBefore = await githubManifest(config, config.targetBranch);
-    const reviewManifestBefore = await githubManifest(config, REVIEW_BRANCH);
+    expect(baseManifestBefore, 'the repeat case starts with no manifest on the selected base').toBeNull();
+    const reviewManifestBefore = requireManifest(
+      await githubManifest(config, REVIEW_BRANCH),
+      'the repeat case starts with the installed review manifest',
+    );
 
     const result = await runInstall(page, context, config, (nodeId) => {
       cleanup = { config, nodeId };
@@ -831,13 +910,16 @@ test.describe.serial('CloudNSite install link — live Hub and E2B release gate'
     expect(baseAfter, 'repeat install leaves the selected base ref unchanged').toBe(baseBefore);
     expect(reviewAfter, 'repeat install creates no new review commit').toBe(reviewBefore);
     const baseManifestAfter = await githubManifest(config, config.targetBranch);
-    const reviewManifestAfter = await githubManifest(config, REVIEW_BRANCH);
-    expect(baseManifestAfter.raw, 'repeat install leaves the base manifest unchanged').toBe(baseManifestBefore.raw);
+    const reviewManifestAfter = requireManifest(
+      await githubManifest(config, REVIEW_BRANCH),
+      'the repeat case keeps the installed review manifest',
+    );
+    expect(baseManifestAfter, 'repeat install leaves the base manifest absent').toBeNull();
     expect(reviewManifestAfter.raw, 'repeat install leaves the review manifest unchanged').toBe(
       reviewManifestBefore.raw,
     );
-    verifyReviewManifest(config, baseManifestBefore.json, reviewManifestAfter.json);
-    await verifyReviewCommit(config, reviewAfter!);
+    verifyReviewManifest(config, {}, reviewManifestAfter.json);
+    await verifyReviewCommit(config, baseBefore!, reviewAfter!);
     logPhase('repeat GitHub result verified');
   });
 });
