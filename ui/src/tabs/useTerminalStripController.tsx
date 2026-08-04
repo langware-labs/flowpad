@@ -23,6 +23,7 @@ import {
   dataContext,
   GraphContext,
   HARNESS_CAPABILITY_KINDS,
+  ViewType,
   type ComputeNode,
 } from '@sdk';
 import { type UseCapabilityResult } from '@sdk/react/hooks';
@@ -117,9 +118,9 @@ export function useTerminalStripController({
     : (dataContext.project?.getDisplayName() ?? dataContext.project?.name ?? null);
 
   const tabCreationLockRef = useRef(false);
-  const [pendingTabCreation, setPendingTabCreation] = useState<
-    'claude' | 'codex' | 'copilot' | 'terminal' | null
-  >(null);
+  const [pendingTabCreation, setPendingTabCreation] = useState<'claude' | 'codex' | 'copilot' | 'terminal' | null>(
+    null,
+  );
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
   const { claude: claudeCapability, codex: codexCapability, copilot: copilotCapability } = useHarnessCapabilities();
@@ -143,36 +144,45 @@ export function useTerminalStripController({
       if (tabCreationLockRef.current) return;
       tabCreationLockRef.current = true;
       setPendingTabCreation(kind);
+      const requiredKind =
+        workerType === 'codex'
+          ? CapabilityKinds.Codex
+          : workerType === 'claude_code'
+            ? CapabilityKinds.ClaudeCode
+            : CapabilityKinds.Harness;
+      // The lock is released in `finally` and NOWHERE else: an unhandled throw
+      // used to strand it set, which left a permanent spinner on the opener and
+      // made every later click a silent no-op until the page reloaded.
       try {
-        const requiredKind =
-          workerType === 'codex'
-            ? CapabilityKinds.Codex
-            : workerType === 'claude_code'
-              ? CapabilityKinds.ClaudeCode
-              : CapabilityKinds.Harness;
-        const harness = await capabilityManager.ensureChecked(requiredKind);
-        if (harness.checked && !harness.available) {
-          askInstallOneOf([...HARNESS_CAPABILITY_KINDS]);
-          clearPending();
-          return;
+        try {
+          const harness = await capabilityManager.ensureChecked(requiredKind);
+          if (harness.checked && !harness.available) {
+            askInstallOneOf([...HARNESS_CAPABILITY_KINDS]);
+            return;
+          }
+        } catch {
+          // Capability API unavailable (older backend) — don't block tab creation.
         }
+        const launchProjectId = launch?.projectId ?? spawnProjectId;
+        // openNewChat creates AND navigates — it owns the chat-mode propagation,
+        // so a second openShellProcess here would re-navigate the same dock
+        // without `?viewMode` and strip the mode back off the URL.
+        await openNewChat(navigation, {
+          ...(launchProjectId ? { projectId: launchProjectId } : {}),
+          ...(launch?.cwd ? { cwd: launch.cwd } : {}),
+          ...(workerType ? { workerType } : {}),
+        });
       } catch {
-        // Capability API unavailable (older backend) — don't block tab creation.
-      }
-      const launchProjectId = launch?.projectId ?? spawnProjectId;
-      // openNewChat creates AND navigates — it owns the chat-mode propagation,
-      // so a second openShellProcess here would re-navigate the same dock
-      // without `?viewMode` and strip the mode back off the URL.
-      const process = await openNewChat(navigation, {
-        ...(launchProjectId ? { projectId: launchProjectId } : {}),
-        ...(launch?.cwd ? { cwd: launch.cwd } : {}),
-        ...(workerType ? { workerType } : {}),
-      });
-      if (!process) {
+        // The spawn failed — overwhelmingly because the harness this capability
+        // row still calls available is gone from disk (uninstalled since the
+        // last discovery sweep, which only runs at backend start). Show the
+        // Capabilities view for THIS kind rather than an error: its arrival
+        // re-probe corrects the stale row and offers install / switch harness,
+        // which is the thing the user actually needs to do next.
+        navigation.openTab(ViewType.CAPABILITIES, { capabilityKind: requiredKind });
+      } finally {
         clearPending();
-        return;
       }
-      clearPending();
     },
     [askInstallOneOf, clearPending, navigation, spawnProjectId],
   );
@@ -291,6 +301,7 @@ export function useTerminalStripController({
         onActivate: () => void handleStartClaude(),
         available: true,
         warning: claudeWarning,
+        capabilityKind: CapabilityKinds.ClaudeCode,
         pendingInline: isClaudeCreationPending,
         disabled: isTabCreationPending,
       },
@@ -302,6 +313,7 @@ export function useTerminalStripController({
         onActivate: () => void handleStartCodex(),
         available: true,
         warning: codexWarning,
+        capabilityKind: CapabilityKinds.Codex,
         pendingInline: isCodexCreationPending,
         disabled: isTabCreationPending,
       },
@@ -313,6 +325,7 @@ export function useTerminalStripController({
         onActivate: () => void handleStartCopilot(),
         available: true,
         warning: copilotWarning,
+        capabilityKind: CapabilityKinds.Copilot,
         pendingInline: isCopilotCreationPending,
         disabled: isTabCreationPending,
       },
@@ -399,7 +412,8 @@ export function useTerminalStripController({
   );
 
   const trailing = useMemo(
-    () => (addTabButton ? <TerminalOpenerToolbar openers={openers} isTabCreationPending={isTabCreationPending} /> : null),
+    () =>
+      addTabButton ? <TerminalOpenerToolbar openers={openers} isTabCreationPending={isTabCreationPending} /> : null,
     [addTabButton, openers, isTabCreationPending],
   );
 
@@ -408,9 +422,7 @@ export function useTerminalStripController({
       { label: t`New Claude Session`, onSelect: () => void handleStartClaude() },
       { label: t`New Terminal`, shortcut: `${modLabel}+T`, onSelect: () => void handleStartTerminal() },
       // Advanced-only: freeze the current context into a GraphContext and open it.
-      ...(isAdvanced
-        ? [{ label: t`Open Context`, Icon: ContextIcon, onSelect: () => void handleOpenContext() }]
-        : []),
+      ...(isAdvanced ? [{ label: t`Open Context`, Icon: ContextIcon, onSelect: () => void handleOpenContext() }] : []),
     ],
     [modLabel, handleStartClaude, handleStartTerminal, isAdvanced, handleOpenContext, ContextIcon],
   );

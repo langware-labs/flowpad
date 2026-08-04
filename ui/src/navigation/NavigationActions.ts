@@ -15,7 +15,7 @@ import {
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import type { ViewMode } from '@src/contexts/view-mode-context';
-import { DockPointer, HIGHLIGHT_PARAM, JOURNEY_PARAM } from './DockPointer';
+import { CAPABILITY_PARAM, DockPointer, HIGHLIGHT_PARAM, JOURNEY_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
@@ -190,7 +190,6 @@ export class NavigationActions {
   applyHighlightInPlace(wikiword: string): void {
     this.updateLiveUrlParams((params) => params.set(HIGHLIGHT_PARAM, wikiword));
   }
-
 
   /**
    * Navigate to the app home root `/`, optionally with `?highlight=`, CARRYING
@@ -479,6 +478,7 @@ export class NavigationActions {
   openTab(tabType: ViewType, options?: TabOptions): void {
     const pointer = DockPointer.forTab(tabType, {
       ...(options?.pinned !== undefined && { pinned: options.pinned.toString() }),
+      ...(options?.capabilityKind ? { [CAPABILITY_PARAM]: options.capabilityKind } : {}),
     });
     this.openDock(pointer);
   }
