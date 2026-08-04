@@ -212,10 +212,9 @@ reading — so a chip there links to itself. The card answers "which tests does
 this doc govern"; if a tag ever needs its whole join drawn, that is a different
 fence.
 
-`tagit` puts the block at the TOP of a rules doc, under the ground-truth
-banner. Whoever opens one arrived from a failing test, so the way back to it
-should be the first thing on screen — which also makes a fence the document's
-first node, a position worth keeping in mind when changing the NodeView.
+`tagit` puts the block at the top of a rules doc, which makes a fence the
+document's **first node** — a position worth keeping in mind when changing the
+NodeView, and one the jsdom fixtures deliberately avoid.
 
 <!-- flowpad:capsule identity
 version: 1
