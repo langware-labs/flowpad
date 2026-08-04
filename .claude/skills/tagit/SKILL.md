@@ -79,12 +79,10 @@ sites: <paste from step 4 — leave the fence out until you have it>
 ## Failure modes
 ````
 
-**The fence goes at the TOP**, directly under the banner — not in a section at
-the bottom. Whoever opens this doc arrived from a failing test, so the first
-thing on screen should be the way back to it: the fence renders as a card of
-bound tests, each a chip that peeks at its test at the capsule's line. The
-rules are what they read next, and prose below a card still reads in order;
-a card below four sections of prose does not get seen.
+The fence renders as a card of bound tests, each a chip that peeks at its test
+at the capsule's line. It sits at the top because whoever opens this doc arrived
+from a failing test: the way back to it should be the first thing on screen, and
+prose below a card still reads in order.
 
 `sites` is the fallback the card draws before the tag index answers, so it must
 match the capsule exactly — which is why step 4 hands it to you rather than you
