@@ -349,7 +349,26 @@ class Shell(Entity):
         return argv[next_idx]
 
     @staticmethod
-    def _strip_cmd_shim(cmdline: list[str]) -> list[str]:
+    def _exe_stem(path: str) -> str:
+        """Basename-without-extension of *path*, casefolded, parsed independently
+        of the host OS.
+
+        ``os.path`` follows the *host's* convention, so a Windows argv inspected
+        from a POSIX host does not split at all —
+        ``posixpath.basename(r"C:\\WINDOWS\\system32\\cmd.exe")`` returns the whole
+        string, because a backslash is an ordinary filename character there.
+        Worker identity is a property of the *target's* path convention, not the
+        machine asking, so split on both separators explicitly. On a real POSIX
+        argv (``/usr/local/bin/node``) this is identical to ``posixpath``.
+        """
+        tail = re.split(r"[\\/]", path)[-1]
+        stem, _, _ext = tail.rpartition(".")
+        # rpartition yields an empty stem for a dotless name ("codex") and for a
+        # leading-dot name (".bashrc"); both keep the whole tail, as splitext does.
+        return (stem or tail).casefold()
+
+    @classmethod
+    def _strip_cmd_shim(cls, cmdline: list[str]) -> list[str]:
         """Drop a leading Windows ``cmd.exe /c`` wrapper from *cmdline*.
 
         npm installs a console script on Windows as a ``.CMD`` batch shim, and
@@ -359,7 +378,7 @@ class Shell(Entity):
         identity check looks at. Unwrapping here lets the caller apply the same
         argv[0]/argv[1] rule to the real command on every platform.
         """
-        if len(cmdline) >= 3 and os.path.splitext(os.path.basename(cmdline[0]))[0].casefold() == "cmd":
+        if len(cmdline) >= 3 and cls._exe_stem(cmdline[0]) == "cmd":
             if cmdline[1].casefold() in ("/c", "/k"):
                 return cmdline[2:]
         return cmdline
@@ -391,8 +410,8 @@ class Shell(Entity):
         if expected_exe:
             # Strip extension + casefold so stored "claude" matches Windows
             # psutil cmdline "claude.exe" / "claude.EXE". Linux unaffected.
-            expected_basename = os.path.splitext(os.path.basename(expected_exe))[0].casefold()
-            candidates = [os.path.splitext(os.path.basename(c))[0].casefold() for c in cmdline[:2]] if cmdline else []
+            expected_basename = cls._exe_stem(expected_exe)
+            candidates = [cls._exe_stem(c) for c in cmdline[:2]] if cmdline else []
             if expected_basename not in candidates:
                 return False
 
