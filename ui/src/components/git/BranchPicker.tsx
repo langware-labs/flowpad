@@ -2,6 +2,7 @@ import type { BranchSummary, RepoSummary } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { useGitBranches } from '@src/hooks/use-git-providers';
+import { formatRelative } from './relative-time';
 import { ArrowLeft, GitBranch, Loader2, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -12,7 +13,8 @@ interface BranchPickerProps {
   onBack: () => void;
 }
 
-/** Move the default branch to the top of the list (mirrors GitHubConnectionDialog.sortBranches). */
+/** Move the default branch to the top of the list (mirrors GitHubConnectionDialog.sortBranches).
+ *  Everything below it stays in the backend's order, which is most-recently-changed first. */
 function pinDefault(branches: BranchSummary[], defaultName: string): BranchSummary[] {
   const i = branches.findIndex((b) => b.name === defaultName);
   if (i <= 0) return branches;
@@ -90,6 +92,10 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
                     <Trans>protected</Trans>
                   </span>
                 )}
+                {/* The list is ordered by this, so show it — otherwise the order looks arbitrary. */}
+                <span className="w-16 shrink-0 text-right text-[10px] text-muted-foreground">
+                  {formatRelative(branch.updated_at)}
+                </span>
               </li>
             ))}
           </ul>
