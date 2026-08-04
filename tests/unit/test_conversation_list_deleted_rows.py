@@ -67,7 +67,9 @@ async def test_deleted_hub_audit_row_is_removed_without_background_fetch():
     assert response.data["bg_fetch_dispatched"] == []
     delete_mock.assert_awaited_once_with(local)
     upsert_mock.assert_not_awaited()
+    # The batch is a mapping of conv id -> the hub revision that justified the
+    # fetch; the drain stamps it as the watermark only on a successful reconcile.
     dispatch.assert_called_once_with(
-        [],
+        {},
         SimpleNamespace(id="bbbb0011-1111-4111-8111-000000000011"),
     )

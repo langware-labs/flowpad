@@ -2636,13 +2636,22 @@ _conv_fetch_inflight: set[str] = set()
 _BG_FETCH_CONCURRENCY = 8
 
 
-async def _drain_conversation_message_fetches(conv_ids: list[str], someone_typeid: str) -> None:
+async def _drain_conversation_message_fetches(pending: dict[str, Optional[datetime]], someone_typeid: str) -> None:
     """Catch up message state for many conversations, bounded concurrency.
 
     Runs as ONE detached task OFF the request path, so the list handler returns
     before any fetch starts (no event-loop contention with the foreground
     reconcile). The process-local claim set preserves per-conversation
     single-flight across overlapping batches.
+
+    ``pending`` maps conversation id → the hub parent ``updated_date`` that
+    justified the fetch. On success that value becomes the conversation's new
+    ``hub_updated_date`` watermark — stamping it HERE, and only here, is what
+    makes the watermark mean "reconciled through this hub revision". Recording
+    it up-front (when the list merely SAW the row) would let a swallowed fetch
+    failure certify a convergence that never happened, and a count-neutral
+    change — a message edit, a delivery/body-status flip — would then stay
+    invisible until the hub moved again.
     """
     sem = asyncio.Semaphore(_BG_FETCH_CONCURRENCY)
 
@@ -2652,28 +2661,44 @@ async def _drain_conversation_message_fetches(conv_ids: list[str], someone_typei
         _conv_fetch_inflight.add(cid)
         try:
             async with sem:
-                await _fetch_conversation_messages(cid, someone_typeid)
+                if await _fetch_conversation_messages(cid, someone_typeid):
+                    await _record_hub_watermark(cid, pending.get(cid), someone_typeid)
         except Exception as e:  # noqa: BLE001
             logger.warning("[conv-msg-drain] %s failed: %s", cid[:8], e)
         finally:
             _conv_fetch_inflight.discard(cid)
 
-    await asyncio.gather(*[_one(c) for c in conv_ids], return_exceptions=True)
+    await asyncio.gather(*[_one(c) for c in pending], return_exceptions=True)
 
 
-def _dispatch_conversation_message_fetches(conv_ids: list[str], someone_typeid: str) -> None:
+async def _record_hub_watermark(conv_id: str, hub_updated: Optional[datetime], someone_typeid: str) -> None:
+    """Advance one conversation's reconciled-through watermark. Best-effort."""
+    if hub_updated is None:
+        return
+    try:
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv is None or Conversation._as_datetime(conv.hub_updated_date) == hub_updated:
+            return
+        conv.hub_updated_date = hub_updated
+        with remote_reflection():
+            await conv.save(someone_typeid, notify=False)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[conv-msg-drain] %s watermark not recorded: %s", conv_id[:8], e)
+
+
+def _dispatch_conversation_message_fetches(pending: dict[str, Optional[datetime]], someone_typeid: str) -> None:
     """Fire-and-forget a whole catch-up batch as one detached, bounded drain.
 
-    Deferred + bounded: the caller collects the drifted conv ids during its
+    Deferred + bounded: the caller collects the drifted conversations during its
     foreground work and dispatches them all here at the very end, so the fetches
     neither interleave with the reconcile loop nor flood the loop all at once.
     """
-    if not conv_ids:
+    if not pending:
         return
     try:
         asyncio.create_task(
-            _drain_conversation_message_fetches(conv_ids, someone_typeid),
-            name=f"conv-msg-drain-{len(conv_ids)}",
+            _drain_conversation_message_fetches(pending, someone_typeid),
+            name=f"conv-msg-drain-{len(pending)}",
         )
     except RuntimeError:
         # No running loop (e.g. a sync call context) — nothing to schedule.
@@ -2905,7 +2930,7 @@ def _clamp_invitation_ts(invitations: list[Pointer], merged: list[Pointer]) -> l
     ]
 
 
-async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> None:
+async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> bool:
     """Bring local message state for a single conversation up to the hub's.
 
     Lists the conversation's child FlowMessages via the children-list route
@@ -2922,7 +2947,11 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
     FM dicts, so the per-id GET loop is gone.
 
     All exceptions are logged and swallowed — this runs as a detached task and
-    must never crash the event loop.
+    must never crash the event loop. Returns True only when the reconcile
+    actually completed, so the caller can decide whether it may advance the
+    conversation's ``hub_updated_date`` watermark (see
+    ``_drain_conversation_message_fetches``). A swallowed failure must NOT be
+    allowed to certify convergence.
     """
     lock = _conv_fetch_locks.setdefault(conv_id, asyncio.Lock())
     async with lock:
@@ -2942,7 +2971,7 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
             # through the authoritative reconcile below.
             if children is None:
                 logger.warning("[conv-msg-fetch] %s: children listing unavailable, skipping", conv_id[:8])
-                return
+                return False
             child_list: list[dict] = []
             if isinstance(children, list):
                 child_list = children
@@ -3066,8 +3095,10 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
                 synced,
                 len(child_list),
             )
+            return True
         except Exception as e:  # noqa: BLE001
             logger.warning("[conv-msg-fetch] %s: aborted: %s", conv_id[:8], e)
+            return False
 
 
 async def _ensure_local_conversation_synced(conv_id: str, someone_typeid: str) -> None:
@@ -3378,12 +3409,12 @@ async def _upsert_hub_conversation_metadata(
     if hub_created is not None and Conversation._as_datetime(existing.created_date) != hub_created:
         existing.created_date = hub_created
         changed = True
-    # Deliberately NOT adopting the hub parent ``updated_date``: the hub re-stamps
-    # it on bare touches (a child's body re-download), which would surface a
-    # days-old conversation as "just now". Recency is owned by
+    # Deliberately NOT adopting the hub parent ``updated_date`` as local recency:
+    # the hub re-stamps it on bare touches (a child's body re-download), which
+    # would surface a days-old conversation as "just now". Recency stays owned by
     # ``project_pointers_to_entity`` (derived from messages' real-change clocks).
-    # ``_should_fetch_messages`` still consults the hub clock transiently to gate
-    # the reconcile; it's just never persisted as local recency.
+    # The hub clock IS persisted, as ``Conversation.hub_updated_date`` — but by the
+    # drain, once the reconcile it justified has actually succeeded, never here.
     if changed:
         # We just refreshed this row from a hub payload — stamp the boundary.
         existing.fetched_at = datetime.now(UTC)
@@ -3394,15 +3425,17 @@ async def _upsert_hub_conversation_metadata(
     return existing
 
 
-def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict) -> bool:
+def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict, *, clock_moved: bool | None = None) -> bool:
     """Out-of-sync detection for one conversation — the dispatch gate of the
     list pipeline. Two independent signals, OR-ed (the hub is the source of
     truth; either one firing invalidates the local copy via the authoritative
     reconcile in ``_fetch_conversation_messages``):
 
-    - ``updated_date`` LWW (``Entity.is_stale``): the hub bumps the parent on
-      child add/edit/delete AND on delivery/body status changes, so one cheap
-      parent compare catches every content/status change.
+    - hub-clock watermark (``Conversation.hub_clock_moved``): the hub bumps the
+      parent on child add/edit/delete AND on delivery/body status changes, so one
+      cheap parent compare catches every content/status change. NOT
+      ``Entity.is_stale`` — see ``Conversation.hub_updated_date`` for why that
+      comparison never converges on this type.
     - ``message_count`` mismatch, BIDIRECTIONAL: catches drift the date can't
       prove — e.g. a local row re-created bare from the hub (carries the hub's
       updated_date, so is_stale says current, but reports 0 messages), or a
@@ -3425,7 +3458,9 @@ def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict) -
         return False
     if local_conv is None:
         return True
-    if Conversation.is_stale(local_conv, hub_conv):
+    if clock_moved is None:
+        clock_moved = Conversation.hub_clock_moved(local_conv, Conversation._as_datetime(hub_conv.get("updated_date")))
+    if clock_moved:
         return True
     raw_hub_count = hub_conv.get("message_count")
     if raw_hub_count is None:
@@ -3537,7 +3572,9 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     # delivery/body status, membership), so ``is_stale`` is a complete change
     # signal — see _should_fetch_messages. Skipping the unchanged majority avoids
     # a per-row get_one + save for every conversation on every list call.
-    bg_fetch_dispatched: list[str] = []
+    # conv id -> the hub revision that justified its fetch; the drain stamps it
+    # as the new watermark only if the reconcile actually succeeds.
+    bg_fetch_pending: dict[str, Optional[datetime]] = {}
     for hub_conv in hub_convs:
         conv_id = (hub_conv.get("id") or "").strip()
         if not conv_id:
@@ -3558,7 +3595,11 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
         # correct comparison baseline. Capture the fetch decision BEFORE the
         # upsert mutates ``existing.updated_date``.
         existing = local_index.get(conv_id)
-        should_fetch = _should_fetch_messages(existing, hub_conv)
+        # Parsed once and reused by the fetch gate, the upsert gate and the
+        # watermark below — it is the same hub string in all three.
+        _hub_updated = Conversation._as_datetime(hub_conv.get("updated_date"))
+        _clock_moved = existing is None or Conversation.hub_clock_moved(existing, _hub_updated)
+        should_fetch = _should_fetch_messages(existing, hub_conv, clock_moved=_clock_moved)
         # ``created_date`` is hub-authoritative and corruptible locally (a DB
         # rebuild re-stamps it) without ever moving ``updated_date`` — so it can't
         # ride is_stale. Compare it here against the cache (free, in-memory) so the
@@ -3569,7 +3610,11 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
             and _hub_created is not None
             and Conversation._as_datetime(existing.created_date) != _hub_created
         )
-        if existing is None or not existing.remote or Conversation.is_stale(existing, hub_conv) or _created_drift:
+        # Same converging watermark as the fetch gate. With ``is_stale`` here the
+        # local metadata write also re-fired on every call for every already-synced
+        # conversation — a save + a WS ``data_op`` per conversation per call, which
+        # is what made the client re-list the whole Inbox dozens of times per login.
+        if existing is None or not existing.remote or _clock_moved or _created_drift:
             try:
                 await _upsert_hub_conversation_metadata(
                     hub_conv,
@@ -3582,7 +3627,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
         if should_fetch:
             # Collect now; dispatch the whole batch off-path at the end so these
             # fetches don't steal event-loop time from the reconcile above.
-            bg_fetch_dispatched.append(conv_id)
+            bg_fetch_pending[conv_id] = _hub_updated
 
     # (d) invitations through the new materializer: the hub embeds the
     # target Conversation + first FlowMessage in each invitation, so the
@@ -3637,7 +3682,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     response = ApiSuccessResponse(
         data={
             "conversations": [c.model_dump(mode="json") for c in merged],
-            "bg_fetch_dispatched": bg_fetch_dispatched,
+            "bg_fetch_dispatched": list(bg_fetch_pending),
             "pruned_ids": pruned_ids,
             "hub_reachable": hub_reachable,
             "auth_required": auth_required,
@@ -3649,7 +3694,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     # fetches start as the response is sent (never contending with the loop above)
     # and only a few run at once. Their writes heal through the authoritative
     # reconcile in _fetch_conversation_messages and stream in via WS data_op.
-    _dispatch_conversation_message_fetches(bg_fetch_dispatched, someone_typeid)
+    _dispatch_conversation_message_fetches(bg_fetch_pending, someone_typeid)
     return response
 
 

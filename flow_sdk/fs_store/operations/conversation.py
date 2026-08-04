@@ -164,7 +164,8 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
     keeps ``updated_date`` from advancing on a bare touch, so this ``max``
     excludes touches by construction: a body re-download bumps no message clock
     and therefore no inbox recency. ``updated_date`` stays the single field used
-    for inbox order AND the hub-sync LWW key.
+    for inbox order. With NO messages there is no max to take — see the
+    empty-case comment below.
     """
     from datetime import datetime
 
@@ -214,7 +215,16 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
         if ts is not None and (new_updated is None or ts > new_updated):
             new_updated = ts
     if new_updated is None:
-        new_updated = datetime.now(UTC)
+        # No messages ⇒ no message activity ⇒ the honest recency is the birth
+        # time. NEVER ``now()``: an empty conversation has not just happened, and
+        # since ``updated_date`` is the Inbox sort key, stamping the current time
+        # here promoted every message-less conversation above genuinely recent
+        # mail on each catch-up that touched it. It also never converged — a
+        # fresh ``now()`` differs from the stored value every time, so the row
+        # re-saved and re-broadcast on every single sync. Reading ``created_date``
+        # (rather than keeping the stored value) is also what lets a row already
+        # carrying a fabricated timestamp repair itself on its next touch.
+        new_updated = Conversation._as_datetime(conv.created_date)
 
     projection_changed = not (conv.message_ids == new_ids and conv.message_count == new_count)
     recency_changed = Conversation._as_datetime(conv.updated_date) != new_updated

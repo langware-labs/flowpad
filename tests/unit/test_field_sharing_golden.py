@@ -225,7 +225,9 @@ def test_the_two_egress_seams_now_agree():
              "private_context_entities_", "shared_context_entities"],
         ),
         (
-            "flow_sdk.builtin.conversation", "Conversation", {}, [], BASE_LOCAL_ONLY,
+            # `hub_updated_date`: the hub revision this device last reconciled.
+            # PRIVATE — a local sync watermark that must never travel back out.
+            "flow_sdk.builtin.conversation", "Conversation", {}, ["hub_updated_date"], BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.
             ["env_vars", "expand", "fs_storage_provider", "git_origin", "kind",
