@@ -181,3 +181,33 @@ export default apiClient;
 // For playwright client global variable
 //@ts-ignore
 window['client'] = apiClient;
+
+/**
+ * Is this error "the backend is unreachable", as opposed to "one request
+ * failed"? The axios interceptor below is the classifier — it stamps
+ * `isServiceUnavailable` exactly when there is no response at all — and this is
+ * the one place that answers the question for every consumer.
+ *
+ * It used to be re-spelled at four call sites (both outage screens and both
+ * route loaders) with four different clause sets, which is how one of them came
+ * to treat ANY 5xx as an outage and blank the app over a single unsupported
+ * action. A 5xx is emphatically not an outage. `type: 'network' | 'config'`
+ * covers errors minted by `navigationService.error()`, which never pass through
+ * the interceptor.
+ */
+export function isBackendUnreachable(error: unknown): boolean {
+  const e = error as
+    | { isServiceUnavailable?: boolean; type?: string; code?: string; message?: string }
+    | null
+    | undefined;
+  if (!e) return false;
+  return Boolean(
+    e.isServiceUnavailable ||
+    e.type === 'network' ||
+    e.type === 'config' ||
+    e.code === 'ERR_NETWORK' ||
+    e.code === 'ERR_CONNECTION_REFUSED' ||
+    e.message?.includes('Failed to fetch') ||
+    e.message?.includes('Network request failed'),
+  );
+}

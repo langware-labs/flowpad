@@ -6,11 +6,7 @@ const results = new Map<string, WikiResolveResult>();
 const listeners = new Set<() => void>();
 let snapshot: ReadonlyMap<string, WikiResolveResult> = new Map();
 
-export function wikiResolveKey(
-  wikiRef: string,
-  word: string,
-  authority: WikiAuthority = 'local',
-): string {
+export function wikiResolveKey(wikiRef: string, word: string, authority: WikiAuthority = 'local'): string {
   return `${authority}\u0000${wikiRef}\u0000${word}`;
 }
 
@@ -38,11 +34,7 @@ export function setWikiResolveResult(
   notify();
 }
 
-export function clearWikiResolveResult(
-  wikiRef: string,
-  word: string,
-  authority: WikiAuthority = 'local',
-): void {
+export function clearWikiResolveResult(wikiRef: string, word: string, authority: WikiAuthority = 'local'): void {
   if (results.delete(wikiResolveKey(wikiRef, word, authority))) notify();
 }
 

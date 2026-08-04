@@ -36,14 +36,46 @@ describe('buildHubRailItems', () => {
   it('keeps the content browsers ahead of it, in order', () => {
     expect(buildHubRailItems(t).map((i) => i.id)).toEqual([
       'home',
-      'conversations',
+      'inbox',
       'tasks',
       'docs',
-      'flows',
       'world',
       'organization',
       'credentials',
     ]);
+  });
+
+  it('places project home right after Home, only while a project is selected', () => {
+    // Gated because the entry addresses its destination by id: with no pointer
+    // `HubProjectPage` renders "Project not found".
+    expect(buildHubRailItems(t).map((i) => i.id)).not.toContain('project');
+
+    const withProject = buildHubRailItems(t, 'proj-1');
+    expect(withProject.map((i) => i.id).slice(0, 2)).toEqual(['home', 'project']);
+
+    const project = withProject.find((i) => i.id === 'project');
+    expect(project?.viewType).toBe(ViewType.PROJECT);
+    expect(project?.pointer).toBe('proj-1');
+  });
+
+  it('points each record browser at a type the HUB serves', () => {
+    // The pointer goes straight into `graph/<type>` (HubRecordsView) and into
+    // `iconForType(pointer)`, so a desk-only type name fails twice over: the list
+    // 422s ("Unknown entity type") AND the icon falls back to the generic glyph,
+    // because a type the hub has no registry entry for has no icon either. That
+    // is what retired the `flows` entry: its `graph_workflow` is desk-only, and
+    // the hub's own flow type is `agentic_flow`.
+    const pointers = Object.fromEntries(
+      buildHubRailItems(t, 'proj-1')
+        .filter((i) => i.viewType === ViewType.HUB_RECORDS)
+        .map((i) => [i.id, i.pointer]),
+    );
+
+    expect(pointers).toEqual({
+      inbox: 'conversation',
+      tasks: 'task',
+      docs: 'markdown',
+    });
   });
 
   it('distinguishes the two WorldView entries by pointer', () => {

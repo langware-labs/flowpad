@@ -1,5 +1,6 @@
 import { cn } from '@src/lib/utils';
 import { imageFilesFromClipboardData } from '@src/utils/clipboard-image';
+import { AttachFilesButton, PickedFileList, usePickedFiles } from '@src/components/conversation/FileAttachmentPicker';
 import { Send, Square } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLingui } from '@lingui/react/macro';
@@ -7,7 +8,7 @@ import { caretOnFirstLine, caretOnLastLine, type InputHistory } from '@src/hooks
 import { PromptHistoryList } from './PromptHistoryList';
 
 interface CompactExecutionInputProps {
-  onSend: (text: string) => void | Promise<void>;
+  onSend: (text: string, files?: File[]) => void | Promise<void>;
   disabled?: boolean;
   placeholder?: string;
   className?: string;
@@ -31,6 +32,13 @@ interface CompactExecutionInputProps {
    */
   onPasteImages?: (files: File[]) => Promise<string[] | void> | string[] | void;
   /**
+   * Opt-in attachments mode: a "+" picker button, drag-and-drop onto the
+   * composer, and file chips. Picked files are held locally and handed to
+   * onSend — the owner uploads them (there may be no process yet to upload
+   * into) and rides the reference lines along with the prompt.
+   */
+  allowAttachments?: boolean;
+  /**
    * Prompt-history navigation (ArrowUp/Down at the first/last line browses;
    * a list of past prompts renders under the textarea while browsing when
    * there is more than one entry). The owner holds the `useInputHistory`
@@ -48,9 +56,10 @@ interface CompactExecutionInputProps {
 
 /**
  * Textarea + send/stop input for the chat surfaces. Deliberately minimal — no
- * uploads, tools panel, codebase connectors, or login flows. Enter sends;
- * Shift+Enter inserts a newline; Cmd/Ctrl+Enter also sends; Escape stops the
- * in-flight turn. While `running`, a Stop button appears and sends enqueue.
+ * tools panel, codebase connectors, or login flows; file attachments are
+ * opt-in via `allowAttachments`. Enter sends; Shift+Enter inserts a newline;
+ * Cmd/Ctrl+Enter also sends; Escape stops the in-flight turn. While
+ * `running`, a Stop button appears and sends enqueue.
  */
 export function CompactExecutionInput({
   onSend,
@@ -62,6 +71,7 @@ export function CompactExecutionInput({
   onStop,
   bare = false,
   onPasteImages,
+  allowAttachments = false,
   leadingSlot,
   onShiftTab,
   history,
@@ -71,6 +81,8 @@ export function CompactExecutionInput({
   const [value, setValue] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  const picker = usePickedFiles({ enabled: allowAttachments, disabled });
 
   // Autosize the textarea up to ~200px. Keep overflow hidden until the content
   // genuinely exceeds the cap — otherwise the border-box border leaves a ~2px
@@ -133,14 +145,20 @@ export function CompactExecutionInput({
     });
   }, []);
 
+  // A files-only send is valid — the ref lines ARE the prompt (files can only
+  // be non-empty when allowAttachments is on; every add path is gated).
+  const canSend = !!value.trim() || picker.files.length > 0;
+
   const send = useCallback(async () => {
+    if (!canSend || disabled) return;
     const text = value.trim();
-    if (!text || disabled) return;
+    const files = picker.files;
     setValue('');
+    picker.clear();
     history?.exitBrowsing();
-    if (running && animateEnqueue) runEnqueueAnimation(text);
-    await onSend(text);
-  }, [value, disabled, onSend, history, running, animateEnqueue, runEnqueueAnimation]);
+    if (running && animateEnqueue && text) runEnqueueAnimation(text);
+    await onSend(text, files);
+  }, [canSend, value, picker, disabled, onSend, history, running, animateEnqueue, runEnqueueAnimation]);
 
   // Image paste: hand the image files to the owner (upload + open Files tab),
   // then splice the returned reference line(s) into the textarea at the caret.
@@ -224,8 +242,20 @@ export function CompactExecutionInput({
   return (
     <div
       ref={rootRef}
-      className={cn('flex flex-shrink-0 flex-col gap-1.5', !bare && 'border-t bg-background px-3 py-2.5', className)}
+      {...picker.dragProps}
+      className={cn(
+        'flex flex-shrink-0 flex-col gap-1.5',
+        !bare && 'border-t bg-background px-3 py-2.5',
+        picker.dragging && 'rounded-xl ring-1 ring-primary',
+        className,
+      )}
     >
+      <PickedFileList
+        files={picker.files}
+        rejected={picker.rejected}
+        disabled={disabled}
+        onRemoveAt={picker.removeAt}
+      />
       <textarea
         ref={taRef}
         value={value}
@@ -248,20 +278,29 @@ export function CompactExecutionInput({
       )}
       <div className="flex min-h-8 items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-1.5" data-queue-chip-anchor>
+          {allowAttachments && (
+            <AttachFilesButton
+              inputId={picker.inputId}
+              onFiles={picker.addFiles}
+              disabled={disabled}
+              title={t`Attach files`}
+              testId="entity-execution-attach"
+            />
+          )}
           {leadingSlot}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {statusSlot}
           {/* While running, Send stays available for non-empty drafts (it
               enqueues); Stop sits beside it. */}
-          {(!showStop || value.trim()) && (
+          {(!showStop || canSend) && (
             <button
               type="button"
               onMouseDown={(e) => {
                 e.preventDefault();
                 void send();
               }}
-              disabled={disabled || !value.trim()}
+              disabled={disabled || !canSend}
               title={showStop ? t`Queue message` : t`Send`}
               aria-label={showStop ? t`Queue message` : t`Send message`}
               className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-primary"

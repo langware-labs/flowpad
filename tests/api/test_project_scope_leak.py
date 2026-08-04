@@ -14,8 +14,6 @@ NOT children of a freshly created project, then asks that project's scoped list
 endpoints for its stats. They must be 0.
 """
 
-from pathlib import Path
-
 import pytest
 
 from flow_sdk.builtin.prompt import Prompt
@@ -42,7 +40,6 @@ async def test_fresh_project_scoped_stats_are_zero(bootstrapped_client, user, tm
     ).save()
 
     prompt_path = home / "prompts" / "global-prompt.md"
-    prompt_path.write_text("Do the thing.\n")
     await Prompt(
         name="global-prompt",
         text="Do the thing.",

@@ -5,11 +5,15 @@ import {
   type OAuthDetachResult,
   type OAuthFlowKind,
   type OAuthTestResult,
+  type Project,
 } from '@sdk';
-import { Check, CircleHelp, Loader2, X } from 'lucide-react';
+import { Check, CircleHelp, Loader2, MoreHorizontal, Trash2, X } from 'lucide-react';
 import * as React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useOAuthConnection } from '@sdk/react/hooks/useOAuthConnection';
+// The grant/placement split lives with the hook that derives it; the SDK root
+// does not re-export react-only modules.
+import { GrantStatus } from '@sdk/react/hooks';
 import { cn } from '@src/lib/utils';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
@@ -20,6 +24,11 @@ import { Badge } from './ui/badge';
 import { providerMark } from './connections-manager/provider-marks';
 import { useConnectionTimestamps } from './connections-manager/use-connection-timestamps';
 import { Button } from './ui/button';
+import { ConfirmDialog } from './ui/confirm-dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { UsageCell } from './connections-manager/usage-cell';
+import { USAGE_EAGER_LIMIT, useCredentialUsage } from './connections-manager/use-credential-usage';
+import { useProjects } from '@src/hooks/use-projects';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 export interface ConnectionsManagerProps {
@@ -43,24 +52,27 @@ interface ExtendedOAuthConnection extends OAuthConnection {
   icon?: string;
 }
 
-/** Each state visually distinct.
- *
- *  They used to share one grey circle and one grey label, so "Ready to Connect"
- *  and "Disconnected" were indistinguishable — the only difference that matters
- *  here, since one needs a browser round-trip and the other does not. Theme
- *  tokens rather than `gray-500`, which does not survive dark mode. */
-const STATUS_META: Record<ConnectionStatus, { dot: string; text: string }> = {
-  [ConnectionStatus.CONNECTED]: { dot: 'bg-green-500', text: 'text-green-600 dark:text-green-500' },
-  [ConnectionStatus.AVAILABLE]: { dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-500' },
-  [ConnectionStatus.DISCONNECTED]: { dot: 'bg-muted-foreground/40', text: 'text-muted-foreground' },
-  // Held but dead. Red rather than amber: amber here means "one click from
-  // working", and this is not — it needs the whole grant again.
-  [ConnectionStatus.NEEDS_REAUTH]: { dot: 'bg-red-500', text: 'text-red-600 dark:text-red-500' },
+/** The Status column answers ONE question: is my account connected to this
+ *  provider? That is the grant, and it is the only thing that means anything
+ *  when no project is selected. Which projects may USE the credential is a
+ *  different question, answered by the Used-by column — conflating the two is
+ *  how a held credential used to render as the baffling "Ready to connect",
+ *  which reads like "not connected" to everyone who isn't holding the data
+ *  model in their head. */
+const GRANT_META: Record<GrantStatus, { dot: string; text: string }> = {
+  [GrantStatus.NONE]: { dot: 'bg-muted-foreground/40', text: 'text-muted-foreground' },
+  [GrantStatus.HELD]: { dot: 'bg-green-500', text: 'text-green-600 dark:text-green-500' },
+  // Held but dead. Red rather than amber: amber would say "one click from
+  // working", and this needs the whole grant again.
+  [GrantStatus.NEEDS_REAUTH]: { dot: 'bg-red-500', text: 'text-red-600 dark:text-red-500' },
 };
 
 /** How many scopes to show before collapsing the rest into a count. A dozen
  *  chips would bury the row it belongs to. */
 const SCOPES_SHOWN = 4;
+
+/** Stable fallback for a provider with no placements. */
+const NO_PROJECTS: Project[] = [];
 
 /** The provider glyph.
  *
@@ -158,9 +170,12 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     connectingConnectionId,
     availableProviders,
     connectionStatuses: providerStatuses,
+    grantStatuses,
+    userTable,
     connect,
     attach,
     detach,
+    disconnect,
     testConnection,
   } = useOAuthConnection({
     projectTypeId,
@@ -183,6 +198,19 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     }));
   }, [availableProviders, providerStatuses, connectionTimestamps]);
 
+  // "Where is this used?" — one env-table fetch per project, answering for every
+  // row at once. Gated above a threshold so a large workspace doesn't fan out on
+  // arrival; the delete dialog force-enables it, because blast radius must never
+  // be guessed.
+  const { projects } = useProjects();
+  const [usageForced, setUsageForced] = React.useState(false);
+  const usageEnabled = usageForced || (projects?.length ?? 0) <= USAGE_EAGER_LIMIT;
+  const { usage, isLoading: usageLoading } = useCredentialUsage({ projects, userTable, enabled: usageEnabled });
+  // Which project row inside a usage popover is mid-attach/detach.
+  const [togglingProjectId, setTogglingProjectId] = React.useState<string | null>(null);
+  // The connection awaiting a delete confirmation (null = dialog closed).
+  const [pendingDelete, setPendingDelete] = React.useState<ExtendedOAuthConnection | null>(null);
+
   // Last probe result per connection. Deliberately NOT persisted: it is a
   // point-in-time answer about a token that can be revoked a second later, and a
   // remembered tick would outlive its truth.
@@ -195,14 +223,12 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // Labels live here, not in a module-level lookup table: a raw string in a
   // Record escapes lingui extraction entirely, so the redesign had quietly made
   // every status and grant name untranslatable.
-  const statusLabel = (status: ConnectionStatus): string =>
-    status === ConnectionStatus.CONNECTED
+  const statusLabel = (grant: GrantStatus): string =>
+    grant === GrantStatus.HELD
       ? t`Connected`
-      : status === ConnectionStatus.NEEDS_REAUTH
+      : grant === GrantStatus.NEEDS_REAUTH
         ? t`Reconnect needed`
-        : status === ConnectionStatus.AVAILABLE
-          ? t`Ready to connect`
-          : t`Not connected`;
+        : t`Not connected`;
 
   const grantLabel = (kind: OAuthFlowKind): string =>
     kind === 'device' ? t`Device code` : kind === 'loopback' ? t`OAuth + PKCE` : t`OAuth`;
@@ -251,42 +277,94 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     }
   };
 
+  /** Grant — run the OAuth flow. Attaches the selected project on the way when
+   *  there is one; with none, it is a user-level grant and nothing more.
+   *
+   *  This used to refuse outright without a project ("an OAuth token is granted
+   *  to a project, not to the app"), which is only half true: the grant is
+   *  user-scoped on BOTH backends — neither `auth` handler reads a target
+   *  entity — and only the attach that follows needs a project. On the hub,
+   *  where a user can hold zero projects, that guard made every row a dead end. */
   const handleConnect = async (connectionId: string) => {
     const connection = allConnections.find((conn) => conn.id === connectionId);
     if (!connection) return;
-    // Check if we have a current project
-    if (!projectTypeId) {
-      notify.error({
-        title: t`No project selected`,
-        message: t`Pick a project first — an OAuth token is granted to a project, not to the app.`,
-      });
-      return;
-    }
 
     try {
-      const currentStatus = connection.status;
-      const providerName = connection.providerName || connection.provider.toLowerCase();
-
-      if (
-        currentStatus === ConnectionStatus.DISCONNECTED ||
-        // Held but dead. Attaching would re-share the same refused credential and
-        // report success, leaving the row Connected and every call still failing;
-        // only a new grant replaces the token.
-        currentStatus === ConnectionStatus.NEEDS_REAUTH
-      ) {
-        // No usable OAuth token, start the full OAuth flow
-        await connect(connectionId, providerName);
-      } else {
-        // OAuth token exists (AVAILABLE/CONNECTED), just attach to current project
-        await attach(connectionId, providerName);
-      }
+      const providerName = connection.providerName;
+      await connect(connectionId, providerName);
     } catch (error) {
-      // Surfaced, not just logged: every failure here (no token yet, a provider
-      // this instance cannot complete a flow for, a backend refusal) used to
-      // land in the console only, so the button looked like it did nothing.
+      // Surfaced, not just logged: every failure here (a provider this instance
+      // cannot complete a flow for, a backend refusal) used to land in the
+      // console only, so the button looked like it did nothing.
       notify.error({
         title: t`${connection.provider} connection failed`,
         message: errorMessage(error, t`Could not connect to ${connection.provider}.`),
+      });
+    }
+  };
+
+  /** Placement — give the selected project use of a credential already held. */
+  const handleAttach = async (connectionId: string) => {
+    const connection = allConnections.find((conn) => conn.id === connectionId);
+    if (!connection || !projectTypeId) return;
+    try {
+      await attach(connectionId, connection.providerName);
+    } catch (error) {
+      notify.error({
+        title: t`${connection.provider} connection failed`,
+        message: errorMessage(error, t`Could not give this project access to ${connection.provider}.`),
+      });
+    }
+  };
+
+  /** Attach/detach a project named by the usage popover — which is usually NOT
+   *  the selected one; that is the point of managing placement from there. */
+  const handleToggleProject = async (connection: ExtendedOAuthConnection, project: Project, nextAttached: boolean) => {
+    const providerName = connection.providerName;
+    setTogglingProjectId(project.id ?? null);
+    try {
+      if (nextAttached) {
+        await attach(connection.id, providerName, undefined, project.typeId);
+      } else {
+        await detach(connection.id, providerName, project.typeId);
+      }
+    } catch (error) {
+      notify.error({
+        title: nextAttached ? t`Could not give access` : t`Could not remove access`,
+        message: errorMessage(error, t`${connection.provider} could not be updated for this project.`),
+      });
+    } finally {
+      setTogglingProjectId(null);
+    }
+  };
+
+  /** What the confirmation says. Names the projects rather than counting them:
+   *  "3 projects" is a number, "Alpha, Beta and Gamma" is a decision. */
+  const deleteDescription = (connection: ExtendedOAuthConnection | null): string => {
+    if (!connection) return '';
+    const names = (usage[connection.providerName] ?? []).map((p) => p.displayName || p.name).filter(Boolean);
+    const provider = connection.provider;
+    if (names.length === 0) {
+      return t`The credential is removed from your account. No project is using it right now, and you'll have to sign in again to use ${provider}.`;
+    }
+    const list = names.join(', ');
+    return t`${provider} is used by ${names.length} project(s): ${list}. Deleting removes access for all of them, and you'll have to sign in again.`;
+  };
+
+  /** Destroy the user's credential. Distinct from detach in kind, not degree —
+   *  every project that borrowed it loses access — so it is always confirmed. */
+  const handleDeleteCredential = async (connection: ExtendedOAuthConnection) => {
+    const providerName = connection.providerName;
+    try {
+      await disconnect(connection.id, providerName);
+      notify.success({
+        title: t`${connection.provider} deleted`,
+        message: t`The credential was removed from your account.`,
+      });
+    } catch (error) {
+      notify.error({
+        title: t`Could not delete ${connection.provider}`,
+        message: errorMessage(error, t`The credential could not be removed.`),
       });
     }
   };
@@ -296,7 +374,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     if (!connection) return;
 
     try {
-      const providerName = connection.providerName || connection.provider.toLowerCase();
+      const providerName = connection.providerName;
       // Status 3: Detach from current project
       await detach(connectionId, providerName);
     } catch (error) {
@@ -336,6 +414,9 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
               <TableHead className="w-[200px]">
                 <Trans>Status</Trans>
               </TableHead>
+              <TableHead className="w-[180px]">
+                <Trans>Used by</Trans>
+              </TableHead>
               <TableHead className="w-[210px] text-right">
                 <Trans>Actions</Trans>
               </TableHead>
@@ -343,6 +424,12 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
           </TableHeader>
           <TableBody>
             {allConnections.map((connection) => {
+              // Grant vs placement: `grant` says whether the user holds the
+              // credential at all (answerable with no project); `status` says
+              // what the selected project sees.
+              const grant = grantStatuses[connection.providerName] ?? GrantStatus.NONE;
+              const held = grant !== GrantStatus.NONE;
+              const attachedProjects = usage[connection.providerName] ?? NO_PROJECTS;
               return (
                 <TableRow key={connection.id}>
                   <TableCell className="font-medium">
@@ -399,7 +486,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
 
                   <TableCell>
                     {(() => {
-                      const meta = STATUS_META[connection.status] ?? STATUS_META[ConnectionStatus.DISCONNECTED];
+                      const meta = GRANT_META[grant];
                       const connecting = connectingConnectionId === connection.id;
                       return (
                         <div className="flex items-center gap-2 text-sm">
@@ -410,7 +497,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                             )}
                           />
                           <span className={connecting ? 'text-muted-foreground' : meta.text}>
-                            {connecting ? t`Waiting for approval…` : statusLabel(connection.status)}
+                            {connecting ? t`Waiting for approval…` : statusLabel(grant)}
                           </span>
                           {!connecting && connection.connectedAt && (
                             <span className="truncate text-xs text-muted-foreground/70">
@@ -422,9 +509,31 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                     })()}
                   </TableCell>
 
+                  <TableCell data-testid={`connection-usage-${connection.id}`}>
+                    {held ? (
+                      <UsageCell
+                        projects={projects ?? []}
+                        attached={attachedProjects}
+                        isLoading={usageLoading}
+                        isEnabled={usageEnabled}
+                        onEnable={() => setUsageForced(true)}
+                        busyProjectId={togglingProjectId}
+                        onToggle={(project, next) => void handleToggleProject(connection, project, next)}
+                      />
+                    ) : (
+                      <span className="text-xs text-muted-foreground/60">—</span>
+                    )}
+                  </TableCell>
+
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      {connection.status !== ConnectionStatus.DISCONNECTED && (
+                      {/* A probe spends the token, so it runs as whoever is
+                          allowed to spend it — and the owner needs no grant to
+                          spend their own. Offered for any held credential: with
+                          a project selected the probe runs as that project (and
+                          the consent gate applies), without one it runs as the
+                          user. Both backends answer. */}
+                      {held && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -442,20 +551,36 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                           <Trans>Test</Trans>
                         </Button>
                       )}
-                      {connection.status === ConnectionStatus.CONNECTED ? (
-                        // Ghost until hovered, and destructive only then: revoking
-                        // access should not be the loudest thing in a table whose
-                        // normal state is "already connected".
+                      {/* Placement, scoped to the selected project. Cheap and
+                          reversible from the same row, so no confirmation. */}
+                      {held && projectTypeId && connection.status === ConnectionStatus.CONNECTED && (
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => void handleDisconnect(connection.id)}
                           disabled={connectingConnectionId === connection.id}
                           className="h-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          data-testid={`connection-detach-${connection.id}`}
                         >
-                          <Trans>Disconnect</Trans>
+                          <Trans>Remove from project</Trans>
                         </Button>
-                      ) : (
+                      )}
+                      {held && projectTypeId && connection.status === ConnectionStatus.AVAILABLE && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void handleAttach(connection.id)}
+                          disabled={connectingConnectionId === connection.id}
+                          className="h-7"
+                          data-testid={`connection-attach-${connection.id}`}
+                        >
+                          <Trans>Add to project</Trans>
+                        </Button>
+                      )}
+                      {/* The grant itself. Offered when there is no usable
+                          credential — including NEEDS_REAUTH, where attaching
+                          would re-share a refused token and report success. */}
+                      {grant !== GrantStatus.HELD && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -468,10 +593,45 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
                               <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
                               <Trans>Connecting</Trans>
                             </>
+                          ) : grant === GrantStatus.NEEDS_REAUTH ? (
+                            <Trans>Reconnect</Trans>
                           ) : (
                             <Trans>Connect</Trans>
                           )}
                         </Button>
+                      )}
+                      {/* Destroying the credential is a different act from
+                          detaching, so it lives behind an overflow menu and a
+                          confirmation rather than next to the everyday buttons. */}
+                      {held && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                              title={t`More`}
+                              data-testid={`connection-more-${connection.id}`}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onSelect={() => {
+                                // Force the usage fan-out: the dialog must name
+                                // what breaks, and "unknown" is not an option.
+                                setUsageForced(true);
+                                setPendingDelete(connection);
+                              }}
+                              data-testid={`connection-delete-${connection.id}`}
+                            >
+                              <Trash2 className="mr-2 h-3.5 w-3.5" />
+                              <Trans>Delete credential</Trans>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       )}
                     </div>
                   </TableCell>
@@ -480,7 +640,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
             })}
             {allConnections.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
                   <Trans>No OAuth providers available</Trans>
                 </TableCell>
               </TableRow>
@@ -488,6 +648,31 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
           </TableBody>
         </Table>
       </div>
+
+      {/* Blast radius, by name. The count comes from the same usage map the
+          Used-by column reads, force-loaded when this dialog opens. */}
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingDelete(null);
+            setUsageForced(false);
+          }
+        }}
+        title={t`Delete ${pendingDelete?.provider ?? ''} credential?`}
+        description={deleteDescription(pendingDelete)}
+        confirmLabel={t`Delete credential`}
+        variant="destructive"
+        onConfirm={() => {
+          const target = pendingDelete;
+          setPendingDelete(null);
+          if (target) void handleDeleteCredential(target);
+        }}
+        onCancel={() => {
+          setPendingDelete(null);
+          setUsageForced(false);
+        }}
+      />
     </div>
   );
 };

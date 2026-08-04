@@ -5,7 +5,9 @@
  * Mirrors flow_sdk/fs_store/fs_ref.py FSRef on the Python side.
  */
 
+import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
+import type { FileUpload } from '../services/FileUpload';
 
 export type FSRefType = 'text' | 'json' | 'folder' | 'file';
 
@@ -67,6 +69,21 @@ export class FSRef {
     await fsManager.writeFile(this.typeId, this.path, content);
   }
 
+  /** Upload a file into this folder through the ordinary entity VFS action. */
+  async uploadFile(file: File): Promise<FileUpload> {
+    if (this.readOnly) throw new Error(`Cannot upload to read-only FSRef: ${this.path}`);
+    const { fsManager } = await import('../services/fsService');
+    return fsManager.uploadFile(this.typeId, this.path, file);
+  }
+
+  /** Browser URL for this file through the ordinary entity VFS action. */
+  getDownloadUrl(): string {
+    const action = new ActionInfo('fs', this.typeId.type, this.typeId.id, 'GET');
+    const cleanPath = this.path.replace(/^\/+/, '');
+    action.subpath = cleanPath ? `download/${cleanPath}` : 'download';
+    return action.fullActionUrl;
+  }
+
   async exists(): Promise<boolean> {
     try {
       const { fsManager } = await import('../services/fsService');
@@ -104,9 +121,12 @@ export class FSRef {
 
   async ls(): Promise<FSRef[]> {
     const { fsManager } = await import('../services/fsService');
-    const result = await fsManager.listDirectory(this.typeId, this.path).catch(() => ({ items: [] as Array<{name: string; relativePath?: string}> }));
-    return (result.items ?? []).map((item: {name: string; relativePath?: string}) => {
-      const itemPath = item.relativePath ?? (this.path.endsWith('/') ? `${this.path}${item.name}` : `${this.path}/${item.name}`);
+    const result = await fsManager
+      .listDirectory(this.typeId, this.path)
+      .catch(() => ({ items: [] as Array<{ name: string; relativePath?: string }> }));
+    return (result.items ?? []).map((item: { name: string; relativePath?: string }) => {
+      const itemPath =
+        item.relativePath ?? (this.path.endsWith('/') ? `${this.path}${item.name}` : `${this.path}/${item.name}`);
       return new FSRef(itemPath, this.typeId, 'file', this.readOnly);
     });
   }

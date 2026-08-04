@@ -131,6 +131,7 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
         processType={ProcessKind.Chat}
         className="h-full border-r border-border"
         dense
+        allowAttachments
         leadingSlot={({ startNewSession }) => (
           <button
             type="button"

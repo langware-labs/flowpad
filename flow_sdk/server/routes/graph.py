@@ -177,6 +177,22 @@ async def handle_request(
         await fill_self_cls_param_if_needed(kwargs, first_param, request_info)
     _hr_bench("after fill_self_cls_param")
 
+    # A published Git-backed asset has no local byte authority. Forward its
+    # ordinary entity-VFS request before parsing/binding the action body so the
+    # exact method, path, query, multipart bytes, and download response remain
+    # intact. A Hub rejection is the response; there is deliberately no local
+    # fallback for this branch.
+    from flow_sdk.server.routes._hub_reflect import (
+        is_git_backed_remote_fs,
+        proxy_git_backed_remote_fs,
+    )
+
+    entity_for_early_fs_proxy = kwargs.get("self")
+    if entity_for_early_fs_proxy is None and request_info.auth_result is not None:
+        entity_for_early_fs_proxy = request_info.auth_result.target
+    if is_git_backed_remote_fs(entity_for_early_fs_proxy, a.action_name):
+        return await proxy_git_backed_remote_fs(request)
+
     request_params = request_info.request_parameters
 
     # Read JSON body once to avoid consuming it multiple times

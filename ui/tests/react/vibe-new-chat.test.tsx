@@ -10,8 +10,25 @@ vi.mock('@src/pages/flow-page/use-start-vibe-session', () => ({
   useStartVibeSession: () => startVibe,
 }));
 
+// Stable identity, like the real hook — a fresh object per render would
+// re-fire any consumer memo/effect keyed on it.
+const EMPTY_ENTITIES_QUERY = {
+  data: [] as never[],
+  isLoading: false,
+  error: null,
+  isError: false,
+  isSuccess: true,
+  refetch: () => {},
+};
+
 vi.mock('@sdk/react/hooks', () => ({
   useAuth: () => ({ user: { name: 'Ada Lovelace' } }),
+  // ProjectActionsRow (rendered by VibeNewChat) reads `useProjects()`, which is
+  // built on `useEntitiesQuery`. This surface only branches on whether the list
+  // is non-empty, and the assertions below are about the submitted model tier —
+  // so an empty, settled result keeps the row in its no-projects state without
+  // pulling a live query into this render.
+  useEntitiesQuery: () => EMPTY_ENTITIES_QUERY,
 }));
 
 vi.mock('@src/components/open-project-component/open-project-component', () => ({

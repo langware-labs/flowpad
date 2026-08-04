@@ -233,20 +233,14 @@ class Entity(DBEntity):
         default_factory=list,
         description="Hub role roster cache: [{user_id, email, name, role, status}]. Hub-authoritative; local is a read cache.",
     )
-    # Git provenance + placement for an asset RECEIVED via a conversation. A raw
-    # ``GitOrigin`` dict ({provider,owner,name,branch,head_commit,rel_path}) —
-    # stored as json to avoid a core→builtin import cycle; construct/validate via
-    # ``flow_sdk.builtin.git_origin.GitOrigin`` at the boundaries. Set ONLY on the
-    # receiver when a shared file-backed asset carried a git origin in the bundle,
-    # so the receiver knows the asset's intended repo-relative location even
-    # without git access. ``persist=TRUE`` → written to the backend record
-    # metadata.json (survives reindex), NOT the asset's user-facing file. Excluded
-    # from ``share()`` (local provenance, never a hub-synced field).
+    # Portable Git provenance + placement for a file-backed asset. The value is
+    # shared with the Hub, while ``persist=TRUE`` writes only backend record
+    # metadata — never the user-facing asset frontmatter/body.
     git_origin: dict | None = APIField(
-        sharing=Sharing.PRIVATE,
+        sharing=Sharing.SHARED,
         default=None,
         persist=Persist.TRUE,
-        description="Git provenance/placement of a received shared asset (local-only; see GitOrigin).",
+        description="Secret-free Git provenance and repo-relative asset placement.",
     )
     asset_occurrences: list[dict] = APIField(
         sharing=Sharing.PRIVATE,
@@ -2197,19 +2191,22 @@ class Entity(DBEntity):
         # asset_ref / parent_path on the entity BEFORE the DB write, so the
         # row carries them on first save. After this call, ``store()`` only
         # has to upsert main_ref and sync_from_entity.
-        await self._prepare_for_storage()
-        await self._save_blobs()
         # Captured before the write flips ``exist_in_db``: a fresh entity can't yet
         # have a Tab pointing at it, so the project-reconcile below is update-only.
         was_create = not self.exist_in_db
+        create_target = await self._prepare_for_storage()
         suppress_store = _SUPPRESS_STORE.get()
 
         type_info = SchemaRegistry.get(self.get_type())
-        if type_info is not None and type_info.db_only:
-            # A DB-only type has no filesystem shadow and therefore no opposite
-            # disk→DB sync to serialize against.
-            await super().save(user_id, notify=notify)
-        else:
+
+        async def persist_prepared_entity() -> None:
+            await self._save_blobs()
+            if type_info is not None and type_info.db_only:
+                # A DB-only type has no filesystem shadow and therefore no
+                # opposite disk→DB sync to serialize against.
+                await DBEntity.save(self, user_id, notify=notify)
+                return
+
             from flow_sdk.fs_store.fs_record import record_sync_guard
 
             # Keep a normal DB write and its filesystem mirror indivisible with
@@ -2217,12 +2214,33 @@ class Entity(DBEntity):
             # explicitly same-task reentrant: ``FSRecord.sync_to_db`` owns it when
             # it reaches this save through ``from_record``.
             async with record_sync_guard(self.get_type(), self.id):
-                await super().save(user_id, notify=notify)
+                await DBEntity.save(self, user_id, notify=notify)
                 if not suppress_store:
                     # Sync metadata down to disk + upsert main_ref iff missing
                     # (Record contract: writes go through main_ref FSRef, no
                     # per-type store()).
                     await self.store()
+
+        if create_target is None:
+            await persist_prepared_entity()
+        else:
+            from flow_sdk.fs_store.fs_record import (
+                assert_create_target_available,
+                create_target_guard,
+            )
+
+            create_info, create_ref = create_target
+            async with create_target_guard(create_info, create_ref):
+                # Re-check inside the path guard. Multiple creates may all pass
+                # the early check in ``_prepare_for_storage``; only the first is
+                # allowed to perform the DB write + carrier materialization.
+                assert_create_target_available(
+                    create_info,
+                    create_ref,
+                    entity_type=self.get_type(),
+                    name=(getattr(self, "name", None) or getattr(self, "title", None) or ""),
+                )
+                await persist_prepared_entity()
 
         # The disk→DB adopt path (from_record) suppresses disk write-back via
         # the _SUPPRESS_STORE contextvar so the source-of-truth file is never
@@ -2257,7 +2275,7 @@ class Entity(DBEntity):
         get_auth_cache().invalidate_entity(self.typeid)
         return self
 
-    async def _prepare_for_storage(self, scope_root: "Path | None" = None) -> None:
+    async def _prepare_for_storage(self, scope_root: "Path | None" = None):
         """Resolve scope-derived fields on the entity before DB save.
 
         For Records that declare ``_main_subdir``, this resolves scope_root
@@ -2282,14 +2300,43 @@ class Entity(DBEntity):
             scope_proj = await self._resolve_scope_project()
             if scope_proj is not None:
                 self.project_id = scope_proj.id
-        if getattr(self, "asset_ref", None):
+        type_name = self.get_type()
+        info = SchemaRegistry.get(type_name)
+
+        def fresh_owned_create_target(asset_ref):
+            # Collision rejection governs ordinary user-authorable assets.
+            # Internal generated types (``creatable=False`` reports/traces)
+            # own separate upsert lifecycles and may deliberately refresh a
+            # stable carrier. A ``_SUPPRESS_STORE`` reflection adopts an
+            # already-materialized carrier without writing it and therefore
+            # is not a competing create.
+            if (
+                info is None
+                or self.exist_in_db
+                or _SUPPRESS_STORE.get()
+                or not info.creatable
+                or not info.owns_main_ref
+            ):
+                return None
+            from flow_sdk.fs_store.fs_record import assert_create_target_available
+
+            assert_create_target_available(
+                info,
+                asset_ref,
+                entity_type=type_name,
+                name=(getattr(self, "name", None) or getattr(self, "title", None) or ""),
+            )
+            return info, asset_ref
+
+        existing_asset_ref = getattr(self, "asset_ref", None)
+        if existing_asset_ref:
             # Already set (entity update or explicit caller-set path), but the
             # scope tag may still be unstamped — derive it (project-aware) so
             # every save labels its bucket, not just HTTP-create/indexer paths.
             self._stamp_scope()
-            return
-        type_name = self.get_type()
-        info = SchemaRegistry.get(type_name)
+            from flow_sdk.fs_store.fs_ref import FSRef
+
+            return fresh_owned_create_target(FSRef(existing_asset_ref))
         if info is None or info._resolved_layout[0] is None:
             return
         # REPO assets nest inside their parent: a repo child lands at
@@ -2314,6 +2361,7 @@ class Entity(DBEntity):
         ar = rec.compute_asset_ref(scope_root, self, default_worker=default_worker)
         if ar is None or getattr(ar, "_path", None) is None:
             return
+        create_target = fresh_owned_create_target(ar)
         from flow_sdk.fs_store.path_utils import canonical_posix_path
 
         path_str = canonical_posix_path(ar.path)
@@ -2329,6 +2377,7 @@ class Entity(DBEntity):
         # plus per-edge band-aids, so any other writer birthed a scope-less row
         # that leaked into every project scope (e.g. usage_report).
         self._stamp_scope()
+        return create_target
 
     @staticmethod
     def _scope_from_path(path) -> str | None:

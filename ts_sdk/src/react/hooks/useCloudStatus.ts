@@ -1,11 +1,6 @@
 import { useEffect, useState } from 'react';
 import { cloudManager } from '../../services/cloud_login';
-import {
-  ConnectionSlot,
-  HubConnectionStatus,
-  HubLoginStatus,
-  LoginSlot,
-} from '../../services/cloud_status';
+import { ConnectionSlot, HubConnectionStatus, HubLoginStatus, LoginSlot } from '../../services/cloud_status';
 
 export interface UseCloudStatusResult {
   login: LoginSlot<HubLoginStatus>;

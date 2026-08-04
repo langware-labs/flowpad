@@ -169,7 +169,10 @@ export function CollapsedSidebar() {
   const hubMode = currentDock?.page === PageId.HUB;
   // Built only in hub mode (desk is the common case — don't allocate/translate 7
   // unused entries every desk render).
-  const hubItems = useMemo(() => (hubMode ? buildHubRailItems(t) : NO_HUB_ITEMS), [hubMode, t]);
+  const hubItems = useMemo(
+    () => (hubMode ? buildHubRailItems(t, project?.id ?? null) : NO_HUB_ITEMS),
+    [hubMode, t, project?.id],
+  );
 
   // Content gates: an icon earns its slot only once the thing it opens exists.
   const gates: Record<RailGate, boolean> = {

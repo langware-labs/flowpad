@@ -115,6 +115,32 @@ If `flow record create` fails, copy its stderr verbatim into the receipt's
 actually went out. **A recording failure is not a send failure.** The mail is
 gone; saying otherwise invites someone to send it again.
 
+On success the command prints JSON containing `outcomes`. Keep
+`outcomes[0].entity_id` — it is the id of the SourceItem you just created, and
+the next step needs it.
+
+## 2b. Register the sent message as this run's artifact
+
+**Only if you actually sent AND recorded.** One command:
+
+```bash
+<the absolute flow path> artifact entity source_item-<entity_id> --no-show
+```
+
+A sent message is a deliverable — the direct product of what the user asked for
+— so it is exactly what an artifact is for. This is what makes the send show up
+in the run's output and on the `artifact.*` bus lane, which is how the UI and
+the tests learn the mail went out. Without it the run produces a receipt file
+nobody is watching.
+
+`--no-show` is not optional. The user is looking at their conversation; the
+default would yank their display onto the raw message record mid-send.
+
+Take `artifact_id` from the JSON it prints. If this command fails, put its
+stderr in the receipt's `error` and set `artifact_id` to null — but leave
+`sent` and `recorded` as they are. Failing to *announce* the mail does not
+un-send it.
+
 ## 3. Write the receipt
 
 Last, write this JSON to the receipt path in your run details:
@@ -128,6 +154,8 @@ Last, write this JSON to the receipt path in your run details:
   "thread_key": "<the thread it landed in>",
   "occurred_at": "<ISO-8601 send time>",
   "recorded": true,
+  "entity_id": "<the SourceItem id from step 2>",
+  "artifact_id": "<the artifact id from step 2b>",
   "error": null
 }
 ```
@@ -137,6 +165,8 @@ Last, write this JSON to the receipt path in your run details:
   and `drafted` is true; both false with no `error` is not an outcome.
 - `recorded` — whether `flow record create` succeeded. Always `false` for a
   draft, because a draft is not recorded.
+- `entity_id` / `artifact_id` — from steps 2 and 2b; `null` for a draft, and
+  `artifact_id` is `null` if registration failed on its own.
 - `error` — `null` on success. Otherwise a short machine string
   (`no_connector`, `auth_failed`, `rate_limited`) or the verbatim stderr of a
   failed command.

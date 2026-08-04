@@ -1,4 +1,16 @@
-import { SubAgent, dataManager, DynamicWorkflow, Layout, Markdown, Project, Prompt, Skill, Task, Whiteboard } from '@sdk';
+import {
+  Agent,
+  SubAgent,
+  dataManager,
+  DynamicWorkflow,
+  Layout,
+  Markdown,
+  Project,
+  Prompt,
+  Skill,
+  Task,
+  Whiteboard,
+} from '@sdk';
 import { PromptEditDialog } from '@src/components/prompt-library/PromptEditDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
 import type { ComponentType } from 'react';
@@ -56,6 +68,8 @@ export interface QuickCreateDescriptor {
    * it had moved to `agentic-assets/task`.
    */
   fallbackSubFolder: string;
+  /** Scope chips this type supports. Omitted means all scopes. */
+  allowedScopes?: readonly ScopeKind[];
   /** Creation function — shared between the quick-create dialog and AssetsPage. */
   create: (args: QuickCreateCreateArgs) => Promise<QuickCreateResult>;
   /**
@@ -116,6 +130,23 @@ export function subFolderFor(descriptor: QuickCreateDescriptor, harness: Harness
 
 export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   {
+    type: Agent.type,
+    label: 'Agent',
+    wikiword: 'Agent Management',
+    fallbackSubFolder: 'agentic-assets/agent',
+    allowedScopes: ['user', 'project'],
+    create: async ({ project, name, scope, folderVfsPath }) => {
+      if (scope === 'folder') {
+        throw new Error('Agents can only be created in User or Project scope');
+      }
+      const saved = await Agent.createInProject(project, name, folderVfsPath);
+      return {
+        pointer: DockPointer.forAssetEditorByTypeId(Agent.type, saved.typeId),
+        toastTitle: 'Agent created',
+      };
+    },
+  },
+  {
     type: 'skill',
     label: 'Skill',
     wikiword: 'Skill assets',
@@ -126,7 +157,10 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
         // Open a freshly-created skill ready to type into: edit mode, caret on the
         // line right after the auto-inserted `# <name>` headline (body line 2).
         pointer: saved.asset_ref
-          ? DockPointer.forAssetEditor('skill', saved.asset_ref, Layout.DOCK, { editorMode: 'editor', initialLine: '2' })
+          ? DockPointer.forAssetEditor('skill', saved.asset_ref, Layout.DOCK, {
+              editorMode: 'editor',
+              initialLine: '2',
+            })
           : undefined,
         toastTitle: 'Skill created',
       };
@@ -143,7 +177,10 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
         // Open a freshly-created agent ready to type into: edit mode, caret at the
         // start of the (empty) system-prompt body, right after the headline.
         pointer: saved.asset_ref
-          ? DockPointer.forAssetEditor('subagent', saved.asset_ref, Layout.DOCK, { editorMode: 'editor', initialLine: '2' })
+          ? DockPointer.forAssetEditor('subagent', saved.asset_ref, Layout.DOCK, {
+              editorMode: 'editor',
+              initialLine: '2',
+            })
           : undefined,
         toastTitle: 'SubAgent created',
       };
@@ -157,9 +194,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     create: async ({ project, name }) => {
       const saved = await DynamicWorkflow.createInProject(project, name);
       return {
-        pointer: saved.asset_ref
-          ? DockPointer.forAssetEditor('dynamic_workflow', saved.asset_ref)
-          : undefined,
+        pointer: saved.asset_ref ? DockPointer.forAssetEditor('dynamic_workflow', saved.asset_ref) : undefined,
         toastTitle: 'Dynamic workflow created',
       };
     },

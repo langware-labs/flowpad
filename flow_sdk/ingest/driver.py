@@ -66,11 +66,16 @@ class SendOutcome:
     orthogonal to ``status`` and load-bearing: False on a SENT message means
     the mail is gone but the local copy is missing, and re-sending to fix the
     bookkeeping would mail the recipient twice.
+
+    ``artifact_id`` is set when the transport registered the sent message as
+    the run's deliverable. Empty is not a failure — a transport with no run
+    behind it (a direct API send) has no producer to attribute an artifact to.
     """
 
     external_id: str = ""
     status: SendStatus = SendStatus.SENT
     recorded: bool = False
+    artifact_id: str = ""
 
     @property
     def drafted(self) -> bool:

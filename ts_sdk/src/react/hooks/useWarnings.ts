@@ -22,16 +22,12 @@ import { useContext } from './useContext';
  * all-checked gate avoids a false flash while startup discovery is still
  * running.
  */
-export function isNoHarnessFound(
-  snapshots: ReadonlyArray<{ checked: boolean; available: boolean }>,
-): boolean {
+export function isNoHarnessFound(snapshots: ReadonlyArray<{ checked: boolean; available: boolean }>): boolean {
   return snapshots.every((snapshot) => snapshot.checked && !snapshot.available);
 }
 
 function readNoHarnessFound(): boolean {
-  return isNoHarnessFound(
-    HARNESS_CAPABILITY_KINDS.map((kind) => capabilityManager.getSnapshot(kind)),
-  );
+  return isNoHarnessFound(HARNESS_CAPABILITY_KINDS.map((kind) => capabilityManager.getSnapshot(kind)));
 }
 
 /**
@@ -56,9 +52,7 @@ export function isHarnessLoginRequired(
 }
 
 function readHarnessLoginRequired(): boolean {
-  return isHarnessLoginRequired(
-    HARNESS_CAPABILITY_KINDS.map((kind) => capabilityManager.getSnapshot(kind)),
-  );
+  return isHarnessLoginRequired(HARNESS_CAPABILITY_KINDS.map((kind) => capabilityManager.getSnapshot(kind)));
 }
 
 /**
@@ -68,21 +62,13 @@ function readHarnessLoginRequired(): boolean {
  */
 export function useWarnings() {
   const context = useContext();
-  const {
-    isDesktop,
-    cloudLoginAvailable,
-    computeNode,
-    snifferEnabled,
-    snifferInstalled,
-    cloudConnectionStatus,
-  } = context;
+  const { isDesktop, cloudLoginAvailable, computeNode, snifferEnabled, snifferInstalled, cloudConnectionStatus } =
+    context;
 
   // Track the most recent hub HTTP error (4xx/5xx) reported by the local
   // backend's httpx hook. Shown as a soft warning so the user can see the
   // full method/path/status and copy it; clicking dismisses it.
-  const [lastHubError, setLastHubError] = useState<HubClientErrorInfo | null>(
-    () => cloudManager.lastHubError,
-  );
+  const [lastHubError, setLastHubError] = useState<HubClientErrorInfo | null>(() => cloudManager.lastHubError);
   useEffect(() => {
     const handler = (next: HubClientErrorInfo | null) => setLastHubError(next);
     cloudManager.on('last_hub_error_changed', handler);
@@ -132,13 +118,15 @@ export function useWarnings() {
     // present at once (e.g. WS reconnecting + an in-flight fs/download
     // returned 404).
     if (lastHubError) {
-      warnings.push(createHubRequestFailedWarning({
-        method: lastHubError.method,
-        path: lastHubError.path,
-        statusCode: lastHubError.statusCode,
-        message: lastHubError.message,
-        onDismiss: () => cloudManager.clearLastHubError(),
-      }));
+      warnings.push(
+        createHubRequestFailedWarning({
+          method: lastHubError.method,
+          path: lastHubError.path,
+          statusCode: lastHubError.statusCode,
+          message: lastHubError.message,
+          onDismiss: () => cloudManager.clearLastHubError(),
+        }),
+      );
     }
 
     // No compute node warning
@@ -171,7 +159,17 @@ export function useWarnings() {
     }
 
     return warnings;
-  }, [isDesktop, cloudLoginAvailable, cloudConnectionStatus, computeNode, snifferEnabled, snifferInstalled, lastHubError, noHarnessFound, harnessLoginRequired]);
+  }, [
+    isDesktop,
+    cloudLoginAvailable,
+    cloudConnectionStatus,
+    computeNode,
+    snifferEnabled,
+    snifferInstalled,
+    lastHubError,
+    noHarnessFound,
+    harnessLoginRequired,
+  ]);
 
   // Update context warnings when computed warnings change
   useEffect(() => {

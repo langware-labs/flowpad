@@ -20,13 +20,13 @@ import importlib
 import logging
 import pkgutil
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from flow_sdk.capsules import CapsuleSpec
-logger = logging.getLogger(__name__)
-
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 from flow_sdk.schema.view_mode import ViewMode
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -47,6 +47,9 @@ class TypeMetadata:
     creatable: bool = False
     indexed_by_default: bool = False
     api_visible: bool = False
+    # Cloud transport for file-backed assets. Runtime delivery capability only;
+    # it deliberately does not participate in the local indexing schema hash.
+    cloud_file_transport: Literal["embedded", "git"] = "embedded"
     # True ⇒ this entity type persists only in the database. ``Entity.save``
     # skips the FSRecord guard + disk mirror entirely; there is no disk→DB adopt
     # path for the type. Runtime persistence policy, not part of the schema hash.
@@ -151,6 +154,7 @@ class TypeMetadata:
             creatable=self.creatable,
             indexed_by_default=self.indexed_by_default,
             api_visible=self.api_visible,
+            cloud_file_transport=self.cloud_file_transport,
             db_only=self.db_only,
             index_fields=list(self.index_fields),
             asset_class=self.asset_class,

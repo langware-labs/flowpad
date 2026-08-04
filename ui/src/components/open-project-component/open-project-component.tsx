@@ -15,6 +15,7 @@ import { notify } from '@src/notifications';
 import { Check, FolderOpen, FolderPlus, Loader2, Search } from 'lucide-react';
 import { projectRecencyMs } from '@src/lib/project-recency';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 /** Free-text match against a project's display name or cwd. `q` must already be
@@ -197,16 +198,22 @@ function CompactProjectSelectDialog({
           )}
 
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 gap-1.5"
-              onClick={onOpenFolder}
-              disabled={!computeNodeAvailable || isSubmitting || !!openingProjectId}
-            >
-              <FolderOpen className="h-3.5 w-3.5" />
-              <Trans>Open Folder</Trans>
-            </Button>
+            {/* Native host folder picker — nothing to point at on a hub-only
+                server, whose files live on the git-backed VFS. Same gate as the
+                home-surface `ProjectActionsRow`, so the two can't disagree
+                about which affordances a hub offers. */}
+            {!isHubOnly() && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 gap-1.5"
+                onClick={onOpenFolder}
+                disabled={!computeNodeAvailable || isSubmitting || !!openingProjectId}
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+                <Trans>Open Folder</Trans>
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"

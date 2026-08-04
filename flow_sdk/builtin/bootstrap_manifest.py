@@ -7,14 +7,19 @@ files — things that must not become a copy, because they are meant to keep
 improving after the template is cloned::
 
     {
-      "helpdesks": ["https://github.com/acme/acme-helpdesk"],
+      "content_projects": [
+        {"url": "https://github.com/acme/acme-support", "branch": "main", "scope": "shared"}
+      ],
       "autolaunch_journey": "engagement-setup"
     }
 
-``helpdesks`` are attached as ordinary context folders (see
+``content_projects`` are attached as ordinary context folders (see
 ``Project.add_context_dir_from_git``). That is the whole point of the split: the
 template goes stale the moment it is cloned, the help desk never does, because
 it stays a link to the vendor's repo rather than a copy inside the customer's.
+
+``helpdesks`` remains supported as the legacy URL-only spelling. New manifests
+should use ``content_projects`` so they can pin the branch and context scope.
 
 Read defensively — this file comes from a third-party repo, and a malformed or
 hostile manifest must degrade to "declares nothing" rather than fail the
@@ -37,6 +42,16 @@ BOOTSTRAP_FILENAME = "bootstrap.json"
 # case. Bounded here so one manifest cannot turn project setup into an
 # unbounded series of clones.
 MAX_HELPDESKS = 8
+MAX_CONTENT_PROJECTS = 8
+
+
+@dataclass(frozen=True)
+class BootstrapContentProject:
+    """One live content dependency declared by a Project manifest."""
+
+    url: str
+    branch: str = ""
+    scope: str = "shared"
 
 
 @dataclass(frozen=True)
@@ -44,10 +59,11 @@ class BootstrapManifest:
     """What a template repo declares. Empty when there is no manifest."""
 
     helpdesks: tuple[str, ...] = ()
+    content_projects: tuple[BootstrapContentProject, ...] = ()
     autolaunch_journey: Optional[str] = None
 
     def __bool__(self) -> bool:
-        return bool(self.helpdesks or self.autolaunch_journey)
+        return bool(self.helpdesks or self.content_projects or self.autolaunch_journey)
 
 
 def bootstrap_manifest_path(repo_root: Path) -> Path:
@@ -84,7 +100,39 @@ def read_bootstrap_manifest(repo_root: Path) -> BootstrapManifest:
         if len(desks) >= MAX_HELPDESKS:
             break
 
+    content_projects: list[BootstrapContentProject] = []
+    seen_declarations: set[tuple[str, str, str]] = set()
+    declared_content = raw.get("content_projects")
+    for entry in declared_content if isinstance(declared_content, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        raw_url = entry.get("url")
+        if not isinstance(raw_url, str) or not raw_url.strip():
+            continue
+        url = raw_url.strip()
+        raw_branch = entry.get("branch", "")
+        branch = raw_branch.strip() if isinstance(raw_branch, str) else ""
+        raw_scope = entry.get("scope", "shared")
+        scope = raw_scope.strip() if isinstance(raw_scope, str) else "shared"
+        if scope not in ("private", "shared"):
+            continue
+        declaration = (url, branch, scope)
+        if declaration in seen_declarations:
+            continue
+        # Preserve conflicting declarations for the semantic reconciliation
+        # preflight. Silently keeping the first branch would install the wrong
+        # revision; the reader stays non-throwing, while the mutating action
+        # rejects the conflict before it links anything.
+        seen_declarations.add(declaration)
+        content_projects.append(BootstrapContentProject(url=url, branch=branch, scope=scope))
+        if len(content_projects) >= MAX_CONTENT_PROJECTS:
+            break
+
     journey = raw.get("autolaunch_journey")
     journey = journey.strip() if isinstance(journey, str) and journey.strip() else None
 
-    return BootstrapManifest(helpdesks=tuple(desks), autolaunch_journey=journey)
+    return BootstrapManifest(
+        helpdesks=tuple(desks),
+        content_projects=tuple(content_projects),
+        autolaunch_journey=journey,
+    )

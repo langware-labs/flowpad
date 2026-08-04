@@ -171,9 +171,7 @@ async function buildShellCleanup(e: ShellLoadError): Promise<CleanupRecord> {
 
 // ── public entry point ──────────────────────────────────────────────────────
 
-export async function loadNextProcess(
-  options: LoadNextProcessOptions = {},
-): Promise<LoadNextProcessResult> {
+export async function loadNextProcess(options: LoadNextProcessOptions = {}): Promise<LoadNextProcessResult> {
   const cleaned: CleanupRecord[] = [];
   const tried = new Set(options.excludeIds ?? []);
 

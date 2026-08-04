@@ -7,20 +7,20 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import FastAPI
 from starlette.requests import Request
 
-from flow_sdk.config import default_service_config
-from flow_sdk.flowpad_types.enums import ExpansionType
-from flow_sdk.api.type_id import TypeId
 from flow_sdk.actions.action_registry import get_action_from_method
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.request_context.request_utils import align_request_typeids
-from flow_sdk.core.urls.service_urls import urls_service
-
-from flow_sdk.utils import starlett_query_brackets_to_dict
 from flow_sdk.api.api_request import APIRequest
-from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.api.type_id import TypeId
+from flow_sdk.config import default_service_config
 from flow_sdk.core.policy import PolicyResolver
-from .auth_info import AuthContext, AuthResult
+from flow_sdk.core.urls.service_urls import urls_service
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.flowpad_types.enums import ExpansionType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.request_context.request_utils import align_request_typeids
 from flow_sdk.request_context.transaction_handler import TransactionHandler
+from flow_sdk.utils import starlett_query_brackets_to_dict
+
+from .auth_info import AuthContext, AuthResult
 
 
 class RequestInfo:
@@ -169,7 +169,11 @@ class RequestInfo:
     def parse_external_domain_micro_app_request(self, micro_app_id: str):
         self._lock = True
         self.target_entity_typeid = TypeId(type=BuiltinEntityType.MICRO_APP.value, id=micro_app_id)
-        self.action = default_service_config.micro_app_domain_config.view_action if default_service_config.micro_app_domain_config else None
+        self.action = (
+            default_service_config.micro_app_domain_config.view_action
+            if default_service_config.micro_app_domain_config
+            else None
+        )
         self.sub_path = (self.request.url.path if self.request.url.path != "/" else None) if self.request else None
 
     def is_micro_app_request(self) -> bool:
@@ -236,18 +240,10 @@ class RequestInfo:
         utm = {k: v for k, v in self.request_parameters.items() if k.startswith("utm_")}
         self.utm = utm if utm else None
 
-        # For POST/PUT/PATCH/DELETE requests, merge form data into request_parameters
-        # Only merge form data, not JSON data, as JSON is typically complex structured data
-        if request.method in ["POST", "PUT", "PATCH", "DELETE"]:
-            content_type = request.headers.get("content-type", "")
-            if "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
-                await self._parse_request_body()
-                if self._post_data and isinstance(self._post_data, dict):
-                    # Merge form data including UploadFile objects
-                    for key, value in self._post_data.items():
-                        # Include strings, lists, and UploadFile objects
-                        if isinstance(value, (str, list)) or hasattr(value, "filename"):
-                            self.request_parameters[key] = value
+        # Request bodies are deliberately not consumed in middleware. The graph
+        # dispatcher parses them once when binding handler arguments. This also
+        # lets a Git-backed remote FS request take the early CloudProxy branch
+        # with its original multipart/streaming body intact.
 
     @property
     def api_request(self) -> APIRequest:

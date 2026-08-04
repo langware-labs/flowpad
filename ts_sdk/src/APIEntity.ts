@@ -786,7 +786,8 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Push this entity to the hub via the standard graph action
    * ``POST /api/v1/graph/<type>/<id>/share``. The local backend's
    * ``share`` action handler forwards the create to the hub using the
-   * stored cloud credentials. On success, ``remote`` is flipped.
+   * stored cloud credentials. The action returns the backend's canonical
+   * entity; adopt that response rather than guessing which fields changed.
    *
    * When ``recipients`` is provided (list of email strings) and the entity
    * is a Conversation, each recipient is invited via the standard
@@ -798,9 +799,23 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const cleaned = recipients
       ?.map((r) => normalizeEmail(r))
       .filter((r): r is string => !!r);
-    info.bodyParameters = { ...this.toJSON(), ...(cleaned?.length ? { recipients: cleaned } : {}) };
-    await dataManager.callAction<unknown, unknown>(info);
-    (this as any).remote = true;
+    info.bodyParameters = cleaned?.length
+      ? { ...this.toJSON(), recipients: cleaned }
+      : {};
+    const response = await dataManager.callAction<unknown, unknown>(info);
+    if (
+      response &&
+      typeof response === 'object' &&
+      'id' in response &&
+      'type' in response &&
+      String((response as { id: unknown }).id) === this.id &&
+      String((response as { type: unknown }).type) === this.typeId.type
+    ) {
+      return dataManager.updateEntityFromJson<T>(response);
+    }
+    // Some specialized share actions return a receipt rather than an entity.
+    // They update their local cache server-side and broadcast that canonical
+    // state; crucially, do not manufacture ``remote=true`` while waiting for it.
     return this as unknown as T;
   }
 
