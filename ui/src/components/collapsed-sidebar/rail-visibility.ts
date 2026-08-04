@@ -106,8 +106,7 @@ export const MODE_CHAIN = [
  * NOTE on the absence of an `assets` entry: it is deliberate and load-bearing.
  * The project item already opens the project's assets (`navigation.openAssets()`),
  * so a separate Assets icon was a second door onto the same room — and it made
- * one click light two rail buttons, which is why `onTasks`/`onAssets` have to
- * subtract each other in the first place.
+ * one click light two rail buttons.
  *
  * Standard adds no icon of its own: it differs from Vibe only in what `chats`
  * targets (the chats list vs. resuming the last UI chat). That is the intended

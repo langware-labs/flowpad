@@ -66,6 +66,11 @@ msgstr "· pick a branch"
 msgid "\"{0}\" is over {MAX_FILE_SIZE_LABEL} and was not attached."
 msgstr "\"{0}\" is over {MAX_FILE_SIZE_LABEL} and was not attached."
 
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
+msgstr "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
+
 #. placeholder {0}: pendingDelete?.title ?? ''
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "\"{0}\" will be removed. This cannot be undone."
@@ -716,6 +721,10 @@ msgstr "A live session is already running in this conversation"
 msgid "A project with that name exists"
 msgstr "A project with that name exists"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
+msgstr "A source is one remote account or feed set. The poller syncs it on the heartbeat."
+
 #: src/components/triggers-view/TriggersList.tsx
 msgid "About FSOp triggers"
 msgstr "About FSOp triggers"
@@ -739,6 +748,10 @@ msgstr "Accepting…"
 #: src/components/connections-manager.tsx
 msgid "Access requested"
 msgstr "Access requested"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Account key"
+msgstr "Account key"
 
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Accurate"
@@ -842,6 +855,10 @@ msgstr "Add a comment..."
 msgid "Add a comment…"
 msgstr "Add a comment…"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Add a data source"
+msgstr "Add a data source"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Add a key in \"LLM API keys\" above to use it here"
 msgstr "Add a key in \"LLM API keys\" above to use it here"
@@ -921,6 +938,10 @@ msgstr "Add context folder"
 #~ msgid "Add custom label..."
 #~ msgstr "Add custom label..."
 
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Add data source"
+msgstr "Add data source"
+
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/components/wiki-toolbar/WikiToolbar.tsx
 msgid "Add entity link"
@@ -954,6 +975,10 @@ msgstr "Add New Hook"
 #: src/components/account/secrets-section.tsx
 msgid "Add secret"
 msgstr "Add secret"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Add source"
+msgstr "Add source"
 
 #: src/components/assets/TagFilterBar.tsx
 msgid "Add tag…"
@@ -993,6 +1018,11 @@ msgstr "Add Trigger"
 msgid "Add Variable"
 msgstr "Add Variable"
 
+#. placeholder {0}: source.name
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Added {0}"
+msgstr "Added {0}"
+
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Added vibe agent"
 msgstr "Added vibe agent"
@@ -1000,6 +1030,10 @@ msgstr "Added vibe agent"
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Adding…"
 msgstr "Adding…"
+
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Additional assets"
+msgstr "Additional assets"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Additional directories"
@@ -1015,6 +1049,7 @@ msgstr "Address book"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/conversation/ExecutePromptDialog.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 msgid "Advanced"
 msgstr "Advanced"
 
@@ -2086,6 +2121,8 @@ msgstr "Can't update — showing last synced"
 #: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/cron-view/CronForm.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/ReplayDialog.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -2350,6 +2387,10 @@ msgstr "Choose avatar image"
 #: src/components/quick-create/ScopeSelection.tsx
 msgid "Choose folder…"
 msgstr "Choose folder…"
+
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Choose the project it loads, and any asset packages to bring with it."
+msgstr "Choose the project it loads, and any asset packages to bring with it."
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Choose which model each tier uses, or add your own — per assistant and provider."
@@ -2987,7 +3028,6 @@ msgstr "Confirm"
 #: src/components/connections-manager.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/journey/JourneyTray.tsx
-#: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Connect"
 msgstr "Connect"
 
@@ -2996,6 +3036,7 @@ msgstr "Connect"
 #~ msgstr "Connect a harness"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Connect GitHub"
 msgstr "Connect GitHub"
 
@@ -3031,8 +3072,8 @@ msgid "Connected to GitHub"
 msgstr "Connected to GitHub"
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "Connected, but still no access to this repo."
-msgstr "Connected, but still no access to this repo."
+#~ msgid "Connected, but still no access to this repo."
+#~ msgstr "Connected, but still no access to this repo."
 
 #: src/components/chat-input.tsx
 #~ msgid "Connected: {0}"
@@ -3837,6 +3878,11 @@ msgstr "Cut"
 msgid "Data privacy mode"
 msgstr "Data privacy mode"
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Data sources"
+msgstr "Data sources"
+
 #: src/components/account/database-section.tsx
 msgid "Database Backed Up"
 msgstr "Database Backed Up"
@@ -3954,6 +4000,7 @@ msgstr "Define the conditions that must match for this trigger to fire"
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/data-sources/DataSourceCard.tsx
 #: src/components/directory-tree/DirectoryTree.tsx
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -4157,6 +4204,10 @@ msgstr "Delete this chat?"
 msgid "Delete this conversation"
 msgstr "Delete this conversation"
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Delete this data source?"
+msgstr "Delete this data source?"
+
 #: src/components/account/system-diagnoses.tsx
 msgid "Delete this diagnosis? This cannot be undone."
 msgstr "Delete this diagnosis? This cannot be undone."
@@ -4192,6 +4243,10 @@ msgstr "Deleted {ok}, {0} failed"
 #: src/components/inbox-view/InboxView.tsx
 msgid "Deleted 1 conversation"
 msgstr "Deleted 1 conversation"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Deleted."
+msgstr "Deleted."
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Deleting a project is permanent: it removes the project folder and every Flowpad record inside it. Projects are never pre-selected — check them deliberately."
@@ -4240,6 +4295,10 @@ msgstr "Deployment WorldView"
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "depth"
 msgstr "depth"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "derived from the fields above"
+msgstr "derived from the fields above"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Deriving task…"
@@ -4441,6 +4500,10 @@ msgstr "Disable all"
 #: src/components/hooks/EventSnifferChip.tsx
 msgid "Disable sniffer"
 msgstr "Disable sniffer"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Disable this source"
+msgstr "Disable this source"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/components/triggers-view/TriggerListItem.tsx
@@ -4696,6 +4759,21 @@ msgstr "Drop files here"
 msgid "Drop items here"
 msgstr "Drop items here"
 
+#. placeholder {0}: result.removed
+#. placeholder {1}: result.streams
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Dropped {0} records across {1} streams; re-fetch on the next poll."
+msgstr "Dropped {0} records across {1} streams; re-fetch on the next poll."
+
+#. placeholder {0}: result.removed
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Dropped {0} records since {since}; re-fetch on the next poll."
+msgstr "Dropped {0} records since {since}; re-fetch on the next poll."
+
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Drops this source's records and clears its sync position, so the next poll re-reads them. Local state — read and starred — does not come back."
+msgstr "Drops this source's records and clears its sync position, so the next poll re-reads them. Local state — read and starred — does not come back."
+
 #: src/components/task-bar/TaskDetailPanel.tsx
 #~ msgid "Due date"
 #~ msgstr "Due date"
@@ -4752,6 +4830,7 @@ msgstr "Edges by kind"
 
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/data-sources/DataSourceCard.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Edit"
 msgstr "Edit"
@@ -4771,6 +4850,10 @@ msgstr "Edit anyway"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Edit attached prompt"
 msgstr "Edit attached prompt"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Edit data source"
+msgstr "Edit data source"
 
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Edit favorite"
@@ -4869,6 +4952,10 @@ msgstr "Empty"
 msgid "Empty folder"
 msgstr "Empty folder"
 
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Empty replays everything. With a date, only records from then on are dropped — undated records are kept, and the sync window is widened if it does not reach that far back."
+msgstr "Empty replays everything. With a date, only records from then on are dropped — undated records are kept, and the sync window is widened if it does not reach that far back."
+
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
 msgid "Empty trace"
 msgstr "Empty trace"
@@ -4908,16 +4995,25 @@ msgstr "Enable sniffer"
 #~ msgid "Enable the sniffer to start capturing hook traffic"
 #~ msgstr "Enable the sniffer to start capturing hook traffic"
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Enable this source"
+msgstr "Enable this source"
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Enable/Disable hook"
 msgstr "Enable/Disable hook"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Enabled"
 msgstr "Enabled"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Enabled — it will poll on the next tick."
+msgstr "Enabled — it will poll on the next tick."
 
 #: src/components/collaboration/RoomHeader.tsx
 msgid "End room"
@@ -5182,9 +5278,14 @@ msgstr "Event *"
 msgid "Event: "
 msgstr "Event: "
 
+#: src/components/data-sources/DataSourceCard.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Events"
 msgstr "Events"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Events from this source"
+msgstr "Events from this source"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "Every {scopeType} row has a source file on disk."
@@ -6296,8 +6397,8 @@ msgid "Git readiness"
 msgstr "Git readiness"
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "Git repo (optional)"
-msgstr "Git repo (optional)"
+#~ msgid "Git repo (optional)"
+#~ msgstr "Git repo (optional)"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/context-folder-sources.tsx
@@ -6312,6 +6413,10 @@ msgstr "Git setup failed."
 msgid "Git tooling installed"
 msgstr "Git tooling installed"
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Git URL"
+msgstr "Git URL"
+
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
@@ -6319,6 +6424,7 @@ msgid "GitHub authorization did not complete."
 msgstr "GitHub authorization did not complete."
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "GitHub connected"
 msgstr "GitHub connected"
 
@@ -6345,6 +6451,10 @@ msgstr "GitHub connection failed."
 #: src/components/icons/CopilotRestoreIcon.tsx
 msgid "GitHub Copilot (restored session)"
 msgstr "GitHub Copilot (restored session)"
+
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "GitHub is connected — private repos are available."
+msgstr "GitHub is connected — private repos are available."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "GitHub unavailable"
@@ -6556,6 +6666,10 @@ msgstr "Help Desk"
 msgid "Help desk files removed"
 msgstr "Help desk files removed"
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Help desks or skills repos to load alongside it."
+msgstr "Help desks or skills repos to load alongside it."
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "Helpers used"
 msgstr "Helpers used"
@@ -6582,6 +6696,10 @@ msgstr "Hide {0}"
 #: src/components/graph-view/ui/FilterChips.tsx
 msgid "Hide {type}"
 msgstr "Hide {type}"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Hide advanced"
+msgstr "Hide advanced"
 
 #: src/components/graph-view/ui/FilterChips.tsx
 msgid "Hide all types"
@@ -6805,6 +6923,10 @@ msgstr "https://github.com/owner/repo.git"
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
 msgstr "Hub"
+
+#: src/components/version-popover/hub-release-label.tsx
+msgid "Hub release, and the UI build serving it"
+msgstr "Hub release, and the UI build serving it"
 
 #: src/components/account/user-info.tsx
 msgid "Hub WebSocket connected."
@@ -7436,6 +7558,10 @@ msgstr "Last Login:"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Last message"
 msgstr "Last message"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Last successful sync"
+msgstr "Last successful sync"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "last triggered"
@@ -8334,6 +8460,10 @@ msgstr "Minimize to the Home icon (returns on restart)"
 msgid "Minimize to the journey icon"
 msgstr "Minimize to the journey icon"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Minimum 60 — the heartbeat only ticks once a minute."
+msgstr "Minimum 60 — the heartbeat only ticks once a minute."
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
 msgstr "Mis-Sc"
@@ -8475,6 +8605,7 @@ msgstr "N/A"
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/EnvVarsManager.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -8504,8 +8635,8 @@ msgid "Name is required"
 msgstr "Name is required"
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "Name it, and optionally set it up from a git repo."
-msgstr "Name it, and optionally set it up from a git repo."
+#~ msgid "Name it, and optionally set it up from a git repo."
+#~ msgstr "Name it, and optionally set it up from a git repo."
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "Name this entity"
@@ -8744,6 +8875,11 @@ msgstr "New Value (optional, max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
 msgid "Next"
 msgstr "Next"
 
+#. placeholder {0}: timeUntil(source.next_poll_at)
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "next {0}"
+msgstr "next {0}"
+
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "Next match (Enter)"
@@ -8751,6 +8887,10 @@ msgstr "Next match (Enter)"
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Next prompt — injected when the agent next goes idle. Press Enter to add."
 msgstr "Next prompt — injected when the agent next goes idle. Press Enter to add."
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Next scheduled poll"
+msgstr "Next scheduled poll"
 
 #: src/components/ui/carousel.tsx
 #~ msgid "Next slide"
@@ -8969,9 +9109,17 @@ msgstr "No creatable types available"
 #~ msgid "No current project available. Please create a project first before connecting OAuth providers."
 #~ msgstr "No current project available. Please create a project first before connecting OAuth providers."
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "No cursors yet — this source has not polled."
+msgstr "No cursors yet — this source has not polled."
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No data available"
 msgstr "No data available"
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "No data sources configured yet. Add one and it starts syncing within a minute."
+msgstr "No data sources configured yet. Add one and it starts syncing within a minute."
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "No data."
@@ -9429,6 +9577,10 @@ msgstr "No records found on disk."
 msgid "No records of this type"
 msgstr "No records of this type"
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "no repo"
+msgstr "no repo"
+
 #: src/components/git/RepoPicker.tsx
 msgid "No repos accessible with this token"
 msgstr "No repos accessible with this token"
@@ -9808,6 +9960,10 @@ msgstr "Nothing new to push — message sent"
 msgid "Nothing open to bookmark"
 msgstr "Nothing open to bookmark"
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Nothing selected — launches an empty desktop."
+msgstr "Nothing selected — launches an empty desktop."
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Nothing shared in this conversation."
 msgstr "Nothing shared in this conversation."
@@ -9934,6 +10090,10 @@ msgstr "Onboarding reset"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "one is enough to get started"
 #~ msgstr "one is enough to get started"
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
+msgstr "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
@@ -10601,6 +10761,10 @@ msgstr "Parent folder"
 msgid "Parent folder to clone into…"
 msgstr "Parent folder to clone into…"
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Parked: a <0>config_error</0> source is skipped by the scheduler, so it will not poll again on its own. <1>Pull changes</1> clears the latch."
+msgstr "Parked: a <0>config_error</0> source is skipped by the scheduler, so it will not poll again on its own. <1>Pull changes</1> clears the latch."
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Participants"
 msgstr "Participants"
@@ -10686,9 +10850,17 @@ msgstr "pattern"
 msgid "Pause"
 msgstr "Pause"
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "paused"
+msgstr "paused"
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Paused"
 msgstr "Paused"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Paused."
+msgstr "Paused."
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "peak"
@@ -10946,6 +11118,10 @@ msgstr "PNG, JPEG, or WebP. Maximum 5 MiB and 4096 × 4096."
 msgid "Point this project at another folder so agents can read it as background — code, docs or assets that live outside the project, without copying anything."
 msgstr "Point this project at another folder so agents can read it as background — code, docs or assets that live outside the project, without copying anything."
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Poll interval (seconds)"
+msgstr "Poll interval (seconds)"
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Port"
 msgstr "Port"
@@ -11187,6 +11363,10 @@ msgstr "Project Required"
 msgid "Project secrets on this machine"
 msgstr "Project secrets on this machine"
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Project to load"
+msgstr "Project to load"
+
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "projected"
 msgstr "projected"
@@ -11289,6 +11469,7 @@ msgstr "protected"
 #~ msgstr "Provide Secret"
 
 #: src/components/connections-manager.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Provider"
 msgstr "Provider"
@@ -11361,6 +11542,10 @@ msgstr "Pull & Open"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull and open task"
 msgstr "Pull and open task"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Pull changes"
+msgstr "Pull changes"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull failed."
@@ -11779,6 +11964,11 @@ msgstr "Reload the MarkdownIndex list."
 msgid "Remove"
 msgstr "Remove"
 
+#. placeholder {0}: nameOf(source)
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Remove {0}"
+msgstr "Remove {0}"
+
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Remove access"
 msgstr "Remove access"
@@ -11917,6 +12107,23 @@ msgstr "Replace"
 msgid "replay"
 msgstr "replay"
 
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Replay {0}"
+msgstr "Replay {0}"
+
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Replay everything"
+msgstr "Replay everything"
+
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Replay since {since}"
+msgstr "Replay since {since}"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Replay…"
+msgstr "Replay…"
+
 #: src/components/conversation/ConversationView.tsx
 #~ msgid "Reply — drafted into {0}"
 #~ msgstr "Reply — drafted into {0}"
@@ -11935,8 +12142,8 @@ msgid "Repo"
 msgstr "Repo"
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "Repo is not public — connect GitHub to continue."
-msgstr "Repo is not public — connect GitHub to continue."
+#~ msgid "Repo is not public — connect GitHub to continue."
+#~ msgstr "Repo is not public — connect GitHub to continue."
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -12421,6 +12628,7 @@ msgid "Running…"
 msgstr "Running…"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/data-sources/DataSourceCard.tsx
 msgid "Runs"
 msgstr "Runs"
 
@@ -12466,6 +12674,7 @@ msgstr "Sandbox unavailable"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/cron-view/CronForm.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -13026,6 +13235,7 @@ msgstr "Select parent folder"
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Select project"
 msgstr "Select project"
 
@@ -13670,6 +13880,10 @@ msgstr "Signed in to the remote"
 msgid "Simple actions — click to show all git operations"
 msgstr "Simple actions — click to show all git operations"
 
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Since (optional)"
+msgstr "Since (optional)"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Size"
@@ -14146,6 +14360,10 @@ msgstr "stored →"
 msgid "stored line"
 msgstr "stored line"
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Streams"
+msgstr "Streams"
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Structure"
 msgstr "Structure"
@@ -14299,6 +14517,11 @@ msgstr "Switch to light mode"
 msgid "Sync {0} changes"
 msgstr "Sync {0} changes"
 
+#. placeholder {0}: timeSince(source.last_synced_at)
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "synced {0}"
+msgstr "synced {0}"
+
 #: src/components/graph-view/GraphView.tsx
 #~ msgid "Syncing…"
 #~ msgstr "Syncing…"
@@ -14394,7 +14617,6 @@ msgstr "Task not found"
 msgid "Tasked"
 msgstr "Tasked"
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Tasks"
 msgstr "Tasks"
@@ -14822,6 +15044,10 @@ msgstr "This session hasn't been reviewed yet, so there's nothing to report."
 #: src/components/collaboration/SharedSessionView.tsx
 msgid "This session is running remotely by {guestName} on your machine."
 msgstr "This session is running remotely by {guestName} on your machine."
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "This source's remote identity — one source per account."
+msgstr "This source's remote identity — one source per account."
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "This trace is not linked to a worker session."
@@ -15380,6 +15606,11 @@ msgstr "Update Plan"
 msgid "Update plan based on <plan-note> sections"
 msgstr "Update plan based on <plan-note> sections"
 
+#. placeholder {0}: editing.name
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Updated {0}"
+msgstr "Updated {0}"
+
 #. placeholder {0}: data.generated
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Updated: {0}"
@@ -15457,6 +15688,7 @@ msgstr "Usage unavailable"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
+#: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Use"
 msgstr "Use"
 
@@ -15952,6 +16184,10 @@ msgstr "Whiteboard created"
 msgid "Who this agent is. Becomes its system prompt."
 msgstr "Who this agent is. Becomes its system prompt."
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Window (days)"
+msgstr "Window (days)"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <0>not</0> touched. After clearing, click <1>Fast</1> to re-index changed entries, or <2>Full</2> to re-index everything."
 msgstr "Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it. Files on disk are <0>not</0> touched. After clearing, click <1>Fast</1> to re-index changed entries, or <2>Full</2> to re-index everything."
@@ -15975,6 +16211,10 @@ msgstr "Worker"
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Worker options{0}"
 msgstr "Worker options{0}"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Worker runs this source spawned"
+msgstr "Worker runs this source spawned"
 
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 #~ msgid "Worker Sessions"
