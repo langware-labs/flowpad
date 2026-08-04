@@ -878,8 +878,8 @@ msgid "Add Artifact"
 msgstr "הוסף ארטיפקט"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Add asset"
-msgstr "הוסף נכס"
+#~ msgid "Add asset"
+#~ msgstr "הוסף נכס"
 
 #: src/components/skills-viewer/amd-editor/components/BlockPicker.tsx
 #~ msgid "Add Block"
@@ -1299,7 +1299,7 @@ msgstr "הניתוח מתנהל — לחץ כדי לראות אותו בלוח �
 msgid "Analyze"
 msgstr "ניתוח"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Analyze and improve"
@@ -1313,7 +1313,7 @@ msgstr "ניתח סשן זה: מטרות, בעיות, סטיות וביצועי 
 msgid "analyzed"
 msgstr "נותחו"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Analyzing asset"
 msgstr "ניתוח נכס"
 
@@ -1572,7 +1572,7 @@ msgstr "ניקוי משאבים"
 msgid "Asset compare"
 msgstr "השוואת נכסים"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Asset has changes"
 msgstr "שינויים לא שמורים בנכס"
 
@@ -1589,13 +1589,14 @@ msgid "asset_ref is unset — has this MarkdownIndex ever been built?"
 msgstr "asset_ref לא הוגדר — האם MarkdownIndex זה בנוי אי פעם?"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Asset…"
-msgstr "נכס…"
+#~ msgid "Asset…"
+#~ msgstr "נכס…"
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "assets"
 msgstr "נכסים"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
@@ -1659,8 +1660,8 @@ msgid "Attach an asset (skill, agent, doc, spec)"
 msgstr "צרף asset (skill, agent, doc, spec)"
 
 #: src/components/asset-manager/AssetPickerPopover.tsx
-msgid "Attach asset"
-msgstr "צרף נכס"
+#~ msgid "Attach asset"
+#~ msgstr "צרף נכס"
 
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -2072,8 +2073,8 @@ msgstr "לא ניתן לעדכן — מוצגים הנתונים מהסנכרו�
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
-#: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/AddGitFolderDialog.tsx
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
@@ -2156,9 +2157,9 @@ msgstr "לא ניתן לקבוע קובץ הגדרות"
 msgid "Cannot edit"
 msgstr "לא ניתן לערוך"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Cannot improve asset"
 msgstr "לא ניתן לשפר את הנכס"
 
@@ -4253,7 +4254,7 @@ msgstr "בעיבוד עם Claude…"
 msgid "Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the result."
 msgstr "תאר את הבעיה או הדבק את השגיאה, ואז הפעל אבחון. השאר ריק לסריקה אבחון מלאה. העוזר בודק את Flowpad, מתקן מה שבטוח, ותיעד את התוצאה."
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Describe the issue to analyze and improve…"
 msgstr "תיאור הבעיה לניתוח ושיפור…"
 
@@ -4320,8 +4321,8 @@ msgid "Desktops"
 msgstr "שולחנות עבודה"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Detach"
-msgstr "נתק"
+#~ msgid "Detach"
+#~ msgstr "נתק"
 
 #: src/components/workflow-runner/header/ViewModeToggle.tsx
 #~ msgid "Detailed view"
@@ -6906,7 +6907,7 @@ msgstr "יובא"
 msgid "Improve"
 msgstr "שיפור"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Improve failed"
 msgstr "השיפור נכשל"
 
@@ -6918,11 +6919,11 @@ msgstr "שפר בהתאם לניתוח זה"
 msgid "Improve skipped"
 msgstr "שיפור דולג"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Improvement ready"
 msgstr "השיפור מוכן"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Improving asset"
 msgstr "משפרים את הנכס"
 
@@ -7945,7 +7946,6 @@ msgstr "טוען..."
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
-#: src/components/asset-manager/AssetPickerPopover.tsx
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/MarkdownIndexPanel.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
@@ -8827,6 +8827,10 @@ msgstr "אין קבצים עדיין"
 msgid "No asset editor is registered for this Wiki target."
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "No assets available."
+msgstr ""
+
 #: src/pages/discover-page/discover-page.tsx
 msgid "No assets match those filters."
 msgstr "אין נכסים התואמים לסינון זה."
@@ -8836,12 +8840,12 @@ msgstr "אין נכסים התואמים לסינון זה."
 #~ msgstr "אין מסמכים פתוחים. לחץ על מסמך או כישורון בסרגל הצד כדי לפתוח אותו כאן."
 
 #: src/components/asset-manager/AssetPickerPopover.tsx
-msgid "No assets to run."
-msgstr "אין נכסים להפעלה."
+#~ msgid "No assets to run."
+#~ msgstr "אין נכסים להפעלה."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "No assets visible to this process."
-msgstr "אין נכסים גלויים לתהליך זה."
+#~ msgid "No assets visible to this process."
+#~ msgstr "אין נכסים גלויים לתהליך זה."
 
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "No assistance requests yet"
@@ -9069,7 +9073,7 @@ msgstr "אין קבצים פתוחים"
 msgid "No files or folders"
 msgstr "אין קבצים או תיקיות"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "No findings found"
 msgstr "לא נמצאו ממצאים"
 
@@ -9200,7 +9204,6 @@ msgstr "אין התאמות"
 msgid "No matches found in the Flowpad known-issues database."
 msgstr "לא נמצאו התאמות במאגר הבעיות הידועות של Flowpad."
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/spotlight/Spotlight.tsx
@@ -9837,7 +9840,7 @@ msgstr "אין מה לשפר"
 msgid "Nothing to push"
 msgstr "אין שינויים לדחיפה"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Nothing to save"
 msgstr "אין מה לשמור"
 
@@ -9983,7 +9986,6 @@ msgstr "פתח {0} ב…"
 #~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/asset-manager/AssetPickerPopover.tsx
 msgid "Open {label}"
 msgstr "פתח {label}"
 
@@ -10450,7 +10452,7 @@ msgstr "פתיחת הפעלת עובד"
 msgid "OPENAI_API_KEY"
 msgstr "OPENAI_API_KEY"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Opened Asset compare."
 msgstr "נפתחה השוואת הנכסים"
 
@@ -11492,8 +11494,8 @@ msgstr "נקרא"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetPickerPopover.tsx
-msgid "Read-only source"
-msgstr "מקור קריאה בלבד"
+#~ msgid "Read-only source"
+#~ msgstr "מקור קריאה בלבד"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #~ msgid "Read-only source. Attach to get a private editable copy."
@@ -11775,9 +11777,15 @@ msgstr "טען מחדש את רשימת MarkdownIndex."
 #~ msgid "Remind in {count} {0}"
 #~ msgstr "הזכר בעוד {count} {0}"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Remove"
 msgstr "הסרה"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Remove {label}"
+msgstr ""
 
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Remove access"
@@ -12163,8 +12171,8 @@ msgid "Reveal in Finder"
 msgstr "הצג ב-Finder"
 
 #: src/components/asset-manager/AssetPickerPopover.tsx
-msgid "Reveal in Finder/Explorer"
-msgstr "הראה ב-Finder/Explorer"
+#~ msgid "Reveal in Finder/Explorer"
+#~ msgstr "הראה ב-Finder/Explorer"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid ""
@@ -12464,7 +12472,7 @@ msgstr "סביבה לא זמינה"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -12494,7 +12502,7 @@ msgstr "שמור שינויים"
 msgid "Save Changes"
 msgstr "שמור שינויים"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Save failed"
@@ -12508,7 +12516,7 @@ msgstr "השמירה נכשלה"
 msgid "Save failed."
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "Save the current asset changes as a version before running improvement."
 msgstr "יש לשמור את השינויים הנוכחיים של הנכס כגרסה לפני הפעלת השיפור"
 
@@ -12691,7 +12699,8 @@ msgstr "חיפוש"
 msgid "Search (⌘K)"
 msgstr "חיפוש (⌘K)"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/editor/markdown/PlainMarkdownAssetEditor.tsx
+#: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Search agents and skills…"
 msgstr "חפש סוכנים ומיומנויות…"
 
@@ -12890,7 +12899,7 @@ msgstr "נראה שאתם מנסים לשכפל מאגר git פרטי. עליכ�
 msgid "Select {0}"
 msgstr "בחר {0}"
 
-#: src/components/asset-manager/AssetPickerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Select {label}"
 msgstr ""
 
@@ -12996,8 +13005,8 @@ msgstr "בחר ב-Harness זמין, או התקן אחד מעמוד הבית ש�
 #~ msgstr "בחר סוג ארטיפקט"
 
 #: src/components/asset-manager/AssetPickerPopover.tsx
-msgid "Select Asset"
-msgstr "בחר נכס"
+#~ msgid "Select Asset"
+#~ msgstr "בחר נכס"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Select capability…"
@@ -13065,6 +13074,10 @@ msgstr "בחר מתי Hook זה צריך לרוץ"
 #: src/components/quick-create/QuickCreateModal.tsx
 msgid "Select…"
 msgstr "בחר…"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Selected assets"
+msgstr ""
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Selection toolbar"
@@ -14508,7 +14521,7 @@ msgstr ""
 #~ msgid "The agent you're looking for doesn't exist or is not available."
 #~ msgstr "הסוכן שאתה מחפש אינו קיים או אינו זמין."
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "The analysis completed but did not produce asset-scoped findings."
 msgstr "הניתוח הושלם אך לא הניב ממצאים בהיקף הנכס"
 
@@ -14524,7 +14537,7 @@ msgstr "הקובץ הוסר בהצלחה."
 msgid "The asset is now available to project members."
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "The asset matches HEAD."
 msgstr "הנכס תואם את HEAD"
@@ -14693,7 +14706,7 @@ msgstr "לא ניתן לבטל פעולה זו."
 msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
 msgstr "לא ניתן להשתף את הנכס הזה עם Git. יש לכבות את שיתוף Git כדי לשלוח עותק."
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
 msgstr "לנכס זה אין נתיב קובץ."
 
@@ -14734,7 +14747,7 @@ msgstr "קובץ זה אינו טקסט"
 msgid "This folder can't be shared yet"
 msgstr "עדיין לא ניתן לשתף את התיקייה"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This folder-backed asset has no main file metadata."
 msgstr "לנכס תיקייה זה אין מטא-נתונים של קובץ ראשי"
 
@@ -14770,7 +14783,7 @@ msgstr "פעולה זו מוחקת את הקובץ מהדיסק באופן קב�
 msgid "This permanently removes the saved context snapshot. This cannot be undone."
 msgstr "זה יסיר באופן קבוע את תמונת הקשר השמורה. לא ניתן לבטל זאת."
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This process has no transcript session yet."
 msgstr "לתהליך זה אין עדיין הפעלת תמלול."
 
@@ -15645,7 +15658,6 @@ msgid "View"
 msgstr "הצג"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/asset-manager/AssetPickerPopover.tsx
 msgid "View {label} (read-only)"
 msgstr "הצג {label} (קריאה בלבד)"
 
@@ -15928,7 +15940,7 @@ msgstr "מה השתבש? (השאר ריק לסריקה מלאה)"
 #~ msgid "What would you like to build?"
 #~ msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerButton.tsx
 msgid "What would you like to fix?"
 msgstr "מה תרצו לתקן?"
 

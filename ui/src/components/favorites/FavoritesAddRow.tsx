@@ -1,5 +1,5 @@
 import { type AssetDescriptor } from '@sdk';
-import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
+import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
 import { displayLabelForTypeid, parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useContext } from '@src/hooks/useContext';
@@ -116,23 +116,25 @@ export function FavoritesAddRow({ parentId }: { parentId: string }) {
         />
       ) : (
         <>
-          <AddButton icon={<FolderPlus className="h-3.5 w-3.5" />} label={t`New folder`} onClick={() => setFolderName('')} />
+          <AddButton
+            icon={<FolderPlus className="h-3.5 w-3.5" />}
+            label={t`New folder`}
+            onClick={() => setFolderName('')}
+          />
 
           {/* The visible button is standalone; the picker opens as a centered
-              modal from the controlled `open` state. In centered mode its own
-              `trigger` is discarded, so it gets an incidental hidden one. */}
+              modal from the controlled `open` state — which is also what lets it
+              escape the enclosing bookmarks-tree menu. */}
           <AddButton
             icon={<PackagePlus className="h-3.5 w-3.5" />}
             label={t`Bookmark an asset`}
             onClick={() => setPickerOpen(true)}
           />
-          <AssetPickerPopover
-            trigger={<span className="sr-only" aria-hidden />}
+          <AssetManagerPopover
             centered
             open={pickerOpen}
             onOpenChange={setPickerOpen}
             onPick={addAsset}
-            filter={() => true}
             searchPlaceholder={t`Search assets…`}
           />
 
