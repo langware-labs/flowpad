@@ -115,9 +115,15 @@ def _override_delta(inst: Entity) -> tuple[list[str], list[str]]:
 
 
 # ── The base sender-local set, shared by every type ───────────────────────────
+# ``git_origin`` is absent from both base lists below: `2259df26` flipped its base
+# declaration PRIVATE → SHARED so secret-free Git provenance + repo-relative
+# placement ride to the hub, which is what makes a git-backed body bundle restore
+# under the receiver's repo (tests/hub_tests/test_git_origin_share_roundtrip.py).
+# `Task` and `MessageAttachment` still re-declare it PRIVATE, so they carry it in
+# `extra_private` per type instead.
 BASE_BUNDLE_EXCLUDE = [
     "asset_occurrences", "asset_ref", "created_by", "cwd", "duplicate_count", "expand",
-    "fetched_at", "fs_storage_mount_path", "git_origin", "installed_root", "members",
+    "fetched_at", "fs_storage_mount_path", "installed_root", "members",
     "message_count", "path", "private_context_entities", "private_context_entities_",
     "private_context_entity_data", "project_id", "remote", "scope",
     "shared_context_entity_data", "system", "tags", "updated_by",
@@ -127,7 +133,7 @@ BASE_BUNDLE_EXCLUDE = [
 # which is why the receiver defended with `sanitized.pop("asset_ref")`.
 BASE_HUB_EXCLUDE = [
     "asset_occurrences", "created_by", "created_date", "duplicate_count", "fetched_at",
-    "git_origin", "members", "message_count", "private_context_entities",
+    "members", "message_count", "private_context_entities",
     "private_context_entities_", "private_context_entity_data", "project_id", "remote",
     "shared_context_entity_data", "system", "tags", "updated_by", "updated_date",
 ]
@@ -175,12 +181,14 @@ def test_the_two_egress_seams_now_agree():
 
 
 @pytest.mark.parametrize(
-    "module, name, kwargs, extra_bundle, local_only, unfillable",
+    "module, name, kwargs, extra_private, local_only, unfillable",
     [
         (
             "flow_sdk.builtin.task", "Task", {"title": "x"},
             # Task is the ONLY type declaring TypeInfo.local_fields.
-            ["my_process_id", "project_name", "project_root"],
+            # `git_origin`: re-declared PRIVATE here, so this type keeps the
+            # pre-2259df26 answer while the base now shares it.
+            ["git_origin", "my_process_id", "project_name", "project_root"],
             BASE_LOCAL_ONLY,
             ["artifacts", "env_vars", "expand", "fs_storage_provider", "git_origin",
              "last_active_at", "private_context_entities_", "shared_context_entities", "ttl"],
@@ -210,7 +218,9 @@ def test_the_two_egress_seams_now_agree():
              "private_context_entities_", "shared_context_entities"],
         ),
         (
-            "flow_sdk.builtin.message_attachment", "MessageAttachment", {}, [], BASE_LOCAL_ONLY,
+            # `git_origin`: re-declared PRIVATE here (see Task above).
+            "flow_sdk.builtin.message_attachment", "MessageAttachment", {}, ["git_origin"],
+            BASE_LOCAL_ONLY,
             ["env_vars", "expand", "fs_storage_provider", "last_active_at",
              "private_context_entities_", "shared_context_entities"],
         ),
@@ -224,7 +234,7 @@ def test_the_two_egress_seams_now_agree():
         ),
     ],
 )
-def test_seam_policy_per_type(module, name, kwargs, extra_bundle, local_only, unfillable):
+def test_seam_policy_per_type(module, name, kwargs, extra_private, local_only, unfillable):
     import importlib
 
     cls = getattr(importlib.import_module(module), name)
@@ -235,13 +245,17 @@ def test_seam_policy_per_type(module, name, kwargs, extra_bundle, local_only, un
     # ignores `exclude` entries a model doesn't have, which is why the literal
     # could carry `path`/`cwd`/`installed_root` for types that never had them —
     # so assert the difference is exactly the undeclared names, not a loosening.
-    literal = set(BASE_BUNDLE_EXCLUDE + extra_bundle) | NEWLY_DECLARED_PRIVATE
+    literal = set(BASE_BUNDLE_EXCLUDE + extra_private) | NEWLY_DECLARED_PRIVATE
     declared = set(cls.model_fields) | set(cls.model_computed_fields)
     assert set(inst._local_fields()) == literal & declared
     assert (literal - set(inst._local_fields())) <= (literal - declared)
     # Derived per type now, so compare against the literal narrowed to what this
     # type declares, plus the fields the convergence newly withholds.
-    hub_expected = (set(BASE_HUB_EXCLUDE) | CONVERGED_TO_PRIVATE | NEWLY_DECLARED_PRIVATE) & declared
+    # `extra_private` is a per-type PRIVATE re-declaration, which withholds from
+    # BOTH seams — so it narrows the hub set exactly as it narrows the bundle one.
+    hub_expected = (
+        set(BASE_HUB_EXCLUDE) | CONVERGED_TO_PRIVATE | NEWLY_DECLARED_PRIVATE | set(extra_private)
+    ) & declared
     assert set(_base_hub_exclude(cls, inst)) == hub_expected
     # Ingress protection is now derived: PRIVATE ∪ HUB_WRITE. It is a superset
     # of the old hand-written LOCAL_ONLY_FIELDS (which listed only the fields

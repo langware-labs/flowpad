@@ -1203,9 +1203,42 @@ async def _reap_protected_path_projects() -> None:
     project_shadows = settings.records_root / "project"
     projects = await Project.get_all()
     rows_by_id = {str(project.id): project for project in projects}
+
+    # A system project is never stale: ``_ensure_system_projects`` runs immediately
+    # before this reaper and re-creates it every time. Its root lives INSIDE the
+    # install (``<checkout>/flow_sdk/system_projects/<name>``), which
+    # ``is_protected_path`` reports as protected — so without an exemption the
+    # reaper deleted the Flowpad Assistant project microseconds after it was
+    # created, on EVERY startup and every ``desktop-db/clear``. The symptom was
+    # silent: the row vanished, ``project/@flowpad_assistant`` answered "Invalid
+    # request", and the assistant docs surface had nothing to resolve.
+    #
+    # Rows carry the answer already — ``_ensure_system_projects`` stamps
+    # ``system=True`` — so ask the row rather than re-deriving it from the path.
     protected_row_ids = {
-        str(project.id) for project in projects if project.fs_storage_mount_path and project.protected_path
+        str(project.id)
+        for project in projects
+        if project.fs_storage_mount_path and project.protected_path and not project.system
     }
+
+    # Shadows are the exception: their ``metadata.json`` carries no ``system``
+    # key, so the flag above is unavailable and the shape of the path is the only
+    # evidence. Resolved once here, outside the per-shadow loop below.
+    shipped_system_root = system_projects_root().resolve()
+
+    def _is_shipped_system_project(mount: str | None) -> bool:
+        """True for ``<running-install>/flow_sdk/system_projects/<name>``.
+
+        Deliberately the RUNNING install only: a copy under some OTHER install is
+        genuinely stale and must still be reaped. (``config.is_system_project_path``
+        answers the any-install question and is the wrong one here.)
+        """
+        if not mount:
+            return False
+        try:
+            return Path(mount).resolve().parent == shipped_system_root
+        except OSError:
+            return False
 
     # Orphan shadows are independent evidence: their DB row may already be
     # gone, but protected-path metadata must not survive to be re-adopted.
@@ -1225,7 +1258,7 @@ async def _reap_protected_path_projects() -> None:
             name = data.get("name")
             if not mount and isinstance(name, str) and (os.path.isabs(name) or ntpath.isabs(name)):
                 mount = name
-            if mount and is_protected_path(mount):
+            if mount and is_protected_path(mount) and not _is_shipped_system_project(mount):
                 protected_shadow_ids.add(project_id)
                 shadow_by_id[project_id] = shadow
 
