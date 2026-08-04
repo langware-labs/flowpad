@@ -16,7 +16,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { MessageSquarePlus, Pencil } from 'lucide-react';
+import { SendProgressNotice } from '@src/components/conversation/SendProgressNotice';
+import { Loader2, MessageSquarePlus, Pencil } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface NewConversationDialogProps {
@@ -236,13 +237,17 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="outline" onClick={onClose} disabled={busy}>
-            <Trans>Cancel</Trans>
-          </Button>
-          <Button onClick={() => void handleCreate()} disabled={!canCreate}>
-            {busy ? t`Creating…` : t`Create`}
-          </Button>
+        <div className="flex items-center gap-2 pt-2">
+          <SendProgressNotice busy={busy} hasAttachments={files.length > 0 || assetRefs.length > 0} />
+          <div className="ml-auto flex gap-2">
+            <Button variant="outline" onClick={onClose} disabled={busy}>
+              <Trans>Cancel</Trans>
+            </Button>
+            <Button onClick={() => void handleCreate()} disabled={!canCreate} className="gap-1.5">
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              {busy ? t`Creating…` : t`Create`}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
