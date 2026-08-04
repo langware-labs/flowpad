@@ -21,12 +21,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   onLaunch: vi.fn(),
   githubStatus: vi.fn(() => Promise.resolve(true)),
-  repoAccess: vi.fn(() => Promise.resolve({ hasAccess: true })),
   connect: vi.fn(() => Promise.resolve(undefined)),
 }));
 
 vi.mock('@src/lib/github-oauth-status', () => ({ fetchGithubStatus: h.githubStatus }));
-vi.mock('@src/utils/gitUtils', () => ({ hasGitHubRepoAccess: h.repoAccess }));
 vi.mock('@sdk/react/hooks', () => ({ useOAuthFlowComplete: () => undefined }));
 vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -35,19 +33,22 @@ vi.mock('@sdk', async (importOriginal) => {
 
 import { NewDesktopDialog } from '@src/pages/hub-home/NewDesktopDialog';
 
+// `displayName` is what the shared project picker renders (project-items.ts).
 const withRepo = {
   id: 'p-hub',
   name: 'flowpad-hub',
+  displayName: 'flowpad-hub',
   git_origin: { provider: 'github', owner: 'langware-labs', name: 'flowpad-hub', branch: 'main', rel_path: '.' },
 } as never;
 
 const desk = {
   id: 'p-desk',
   name: 'acme-support',
+  displayName: 'acme-support',
   git_origin: { provider: 'github', owner: 'acme', name: 'acme-support', branch: 'main', rel_path: '.' },
 } as never;
 
-const repoLess = { id: 'p-notes', name: 'scratch-notes', git_origin: null } as never;
+const repoLess = { id: 'p-notes', name: 'scratch-notes', displayName: 'scratch-notes', git_origin: null } as never;
 
 function renderDialog(props: Record<string, unknown> = {}) {
   return render(
@@ -159,6 +160,9 @@ describe('new desktop: project + asset packages', () => {
       name: 'Hello-World',
       gitOrigin: expect.objectContaining({ owner: 'octocat' }),
     });
+    // No access probe on the way: `/api/v1/git/remote-access` is a flow_sdk
+    // route the hub doesn't register, so it 404s for every repo.
+    expect(vi.mocked(h.connect)).not.toHaveBeenCalled();
   });
 
   it('an asset can be removed before launching', async () => {
@@ -180,36 +184,30 @@ describe('new desktop: project + asset packages', () => {
     expect(launched()).toEqual({ name: 'Desktop 3' });
   });
 
-  it('never probes repo access — that route 404s on the hub', async () => {
-    renderDialog();
-
-    await userEvent.click(screen.getByTestId('loaded-project-chip-url'));
-    await userEvent.type(screen.getByTestId('loaded-project-url-input'), 'https://github.com/octocat/Hello-World');
-    await userEvent.click(screen.getByRole('button', { name: 'Use' }));
-    await userEvent.click(screen.getByTestId('launch-desktop'));
-
-    expect(h.repoAccess).not.toHaveBeenCalled();
-    expect(launched().sandboxProject.gitOrigin).toBeDefined();
-  });
-
-  it('makes the GitHub chip the connect action when there is no connection', async () => {
+  it('offers the connection once for the whole dialog, not per field', async () => {
     h.githubStatus.mockResolvedValue(false);
     renderDialog();
 
-    const chip = await screen.findByTestId('loaded-project-chip-github');
-    expect(chip).toHaveAttribute('aria-label', 'Connect GitHub');
-    await userEvent.click(chip);
+    const connect = await screen.findByTestId('connect-github');
+    await userEvent.click(connect);
 
     expect(h.connect).toHaveBeenCalledWith('github');
+    expect(screen.queryAllByTestId('connect-github')).toHaveLength(1);
   });
 
-  it('reports a connection instead of asking for one', async () => {
+  it('reports an existing connection instead of asking for one', async () => {
     renderDialog();
 
-    const chip = await screen.findByTestId('assets-chip-github');
-    expect(chip).toHaveAttribute('aria-label', 'GitHub connected');
-    await userEvent.click(chip);
+    expect(await screen.findByTestId('github-connected')).toBeInTheDocument();
+    expect(screen.queryByTestId('connect-github')).not.toBeInTheDocument();
+  });
 
-    expect(h.connect).not.toHaveBeenCalled();
+  it('keeps asking while the status is unknown, rather than reporting "not connected"', async () => {
+    // `null` is the bootstrap race, not an answer — reporting it as "no
+    // connection" is what the clone dialog learned to avoid.
+    h.githubStatus.mockResolvedValueOnce(null).mockResolvedValue(true);
+    renderDialog();
+
+    expect(await screen.findByTestId('github-connected')).toBeInTheDocument();
   });
 });

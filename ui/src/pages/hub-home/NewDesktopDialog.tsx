@@ -10,20 +10,36 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
+import { ProjectSelector } from '@src/components/project-selector/ProjectSelector';
+import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
 import { cn } from '@src/lib/utils';
 import { fetchGithubStatus } from '@src/lib/github-oauth-status';
 import type { ContextProject, SandboxSetup } from '@src/hooks/use-desktops';
-import { Briefcase, Check, GitBranch, Github, Link2, Loader2, X } from 'lucide-react';
+import { Briefcase, CheckCircle2, GitBranch, Github, Link2, Loader2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
-/** What the user picked as a source — a project they already have, or a repo URL. */
-type Source =
-  | { kind: 'project'; project: Project }
-  | { kind: 'git'; gitOrigin: GitOrigin; name: string };
+/**
+ * A picked source, normalised at pick time.
+ *
+ * `gitOrigin` is null for a project that was never cloned from anywhere — it
+ * can still be the project the desktop loads (the box mounts it empty), but it
+ * has nothing to clone as an asset. `projectId` is set when the user picked an
+ * existing project rather than pasting a URL, and is what the box adopts so one
+ * id spans hub and sandbox.
+ */
+interface Source {
+  name: string;
+  gitOrigin: GitOrigin | null;
+  projectId?: string;
+}
 
-/** Which chip's panel is open, if any. */
-type Panel = 'project' | 'github' | 'url';
+/** Which chip's panel is open in a field, if any. */
+type Panel = 'project' | 'url';
+
+function sourceFromProject(project: Project): Source {
+  return { name: project.displayName, gitOrigin: project.git_origin ?? null, projectId: project.id };
+}
 
 interface NewDesktopDialogProps {
   open: boolean;
@@ -38,26 +54,15 @@ interface NewDesktopDialogProps {
   onLaunch: (opts: { name: string; sandboxProject?: SandboxSetup }) => void;
 }
 
-/** A source's git origin, when it has one. A project that was never cloned from
- *  anywhere has none — it can still be the project loaded (the box mounts it
- *  empty), but there is nothing to clone for it as an asset. */
-function originOf(source: Source): GitOrigin | null {
-  return source.kind === 'git' ? source.gitOrigin : (source.project.git_origin ?? null);
-}
-
-function nameOf(source: Source): string {
-  return source.kind === 'git' ? source.name : (source.project.name ?? 'project');
-}
-
 /**
  * Start a desktop: name it, say which project it loads, and add any asset
  * packages — help desks or skills repos that get cloned in, indexed, and
  * attached as context folders of that project.
  *
- * Both fields are the same control ({@link SourceField}): three chips — pick a
- * project, connect GitHub, paste a URL — each opening its own panel directly
- * underneath. The only difference is what a pick does (replace vs. append) and
- * which projects are offered.
+ * Both fields are the same control ({@link SourceField}): the picks as
+ * removable pills, then chips — pick a project, paste a URL — each opening its
+ * own panel directly underneath. The only difference is what a pick does
+ * (replace vs. append) and which projects are on offer.
  *
  * It deliberately does NOT probe repo access first: that probe
  * (`/api/v1/git/remote-access`) is a flow_sdk route the hub does not register,
@@ -90,15 +95,30 @@ export function NewDesktopDialog({
     const fromUrl = initialGitUrl ? gitOriginFromUrl(initialGitUrl) : null;
     setLoadedProject(
       fromUrl
-        ? { kind: 'git', gitOrigin: fromUrl, name: fromUrl.name }
+        ? { name: fromUrl.name, gitOrigin: fromUrl }
         : currentProject
-          ? { kind: 'project', project: currentProject }
+          ? sourceFromProject(currentProject)
           : null,
     );
     setAssets([]);
     setConnecting(false);
     setError('');
-    void fetchGithubStatus().then((r) => setGithubConnected(r === true));
+
+    // `null` means the question couldn't be asked yet — the bootstrap race where
+    // `userTypeId` isn't populated — so retry briefly rather than reporting a
+    // connection the user does have as missing (same as NewProjectFromGitDialog).
+    let cancelled = false;
+    const poll = () => {
+      void fetchGithubStatus().then((r) => {
+        if (cancelled) return;
+        if (r === null) setTimeout(poll, 500);
+        else setGithubConnected(r);
+      });
+    };
+    poll();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -128,6 +148,8 @@ export function NewDesktopDialog({
     connecting,
   );
 
+  const onInvalidUrl = useCallback(() => setError(t`Enter a valid GitHub repository URL.`), [t]);
+
   const handleSubmit = useCallback(() => {
     const desktopName = name.trim() || defaultName;
     if (!loadedProject) {
@@ -135,30 +157,21 @@ export function NewDesktopDialog({
       onLaunch({ name: desktopName }); // nothing to load → a plain desktop
       return;
     }
-    const origin = originOf(loadedProject);
-    const contextProjects: ContextProject[] = assets.flatMap((asset) => {
-      const assetOrigin = originOf(asset);
-      // Scope is `shared` for asset packages: they travel with the project.
-      return assetOrigin ? [{ gitOrigin: assetOrigin, name: nameOf(asset), scope: 'shared' as const }] : [];
-    });
+    // Scope is `shared` for asset packages: they travel with the project.
+    const contextProjects: ContextProject[] = assets.flatMap((asset) =>
+      asset.gitOrigin ? [{ gitOrigin: asset.gitOrigin, name: asset.name, scope: 'shared' as const }] : [],
+    );
     onOpenChange(false);
     onLaunch({
       name: desktopName,
       sandboxProject: {
-        name: nameOf(loadedProject),
-        ...(origin ? { gitOrigin: origin } : {}),
-        ...(loadedProject.kind === 'project' ? { projectId: loadedProject.project.id } : {}),
+        name: loadedProject.name,
+        ...(loadedProject.gitOrigin ? { gitOrigin: loadedProject.gitOrigin } : {}),
+        ...(loadedProject.projectId ? { projectId: loadedProject.projectId } : {}),
         ...(contextProjects.length ? { contextProjects } : {}),
       },
     });
   }, [name, defaultName, loadedProject, assets, onLaunch, onOpenChange]);
-
-  const shared = {
-    githubConnected,
-    connecting,
-    onConnect: connectGithub,
-    onInvalidUrl: () => setError(t`Enter a valid GitHub repository URL.`),
-  };
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!connecting) onOpenChange(o); }}>
@@ -187,7 +200,7 @@ export function NewDesktopDialog({
           onPick={setLoadedProject}
           onRemove={() => setLoadedProject(null)}
           emptyHint={t`Nothing selected — launches an empty desktop.`}
-          {...shared}
+          onInvalidUrl={onInvalidUrl}
         />
 
         <SourceField
@@ -198,8 +211,33 @@ export function NewDesktopDialog({
           onPick={(source) => setAssets((prev) => [...prev, source])}
           onRemove={(index) => setAssets((prev) => prev.filter((_, at) => at !== index))}
           emptyHint={t`Help desks or skills repos to load alongside it.`}
-          {...shared}
+          onInvalidUrl={onInvalidUrl}
         />
+
+        {/* One connection, stated once — both fields use the same credential. */}
+        {githubConnected ? (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="github-connected">
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+            <Trans>GitHub connected — private repos are available.</Trans>
+          </p>
+        ) : (
+          <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs">
+            <span className="text-muted-foreground">
+              <Trans>Tip: connect GitHub to use private repos.</Trans>
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 shrink-0 px-2 text-xs"
+              onClick={connectGithub}
+              disabled={connecting}
+              data-testid="connect-github"
+            >
+              {connecting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Github className="h-3 w-3" />}
+              <span className="ml-1.5"><Trans>Connect</Trans></span>
+            </Button>
+          </div>
+        )}
 
         {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
 
@@ -217,7 +255,7 @@ export function NewDesktopDialog({
 }
 
 /**
- * One labelled field: what's picked so far, then the three ways to pick more.
+ * One labelled field: what's picked so far, then the two ways to pick more.
  *
  * Used verbatim for the loaded project and for the asset packages — the caller
  * only decides whether a pick replaces or appends, and which projects are on
@@ -232,9 +270,6 @@ function SourceField({
   onPick,
   onRemove,
   emptyHint,
-  githubConnected,
-  connecting,
-  onConnect,
   onInvalidUrl,
 }: {
   label: string;
@@ -244,16 +279,16 @@ function SourceField({
   onPick: (source: Source) => void;
   onRemove: (index: number) => void;
   emptyHint: string;
-  githubConnected: boolean;
-  connecting: boolean;
-  onConnect: () => void;
   onInvalidUrl: () => void;
 }) {
   const { t } = useLingui();
   const [panel, setPanel] = useState<Panel | null>(null);
   const [url, setUrl] = useState('');
 
-  const toggle = (next: Panel) => setPanel((prev) => (prev === next ? null : next));
+  const pickedIds = useMemo(
+    () => values.map((v) => v.projectId).filter((id): id is string => !!id),
+    [values],
+  );
 
   const pick = (source: Source) => {
     setPanel(null);
@@ -267,7 +302,7 @@ function SourceField({
       onInvalidUrl();
       return;
     }
-    pick({ kind: 'git', gitOrigin, name: gitOrigin.name });
+    pick({ name: gitOrigin.name, gitOrigin });
   };
 
   return (
@@ -278,23 +313,23 @@ function SourceField({
         <div className="mb-1.5 flex flex-wrap gap-1.5" data-testid={`${testId}-values`}>
           {values.map((source, i) => (
             <span
-              key={`${nameOf(source)}-${i}`}
+              key={`${source.name}-${i}`}
               className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-muted/50 py-0.5 pl-2 pr-1 text-xs"
             >
-              {source.kind === 'project' ? (
+              {source.projectId ? (
                 <Briefcase className="h-3 w-3 shrink-0 text-muted-foreground" />
               ) : (
                 <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
               )}
-              <span className="truncate">{nameOf(source)}</span>
-              {!originOf(source) && (
+              <span className="truncate">{source.name}</span>
+              {!source.gitOrigin && (
                 <span className="shrink-0 text-[10px] uppercase text-muted-foreground"><Trans>no repo</Trans></span>
               )}
               <button
                 type="button"
                 className="shrink-0 rounded-full p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={() => onRemove(i)}
-                aria-label={t`Remove ${nameOf(source)}`}
+                aria-label={t`Remove ${source.name}`}
               >
                 <X className="h-3 w-3" />
               </button>
@@ -306,33 +341,21 @@ function SourceField({
       )}
 
       <div className="flex flex-wrap items-center gap-1.5">
-        {/* Picking from a list only means something when there IS a choice. */}
-        {projects.length > 1 && (
+        {/* Offered while there is still something unpicked to offer: for the
+            loaded project that hides a list of the one project already chosen,
+            for assets it keeps a single candidate reachable. */}
+        {projects.length > pickedIds.length && (
           <Chip
             active={panel === 'project'}
-            onClick={() => toggle('project')}
+            onClick={() => setPanel((p) => (p === 'project' ? null : 'project'))}
             testId={`${testId}-chip-project`}
             label={t`Select project`}
             icon={<Briefcase className="h-3 w-3" />}
           />
         )}
         <Chip
-          active={panel === 'github'}
-          onClick={() => (githubConnected ? toggle('github') : onConnect())}
-          testId={`${testId}-chip-github`}
-          label={githubConnected ? t`GitHub connected` : t`Connect GitHub`}
-          iconOnly
-          icon={
-            connecting ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Github className={cn('h-3 w-3', githubConnected && 'text-emerald-500')} />
-            )
-          }
-        />
-        <Chip
           active={panel === 'url'}
-          onClick={() => toggle('url')}
+          onClick={() => setPanel((p) => (p === 'url' ? null : 'url'))}
           testId={`${testId}-chip-url`}
           label={t`Git URL`}
           icon={<Link2 className="h-3 w-3" />}
@@ -340,27 +363,17 @@ function SourceField({
       </div>
 
       {panel === 'project' && (
-        <ul className="mt-1.5 max-h-40 overflow-y-auto rounded-md border border-border p-1" data-testid={`${testId}-projects`}>
-          {projects.map((project) => (
-            <li key={project.id}>
-              <button
-                type="button"
-                className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs hover:bg-accent"
-                onClick={() => pick({ kind: 'project', project })}
-              >
-                <Briefcase className="h-3 w-3 shrink-0 text-muted-foreground" />
-                <span className="truncate">{project.name}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {panel === 'github' && githubConnected && (
-        <p className="mt-1.5 flex items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-[11px] text-muted-foreground">
-          <Check className="h-3 w-3 text-emerald-500" />
-          <Trans>GitHub is connected — private repos are available.</Trans>
-        </p>
+        <div className="mt-1.5 rounded-md border border-border p-1" data-testid={`${testId}-projects`}>
+          <ProjectSelector
+            projects={projectEntitiesToSelectorItems(projects)}
+            selectedId={null}
+            excludeIds={pickedIds}
+            onSelect={(id) => {
+              const project = projects.find((p) => p.id === id);
+              if (project) pick(sourceFromProject(project));
+            }}
+          />
+        </div>
       )}
 
       {panel === 'url' && (
@@ -391,21 +404,17 @@ function Chip({
   active,
   onClick,
   testId,
-  iconOnly,
 }: {
   label: string;
   icon: React.ReactNode;
   active: boolean;
   onClick: () => void;
   testId: string;
-  iconOnly?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      title={iconOnly ? label : undefined}
-      aria-label={iconOnly ? label : undefined}
       data-testid={testId}
       className={cn(
         'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors',
@@ -415,7 +424,7 @@ function Chip({
       )}
     >
       {icon}
-      {!iconOnly && <span>{label}</span>}
+      <span>{label}</span>
     </button>
   );
 }

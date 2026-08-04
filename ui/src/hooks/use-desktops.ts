@@ -80,7 +80,8 @@ const STEP_LABELS: Record<StepId, string> = {
  * step run without its row.
  */
 function hasContextWork(setup: SandboxSetup): boolean {
-  return Boolean(setup.install || setup.contextProjects?.length || setup.gitOrigin);
+  // A manifest (and the install that reconciles one) can only come from a repo.
+  return Boolean(setup.gitOrigin || setup.contextProjects?.length);
 }
 
 /**
@@ -94,9 +95,9 @@ function hasContextWork(setup: SandboxSetup): boolean {
 function plannedSteps(setup?: SandboxSetup): Step[] {
   const ids: StepId[] = ['launch', 'health'];
   if (setup) {
-    // No repo to fetch → the box mounts the project empty instead.
-    ids.push(...(setup.gitOrigin ? (['validate', 'clone'] as StepId[]) : (['init'] as StepId[])));
-    ids.push('index');
+    // No repo to fetch → the box mounts the project empty instead, and an empty
+    // directory has nothing to index.
+    ids.push(...(setup.gitOrigin ? (['validate', 'clone', 'index'] as StepId[]) : (['init'] as StepId[])));
     if (hasContextWork(setup)) ids.push('context');
     ids.push('default');
   }
@@ -218,9 +219,6 @@ export interface SandboxSetup {
   install?: ContentInstallSpec;
 }
 
-/** @deprecated Kept while call sites migrate: a sandbox project used to be
- *  git-only, so this was its name. */
-export type GitSetup = SandboxSetup;
 
 /** A repo that becomes its own project on the box AND a context folder of the
  *  main one — how a help desk's skills and assets come into scope. */
@@ -235,7 +233,6 @@ export interface ContextProject {
 interface CloneResult extends InstallNavigationResult {
   path: string;
   manifest?: ManifestEntry[];
-  message?: string;
 }
 
 /** One `content_projects` entry from the cloned repo's `.flowpad/bootstrap.json`. */
@@ -281,7 +278,7 @@ async function provisionSandboxProject(
   patch: PatchStep,
 ): Promise<CloneResult> {
   const cloned = setup.gitOrigin
-    ? await cloneSandboxProject(nodeId, setup, run, patch)
+    ? await cloneSandboxProject(nodeId, setup, run)
     : await run('init', async () => {
         // No repository behind this project — the box mounts it empty, which
         // is still what gives the directory its identity.
@@ -294,7 +291,9 @@ async function provisionSandboxProject(
       });
 
   const projectId = cloned.project!.id!;
-  await run('index', () => opsCall(nodeId, 'index-project', { path: cloned.path, project_id: projectId }));
+  if (setup.gitOrigin) {
+    await run('index', () => opsCall(nodeId, 'index-project', { path: cloned.path, project_id: projectId }));
+  }
 
   if (hasContextWork(setup)) {
     await run('context', async () => {
@@ -323,12 +322,7 @@ async function provisionSandboxProject(
 }
 
 /** Ask the box whether the name is free, then have the hub clone into it. */
-async function cloneSandboxProject(
-  nodeId: string,
-  setup: SandboxSetup,
-  run: RunStep,
-  patch: PatchStep,
-): Promise<CloneResult> {
+async function cloneSandboxProject(nodeId: string, setup: SandboxSetup, run: RunStep): Promise<CloneResult> {
   await run('validate', async () => {
     const check = await opsCall<NameCheck>(nodeId, 'validate-project-name', { name: setup.name });
     if (check && check.available === false) {
@@ -338,7 +332,6 @@ async function cloneSandboxProject(
   });
 
   return run('clone', async () => {
-    patch('clone', { detail: `cloning ${setup.name}…` });
     const result = await opsCall<CloneResult>(nodeId, 'clone-project', {
       git_origin: setup.gitOrigin,
       name: setup.name,
