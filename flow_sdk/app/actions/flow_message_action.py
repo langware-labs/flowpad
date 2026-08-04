@@ -1400,6 +1400,51 @@ async def resolve_helpdesk(project_id: Optional[str] = None) -> Optional[Helpdes
     return await _hub_default_helpdesk()
 
 
+async def _ticket_context_typeids(project_id: Optional[str]) -> list[str]:
+    """TypeIds a desk needs to triage a ticket: the requester's project, and
+    the agent session they were running when they asked.
+
+    Best-effort by design — a ticket must never fail to open because context
+    could not be gathered. Returns ``[]`` rather than raising.
+
+    The session is resolved as the project's most recently active
+    ``AgenticProcess``, which is what "what was I doing when this went wrong"
+    means from the requester's side; its ``claude_session`` is the transcript
+    the assignee will pull after pickup.
+    """
+    out: list[str] = []
+    if not project_id:
+        return out
+    try:
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        project = await Project.get_by_id(project_id)
+        if project is None:
+            return out
+        out.append(str(project.typeid))
+
+        from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
+            AgenticProcess,
+        )
+
+        # AgenticProcess is project-FIELD scoped, not graph-scoped — a scoped
+        # query returns 0 rows. Filter on the field.
+        processes = await AgenticProcess.get_all({"project_id": project_id})
+        latest = max(
+            (p for p in processes if getattr(p, "updated_date", None)),
+            key=lambda p: p.updated_date,
+            default=None,
+        )
+        if latest is not None:
+            out.append(str(latest.typeid))
+            session_id = getattr(latest, "session_id", None)
+            if session_id:
+                out.append(f"claude_session-{session_id}")
+    except Exception as e:  # noqa: BLE001
+        logger.info("[helpdesk-start-ticket] context gather skipped: %s", e)
+    return out
+
+
 @action.post(action_name="helpdesk-start-ticket", types=None)
 async def helpdesk_start_ticket() -> ApiResponse:
     """Open a support ticket — a guest-authored ``helpdesk`` conversation under
@@ -1428,7 +1473,26 @@ async def helpdesk_start_ticket() -> ApiResponse:
             return ApiFailResponse(message="Help desk is unavailable on this hub")
         helpdesk_id = target.project_id
 
-        resp = await _hub_action("POST", f"/graph/project/{helpdesk_id}/start_guest_conversation", {"text": text})
+        # Context rides with the ticket. A desk answering for someone else's
+        # project cannot triage from prose alone — "which engagement is this,
+        # and what was the agent doing?" is the first question every time, and
+        # a round trip to ask it is the difference between a ticket answered
+        # today and one answered tomorrow.
+        #
+        # ``FlowMessage.context`` is a TypeId list the hub stores without
+        # inspecting, so this needs nothing hub-side. Ids only: the desk is a
+        # different machine and cannot read the requester's disk. Transcript
+        # BYTES travel separately, through the share bundle
+        # (``agenticProcessShareSource`` → ``upload_body``) — the assignee
+        # pulls them once they pick the ticket up.
+        hub_body: dict = {"text": text}
+        ticket_context = await _ticket_context_typeids(project_id or None)
+        if ticket_context:
+            hub_body["context"] = ticket_context
+
+        resp = await _hub_action(
+            "POST", f"/graph/project/{helpdesk_id}/start_guest_conversation", hub_body
+        )
         if not resp or resp.get("status") != "SUCCESS":
             msg = (resp or {}).get("message") or "hub unreachable"
             # 502, not the default 500: the failure is the UPSTREAM hub rejecting
@@ -1528,18 +1592,38 @@ async def helpdesk_tickets_list() -> ApiResponse:
     the hub). Returns the lightweight rows verbatim so the UI can render an
     "unpicked" queue — unpicked tickets don't fan out to non-participants, so
     this is the only way staff discover them. Picking one up materializes it
-    locally (see ``conversation-pickup``)."""
+    locally (see ``conversation-pickup``).
+
+    Two callers with opposite questions share this action:
+
+    * a REQUESTER asks "which desk serves me?" — pass ``project_id`` (the
+      project they are working in) and the desk is resolved from it.
+    * STAFF ask "what is queued on MY desk?" — pass ``desk_project_id``, the
+      hub project that owns the queue, and it is used verbatim.
+
+    Staff need the second form because resolution only ever answers the first
+    question: a desk owner's own project has no desk of its own, so resolving
+    from it walks past their queue to whatever desk serves *them* (the hub's
+    default), and they get "no valid access for role ['guest']" against a desk
+    that isn't theirs. Their own tickets were unreachable from the app.
+    """
     try:
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="No authenticated user in request context")
 
         body = await request_info.get_post_data() or {}
-        project_id = (body.get("project_id") or "").strip()
-        target = await resolve_helpdesk(project_id or None)
-        if not target:
-            return ApiFailResponse(message="Help desk is unavailable on this hub")
-        helpdesk_id = target.project_id
+        # Explicit desk wins: the staff surface already knows which desk it is
+        # rendering, and asking it to be re-derived is what broke the case.
+        desk_project_id = (body.get("desk_project_id") or "").strip()
+        if desk_project_id:
+            helpdesk_id = desk_project_id
+        else:
+            project_id = (body.get("project_id") or "").strip()
+            target = await resolve_helpdesk(project_id or None)
+            if not target:
+                return ApiFailResponse(message="Help desk is unavailable on this hub")
+            helpdesk_id = target.project_id
 
         resp = await _hub_action("GET", f"/graph/project/{helpdesk_id}/helpdesk_conversations")
         # Propagate a hub authorization/transport failure instead of synthesizing
