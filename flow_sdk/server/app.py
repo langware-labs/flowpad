@@ -64,6 +64,7 @@ from .routes import (
     compute_register_router,
     debug_router,
     dep_graph_router,
+    display_router,
     detection_router,
     directory_router,
     docs_graph_router,
@@ -526,6 +527,7 @@ server.add_router(debug_router)
 server.add_router(ingest_router)
 server.add_router(runs_router)
 server.add_router(tags_router)
+server.add_router(display_router)
 server.add_router(subgraph_router)
 server.add_router(navigate_router)
 server.add_router(agent_records_router)

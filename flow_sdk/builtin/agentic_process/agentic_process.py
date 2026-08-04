@@ -2449,7 +2449,9 @@ class AgenticProcess(Entity):
             )
 
         try:
-            payload = await resolve_display_target(typeid=typeid, path=path, port=port)
+            # `discover=True` — a display verb: showing a just-written file has
+            # to recover it so the bespoke editor renders, not a raw file view.
+            payload = await resolve_display_target(typeid=typeid, path=path, port=port, discover=True)
         except InvalidDisplayTarget as e:
             return ApiFailResponse(message=str(e), status_code=400)
         except DisplayTargetNotFound as e:
@@ -2895,6 +2897,7 @@ class AgenticProcess(Entity):
                 typeid=str(body.get("typeid") or "").strip() or None,
                 path=str(body.get("path") or "").strip() or None,
                 port=body.get("port"),
+                discover=True,  # a display verb — see `flow show file`
             )
         except InvalidDisplayTarget as e:
             return ApiFailResponse(message=str(e), status_code=400)
