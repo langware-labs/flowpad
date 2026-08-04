@@ -1151,6 +1151,19 @@ async def handle_remove_message(flow_message_id: str) -> ApiResponse:
                 message=f"Hub {e.status_code}: {e.reason}",
             )
 
+    # Detach the child edge BEFORE destroying the row. Membership is the edge
+    # now, so pruning only the jsonl pointer would leave the message in the
+    # projection — the reproject reads edges. Order matters twice over: after
+    # ``destroy()`` the child no longer resolves, so ``detach_child`` would find
+    # nothing to remove and announce nothing.
+    if conv_id:
+        try:
+            conv_for_detach = await Conversation.get_one({"id": conv_id})
+            if conv_for_detach is not None:
+                await conv_for_detach.detach_child(fm.typeid, notify=True)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[remove-message] child detach failed fm=%s conv=%s: %s", fm_id, conv_id, e)
+
     # Purge the local existence (DB row + relationships + on-disk record folder
     # + staging data/MessageAttachment rows, via the FlowMessage lifecycle).
     try:
@@ -1835,6 +1848,17 @@ async def _process_single_hub_message(raw: dict) -> str | None:
             payload["remote"] = True
         else:
             payload = {**raw, "remote": True}
+        # Local parentage. The hub has no ``parent_type_id`` on FlowMessage (only
+        # its Comment declares one), so a hub payload never carries it and
+        # ``merge_hub_payload`` — which restores only PRIVATE / HUB_WRITE fields —
+        # would drop ours on every LWW refresh. Rather than reclassify the field
+        # globally (it is SHARED, and the hub-child path deliberately lets a
+        # payload's own value win), write it unconditionally: it is DERIVED from
+        # the conversation we are syncing, so re-deriving it each pass is both
+        # cheap and self-healing.
+        _conv_id = (raw.get("conversation_id") or "").strip()
+        if _conv_id:
+            payload["parent_type_id"] = f"{Conversation.get_type()}-{_conv_id}"
         fm = FlowMessage.model_validate(payload)
         await fm.save()
     except Exception as e:  # noqa: BLE001
@@ -1842,6 +1866,43 @@ async def _process_single_hub_message(raw: dict) -> str | None:
         return None
     conv_id = (raw.get("conversation_id") or "").strip()
     if conv_id:
+        # Set before the edge block so the announcement below is well-defined
+        # even if that block raises (it is caught and logged, not fatal).
+        conv_for_edge = None
+        announce_child = False
+        try:
+            # The message IS a child of the conversation — make that a real local
+            # edge, the way the hub already models it (``Conversation.add_child``
+            # in ``add_message``).
+            #
+            # notify=True, and this is THE announcement for a synced message.
+            # It cannot be deferred to the reconcile's projection write: that
+            # writer only announces when it detects a change, and this loop has
+            # already made the change — the exact swallow that let a message land
+            # in SQLite with the open conversation never told. Riding the edge
+            # instead of the projection is the whole point of modelling messages
+            # as children.
+            #
+            # Volume is bounded by the new-edge guard: only a genuinely new edge
+            # emits, so the every-sync re-convergence passes are silent and a
+            # backlog of N new messages costs N frames — the same order as the N
+            # flow_message CREATEs that already fire alongside them.
+            conv_for_edge = await Conversation.get_one({"id": conv_id})
+            if conv_for_edge is not None:
+                # Attach SILENTLY here and announce after the projection below.
+                # Announcing at attach time is a race the client always loses:
+                # its handler re-reads the conversation the moment the frame
+                # lands, but ``message_ids``/``message_count`` are still the
+                # pre-arrival values until the projection write further down —
+                # so the refetch returns a row without this message, and the
+                # projection write is silent, so nobody ever corrects it. That
+                # is the "message synced but the open view never updated"
+                # report, reproduced live: the client's refetch fired in the
+                # same second as the announcement and came back stale.
+                announce_child = not await conv_for_edge._has_child_edge(fm)
+                await conv_for_edge.attach_child(fm, notify=False)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[fm-process] child edge conv=%s fm=%s failed: %s", conv_id[:8], fm_id[:8], e)
         try:
             # Canonical write path for the message_ids / message_count
             # projection — same pattern materialize_flow_message uses on
@@ -1861,7 +1922,19 @@ async def _process_single_hub_message(raw: dict) -> str | None:
                 ts = raw.get("created_date") or ""
                 append_message_pointer(rec, fm_id, ts)
                 await rec.sync_to_db(notify=False)
+                # notify=False — and it stays correct, unlike before. The
+                # announcement now rides the CHILD EDGE, not this projection
+                # write, so suppressing it here no longer loses the event. The
+                # reconcile announces the conversation once at the end of the
+                # batch.
                 await project_pointers_to_entity(rec, notify=False)
+                # NOW the parent is worth re-reading: the projection carries
+                # this message. Announcing here rather than at attach time is
+                # what makes the client's refetch return the new message.
+                if announce_child and conv_for_edge is not None:
+                    from flow_sdk.api.api_types.messages import OperationType  # noqa: PLC0415
+
+                    await conv_for_edge.emit_child_op(fm, OperationType.CHILD_CREATED)
         except Exception as e:  # noqa: BLE001
             logger.warning(
                 "[fm-process] pointer-append for conv=%s fm=%s failed: %s",
@@ -2450,11 +2523,30 @@ async def _materialize_invitation(
         # live message materialization — a "now" clock would sort the notice
         # AFTER the first real message (the UI orders bubbles by pointer ts).
         # Backdate to the invitation's own hub clock (conv clock as fallback).
-        invite_ts = (
-            str(hub_inv.get("created_date") or "").strip()
-            or str(embedded_conv.get("created_date") or "").strip()
-            or None
-        )
+        # The EARLIER of the two clocks, not the first non-empty one. The notice
+        # is the recipient's entry point and must sort first, but an invite into
+        # an EXISTING conversation is created long after that thread's first
+        # message — ordering by the invitation's own clock would file the Accept
+        # gate below messages the recipient cannot read yet. Taking the minimum
+        # is monotone and idempotent, and now that ordering comes from
+        # ``created_date`` (not a separately-clamped pointer ts) it is the only
+        # thing deciding where the notice lands.
+        # Compared as datetimes, not strings — the two clocks can differ in
+        # offset spelling ("Z" vs "+00:00") and precision, where a lexical min
+        # silently picks the wrong one.
+        _invite_candidates = [
+            (Conversation._as_datetime(s), s)
+            for s in (
+                str(hub_inv.get("created_date") or "").strip(),
+                str(embedded_conv.get("created_date") or "").strip(),
+            )
+            if s
+        ]
+        _parsed = [(dt, s) for dt, s in _invite_candidates if dt is not None]
+        if _parsed:
+            invite_ts = min(_parsed, key=lambda pair: pair[0])[1]
+        else:
+            invite_ts = _invite_candidates[0][1] if _invite_candidates else None
         synth_payload = {
             "id": synth_fm_id,
             "text": (message_text or "You've been invited to a conversation"),
@@ -2489,7 +2581,7 @@ async def _materialize_invitation(
     # navigable window before the Accept gate appears).
     if notify:
         try:
-            from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
+            from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
             from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
 
             if inv_fm is not None:

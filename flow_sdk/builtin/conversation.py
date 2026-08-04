@@ -4,6 +4,14 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optional
 
+from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
+from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.builtin.user import normalize_email
+from flow_sdk.core import Entity
+from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
+from flow_sdk.db.drivers.db_base_record import TypeId
+from flow_sdk.schema.types import EntityType
+
 
 class MessageRef(NamedTuple):
     """A reference to one message in a conversation's ordered log: which message
@@ -32,14 +40,6 @@ def _ref_sort_key(ref: "MessageRef") -> tuple:
     if landed.tzinfo is None:
         landed = landed.replace(tzinfo=timezone.utc)
     return (1, landed.timestamp())
-
-from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
-from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.builtin.user import normalize_email
-from flow_sdk.core import Entity
-from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
-from flow_sdk.db.drivers.db_base_record import TypeId
-from flow_sdk.schema.types import EntityType
 
 
 class ConversationKind(StrEnum):
@@ -232,7 +232,7 @@ class Conversation(ProjectedFields, Entity):
         """
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-        for ref in (shared_context_entities or []):
+        for ref in shared_context_entities or []:
             tid = _coerce_context_typeid(ref)
             if tid is None or not tid.id:
                 continue
@@ -397,7 +397,7 @@ class Conversation(ProjectedFields, Entity):
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         targets: list[dict] = []
-        for ref in (self.shared_context_entities or []):
+        for ref in self.shared_context_entities or []:
             tid = _coerce_context_typeid(ref)
             if tid is None or tid.type not in _HUB_SHAREABLE_ASSET_TYPES or not tid.id:
                 continue
@@ -448,7 +448,9 @@ class Conversation(ProjectedFields, Entity):
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
         rec = from_jsonl(
-            default_jsonl_path(self.id), parent_id="", record_id=self.id,
+            default_jsonl_path(self.id),
+            parent_id="",
+            record_id=self.id,
             parent_type=RecordType.PROJECT,
         )
         for ptr in message_pointers(rec):
@@ -466,6 +468,74 @@ class Conversation(ProjectedFields, Entity):
             await fm.save()
             if fm.body_status == BodyStatus.UPLOADING:
                 await _upload_body_and_finalize(fm, self.id)
+
+    async def ensure_message_edges(self) -> dict:
+        """Backfill parent→message ``is_child`` edges from what we already know.
+
+        Membership used to live only in the on-disk pointer index and the
+        ``conversation_id`` field; edges are new, so every conversation that
+        predates them has none. Anything deriving membership from edges must
+        call this first or it reads an empty set and blanks the projection.
+
+        Candidates are the union of BOTH legacy sources — jsonl pointers and
+        rows carrying ``conversation_id`` — so a message whose pointer was lost
+        (DB rebuild, interrupted write) is recovered rather than dropped.
+        Strictly additive and idempotent: ``attach_child`` dedups, so a
+        converged conversation does zero writes. Silent by design — the caller
+        announces once afterwards rather than once per backfilled message.
+
+        Returns counts for logging: ``{candidates, added, missing}``.
+        """
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.conversation import (  # noqa: PLC0415
+            default_jsonl_path,
+            from_jsonl,
+            message_pointers,
+        )
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+        candidate_ids: set[str] = set()
+        try:
+            rec = from_jsonl(
+                default_jsonl_path(self.id),
+                parent_id="",
+                record_id=self.id,
+                parent_type=RecordType.PROJECT,
+            )
+            candidate_ids.update(p.id for p in message_pointers(rec))
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            for fm in await FlowMessage.get_all({"conversation_id": self.id}):
+                if fm.id:
+                    candidate_ids.add(fm.id)
+        except Exception:  # noqa: BLE001
+            pass
+
+        added = 0
+        missing = 0
+        for fm_id in candidate_ids:
+            fm = await FlowMessage.get_one({"id": fm_id})
+            if fm is None:
+                missing += 1
+                continue
+            if await self._has_child_edge(fm):
+                continue
+            if fm.parent_type_id != str(self.typeid):
+                fm.parent_type_id = str(self.typeid)
+                await fm.save(None, notify=False)
+            await self.attach_child(fm, notify=False)
+            added += 1
+
+        if added or missing:
+            logging.info(
+                "[conv-edges] %s: backfilled %d edge(s) from %d candidate(s); %d unresolvable",
+                (self.id or "?")[:8],
+                added,
+                len(candidate_ids),
+                missing,
+            )
+        return {"candidates": len(candidate_ids), "added": added, "missing": missing}
 
     def message_refs(self) -> "list[MessageRef]":
         """This conversation's messages in order (oldest-first), as lightweight
@@ -579,7 +649,9 @@ class Conversation(ProjectedFields, Entity):
             "",
         ]
         rec = from_jsonl(
-            default_jsonl_path(self.id), parent_id="", record_id=self.id,
+            default_jsonl_path(self.id),
+            parent_id="",
+            record_id=self.id,
             parent_type=RecordType.PROJECT,
         )
         for ptr in message_pointers(rec):
@@ -640,10 +712,7 @@ class Conversation(ProjectedFields, Entity):
         if sender_name:
             body["sender_name"] = sender_name
         if attachments:
-            body["attachment"] = [
-                a if isinstance(a, dict) else a.model_dump(mode="python")
-                for a in attachments
-            ]
+            body["attachment"] = [a if isinstance(a, dict) else a.model_dump(mode="python") for a in attachments]
         if shared_context_entities:
             body["shared_context_entities"] = shared_context_entities
         # Forward provenance — mirrored on the hub FlowMessage schema so it
@@ -697,7 +766,6 @@ class Conversation(ProjectedFields, Entity):
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
             return await client.post(path, {"flow_message_id": flow_message_id})
 
-
     @property
     def data_path(self) -> str:
         """Canonical path to this conversation's jsonl pointer index.
@@ -706,6 +774,7 @@ class Conversation(ProjectedFields, Entity):
         so on-disk layout is uniform; no per-instance storage.
         """
         from flow_sdk.fs_store.operations.conversation import default_jsonl_path  # noqa: PLC0415
+
         return str(default_jsonl_path(self.id))
 
     # NOTE: per-subclass project-id projection moved to

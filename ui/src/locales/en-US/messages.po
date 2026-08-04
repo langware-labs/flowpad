@@ -187,8 +187,14 @@ msgstr "{0} bytes"
 
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
+#: src/components/connections-manager.tsx
 msgid "{0} connection failed"
 msgstr "{0} connection failed"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "{0} could not be updated for this project."
+msgstr "{0} could not be updated for this project."
 
 #. placeholder {0}: summary.current
 #. placeholder {1}: summary.stale
@@ -197,6 +203,11 @@ msgstr "{0} connection failed"
 #: src/components/machine-overview/service-status-led.tsx
 msgid "{0} current · {1} stale · {2} partial · {3} error"
 msgstr "{0} current · {1} stale · {2} partial · {3} error"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "{0} deleted"
+msgstr "{0} deleted"
 
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
@@ -427,6 +438,11 @@ msgstr "{name} isn't installed on this computer yet. Follow the quick setup guid
 #: src/components/conversation/LiveSessionGroup.tsx
 msgid "{promptCount} prompts · {replyCount} replies"
 msgstr "{promptCount} prompts · {replyCount} replies"
+
+#. placeholder {0}: names.length
+#: src/components/connections-manager.tsx
+msgid "{provider} is used by {0} project(s): {list}. Deleting removes access for all of them, and you'll have to sign in again."
+msgstr "{provider} is used by {0} project(s): {list}. Deleting removes access for all of them, and you'll have to sign in again."
 
 #. placeholder {0}: remaining !== 1 ? 's' : ''
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
@@ -893,8 +909,13 @@ msgid "Add comment..."
 msgstr "Add comment..."
 
 #: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Add context folder"
 msgstr "Add context folder"
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+#~ msgid "Add Context Folder"
+#~ msgstr "Add Context Folder"
 
 #: src/components/label-select.tsx
 #~ msgid "Add custom label..."
@@ -946,6 +967,10 @@ msgstr "Add to favorites"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Add to Private Context"
 msgstr "Add to Private Context"
+
+#: src/components/connections-manager.tsx
+msgid "Add to project"
+msgstr "Add to project"
 
 #: src/components/conversation/chips/MessageChips.tsx
 #: src/components/prompt-library/PromptLibraryMenu.tsx
@@ -1327,6 +1352,10 @@ msgstr "Annotation submitted"
 msgid "Annotations"
 msgstr "Annotations"
 
+#: src/components/assets/context-folder-sources.tsx
+msgid "Another Flowpad project — its folder becomes context for this one"
+msgstr "Another Flowpad project — its folder becomes context for this one"
+
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "Any detail that helps (optional)"
 msgstr "Any detail that helps (optional)"
@@ -1571,6 +1600,7 @@ msgstr "assets"
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/pages/hub-project/HubProjectPage.tsx
 msgid "Assets"
 msgstr "Assets"
 
@@ -1766,6 +1796,10 @@ msgstr "Back to open projects"
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
 #~ msgid "Back to projects"
 #~ msgstr "Back to projects"
+
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Back to repositories"
+msgstr "Back to repositories"
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
@@ -2095,6 +2129,7 @@ msgstr "Can't update — showing last synced"
 #: src/components/triggers-view/TriggerEditor.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
+#: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/LaunchLanding.tsx
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
@@ -2275,6 +2310,7 @@ msgstr "checking…"
 #~ msgid "Checking..."
 #~ msgstr "Checking..."
 
+#: src/components/project-home/ProjectPublishButton.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Checking…"
 msgstr "Checking…"
@@ -2574,6 +2610,10 @@ msgstr "Clone @ {branch}"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Clone & Open"
 msgstr "Clone & Open"
+
+#: src/components/assets/context-folder-sources.tsx
+msgid "Clone a git repo (or reuse a local clone) as context"
+msgstr "Clone a git repo (or reuse a local clone) as context"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -3298,6 +3338,12 @@ msgstr "Could not change sign-in method"
 msgid "Could not check sign-in"
 msgstr "Could not check sign-in"
 
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Could not connect GitHub"
+msgstr "Could not connect GitHub"
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 msgid "Could not connect to {0}."
@@ -3314,6 +3360,11 @@ msgstr "Could not declare that key"
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not delete"
 msgstr "Could not delete"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "Could not delete {0}"
+msgstr "Could not delete {0}"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Could not deploy"
@@ -3352,6 +3403,15 @@ msgstr "Could not freeze context"
 msgid "Could not generate a link"
 msgstr "Could not generate a link"
 
+#: src/components/connections-manager.tsx
+msgid "Could not give access"
+msgstr "Could not give access"
+
+#. placeholder {0}: connection.provider
+#: src/components/connections-manager.tsx
+msgid "Could not give this project access to {0}."
+msgstr "Could not give this project access to {0}."
+
 #: src/components/EnvVarsManager.tsx
 msgid "Could not load environment variables"
 msgstr "Could not load environment variables"
@@ -3368,9 +3428,18 @@ msgstr "Could not open skill"
 msgid "Could not publish asset"
 msgstr "Could not publish asset"
 
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Could not publish project"
+msgstr "Could not publish project"
+
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "Could not reach support"
 msgstr "Could not reach support"
+
+#: src/components/connections-manager.tsx
+msgid "Could not remove access"
+msgstr "Could not remove access"
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Could not remove the help desk files"
@@ -3416,6 +3485,11 @@ msgstr "Could not save agent"
 #: src/components/diagnose/use-diagnosis-report.ts
 msgid "Could not send report to the Flowpad team"
 msgstr "Could not send report to the Flowpad team"
+
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Could not set up Git"
+msgstr "Could not set up Git"
 
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
@@ -3472,9 +3546,17 @@ msgstr "Couldn't check for updates: {error}"
 msgid "Couldn't finish preparing your sandbox"
 msgstr "Couldn't finish preparing your sandbox"
 
+#: src/pages/entry/InstallLanding.tsx
+msgid "Couldn't finish preparing your workspace"
+msgstr "Couldn't finish preparing your workspace"
+
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
 msgstr "Couldn’t load transcript"
+
+#: src/components/git/RepoPicker.tsx
+msgid "Couldn’t load your repos."
+msgstr "Couldn’t load your repos."
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Couldn't open the help desk"
@@ -3563,6 +3645,14 @@ msgstr "Create a new {0}."
 #~ msgid "Create a new artifact in this project."
 #~ msgstr "Create a new artifact in this project."
 
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Create a private GitHub repository"
+msgstr "Create a private GitHub repository"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Create a private repository"
+msgstr "Create a private repository"
+
 #: src/components/hooks-manager/HookForm.tsx
 #~ msgid "Create Agent Hook"
 #~ msgstr "Create Agent Hook"
@@ -3616,6 +3706,10 @@ msgstr "Create new…"
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1> frontmatter into a docs folder and running <2>flow record index <path></2>."
 msgstr "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1> frontmatter into a docs folder and running <2>flow record index <path></2>."
+
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Create private repo"
+msgstr "Create private repo"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Create Project"
@@ -3899,6 +3993,11 @@ msgstr "Delete {0}"
 msgid "Delete {0} contexts?"
 msgstr "Delete {0} contexts?"
 
+#. placeholder {0}: pendingDelete?.provider ?? ''
+#: src/components/connections-manager.tsx
+msgid "Delete {0} credential?"
+msgstr "Delete {0} credential?"
+
 #. placeholder {0}: request?.name ?? 'asset'
 #: src/components/assets/delete-asset-modal.tsx
 msgid "Delete {0}?"
@@ -3963,6 +4062,11 @@ msgstr "Delete context"
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Delete context?"
 msgstr "Delete context?"
+
+#: src/components/connections-manager.tsx
+#: src/components/connections-manager.tsx
+msgid "Delete credential"
+msgstr "Delete credential"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Delete desktop"
@@ -4377,7 +4481,6 @@ msgstr "Discard unsaved changes and go back to inbox"
 
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/collaboration/SharedSessionView.tsx
-#: src/components/connections-manager.tsx
 msgid "Disconnect"
 msgstr "Disconnect"
 
@@ -5100,8 +5203,8 @@ msgid "Every skill, agent, spec, and document this project ships."
 msgstr "Every skill, agent, spec, and document this project ships."
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Everyone the project is shared with gets it"
-msgstr "Everyone the project is shared with gets it"
+#~ msgid "Everyone the project is shared with gets it"
+#~ msgstr "Everyone the project is shared with gets it"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Everything you can reach, as a live graph."
@@ -5947,6 +6050,10 @@ msgstr "Flowpad diagnostics"
 #~ msgid "Flowpad docs"
 #~ msgstr "Flowpad docs"
 
+#: src/components/git/CreatePrivateRepoForm.tsx
+msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
+msgstr "Flowpad initializes the repository, then proposes the install on a separate review branch."
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "FlowPad Server Status"
 msgstr "FlowPad Server Status"
@@ -5996,6 +6103,10 @@ msgstr "Focused"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Folder name"
 msgstr "Folder name"
+
+#: src/components/assets/context-folder-sources.tsx
+msgid "Folder on this computer"
+msgstr "Folder on this computer"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Folder…"
@@ -6168,8 +6279,8 @@ msgstr "Git changes"
 #~ msgstr "Git Clone Failed"
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Git folder"
-msgstr "Git folder"
+#~ msgid "Git folder"
+#~ msgstr "Git folder"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Git is required to share files"
@@ -6189,20 +6300,43 @@ msgid "Git repo (optional)"
 msgstr "Git repo (optional)"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/assets/context-folder-sources.tsx
 msgid "Git repository"
 msgstr "Git repository"
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Git setup failed."
+msgstr "Git setup failed."
 
 #: src/components/project-home/ProjectGitChip.tsx
 msgid "Git tooling installed"
 msgstr "Git tooling installed"
+
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "GitHub authorization did not complete."
+msgstr "GitHub authorization did not complete."
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "GitHub connected"
 msgstr "GitHub connected"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
-msgid "GitHub connected — you can clone private repos."
-msgstr "GitHub connected — you can clone private repos."
+msgid "GitHub connected — no private repos visible to this token."
+msgstr "GitHub connected — no private repos visible to this token."
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "GitHub connected — private repos included."
+msgstr "GitHub connected — private repos included."
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+#~ msgid "GitHub connected — you can clone private repos."
+#~ msgstr "GitHub connected — you can clone private repos."
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "GitHub connected."
+msgstr "GitHub connected."
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "GitHub connection failed."
@@ -6219,6 +6353,10 @@ msgstr "GitHub unavailable"
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "gitignore"
 msgstr "gitignore"
+
+#: src/components/connections-manager/usage-cell.tsx
+msgid "Give this project access"
+msgstr "Give this project access"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "glob"
@@ -7339,6 +7477,10 @@ msgstr "Launch a session first"
 msgid "Launch sandbox"
 msgstr "Launch sandbox"
 
+#: src/pages/entry/InstallLanding.tsx
+msgid "Launch workspace"
+msgstr "Launch workspace"
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Launching…"
 msgstr "Launching…"
@@ -7823,6 +7965,7 @@ msgstr "Loading..."
 #: src/pages/discover-page/discover-page.tsx
 #: src/pages/hub-browse/HubEntityView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
+#: src/pages/hub-project/HubProjectPage.tsx
 msgid "Loading…"
 msgstr "Loading…"
 
@@ -8253,6 +8396,7 @@ msgstr "Modified"
 msgid "more"
 msgstr "more"
 
+#: src/components/connections-manager.tsx
 #: src/components/helpdesk/HelpdeskGuides.tsx
 #: src/components/ui/breadcrumb.tsx
 msgid "More"
@@ -8497,7 +8641,6 @@ msgstr "New Files ({0})"
 
 #: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/quick-create/DesktopSurface.tsx
-#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New folder"
 msgstr "New folder"
@@ -8527,10 +8670,10 @@ msgstr "New name"
 msgid "New option"
 msgstr "New option"
 
+#: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "New project"
 msgstr "New project"
 
@@ -9192,7 +9335,6 @@ msgid "No project open"
 msgstr "No project open"
 
 #: src/components/collaboration/StartRoomDialog.tsx
-#: src/components/connections-manager.tsx
 msgid "No project selected"
 msgstr "No project selected"
 
@@ -9217,6 +9359,10 @@ msgstr "No projects yet"
 #: src/components/credentials-view/CredentialsView.tsx
 msgid "No projects yet — create one from the desktop app, then pick it here."
 msgstr "No projects yet — create one from the desktop app, then pick it here."
+
+#: src/components/connections-manager/usage-cell.tsx
+msgid "No projects yet — the connection is saved to your account; attach it when you create one."
+msgstr "No projects yet — the connection is saved to your account; attach it when you create one."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "No projects."
@@ -9243,6 +9389,10 @@ msgstr "No prompts yet — create one below."
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "No PTY events have fired yet."
 msgstr "No PTY events have fired yet."
+
+#: src/pages/hub-project/HubProjectPage.tsx
+msgid "No published assets yet."
+msgstr "No published assets yet."
 
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 msgid "No recent activity"
@@ -9618,6 +9768,10 @@ msgstr "Not signed in — please re-authenticate"
 msgid "Not started — your first prompt will request access to {hostName}'s machine."
 msgstr "Not started — your first prompt will request access to {hostName}'s machine."
 
+#: src/components/connections-manager/usage-cell.tsx
+msgid "Not used yet"
+msgstr "Not used yet"
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Note (optional)"
 msgstr "Note (optional)"
@@ -9690,6 +9844,10 @@ msgstr "Nothing to save"
 #: src/pages/hub-browse/HubEntityView.tsx
 msgid "Nothing to show."
 msgstr "Nothing to show."
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Nothing was installed. You can close this tab."
+msgstr "Nothing was installed. You can close this tab."
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Nothing was launched. You can close this tab."
@@ -9782,8 +9940,8 @@ msgid "Only harness entries here — enable “Show all” to view them."
 msgstr "Only harness entries here — enable “Show all” to view them."
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Only on this machine — never shared"
-msgstr "Only on this machine — never shared"
+#~ msgid "Only on this machine — never shared"
+#~ msgstr "Only on this machine — never shared"
 
 #: src/components/chat-input.tsx
 #~ msgid "Only one ZIP file can be uploaded at a time"
@@ -9921,9 +10079,9 @@ msgstr "Open docker terminal"
 msgid "Open dot-path ontology; custom descendants are welcome."
 msgstr "Open dot-path ontology; custom descendants are welcome."
 
-#: src/pages/flow-page/vibe-new-chat.tsx
-msgid "Open existing project"
-msgstr "Open existing project"
+#: src/components/project-starter-actions/project-starter-actions.tsx
+#~ msgid "Open existing project"
+#~ msgstr "Open existing project"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "Open Existing Project"
@@ -9952,8 +10110,7 @@ msgstr "Open externally: {childPath}"
 #~ msgid "Open Flowpad docs"
 #~ msgstr "Open Flowpad docs"
 
-#: src/components/assets/context-folder-sources.tsx
-#: src/pages/flow-page/vibe-new-chat.tsx
+#: src/components/open-project-component/project-actions-row.tsx
 msgid "Open folder"
 msgstr "Open folder"
 
@@ -9965,7 +10122,7 @@ msgstr "Open Folder"
 msgid "Open folder: {projectPath}"
 msgstr "Open folder: {projectPath}"
 
-#: src/pages/flow-page/vibe-new-chat.tsx
+#: src/components/open-project-component/project-actions-row.tsx
 msgid "Open from git"
 msgstr "Open from git"
 
@@ -10119,6 +10276,10 @@ msgstr "Open Plan"
 msgid "Open process"
 msgstr "Open process"
 
+#: src/components/open-project-component/project-actions-row.tsx
+msgid "Open project"
+msgstr "Open project"
+
 #: src/pages/flow-page/content-panel/unified-tab-strip.tsx
 msgid "Open Project"
 msgstr "Open Project"
@@ -10131,6 +10292,10 @@ msgstr "Open project assets — {0}"
 #: src/pages/flow-page/vibe-new-chat.tsx
 #~ msgid "Open project folder"
 #~ msgstr "Open project folder"
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Open project in cloud"
+msgstr "Open project in cloud"
 
 #: src/components/status-bar.tsx
 #: src/components/status-bar.tsx
@@ -10214,6 +10379,10 @@ msgstr "Open the live session"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Open the live session in a terminal"
 msgstr "Open the live session in a terminal"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Open the project"
+msgstr "Open the project"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #~ msgid "Open the raw JSONL in a new tab"
@@ -10421,7 +10590,6 @@ msgid "Parent directory"
 msgstr "Parent directory"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/project-selector/NewProjectDialog.tsx
 msgid "Parent folder"
 msgstr "Parent folder"
 
@@ -10591,8 +10759,12 @@ msgid "Pick a project"
 msgstr "Pick a project"
 
 #: src/components/connections-manager.tsx
-msgid "Pick a project first — an OAuth token is granted to a project, not to the app."
-msgstr "Pick a project first — an OAuth token is granted to a project, not to the app."
+#~ msgid "Pick a project first — an OAuth token is granted to a project, not to the app."
+#~ msgstr "Pick a project first — an OAuth token is granted to a project, not to the app."
+
+#: src/components/assets/context-folder-sources.tsx
+msgid "Pick any folder already on this machine"
+msgstr "Pick any folder already on this machine"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Pick one to get started — it only takes a few seconds."
@@ -10770,6 +10942,10 @@ msgstr "Plugins"
 msgid "PNG, JPEG, or WebP. Maximum 5 MiB and 4096 × 4096."
 msgstr "PNG, JPEG, or WebP. Maximum 5 MiB and 4096 × 4096."
 
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Point this project at another folder so agents can read it as background — code, docs or assets that live outside the project, without copying anything."
+msgstr "Point this project at another folder so agents can read it as background — code, docs or assets that live outside the project, without copying anything."
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Port"
 msgstr "Port"
@@ -10805,6 +10981,10 @@ msgstr "Preferences"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Preparing your sandbox…"
 msgstr "Preparing your sandbox…"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Preparing your workspace…"
+msgstr "Preparing your workspace…"
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Preparing…"
@@ -10910,6 +11090,7 @@ msgstr "Profile Picture:"
 msgid "Progress"
 msgstr "Progress"
 
+#: src/components/assets/context-folder-sources.tsx
 #: src/components/code-editor/CodeEditor.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
@@ -10949,7 +11130,7 @@ msgstr "Project assets"
 msgid "Project Commands (.claude/commands/)"
 msgstr "Project Commands (.claude/commands/)"
 
-#: src/components/assets/context-folder-sources.tsx
+#: src/components/project-selector/NewProjectDialog.tsx
 msgid "Project folder"
 msgstr "Project folder"
 
@@ -10985,6 +11166,14 @@ msgstr "Project not found"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Project not found locally"
 msgstr "Project not found locally"
+
+#: src/pages/hub-project/HubProjectPage.tsx
+msgid "Project not found."
+msgstr "Project not found."
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Project published"
+msgstr "Project published"
 
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Project renamed"
@@ -11134,10 +11323,12 @@ msgid "PTY Viewer"
 msgstr "PTY Viewer"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
 msgid "Publish"
 msgstr "Publish"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
 msgid "Publish failed."
 msgstr "Publish failed."
 
@@ -11151,12 +11342,17 @@ msgstr "Publish to cloud"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
 msgid "Published"
 msgstr "Published"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 msgid "Published to cloud"
 msgstr "Published to cloud"
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Publishing…"
+msgstr "Publishing…"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull & Open"
@@ -11316,8 +11512,8 @@ msgid "Ready"
 msgstr "Ready"
 
 #: src/components/connections-manager.tsx
-msgid "Ready to connect"
-msgstr "Ready to connect"
+#~ msgid "Ready to connect"
+#~ msgstr "Ready to connect"
 
 #: src/components/connections-manager.tsx
 #~ msgid "Ready to Connect"
@@ -11398,6 +11594,10 @@ msgstr "Recent Sessions"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Recent Transcripts"
 msgstr "Recent Transcripts"
+
+#: src/components/connections-manager.tsx
+msgid "Reconnect"
+msgstr "Reconnect"
 
 #: src/components/connections-manager.tsx
 msgid "Reconnect needed"
@@ -11579,6 +11779,10 @@ msgstr "Reload the MarkdownIndex list."
 msgid "Remove"
 msgstr "Remove"
 
+#: src/components/connections-manager/usage-cell.tsx
+msgid "Remove access"
+msgstr "Remove access"
+
 #: src/components/conversation/MessageComposer.tsx
 msgid "Remove attachment"
 msgstr "Remove attachment"
@@ -11611,6 +11815,10 @@ msgstr "Remove file"
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "Remove from folder"
+
+#: src/components/connections-manager.tsx
+msgid "Remove from project"
+msgstr "Remove from project"
 
 #: src/components/entity-execution-panel/QueueChip.tsx
 #: src/components/entity-execution-panel/QueueChip.tsx
@@ -11774,6 +11982,7 @@ msgid "Repository and remote configured"
 msgstr "Repository and remote configured"
 
 #: src/components/assets/AddGitFolderDialog.tsx
+#: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Repository name"
 msgstr "Repository name"
 
@@ -13241,6 +13450,7 @@ msgid "Should I allow this tool? Respond with JSON: {0}"
 msgstr "Should I allow this tool? Respond with JSON: {0}"
 
 #: src/components/claude-terminal/claude-terminal.tsx
+#: src/components/connections-manager/usage-cell.tsx
 msgid "Show"
 msgstr "Show"
 
@@ -13403,9 +13613,17 @@ msgstr "Sign in"
 #~ msgid "Sign in to a coding assistant"
 #~ msgstr "Sign in to a coding assistant"
 
+#: src/pages/entry/InstallLanding.tsx
+msgid "Sign in to choose one of your GitHub repositories."
+msgstr "Sign in to choose one of your GitHub repositories."
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sign in to create desktops"
 msgstr "Sign in to create desktops"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Sign in to Flowpad"
+msgstr "Sign in to Flowpad"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Sign in to see who's a member"
@@ -13871,6 +14089,10 @@ msgstr "Status:"
 msgid "status: {0}"
 msgstr "status: {0}"
 
+#: src/components/assets/context-folder-sources.tsx
+msgid "Stays on this machine only — the folder is never sent to anyone, even people this project is shared with."
+msgstr "Stays on this machine only — the folder is never sent to anyone, even people this project is shared with."
+
 #: src/components/workflow-runner/detail/StepDetailPane.tsx
 #~ msgid "Step at line {0}"
 #~ msgstr "Step at line {0}"
@@ -14302,6 +14524,18 @@ msgstr "The asset matches HEAD."
 msgid "The assets published with this project — its skills, agents, specs, and docs."
 msgstr "The assets published with this project — its skills, agents, specs, and docs."
 
+#: src/components/connections-manager.tsx
+msgid "The credential could not be removed."
+msgstr "The credential could not be removed."
+
+#: src/components/connections-manager.tsx
+msgid "The credential is removed from your account. No project is using it right now, and you'll have to sign in again to use {provider}."
+msgstr "The credential is removed from your account. No project is using it right now, and you'll have to sign in again to use {provider}."
+
+#: src/components/connections-manager.tsx
+msgid "The credential was removed from your account."
+msgstr "The credential was removed from your account."
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."
 msgstr "The default — what you want 99% of the time."
@@ -14538,6 +14772,10 @@ msgstr "This project has no assets yet."
 #: src/components/machine-overview/node-secrets.tsx
 msgid "This project has no secrets declared yet."
 msgstr "This project has no secrets declared yet."
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "This project is now available in the cloud."
+msgstr "This project is now available in the cloud."
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #~ msgid "This project is ready to publish and share over Git."
@@ -14854,6 +15092,10 @@ msgstr "Transcript not found"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Transcripts"
 msgstr "Transcripts"
+
+#: src/components/assets/context-folder-sources.tsx
+msgid "Travels with the project — everyone it is shared with gets this folder as context too."
+msgstr "Travels with the project — everyone it is shared with gets this folder as context too."
 
 #: src/components/assets/context-folder-sources.tsx
 #~ msgid "Travels with the project when shared"
@@ -15247,6 +15489,10 @@ msgstr "used"
 msgid "Used assets"
 msgstr "Used assets"
 
+#: src/components/connections-manager.tsx
+msgid "Used by"
+msgstr "Used by"
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
@@ -15608,6 +15854,11 @@ msgstr "What Flowpad found when it checked this project's Git setup."
 msgid "What is {0}?"
 msgstr "What is {0}?"
 
+#: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "What is a context folder?"
+msgstr "What is a context folder?"
+
 #: src/components/status-bar.tsx
 msgid "What is a Flowpad project?"
 msgstr "What is a Flowpad project?"
@@ -15894,6 +16145,10 @@ msgstr "Your API Keys"
 #: src/components/graph-view/webglSupport.tsx
 msgid "Your browser could not create a WebGL context, so the graph cannot render. This usually means graphics acceleration is disabled or the GPU process crashed."
 msgstr "Your browser could not create a WebGL context, so the graph cannot render. This usually means graphics acceleration is disabled or the GPU process crashed."
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Your CloudNSite workspace is ready"
+msgstr "Your CloudNSite workspace is ready"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 #: src/components/collaboration/StartRoomDialog.tsx

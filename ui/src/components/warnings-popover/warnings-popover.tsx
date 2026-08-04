@@ -5,7 +5,9 @@ import { openWikiModal } from '@src/components/wiki-tip';
 import { useDockNavigation } from '@src/navigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useWarnings } from '@sdk/react/hooks';
-import { runCommand } from '@src/notifications';
+import { runAction, runCommand, useAlertStore } from '@src/notifications';
+import type { NotificationData, NotificationLevel } from '@src/notifications';
+import { DiagnoseIconButton } from '@src/notifications/diagnose/DiagnoseIconButton';
 import {
   AlertCircle,
   AlertOctagon,
@@ -65,42 +67,65 @@ const colorMap: Record<string, { bg: string; text: string; border: string }> = {
   },
 };
 
+/** Alert level → the same colour vocabulary the derived warnings use. */
+const ALERT_COLOR: Record<NotificationLevel, keyof typeof colorMap> = {
+  error: 'red',
+  warning: 'yellow',
+  info: 'blue',
+  success: 'gray',
+};
+
+const ITEM_CLASS = 'group flex w-full items-start gap-2 rounded-md border p-3 transition-colors hover:bg-accent';
+const ICON_BTN_CLASS =
+  'flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100';
+
+/** Copy-to-clipboard affordance, shared by derived warnings and logged alerts. */
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard write can reject under restrictive permissions; fail silently
+    }
+  }, [text]);
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        void copy();
+      }}
+      className={ICON_BTN_CLASS}
+      title={copied ? 'Copied!' : 'Copy warning text'}
+      aria-label={copied ? 'Copied' : 'Copy warning text'}
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
 interface WarningItemProps {
   warning: UserWarning;
   onClick: () => void;
 }
 
+/**
+ * A derived warning — it describes a condition that is true right now
+ * (cloud down, no harness, sniffer on). Deliberately NOT dismissible: it goes
+ * away when the condition does. Only the logged alerts below can be dismissed.
+ */
 function WarningItem({ warning, onClick }: WarningItemProps) {
   const Icon = iconMap[warning.icon] || AlertTriangle;
   const colors = colorMap[warning.color] || colorMap.yellow;
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = useCallback(
-    async (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.stopPropagation();
-      const text = warning.description
-        ? `${warning.message}\n${warning.description}`
-        : warning.message;
-      try {
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1500);
-      } catch {
-        // clipboard write can reject under restrictive permissions; fail silently
-      }
-    },
-    [warning.message, warning.description],
-  );
 
   return (
-    <div
-      className={`group flex w-full items-start gap-2 rounded-md border p-3 transition-colors hover:bg-accent ${colors.border}`}
-    >
-      <button
-        type="button"
-        onClick={onClick}
-        className="flex min-w-0 flex-1 items-start gap-3 text-left"
-      >
+    <div className={`${ITEM_CLASS} ${colors.border}`}>
+      <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-start gap-3 text-left">
         <div className={`rounded-md p-1.5 ${colors.bg}`}>
           <Icon className={`h-4 w-4 ${colors.text}`} />
         </div>
@@ -109,21 +134,71 @@ function WarningItem({ warning, onClick }: WarningItemProps) {
           {warning.description && <p className="mt-0.5 text-xs text-muted-foreground">{warning.description}</p>}
         </div>
       </button>
-      <button
-        type="button"
-        onClick={handleCopy}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
-        title={copied ? 'Copied!' : 'Copy warning text'}
-        aria-label={copied ? 'Copied' : 'Copy warning text'}
-      >
-        {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-      </button>
+      <CopyButton text={warning.description ? `${warning.message}\n${warning.description}` : warning.message} />
+    </div>
+  );
+}
+
+/**
+ * A logged alert — a `warning`/`error` notification that outside Dev mode never
+ * popped as a toast (see `notify.ts`). It reports something that already
+ * happened, so unlike a derived warning it IS dismissible; its CTAs are carried
+ * over so the user can still act on it from here.
+ */
+function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: () => void }) {
+  const colors = colorMap[ALERT_COLOR[alert.level]] || colorMap.yellow;
+  const Icon = alert.level === 'error' ? AlertCircle : AlertTriangle;
+
+  return (
+    <div className={`${ITEM_CLASS} ${colors.border}`} data-testid="warnings-popover-alert">
+      <div className={`rounded-md p-1.5 ${colors.bg}`}>
+        <Icon className={`h-4 w-4 ${colors.text}`} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">{alert.title}</p>
+        {alert.message && <p className="mt-0.5 whitespace-pre-line text-xs text-muted-foreground">{alert.message}</p>}
+        {alert.actions && alert.actions.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {alert.actions.map((action, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => runAction(action, alert.id)}
+                className={`rounded px-2 py-1 text-xs font-medium ${
+                  i === 0
+                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                }`}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5">
+        <CopyButton text={alert.message ? `${alert.title}\n${alert.message}` : alert.title} />
+        <DiagnoseIconButton data={alert} />
+        <button
+          type="button"
+          onClick={onDismiss}
+          className={ICON_BTN_CLASS}
+          title="Dismiss"
+          aria-label={`Dismiss ${alert.title}`}
+          data-testid="warnings-popover-dismiss"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
 
 export function WarningsPopover() {
   const { warnings } = useWarnings();
+  const alerts = useAlertStore((s) => s.alerts);
+  const dismissAlert = useAlertStore((s) => s.dismiss);
+  const dismissAllAlerts = useAlertStore((s) => s.dismissAll);
   const { navigation } = useDockNavigation();
   const [open, setOpen] = useState(false);
 
@@ -159,18 +234,22 @@ export function WarningsPopover() {
     [navigation],
   );
 
-  // Don't render if no warnings
-  if (warnings.length === 0) {
+  const total = warnings.length + alerts.length;
+
+  // Nothing to say — neither a live condition nor a logged alert.
+  if (total === 0) {
     return null;
   }
 
-  // Get the most severe warning color for the trigger icon
-  const mostSevereWarning = warnings.reduce((prev, curr) => {
-    const severity = { red: 3, orange: 2, yellow: 1, blue: 0, gray: 0 };
-    return (severity[curr.color] || 0) > (severity[prev.color] || 0) ? curr : prev;
-  }, warnings[0]);
-
-  const triggerColors = colorMap[mostSevereWarning.color] || colorMap.yellow;
+  // Trigger tint follows the most severe item, alerts included: an error that
+  // never got to be a toast still has to look like an error in the footer.
+  const severity = { red: 3, orange: 2, yellow: 1, blue: 0, gray: 0 };
+  const colorKeys: Array<keyof typeof colorMap> = [
+    ...warnings.map((w) => w.color),
+    ...alerts.map((a) => ALERT_COLOR[a.level]),
+  ];
+  const worstColor = colorKeys.reduce((prev, curr) => ((severity[curr] || 0) > (severity[prev] || 0) ? curr : prev));
+  const triggerColors = colorMap[worstColor] || colorMap.yellow;
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -181,17 +260,34 @@ export function WarningsPopover() {
         >
           <AlertTriangle className="h-4 w-4" />
           <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
-            {warnings.length}
+            {total}
           </span>
         </button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="start" className="w-80 p-2">
-        <div className="space-y-2">
-          <p className="px-1 text-xs font-medium text-muted-foreground">
-            {warnings.length} {warnings.length === 1 ? 'Warning' : 'Warnings'}
+      <PopoverContent side="top" align="start" className="flex max-h-[70vh] w-96 flex-col p-2">
+        <div className="flex items-center justify-between gap-2 px-1 pb-2">
+          <p className="text-xs font-medium text-muted-foreground">
+            {total} {total === 1 ? 'Warning' : 'Warnings'}
           </p>
+          {/* Only the logged alerts are dismissible, so the bulk action is
+              offered only when there is at least one. */}
+          {alerts.length > 0 && (
+            <button
+              type="button"
+              onClick={dismissAllAlerts}
+              className="rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              data-testid="warnings-popover-dismiss-all"
+            >
+              Dismiss all
+            </button>
+          )}
+        </div>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
           {warnings.map((warning) => (
             <WarningItem key={warning.id} warning={warning} onClick={() => handleWarningClick(warning)} />
+          ))}
+          {alerts.map((alert) => (
+            <AlertItem key={alert.id} alert={alert} onDismiss={() => dismissAlert(alert.id)} />
           ))}
         </div>
       </PopoverContent>

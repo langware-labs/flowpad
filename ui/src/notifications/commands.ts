@@ -1,8 +1,6 @@
-import { toast as sonnerToast } from 'sonner';
 import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess, snifferManager } from '@sdk';
 import { gitResolvePrompt } from '@src/components/status-bar/gitResolvePrompt';
 import { closeTerminalTab } from '@src/tabs/useTabs';
-import { useBadgeStore } from './store';
 import { notify } from './notify';
 import type { NotificationAction } from './types';
 
@@ -72,7 +70,7 @@ registerCommand('sniffer.disable', (_args, ctx) => {
   void snifferManager
     .disable()
     .then(() => {
-      sonnerToast.dismiss(ctx.id);
+      notify.dismiss(ctx.id);
       notify.success({ title: 'Hook sniffer disabled', message: 'Claude Code hooks were removed from your settings.' });
     })
     .catch((e: unknown) => {
@@ -81,8 +79,8 @@ registerCommand('sniffer.disable', (_args, ctx) => {
 });
 
 registerCommand('notification.dismiss', (_args, ctx) => {
-  sonnerToast.dismiss(ctx.id);
-  useBadgeStore.getState().remove(ctx.id);
+  // One dismiss path for all three surfaces — toast, sidebar badge, alert log.
+  notify.dismiss(ctx.id);
 });
 
 // `Detail` on a cloud-error toast. Surfaces the raw transport detail the

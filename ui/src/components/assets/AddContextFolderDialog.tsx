@@ -2,11 +2,7 @@ import React, { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import type { ContextFolderScope } from '@src/hooks/use-project-context-folders';
-import {
-  ContextFolderScopeChips,
-  useContextFolderSources,
-  type ContextFolderSource,
-} from './context-folder-sources';
+import { ContextFolderScopeChips, useContextFolderSources, type ContextFolderSource } from './context-folder-sources';
 
 interface AddContextFolderDialogProps {
   open: boolean;
@@ -38,7 +34,11 @@ function SourceTile({
       className="flex h-24 w-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-border bg-background text-muted-foreground transition-colors hover:border-primary hover:bg-accent hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <Icon className="h-8 w-8" />
-      <span className="max-w-[88px] truncate text-[11px] font-medium leading-none">{label}</span>
+      {/* Wraps rather than truncates — see the DesktopTile label in
+          QuickCreatePanel; these are the same source labels. */}
+      <span className="line-clamp-2 max-w-[88px] text-balance break-words px-1 text-center text-[11px] font-medium leading-tight">
+        {label}
+      </span>
     </button>
   );
 }
