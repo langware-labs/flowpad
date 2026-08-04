@@ -84,6 +84,7 @@ def shell_pty_stream_path(record_id: str, pty_pid: str | None):
     if pty_pid is None:
         raise ValueError("No pty_pid set")
     from flow_sdk.fs_store.record_paths import data_dir_for
+
     return data_dir_for(BuiltinEntityType.SHELL.value, record_id) / f"{pty_pid}.pty"
 
 
@@ -347,6 +348,22 @@ class Shell(Entity):
             return None
         return argv[next_idx]
 
+    @staticmethod
+    def _strip_cmd_shim(cmdline: list[str]) -> list[str]:
+        """Drop a leading Windows ``cmd.exe /c`` wrapper from *cmdline*.
+
+        npm installs a console script on Windows as a ``.CMD`` batch shim, and
+        spawning that shim yields a PTY process whose argv is
+        ``['C:\\WINDOWS\\system32\\cmd.exe', '/c', 'C:\\...\\codex.CMD', ...]``
+        — the worker's own name sits at argv[2], one slot past the window the
+        identity check looks at. Unwrapping here lets the caller apply the same
+        argv[0]/argv[1] rule to the real command on every platform.
+        """
+        if len(cmdline) >= 3 and os.path.splitext(os.path.basename(cmdline[0]))[0].casefold() == "cmd":
+            if cmdline[1].casefold() in ("/c", "/k"):
+                return cmdline[2:]
+        return cmdline
+
     @classmethod
     def _cmdline_matches_expected(
         cls,
@@ -362,7 +379,15 @@ class Shell(Entity):
         ``codex`` whose installed entrypoint is a Node shebang script —
         the kernel exec's ``node`` with the script path as argv[1], so a
         strict argv[0] check would falsely report the worker as dead.
+
+        A leading ``cmd.exe /c`` shim is unwrapped first: on Windows the same
+        npm workers are launched through a ``.CMD`` batch file, which pushes the
+        worker name to argv[2]. Without the unwrap this returns False for a
+        perfectly healthy worker, and the pty-recovery watchdog reads that
+        false negative as "worker dead", kills the live PTY and respawns it —
+        a ~5s relaunch loop that never converges (exit code 15 = SIGTERM).
         """
+        cmdline = cls._strip_cmd_shim(cmdline)
         if expected_exe:
             # Strip extension + casefold so stored "claude" matches Windows
             # psutil cmdline "claude.exe" / "claude.EXE". Linux unaffected.
@@ -813,9 +838,7 @@ class Shell(Entity):
         try:
             stream = session.pty_stream_file
             if stream is not None:
-                initial, snapshot_max_seq = stream.read_output_snapshot_after_seq(
-                    session.generation_start_seq
-                )
+                initial, snapshot_max_seq = stream.read_output_snapshot_after_seq(session.generation_start_seq)
             else:
                 initial, snapshot_max_seq = b"", session.generation_start_seq
 
@@ -1155,9 +1178,7 @@ class Shell(Entity):
                 latest_owner = await type(owner).get_by_id(owner.id)
                 if latest_owner is not None and latest_owner.shell_id == self.id:
                     latest_owner.context_data = {
-                        key: value
-                        for key, value in latest_owner.context_data.items()
-                        if key != "_shell_exit_pending"
+                        key: value for key, value in latest_owner.context_data.items() if key != "_shell_exit_pending"
                     }
                     latest_owner.sidecar_shell_id = None
                     latest_owner.status = ProcessStatus.STOPPED.value
