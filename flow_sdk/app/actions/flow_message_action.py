@@ -3511,7 +3511,13 @@ async def _upsert_hub_conversation_metadata(
                 logger.debug("[conv-upsert] address-book learn failed for conv=%s: %s", conv_id[:8], learn_err)
     if existing is None:
         payload: dict = {"id": conv_id, "remote": True}
-        for k in ("title", "participants", "remote_project_id", "remote_project_name", "shared_context_entities"):
+        # ``kind`` is hub-authoritative for a hub-owned conversation. Omitting
+        # it filed every picked-up support ticket as an ordinary ``direct``
+        # chat on the STAFF side — the hub said ``helpdesk``, the local row
+        # said otherwise, and the desk's own queue view could not recognise its
+        # own tickets. The requester side had been papering over this by
+        # re-stamping HELPDESK after the fact; pickup had no such workaround.
+        for k in ("title", "kind", "participants", "remote_project_id", "remote_project_name", "shared_context_entities"):
             if hub_conv.get(k) is not None:
                 payload[_local_roster_key(k)] = (
                     _normalize_participants(hub_conv[k])
@@ -3559,7 +3565,7 @@ async def _upsert_hub_conversation_metadata(
             return await conv.save(someone_typeid, notify=notify)
     # Update path: copy hub-owned fields without touching projections.
     changed = False
-    for k in ("title", "participants", "remote_project_id", "remote_project_name"):
+    for k in ("title", "kind", "participants", "remote_project_id", "remote_project_name"):
         v = hub_conv.get(k)
         if k == "participants" and isinstance(v, list):
             v = _normalize_participants(v)
