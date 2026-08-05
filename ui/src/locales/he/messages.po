@@ -4486,6 +4486,10 @@ msgstr "אבחון Flowpad"
 msgid "Diagnose this error"
 msgstr "אבחן את השגיאה הזו"
 
+#: src/notifications/diagnose/DiagnoseIconButton.tsx
+msgid "Diagnose this warning"
+msgstr "אבחן את האזהרה הזו"
+
 #: src/components/version-popover/diagnosis-report-modal.tsx
 msgid "Diagnosis"
 msgstr "אבחון"
