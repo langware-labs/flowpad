@@ -2,10 +2,17 @@
 
 Drive the user's Flowpad browser tab to a specific entity. The CLI targets the tab the user is currently looking at — you do not need to pick a destination window.
 
-> **Not for Display presentation.** `flow navigate` moves the user's browser tab.
-> When you are presenting a file/entity into an active process **Display** (a
-> vibe/creator session, "open it in the display"), use `flow show file <path>` /
-> `flow show entity <typeid>` instead — never `flow navigate`.
+> **Not for presenting a deliverable.** `flow navigate` moves the user's browser
+> tab and interrupts them. When you are handing over something you made, use
+> `flow show file <path>` / `flow show entity <typeid>` — it works in every mode
+> (pinning the vibe display pane where there is one, otherwise opening a tab
+> beside your process) and never navigates. Reserve `flow navigate` for an
+> explicit "take me there".
+>
+> **Entities and file paths only.** There is no way to open a screen — Events,
+> Assets, Files, Preferences, Settings, Search, Inbox, Data Sources, Runs and the
+> other rail destinations are not addressable by either verb. Tell the user which
+> rail item to click instead.
 
 ## How to navigate
 

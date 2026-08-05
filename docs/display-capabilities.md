@@ -20,8 +20,14 @@ in the same viewer components:
    Grammar owned by `DockPointer` (`ui/src/navigation/DockPointer.ts`);
    master render switch `content-panel.tsx:230-402`.
 2. **Agent show targets** (`flow show`): `show entity|file|webapp →
-   resolve_display_target (typeid | path | port) → AgenticProcess.on_show →
-   display_stack/last_shown → VibeWorkspace routing → viewer`.
+   resolve_display_target (typeid | path | port | artifact_id) →
+   AgenticProcess.on_show → display_stack/last_shown → VibeWorkspace routing →
+   viewer`. `DisplayTargetKind` has five members — `entity`, `vfs`, `webapp`,
+   `app` (artifact-addressed, runtime derived per-resolve so a stale port never
+   becomes an app's identity), `shell` — but the `flow show` CLI exposes only the
+   first three; `app` and `shell` are reached through `flow app` and
+   `flow terminal`. Outside vibe the same targets mint a tab instead of pinning a
+   pane (`docs/tabs/display.md` §5).
    Resolver `flow_sdk/core/display_target.py:43-98`; FSM
    `agentic_process.py:2084-2146`; frontend routing
    `vibe-workspace.tsx:369-524`.
@@ -187,6 +193,21 @@ No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
 9. **MCP host duplication**: ShowView and AppHost share near-identical
    AppRenderer scaffolding; both stub `onCallTool`.
 10. **`/sdk` mount dead**; `view_external_domain` vestigial in OSS.
+11. **Agents can only address entities and files — never a screen.** The
+    server→client directive vocabulary is exactly three kinds
+    (`navigate_entity`, `navigate_vfs`, `desktop_notify`;
+    `ui/src/hooks/use-ui-command-listener.ts`), and unknown kinds are logged and
+    dropped. So every pointerless surface is unreachable by an agent in both
+    modes: Events, Assets, Explorer, Preferences, Settings, Hooks, Capabilities,
+    Data Sources, Runs, Search, Desktop, Inbox, Credentials, Cron, Graph, Tag,
+    Worldview, K-Browser, Helpdesk, Discover, Home, and every `page=hub` surface.
+    On the left rail only **project** and **chats** are reachable, and only
+    because they happen to be entity-backed. The structural blocker is that
+    `ViewType` lives solely in `ts_sdk/src/utils/ui/view-types.ts` — the backend
+    has no twin and hand-builds exactly one URL shape (`dock_url` in
+    `display_target.py`). Nor can an agent switch view mode, manage tabs (the
+    `Tab` actions exist but have no CLI surface), or enumerate what is openable
+    (`flow schema list` covers entity types only).
 
 ## 8. Open questions
 
