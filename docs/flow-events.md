@@ -528,6 +528,75 @@ still cover the twins.
 Verified: 4556 backend unit tests pass; `ui` unit project 3083 pass (the one
 failure, `cloud-manager-hub-identity`, reproduces on unmodified code).
 
+## Phase 8c — Triggers become EMITTERS (phase 4's deferred half)  ✅
+
+Phase 4 shipped `event → trigger`; the reverse was deferred to phase 6 ("their
+`fs.*`/`time.*`/`hook.*` emission adapters land in phase 6") and phase 6 closed
+without it. So a fire produced only a JSONL row, no surface could show a rule's
+cause beside its effect, and the Triggers and Signals screens shared zero rows
+of data. This closes that, and the two screens merge into one **Events** screen.
+
+**Emitted** (`flow_sdk/builtin/trigger_on_tag.py`, the standard `<family>_on_tag`
+shape): `trigger.fired`, `trigger.suppressed` (`reason_code` ∈ storm |
+confirm_failed | disabled | self_loop), `trigger.failed` (`stage` ∈ action |
+flow_activation), and `hook.<snake_event>` once per inbound webhook.
+
+**Three corrections to the phase-4/7 plan, each load-bearing:**
+
+1. **`hook.<EventName>` is unsubscribable.** `grammar.TAG_PATTERN` is
+   lowercase-only, so `hook.PostToolUse` would emit fine (the bus is permissive)
+   but no TAG trigger or flow subscription could ever name it —
+   `validate_bus_pattern` rejects the pattern at save. Snake-cased via
+   `hook_event_tag()`; pinned by a test.
+2. **No `fs.*` / `time.*`.** An FSOp trigger IS the watcher and a schedule
+   trigger IS the job — no file watch or timer exists here without a rule
+   attached, so a source event beside the fire is the same fact twice (and gives
+   a user with rules on both `fs.*` and `trigger.*` two runs from one save). The
+   "no rule matched" case those families exist to expose is structurally empty
+   for fs/time. `hook.*` IS emitted because one webhook fans across N triggers
+   and matching none is the common case.
+3. **Phase 7's "trigger-log already embeds the envelope" was never true.**
+   `append_entry` copies a FIXED key set and silently dropped `event=`. The row
+   now carries `event_id` plus a lean `cause_*` trio — not `model_dump()`, whose
+   `graph_workflow.*` payloads carry stdout tails.
+
+**Self-loop brake (a latent bug, not a new guard).** `trigger.*` is a pattern a
+user could already save. The moment `trigger.fired` existed, a rule on it fed
+itself, bounded only by the storm cap — containment, not correctness. TAG fires
+now drop when their causing envelope already carries the trigger's own target in
+`ctx.scope`, mirroring `manager.py`'s flow-subscription brake, and propagate the
+causing scope forward so A→B→A dies too. Falsification test: remove the brake
+and the counter climbs past 1.
+
+**New bus primitive** — `make_event` + `publish` beside `emit`. `emit`'s
+zero-subscriber fast path returns None, so a log row's `event_id` would exist
+only when somebody happened to be listening; the join between a row and an
+envelope has to hold always. `emit`/`deliver` are unchanged.
+
+**Forwarding: nothing new joins the allowlist.** By ws_forward's own admission
+test, FSOp fires ride a user-tunable `debounce_ms` and hook fires are per tool
+use, so `trigger.*` fails AS A FAMILY, and a family is admitted whole. The app
+reads fires over REST (`trigger/fires`, new class action) until **per-connection
+tag subscriptions** (phase 8b/9) make `target: trigger:<id>` a bounded lane —
+the same blocker `entity.*` and `data_op_msg` already wait on. Pinned by
+`test_trigger_family_is_not_forwarded_because_fsop_and_hook_are_per_item`, whose
+deletion is the only way to add the pattern.
+
+**Still outstanding:** HOOK writes no trigger-log row (only `trigger.fired`), and
+the four fire paths still emit at four call sites rather than through one
+`record_trigger_outcome` seam — FSOp and HOOK inline their own copies of
+`activate_flows_for_trigger` / `dispatch_trigger_actions`. Consolidating means
+newly giving every hook rule a log row, which is a visible behavior change worth
+its own review (and `log_mode` is enforced nowhere today).
+
+### Log
+- 2026-08-05 — shipped. Adapter + bus primitive + log-key alignment + the
+  self-loop brake; emissions at all four fire paths. UI: Triggers + Signals
+  merged into `/dock/events` (`triggers`/`signals`/`cron` kept as aliases).
+  Live drill on dev-1: `trigger.fired` observed in `/debug/observed_tags`, a
+  50-file batch yields exactly one envelope, log rows carry `event_id`, and
+  "Run now" on a schedule rule lands a row in the feed within one poll.
+
 ## Phase 9 — Recorder + policy hardening  ☐
 
 `EventBus.on("*", sink)` recorder interface; the four jsonl sinks (RunJournal,

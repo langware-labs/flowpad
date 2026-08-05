@@ -16,10 +16,9 @@
  */
 
 import { FileCode } from 'lucide-react';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 
 import { registerFenceRenderer, type FenceRenderContext, type FenceRenderer } from '../registry';
+import { el, iconMarkup } from './dom';
 import { applyInterfaceEdit, type InterfaceEdit } from './interface-edit';
 import {
   parseInterfaceBlock,
@@ -30,23 +29,7 @@ import {
 } from './interface-schema';
 import { formatSourceLabel, resolveSourceLocation } from './source-location';
 
-/**
- * The chip's glyph, rendered to markup rather than transcribed.
- *
- * This renderer builds plain DOM and cannot mount a React icon, but hand-copying
- * lucide's path data drifts — the first version of this constant was already a
- * stale revision of `file-code`. `renderToStaticMarkup` is the same escape hatch
- * `graph-view/icons/iconToDataUri.ts` uses to get a lucide icon outside a React
- * tree; computed once at module load.
- */
-const SOURCE_ICON = renderToStaticMarkup(createElement(FileCode, { width: 12, height: 12, 'aria-hidden': true }));
-
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  node.className = className;
-  if (text != null) node.textContent = text;
-  return node;
-}
+const SOURCE_ICON = iconMarkup(FileCode);
 
 /**
  * A click-to-edit value.

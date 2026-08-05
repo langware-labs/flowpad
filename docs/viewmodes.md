@@ -3,13 +3,25 @@ id: d344b080-a33a-4cf3-8916-cec2b50d3199
 title: View Modes
 ---
 
-# View Modes — Standard / Advanced / Dev "skin" system
+# View Modes — Vibe / Standard / Advanced / Dev "skin" system
 
-A single global flag, **View mode**, lets a user dial the whole UI across three
-tiers: **Standard** (calm, minimal) ⊂ **Advanced** (power-user) ⊂ **Dev** (full
-developer internals). Normal users toggle Standard ↔ Advanced; developers can
-enter Dev mode (console-only entry: `window.setDev(true)`). It is toggled from
-the footer pill and behaves like the theme: one switch, app-wide.
+A single global flag, **View mode**, lets a user dial the whole UI across four
+tiers: **Vibe** (creator workspace, the default) ⊂ **Standard** (calm, minimal) ⊂
+**Advanced** (power-user) ⊂ **Dev** (full developer internals). It is picked from
+the footer selector and behaves like the theme: one switch, app-wide.
+
+The footer control labels each mode by the **surface it shows**, not by its rank —
+Vibe, **Chat** (`standard`), **Terminal** (`advanced`), Dev — because the selector
+is what picks the workspace / chat pane / xterm, and rank names would tell the user
+about an internal hierarchy instead of what they get. The enum values stay
+`standard`/`advanced` (persisted preference, URL param). The first three always
+render; Dev stays hidden until a double-click on the selected Terminal button
+reveals it (revealing never selects), and that reveal is deliberately not
+persisted. `window.setDev(true)` still works.
+
+Vibe has its own doc — [Vibe Mode](modes/vibe_mode.md) — because it adds a layout
+(chat + Display) rather than only hiding chrome. Everything below applies to all
+four tiers.
 
 This doc is the methodology + developer guidelines for building UI that honors
 View mode. **Read the skin-layer rule before adding a single conditional.**
@@ -41,6 +53,30 @@ Why so strict: a mode toggle that resets state, refetches, or unmounts live
 work is a bug surface. Keeping mode a pure presentation concern makes it cheap,
 instant, and impossible to break the data layer with.
 
+### The ONE sanctioned exception — session surface
+
+An agent session's **transport** follows the mode, and this is deliberate: only
+the terminal surface runs an interactive PTY (`viewModePtyMode`), so selecting
+Terminal switches the live worker to `WorkerMode.Interactive` and selecting
+Vibe/Chat switches it to `WorkerMode.CLI`
+(`ui/src/components/terminal/interactive-terminal/use-process-surface.ts`). That
+is a real backend mutation driven by view mode — the mapping is
+`surfaceForViewMode(mode) → 'vibe' | 'chat' | 'terminal'`
+(`ui/src/contexts/view-mode-context.tsx`), the single reason View mode is *the*
+mode selector rather than a skin. It replaced a second `chat mode` preference
+that drifted out of sync with this one; one enum, one preference, one control.
+
+The exception is scoped to that switch and carries its own rules: the backend
+409s a mid-turn switch, so the reconcile waits for `awaitingUserInput` and
+deliberately leaves the mode unrecorded on refusal, retrying when the worker goes
+idle rather than stranding the session on the wrong transport. Do not read this
+carve-out as a licence to gate anything else on mode — everything above still
+holds for chrome, layout, and data.
+
+Because getting the surface wrong mounts a whole pane, read it with
+`useSessionSurface()`, which returns `null` for NOT-KNOWN-YET and lets callers
+hold the arrangement instead of painting a guess (see the boot-seed note below).
+
 ## The toolkit — `@src/components/view-mode`
 
 One import surface. State lives in `ui/src/contexts/view-mode-context.tsx`;
@@ -50,8 +86,9 @@ the barrel re-exports it alongside the components.
 import {
   useIsAdvanced,   // () => boolean    — true if Advanced or Dev (hierarchy)
   useIsDev,        // () => boolean    — true only in Dev mode
+  useIsVibe,       // () => boolean    — true only in Vibe mode
   useViewMode,     // () => ViewMode   — when you need the enum value
-  ViewMode,        // enum { Standard, Advanced, Dev }
+  ViewMode,        // enum { Vibe, Standard, Advanced, Dev }
   setViewMode,     // (ViewMode) => void
   getViewMode,     // () => ViewMode   — imperative read (also window.getView)
   AdvancedOnly,    // <AdvancedOnly reserve> — hide-in-Standard wrapper
@@ -61,7 +98,7 @@ import {
 ```
 
 Also available as globals:
-- `window.setView(mode)` — set to Standard/Advanced/Dev
+- `window.setView(mode)` — set to Vibe/Standard/Advanced/Dev
 - `window.getView()` — read current mode
 - `window.setDev(val?)` — set Dev mode (no arg = toggle between Dev and Advanced)
 - `window.getDev()` — read Dev mode boolean
@@ -177,6 +214,7 @@ needed to set state:
 
 ```js
 // drive the mode (re-renders live, no reload)
+browser_evaluate: () => window.setView('vibe')
 browser_evaluate: () => window.setView('standard')
 browser_evaluate: () => window.setView('advanced')
 browser_evaluate: () => window.setView('dev')
@@ -185,7 +223,7 @@ browser_evaluate: () => window.setDev(false)    // exit Dev → Advanced
 browser_evaluate: () => window.setDev()         // toggle Dev ↔ Advanced
 browser_evaluate: () => window.getView()
 browser_evaluate: () => window.getDev()
-browser_evaluate: () => document.documentElement.dataset.view   // 'standard' | 'advanced' | 'dev'
+browser_evaluate: () => document.documentElement.dataset.view   // 'vibe' | 'standard' | 'advanced' | 'dev'
 ```
 
 Assertions:
@@ -212,7 +250,8 @@ Assertions:
 
 ## Decision log
 
-- **3-tier hierarchy: Standard ⊂ Advanced ⊂ Dev.** `useIsAdvanced()` returns true for both Advanced and Dev, enforcing the hierarchy by construction. New consumers can use `useIsDev()` for Dev-specific gates. Migration from the old separate `devMode` boolean is automatic (one-time `localStorage` swap on startup).
+- **4-tier hierarchy: Vibe ⊂ Standard ⊂ Advanced ⊂ Dev.** `useIsAdvanced()` returns true for both Advanced and Dev, enforcing the hierarchy by construction. New consumers can use `useIsDev()` for Dev-specific gates, or `useIsVibe()` for the creator workspace. Migration from the old separate `devMode` boolean is automatic (one-time `localStorage` swap on startup).
+- **Labelled by surface, not by rank.** The selector reads Vibe / Chat / Terminal / Dev while the persisted values stay `vibe`/`standard`/`advanced`/`dev`. Users pick a surface; the hierarchy is an implementation detail that only gate authors need.
 - **No-arg `setDev()` toggles Dev ↔ Advanced.** Developers use `window.setDev()` to toggle dev mode without reaching the console to type true/false. Non-developers never see Dev mode in the UI (normal users don't have access to the 3-state footer pill cycle).
 - **Reserve-by-default (visibility:hidden) over unmount.** A View toggle should feel like flipping a skin, not reflowing the page. Reserving space keeps it shift-free; `reserve={false}` is the opt-out for flow layouts. (The footer trace-heartbeat and UsageBar shipped this way.)
 - **One global flag, not per-surface toggles.** View mode is a single mental model for the user and a single read path (`useIsAdvanced`, `useIsDev`) for devs. A per-tab/per-surface toggle was rejected as a second concept to manage.

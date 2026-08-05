@@ -5,7 +5,11 @@
 import { describe, it, expect } from 'vitest';
 import { CredentialsSubview } from '@sdk';
 
-import { credentialsPointer, parseCredentialsPointer } from '@src/components/credentials-view/credentials-pointer';
+import {
+  credentialsPointer,
+  credentialsTabs,
+  parseCredentialsPointer,
+} from '@src/components/credentials-view/credentials-pointer';
 
 describe('credentials pointer', () => {
   it('round-trips a tab', () => {
@@ -24,10 +28,21 @@ describe('credentials pointer', () => {
     });
   });
 
-  it('defaults to Environment rather than a blank pane', () => {
+  it('falls back to the tab the caller nominates, never a blank pane', () => {
     for (const p of [undefined, '', 'not-a-tab', '/']) {
+      expect(parseCredentialsPointer(p, CredentialsSubview.CONNECTIONS).tab).toBe(CredentialsSubview.CONNECTIONS);
       expect(parseCredentialsPointer(p).tab).toBe(CredentialsSubview.ENVIRONMENT);
     }
+  });
+
+  it('leads with Connections on a hub, Environment on the desk', () => {
+    // Environment is project-scoped and the hub routinely has no project, so
+    // leading with it opened the view on an empty state.
+    expect(credentialsTabs(true)[0]).toBe(CredentialsSubview.CONNECTIONS);
+    expect(credentialsTabs(false)[0]).toBe(CredentialsSubview.ENVIRONMENT);
+    // API Keys stays last either way — only the first two swap.
+    expect(credentialsTabs(true).at(-1)).toBe(CredentialsSubview.API_KEYS);
+    expect(credentialsTabs(false).at(-1)).toBe(CredentialsSubview.API_KEYS);
   });
 
   it('omits the project segment when there is no project', () => {

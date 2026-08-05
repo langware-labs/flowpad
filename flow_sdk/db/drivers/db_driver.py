@@ -75,7 +75,14 @@ class DBConfig:
         database=None,
         commit_immediately=False,
         debug_commit_immediately=False,
+        pooled=True,
     ):
+        # Reuse DB connections instead of opening one per operation. Default on:
+        # a fresh aiosqlite connection costs ~3.7ms (new thread + 6 PRAGMAs)
+        # before any work. Test harnesses that swap a driver in globally and
+        # then close it should pass pooled=False — a pooled displaced driver
+        # keeps live connections to a file the test is about to delete.
+        self.pooled = pooled
         self.uri = uri
         self.host = host
         self.port = port

@@ -277,7 +277,7 @@ async def handle_record_action():
 #: IS correct, so the refusal tells the caller where to go instead of just no.
 _ALTERNATE_BIRTH_PATH: dict[str, str] = {
     "source_item": "POST /api/v1/ingest/items (or `flow record create source_item`) — "
-    "the ingestor owns this type's deterministic id and content digest",
+    "the ingestor owns this type's identity resolution and content digest",
 }
 
 
@@ -314,11 +314,11 @@ async def handle_create_entity(request: Request):
         service_log.highlighted_error(err_msg)
         raise HTTPException(status_code=400, detail=err_msg)
 
-    # `creatable=False` means the type has a different birth path — SourceItem
-    # is minted by the ingestor, which owns its deterministic id and digest.
-    # Without this gate a caller can POST one here and get a random uuid4 with
-    # an empty digest: a row that looks real, is FTS-indexed, and can never
-    # converge with what the poller writes. Permanent duplicates.
+    # Some types have a different birth path — SourceItem is minted by the
+    # ingestor, which resolves it against its natural key and computes the
+    # digest. Without this gate a caller can POST one here and get a row with an
+    # empty digest and no stream/external id: it looks real, is FTS-indexed, and
+    # never converges with what the poller writes. Permanent duplicates.
     problem = _uncreatable_reason(request_info.direct_resource_type)
     if problem:
         raise HTTPException(status_code=400, detail=problem)

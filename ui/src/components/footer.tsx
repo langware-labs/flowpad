@@ -7,6 +7,7 @@ import { PoweredBy } from '@src/components/powered-by';
 import { IndexerStatusPill } from '@src/components/search-index/IndexerStatusPill';
 import { StatusBar } from '@src/components/status-bar';
 import { VersionPopover } from '@src/components/version-popover';
+import { HubReleaseLabel } from '@src/components/version-popover/hub-release-label';
 import { AdvancedOnly, useIsVibe } from '@src/components/view-mode';
 import { WarningsPopover } from '@src/components/warnings-popover';
 import { PrivacyModePopover } from '@src/components/privacy-mode/privacy-mode-popover';
@@ -19,6 +20,7 @@ import { useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { useContext } from '@sdk/react/hooks';
 import { PageId } from '@sdk';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { useColorPalette } from '../hooks/useColorPalette';
 
@@ -111,7 +113,12 @@ export function Footer({ className = '' }: FooterProps) {
               <span className="cq-helpdesk-label"><Trans>Help desk</Trans></span>
             </button>
           )}
-          {version && <VersionPopover currentVersion={version} />}
+          {/* `isHubOnly()`, not `hubMode`: this gate is runtime-shaped, not
+              page-shaped. A desktop showing the hub page still has a desk
+              backend, so the popover's actions work there — and the label would
+              print the DESK's version under the word "hub". */}
+          {isHubOnly() && <HubReleaseLabel hubVersion={version} />}
+          {!isHubOnly() && version && <VersionPopover currentVersion={version} />}
           <PoweredBy className="cq-powered" />
           <LanguageSelector />
         </div>

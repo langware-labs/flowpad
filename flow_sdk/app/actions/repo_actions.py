@@ -41,6 +41,7 @@ GITHUB_PROVIDER = "github"
 class GithubApiRequestConsts:
     HOSTNAME = "github.com"
     API_BASE_URL = "https://api.github.com/repos"
+    GRAPHQL_URL = "https://api.github.com/graphql"
     USER_REPOS_URL = "https://api.github.com/user/repos"
     INVITATIONS_URL = "https://api.github.com/user/repository_invitations"
     ACCEPT_HEADER = "application/vnd.github.v3+json"
@@ -257,51 +258,34 @@ def _prepare_github_headers(token: Optional[str]) -> dict:
     return headers
 
 
-def _build_branches_response(response: requests.Response) -> ApiResponse:
-    if response.status_code == 200:
-        branches = response.json()
-        simplified_branches = [
-            {"name": branch["name"], "protected": branch.get("protected", False)} for branch in branches
-        ]
-        return ApiSuccessResponse(data=simplified_branches)
+def _sort_branches_by_recency(branches: list[dict]) -> list[dict]:
+    """Most recently changed first; undated branches keep their order at the end.
 
-    elif response.status_code == 404:
-        return ApiFailResponse(message="Repository not found or you don't have access to it")
-
-    elif response.status_code == 401 or response.status_code == 403:
-        return ApiFailResponse(message="Authentication failed. Please reconnect your GitHub account.")
-
-    else:
-        content_type = response.headers.get(GithubApiRequestConsts.CONTENT_TYPE_HEADER, "")
-        if content_type.startswith(GithubApiRequestConsts.JSON_CONTENT_TYPE):
-            error_data = response.json()
-        else:
-            error_data = {"message": response.text}
-
-        error_message = error_data.get("message", "Unknown error")
-        return ApiFailResponse(message=f"GitHub API error: {error_message}")
+    Undated entries only occur on the REST fallback, where GitHub reports no
+    date at all — sorting those to the back beats interleaving them at the
+    epoch, which would read as "changed in 1970".
+    """
+    dated = [b for b in branches if b.get("updated_at")]
+    undated = [b for b in branches if not b.get("updated_at")]
+    dated.sort(key=lambda b: b["updated_at"], reverse=True)
+    return dated + undated
 
 
-async def _fetch_branches_from_github(api_url: str, headers: dict) -> ApiResponse:
+async def _fetch_branches_from_github(api_url: str, headers: dict, owner: str = "", name: str = "") -> ApiResponse:
+    """Every branch of a repo, newest change first.
+
+    REST is the fallback rather than the primary because its branch objects
+    carry no dates and it offers no sort, so the picker could only ever be
+    alphabetical. GraphQL returns the same refs *with* each one's
+    ``committedDate`` in the same number of round trips.
+    """
     try:
-        # per_page=100 is GitHub's max; without it the default is 30, which
-        # silently truncates feature-heavy repos and hides the default branch.
-        # Repos with >100 branches need pagination — out of scope for v1.
-        # Sync `requests.get` is offloaded to a worker thread so the FastAPI
-        # event loop stays responsive while we wait on GitHub.
-        response = await asyncio.to_thread(
-            requests.get,
-            api_url,
-            headers=headers,
-            params={"per_page": 100},
-            timeout=GithubApiRequestConsts.REQUEST_TIMEOUT,
-        )
-        # Route auth/rate-limit/etc. errors through the shared classifier so
-        # the UI sees the same reason/status across list, invitations, branches.
-        classified = _classify_github_error(response)
-        if classified is not None:
-            return classified
-        return _build_branches_response(response)
+        branches = await _fetch_branches_graphql(owner, name, headers)
+        if branches is None:
+            branches = await _fetch_branches_rest(api_url, headers)
+            if isinstance(branches, ApiResponse):
+                return branches  # an error worth reporting; don't paper over it
+        return ApiSuccessResponse(data=_sort_branches_by_recency(branches))
     except requests.exceptions.Timeout:
         return ApiFailResponse(message="Request to GitHub API timed out")
     except requests.exceptions.RequestException as e:
@@ -309,6 +293,100 @@ async def _fetch_branches_from_github(api_url: str, headers: dict) -> ApiRespons
     except Exception as e:
         logger.error(f"Unexpected error fetching branches: {e}")
         return ApiFailResponse(message=f"Unexpected error: {str(e)}")
+
+
+async def _fetch_branches_rest(api_url: str, headers: dict) -> list[dict] | ApiResponse:
+    """All pages of GitHub's REST branch list, in GitHub's own (alphabetical) order.
+
+    per_page=100 is GitHub's max; the default is 30. Following the ``Link``
+    header matters as much as the page size: flowpad-hub has 228 branches, and
+    page 1 alphabetically stops at "compose" — so every ``release/*`` used to be
+    invisible with no error anywhere.
+    """
+    collected: list[dict] = []
+    page = 1
+    while True:
+        # Sync `requests.get` is offloaded to a worker thread so the FastAPI
+        # event loop stays responsive while we wait on GitHub.
+        response = await asyncio.to_thread(
+            requests.get,
+            api_url,
+            headers=headers,
+            params={"per_page": 100, "page": page},
+            timeout=GithubApiRequestConsts.REQUEST_TIMEOUT,
+        )
+        # Route auth/rate-limit/etc. errors through the shared classifier so
+        # the UI sees the same reason/status across list, invitations, branches.
+        classified = _classify_github_error(response)
+        if classified is not None:
+            return classified
+        collected.extend(
+            {"name": b["name"], "protected": b.get("protected", False), "updated_at": ""}
+            for b in response.json() or []
+        )
+        next_page = _parse_next_page_from_link(response.headers.get("Link"))
+        if next_page is None:
+            return collected
+        page = next_page
+
+
+_BRANCHES_GRAPHQL = """
+query($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    refs(refPrefix: "refs/heads/", first: 100, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        name
+        branchProtectionRule { id }
+        target { ... on Commit { committedDate } }
+      }
+    }
+  }
+}
+"""
+
+
+async def _fetch_branches_graphql(owner: str, name: str, headers: dict) -> list[dict] | None:
+    """Branches with their last-change date, or None if GraphQL can't answer.
+
+    GraphQL always requires a token, so an anonymous read of a public repo lands
+    here with nothing to send — that's a `None`, not an error, and the caller
+    falls back to REST.
+    """
+    if "Authorization" not in headers:
+        return None
+    collected: list[dict] = []
+    cursor: str | None = None
+    while True:
+        response = await asyncio.to_thread(
+            requests.post,
+            GithubApiRequestConsts.GRAPHQL_URL,
+            headers=headers,
+            json={"query": _BRANCHES_GRAPHQL, "variables": {"owner": owner, "name": name, "cursor": cursor}},
+            timeout=GithubApiRequestConsts.REQUEST_TIMEOUT,
+        )
+        if response.status_code != 200:
+            return None
+        body = response.json() or {}
+        # A GraphQL error arrives as HTTP 200 with an `errors` array.
+        if body.get("errors"):
+            logger.warning(f"GraphQL branch listing failed for {owner}/{name}: {body['errors']}")
+            return None
+        refs = ((body.get("data") or {}).get("repository") or {}).get("refs")
+        if refs is None:
+            return None
+        for node in refs.get("nodes") or []:
+            collected.append(
+                {
+                    "name": node.get("name", ""),
+                    "protected": bool(node.get("branchProtectionRule")),
+                    "updated_at": ((node.get("target") or {}).get("committedDate")) or "",
+                }
+            )
+        page_info = refs.get("pageInfo") or {}
+        if not page_info.get("hasNextPage"):
+            return collected
+        cursor = page_info.get("endCursor")
 
 
 async def get_branches_list(
@@ -333,7 +411,7 @@ async def get_branches_list(
     token = await _get_github_token(request_info)
     headers = _prepare_github_headers(token)
 
-    return await _fetch_branches_from_github(api_url, headers)
+    return await _fetch_branches_from_github(api_url, headers, owner=_o, name=_n)
 
 
 # ── Picker v1: list user's repos + invitations ──────────────────────────────

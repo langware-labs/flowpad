@@ -11,6 +11,7 @@ import {
   type EntityEnvVars,
   type EnvVarStatus,
   type OAuthDetachResult,
+  type OAuthFlowCompletePayload,
   type OAuthProvider,
   type OAuthTestResult,
 } from '@sdk';
@@ -260,7 +261,7 @@ export const useOAuthConnection = ({
 
   // Listen for OAuth flow completion (auth + attach) via custom event
   useEffect(() => {
-    const handleOAuthFlowComplete = (data: { status: OAuthStatus; attachSuccess?: boolean }) => {
+    const handleOAuthFlowComplete = (data: OAuthFlowCompletePayload) => {
       if (data.status === OAuthStatus.SUCCESS && currentOAuthFlow) {
         // Store connection ID before clearing the flow
         const connectionId = currentOAuthFlow.connectionId;
@@ -269,10 +270,11 @@ export const useOAuthConnection = ({
         setCurrentOAuthFlow(null);
         setConnectingConnectionId(null);
 
-        // Invalidate queries to get updated statuses
-        void queryClient.invalidateQueries({
-          queryKey: entityEnvQueryKey(projectTypeId),
-        });
+        // The grant lands on the USER's table, which every status here is
+        // derived from — invalidating only the project key left it cached, so a
+        // provider read "Not connected" until a reload, and with no project
+        // selected the key holds nothing at all and the refresh was a no-op.
+        void queryClient.invalidateQueries({ queryKey: entityEnvQueryKeyRoot });
 
         // Call the appropriate callback based on the operation result
         if (data.attachSuccess === true) {

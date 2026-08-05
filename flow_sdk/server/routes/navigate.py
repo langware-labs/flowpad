@@ -201,7 +201,9 @@ async def navigate_file(req: NavigateFileRequest):
     # Shared resolution policy with `flow show` (resolve_display_target):
     # entity-backed asset when the path is indexed, else a raw VFS open — the
     # client builds the asset-editor dock pointer (editor chosen by extension).
-    resolved = await resolve_display_target(path=raw)
+    # `discover=True`: navigating to a file the agent just wrote must land on
+    # its bespoke editor, so the not-yet-indexed recovery is wanted here.
+    resolved = await resolve_display_target(path=raw, discover=True)
     if resolved["kind"] == DisplayTargetKind.ENTITY:
         await _send_ui_command(ws, "navigate_entity", type=resolved["type"], id=resolved["id"])
         return {

@@ -144,13 +144,17 @@ If a test fails on time, the production code is too slow or stalls — that's th
 
 ## Entity id policy (non-negotiable)
 
-**An entity id is always a UUID v4 (random) or v5 (deterministic). Never any other version.** v4 = no stable key (random); v5 = derived from a stable key (a file path or a natural key, via `uuid5`). Nothing else is a valid entity id.
+**UUID v4 is the entity id. The one exception is a READ-ONLY asset, whose id may be v5 derived from its file path.** An id is a name, not a fact about the thing — it does not encode which account a source serves or which record a row mirrors. Anything that needs *that* is a **lookup on the natural key**, not id arithmetic.
 
-* **Mint through one place.** Construct ids only via `mint_uuid(key=None, *, namespace=...)` in `flow_sdk/api/api_types/identifier.py` (re-exported from `flow_sdk/fs_store/identifier.py`): `uuid5(namespace, key)` when a stable key is given, else `uuid4`. Don't hand-roll `uuid.uuid4()` / `uuid5(...)` at call sites — route through the minter (or `Entity.allocate_id`, or `TypeInfo.mint_id`, which themselves use it).
+Why the exception and nothing else: a read-only asset has no row of its own to look up — the file IS the record, so its id has to fall out of the path or a rescan would mint a new entity for the same file. Everything else has a row, and a row can be queried.
+
+**Never invent a new deterministic id.** If you catch yourself writing `uuid5(...)` to make a re-run "converge on the same row", stop: query for the row instead. `SourceItem.find_existing` (`flow_sdk/builtin/source_item.py`) and `DataSource.find_for_account` are the shape — the lookup gives the same idempotency, works on rows minted before the key existed, and does not silently break when a key component changes.
+
+* **Mint through one place.** Construct ids only via `mint_uuid(key=None, *, namespace=...)` in `flow_sdk/api/api_types/identifier.py` (re-exported from `flow_sdk/fs_store/identifier.py`): `uuid5(namespace, key)` when a stable key is given, else `uuid4`. Don't hand-roll `uuid.uuid4()` / `uuid5(...)` at call sites — route through the minter (or `Entity.allocate_id`, or `TypeInfo.mint_id`, which themselves use it). New code passes no key.
 
 * **Validate on adopt.** Any id taken from outside the minter — a markdown/asset **frontmatter** **`id:`**, a slug, a client-supplied id — must pass `is_valid_entity_id` (UUID v4/v5) before it's adopted. If it doesn't (e.g. a hand-authored v7), **ignore it and derive a stable v5 instead** — never let a foreign id become an entity id. `TypeInfo.extract_id` is the filesystem adoption gate around the pure per-type carrier readers; `Entity.allocate_id` enforces the entity-side gate. New id-adopting paths must use one of those seams.
 
-* **Two predicates, don't confuse them.** `is_valid_uuid` / `UUID_PATTERN` are deliberately **version-agnostic** (URL/VFS path matchers and `@local` parsing depend on that) — do NOT tighten them. `is_valid_entity_id` is the **mint/adopt policy gate** (v4/v5 only) — use it wherever an id is born or adopted.
+* **Two predicates, don't confuse them.** `is_valid_uuid` / `UUID_PATTERN` are deliberately **version-agnostic** (URL/VFS path matchers and `@local` parsing depend on that) — do NOT tighten them. `is_valid_entity_id` is the **mint/adopt policy gate** — use it wherever an id is born or adopted. It keeps accepting **v4 and v5**: read-only assets are v5 by design, and so are rows minted before this rule. Tightening it to v4-only would orphan both.
 
 * **Validators must agree at v4/v5.** The frontend `ts_sdk/src/models/TypeId.ts` regex (`…-[45]xxx-…`) and the hub `flowpad/hub/api/identifier.py` must accept exactly v4/v5. A mismatch (e.g. a stricter frontend) means a backend-minted id can poison entity resolution — see the v7 incident where one fixture's v7 frontmatter id broke `useEntityByPath`'s whole bulk list.
 

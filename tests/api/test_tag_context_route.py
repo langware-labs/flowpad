@@ -110,3 +110,33 @@ async def test_blessed_header_and_invalid_inputs(client):
     bad_mode = await client.post(
         "/api/v1/tags/context", json={"name": "qa.ctx", "mode": "huge"})
     assert bad_mode.json()["status"] == "FAIL"
+
+
+async def test_parts_narrows_the_join(client, tag_root):
+    """`parts` lets a caller buy only the half it reads.
+
+    The `breadcrumb` fence asks for `code` alone. Without the filter it would
+    also pay for the blessed header and its ancestors, a backlink query, and a
+    full read + summarise of every bound doc — which, for a `breadcrumb.test.*`
+    tag, always includes the very page being rendered.
+    """
+    root, _doc_path, _code_path = tag_root
+
+    resp = await client.post(
+        "/api/v1/tags/context",
+        json={"name": "qa.ctx.runs", "root": str(root), "parts": ["code"]},
+    )
+    data = resp.json()["data"]
+    assert any(site["path"].endswith("runner.py") for site in data["code"])
+    assert data["docs"] == [] and data["mentions"] == []
+    # The name still comes back, so a caller can key its cache off the response.
+    assert data["tag"]["name"] == "qa.ctx.runs"
+
+    # Omitted = the whole join, which is what `flow tag get` wants.
+    whole = await client.post(
+        "/api/v1/tags/context", json={"name": "qa.ctx.runs", "root": str(root)})
+    assert whole.json()["data"]["docs"], "omitting parts must not narrow anything"
+
+    bad = await client.post(
+        "/api/v1/tags/context", json={"name": "qa.ctx.runs", "parts": ["nope"]})
+    assert bad.json()["status"] == "FAIL"

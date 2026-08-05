@@ -20,8 +20,14 @@ in the same viewer components:
    Grammar owned by `DockPointer` (`ui/src/navigation/DockPointer.ts`);
    master render switch `content-panel.tsx:230-402`.
 2. **Agent show targets** (`flow show`): `show entity|file|webapp →
-   resolve_display_target (typeid | path | port) → AgenticProcess.on_show →
-   display_stack/last_shown → VibeWorkspace routing → viewer`.
+   resolve_display_target (typeid | path | port | artifact_id) →
+   AgenticProcess.on_show → display_stack/last_shown → VibeWorkspace routing →
+   viewer`. `DisplayTargetKind` has five members — `entity`, `vfs`, `webapp`,
+   `app` (artifact-addressed, runtime derived per-resolve so a stale port never
+   becomes an app's identity), `shell` — but the `flow show` CLI exposes only the
+   first three; `app` and `shell` are reached through `flow app` and
+   `flow terminal`. Outside vibe the same targets mint a tab instead of pinning a
+   pane (`docs/tabs/display.md` §5).
    Resolver `flow_sdk/core/display_target.py:43-98`; FSM
    `agentic_process.py:2084-2146`; frontend routing
    `vibe-workspace.tsx:369-524`.
@@ -34,7 +40,9 @@ view-mode, and filesystem-shape hints (`main_layout`/`main_file`/`main_ext`)
 ## 2. Files by extension
 
 The extension→viewer rule is ONE registry — `EXT_TO_EDITOR` +
-`editorForPath` in `ts_sdk/src/models/asset-editor.ts` — and every raw-file
+`editorForPath` in `ts_sdk/src/models/asset-editor.ts` (mirrored for the
+backend in `flow_sdk/core/asset_editor.py`, see [§9](#9-deep-links-from-the-backend))
+— and every raw-file
 surface routes through it: `dockPointerForFile` (openFile / explorer / chat
 attachments), the vibe display's `vfsEditorEl`, and `assetPointerForTarget`
 (display history). `dockPointerForFile` also carries a requested line across the
@@ -78,7 +86,9 @@ over extensions: a path that resolves to an entity opens its type's editor.
 
 ## 3. Assets / entities
 
-Three registries decide how an entity opens, kept in agreement **manually**:
+Four registries decide how an entity opens, kept in agreement **manually** —
+the fourth is `flow_sdk/core/asset_editor.py`, the backend's type→editor mirror
+of (1), pinned to it by a shared fixture rather than by hand (see [§9](#9-deep-links-from-the-backend)):
 
 1. **`EDITOR_TYPES` / `TYPE_TO_EDITOR`** (`ts_sdk/src/models/asset-editor.ts:24-47`)
    — record type → AssetEditor. Editors: code, markdown (markdown, claude_md,
@@ -183,6 +193,21 @@ No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
 9. **MCP host duplication**: ShowView and AppHost share near-identical
    AppRenderer scaffolding; both stub `onCallTool`.
 10. **`/sdk` mount dead**; `view_external_domain` vestigial in OSS.
+11. **Agents can only address entities and files — never a screen.** The
+    server→client directive vocabulary is exactly three kinds
+    (`navigate_entity`, `navigate_vfs`, `desktop_notify`;
+    `ui/src/hooks/use-ui-command-listener.ts`), and unknown kinds are logged and
+    dropped. So every pointerless surface is unreachable by an agent in both
+    modes: Events, Assets, Explorer, Preferences, Settings, Hooks, Capabilities,
+    Data Sources, Runs, Search, Desktop, Inbox, Credentials, Cron, Graph, Tag,
+    Worldview, K-Browser, Helpdesk, Discover, Home, and every `page=hub` surface.
+    On the left rail only **project** and **chats** are reachable, and only
+    because they happen to be entity-backed. The structural blocker is that
+    `ViewType` lives solely in `ts_sdk/src/utils/ui/view-types.ts` — the backend
+    has no twin and hand-builds exactly one URL shape (`dock_url` in
+    `display_target.py`). Nor can an agent switch view mode, manage tabs (the
+    `Tab` actions exist but have no CLI surface), or enumerate what is openable
+    (`flow schema list` covers entity types only).
 
 ## 8. Open questions
 
@@ -218,3 +243,43 @@ No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
    (plus a slim non-React entry), or delete the mount?
 7. **Show feedback**: should `on_show` report back whether a display actually
    mounted (watcher count), so agents can tell a deliverable was presented?
+
+## 9. Deep links from the backend
+
+Everything above is the *frontend* deciding how to display something it already
+navigated to. One case runs the other way: an agent that has just written a file
+wants to hand the **user** a URL. `flow record url <path|typeid>` prints it.
+
+The URL grammar `/dock/assets/editor/<editor>/typeid/<type>-<id>` is authored in
+two places now — `assetEditorPointer` (`ts_sdk/src/APIEntity.ts`) and `dock_url`
+(`flow_sdk/core/display_target.py`) — because the backend cannot reach the TS
+map. The editor tables they read are pinned against each other by
+`tests/fixtures/asset_editor_contract.json`, which *neither side generates*:
+both `tests/unit/test_asset_editor_contract.py` and
+`ui/tests/unit/asset-editor-contract.test.ts` assert against it, so a one-sided
+change fails that side's suite and a fixture change fails both.
+
+Three decisions worth not re-litigating:
+
+* **`url` is not on the wire.** It is deliberately absent from the DisplayTarget
+  payloads that `resolve_display_target` returns, even though it would be free
+  there. Those payloads are persisted in display history and cross the hub, so a
+  baked `http://localhost:<port>/…` goes wrong the moment a port changes — and a
+  frontend that started preferring a wire `url` would put the grammar's two
+  owners on opposite sides of a version boundary, where a shipped Electron build
+  can pin a stale one. The wire carries the **address**; the client builds the
+  **URL**.
+* **The server builds it, not the CLI.** The UI is served by Vite on a different
+  port than the API in every dev instance, and the CLI's `_discover_port()`
+  finds the API's. `InstanceSettings.ui_port` owns that vite-or-api rule; the
+  notification redirect reads the same property.
+* **`POST /api/v1/display/url` is side-effect free.** It passes `discover=False`,
+  because `resolve_display_target`'s recovery step for an unindexed path parses
+  the file and `sync_to_db`s it — right for `flow show` ("display this thing I
+  just made"), wrong for a query. An unindexed path answers `NOT_INDEXED` and
+  the caller is told to index it first. `tests/api/test_display_url_route.py`
+  pins this by making the recovery function raise.
+
+VFS (unindexed) paths get no URL yet: that pointer form depends on
+`normalizeAssetVfsPath`, which has no Python twin. Mirroring it — with
+`vfs_cases` added to the contract fixture — is the follow-up.

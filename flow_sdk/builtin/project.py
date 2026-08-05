@@ -1861,6 +1861,40 @@ class Project(Entity):
         except Exception:
             log.debug("[project] index-sentinel stamp on create failed", exc_info=True)
 
+    @action.post(action_name="deploy")
+    async def deploy_action(self) -> "ApiResponse":
+        """`POST /project/<id>/deploy` — run this project's app in a cloud box.
+
+        The web half of deployment, and the same verb an Agent gets. A micro app
+        is deployed by deploying the project that holds it: the project is what
+        has a repository, and the sandbox materializes exactly that. It is also
+        what a LOCAL web placement already parents to, so both tiers agree on
+        what a web deployment hangs off.
+
+        Sharing is implicit — a deploy names a project the hub has to already
+        know, so the two are never separately orderable by a caller.
+
+        Long by nature (E2B create + boot + health is tens of seconds); if that
+        becomes a timeout in practice the fix is 202-and-poll on the node's
+        ``ops/status``, which already exists, not a longer client timeout.
+        """
+        from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        actor = request_info.someone_typeid if request_info else None
+        if not actor:
+            return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
+        try:
+            if not self.remote:
+                await self.share()
+                self.remote = True
+                await self.save()
+            data = await deploy_entity_to_cloud(self)
+        except Exception as exc:
+            return ApiFailResponse(message=f"deploy failed: {exc}")
+        return ApiSuccessResponse(data={"project_id": self.id, **data})
+
     @action.post(action_name="activate")
     async def activate(self) -> "ApiResponse":
         """Project activation — the one "the user is now in this project" signal.
@@ -1912,9 +1946,18 @@ class Project(Entity):
         ``rel_path="."`` is deliberate: the whole repo is the context folder, and
         a subfolder-scoped origin would never see a manifest at the repo root.
 
-        ``branch`` is pinned when given because ``_resolve_git_checkout`` only
-        pulls when the origin names a branch — an unpinned folder would freeze
-        at whatever it first cloned.
+        **The branch is always pinned**, to the caller's when given and to the
+        remote's default (``git ls-remote --symref … HEAD``) otherwise. An
+        unpinned origin is not merely "freezes at whatever it first cloned" —
+        it silently adopts a checkout it never made. ``matches_repo`` skips its
+        branch check when the origin names no branch
+        (``if require_branch and self.branch``), so ANY checkout of this URL
+        anywhere on disk matches, on any branch, at any commit; and
+        ``_resolve_git_checkout`` gates its pull on ``if origin.branch`` too, so
+        nothing brings it up to date afterwards. The result is a vendor folder
+        whose contents depend on what some unrelated flow happened to leave in
+        the workspace. Resolving the default branch costs one ``ls-remote`` (no
+        objects fetched) and makes both the match and the pull real.
         """
         if not url or not url.strip():
             return ApiFailResponse(message="url is required")
@@ -1924,6 +1967,22 @@ class Project(Entity):
         origin = GitOrigin.from_url(url.strip(), branch=branch.strip(), rel_path=".")
         if origin is None:
             return ApiFailResponse(message=f"Not a recognizable git URL: {url}")
+
+        if not origin.branch:
+            from flow_sdk.app.actions.oauth_action import (  # noqa: PLC0415
+                _get_github_token_for_current_user,
+            )
+            from flow_sdk.utils.git import git_remote_access  # noqa: PLC0415
+
+            token, _ = await _get_github_token_for_current_user()
+            reachable, default_branch = await git_remote_access(origin.clone_url(), token)
+            if not reachable:
+                return ApiFailResponse(
+                    message=f"Cannot read {origin.clone_url()} — check the URL and your access",
+                    status_code=502,
+                )
+            if default_branch:
+                origin = origin.model_copy(update={"branch": default_branch})
 
         from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
 

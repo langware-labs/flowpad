@@ -1,11 +1,13 @@
 import {
-  connectionManager,
   copyToClipboard,
   dataManager,
+  OAUTH_PROVIDERS,
   OAuthEventType,
+  OAuthStatus,
   oauthService,
   type OAuthDeviceFlowPayload,
 } from '@sdk';
+import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -21,22 +23,14 @@ import { ExternalLink, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
-interface LlmConfigMsg {
-  message_type?: string;
-  is_configured?: boolean;
-  auth_method?: string;
-  oauth_request_id?: string;
-  status?: string;
-}
-
 /**
  * Single global mount in App.tsx. Listens for `OAuthEventType.DEVICE_FLOW_START`
  * (currently fired only for GitHub) and renders a modal showing the user_code +
  * a single button that copies the code and opens `verification_uri`. The dialog
  * does NOT open the URL until the user clicks — that way the copy happens
  * inside a user-gesture (so paste works on the GitHub page). Self-closes on
- * `on_llm_config_msg` SUCCESS for the matching `oauth_request_id`, or when the
- * user hits Cancel.
+ * `OAuthEventType.OAUTH_FLOW_COMPLETE` SUCCESS for the matching
+ * `oauth_request_id`, or when the user hits Cancel.
  */
 export function GitHubDeviceFlowModal() {
   const { t } = useLingui();
@@ -66,24 +60,20 @@ export function GitHubDeviceFlowModal() {
     return () => clearInterval(tick);
   }, [payload]);
 
-  // Listen for the backend's broadcast — close on SUCCESS, surface ERROR.
-  useEffect(() => {
-    if (!payload) return;
-    const handler = (msg: LlmConfigMsg) => {
-      if (msg.auth_method !== 'github') return;
-      if (msg.oauth_request_id && msg.oauth_request_id !== payload.state) return;
-      if (msg.status === 'success') {
+  // Close on SUCCESS, surface ERROR — for THIS flow only.
+  useOAuthFlowComplete(
+    OAUTH_PROVIDERS.GITHUB,
+    (msg) => {
+      if (msg.oauth_request_id !== payload?.state) return;
+      if (msg.status === OAuthStatus.SUCCESS) {
         notify.success({ title: t`GitHub connected`, durationMs: 3000 });
         setPayload(null);
-      } else if (msg.status === 'error') {
+      } else {
         setError(t`Authorization failed or was denied. Click Retry to try again.`);
       }
-    };
-    connectionManager.on('on_llm_config_msg', handler);
-    return () => {
-      connectionManager.off('on_llm_config_msg', handler);
-    };
-  }, [payload]);
+    },
+    payload !== null,
+  );
 
   // Single combined action: copy first (inside the user-gesture click handler,
   // so the clipboard write is allowed and paste will work on the GitHub page),

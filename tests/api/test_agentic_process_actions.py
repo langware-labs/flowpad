@@ -362,7 +362,7 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
         "rel_path": "frontend",
         "project_id": "",
     }
-    assert deployment["kind"] == "local.runtime.web"
+    assert deployment["kind"] == "runtime.web"
     assert deployment["artifact_id"] == artifact["id"]
     assert deployment["provider_labels"]["flowpad.runtime.port"] == "3300"
     # The pin is the APP, not the port: a port is one of two ways to reach it
@@ -392,7 +392,7 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     deployment_entity = await Deployment.get_by_id(deployment["id"])
     assert artifact_entity is not None and deployment_entity is not None
     artifact_entity.kind = "application.web.react"
-    deployment_entity.kind = "local.runtime.web.vite"
+    deployment_entity.kind = "runtime.web.vite"
     await artifact_entity.save(notify=False)
     await deployment_entity.save(notify=False)
     descendant_list = await bootstrapped_client.post(f"{base}/webapp-artifacts", json={})

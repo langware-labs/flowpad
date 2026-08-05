@@ -12,8 +12,8 @@ new driver.
 
 **The agent records; this driver does not.** The worker calls
 ``flow record create source_item``, which goes through ``ingest_items`` — the
-same chokepoint the poller uses, with the same deterministic ids and the same
-digest gate. So ``fetch`` returns no items: they already landed, and ingesting
+same chokepoint the poller uses, resolving against the same natural key and
+gating on the same digest. So ``fetch`` returns no items: they already landed, and ingesting
 them a second time here would double every message. What it returns instead is
 the receipt's account of what happened, which is what the cursor and
 ``sync.completed`` need.
@@ -47,6 +47,7 @@ from flow_sdk.ingest.driver import (
     SendStatus,
     StreamCursorView,
     StreamRef,
+    ingest_run_context,
 )
 from flow_sdk.ingest.health import SourceError
 
@@ -293,12 +294,15 @@ class AgentDriver:
             # for, and the conversation cannot find its own in-flight replies
             # after a reload.
             "context_data": {
+                # Same handle the fetch path stamps, for the same reason: a send
+                # is spawned by nothing browsable either.
+                **ingest_run_context(source),
                 "channel_send": {
                     "to": to,
                     "thread_key": thread_key,
                     "channel": channel,
                     "conversation_id": conversation_id or "",
-                }
+                },
             },
         }
         if harness:
@@ -433,6 +437,10 @@ class AgentDriver:
         options: dict[str, Any] = {
             "name": f"ingest {source.name or source.id[:8]} · {cursor.stream_key}",
             "visible": False,
+            # The run's only handle. An ingest worker has no spawning entity to
+            # browse from, so without this it is unreachable from the Runs list
+            # and the source's "Runs" link resolves to nothing.
+            "context_data": ingest_run_context(source),
         }
         if harness:
             options["worker_type"] = harness

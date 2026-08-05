@@ -3,7 +3,7 @@
  *
  * Desk clones onto the local compute node. The hub has neither a compute node
  * (its bootstrap ships no `default_compute_node`) nor a local filesystem, so the
- * same dialog must target an E2B sandbox: `launch({gitSetup})` has the HUB clone
+ * same dialog must target an E2B sandbox: `launch({sandboxProject})` has the HUB clone
  * the repo — with the user's token, which is the only reason a PRIVATE repo is
  * reachable at all — and copy the tree into the box.
  *
@@ -56,13 +56,13 @@ describe('clone target, by runtime', () => {
     expect(h.launch).toHaveBeenCalledTimes(1);
     const arg = h.launch.mock.calls[0][0] as {
       name: string;
-      gitSetup: { name: string; gitOrigin: { owner: string; name: string; branch: string } };
+      sandboxProject: { name: string; gitOrigin: { owner: string; name: string; branch: string } };
     };
     expect(arg.name).toBe('flowpad-hub');
-    expect(arg.gitSetup.gitOrigin.owner).toBe('langware-labs');
-    expect(arg.gitSetup.gitOrigin.name).toBe('flowpad-hub');
+    expect(arg.sandboxProject.gitOrigin.owner).toBe('langware-labs');
+    expect(arg.sandboxProject.gitOrigin.name).toBe('flowpad-hub');
     // The picked branch has to reach the box, or it clones the default branch.
-    expect(arg.gitSetup.gitOrigin.branch).toBe('main');
+    expect(arg.sandboxProject.gitOrigin.branch).toBe('main');
   });
 
   it('on hub, refuses a URL it cannot turn into a git origin', async () => {

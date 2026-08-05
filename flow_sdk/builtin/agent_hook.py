@@ -240,11 +240,27 @@ class AgentHook(Entity):
 
         return matched_actions
 
-    async def handle_webhook(self, webhook_data: AgentHookData) -> WebhookHandleResult:
+    async def handle_webhook(self, webhook_data: AgentHookData,
+                             *, actor: Optional[str] = None) -> WebhookHandleResult:
         """
         Handle a webhook event for this agent hook.
 
         Processes the webhook data and invokes matching triggers.
+
+        This is also the bus funnel for the hook family. Two emissions, and the
+        distinction between them matters:
+
+        * ONE ``hook.<event>`` per inbound webhook, carrying the match count.
+          Emitted here rather than per trigger because a webhook that matches
+          NOTHING is the common case and is otherwise invisible everywhere in
+          the product — ``Trigger.match`` just returns falsy and the request
+          ends. One-per-webhook also keeps this off the per-item lane.
+        * ONE ``trigger.fired`` per MATCHED trigger, so a hook rule reads the
+          same as a schedule or fsop rule on the events screen.
+
+        ``actor`` is the principal that caused the webhook (``agentic_process:<id>``),
+        resolved by the caller from the hook's execution scope — this method
+        cannot see it.
 
         In the old FlowPad cloud, this also created/looked up a Flow entity
         for session tracking via Flow.get_or_create_for_session().  In desktop
@@ -268,12 +284,37 @@ class AgentHook(Entity):
         triggers = await self.get_triggers()
 
         # Invoke matching triggers
+        from flow_sdk.builtin.trigger_on_tag import emit_hook_received, emit_trigger_fired
+
         executed_actions: list[ExecutedAction] = []
+        matched_trigger_ids: list[str] = []
         for entity in triggers:
             trigger: Trigger = entity  # type: ignore
             result = await trigger.invoke(hook_data)
             if result:
                 executed_actions.append(result)
+                if trigger.id:
+                    matched_trigger_ids.append(trigger.id)
+                    emit_trigger_fired(
+                        trigger.id, str(trigger.trigger_type),
+                        trigger.name or trigger.id,
+                        counter=trigger.counter,
+                        action_types=[str(a.action_type) for a in trigger.actions],
+                        detail={"hook_event": str(hook_data.hook_event_name or ""),
+                                "agent_hook_id": self.id},
+                        project_id=trigger.project_id,
+                        actor=actor,
+                        scope_extra=[f"agent_hook:{self.id}"] if self.id else None,
+                    )
+
+        emit_hook_received(
+            self.id or "",
+            str(hook_data.hook_event_name or ""),
+            matched=len(matched_trigger_ids),
+            matched_trigger_ids=matched_trigger_ids,
+            session_id=session_id,
+            actor=actor,
+        )
 
         return WebhookHandleResult(
             status="processed",

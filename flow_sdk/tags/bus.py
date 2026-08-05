@@ -180,16 +180,52 @@ class TagEventBus:
             if not self._sub_matches(sub, tag_segments, target):
                 continue
             if event is None:
-                event = FlowEvent(tag=tag, target=target, data=data or {},
-                                  ctx=FlowEventCtx(**{"origin": self._tier, **(ctx or {})}))
+                # Built on the first MATCHING sub (not merely the first sub) —
+                # the laziness is the point. Tier-stamping lives in make_event.
+                event = self.make_event(tag, target, data, ctx)
             if sub.scope and not any(s in event.ctx.scope for s in sub.scope):
                 continue
             self._dispatch(sub, event)
         return event
 
+    def make_event(self, tag: str, target: str, data: dict | None = None,
+                   ctx: dict | None = None) -> FlowEvent:
+        """Build an envelope WITHOUT dispatching it — the tier-stamping half of
+        ``emit`` on its own.
+
+        Exists so a caller that must know the envelope id *before* it is
+        published (to write it onto a record, so the record and the envelope are
+        the same fact) can get one unconditionally. ``emit`` cannot serve that:
+        its zero-subscriber fast path returns None, so the id would be present
+        only when somebody happened to be listening.
+
+        Always go through here rather than constructing a ``FlowEvent`` at a call
+        site — ``ctx.origin`` must keep coming from the bus TIER, which is the
+        one thing a hand-built envelope always gets wrong (a worker or sandbox
+        flow_sdk must not self-label ``local_server``).
+        """
+        return FlowEvent(tag=tag, target=target, data=data or {},
+                         ctx=FlowEventCtx(**{"origin": self._tier, **(ctx or {})}))
+
+    def publish(self, event: FlowEvent) -> FlowEvent:
+        """Dispatch an envelope built here by ``make_event`` — the emit half.
+
+        Observes (an emitted tag is seen whether or not anyone listens) and fans
+        out, returning the same object so the caller can read its id. Distinct
+        from ``deliver``, which is the RELAY entry for an envelope minted on
+        another tier and deliberately does not observe.
+        """
+        self._observe(event.tag, event.target)
+        self._fanout(event)
+        return event
+
     def deliver(self, event: FlowEvent) -> None:
         """Dispatch a PRE-BUILT envelope (relay entry — id/timestamp/actor are
         never rewritten; the caller stamps ``origin`` per the arriving hop)."""
+        self._fanout(event)
+
+    def _fanout(self, event: FlowEvent) -> None:
+        """The shared pre-built-envelope dispatch loop (publish + deliver)."""
         tag_segments = event.tag.split(".")
         for sub in list(self._subs.values()):
             if not self._sub_matches(sub, tag_segments, event.target):
@@ -233,6 +269,15 @@ event_bus = TagEventBus()
 def emit_tag(tag: str, target: str, data: dict | None = None,
                ctx: dict | None = None) -> Optional[FlowEvent]:
     return event_bus.emit(tag, target, data, ctx)
+
+
+def make_tag_event(tag: str, target: str, data: dict | None = None,
+                   ctx: dict | None = None) -> FlowEvent:
+    return event_bus.make_event(tag, target, data, ctx)
+
+
+def publish_tag(event: FlowEvent) -> FlowEvent:
+    return event_bus.publish(event)
 
 
 def on_tag(pattern: str, handler: FlowEventHandler, *,

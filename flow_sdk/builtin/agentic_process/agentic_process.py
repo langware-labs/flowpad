@@ -2369,14 +2369,14 @@ class AgenticProcess(Entity):
         return sorted(webapps, key=lambda artifact: str(getattr(artifact, "created_date", "") or ""), reverse=True)
 
     async def _get_project_webapp_deployments(self) -> list:
-        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import KIND_WEB, Deployment  # noqa: PLC0415
         from flow_sdk.core import QueryFilter  # noqa: PLC0415
         from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
 
         project = await self._resolve_webapp_project()
         source = project.typeid if project is not None else None
         deployments = await Deployment.get_all(QueryFilter.by_type(Deployment.get_type()), source_entity=source)
-        return [deployment for deployment in deployments if kind_matches("local.runtime.web", deployment.kind)]
+        return [deployment for deployment in deployments if kind_matches(KIND_WEB, deployment.kind)]
 
     async def _artifact_reference(self, payload: dict) -> tuple[str, str]:
         """What a resolved display target points at: ``(asset_ref, entity_kind)``.
@@ -2449,7 +2449,9 @@ class AgenticProcess(Entity):
             )
 
         try:
-            payload = await resolve_display_target(typeid=typeid, path=path, port=port)
+            # `discover=True` — a display verb: showing a just-written file has
+            # to recover it so the bespoke editor renders, not a raw file view.
+            payload = await resolve_display_target(typeid=typeid, path=path, port=port, discover=True)
         except InvalidDisplayTarget as e:
             return ApiFailResponse(message=str(e), status_code=400)
         except DisplayTargetNotFound as e:
@@ -2698,56 +2700,57 @@ class AgenticProcess(Entity):
         git_origin,
         project,
     ):
-        """Create/update the Artifact's runtime companion — a local dev server.
+        """Create/update the app's runtime placement — a local dev server.
 
-        Sibling of ``_upsert_webapp_micro_app``: one companion per plane, each
-        minted from a deterministic id so re-registering the same app updates
-        its row instead of forking a second one.
+        Sibling of ``_upsert_webapp_micro_app``: one companion per plane. The row
+        converges through ``Deployment.find_existing`` on (parent, provider) —
+        re-registering the same app updates it rather than forking a second one,
+        without baking the artifact id into an id that could then never change.
+
+        Parented to the PROJECT, not the Artifact: an Artifact records how the
+        app was generated and lives under its own parent, while the placement
+        belongs to the project that owns the running thing. ``artifact_id`` keeps
+        the reference.
         """
-        from datetime import datetime  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import KIND_WEB, Deployment  # noqa: PLC0415
+        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
 
-        from flow_sdk._compat import UTC  # noqa: PLC0415
-        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
-        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
-
-        deployment_id = mint_uuid(f"deployment:legacy-artifact:{artifact.id}")
-        deployment = await Deployment.get_by_id(deployment_id)
-        payload = {
-            "name": f"{name} (local)",
-            "kind": "local.runtime.web",
-            "artifact_id": artifact.id,
-            "artifact_link_source": "manual",
-            "target": {
-                "provider": "local",
-                "scope": project.id if project is not None else "machine",
-                "location": f"http://localhost:{port}",
+        if project is None:
+            # Nothing to parent to, and a placement with no owner is not a
+            # placement — the caller's project resolution already tried three
+            # ways to find one.
+            return None
+        deployment = await Deployment.upsert(
+            parent_type_id=str(project.typeid),
+            provider="local",
+            kind=KIND_WEB,
+            element=project,
+            payload={
+                "name": f"{name} (local)",
+                "artifact_id": artifact.id,
+                "artifact_link_source": "manual",
+                "target": {
+                    "provider": "local",
+                    "scope": project.id,
+                    "location": f"http://localhost:{port}",
+                },
+                "origin": {
+                    "kind": "local",
+                    "provider": "local",
+                    "external_id": ComputeNode._local_id(),
+                    "url": f"http://localhost:{port}",
+                },
+                "status": {"sync_state": "current", "provider_state": "configured"},
+                "provider_labels": {
+                    "flowpad.runtime.port": str(port),
+                    "flowpad.runtime.start_cmd": start_cmd,
+                    "flowpad.runtime.health": health,
+                },
+                "source_revision": getattr(git_origin, "head_commit", None),
+                "project_id": project.id,
             },
-            "resource": {
-                "full_resource_name": f"local://localhost:{port}",
-                "asset_type": "flowpad.local/Process",
-                "provider_uid": str(port),
-            },
-            "status": {
-                "sync_state": "current",
-                "provider_state": "configured",
-                "observed_at": datetime.now(UTC).isoformat(),
-            },
-            "provider_labels": {
-                "flowpad.runtime.port": str(port),
-                "flowpad.runtime.start_cmd": start_cmd,
-                "flowpad.runtime.health": health,
-            },
-            "source_revision": getattr(git_origin, "head_commit", None),
-            "project_id": project.id if project is not None else self.project_id,
-            "parent_type_id": str(project.typeid) if project is not None else None,
-        }
-        if deployment is None:
-            deployment = Deployment(id=deployment_id, **payload)
-        else:
-            deployment.apply_field_updates(payload)
-        await deployment.save()
-        if project is not None:
-            await project.attach_child(deployment)
+        )
+        await project.attach_child(deployment)
         return deployment
 
     async def _upsert_webapp_micro_app(
@@ -2895,6 +2898,7 @@ class AgenticProcess(Entity):
                 typeid=str(body.get("typeid") or "").strip() or None,
                 path=str(body.get("path") or "").strip() or None,
                 port=body.get("port"),
+                discover=True,  # a display verb — see `flow show file`
             )
         except InvalidDisplayTarget as e:
             return ApiFailResponse(message=str(e), status_code=400)

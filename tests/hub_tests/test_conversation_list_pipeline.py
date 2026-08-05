@@ -591,8 +591,120 @@ async def test_created_date_adopted_from_hub(hub_base_url, hub_login_payload):
 
 
 # ---------------------------------------------------------------------------
-# 13. fetched_at is stamped on hub refresh and never leaves the device
+# 13. an empty conversation's recency is its birth time, never "now"
 # ---------------------------------------------------------------------------
+
+
+async def test_empty_conversation_does_not_fake_recency(hub_base_url, hub_login_payload):
+    """A message-less conversation reports its birth time, not "now".
+
+    ``project_pointers_to_entity`` derives recency as ``max(message.updated_date)``;
+    with no messages there is no max, and the honest answer is ``created_date``.
+
+    Regression guard: falling back to ``datetime.now()`` invented a timestamp the
+    conversation never earned, and since ``updated_date`` is the Inbox sort key
+    (``compareConversationsByRecency``), every catch-up that touched an empty
+    conversation promoted it above genuinely recent mail — 33 such rows buried a
+    real message in the reported incident.
+
+    Entry point is ``_fetch_conversation_messages`` — what the
+    ``conversation-message-sync`` action awaits when the conversation view opens,
+    and what the login catch-up drain calls per conversation.
+
+    The ordering assertion is a proxy: it checks the *input* to the UI sort, not
+    the rendered row order. The exact-invariant assertion before it is not.
+    """
+    api_key = _stash_credentials(hub_login_payload)
+    from flow_sdk.app.actions.flow_message_action import (
+        _fetch_conversation_messages,
+        handle_conversation_list,
+    )
+    from flow_sdk.builtin.conversation import Conversation
+
+    # Older, and empty — the "pong-…" style rows that hijacked the top.
+    empty_id = await _hub_create_conversation(hub_base_url, api_key, title=f"empty-{uuid.uuid4()}")
+    await asyncio.sleep(0.05)
+    # Newer, and carrying a real message — the "Tzahi" row that got buried.
+    real_id = await _hub_create_conversation(hub_base_url, api_key, title=f"real-{uuid.uuid4()}")
+    await _hub_add_message(hub_base_url, api_key, real_id, "a real message")
+
+    someone = await _local_user_typeid()
+    await handle_conversation_list(someone)
+    assert await _poll_until(_projected(real_id, expected_count=1), timeout=10.0), (
+        "precondition: the real message never materialized"
+    )
+
+    # A later catch-up touches the empty conversation — the every-login case.
+    await _fetch_conversation_messages(empty_id, someone)
+
+    empty = await Conversation.get_one({"id": empty_id})
+    real = await Conversation.get_one({"id": real_id})
+    assert empty is not None and real is not None
+    assert int(empty.message_count or 0) == 0, "precondition: the empty conversation must have no messages"
+
+    # The invariant itself, exactly — no messages ⇒ recency IS the birth time.
+    empty_ts = Conversation._as_datetime(empty.updated_date)
+    assert empty_ts == Conversation._as_datetime(empty.created_date), (
+        f"empty conversation invented recency: updated_date={empty_ts} != created_date={empty.created_date}"
+    )
+
+    # …and the consequence the user actually sees: it must not outrank real mail.
+    real_ts = Conversation._as_datetime(real.updated_date)
+    assert empty_ts < real_ts, (
+        f"a message-less conversation outranks one with a real message: "
+        f"empty(msgs=0).updated_date={empty_ts} > real(msgs=1).updated_date={real_ts}. "
+        f"The empty row has no message clock to derive recency from, so the projection "
+        f"stamped it with the current time and it sorts to the top of the Inbox."
+    )
+
+
+async def test_settled_conversation_is_not_redispatched(hub_base_url, hub_login_payload):
+    """A conversation that is fully in sync must NOT be re-dispatched.
+
+    The catch-up gate compares hub clock to hub clock — the hub's parent
+    ``updated_date`` against ``Conversation.hub_updated_date``, the revision this
+    device last reconciled through — so once a conversation settles the gate stays
+    shut until the hub actually changes something.
+
+    Regression guard: gating on the LOCAL ``updated_date`` (``Entity.is_stale``)
+    never converged, because the projection writer rewrites that field from the
+    messages' own clocks, which are by construction earlier than the hub's parent
+    stamp. Every catch-up then re-ran the full per-conversation + per-message hub
+    fan-out for conversations with nothing to fetch — on the user's critical path,
+    since ``inbox.catchup`` calls this same handler on every login and startup.
+    """
+    api_key = _stash_credentials(hub_login_payload)
+    from flow_sdk.app.actions.flow_message_action import handle_conversation_list
+    from flow_sdk.builtin.conversation import Conversation
+
+    conv_id = await _hub_create_conversation(hub_base_url, api_key, title=f"converge-{uuid.uuid4()}")
+    await _hub_add_message(hub_base_url, api_key, conv_id, "converge msg")
+
+    someone = await _local_user_typeid()
+    first = await handle_conversation_list(someone)
+    assert conv_id in (first.data or {}).get("bg_fetch_dispatched", []), (
+        "precondition: the first catch-up must fetch this conversation"
+    )
+
+    # Let the detached drain finish — the local projection must match the hub.
+    settled = await _poll_until(_projected(conv_id, expected_count=1), timeout=10.0)
+    assert settled is not None, f"catch-up never projected the message for {conv_id[:8]}"
+
+    # Nothing has happened on the hub since. This catch-up has no work to do.
+    second = await handle_conversation_list(someone)
+    dispatched = (second.data or {}).get("bg_fetch_dispatched", [])
+
+    if conv_id in dispatched:
+        # Diagnostics cost a hub round-trip, so only pay for them on failure.
+        local = await Conversation.get_one({"id": conv_id})
+        hub_row = await _hub_get_conversation(hub_base_url, api_key, conv_id)
+        pytest.fail(
+            f"settled conversation re-dispatched with nothing to fetch — "
+            f"watermark local.hub_updated_date={local.hub_updated_date} vs "
+            f"hub.updated_date={hub_row.get('updated_date')}; local recency "
+            f"updated_date={local.updated_date} (trails the hub by design); "
+            f"counts already agree (local={local.message_count} hub={hub_row.get('message_count')})"
+        )
 
 
 async def test_fetched_at_stamped_and_not_outbound(hub_base_url, hub_login_payload):

@@ -314,8 +314,13 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
         logger.debug("AgentHook not found: %s — skipping entity-specific handling", agent_hook_id)
         return ApiSuccessResponse(data={})
 
-    # Use the refactored handle_webhook method
-    result = await agent_hook.handle_webhook(webhook_data)
+    # Use the refactored handle_webhook method. `actor` is resolved HERE because
+    # the execution scope only exists at this door — handle_webhook emits the
+    # hook.* / trigger.fired envelopes and cannot see who caused them.
+    result = await agent_hook.handle_webhook(
+        webhook_data,
+        actor=f"agentic_process:{agentic_process_id}" if agentic_process_id else None,
+    )
 
     # Emit FlowData for live sniffer/watchers. Route through the canonical
     # ``convert_hook_event`` translator so the global sniffer view receives

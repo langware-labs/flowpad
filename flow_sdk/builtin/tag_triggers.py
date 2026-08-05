@@ -3,17 +3,27 @@
 
 A ``TriggerType.TAG`` trigger declares ``{tag_pattern, tag_target?,
 tag_scope?}`` and fires through the SAME machinery as every other trigger
-kind: counter/last_run update → flow activation (``on_trigger_fired``) →
-action dispatch via the handler registry → trigger-log entry (which embeds
-the full envelope — the phase-7 journal preview).
+kind: counter/last_run update → ``trigger.fired`` emission → flow activation
+(``on_trigger_fired``) → action dispatch via the handler registry →
+trigger-log entry.
+
+The log row carries the causing envelope as three lean scalars
+(``cause_event_id`` / ``cause_tag`` / ``cause_target``) plus its OWN
+``event_id``, not a full ``model_dump``. An earlier version of this module
+passed ``event=event.model_dump()`` and claimed the row "embeds the full
+envelope"; ``append_entry`` copies a fixed key set and silently dropped it, so
+that was never true — see the note in ``fs_store/operations/trigger_log.py``.
 
 Safety, because the bus has no budgets:
 
+* **Self-loop brake** — the STRUCTURAL cycle guard, mirroring flow
+  subscriptions (``graph_workflow_manager/manager.py``). A fire whose causing
+  envelope already carries this trigger's own target in ``ctx.scope`` is
+  dropped, which stops A→A and A→B→A. Cross-trigger chaining stays legal.
 * **Storm guard** — a per-trigger fixed window (``max_fires_per_minute``,
-  default 30). Exceeding it drops fires and writes ONE ``storm_suppressed``
-  log entry per window — never silent. This is also the structural cycle
-  brake: a trigger whose actions re-emit its own pattern hits the bucket,
-  not infinity.
+  default 30). Exceeding it drops fires and records ONE suppression per window
+  — never silent. Containment for volume; the brake above is what handles
+  cycles.
 * **Confirm-against-store (law 5)** — optional ``confirm: {type, filter}``;
   when set, the entity query must match or the fire is skipped (event says
   *check now*; the store says *it's true*).
@@ -98,19 +108,66 @@ async def start_tag_triggers() -> None:
             logger.exception("TAG trigger %s: arming failed", trigger.name)
 
 
-def _storm_allows(trigger_id: str, trigger_name: str, cap: int) -> bool:
-    """Fixed-window fire cap; logs ONE storm_suppressed entry per window."""
+def _suppressed(trigger: "Trigger", reason_code: str, reason: str,
+                cause: Optional["FlowEvent"] = None) -> None:
+    """Record a declined fire on BOTH halves — the bus and the JSONL log.
+
+    Every branch here was silent before: only the storm guard wrote a row, and
+    a ``confirm`` rejection wrote nothing at all, which is why "I made a trigger
+    and nothing happened" had no answer anywhere in the product.
+    """
+    from flow_sdk.builtin.trigger_on_tag import emit_trigger_suppressed
+
+    trigger_id = trigger.id or ""
+    name = trigger.name or trigger_id
+    event_id = emit_trigger_suppressed(
+        trigger_id, str(trigger.trigger_type), name,
+        reason_code=reason_code, detail=reason,
+        project_id=trigger.project_id, cause=cause,
+    )
+    _append_log(name, {
+        "hook_event": "storm_suppressed" if reason_code == "storm" else "tag_suppressed",
+        "trigger": False,
+        "reason": reason,
+        "reason_code": reason_code,
+        "rule_name": name,
+        "trigger_id": trigger_id,
+        "trigger_type": str(trigger.trigger_type),
+        "event_id": event_id,
+        **_cause_keys(cause),
+    })
+
+
+def _cause_keys(cause: Optional["FlowEvent"]) -> dict[str, Any]:
+    """The three lean scalars describing a causing envelope.
+
+    Deliberately NOT ``cause.model_dump()``: a ``graph_workflow.*`` cause carries
+    stdout/stderr tails (the reason ws_forward has MAX_RETAINED_DATA_CHARS), and
+    1000 rows per rule would pin that to disk forever. ``cause_event_id`` is the
+    pointer; look the envelope up if the full thing is ever wanted."""
+    if cause is None:
+        return {}
+    return {
+        "cause_event_id": cause.id,
+        "cause_tag": cause.tag,
+        "cause_target": cause.target,
+        "actor": cause.ctx.actor,
+    }
+
+
+def _storm_allows(trigger: "Trigger", cap: int, cause: "FlowEvent") -> bool:
+    """Fixed-window fire cap; records ONE suppression per window."""
+    trigger_name = trigger.name or trigger.id or ""
 
     def _on_suppress() -> None:
-        _append_log(trigger_name, {
-            "hook_event": "storm_suppressed",
-            "trigger": False,
-            "reason": f"fires exceeded max_fires_per_minute={cap}; suppressing until the window resets",
-            "rule_name": trigger_name,
-        })
+        _suppressed(
+            trigger, "storm",
+            f"fires exceeded max_fires_per_minute={cap}; suppressing until the window resets",
+            cause,
+        )
         logger.warning("TAG trigger %s: storm guard tripped (cap %d/min)", trigger_name, cap)
 
-    return _storm_guard.allows(trigger_id, cap, _on_suppress)
+    return _storm_guard.allows(trigger.id or "", cap, _on_suppress)
 
 
 async def _confirmed(trigger: "Trigger") -> bool:
@@ -149,23 +206,65 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
         dispatch_trigger_actions,
     )
 
+    from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired
+    from flow_sdk.tags.envelope import target_of
+
     trigger = await Trigger.get_by_id(trigger_id)
-    if not (trigger and trigger.enabled):
+    if trigger is None:
+        return  # deleted between arm and fire — nothing to attribute a row to
+    if not trigger.enabled:
+        _suppressed(trigger, "disabled",
+                    "rule was disabled between arming and this event", event)
         return
-    if not _storm_allows(trigger_id, trigger.name or trigger_id, trigger.max_fires_per_minute):
+
+    # SELF-LOOP BRAKE — mirrors the flow-subscription brake at
+    # graph_workflow_manager/manager.py:372. Every `trigger.*` emission puts
+    # `trigger:<id>` innermost in ctx.scope, and a tag fire PROPAGATES the
+    # causing scope forward, so this kills A→A and A→B→A alike while leaving
+    # cross-trigger chaining (A→B, no cycle) legal.
+    #
+    # Not optional once trigger.fired exists: `trigger.*` is a pattern a user
+    # can save today, and without this the storm guard is the only thing
+    # standing between them and a permanent 30-fires-per-minute loop — which is
+    # containment, not correctness.
+    if target_of("trigger", trigger_id) in event.ctx.scope:
+        # Recorded, not merely logged: a self-loop drop is the most confusing
+        # silent non-fire in the design — the rule looks armed, the event
+        # matched, and nothing happened. That is exactly what the events screen
+        # exists to explain, so it gets a row like every other declined fire.
+        _suppressed(trigger, "self_loop",
+                    f"{event.tag} already carries this rule in its scope chain "
+                    f"— firing again would be a cycle", event)
+        return
+
+    if not _storm_allows(trigger, trigger.max_fires_per_minute, event):
         return
     if not await _confirmed(trigger):
+        _suppressed(trigger, "confirm_failed",
+                    f"confirm query on {(trigger.confirm or {}).get('type')} matched no rows",
+                    event)
         return
 
     trigger.counter += 1
     trigger.last_run = datetime.now(timezone.utc)
     await trigger.update()
 
+    # Emit BEFORE the work: `fired` means the rule matched and dispatch has
+    # begun, not that it finished. What happens afterwards is `trigger.failed`.
+    event_id = emit_trigger_fired(
+        trigger_id, str(trigger.trigger_type), trigger.name or trigger_id,
+        counter=trigger.counter,
+        action_types=[str(a.action_type) for a in trigger.actions],
+        detail={"cause_tag": event.tag, "cause_target": event.target},
+        project_id=trigger.project_id,
+        cause=event,
+    )
+
     # Shared fire steps (same helpers as schedule/fsop). Tag fires carry no
-    # file changes; the ENVELOPE rides the log entry below (handlers gain an
-    # event kwarg when one needs it).
+    # file changes; the causing ENVELOPE rides through to the run entry, where
+    # phase 7 preserves its id — so a run and this log row share one join key.
     await activate_flows_for_trigger(trigger_id, trigger.name or trigger_id,
-                                     envelope=event)
+                                     envelope=event, trigger=trigger)
     await dispatch_trigger_actions(trigger, changes=[])
 
     _append_log(trigger.name or trigger_id, {
@@ -173,7 +272,10 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
         "trigger": True,
         "reason": f"Tag {event.tag} on {event.target}",
         "rule_name": trigger.name,
-        "event": event.model_dump(),
+        "trigger_id": trigger_id,
+        "trigger_type": str(trigger.trigger_type),
+        "event_id": event_id,
+        **_cause_keys(event),
         "actions": [{"action_type": str(a.action_type)} for a in trigger.actions],
     })
 

@@ -122,7 +122,7 @@ export function useCloneGitProjectAndOpen(landing?: ProjectLanding) {
  * **Desk** clones onto the local compute node — the path this hook has always
  * taken. **Hub** has no compute node (its bootstrap ships no
  * `default_compute_node`) and no local filesystem, so a clone there targets an
- * E2B sandbox instead: `launch({gitSetup})` has the HUB clone the repo — with
+ * E2B sandbox instead: `launch({sandboxProject})` has the HUB clone the repo — with
  * the user's token, which is why private repos work at all — and copy the tree
  * into the box, which materializes it into an indexed Project. Same pipeline
  * `InstallLanding` uses; nothing new on either side.
@@ -140,10 +140,12 @@ export function useGitCloneDialogSubmit(computeNodeId: string | null | undefined
       if (isHubOnly()) {
         const gitOrigin = gitOriginFromUrl(url, branch ?? '');
         if (!gitOrigin) throw new Error('Not a recognisable git URL');
-        // The repo name is the box-side folder/project name; `acceptSuggested`
-        // is the desk collision flow, which a fresh sandbox cannot hit.
+        // The repo name is the box-side folder/project name. A fresh sandbox
+        // can't collide, but a re-used one can — the launch pipeline asks the
+        // box before it clones, and reports the clash the same way the desk
+        // path does so the dialog's existing banner handles both.
         const name = acceptSuggested || gitOrigin.name;
-        await launch({ name, gitSetup: { name, gitOrigin } });
+        await launch({ name, sandboxProject: { name, gitOrigin } });
         return { ok: true };
       }
 

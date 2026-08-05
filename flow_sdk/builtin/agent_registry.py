@@ -14,7 +14,7 @@ from flow_sdk.api.type_id import TypeId
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.agent import Agent
-    from flow_sdk.builtin.agent_deployment import AgentDeployment
+    from flow_sdk.builtin.deployment import Deployment
 
 AgentRef = Union[str, TypeId, "Agent"]
 
@@ -89,7 +89,7 @@ def _shipped_agent(name: str) -> Optional["Agent"]:
     return found if isinstance(found, Agent) else None
 
 
-async def get_agent_local_deployment(ref: AgentRef) -> "AgentDeployment":
+async def get_agent_local_deployment(ref: AgentRef) -> "Deployment":
     """The agent's ``local`` deployment — created on first use.
 
     Raises when the agent doesn't resolve: a launch site naming an agent that

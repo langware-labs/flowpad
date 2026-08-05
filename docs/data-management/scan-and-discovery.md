@@ -105,6 +105,7 @@ Notable structural facts:
 
 - **Two-stage into-file walks.** Hooks and MCP servers are discovered in two steps: `<root> → *_SOURCE` (one FSRef per `settings.json` / `.mcp.json`-like file), then `*_SOURCE → leaf` (one FSRef per entry, each carrying a distinct RFC-6901 `json_path` so fragment records sharing one file are not collapsed by the DFS dedup key `(path, record_type, json_path)`).
 - **`real_project_cwd_fn` is intentionally NOT registered** on `USER_HOME_FOLDER`. Project-cwd fan-out used to be implicit (any user-home scan silently walked every project tree). Project-cwd roots are now contributed explicitly by the scope filter via `_resolve_scoped_roots` — callers wanting all projects pass a `ScopeFilter` from `get_all_scope_filter()`.
+- **A project root can be read-only.** `_resolve_scoped_roots` stamps `read_only` on a root whose mount is in `Folder.borrowed_checkout_paths()` — someone else's repo, which the walk must not write identity capsules into (why, and who else asks: [fs-ref.md](../fs-ref.md)). The set is fetched once per scan, not per root; `read_only` then propagates down the parent chain.
 - **Codex projects** are consolidated into `RecordType.PROJECT` (`codex_projects_fn` is annotated `PROJECT`); `CODEX_PROJECT` is a deprecated alias.
 
 ### Type-gating the dispatch

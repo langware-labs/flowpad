@@ -22,8 +22,10 @@ logger = logging.getLogger(__name__)
 
 def _get_ui_port() -> int:
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
-    s = get_instance_settings()
-    return s.vite_port if s.vite_port is not None else s.port
+
+    # The vite-or-api rule lives on the settings object now, so this route and
+    # `flow record url` cannot disagree about where the UI is served.
+    return get_instance_settings().ui_port
 
 
 _REDIRECT_HTML = """<!DOCTYPE html>

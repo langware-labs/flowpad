@@ -211,6 +211,20 @@ def channel_of_driver(driver: "IngestDriver", source: "DataSource") -> str:
     return str(getattr(driver, "provider", "") or "")
 
 
+#: The `context_data` key naming the source a spawned worker belongs to.
+#: Paired with `SCOPES["data_source_id"]` (flow_sdk/server/routes/runs.py) and
+#: `PROCESS_RUN_SCOPE_KEYS` (ui/src/navigation/DockPointer.ts) — an ingest worker
+#: has no spawning entity to browse from, so this key is the only handle the Runs
+#: list has on it. One definition on the producing side; the two consumers name
+#: it back.
+RUN_SOURCE_KEY = "data_source_id"
+
+
+def ingest_run_context(source: "DataSource") -> dict[str, str]:
+    """The provenance every ingest-spawned worker carries."""
+    return {RUN_SOURCE_KEY: str(getattr(source, "id", "") or "")}
+
+
 _REGISTRY: dict[str, IngestDriver] = {}
 
 
