@@ -3100,7 +3100,7 @@ class Entity(DBEntity):
             from flow_sdk.request_context.methods import delete_user_credentials  # noqa: PLC0415
 
             # Pass self.id as foreign_key to match the device-flow write convention
-            # in flow_sdk.app.actions.desktop_oauth._save_github_token_to_sod —
+            # in flow_sdk.app.actions.desktop_oauth.record_credential —
             # otherwise the composed SOD key diverges and the token is silently
             # leaked on disk after a user-initiated revocation.
             await delete_user_credentials(self, provider_id, self.id)

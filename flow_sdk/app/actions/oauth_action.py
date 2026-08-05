@@ -378,14 +378,11 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
       The token stays on the hub and is resolved when a worker actually needs it,
       which is the rule the rest of the secret plane follows.
     """
+    from flow_sdk.app.actions.desktop_oauth import record_credential  # noqa: PLC0415
     from flow_sdk.core.entity.entity_env.env_types import EnvVar, EnvVarType  # noqa: PLC0415
-    from flow_sdk.core.oauth.provider_registry import get_local_provider  # noqa: PLC0415
-    from flow_sdk.request_context.methods import (  # noqa: PLC0415
-        get_current_request_user_fresh,
-        set_user_credentials,
-    )
-
     from flow_sdk.core.oauth.hub_providers import invalidate_hub_providers  # noqa: PLC0415
+    from flow_sdk.core.oauth.provider_registry import get_local_provider  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_user_fresh  # noqa: PLC0415
 
     invalidate_hub_providers()
 
@@ -396,11 +393,15 @@ async def _adopt_hub_credential(provider: str, local_name: str, hub_name: str) -
     if get_local_provider(provider) is not None:
         value = await hub_credential_value(hub_name)
         if value:
-            await set_user_credentials(user, local_name, value, user.id)
+            # Through the same seam the desktop grants use, so an adopted token
+            # and a locally-granted one are indistinguishable afterwards.
+            await record_credential(user, provider, value)
             logger.info("OAuth: adopted the hub's %s token into local %s", provider, local_name)
         else:
             logger.warning("OAuth: hub holds %s but would not release its value", hub_name)
 
+    # A provider the hub owns outright has no local value to record, but the row
+    # still has to exist or the table reads it as MISSING.
     if user.get_env_var(local_name) is None:
         user.set_env_var(
             EnvVar(
@@ -482,9 +483,11 @@ async def _get_github_token_for_current_user() -> tuple[str | None, str | None]:
         user = await User.get_by_typeid(request_info.user)
         if not user:
             return None, None
-        # Same FK convention as the write side in _save_github_token_to_sod.
+        # Same FK convention as the write side in record_credential — and the
+        # same NAME source, so a rename cannot leave the write and read halves
+        # pointing at different SOD entries.
         try:
-            token = await get_user_credentials(user, "github_credentials", user.id)
+            token = await get_user_credentials(user, _github_credentials_name(), user.id)
             return token, None
         except KeyError:
             # Standard "no SOD entry" — distinct from infrastructure errors below.
@@ -492,6 +495,17 @@ async def _get_github_token_for_current_user() -> tuple[str | None, str | None]:
     except Exception as e:
         logger.warning(f"github token lookup failed: {e}")
         return None, str(e)
+
+
+def _github_credentials_name() -> str:
+    """The SOD entry GitHub's token lives in, from the registry.
+
+    The fallback keeps a de-registered provider readable rather than turning a
+    lookup into a crash — the same shape `flow_source_control` uses.
+    """
+    from flow_sdk.core.oauth.provider_registry import GITHUB, user_credentials_name  # noqa: PLC0415
+
+    return user_credentials_name(GITHUB) or "github_credentials"
 
 
 async def _handle_github_disconnect() -> ApiResponse:
@@ -506,11 +520,12 @@ async def _handle_github_disconnect() -> ApiResponse:
         user = await User.get_by_typeid(request_info.user)
         if not user:
             return ApiFailResponse(message="User not found")
-        await delete_user_credentials(user, "github_credentials", user.id)
+        name = _github_credentials_name()
+        await delete_user_credentials(user, name, user.id)
         # Drop the visibility row too, or the provider keeps reading CONNECTED.
         from flow_sdk.app.actions.desktop_oauth import _drop_credential_row  # noqa: PLC0415
 
-        await _drop_credential_row(user, "github_credentials")
+        await _drop_credential_row(user, name)
         from flow_sdk.builtin.capability import restamp_capability_state
         from flow_sdk.core.capabilities import CapabilityKind
 

@@ -15,7 +15,7 @@ resolvable and a hub-held one is not.
 
 ``user_credentials_name`` must match what the desktop OAuth flows actually
 write, or a connected provider reads as MISSING: ``github_credentials``
-(``desktop_oauth._save_github_token_to_sod``) and ``anthropic_credentials``
+(both written through ``desktop_oauth.record_credential``) and ``anthropic_credentials``
 (``desktop_oauth.ANTHROPIC_CREDENTIALS_NAME``).
 """
 
