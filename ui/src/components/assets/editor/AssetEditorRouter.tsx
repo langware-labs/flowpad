@@ -140,7 +140,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
   // which a backend-scan WS flood turns into a per-frame reload (the "flicker").
   const mainRef = entityRecord?.mainRef ?? null;
   const computeNodeKey = computeNode?.typeId?.toString() ?? null;
-  const derived = useMemo<{ fsRef: FSRef; assetType: string } | null>(() => {
+  const derived = useMemo<{ fsRef: FSRef; assetType: string; mainFileRef: FSRef } | null>(() => {
     if (!ptr || !ptr.editor || isFileOnlyEditor(ptr.editor)) return null;
     if (ptr.method === AssetRoutingMethod.TYPEID) {
       // The entity owns its content layout. record/refs carries both the path
@@ -150,14 +150,20 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
       return {
         fsRef: recordContentRef(mainRef, !!dataManager.getTypeInfo(typeId!.type)?.folder_backed),
         assetType: typeId!.type,
+        mainFileRef: mainRef,
       };
     }
     const vfs = VFSPath.parse(ptr.value);
     if (!vfs.typeId) return null;
+    const vfsRef = new FSRef(vfs.entitySubPath, vfs.typeId);
     return {
-      fsRef: new FSRef(vfs.entitySubPath, vfs.typeId),
+      fsRef: vfsRef,
       // vfs lost the precise record type; fall back to the editor's primary type.
       assetType: (EDITOR_TYPES[ptr.editor][0] as string | undefined) ?? ptr.editor,
+      // record/refs is TYPEID-only, so `mainRef` is null on this route. A vfs
+      // pointer names the asset's own file, so it IS the main ref — editors
+      // that write the main file (agent.md) must use this, not `mainRef`.
+      mainFileRef: vfsRef,
     };
     // ptr/typeId are derived deterministically from `pointer`; keying on the
     // stable strings keeps the memo from re-minting the FSRef every render.
@@ -233,7 +239,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
   }
 
   if (!derived) return <ConnectingFallback />;
-  const { fsRef, assetType } = derived;
+  const { fsRef, assetType, mainFileRef } = derived;
 
   switch (ptr.editor) {
     case AssetEditor.SKILL:
@@ -287,7 +293,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
           resolvedEntity={typeIdEntity as Agent | undefined}
           render={(agent) => (
             <AssetCollisionShell entity={agent}>
-              <AgentProfileEditor agent={agent} mainRef={mainRef!} onSaved={() => refetchEntity()} />
+              <AgentProfileEditor agent={agent} mainRef={mainFileRef} onSaved={() => refetchEntity()} />
             </AssetCollisionShell>
           )}
         />
