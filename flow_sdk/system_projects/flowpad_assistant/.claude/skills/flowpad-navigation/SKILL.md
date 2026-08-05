@@ -21,10 +21,9 @@ an investigation.
 > `flow show file <path>` / `flow show entity <typeid>` whenever you are handing
 > over something you made — see the decision rule at the bottom.
 >
-> **Neither verb can open a screen.** Only entities and file paths are
-> addressable. If the user asks for Events, Assets, Preferences, Settings, Files,
-> Search, the Inbox, Data Sources, Runs, or any other rail/screen destination, say
-> you cannot open it and name the rail item they should click.
+> **Screens are addressable too.** `flow show view <address>` /
+> `flow navigate view <address>` open Events, Assets, Preferences, Files,
+> Search, the Inbox, Data Sources, Runs and the rest — see "A screen" below.
 
 ## You already have a TypeId
 
@@ -64,6 +63,24 @@ flow navigate entity <data.typeid>
 `flow record index` is path-scoped and fast; its JSON has `data.typeid`
 (e.g. `markdown-<uuid>`) — pass that straight to `flow navigate`. No search, no
 guessing. Do not read the file, do not open it with the OS, do not summarize.
+
+## A screen (Events, Preferences, Assets, Files, …)
+
+Screens are addressed by **view name**, optionally plus `/pointer` and `?opts`
+— not by TypeId. One command, then stop:
+
+```bash
+flow show view events                       # presenting it — the default
+flow navigate view preferences/appearance   # only if they said "take me there"
+```
+
+More examples: `assets/list/skill`, `explorer/src`, `search?q=widget`,
+`process-runs`, `data-sources`, `capabilities`, `inbox`, `desktop`,
+`lens/claude/transcript/<id>`. Quote anything containing `?`.
+
+Don't guess a view name — `flow schema views` lists every one with whether it
+needs a pointer. Exit `2` means the view is unknown or its pointer is missing;
+exit `4` means the pointer named an entity that doesn't exist.
 
 ## "the current X" (no path, no id)
 
