@@ -1,5 +1,6 @@
-import { APIEntity, isNonEmptyString, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
 import type { IEntity } from '../IEntity';
+import { ActionInfo } from '../models';
 import { DockPointerData } from '../models/DockPointer';
 import { normalizeKind } from '../models/Kind';
 import { ViewType } from '../utils/ui/view-types';
@@ -9,6 +10,18 @@ export type ArtifactLinkSource = 'manual' | 'gcp_label';
 export type DeploymentSyncState = 'current' | 'stale' | 'partial' | 'error';
 export type DeploymentObservationKind = 'cost' | 'size' | 'activity';
 export type ObservationCoverage = 'available' | 'unavailable' | 'unattributed' | 'stale';
+
+/** What is placed. WHERE it runs is `target.provider` — two axes, two fields. */
+export const KIND_AGENT = 'runtime.agent';
+export const KIND_WEB = 'runtime.web';
+export const KIND_NODE = 'compute.node';
+
+/**
+ * Providers that place a resource on a ComputeNode, so `origin.external_id`
+ * names that node. An inventoried `gcp` resource is not node-backed — its
+ * `external_id` is the provider's own resource name.
+ */
+export const NODE_PROVIDERS: ReadonlySet<string> = new Set(['local', 'e2b', 'docker']);
 
 /** Provider-normalized signal; unavailable data is represented explicitly, never as zero. */
 export interface DeploymentObservation {
@@ -29,12 +42,21 @@ export interface DeploymentTarget {
   location?: string | null;
 }
 
-/** Secret-free identity of the observed provider resource. */
-export interface ExternalResourceRef {
-  full_resource_name: string;
-  asset_type: string;
-  parent_full_resource_name?: string | null;
-  provider_uid?: string | null;
+/**
+ * Where this record's truth lives — the cloud resource being placed.
+ *
+ * The same value object the ingest side uses (`flow_sdk/builtin/cloud_origin.py`):
+ * secret-free, no behaviour, just a pointer at a mutable object in someone
+ * else's system. `external_id` is the ComputeNode typeid for a node-backed
+ * placement, or the provider's own resource name for an inventoried one.
+ */
+export interface CloudOrigin {
+  kind: string;
+  provider: string;
+  data_source_id?: string;
+  source_item_id?: string;
+  external_id: string;
+  url?: string;
 }
 
 export interface DeploymentStatus {
@@ -50,7 +72,7 @@ export interface IDeployment extends Omit<IEntity, 'status'> {
   artifact_id?: string | null;
   artifact_link_source?: ArtifactLinkSource | null;
   target: DeploymentTarget;
-  resource?: ExternalResourceRef | null;
+  origin?: CloudOrigin | null;
   status: DeploymentStatus;
   provider_labels: Record<string, string>;
   observations: Partial<Record<DeploymentObservationKind, DeploymentObservation>>;
@@ -59,8 +81,12 @@ export interface IDeployment extends Omit<IEntity, 'status'> {
 }
 
 /**
- * Deployment is the desired/observed placement plane for an Artifact or an
- * independently discovered provider resource.
+ * Deployment is THE placement record: this thing runs on that machine.
+ *
+ * Two axes, each declared once — `kind` says WHAT is placed (`runtime.agent`,
+ * `runtime.web`, `compute.node`), `target.provider` says WHERE (`local`, `e2b`,
+ * `gcp`). The row is parented to the deployed element and holds the same id on
+ * the hub and here, so a cloud placement is adopted rather than re-minted.
  */
 @registerEntity
 export class Deployment extends APIEntity<Deployment> implements IDeployment {
@@ -71,7 +97,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   artifact_id: string | null;
   artifact_link_source: ArtifactLinkSource | null;
   target: DeploymentTarget;
-  resource: ExternalResourceRef | null;
+  origin: CloudOrigin | null;
   status: DeploymentStatus;
   provider_labels: Record<string, string>;
   observations: Partial<Record<DeploymentObservationKind, DeploymentObservation>>;
@@ -91,12 +117,14 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
       scope: deployment.target?.scope ?? '',
       location: deployment.target?.location ?? null,
     };
-    this.resource = deployment.resource
+    this.origin = deployment.origin
       ? {
-          full_resource_name: deployment.resource.full_resource_name,
-          asset_type: deployment.resource.asset_type,
-          parent_full_resource_name: deployment.resource.parent_full_resource_name ?? null,
-          provider_uid: deployment.resource.provider_uid ?? null,
+          kind: deployment.origin.kind ?? '',
+          provider: deployment.origin.provider ?? '',
+          data_source_id: deployment.origin.data_source_id ?? '',
+          source_item_id: deployment.origin.source_item_id ?? '',
+          external_id: deployment.origin.external_id ?? '',
+          url: deployment.origin.url ?? '',
         }
       : null;
     this.status = {
@@ -117,6 +145,25 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
       focus: `${Deployment.type}-${this.id}`,
       selected: `${Deployment.type}-${this.id}`,
     });
+  }
+
+  /** The machine this runs on, or null when the placement is not node-backed. */
+  get computeNodeTypeId(): string | null {
+    if (!NODE_PROVIDERS.has(this.target.provider)) return null;
+    return this.origin?.external_id || null;
+  }
+
+  /**
+   * Stop the machine, keep the row.
+   *
+   * Terminate is a pause: this row carries the placement's cost and activity
+   * observations, and deleting it throws away the only record of what the box
+   * cost. Deleting a Deployment destroys a real cloud resource, which is why
+   * that path warns and this one does not.
+   */
+  async pause(): Promise<Deployment> {
+    const action = new ActionInfo('pause', Deployment.type, this.id, 'POST');
+    return new Deployment((await dataManager.callAction(action)) as IDeployment);
   }
 
   private validateStructure(): void {

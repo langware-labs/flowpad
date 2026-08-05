@@ -5,11 +5,13 @@ Generic and discriminated by ``kind`` (``content.feed.item``, later
 differ only in ``kind`` and ``raw``, and a single queryable table is what any
 later projection over ingested records will need.
 
-**Identity is deterministic.** ``allocate_deterministic_id`` mints a v5 id from
-``(data_source, stream, external id)``, so a re-poll, a replay and a
-reconciliation sweep all converge on the same row — idempotency with no delivery
-ledger and no dedupe table. Same reasoning as
-``MessageAttachment.allocate_deterministic_id``.
+**Identity is the natural key, looked up — not derived.** The id is an ordinary
+``uuid4``; what makes a re-poll, a replay and a reconciliation sweep converge on
+one row is ``find_existing``, which resolves ``(data_source, stream, external
+id)`` to the row that already holds it. Same guarantee as the old v5-derived id
+(idempotency with no delivery ledger and no dedupe table), relocated from id
+arithmetic to a lookup — so rows written before the change still resolve, and
+nothing has to re-derive an id it does not hold.
 
 **Snapshot vs local state.** Snapshot fields are refreshed from the provider
 whenever the content digest moves; ``read`` and ``starred`` are ours and must
@@ -21,7 +23,6 @@ from __future__ import annotations
 from typing import ClassVar, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
-from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
 
@@ -71,13 +72,24 @@ class SourceItem(Entity):
 
     _api_visible: ClassVar[bool] = True
 
-    @staticmethod
-    def allocate_deterministic_id(data_source_id: str, stream_key: str, external_id: str) -> str:
-        """v5 id from (source, stream, external id) — re-ingest upserts the same row.
+    @classmethod
+    async def find_existing(
+        cls, data_source_id: str, stream_key: str, external_id: str
+    ) -> Optional["SourceItem"]:
+        """THE identity lookup — the row for this natural key, or None.
 
         ``stream_key`` is part of the key because provider ids are frequently
         only unique *within* a stream (a Slack ``ts`` repeats across channels),
         and ``data_source_id`` because the same remote feed added twice must not
         collide.
+
+        Single-row path, indexed by ``ix_entities_source_item_natural_key``.
+        ``ingest_items`` does the same resolution for a whole page in one query
+        (``_load_existing``) — use that for anything batched, or a steady-state
+        poll pays one SELECT per item just to consult the digest gate.
         """
-        return mint_uuid(f"source_item:{data_source_id}:{stream_key}:{external_id}")
+        return await cls.get_one({
+            "data_source_id": data_source_id,
+            "stream_key": stream_key,
+            "external_id": external_id,
+        })

@@ -416,6 +416,17 @@ class BaseInstanceSettings:
     # spans instances, like the migration ledger.
 
     @property
+    def ui_port(self) -> int:
+        """The port a BROWSER should be pointed at to reach this instance's UI.
+
+        Not the same as ``port`` whenever Vite is serving the frontend, which is
+        every dev instance — so any deep link built against ``port`` 404s there.
+        One owner for that rule: the notification redirect and ``flow record
+        url`` both read it here rather than each re-deriving the fallback.
+        """
+        return self.vite_port if self.vite_port is not None else self.port
+
+    @property
     def global_dir(self) -> Path:
         """``<flow_home>/global`` — cross-instance shared state."""
         return self.flow_home / "global"

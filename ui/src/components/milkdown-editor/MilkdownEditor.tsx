@@ -52,6 +52,7 @@ import { fenceRenderPlugins, fenceHostServicesCtx, type FenceHostServices } from
 // any dependency on the renderers built on top of it.
 import './plugins/fence-render/renderers/mermaid';
 import './plugins/fence-render/renderers/interface';
+import './plugins/fence-render/renderers/breadcrumb';
 import {
   bidiPlugins,
   setDirCommand, unsetDirCommand,

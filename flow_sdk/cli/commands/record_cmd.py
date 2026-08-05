@@ -17,7 +17,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, NoReturn, Optional
 
 import requests
 import typer
@@ -159,6 +159,91 @@ def index_record(
             "typeids": typeids,
         }
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# `flow record url` — the record's clickable deep link, for THIS instance
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: Route `error_code` → exit code. Several failures share exit 4; the code in
+#: the envelope is what lets an agent tell "not indexed yet" from "wrong kind
+#: of thing" without parsing prose.
+_URL_EXIT_CODES = {
+    "INVALID_ARG": EXIT_INVALID_ARG,
+    "NOT_FOUND": EXIT_NOT_FOUND,
+    "NOT_INDEXED": EXIT_NOT_FOUND,
+    "NO_ASSET_EDITOR": EXIT_NOT_FOUND,
+}
+
+
+@record_app.command(
+    "url",
+    help=(
+        "Print the asset-editor deep link for a record — a URL a human can "
+        "click, resolved against this instance and env. Takes the path the "
+        "record was written to, or its TypeId. Read-only: never indexes."
+    ),
+)
+def url_record(
+    target: Annotated[
+        str,
+        typer.Argument(
+            help=(
+                "A file path, or a TypeId ('<type>-<uuid>'). An existing path "
+                "always wins — that is what an agent has just written."
+            )
+        ),
+    ],
+) -> None:
+    """Resolve a record's canonical editor URL.
+
+    The URL is built SERVER-side, not here. In a dev instance the UI is served
+    by Vite on a different port than the API, and ``_discover_port`` returns the
+    API's — a link built locally would 404 there. The server knows both.
+
+    Exit codes (the ``error_code`` in the failure envelope distinguishes the
+    three exit-4 cases, so an agent need not parse prose):
+
+        0 — resolved; ``url`` is in the payload
+        2 — INVALID_ARG: empty argument, or neither a path nor a TypeId
+        4 — NOT_FOUND / NOT_INDEXED / NO_ASSET_EDITOR
+        5 — INSTANCE_NOT_RUNNING / CONNECTION_ERROR
+        7 — anything else the server refused
+    """
+    raw = (target or "").strip()
+    if not raw:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "target is required")
+
+    # An existing path wins over TypeId parsing: the agent just wrote the file,
+    # and a file literally named `<type>-<uuid>` is the far stranger case.
+    expanded = os.path.abspath(os.path.expanduser(raw))
+    if os.path.exists(expanded):
+        body = {"path": expanded}
+    elif "-" in raw:
+        body = {"typeid": raw}
+    else:
+        _fail(
+            EXIT_INVALID_ARG,
+            "INVALID_ARG",
+            f"Not an existing path and not a TypeId: {raw!r}",
+        )
+
+    port = _discover_port()
+    url = f"http://127.0.0.1:{port}/api/v1/display/url"
+
+    def _on_error(status_code: int, rbody: dict) -> NoReturn:
+        # Branch on the body's `error_code`, never the transport status:
+        # `ApiFailResponse.status_code` is a body field, so these all arrive as
+        # HTTP 200 and every failure would otherwise collapse into one code.
+        code = str((rbody.get("data") or {}).get("error_code") or "ACTION_FAILED")
+        _fail(
+            _URL_EXIT_CODES.get(code, EXIT_ACTION_FAILED),
+            code,
+            str(rbody.get("message") or f"HTTP {status_code}"),
+        )
+
+    data = _post_graph_json(url, body, timeout=15, on_error=_on_error)
+    _ok({"target": raw, **data})
 
 
 # ─────────────────────────────────────────────────────────────────────────────

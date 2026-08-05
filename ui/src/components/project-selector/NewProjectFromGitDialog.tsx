@@ -1,4 +1,5 @@
-import { connectionManager, oauthService, type RepoSummary } from '@sdk';
+import { OAUTH_PROVIDERS, OAuthStatus, oauthService, type RepoSummary } from '@sdk';
+import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { BranchPicker } from '@src/components/git/BranchPicker';
 import { InvitationsStrip } from '@src/components/git/InvitationsStrip';
 import { RepoPicker } from '@src/components/git/RepoPicker';
@@ -100,29 +101,25 @@ export function NewProjectFromGitDialog({
     };
   }, [open, initialUrl, initialBranch]);
 
-  // Refresh status on a successful GitHub connect broadcast.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (msg: { auth_method?: string; status?: string }) => {
-      if (msg.auth_method === 'github' && msg.status === 'success') {
-        // A stale "no access" verdict was reached WITHOUT the token that just
-        // arrived — drop it so the user isn't looking at an answer that no
-        // longer holds. Re-clicking Clone re-probes with the new credential.
-        setAccessError(null);
-        void fetchGithubStatus().then((r) => {
-          if (r !== null) setGithubConnected(r);
-        });
-      }
-    };
-    connectionManager.on('on_llm_config_msg', handler);
-    return () => {
-      connectionManager.off('on_llm_config_msg', handler);
-    };
-  }, [open]);
+  // Refresh status when a GitHub grant lands.
+  useOAuthFlowComplete(
+    OAUTH_PROVIDERS.GITHUB,
+    (msg) => {
+      if (msg.status !== OAuthStatus.SUCCESS) return;
+      // A stale "no access" verdict was reached WITHOUT the token that just
+      // arrived — drop it so the user isn't looking at an answer that no
+      // longer holds. Re-clicking Clone re-probes with the new credential.
+      setAccessError(null);
+      void fetchGithubStatus().then((r) => {
+        if (r !== null) setGithubConnected(r);
+      });
+    },
+    open,
+  );
 
   const handleConnectGithub = useCallback(async () => {
     try {
-      await oauthService.connect('github');
+      await oauthService.connect(OAUTH_PROVIDERS.GITHUB);
     } catch (err) {
       // Prefer the backend's ApiFailResponse message over axios's generic
       // "Request failed with status code 500".

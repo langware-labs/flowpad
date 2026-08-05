@@ -17,7 +17,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from flow_sdk.builtin.change_event import ChangeEvent
-from flow_sdk.builtin.hook_models import get_action_handler
 from flow_sdk.builtin.trigger import Trigger, TriggerType
 
 _log = logging.getLogger(__name__)
@@ -74,37 +73,42 @@ async def _fire(
         except Exception:
             _log.exception("Trigger %s: failed to persist counter/last_triggered", trigger.name)
 
-    # Per-action try so one bad handler doesn't skip the rest.
+    # Shared fire steps — the SAME helpers schedule and tag fires use. These
+    # were inlined copies until the bus emitters landed and made a third
+    # duplicated concern obvious; the fire contract (the `envelope=` kwarg,
+    # `trigger.failed` emission) now has one home instead of three.
+    from flow_sdk.builtin.trigger import activate_flows_for_trigger, dispatch_trigger_actions
 
-    # Flow activation: any active GraphWorkflow with a trigger node referencing
-    # this trigger starts a run (see graph_workflow_manager.on_trigger_fired).
     if not is_test and trigger.id:
-        try:
-            from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
-
-            await get_graph_workflow_manager().on_trigger_fired(trigger.id)
-        except Exception:
-            _log.exception("FSOp trigger %s: flow activation failed", trigger.name)
-
-    for action in trigger.actions:
-        try:
-            handler = get_action_handler(action.action_type)
-            if handler is None:
-                _log.warning(
-                    "Trigger %s: no handler for action_type=%s",
-                    trigger.name,
-                    action.action_type,
-                )
-                continue
-            await handler.execute(trigger, action=action, changes=changes)
-        except Exception:
-            _log.exception(
-                "Trigger %s: action %s raised during dispatch", trigger.name, action.action_type
-            )
+        await activate_flows_for_trigger(trigger.id, trigger.name or trigger.id,
+                                         trigger=trigger)
+    await dispatch_trigger_actions(trigger, changes=changes)
 
     # One log row per fire. Cap paths persisted; `changes_total` is the truth.
     first = changes[0]
     sampled = [{"path": str(c.path), "change_type": c.change_type} for c in changes[:_LOG_CAP]]
+
+    # ONE envelope per fire — i.e. per debounce window, matching the log row.
+    # Never move this into the raw-changes loop in `_run_watch_for` and never
+    # into the watch_filter: awatch's debounce IS the rate guard here, and a
+    # per-file emission would be exactly the per-write lane that keeps
+    # `entity.*` off the forwarding allowlist. `detail` carries counts and the
+    # first path only; the batch itself belongs to the log row above.
+    from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired
+
+    event_id = emit_trigger_fired(
+        trigger.id or "", str(trigger.trigger_type), trigger.name or trigger.id or "",
+        counter=trigger.counter,
+        action_types=[str(a.action_type) for a in trigger.actions],
+        detail={
+            "changes_total": len(changes),
+            "first_path": str(first.path),
+            "first_change_type": first.change_type,
+        },
+        project_id=trigger.project_id,
+        is_test=is_test,
+    )
+
     try:
         from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry
 
@@ -132,6 +136,10 @@ async def _fire(
                 "trigger": True,
                 "is_test": is_test,
                 "rule_name": trigger.name,
+                "trigger_id": trigger.id,
+                "trigger_type": str(trigger.trigger_type),
+                "event_id": event_id,
+                "actor": "system",
                 "actions": [{"action_type": str(a.action_type)} for a in trigger.actions],
                 "agentic_process_id": None,
             },

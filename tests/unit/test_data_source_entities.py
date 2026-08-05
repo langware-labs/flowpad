@@ -20,16 +20,28 @@ NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 def _source(**kw) -> DataSource:
     base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name="Test feed")
     base.update(kw)
-    return DataSource(
-        id=DataSource.allocate_deterministic_id(base["provider"], base["account_key"]), **base
-    )
+    return DataSource(**base)
 
 
-def test_id_is_deterministic_per_provider_and_account():
-    a = DataSource.allocate_deterministic_id("rss", "acct-1")
-    b = DataSource.allocate_deterministic_id("rss", "acct-1")
-    c = DataSource.allocate_deterministic_id("rss", "acct-2")
-    assert a == b and a != c
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_two_sources_may_serve_one_account():
+    """Ids are uuid4 and `account_key` is descriptive, not a key.
+
+    Whether a second poller on one account is worth its request cost is the
+    operator's call — nothing in the entity, the create path or the UI form
+    refuses it. Pinned because the previous design derived the id FROM the
+    account, which made this impossible by construction.
+    """
+    account = f"acct-{uuid.uuid4().hex[:8]}"
+    first = _source(account_key=account)
+    second = _source(account_key=account)
+    await first.save()
+    await second.save()
+
+    assert first.id != second.id
+    both = await DataSource.get_all({"account_key": account})
+    assert {s.id for s in both} == {first.id, second.id}
 
 
 def test_due_selection():

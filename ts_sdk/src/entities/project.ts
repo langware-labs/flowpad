@@ -8,6 +8,7 @@ import { isHubOnly } from '../utils/hub-runtime';
 import { ViewType } from '../utils/ui/view-types';
 import { SubAgent } from './subagent';
 import { Artifact, IArtifact } from './artifact';
+import type { IDeployment } from './deployment';
 import { type ConversationParticipant } from './conversation';
 import { ComputeNode } from './compute_node';
 import { GitWorkdir } from './git-workdir';
@@ -407,6 +408,22 @@ export class Project extends APIEntity<Project> {
     const computeNode = dataManager.updateEntityFromJson<ComputeNode>(responseComputeNode.compute_node);
     this.computeNode = computeNode;
     return computeNode;
+  }
+
+  /**
+   * Run this project's app on a machine of its own in the cloud.
+   *
+   * The web half of deployment — a micro app is deployed by deploying the
+   * project that holds it, because the project is what has the repository the
+   * sandbox materializes. Sharing to the hub is implicit, so there is no order
+   * for a caller to get wrong.
+   *
+   * Slow by nature (create + boot + health on a real sandbox); callers should
+   * show progress rather than assume a snappy round trip.
+   */
+  async deploy(): Promise<ProjectDeployResult> {
+    const action = new ActionInfo('deploy', Project.type, this.id, 'POST');
+    return (await dataManager.callAction(action)) as ProjectDeployResult;
   }
 
   /**
@@ -959,4 +976,20 @@ export class Project extends APIEntity<Project> {
     if (!response?.project) return null;
     return dataManager.updateEntityFromJson<Project>(response.project as Record<string, unknown>);
   }
+}
+
+/**
+ * What `POST /project/<id>/deploy` hands back.
+ *
+ * `deployment` is the placement ROW — the same entity, at the same id, that the
+ * local backend has already adopted by the time this resolves. Callers render
+ * the persisted Deployment rather than this response: it is a receipt, not the
+ * state. Same shape as `AgentDeployResult`, because it is the same verb.
+ */
+export interface ProjectDeployResult {
+  project_id: string;
+  deployment?: IDeployment;
+  node_typeid?: string;
+  host_url?: string;
+  reused?: boolean;
 }

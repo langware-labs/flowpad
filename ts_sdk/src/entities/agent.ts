@@ -5,6 +5,7 @@ import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 import { dataContext } from '../FlowSync/context';
 import { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
+import type { IDeployment } from './deployment';
 
 export { AGENT_AVATAR_FILE, AGENT_AVATAR_REF } from './agent-avatar';
 
@@ -199,15 +200,18 @@ export class Agent extends APIEntity<Agent> {
 /**
  * What `POST /agent/<id>/deploy` hands back.
  *
- * The keys past `agent_id` are the hub's, forwarded verbatim: whatever
- * `workspace-ready` reported, plus the node and the cookie-gated URL that opens
- * it. `agent_definition_error` is present when the box came up but `agent.md`
- * failed to land — a live machine that is not yet the agent.
+ * `deployment` is the placement ROW — the same entity, at the same id, that the
+ * local backend has already adopted by the time this resolves. Callers render
+ * the persisted Deployment rather than this response: it is a receipt, not the
+ * state. `agent_definition_error` is present when the box came up but
+ * `agent.md` failed to land — a live machine that is not yet the agent.
  */
 export interface AgentDeployResult {
   agent_id: string;
+  deployment?: IDeployment;
   node_typeid?: string;
   host_url?: string;
+  reused?: boolean;
   agent_definition?: string;
   agent_definition_error?: string;
 }

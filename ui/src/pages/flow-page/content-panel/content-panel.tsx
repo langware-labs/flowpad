@@ -36,7 +36,6 @@ import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
 import { TabbedTerminal } from '@src/components/terminal';
-import { TriggersView } from '@src/components/triggers-view';
 import { WebappViewer } from '@src/components/webapp-viewer';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
@@ -90,8 +89,11 @@ const GenericSubgraphView = lazy(() =>
 const GraphWorkflowsView = lazy(() =>
   import('@src/components/graph-workflows/GraphWorkflowsView').then((m) => ({ default: m.GraphWorkflowsView })),
 );
-const SignalsView = lazy(() =>
-  import('@src/components/signals/SignalsView').then((m) => ({ default: m.SignalsView })),
+const EventsView = lazy(() =>
+  import('@src/components/events/EventsView').then((m) => ({ default: m.EventsView })),
+);
+const DataSourcesView = lazy(() =>
+  import('@src/components/data-sources/DataSourcesView').then((m) => ({ default: m.DataSourcesView })),
 );
 const RunsView = lazy(() => import('@src/components/runs/RunsView').then((m) => ({ default: m.RunsView })));
 const SurveyView = lazy(() =>
@@ -350,9 +352,17 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
             onFileSelect={handleExplorerFileSelect}
           />
         );
+      // The merged Events screen. TRIGGERS / SIGNALS / CRON are aliases, not
+      // redirects — every bookmarked URL keeps resolving to the same screen.
+      case ViewType.EVENTS:
       case ViewType.TRIGGERS:
+      case ViewType.SIGNALS:
       case ViewType.CRON:
-        return <TriggersView />;
+        return (
+          <Suspense fallback={null}>
+            <EventsView />
+          </Suspense>
+        );
       case ViewType.CAPABILITIES:
         return <CapabilitiesView />;
       case ViewType.SHOW:
@@ -397,10 +407,10 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
             <GraphWorkflowsView />
           </Suspense>
         );
-      case ViewType.SIGNALS:
+      case ViewType.DATA_SOURCES:
         return (
           <Suspense fallback={null}>
-            <SignalsView />
+            <DataSourcesView />
           </Suspense>
         );
       case ViewType.PROCESS_RUNS:

@@ -14,11 +14,17 @@ other skill files, never `ls` the skills dir, never write a report.** Navigation
 is one side-effect that the user sees in their browser; it is a few commands, not
 an investigation.
 
-> **Display sessions use `flow show`, not `flow navigate`.** Everything below
-> `flow navigate`s the user's browser tab. If you are in a vibe/creator session
-> with a display pane (asked to open/show something "in the display"), use
-> `flow show file <path>` / `flow show entity <typeid>` instead — see the
-> decision rule at the bottom.
+> **Presenting a deliverable uses `flow show`, not `flow navigate`.** Everything
+> below `flow navigate`s the user's browser tab, which interrupts them. `flow show`
+> works in EVERY mode — it pins the vibe display pane if there is one, and
+> otherwise opens the target as a tab beside your process without navigating. Use
+> `flow show file <path>` / `flow show entity <typeid>` whenever you are handing
+> over something you made — see the decision rule at the bottom.
+>
+> **Neither verb can open a screen.** Only entities and file paths are
+> addressable. If the user asks for Events, Assets, Preferences, Settings, Files,
+> Search, the Inbox, Data Sources, Runs, or any other rail/screen destination, say
+> you cannot open it and name the rail item they should click.
 
 ## You already have a TypeId
 
@@ -71,15 +77,19 @@ flow navigate entity <that-typeid>     # if the value is null, tell the user and
 
 ## Presenting into a Display vs. moving the browser: `flow show` vs `flow navigate`
 
-Decision rule — key on the **target**, not on who authored the file:
+Decision rule — key on the **intent**, not on the mode and not on who authored
+the file:
 
-- **The active process Display** (a vibe/creator session with a display pane, or
-  the user says "in the display / on screen") → **always `flow show`**, whether
-  you created the file/entity or it already existed. `show` never moves the
-  user's browser; it sets the display focus for whoever is watching this session.
-- **The user's own browser tab** ("jump to", "take me to" an entity, standard
-  assistant with no Display) → `flow navigate`. It hijacks the visible tab, so
-  never use it to present something on a Display.
+- **"Here is the thing I made"** → **always `flow show`**, in every mode. It never
+  navigates: in a vibe session it pins the display pane; in any other mode it
+  opens the target as a tab right after your process and marks your chip. A
+  background agent therefore cannot interrupt anyone.
+- **"Take me there"** — the user explicitly asks to jump to / open / go to an
+  entity → `flow navigate`. It hijacks the tab the user is looking at, so use it
+  only when being moved is what they asked for.
+
+When in doubt, `flow show` — the failure mode of showing is a tab the user
+ignores; the failure mode of navigating is yanking them out of their work.
 
 Exit 0 = recorded, done — even if nothing is visibly open.
 

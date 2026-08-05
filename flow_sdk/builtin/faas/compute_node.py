@@ -1080,7 +1080,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         if not ok:
             return ApiFailResponse(message=msg, status_code=400)
 
+        from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
+
         project = await self._materialize_project(target_dir)
+        # The sanctioned one-shot scan, not a banned auto-walk: the user asked
+        # for this clone, and it has to be searchable when they land in it.
+        await _index_additional_dir(target_dir)
         return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
 
     @staticmethod
@@ -1101,56 +1106,193 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         return f"{leaf}-{n}"
 
     @staticmethod
-    async def _materialize_project(target_dir: str) -> "Project":
-        """Turn an already-populated directory into a desktop Project.
+    async def _materialize_project(target_dir: str, project_id: str | None = None) -> "Project":
+        """Turn an already-populated directory into a desktop Project: mint it
+        and wire it to the desktop.
 
         Independent of HOW ``target_dir`` got its files (git clone here, or a
-        hub-side clone → copy_folder transfer for the setup-git flow): mint the
-        Project, wire it to the desktop, and run one explicit index scan so the
-        tree is fully searchable the moment the caller lands in it (save() only
-        stamps an empty index sentinel). User-initiated → the sanctioned
-        one-shot index, not a banned auto-walk (same call add_context_dir makes).
+        hub-side clone → copy_folder transfer). Indexing is deliberately NOT
+        part of it — it is its own step, so a caller driving the box can show a
+        slow scan rather than have it hide inside "materializing", and nothing
+        walks the tree twice.
+
+        ``project_id`` adopts an id minted elsewhere — the hub mints the Project
+        that names the engagement and this box materializes it, so one identity
+        spans both sides (and every sandbox the same project is opened in).
+        Callers pass an id only through ``_adopted_project_id``, which enforces
+        the v4/v5 entity-id policy; a raw id is never adopted here.
         """
-        from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
-        project = Project(name=target_dir)
+        # Splatted rather than `id=project_id`: the model rejects an explicit
+        # None, and "no id" has to mean "mint one".
+        project = Project(name=target_dir, **({"id": project_id} if project_id else {}))
         await project.save()
         await project.setup_for_desktop()
-        await _index_additional_dir(target_dir)
         return project
+
+    @staticmethod
+    def _adopted_project_id(raw: object) -> str | None:
+        """The entity-id adoption gate for an id arriving from off-box.
+
+        Returns the id when it conforms (UUID v4/v5), ``None`` when absent.
+        Raises for anything else rather than silently minting a fresh one: the
+        hub asked for THIS id, and a project that comes back under a different
+        one would set the default to something the hub cannot address.
+        """
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+
+        if raw in (None, ""):
+            return None
+        candidate = str(raw)
+        if not is_valid_entity_id(candidate):
+            raise ValueError(f"project_id must be a UUID v4 or v5 entity id: {candidate}")
+        return candidate
+
+    async def _place_project(self, leaf: str, raw_project_id: object, deliver) -> ApiResponse:
+        """Put a project at a free slot under ``AGENT_MOUNT_FOLDER`` and mint it.
+
+        Everything the ways of getting a project onto this box agree on: where it
+        lands, that a name clash auto-suffixes rather than fails (the caller has
+        already paid for a sandbox), the v4/v5 adoption gate for an id minted
+        off-box, and the ``{project, path}`` answer. ``deliver`` is the only
+        difference between them — move a staged tree in, or create the directory.
+
+        ``path`` rides in the response because the caller's next step is usually
+        to attach this checkout to another project as a context folder, and only
+        this side knows where it landed.
+        """
+        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
+
+        try:
+            project_id = self._adopted_project_id(raw_project_id)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+
+        target_dir = os.path.join(AGENT_MOUNT_FOLDER, self._next_free_leaf(leaf))
+        deliver(target_dir)
+        project = await self._materialize_project(target_dir, project_id)
+        return ApiSuccessResponse(data={"project": project.model_dump(mode="json"), "path": target_dir})
 
     @action.post(action_name="materialize-project")
     async def _materialize_project_action(self) -> ApiResponse:
         """Materialize a Project from a directory delivered into this node (e.g.
         by the hub's setup-git via ``copy_folder`` into a staging path).
 
-        Body: ``{ "staging_path": "<abs source dir>", "name": "<optional>" }``.
-        Moves the staged tree under ``AGENT_MOUNT_FOLDER/<leaf>``, then mints +
-        indexes the Project. Keeps ``AGENT_MOUNT_FOLDER`` placement on the box
+        Body: ``{ "staging_path": "<abs source dir>", "name": "<optional>",
+        "project_id": "<optional uuid v4/v5>" }``. Moves the staged tree under
+        ``AGENT_MOUNT_FOLDER/<leaf>`` and mints the Project — indexing is the
+        caller's own step. Keeps ``AGENT_MOUNT_FOLDER`` placement on the box
         side so the hub never needs the box's home path. A name clash
         auto-suffixes (``<leaf>-N``) rather than 409-ing: the launch path has
         already committed to a desktop, so failing it over a folder name would
         strand the user.
+
+        ``path`` rides in the response next to the project because the caller's
+        next step is usually to attach this checkout to another project as a
+        context folder, and only this side knows where it landed.
         """
         import shutil  # noqa: PLC0415
 
-        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
-
         request_info = get_current_request_info()
-        body = await request_info.get_post_data() if request_info else {}
-        staging_path = (body or {}).get("staging_path")
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        staging_path = body.get("staging_path")
         if not staging_path or not os.path.isdir(staging_path):
             return ApiFailResponse(message="staging_path is required and must be an existing directory", status_code=400)
-        leaf = (str((body or {}).get("name") or os.path.basename(staging_path.rstrip("/")))).strip()
+        leaf = (str(body.get("name") or os.path.basename(staging_path.rstrip("/")))).strip()
         if not leaf:
             return ApiFailResponse(message="could not derive a project name", status_code=400)
 
-        target_dir = os.path.join(AGENT_MOUNT_FOLDER, self._next_free_leaf(leaf))
-        os.makedirs(AGENT_MOUNT_FOLDER, exist_ok=True)
-        shutil.move(staging_path, target_dir)
-        project = await self._materialize_project(target_dir)
-        return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
+        def deliver(target_dir: str) -> None:
+            os.makedirs(os.path.dirname(target_dir), exist_ok=True)
+            shutil.move(staging_path, target_dir)
+
+        return await self._place_project(leaf, body.get("project_id"), deliver)
+
+    @action.post(action_name="init-empty-project")
+    async def _init_empty_project_action(self) -> ApiResponse:
+        """Mount a project on this node that has no repository behind it.
+
+        Body: ``{ "name": "<leaf>", "project_id": "<optional uuid v4/v5>" }`` →
+        ``{ project, path }`` — the same shape ``materialize-project`` answers
+        with, so a caller sequences the two identically.
+
+        The sibling of materialize for a project that was never cloned from
+        anywhere: same placement, same adoption gate, same minting; it creates
+        the directory instead of moving a delivered tree, and runs no index —
+        there is nothing in it yet to find.
+
+        The identity is what makes this more than ``mkdir``. A project's id is
+        resolved from the record whose canonical cwd matches the path (see
+        ``project_type_info``: ``derived_identity(existing_project_record_id)``),
+        so minting the row against this directory is what makes a later scan of
+        it resolve to THIS project rather than mint a second one.
+        """
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        leaf = str(body.get("name") or "").strip()
+        if not leaf:
+            return ApiFailResponse(message="name is required", status_code=400)
+
+        # `_next_free_leaf` already proved the path is free, so this only has to
+        # create it (parents included).
+        return await self._place_project(leaf, body.get("project_id"), lambda target_dir: os.makedirs(target_dir))
+
+    @action.post(action_name="validate-project-name")
+    async def _validate_project_name_action(self) -> ApiResponse:
+        """Is this project name free on this node, and if not, what is?
+
+        Body: ``{ "name": "<leaf>" }`` → ``{ available, suggested }``.
+
+        Pure question, no side effects: a provisioning caller asks BEFORE it
+        clones so the user can pick another name while it is still cheap, rather
+        than discovering the clash after a repo has already been copied in.
+        ``suggested`` is the same ``<leaf>-N`` the materialize path would take.
+        """
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        name = str(body.get("name") or "").strip()
+        if not name:
+            return ApiFailResponse(message="name is required", status_code=400)
+
+        suggested = self._next_free_leaf(name)
+        return ApiSuccessResponse(data={"available": suggested == name, "suggested": suggested})
+
+    @action.post(action_name="set-default-project")
+    async def _set_default_project_action(self) -> ApiResponse:
+        """Name the project this box should OPEN on, for the next bootstrap only.
+
+        Body: ``{ "project_id": "<uuid v4/v5>" }``.
+
+        The provisioning side (today: the hub, after cloning a repo in) is the
+        only one that knows which of several projects the user actually asked
+        for. It is an opening instruction, not a stored preference: bootstrap
+        hands it out once and forgets it, so a later refresh cannot re-assert it
+        over whatever the user has since selected. See
+        ``flow_sdk/server/state.py``.
+        """
+        from flow_sdk.server.state import set_pending_default_project  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        try:
+            project_id = self._adopted_project_id(body.get("project_id"))
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        if not project_id:
+            return ApiFailResponse(message="project_id is required", status_code=400)
+
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        # Refuse an id this box doesn't have: bootstrap would silently drop it,
+        # and the caller would believe the sandbox was going to open there.
+        project = await Project.get_by_id(project_id)
+        if project is None:
+            return ApiFailResponse(message=f"No project {project_id} on this node", status_code=404)
+
+        set_pending_default_project(project_id)
+        logging.info(f"[provisioning] next bootstrap will open project {project_id}")
+        return ApiSuccessResponse(data={"project_id": project_id})
 
     @action.post(action_name="find-local-repo")
     async def _find_local_repo(self) -> ApiResponse:

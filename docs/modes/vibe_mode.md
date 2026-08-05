@@ -22,12 +22,15 @@ target-specific Vibe chat while keeping the same content surface mounted.
 ## Architecture (non-negotiable)
 
 1. **The URL is the standard agentic-process dock URL + the view mode.** A Vibe
-   session rides the normal `/dock/shell/agentic_process-<id>` URL with
-   `data-view="vibe"` on `<html>`. Vibe invents no route, no loader, no URL grammar.
+   session rides the normal `/dock/shell/agentic_process-<id>` URL, with the mode
+   carried by the `?viewMode` search param and reflected as `data-view="vibe"` on
+   `<html>`. Vibe invents no route, no loader, no URL grammar — one process is ONE
+   `Tab` identity in every mode. (A per-mode URL family was tried and collapsed;
+   see [Vibe Display surface](../tabs/display.md) §3.)
 2. **Navigation stays URL-first.** Entering Vibe changes only the current dock's
-   `viewMode` option. A `flow show` file/entity target becomes a normal child
-   dock and is focused through `navigation.openDock`; its loader is the only
-   context writer. The process Display target remains local process state.
+   `viewMode` option. A `flow show` target pins the Display pane — local process
+   state, no URL change. When it is opened as a child dock instead, that goes
+   through `navigation.openDock` and its loader is the only context writer.
 3. **No baggage.** The display resolves its data through the **existing**
    structured channels — project-scoped artifacts + `focus.metadata.port` fed into
    `useViewerStore.currentContext` (the exact channel `WebappViewer` already
@@ -63,10 +66,15 @@ That is the whole surface area. See below for what it explicitly does not touch.
 
 ## Entering Vibe
 
-- **Default is Standard; Vibe is opt-in.** `preferences.ui.view_mode` defaults to
-  `standard` (`ts_sdk/src/preferences/prefRegistry.ts`). Users cycle into Vibe via
-  the footer **View toggle** pill (`Vibe → Standard → Advanced → Vibe`;
-  `ui/src/components/view-toggle/view-toggle.tsx`). `window.setView('vibe')` works too.
+- **Vibe is the default.** `preferences.ui.view_mode` defaults to `vibe`
+  (`ts_sdk/src/preferences/prefRegistry.ts` — the ONE place the default lives);
+  users opt *up* to Chat/Terminal/Dev. The footer control is a segmented **mode
+  selector**, labelled by the surface each mode shows rather than by rank — Vibe,
+  Chat (`standard`), Terminal (`advanced`), Dev
+  (`ui/src/components/view-toggle/view-toggle.tsx`). `window.setView('vibe')` works too.
+  Selection is URL-first: on a dock route the click only
+  `openDock(currentDock.withViewMode(next))`; pointerless routes write the
+  preference directly.
 - **VibeHome** is the empty state: a centered hero ("Build something **amazing**")
   + the `SessionInput` prompt as the focal CTA. It is the `vibe` branch of a
   `VibeSwap` in `HomeLanding.tsx` — the full Standard 3-column home is the fallback

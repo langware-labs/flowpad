@@ -11,6 +11,7 @@ import { renderInterfaceCard } from '@src/components/milkdown-editor/plugins/fen
 import { parseInterfaceBlock } from '@src/components/milkdown-editor/plugins/fence-render/renderers/interface-schema';
 import {
   formatSourceLabel,
+  resolveRelPath,
   resolveSourceLocation,
   type SourceResolveContext,
 } from '@src/components/milkdown-editor/plugins/fence-render/renderers/source-location';
@@ -189,6 +190,42 @@ describe('resolving source to a local path', () => {
       const source = { origin: gitOrigin({ rel_path: '../escape.ts' }) };
       expect(resolveSourceLocation(source, ctx())).toMatchObject({ ok: false });
     });
+  });
+});
+
+/* The join rule itself, shared with the `breadcrumb` fence — whose sites are
+ * already rooted by construction and so pass their root in directly. */
+describe('resolveRelPath', () => {
+  it('joins a relative path onto a root', () => {
+    expect(resolveRelPath('tests/unit/test_x.py', '/repo', 41)).toEqual({
+      ok: true,
+      path: '/repo/tests/unit/test_x.py',
+      line: 41,
+    });
+  });
+
+  it('normalizes duplicate and trailing slashes the same way', () => {
+    expect(resolveRelPath('a//b.ts', '/repo/')).toMatchObject({ ok: true, path: '/repo/a/b.ts' });
+  });
+
+  it('refuses an escaping path', () => {
+    expect(resolveRelPath('../../etc/passwd', '/repo')).toEqual({
+      ok: false,
+      reason: 'Unsafe path "../../etc/passwd"',
+    });
+  });
+
+  it('reports a missing root rather than guessing one', () => {
+    expect(resolveRelPath('a.ts', null)).toEqual({
+      ok: false,
+      reason: 'No project open to resolve this path against',
+    });
+  });
+
+  /* An unsafe path is the more actionable complaint of the two, so it wins even
+   * when the root is also unusable. */
+  it('prefers the unsafe-path reason over the missing-root one', () => {
+    expect(resolveRelPath('../x.ts', null)).toEqual({ ok: false, reason: 'Unsafe path "../x.ts"' });
   });
 });
 

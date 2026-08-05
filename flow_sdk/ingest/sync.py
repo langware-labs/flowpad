@@ -188,6 +188,9 @@ def _round_robin(cursors: list[DataSourceCursor], budget: int) -> list[DataSourc
 
 
 async def _roll_up(source: DataSource, cursors: list[DataSourceCursor], now: datetime) -> None:
+    # Free: this row is being written anyway, and it saves every list surface
+    # from watching the cursor table live just to render a count.
+    source.stream_count = len(cursors)
     health = worst_of([c.health for c in cursors])
     source.health = health.value
     offender = next(

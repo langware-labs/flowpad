@@ -79,6 +79,10 @@ export const PROCESS_RUN_SCOPE_KEYS = [
   'flow_run_id',
   'node_id',
   'agent',
+  // Paired with SCOPES in flow_sdk/server/routes/runs.py — a new scope is one
+  // entry in each. An ingest worker has no spawning entity to browse from (the
+  // whole reason this list exists), so its source is the only handle on it.
+  'data_source_id',
 ] as const;
 
 export type ProcessRunScope = Partial<Record<(typeof PROCESS_RUN_SCOPE_KEYS)[number], string>>;
@@ -508,17 +512,29 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Triggers dock. The selected trigger id (and the transient "creating" mode)
-   * ride in OPTIONS, never `pointer`, so the Triggers tabHash stays `triggers|`
-   * — selection/creation are URL-addressable + reload-safe but stay in ONE tab
-   * (the same rule the scope filter already follows here). Pair with the
-   * `trigger` / `creating` option keys read by TriggersView/TriggersNavigator.
+   * Events dock — the merged rules + activity screen. The selected rule id (and
+   * the transient "creating" mode) ride in OPTIONS, never `pointer`, so the
+   * tabHash stays `events|` — selection/creation are URL-addressable +
+   * reload-safe but stay in ONE tab (the same rule the scope filter follows
+   * here). Pair with the `trigger` / `creating` option keys read by the
+   * events view and the rules navigator.
    */
-  static forTriggers(triggerId?: string, opts?: { creating?: string }, layout: Layout = Layout.DOCK): DockPointer {
+  static forEvents(
+    ruleId?: string,
+    opts?: { creating?: string; system?: boolean },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
     const options: Record<string, string> = {};
-    if (triggerId) options.trigger = triggerId;
+    if (ruleId) options.trigger = ruleId;
     if (opts?.creating) options.creating = opts.creating;
-    return new DockPointer(ViewType.TRIGGERS, undefined, options, layout);
+    // `system` rides the URL rather than component state because BOTH panes
+    // need it: the ScopeFilter shape is `{mode, user, projects}` and cannot
+    // carry `system`, so system-scoped rules have always ridden a separate
+    // toggle. Once the feed had to honour the same rule as the rules list,
+    // keeping that toggle local to the navigator would have meant the body
+    // silently dropping every system rule's activity.
+    if (opts?.system) options.system = '1';
+    return new DockPointer(ViewType.EVENTS, undefined, options, layout);
   }
 
   /**
@@ -538,7 +554,7 @@ export class DockPointer implements IDockPointer {
    *   /dock/process-runs?flow_id=…&node_id=…        narrowed
    *
    * Everything rides OPTIONS and the pointer stays empty — the same call
-   * {@link forTriggers} makes, and for the same reason: `tabHash` folds to
+   * {@link forEvents} makes, and for the same reason: `tabHash` folds to
    * `process-runs|`, so selecting a run is addressable and reload-safe without
    * minting a tab per run. The scope keys are the backend's `SCOPES`
    * vocabulary verbatim, so a new scope is one entry on each side.
@@ -1579,7 +1595,7 @@ export class DockPointer implements IDockPointer {
     const pointer = sub?.messageId ? `${conversationId}/message/${sub.messageId}` : conversationId;
     // `thread` rides OPTIONS, not the path: opening a thread is a filter over
     // the same conversation, so `tabHash` must stay `conversation|<id>` and
-    // never mint a second tab. Same call `forTriggers` and `forProcessRuns`
+    // never mint a second tab. Same call `forEvents` and `forProcessRuns`
     // make, for the same reason.
     const options: Record<string, string> = {};
     if (sub?.thread) options[THREAD_PARAM] = sub.thread;

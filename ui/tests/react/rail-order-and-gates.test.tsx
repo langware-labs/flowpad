@@ -20,7 +20,7 @@ import { SidebarProvider } from '@src/components/ui/sidebar';
 import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { ViewType } from '@src/types/ViewType';
 
-const nav = vi.hoisted(() => ({ openDock: vi.fn(), openTab: vi.fn(), openAssets: vi.fn(), openTasks: vi.fn() }));
+const nav = vi.hoisted(() => ({ openDock: vi.fn(), openTab: vi.fn(), openAssets: vi.fn() }));
 /** Mutable so a test can put the rail on a given dock URL (active-state input). */
 const dock = vi.hoisted(() => ({ current: null as { viewType: ViewType; pointer?: string } | null }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
@@ -39,9 +39,8 @@ const lastVibeChat = vi.hoisted(() => vi.fn());
 vi.mock('@src/pages/flow-page/use-last-vibe-chat', () => ({ useLastVibeChat: () => lastVibeChat }));
 
 // Content gates, driven per test.
-const gates = vi.hoisted(() => ({ conversations: false, tasks: [] as unknown[] }));
+const gates = vi.hoisted(() => ({ conversations: false }));
 vi.mock('@src/hooks/use-has-conversations', () => ({ useHasConversations: () => gates.conversations }));
-vi.mock('@src/hooks/use-project-tasks', () => ({ useProjectTasks: () => ({ data: gates.tasks }) }));
 
 // Heavy presentational leaves — irrelevant to placement decisions.
 vi.mock('@src/components/theme-toggle/theme-toggle', () => ({ ThemeToggle: () => null }));
@@ -90,7 +89,6 @@ function renderRail() {
 
 beforeEach(async () => {
   gates.conversations = false;
-  gates.tasks = [];
   dock.current = null;
   await setProject(PROJECT);
   setViewMode(ViewMode.Vibe);
@@ -100,7 +98,6 @@ afterEach(() => {
   nav.openDock.mockClear();
   nav.openTab.mockClear();
   nav.openAssets.mockClear();
-  nav.openTasks.mockClear();
   lastVibeChat.mockClear();
   setViewMode(ViewMode.Standard);
 });
@@ -115,18 +112,29 @@ describe('rail — order and gates', () => {
     expect(renderRail().ids()).not.toContain('project');
   });
 
-  it('reveals Inbox on the first conversation and Tasks on the first task, independently', () => {
+  it('reveals Inbox on the first conversation', () => {
     gates.conversations = true;
     expect(renderRail().ids()).toEqual(['home', 'project', 'chats', 'bookmarks', 'inbox', 'files']);
+  });
 
-    gates.conversations = false;
-    gates.tasks = [{ id: 't1' }];
-    expect(renderRail().ids()).toEqual(['home', 'project', 'chats', 'bookmarks', 'tasks', 'files']);
+  it('Data sources appears at Advanced, not before, and needs no content gate', () => {
+    expect(renderRail().ids()).not.toContain('data-sources');
+    setViewMode(ViewMode.Standard);
+    expect(renderRail().ids()).not.toContain('data-sources');
+
+    setViewMode(ViewMode.Advanced);
+    // No gate is set on the way in — see RAIL_ITEMS for why.
+    expect(renderRail().ids()).toContain('data-sources');
+  });
+
+  it('clicking Data sources opens its dedicated view', () => {
+    setViewMode(ViewMode.Advanced);
+    fireEvent.click(renderRail().item('data-sources')!);
+    expect(nav.openTab).toHaveBeenCalledWith(ViewType.DATA_SOURCES);
   });
 
   it('keeps one order across every mode — icons are only ever added', () => {
     gates.conversations = true;
-    gates.tasks = [{ id: 't1' }];
     let previous: (string | null)[] = [];
     for (const mode of [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced, ViewMode.Dev]) {
       setViewMode(mode);
@@ -176,13 +184,13 @@ describe('rail — one active resolver above and below the chevron', () => {
     expect(files!.getAttribute('data-active')).toBe('true');
   });
 
-  it('Tasks reads the dock POINTER, not the viewType alone (it rides Assets)', () => {
-    gates.tasks = [{ id: 't1' }];
+  it('the project item owns every assets surface, the task list included', () => {
+    // No rail entry claims `list/task` any more, so nothing may subtract it
+    // from the project item — subtracting would leave the rail dark there.
     dock.current = { viewType: ViewType.ASSETS, pointer: 'list/task' };
     const rail = renderRail();
-    expect(rail.item('tasks')!.getAttribute('data-active')).toBe('true');
-    // ...and the project item subtracts it, so one click can't light two buttons.
-    expect(rail.item('project')!.getAttribute('data-active')).not.toBe('true');
+    expect(rail.item('tasks')).toBeNull();
+    expect(rail.item('project')!.getAttribute('data-active')).toBe('true');
   });
 
   it('the project item is active on a plain assets surface', () => {

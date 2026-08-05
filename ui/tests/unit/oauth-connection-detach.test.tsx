@@ -18,12 +18,13 @@ const h = vi.hoisted(() => ({
   detach: vi.fn(),
   disconnect: vi.fn(),
   attach: vi.fn(),
+  connect: vi.fn(),
   userTable: { values: [] as unknown[] },
 }));
 
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  oauthService: { detach: h.detach, disconnect: h.disconnect, attach: h.attach },
+  oauthService: { detach: h.detach, disconnect: h.disconnect, attach: h.attach, connect: h.connect },
   dataContext: { userTypeId: { type: 'user', id: 'u1', toString: () => 'user-u1' } },
 }));
 // Only the user has a table; the project query stays empty, which is the
@@ -36,7 +37,8 @@ vi.mock('@sdk/react/hooks/useEntityEnv', async (importOriginal) => ({
   }),
 }));
 
-import { ConnectionStatus } from '@sdk';
+import { ConnectionStatus, OAuthEventType, OAuthStatus, dataManager } from '@sdk';
+import { entityEnvQueryKeyRoot } from '@sdk/react/hooks';
 import { useOAuthConnection } from '@sdk/react/hooks/useOAuthConnection';
 
 const PROJECT = { type: 'project', id: 'p1', toString: () => 'project-p1' } as never;
@@ -118,5 +120,41 @@ describe('useOAuthConnection — with no project selected', () => {
 
     expect(captured.current!.connectionStatuses.github).toBe(ConnectionStatus.DISCONNECTED);
     expect(captured.current!.grantStatuses.github).toBe('none');
+  });
+});
+
+describe('useOAuthConnection — after a grant completes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.userTable = { values: [HELD_GITHUB] };
+  });
+  afterEach(() => cleanup());
+
+  it('refreshes the whole env-table family, not just the selected project', async () => {
+    // With no project selected, the old per-project key held nothing, so the
+    // post-grant refresh was a no-op and the row never left "Not connected".
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    const captured: { current: ReturnType<typeof useOAuthConnection> | null } = { current: null };
+    const Probe = () => {
+      captured.current = useOAuthConnection({ projectTypeId: undefined });
+      return null;
+    };
+    render(
+      <QueryClientProvider client={client}>
+        <Probe />
+      </QueryClientProvider>,
+    );
+
+    // Put the hook in "a flow is running" state, then complete it.
+    await act(async () => {
+      await captured.current!.connect('github', 'github').catch(() => undefined);
+    });
+    invalidate.mockClear();
+    await act(async () => {
+      dataManager.emit(OAuthEventType.OAUTH_FLOW_COMPLETE, { status: OAuthStatus.SUCCESS, provider: 'github' });
+    });
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: entityEnvQueryKeyRoot });
   });
 });

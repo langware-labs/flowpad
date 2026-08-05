@@ -49,9 +49,9 @@ export default function LaunchLanding() {
     if (!gitOrigin) return;
     setStarted(true);
     // Inside the click gesture — `launch` claims the new tab synchronously.
-    // `gitLanding` (not `gitSetup`): the BOX clones the repo itself on its
-    // landing, so this works on the current workspace image and needs no hub op.
-    void launch({ name, gitLanding: { gitOrigin, name } });
+    // The hub sets the sandbox up (it holds the token, so a private repo works
+    // here too) and the tab lands inside the project it created.
+    void launch({ name, sandboxProject: { gitOrigin, name } });
   };
 
   const body = (

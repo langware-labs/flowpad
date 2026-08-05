@@ -6,10 +6,16 @@ id: 166a48fd-0c92-4201-aaf6-f4f56863a8ca
 
 The **Display** is the right-hand pane of vibe mode: a persistent, always-present
 surface that shows whatever the agent chose to present via `flow show`. It is
-**not** the process's terminal tab — in vibe mode the process itself is the
-left-side chat, so the process has no separate shell tab. The Display is a
-first-class `Tab` addressed by its own URL (`/dock/display/agentic_process-<id>`),
-backed by an ordered **display stack** on the process entity.
+**not** a tab of its own — a process has exactly ONE tab, its shell dock
+(`/dock/shell/agentic_process-<id>`), and vibe is a *view mode* of that tab
+carried by the `?viewMode` search param. The Display is an area inside the
+workspace laid over that dock, backed by an ordered **display stack** on the
+process entity.
+
+`flow show` is mode-agnostic: it names one address, and the presentation adapts.
+Vibe pins the target in this pane; every other mode has no display pane, so the
+target is minted as an ordinary top-level tab placed right after the process that
+showed it (`ui/src/hooks/use-show-target-listener.ts`) — see [§5](#5-show-outside-vibe).
 
 ```
 ┌──────────────────────────────┬───────────────────────────────────────┐
@@ -93,30 +99,29 @@ typed `DisplayEntry[] = ShowTarget & { shown_at }`).
 
 ## 3. Routing & mount
 
-The Display is a normal dock view — no `router.tsx` change (the `dock/:viewType/*`
-route is generic).
+The Display has no view id, no pointer constructor and no loader case of its own.
+It is a region of the workspace that renders over the process's shell dock, so
+the routing story is entirely the shell dock's.
 
-| Piece | Location | Role |
-|-------|----------|------|
-| `ViewType.DISPLAY = 'display'` | `ts_sdk/src/utils/ui/view-types.ts` | the view id |
-| `VIEWER_REGISTRY[DISPLAY]` | `ui/src/types/ViewType.ts` | `title: 'Display'`, `Monitor` icon, `canAddAsTab: false` |
-| `DockPointer.forDisplay(procId)` | `ui/src/navigation/DockPointer.ts` | `/dock/display/agentic_process-<id>` — reuses the shell pointer grammar so `targetTypeId`/`tabHash` resolve the process for free |
-| loader case | `ui/src/routes/loaders/load-dock-pointer.ts` | `ViewType.DISPLAY` → `loadAgenticProcessRoute` (same as the process route) |
+### One URL family, in both modes
 
-### Mode-canonical URL — one surface per mode
+A process has exactly ONE canonical URL family — `/dock/shell/agentic_process-<id>`
+— in vibe and standard alike. The view mode rides the `?viewMode` search param
+(`VIEW_MODE_PARAM`, `DockPointer.viewMode`), never a URL family, so one process is
+one `Tab` identity no matter which mode is showing it.
 
-Each view mode has ONE canonical process-surface URL family, owned by
-**`processSurfaceViewType(vibe)`** (`ui/src/navigation/process-dock-canonicalization.ts`):
+An earlier model gave vibe its own `/dock/display/...` family backed by a second
+`Tab` row; it was collapsed. Those rows are reaped server-side, and
+`canonicalProcessDockPath` (`ui/src/navigation/process-dock-canonicalization.ts`)
+redirects any surviving display URL — a pre-collapse bookmark, a history entry, a
+popped-out `/win` window — to the shell form with its search string (including
+`viewMode` and scope keys) preserved verbatim. The function is pure; the main
+loader (`ui/src/routes/loaders/main-loader.ts`) throws `redirect()` on a non-null
+result.
 
-- **vibe** → `ViewType.DISPLAY` → `/dock/display/<proc>` (the Display pane)
-- **standard** → `ViewType.SHELL` → `/dock/shell/<proc>` (the terminal dock)
-
-`canonicalProcessDockPath` redirects cross-mode / legacy URLs (pre-display bookmarks,
-history entries, a mode toggle while parked on the other family) to the current
-mode's family. The main loader (`ui/src/routes/loaders/main-loader.ts`) throws
-`redirect()` on a non-null result, so the session/tab machinery only ever sees one
-URL family per mode. `NavigationActions.openShellProcess` consumes the same
-`processSurfaceViewType` pairing, so nav and redirect can't drift.
+Do not reintroduce `ViewType.DISPLAY`, `DockPointer.forDisplay`, or a
+`processSurfaceViewType(vibe)` pairing — a per-mode URL family is what minted the
+second tab identity.
 
 ---
 
@@ -127,26 +132,31 @@ URL family per mode. `NavigationActions.openShellProcess` consumes the same
 
 ### `useVibeWorkspaceSession` (`use-vibe-workspace-session.ts`)
 
-Resolves `{ displayTab, displayDock, processId, onDisplayUrl }` from the current URL:
+Resolves `{ processTab, processDock, processId, onProcessUrl }` from the current URL:
 
-- **Case 1 — the display URL**: `viewType === DISPLAY` (or `SHELL`, tolerated) with
-  an `agentic_process-<id>` pointer → `onDisplayUrl: true`; the display shows the
-  agent's pin.
-- **Case 2 — a child URL**: any tab whose `parent_tab_id` is the display tab (opened
+- **Case 1 — the process URL**: `/dock/shell/agentic_process-<id>` →
+  `onProcessUrl: true`; the display shows the agent's pin.
+- **Case 2 — a child URL**: any tab whose `parent_tab_id` is the process tab (opened
   from inside the workspace) → the display shows that child's `ContentPanel`.
+
+`processTab` may be null briefly on the process URL before the row lands in the
+store — it is needed to parent new children and drive the strip, not to render.
 
 ### Layout (`vibe-workspace.tsx`)
 
 A horizontal `ResizablePanelGroup`:
 
 - **Left** — `EntityExecutionPanel` bound to the process (`ProcessKind.Chat`, headless
-  transport). This *is* the process; there is no process tab.
+  transport). This *is* the process; the workspace is laid over the process's own tab.
 - **Right** — `WorkspaceChildStrip` (top) + the display element (below).
 
 `WorkspaceChildStrip` (`workspace-child-strip.tsx`) renders the Display as a **fixed,
-square `Monitor` header** — deliberately not tab-shaped (solid right border, no chip)
-to signal "not a tab" — with the child `TabStrip` (tabs filtered by `parent_tab_id`)
-starting to its right. Clicking the header `openDock(displayDock)`.
+non-closable `Monitor` chip** — mirroring the hub micro-app's fixed "Active" tab —
+with the child `TabStrip` (tabs filtered by `parent_tab_id`) starting to its right.
+Clicking it `openDock(processDock)`. The children are ORDINARY global tabs that also
+appear in the standard global strip; this strip is a filtered, workspace-local view
+of them, so the component stays dumb — `parent_tab_id` is minted by the opener
+context at the tab chokepoint.
 
 ### Display precedence (`displayEl`)
 
@@ -162,6 +172,32 @@ What renders in the display area, in order:
 `shown` is restored on mount from `context_data.last_shown` (or the newest stack
 entry) and advanced live by `proc.onShow` (which also bumps `showNonce`, the
 same-port iframe cache-buster).
+
+---
+
+## 5. `show` outside vibe
+
+`ui/src/hooks/use-show-target-listener.ts` is the non-vibe half of the same verb.
+There is no display pane in chat/terminal/dev mode, so the shown target becomes
+what it would have been had the user opened it: a top-level tab, placed
+immediately after the process that showed it.
+
+**It never navigates**, and that is the load-bearing decision. A show is the agent
+saying "this is ready", not "drop what you are doing"; navigating would yank a
+user who is mid-task in another tab. The intent is carried instead by the marker
+`ShownTargetBadge` puts on the process's own chip. Three problems fall away with
+the navigation: a background agent cannot interrupt anyone, `on_show`'s broadcast
+to EVERY client (browser tabs, `/win` popouts, the desktop shell) becomes
+idempotent — minting one deterministic row N times is still one row and zero
+navigations — and there is no race with a route loader.
+
+**Freshness gate (`isFreshShow`).** A tab is durable, so a show stamped before
+this client mounted is already represented — its tab exists, or the user closed it
+deliberately — and acting on it would undo that close on every reload. Only a show
+newer than `mountedAt` is news. Note the gate is per-*show-entry*, not a
+"first observation sets a baseline" flag: this listener serves every process, so a
+baseline consumed by whichever unrelated process updated first let every stale
+target sail through and closed tabs came back on reload.
 
 ### History popover
 

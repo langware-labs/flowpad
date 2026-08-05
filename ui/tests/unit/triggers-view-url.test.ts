@@ -1,45 +1,62 @@
 /**
- * Regression test: TriggersView uses a hardcoded relative URL ('/api/v1/rules')
- * for its fetch call, which hits the Vite dev server (localhost:4097) instead of
- * the backend API server (localhost:9007 via __API_URL__).  The dev server has no
- * proxy rule for /api/v1/rules and returns the SPA HTML shell; JSON.parse fails
- * silently in the catch block and `rules` stays empty forever.
+ * Regression test: rule/event components must not fetch a bare relative URL
+ * like `fetch('/api/v1/rules')` — that resolves to the Vite dev server, not the
+ * backend, so the dev server returns the SPA HTML shell, JSON.parse fails in a
+ * catch block, and the list stays empty forever with no error anywhere.
  *
- * The correct URL must be an absolute URL built from __API_URL__.
+ * Backend access goes through `dataManager` (entities/actions) or `apiClient`
+ * (non-entity REST, path only) — never a hand-built URL. See CLAUDE.md,
+ * "Backend URLs in the frontend".
+ *
+ * This scans the DIRECTORIES rather than naming files. The previous version read
+ * three filenames literally and would have thrown on `readFileSync` the moment
+ * any of them was renamed — which is exactly what happened when the Triggers and
+ * Signals screens merged into Events.
  */
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { resolve } from 'path';
 import { describe, expect, it } from 'vitest';
 
-// Read the source files that contain the fetch calls.
-const SRC_ROOT = resolve(__dirname, '../../src/components/triggers-view');
+const ROOTS = [
+  resolve(__dirname, '../../src/components/events'),
+  resolve(__dirname, '../../src/components/triggers-view'),
+];
 
-function readSrc(filename: string): string {
-  return readFileSync(resolve(SRC_ROOT, filename), 'utf-8');
+function sourceFiles(): { path: string; src: string }[] {
+  const out: { path: string; src: string }[] = [];
+  for (const root of ROOTS) {
+    let names: string[] = [];
+    try {
+      names = readdirSync(root);
+    } catch {
+      continue; // a directory may legitimately not exist
+    }
+    for (const name of names) {
+      if (!/\.tsx?$/.test(name)) continue;
+      out.push({ path: `${root}/${name}`, src: readFileSync(resolve(root, name), 'utf-8') });
+    }
+  }
+  return out;
 }
 
-const triggersViewSrc = readSrc('TriggersView.tsx');
-const triggerEditorSrc = readSrc('TriggerEditor.tsx');
-const triggerListItemSrc = readSrc('TriggerListItem.tsx');
-
-/**
- * Each fetch call in the triggers-view components should NOT use a bare relative
- * path like  fetch('/api/v1/...')  — that resolves to the Vite dev server, not
- * the backend.  Instead it must use an absolute URL constructed from __API_URL__
- * (or an equivalent helper that embeds the backend base URL).
- */
-describe('triggers-view fetch URLs', () => {
-  it('TriggersView should not fetch /api/v1/rules with a bare relative URL', () => {
-    // This assertion FAILS currently — the source contains fetch('/api/v1/rules').
-    expect(triggersViewSrc).not.toMatch(/fetch\s*\(\s*['"`]\/api\/v1\/rules['"`]/);
+describe('rule/event component fetch URLs', () => {
+  it('scans a non-empty set of sources', () => {
+    // Guards the guard: a glob that silently matches nothing would make every
+    // assertion below vacuously true.
+    expect(sourceFiles().length).toBeGreaterThan(3);
   });
 
-  it('TriggerEditor should not fetch /api/v1/rules with bare relative URLs', () => {
-    // Both the GET and PUT calls use fetch(`/api/v1/rules/${rule.name}/trigger`).
-    expect(triggerEditorSrc).not.toMatch(/fetch\s*\(\s*`\/api\/v1\/rules\//);
+  it('no component fetches a bare relative /api/v1/ URL', () => {
+    const offenders = sourceFiles()
+      .filter(({ src }) => /fetch\s*\(\s*['"`]\/api\/v1\//.test(src))
+      .map(({ path }) => path);
+    expect(offenders).toEqual([]);
   });
 
-  it('TriggerListItem should not fetch /api/v1/rules with bare relative URLs', () => {
-    expect(triggerListItemSrc).not.toMatch(/fetch\s*\(\s*`\/api\/v1\/rules\//);
+  it('no component builds a backend URL from __API_URL__ directly', () => {
+    const offenders = sourceFiles()
+      .filter(({ src }) => /__API_URL__/.test(src))
+      .map(({ path }) => path);
+    expect(offenders).toEqual([]);
   });
 });

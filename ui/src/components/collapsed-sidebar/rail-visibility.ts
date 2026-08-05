@@ -31,15 +31,15 @@ export type RailItemId =
   | 'project'
   | 'chats'
   | 'inbox'
-  | 'tasks'
   | 'bookmarks'
   | 'discover'
-  | 'triggers'
+  /** Rules and the events they fire on — replaced `triggers` + `signals`. */
+  | 'events'
   | 'hooks'
   | 'files'
   | 'capabilities'
   | 'graph-workflows'
-  | 'signals'
+  | 'data-sources'
   | 'process-runs';
 
 /**
@@ -49,8 +49,11 @@ export type RailItemId =
  * RAIL_ITEMS (where it would resolve to a silent `null` at render). It does gate
  * its `project` entry, but on its own input rather than through {@link RailGate}
  * — that entry needs the project *id* as a dock pointer, not just a boolean.
- * `home` and `tasks` exist on both surfaces and mean different things on each —
- * another reason not to share one union.
+ * `home` and `inbox` exist on both surfaces and mean different things on each —
+ * another reason not to share one union. `tasks` is now hub-only: the desk rail
+ * dropped it (the project item already opens the `list/task` asset surface), and
+ * the hub's `tasks` is a different thing entirely — HUB_RECORDS with a `task`
+ * pointer. A shared union would have made that removal look like a hub change.
  */
 export type HubRailItemId =
   | 'home'
@@ -78,9 +81,7 @@ export type RailGate =
   /** A project is currently selected. */
   | 'project'
   /** At least one Conversation exists. */
-  | 'conversations'
-  /** At least one Task exists. */
-  | 'tasks';
+  | 'conversations';
 
 export type RailSpec = {
   id: RailItemId;
@@ -105,8 +106,7 @@ export const MODE_CHAIN = [
  * NOTE on the absence of an `assets` entry: it is deliberate and load-bearing.
  * The project item already opens the project's assets (`navigation.openAssets()`),
  * so a separate Assets icon was a second door onto the same room — and it made
- * one click light two rail buttons, which is why `onTasks`/`onAssets` have to
- * subtract each other in the first place.
+ * one click light two rail buttons.
  *
  * Standard adds no icon of its own: it differs from Vibe only in what `chats`
  * targets (the chats list vs. resuming the last UI chat). That is the intended
@@ -118,16 +118,22 @@ export const RAIL_ITEMS: readonly RailSpec[] = [
   { id: 'chats', from: ViewMode.Vibe, placement: 'top' },
   { id: 'bookmarks', from: ViewMode.Vibe, placement: 'top' },
   { id: 'inbox', from: ViewMode.Vibe, placement: 'top', gate: 'conversations' },
-  { id: 'tasks', from: ViewMode.Vibe, placement: 'top', gate: 'tasks' },
+  // Took the Tasks slot. Ungated on purpose: this screen is where the FIRST
+  // source is created, so gating it on "a source exists" would make it
+  // unreachable from empty — the one state where it matters most.
+  { id: 'data-sources', from: ViewMode.Advanced, placement: 'top' },
   { id: 'discover', from: ViewMode.Dev, placement: 'top' },
   { id: 'graph-workflows', from: ViewMode.Dev, placement: 'top' },
-  { id: 'signals', from: ViewMode.Dev, placement: 'top' },
+  // Rules and the events they fire on, merged. Took BOTH the old `signals`
+  // (Dev/top) and `triggers` (Advanced/overflow) slots: Advanced because
+  // dropping to Dev would have removed rules from a mode that already had
+  // them, top because a screen you operate does not belong behind a chevron.
+  { id: 'events', from: ViewMode.Advanced, placement: 'top' },
   // Advanced, not Dev: 'what did my agent produce' is an ordinary question,
   // and the answer was previously unreachable for any run without a
   // spawning entity to browse to.
   { id: 'process-runs', from: ViewMode.Advanced, placement: 'top' },
   { id: 'files', from: ViewMode.Vibe, placement: 'overflow' },
-  { id: 'triggers', from: ViewMode.Advanced, placement: 'overflow' },
   { id: 'hooks', from: ViewMode.Advanced, placement: 'overflow' },
   { id: 'capabilities', from: ViewMode.Dev, placement: 'overflow' },
 ];
@@ -136,7 +142,6 @@ export const RAIL_ITEMS: readonly RailSpec[] = [
 export const NO_GATES: Record<RailGate, boolean> = {
   project: false,
   conversations: false,
-  tasks: false,
 };
 
 /**
