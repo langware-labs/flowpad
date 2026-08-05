@@ -156,7 +156,7 @@ msgstr "[[{name}]] is ambiguous"
 msgid "[[{name}]] not found"
 msgstr "[[{name}]] not found"
 
-#. placeholder {0}: cursors.length
+#. placeholder {0}: source.stream_count
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "{0, plural, one {# stream} other {# streams}}"
 msgstr "{0, plural, one {# stream} other {# streams}}"
@@ -3415,7 +3415,9 @@ msgid "Could not delete"
 msgstr "Could not delete"
 
 #. placeholder {0}: connection.provider
+#. placeholder {0}: source.name || source.provider
 #: src/components/connections-manager.tsx
+#: src/components/data-sources/DataSourcesView.tsx
 msgid "Could not delete {0}"
 msgstr "Could not delete {0}"
 
@@ -3490,6 +3492,11 @@ msgstr "Could not publish asset"
 msgid "Could not publish project"
 msgstr "Could not publish project"
 
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Could not pull {0}"
+msgstr "Could not pull {0}"
+
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "Could not reach support"
 msgstr "Could not reach support"
@@ -3505,6 +3512,11 @@ msgstr "Could not remove the help desk files"
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Could not rename context"
 msgstr "Could not rename context"
+
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Could not replay {0}."
+msgstr "Could not replay {0}."
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Could not report diagnosis"
@@ -3585,6 +3597,11 @@ msgstr "Could not stop"
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not update"
 msgstr "Could not update"
+
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Could not update {0}"
+msgstr "Could not update {0}"
 
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Could not update attached secrets"
@@ -12184,6 +12201,10 @@ msgid "Replay everything"
 msgstr "Replay everything"
 
 #: src/components/data-sources/ReplayDialog.tsx
+msgid "Replay failed"
+msgstr "Replay failed"
+
+#: src/components/data-sources/ReplayDialog.tsx
 msgid "Replay since {since}"
 msgstr "Replay since {since}"
 
@@ -14844,6 +14865,10 @@ msgstr "The asset matches HEAD."
 msgid "The assets published with this project — its skills, agents, specs, and docs."
 msgstr "The assets published with this project — its skills, agents, specs, and docs."
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "The change was not saved."
+msgstr "The change was not saved."
+
 #: src/components/connections-manager.tsx
 msgid "The credential could not be removed."
 msgstr "The credential could not be removed."
@@ -14935,6 +14960,14 @@ msgstr "The session has new activity since the last analysis — run a fresh one
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "The session transcript could not be read."
 msgstr "The session transcript could not be read."
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "The source was not queued."
+msgstr "The source was not queued."
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "The source was not removed."
+msgstr "The source was not removed."
 
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "The tab content could not be prepared."

@@ -156,7 +156,7 @@ msgstr ""
 msgid "[[{name}]] not found"
 msgstr "[[{name}]] לא נמצאה"
 
-#. placeholder {0}: cursors.length
+#. placeholder {0}: source.stream_count
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "{0, plural, one {# stream} other {# streams}}"
 msgstr ""
@@ -3415,7 +3415,9 @@ msgid "Could not delete"
 msgstr "לא היה ניתן למחוק"
 
 #. placeholder {0}: connection.provider
+#. placeholder {0}: source.name || source.provider
 #: src/components/connections-manager.tsx
+#: src/components/data-sources/DataSourcesView.tsx
 msgid "Could not delete {0}"
 msgstr ""
 
@@ -3490,6 +3492,11 @@ msgstr ""
 msgid "Could not publish project"
 msgstr ""
 
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Could not pull {0}"
+msgstr ""
+
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "Could not reach support"
 msgstr ""
@@ -3505,6 +3512,11 @@ msgstr ""
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Could not rename context"
 msgstr "לא ניתן היה לשנות את שם ההקשר"
+
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Could not replay {0}."
+msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Could not report diagnosis"
@@ -3585,6 +3597,11 @@ msgstr "לא ניתן לעצור"
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not update"
 msgstr "לא היה ניתן לעדכן"
+
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Could not update {0}"
+msgstr ""
 
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Could not update attached secrets"
@@ -12184,6 +12201,10 @@ msgid "Replay everything"
 msgstr ""
 
 #: src/components/data-sources/ReplayDialog.tsx
+msgid "Replay failed"
+msgstr ""
+
+#: src/components/data-sources/ReplayDialog.tsx
 msgid "Replay since {since}"
 msgstr ""
 
@@ -14844,6 +14865,10 @@ msgstr "הנכס תואם את HEAD"
 msgid "The assets published with this project — its skills, agents, specs, and docs."
 msgstr "הנכסים שפורסמו עם הפרויקט הזה — הכישורים, הסוכנים, המפרטים והמסמכים שלו."
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "The change was not saved."
+msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "The credential could not be removed."
 msgstr ""
@@ -14935,6 +14960,14 @@ msgstr "לסשן יש פעילות חדשה מאז הניתוח האחרון —
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "The session transcript could not be read."
 msgstr "לא ניתן לקרוא את תמליל ההפעלה."
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "The source was not queued."
+msgstr ""
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "The source was not removed."
+msgstr ""
 
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "The tab content could not be prepared."
