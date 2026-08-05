@@ -61,6 +61,26 @@ class EnvVar(BaseModel):
     #: ``var_status``, which answers "may this project use it", not "does it work".
     needs_reauth: bool = False
 
+    # --- WHOSE account this credential belongs to -----------------------------
+    # Latest login wins, which is right — but until now nothing recorded WHICH
+    # account won. Re-connecting a provider as a different account silently
+    # repointed every consumer that had been granted the old one, and every
+    # status still read AVAILABLE because the table only checks that a
+    # name-matching row exists.
+    #
+    # `account_key` is an opaque provider-side id, never the token and never a
+    # display string: comparison has to be exact, and a human-readable label
+    # would put PII in a row that travels.
+    #: The provider account the currently-held token belongs to. None when the
+    #: provider does not say — and None must never compare equal to a set value.
+    account_key: Optional[str] = None
+    #: Epoch seconds of the grant that produced the currently-held token.
+    connected_at: Optional[int] = None
+    #: On a BORROWER's reference row: the account that was consented to. Compared
+    #: against the owner's `account_key` at status time; a mismatch means the
+    #: consent on file was for someone else.
+    bound_account_key: Optional[str] = None
+
     # EVERY predicate here is a property, and that uniformity is the point.
     # `is_key` and `is_plain` were plain methods while their siblings were
     # properties, so `if var.is_plain or var.is_key:` in `resolve_var_status`

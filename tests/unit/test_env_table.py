@@ -7,6 +7,8 @@ now nothing in this repo tested them, so the two branches of
 never exercised here at all.
 """
 
+import uuid
+
 import pytest
 
 from flow_sdk.app.actions.env_var import owns_its_value, store_env_var_value
@@ -20,6 +22,7 @@ from flow_sdk.core.entity.entity_env.env_types import (
     EnvVarType,
 )
 from flow_sdk.core.entity.entity_env.env_utils import is_confidential, mask_confidential_value
+from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import get_entity_credentials
 from flow_sdk.schema.type_info import register_all
@@ -271,3 +274,61 @@ def test_na_is_reachable_for_a_row_that_is_neither_plain_key_nor_ref():
     """
     token_row = EnvVar(name="github_credentials", var_type=EnvVarType.OAUTH_TOKEN)
     assert resolve_var_status(token_row, None) is EnvStatusEnum.NA
+
+
+# ── whose account is this? ────────────────────────────────────────────────────
+#
+# "Latest login wins" is the right rule for the credential store, but until the
+# account was recorded nothing could tell that the winner was a DIFFERENT
+# account. A consumer granted workspace A kept reading AVAILABLE while pointing
+# at workspace B, because the join only checks that a name-matching row exists.
+
+
+def _bound_pair(bound: str | None, held: str | None):
+    """A borrower's reference row + the owner's credential row it points at."""
+    borrower = EnvVar(
+        name="slack_in_project",
+        var_type=EnvVarType.OAUTH_TOKEN,
+        ref_type=BuiltinEntityType.USER,
+        ref_name="slack_credentials",
+        bound_account_key=bound,
+    )
+    owner = EnvVar(
+        name="slack_credentials",
+        var_type=EnvVarType.OAUTH_TOKEN,
+        account_key=held,
+    )
+    return borrower, owner
+
+
+def test_a_reconnect_as_a_different_account_needs_consent_again():
+    project = TypeId(type=BuiltinEntityType.PROJECT.value, id=str(uuid.uuid4()))
+    borrower, owner = _bound_pair(bound="T_OLD:U1", held="T_NEW:U1")
+    owner.share_with(project)
+
+    assert resolve_var_status(borrower, owner, project) is EnvStatusEnum.CONSENT_REQUIRED, (
+        "the held credential belongs to a different provider account than the one "
+        "this project was granted — silently following it would point the project "
+        "at a workspace nobody here agreed to"
+    )
+
+
+def test_the_same_account_stays_available_across_a_reconnect():
+    project = TypeId(type=BuiltinEntityType.PROJECT.value, id=str(uuid.uuid4()))
+    borrower, owner = _bound_pair(bound="T1:U1", held="T1:U1")
+    owner.share_with(project)
+
+    assert resolve_var_status(borrower, owner, project) is EnvStatusEnum.AVAILABLE
+
+
+def test_an_unidentified_account_never_counts_as_a_mismatch():
+    """Providers that do not identify their accounts leave both sides None.
+    A None must not be read as 'different' — that would break every provider
+    without an account_key extractor."""
+    project = TypeId(type=BuiltinEntityType.PROJECT.value, id=str(uuid.uuid4()))
+    for bound, held in ((None, "T1:U1"), ("T1:U1", None), (None, None)):
+        borrower, owner = _bound_pair(bound=bound, held=held)
+        owner.share_with(project)
+        assert resolve_var_status(borrower, owner, project) is EnvStatusEnum.AVAILABLE, (
+            f"bound={bound!r} held={held!r} must not be treated as a mismatch"
+        )
