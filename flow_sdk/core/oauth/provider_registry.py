@@ -27,6 +27,7 @@ from typing import Optional
 
 GITHUB = "github"
 ANTHROPIC = "anthropic"
+SLACK = "slack"
 
 
 class OAuthFlowKind(str, Enum):
@@ -151,6 +152,26 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         extra_authorize_params=(("code", "true"),),
         token_shape=TokenShape.CREDENTIAL_DICT,
     ),
+    SLACK: LocalOAuthProvider(
+        name=SLACK,
+        display_name="Slack",
+        user_credentials_name="slack_credentials",
+        icon="Slack",
+        # The hub runs this one: it holds the client secret, and Slack matches
+        # the redirect URI against the app's registered
+        # `<hub>/api/v1/graph/oauth/slack/callback`. A loopback port could never
+        # be registered, so `endpoints` is None and `prefers_hub_flow` routes it.
+        kind=OAuthFlowKind.CODE,
+        endpoints=None,
+        # Scopes live in the hub's plugin manifest, which is what actually asks
+        # for them. Publishing a second list here would drift from the consent
+        # screen the user really sees.
+        scopes=(),
+        # The entry exists so `_adopt_hub_credential` will copy the hub's token
+        # into local SOD — without it the desktop ends a successful flow holding
+        # a row and nothing else. Slack's token is a bearer string.
+        token_shape=TokenShape.BEARER_STRING,
+    ),
 }
 
 
@@ -196,13 +217,21 @@ def user_credentials_name(name: str) -> Optional[str]:
 def prefers_hub_flow(name: str) -> bool:
     """Whether this provider should run its flow on the hub when one is available.
 
-    True for a provider we can only complete with a DEVICE grant, and for one we
-    do not know at all. False for a local code grant (Anthropic's loopback),
-    which is already the real thing.
+    True for a provider we do not know at all, for one we can only complete with
+    a DEVICE grant, and for one that has NO local endpoints — Slack, whose client
+    secret and registered redirect URI both live on the hub. False for a local
+    code grant (Anthropic's loopback), which is already the real thing.
+
+    The endpoints clause is what lets a hub-run provider still have a registry
+    entry. That entry is not decoration: `_adopt_hub_credential` copies a
+    hub-held token into local SOD only for a provider it can look up, so without
+    one the desktop finishes the flow holding a row and no token.
 
     The ONE encoding of that rule. `_handle_auth` routes by it and the provider
     row derives its advertised grant from it — written twice, the table would
     eventually claim a grant the button does not run.
     """
     local = get_local_provider(name)
-    return local is None or local.kind == OAuthFlowKind.DEVICE
+    if local is None:
+        return True
+    return local.endpoints is None or local.kind == OAuthFlowKind.DEVICE
