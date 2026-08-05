@@ -161,15 +161,23 @@ def render_fence(path: Path, line: int, tag: str, note: str) -> str:
     resolves against (the document's project root) and what the tag index
     reports back for a code site — one shape for both halves of the hybrid.
 
+    The root is derived from the TARGET FILE, not from this script's own
+    location. Those are the same directory in the ordinary case and differ in
+    every interesting one — a sibling clone, a worktree, a monorepo package —
+    where anchoring on the script would emit an absolute path that no card can
+    resolve.
+
     Values go out as JSON strings: a double-quoted YAML scalar escapes the same
     way, and a note like "FAILING? read this" is not safe to emit bare (a
     leading `?` is a YAML indicator).
     """
+    resolved = path.resolve()
+    root = next((p for p in resolved.parents if (p / ".git").exists()), None)
     try:
-        rel_path = path.resolve().relative_to(REPO_ROOT).as_posix()
+        rel_path = resolved.relative_to(root or REPO_ROOT).as_posix()
     except ValueError:
-        # Outside the repo: emit what we were given and let the card report the
-        # unresolvable path rather than silently writing an absolute one.
+        # Not inside any repo: emit what we were given and let the card report
+        # the unresolvable path rather than silently writing an absolute one.
         rel_path = path.as_posix()
     return "\n".join(
         [
