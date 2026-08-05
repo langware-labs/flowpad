@@ -18,7 +18,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from functools import cached_property
+from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, List
 from uuid import uuid4
@@ -107,6 +107,25 @@ INSTANT_EXIT_WINDOW_SECONDS = 5.0
 # decide a refresh can self-heal. Keep them sharing this constant — a reword
 # would otherwise silently break recovery.
 LOCAL_COMPUTE_NODE_MISSING_FAILURE = "Compute node not found for local shell session (@local)"
+
+
+@lru_cache(maxsize=1)
+def live_stream_noise_kinds() -> frozenset:
+    """Transcript kinds that are session bookkeeping, not conversation.
+
+    Shared by the two live-streaming paths — the ``prompt`` response stream and
+    the ``observe-turn`` stream — so a row can never be noise on one and content
+    on the other. Cached rather than a module constant because ``EntryKind`` is
+    imported lazily here, as everywhere else in this module.
+    """
+    from flow_sdk.transcript_analyzer.entry import EntryKind
+
+    return frozenset({
+        EntryKind.META,
+        EntryKind.SYSTEM,
+        EntryKind.SUMMARY,
+        EntryKind.TOKEN_USAGE,
+    })
 
 
 def _iter_touched_paths(entries: "Iterable") -> "Iterator[str]":
@@ -689,7 +708,25 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
 # back-compat readers (standard-mode viewer). Capped; consecutive identical
 # targets refresh the timestamp instead of duplicating.
 DISPLAY_STACK_CAP = 50
-_DISPLAY_TARGET_KEYS = ("kind", "typeid", "type", "id", "path", "port")
+# Every field that can distinguish one display target from another. A kind that
+# adds its own address fields MUST list them here: the keys a payload does not
+# carry are ``None`` on both sides and compare equal, so an omission silently
+# collapses that whole kind into a single "same target" — the DOCK kind (whose
+# address is view_type/pointer/page/options and none of typeid/type/id/path/port)
+# was doing exactly that, refreshing one stack entry instead of appending each
+# screen the agent showed.
+_DISPLAY_TARGET_KEYS = (
+    "kind",
+    "typeid",
+    "type",
+    "id",
+    "path",
+    "port",
+    "view_type",
+    "pointer",
+    "page",
+    "options",
+)
 
 
 def _same_display_target(a: dict, b: dict) -> bool:
@@ -2877,11 +2914,12 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="show")
     async def _http_show(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Resolve a show target — ``{typeid}`` | ``{path}`` | ``{port}`` — and emit it.
+        """Resolve a show target — ``{typeid}`` | ``{path}`` | ``{port}`` | ``{view}`` — and emit it.
 
         Resolution is the shared ``resolve_display_target`` policy (same as
         ``flow navigate file``): indexed asset → its entity; unknown path →
-        raw vfs pointer; port → webapp preview.
+        raw vfs pointer; port → webapp preview; view → a dock address (a SCREEN,
+        the one form that reaches a view with no entity behind it).
         """
         from flow_sdk.core.display_target import (  # noqa: PLC0415
             DisplayTargetNotFound,
@@ -2898,6 +2936,7 @@ class AgenticProcess(Entity):
                 typeid=str(body.get("typeid") or "").strip() or None,
                 path=str(body.get("path") or "").strip() or None,
                 port=body.get("port"),
+                dock=str(body.get("view") or "").strip() or None,
                 discover=True,  # a display verb — see `flow show file`
             )
         except InvalidDisplayTarget as e:
@@ -3895,12 +3934,7 @@ class AgenticProcess(Entity):
         # the live stream so the chat + dense chips show only "what the agent
         # did", not the system prompt / session-start markers (which otherwise
         # render as noise chips like "system · system").
-        _NOISE_KINDS = {
-            EntryKind.META,
-            EntryKind.SYSTEM,
-            EntryKind.SUMMARY,
-            EntryKind.TOKEN_USAGE,
-        }
+        _NOISE_KINDS = live_stream_noise_kinds()
 
         # Watermark BEFORE routing the message: a resumed/booted session already
         # has entries on disk (history, session.start). Count them now so the
@@ -4220,6 +4254,175 @@ class AgenticProcess(Entity):
                     # Client disconnected — the PTY worker keeps running on its
                     # own; just stop the poller.
                     turn_task.cancel()
+
+        return StreamingResponse(
+            _stream_body(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @action.post(action_name="observe-turn")
+    async def observe_turn(self) -> Any:
+        """Stream an IN-FLIGHT turn's transcript entries to a client that did
+        NOT start it.
+
+        A turn's content reaches the client that sent it through that client's
+        own ``prompt`` response stream. Nobody else has a source: a turn typed
+        into the xterm, watched from a second tab, or driven by a background
+        worker leaves every other surface on a stale list until something
+        force-reloads history at turn end. This is that missing source, and it
+        is deliberately a PULL: it exists only while a surface is actually
+        looking, so a session nobody is watching costs nothing at all.
+
+        Read-only by construction. It takes no prompt lock, registers no worker,
+        and mutates no state — so it can never 409, never delays the turn it is
+        watching, and two observers cannot conflict.
+
+        Ends on whichever signal is AUTHORITATIVE for this transport, plus the
+        client hanging up (Starlette cancels the generator on disconnect,
+        exactly as an aborted ``prompt`` is torn down). There is no duration
+        argument — the turn's end is the signal:
+
+        * **PTY** → a provider message-end marker (:meth:`_pty_turn_complete`)
+          AND ``is_turn_busy`` false. Neither alone is sufficient: the marker
+          fires per assistant message (a multi-step turn emits several), and the
+          predicate falls through to the transcript tail for an interactive
+          worker, which reads idle for a beat between a tool result and the next
+          model output. Closing early is not merely cosmetic — the client
+          re-opens, re-watermarks, and skips whatever landed in the gap.
+        * **headless** → ``is_turn_busy`` alone, exact by construction for CLI
+          mode: the prompt lock, the registered worker, or ``_turn_in_flight``
+          spans the whole turn (see the predicate's own note on the tail signal
+          being PTY-only). A headless turn writes no provider marker.
+        """
+        from starlette.responses import StreamingResponse  # local import — starlette is an app-layer dep
+
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
+            entry_to_flowdata,
+        )
+        from flow_sdk.transcript_analyzer import AgentTranscriptFile
+
+        poll_interval = 0.3
+        worker_type = self.driver.name
+        noise = live_stream_noise_kinds()
+        handler = StreamingResponseHandler()
+
+        def _transcript_path() -> "Path | None":
+            try:
+                desc = self.driver.transcript_descriptor(self)
+            except Exception:
+                desc = None
+            if desc is not None:
+                return desc.path
+            try:
+                return self.driver.transcript_path(self)
+            except Exception:
+                return None
+
+        def _read_entries(path: "Path") -> list:
+            """Full reparse keyed off entry COUNT — same choice the prompt
+            stream makes, because a vendor that rewrites its session file
+            (copilot) invalidates a cached byte offset and silently drops the
+            turn. Gated on a (size, mtime) change so idle polls stay cheap."""
+            try:
+                desc = self.driver.transcript_descriptor(self)
+            except Exception:
+                desc = None
+            try:
+                tf = AgentTranscriptFile(
+                    worker_type,
+                    path,
+                    session_id=self.session_id or "",
+                    transcript_format=desc.format if desc is not None else None,
+                )
+                return list(tf.entries)
+            except Exception:
+                logger.debug("observe-turn: transcript parse failed for %s", path, exc_info=True)
+                return []
+
+        path = _transcript_path()
+        # Watermark at open: the caller's pane loads history on mount, so
+        # everything up to now is already on screen. Stream only what the turn
+        # appends from here.
+        emitted = len(_read_entries(path)) if path is not None and path.exists() else 0
+
+        async def _observe() -> None:
+            nonlocal emitted
+            try:
+                last_sig: "tuple[int, int] | None" = None
+                saw_marker = False
+                while True:
+                    p = path if (path is not None and path.exists()) else _transcript_path()
+                    if p is not None and p.exists():
+                        try:
+                            st = p.stat()
+                            sig = (st.st_size, st.st_mtime_ns)
+                        except OSError:
+                            sig = None
+                        if sig is not None and sig != last_sig:
+                            last_sig = sig
+                            entries = _read_entries(p)
+                            fresh, emitted = entries[emitted:], max(emitted, len(entries))
+                            for entry in fresh:
+                                if entry.kind in noise:
+                                    continue
+                                if self._pty_turn_complete(
+                                    entry,
+                                    worker_type=worker_type,
+                                    active_turn_id=None,
+                                    user_turn_landed=True,
+                                ):
+                                    # A marker means "a message completed", not
+                                    # "the turn is over" — claude writes one per
+                                    # assistant segment, so a multi-step turn
+                                    # emits several. Remember it and let the
+                                    # liveness check below decide; returning here
+                                    # ends the stream mid-turn and the client's
+                                    # re-open re-watermarks past whatever lands
+                                    # in the gap.
+                                    saw_marker = True
+                                    continue
+                                await handler.on_flow_data(
+                                    entry_to_flowdata(entry, observation_kind="live")
+                                )
+                    # Neither signal is sufficient alone for a PTY: the provider
+                    # marker fires per message, and ``is_turn_busy`` falls through
+                    # to the transcript tail, which reads idle for a beat between
+                    # a tool result and the next model output. Together they are
+                    # exact — a completed message AND nothing running. Headless
+                    # writes no marker, but there ``is_turn_busy`` is exact on its
+                    # own (lock / registered worker / ``_turn_in_flight`` span the
+                    # whole turn; see the predicate's note on the tail being
+                    # PTY-only).
+                    if (saw_marker or not self.pty_mode) and not is_turn_busy(self):
+                        return
+                    await asyncio.sleep(poll_interval)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.debug("AgenticProcess %s: observe-turn poller failed", self.id, exc_info=True)
+            finally:
+                await handler.on_flow_data(None)
+
+        # Nothing running: hand back an empty, already-closed stream rather than
+        # an error — a caller racing the end of a turn is normal, not a fault.
+        observe_task = asyncio.create_task(_observe()) if is_turn_busy(self) else None
+        if observe_task is None:
+            await handler.on_flow_data(None)
+
+        async def _stream_body():
+            try:
+                async for xml_chunk in handler:
+                    yield xml_chunk
+            finally:
+                if observe_task is not None and not observe_task.done():
+                    # Client went away (unmounted / navigated). The worker keeps
+                    # running; just stop watching it.
+                    observe_task.cancel()
 
         return StreamingResponse(
             _stream_body(),

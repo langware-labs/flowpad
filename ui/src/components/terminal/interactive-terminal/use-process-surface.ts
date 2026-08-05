@@ -46,10 +46,17 @@ export function resetSurfaceReconcileState(): void {
  *
  * Mode selection itself is pure navigation (`?viewMode=`, adopted as the
  * preference on load). The one thing navigation cannot express is the transport,
- * because that is a worker lifecycle action: the terminal surface is an
- * interactive PTY, vibe and chat are headless print-mode. Mount this wherever a
- * session is on screen and the reconcile happens however the mode changed — the
- * footer toggle, a `?viewMode=` URL, or `window.setView()`.
+ * because that is a worker lifecycle action. Mount this wherever a session is on
+ * screen and the reconcile happens however the mode changed — the footer toggle,
+ * a `?viewMode=` URL, or `window.setView()`.
+ *
+ * Reconciliation is ONE-DIRECTIONAL: **a terminal surface requires a PTY; chat
+ * and vibe require nothing.** They render the session's stream, which is
+ * transport-independent — `SimpleChatPane` binds to `flowDataStream`, a composer
+ * send routes to PTY stdin through `_run_pty_prompt`, and a turn this client did
+ * not start arrives via `useObservedTurn`. Killing a healthy worker to enter chat
+ * bought nothing, and when the backend refused it mid-turn (409) the kill was
+ * silently queued to fire minutes later.
  *
  * Reconciles on a mode CHANGE only, never on first sight of a process: merely
  * opening a session must not kill or spawn a worker. By default it returns the
@@ -95,6 +102,12 @@ export function useProcessSurface({
     if (previous === viewMode) return;
 
     const wantPty = viewModePtyMode(viewMode);
+    // Chat / vibe are transport-agnostic — record the mode and leave the worker
+    // alone. See the one-directional rule in this hook's doc comment.
+    if (!wantPty) {
+      lastReconciledMode.set(key, viewMode);
+      return;
+    }
     if (wantPty === ptyMode) {
       lastReconciledMode.set(key, viewMode); // transport already matches
       return;
@@ -112,7 +125,8 @@ export function useProcessSurface({
     void (async () => {
       let reconciled = false;
       try {
-        await live.switchMode(wantPty ? WorkerMode.Interactive : WorkerMode.CLI, wantPty ? getDims?.() : undefined);
+        // Only ever the PTY direction now — chat/vibe returned above.
+        await live.switchMode(WorkerMode.Interactive, getDims?.());
         lastReconciledMode.set(key, viewMode);
         reconciled = true;
         // The transcript reconcile pulls in turns the other mode produced. It is
@@ -126,7 +140,7 @@ export function useProcessSurface({
       } catch (err) {
         console.error('[sessionSurface] mode switch failed', err);
         notify.error({
-          title: wantPty ? 'Could not switch to terminal' : 'Could not switch to chat',
+          title: 'Could not switch to terminal',
           message: err instanceof Error ? err.message : String(err),
         });
       } finally {

@@ -337,3 +337,135 @@ async def test_navigate_picks_focused_tab_when_multiple_connected():
                 msg = _receive_ui_command(ws_fg)
                 assert msg["message_type"] == "ui_command"
                 assert msg["id"] == project_id
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /api/v1/agent/navigate/view — the SCREEN form
+#
+# Validation runs against the dock-address table BEFORE the UI is touched, so a
+# bad address is a clean error the agent can act on rather than a silent no-op
+# in the browser. These lock the status + error_code the CLI maps to exit codes.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "address",
+    ["nonsense", "skills", "helpdesk", ""],
+    ids=["unknown-view", "not-addressable", "pointer-required", "empty"],
+)
+async def test_navigate_view_rejects_bad_addresses_before_touching_the_ui(address):
+    """A rejected address never reaches a browser tab — note there is no WS here.
+
+    `skills` is the interesting one: it still DECODES (it is baked into saved
+    tabs) but is not a destination, so offering it would be a lie.
+    """
+    from flow_sdk.server.app import app
+
+    with TestClient(app) as client:
+        resp = client.post("/api/v1/agent/navigate/view", json={"view": address})
+        assert resp.status_code == 400
+        assert resp.json()["error_code"] == "INVALID_VIEW"
+
+
+async def test_navigate_view_entity_shaped_pointer_that_names_nothing_is_404():
+    """`conversation/<bogus>` fails here rather than opening a broken dock."""
+    from flow_sdk.server.app import app
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/v1/agent/navigate/view",
+            json={"view": f"conversation/{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["error_code"] == "ENTITY_NOT_FOUND"
+
+
+async def test_navigate_view_no_active_tab_returns_409():
+    """Same targeting contract as the other navigate verbs (`_pick_target`)."""
+    from flow_sdk.server.app import app
+
+    with TestClient(app) as client:
+        resp = client.post("/api/v1/agent/navigate/view", json={"view": "events"})
+        assert resp.status_code == 409
+        assert resp.json()["error_code"] == "NO_ACTIVE_TAB"
+
+
+async def test_navigate_view_sends_navigate_dock_to_the_active_tab():
+    """Happy path: a pointerless screen reaches the browser as `navigate_dock`."""
+    from flow_sdk.server.app import app
+
+    with TestClient(app) as client:
+        connection_id = str(uuid.uuid4())
+        with client.websocket_connect(f"/api/v1/connect/ws/{connection_id}") as ws:
+            _consume_confirmation(ws)
+            ws.send_json(
+                {"message_type": "presence", "message_id": "p-view", "visible": True, "focused": True}
+            )
+            _flush(ws)
+
+            resp = client.post("/api/v1/agent/navigate/view", json={"view": "events"})
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["ok"] is True
+            assert body["mode"] == "dock"
+            assert body["view_type"] == "events"
+
+            msg = _receive_ui_command(ws)
+            assert msg["kind"] == "navigate_dock"
+            assert msg["view_type"] == "events"
+            # A pointerless view omits the key rather than sending null (the
+            # payload shape; see `dock_target`). The frontend reads it with `??`.
+            assert msg.get("pointer") is None
+            assert msg["page"] == "desk"
+
+
+async def test_navigate_view_carries_pointer_options_and_page():
+    """The whole address survives the wire — pointer, query options and page."""
+    from flow_sdk.server.app import app
+
+    with TestClient(app) as client:
+        connection_id = str(uuid.uuid4())
+        with client.websocket_connect(f"/api/v1/connect/ws/{connection_id}") as ws:
+            _consume_confirmation(ws)
+            ws.send_json(
+                {"message_type": "presence", "message_id": "p-opts", "visible": True, "focused": True}
+            )
+            _flush(ws)
+
+            resp = client.post(
+                "/api/v1/agent/navigate/view",
+                json={"view": "/dock/hub/worldview/organization?focus=deployment"},
+            )
+            assert resp.status_code == 200
+
+            msg = _receive_ui_command(ws)
+            assert msg["kind"] == "navigate_dock"
+            assert msg["view_type"] == "worldview"
+            assert msg["pointer"] == "organization"
+            assert msg["options"] == {"focus": "deployment"}
+            assert msg["page"] == "hub"
+
+
+async def test_navigate_view_forwards_a_retired_view():
+    """A saved `environment` address still opens — as `credentials/environment`.
+
+    Retirement is expressed by the forward map, not by absence, so an address
+    that predates the retirement keeps working instead of erroring.
+    """
+    from flow_sdk.server.app import app
+
+    with TestClient(app) as client:
+        connection_id = str(uuid.uuid4())
+        with client.websocket_connect(f"/api/v1/connect/ws/{connection_id}") as ws:
+            _consume_confirmation(ws)
+            ws.send_json(
+                {"message_type": "presence", "message_id": "p-retired", "visible": True, "focused": True}
+            )
+            _flush(ws)
+
+            resp = client.post("/api/v1/agent/navigate/view", json={"view": "environment"})
+            assert resp.status_code == 200
+
+            msg = _receive_ui_command(ws)
+            assert msg["view_type"] == "credentials"
+            assert msg["pointer"] == "environment"
