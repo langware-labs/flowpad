@@ -39,26 +39,34 @@ def _no_assignment():
     runtime.reset_cache()
 
 
-def test_same_cached_payload_yields_different_kinds(cached_payload):
+@pytest.mark.asyncio
+async def test_same_cached_payload_yields_different_kinds(cached_payload):
     """The whole point: one cached payload, two clients, two answers."""
-    shell = bootstrap_route._with_runtime(cached_payload, True)
-    tab = bootstrap_route._with_runtime(cached_payload, False)
+    shell = await bootstrap_route._with_runtime(cached_payload, True)
+    tab = await bootstrap_route._with_runtime(cached_payload, False)
 
     assert shell.data.runtime.kind == RuntimeKind.DESKTOP
     assert tab.data.runtime.kind == RuntimeKind.BROWSER
 
 
-def test_stamping_does_not_write_through_to_the_cached_object(cached_payload):
+@pytest.mark.asyncio
+async def test_stamping_does_not_write_through_to_the_cached_object(cached_payload):
     """`model_copy`, not mutation — otherwise the first caller's kind is written
-    into the cache and served to the next one."""
-    bootstrap_route._with_runtime(cached_payload, True)
+    into the cache and served to the next one.
+
+    Must be awaited: an un-awaited coroutine never runs, so the assertion below
+    would hold no matter how the function behaved — a green test proving
+    nothing. That is exactly what it did when `_with_runtime` went async.
+    """
+    await bootstrap_route._with_runtime(cached_payload, True)
 
     assert cached_payload.runtime is None
 
 
-def test_rest_of_the_payload_still_comes_from_the_cache(cached_payload):
+@pytest.mark.asyncio
+async def test_rest_of_the_payload_still_comes_from_the_cache(cached_payload):
     """Only `runtime` is per-request; nothing else is recomputed or dropped."""
-    stamped = bootstrap_route._with_runtime(cached_payload, False).data
+    stamped = (await bootstrap_route._with_runtime(cached_payload, False)).data
 
     assert stamped.records_root == cached_payload.records_root
     assert stamped.supported_pages == cached_payload.supported_pages
@@ -94,11 +102,14 @@ def test_over_http_the_electron_flag_selects_the_kind(cached_payload):
     assert omitted["data"]["runtime"]["kind"] == RuntimeKind.BROWSER
 
 
-def test_hub_assignment_overrides_the_electron_flag(cached_payload):
+@pytest.mark.asyncio
+async def test_hub_assignment_overrides_the_electron_flag(cached_payload):
     """A sandbox launched by the hub reports `sandbox` to every client, whether
     or not that client happens to be an Electron shell."""
     from flow_sdk.instance_settings import runtime
 
     with patch.object(runtime, "get_assigned_runtime", return_value=RuntimeKind.AGENT):
-        assert bootstrap_route._with_runtime(cached_payload, True).data.runtime.kind == RuntimeKind.AGENT
-        assert bootstrap_route._with_runtime(cached_payload, False).data.runtime.kind == RuntimeKind.AGENT
+        shell = await bootstrap_route._with_runtime(cached_payload, True)
+        tab = await bootstrap_route._with_runtime(cached_payload, False)
+        assert shell.data.runtime.kind == RuntimeKind.AGENT
+        assert tab.data.runtime.kind == RuntimeKind.AGENT
