@@ -47,6 +47,7 @@ def _pty_return_code(pty_process: Any) -> int | None:
         return -signal_status
     return None
 
+
 _INHERITED_NO_COLOR_ENV_VARS = (
     "NO_COLOR",
     "NODE_DISABLE_COLORS",
@@ -1115,20 +1116,24 @@ class LocalComputeProvider(ComputeProvider):
         pick_file = mode == "file"
 
         if sys.platform == PLATFORM_DARWIN:
-            # Activate Finder to bring the dialog in front, close any Finder
-            # windows so only the picker is visible, then choose the path.
+            # The dialog belongs to `osascript` itself — never drive Finder.
+            # Scripting another app is an Apple event, which the hardened,
+            # signed desktop app can't send (no `com.apple.security.automation
+            # .apple-events` entitlement), so a `tell application "Finder"`
+            # block aborts the whole script and NO picker ever appears. A bare
+            # `choose folder` needs no permission and opens in the floating
+            # window layer, above every normal window including ours. The
+            # prompt names us so a user hunting for it knows what asked.
             if initial_dir:
-                default_location = f'default location POSIX file "{initial_dir}"'
+                escaped_dir = initial_dir.replace("\\", "\\\\").replace('"', '\\"')
+                default_location = f'default location POSIX file "{escaped_dir}"'
             else:
                 default_location = ""
             chooser = "choose file" if pick_file else "choose folder"
+            what = "file" if pick_file else "folder"
             apple_script = (
-                'tell application "Finder"\n'
-                "    activate\n"
-                "    close every window\n"
-                "end tell\n"
-                "delay 0.1\n"
-                f"set thePath to {chooser} {default_location}\n"
+                "tell me to activate\n"
+                f'set thePath to {chooser} with prompt "Flowpad — select a {what}" {default_location}\n'
                 "return POSIX path of thePath"
             )
             result = subprocess.run(
@@ -1148,23 +1153,44 @@ class LocalComputeProvider(ComputeProvider):
             # break the script. Force UTF-8 on the dialog's stdout (and decode
             # it as UTF-8) so a returned non-ASCII path survives intact instead
             # of being mangled by the console's cp1252 default.
+            #
+            # An OWNERLESS dialog inherits the z-order of the background
+            # PowerShell process, and Windows' foreground lock forbids a
+            # background process from raising itself — so the picker opened
+            # BEHIND the Flowpad window and all the user got was a taskbar
+            # blink. Give it a hidden, centered, topmost owner form: an owned
+            # window always sits above its owner, and an owner in the topmost
+            # band puts the dialog there too — visible over every normal
+            # window no matter who holds the foreground.
+            owner_lines = (
+                "$owner = New-Object System.Windows.Forms.Form; "
+                "$owner.FormBorderStyle = 'None'; $owner.Opacity = 0; "
+                "$owner.Width = 1; $owner.Height = 1; "
+                "$owner.ShowInTaskbar = $false; $owner.TopMost = $true; "
+                "$owner.StartPosition = 'CenterScreen'; "
+                "$owner.Show(); $owner.Activate(); "
+            )
             if pick_file:
                 initial_line = f"$d.InitialDirectory = {_ps_single_quote(initial_dir)}; " if initial_dir else ""
                 ps_script = (
                     "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
                     "Add-Type -AssemblyName System.Windows.Forms; "
+                    f"{owner_lines}"
                     "$d = New-Object System.Windows.Forms.OpenFileDialog; "
                     f"{initial_line}"
-                    "if ($d.ShowDialog() -eq 'OK') { $d.FileName } else { '' }"
+                    "$r = $d.ShowDialog($owner); $owner.Close(); "
+                    "if ($r -eq 'OK') { $d.FileName } else { '' }"
                 )
             else:
                 selected_path_line = f"$d.SelectedPath = {_ps_single_quote(initial_dir)}; " if initial_dir else ""
                 ps_script = (
                     "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
                     "Add-Type -AssemblyName System.Windows.Forms; "
+                    f"{owner_lines}"
                     "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
                     f"{selected_path_line}"
-                    "if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath } else { '' }"
+                    "$r = $d.ShowDialog($owner); $owner.Close(); "
+                    "if ($r -eq 'OK') { $d.SelectedPath } else { '' }"
                 )
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", ps_script],

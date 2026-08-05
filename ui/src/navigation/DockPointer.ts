@@ -115,6 +115,22 @@ export const LANG_PARAM = 'lang';
 export const JOURNEY_PARAM = 'journeyId';
 
 /**
+ * URL query-param key naming the capability the user was reaching for when they
+ * were routed to the Capabilities view — e.g. clicking "Start Codex" on an
+ * opener whose harness looks unavailable lands here with
+ * `capability=harness.codex.cli`. The view re-probes THAT kind on arrival, so a
+ * CLI installed since the last discovery sweep is found at the moment the user
+ * asks for it (the sweep only runs at backend start). Absent means "no intent"
+ * — the view then shows the last known state without probing anything.
+ *
+ * Rides in `options` (reload- and back-safe) and is excluded from `tabHash`,
+ * so arriving with an intent reuses the one Capabilities tab. Pairs with
+ * `DockPointer.capabilityKind` and `navigation.openTab(ViewType.CAPABILITIES,
+ * { capabilityKind })`.
+ */
+export const CAPABILITY_PARAM = 'capability';
+
+/**
  * Canonicalize an entity-relative path: forward slashes, collapsed separators,
  * no leading/trailing slash. Route identity itself is always carried by
  * VFSPath; this helper remains for entitySubPath and legacy-route ingestion.
@@ -374,7 +390,6 @@ export class DockPointer implements IDockPointer {
     return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
   }
 
-
   /**
    * The translated-body language this dock asks to show, or null for the
    * original doc. URL-carried (shareable + back-safe) and excluded from
@@ -397,6 +412,16 @@ export class DockPointer implements IDockPointer {
    */
   get journeyId(): string | null {
     return this.options?.[JOURNEY_PARAM] ?? null;
+  }
+
+  /**
+   * The capability kind this dock was opened FOR, or null. Set when a launch
+   * surface routes to the Capabilities view because the thing the user asked
+   * for looks unavailable; the view re-probes it on arrival. See
+   * {@link CAPABILITY_PARAM}.
+   */
+  get capabilityKind(): string | null {
+    return this.options?.[CAPABILITY_PARAM] ?? null;
   }
 
   /**
@@ -871,12 +896,7 @@ export class DockPointer implements IDockPointer {
     if (!vfsPath.isAbsolute) {
       throw new Error(`Asset filesystem pointers require an absolute VFS path: "${vfsPath.rawPath}"`);
     }
-    return new DockPointer(
-      ViewType.ASSETS,
-      `fs/${AssetRoutingMethod.VFS}/${vfsPath.absVfsPath}`,
-      undefined,
-      layout,
-    );
+    return new DockPointer(ViewType.ASSETS, `fs/${AssetRoutingMethod.VFS}/${vfsPath.absVfsPath}`, undefined, layout);
   }
 
   /**
@@ -910,32 +930,19 @@ export class DockPointer implements IDockPointer {
    * `compute_node-@local`; live UUIDs remain an I/O concern.
    */
   canonicalLegacyAssetFsDock(): DockPointer | null {
-    const assetsPointer =
-      this.viewType === ViewType.ASSETS ? (this.pointer ?? null) : this.assetSubPointer;
+    const assetsPointer = this.viewType === ViewType.ASSETS ? (this.pointer ?? null) : this.assetSubPointer;
     const canonicalPrefix = `fs/${AssetRoutingMethod.VFS}/`;
     if (!assetsPointer?.startsWith('fs/') || assetsPointer.startsWith(canonicalPrefix)) {
       return null;
     }
 
     const relativePath = normalizeRel(assetsPointer.slice('fs/'.length));
-    const canonical = DockPointer.forAssetFs(
-      VFSPath.fromTypeId(LOCAL_COMPUTE_NODE, relativePath),
-      this.layout,
-    );
+    const canonical = DockPointer.forAssetFs(VFSPath.fromTypeId(LOCAL_COMPUTE_NODE, relativePath), this.layout);
     const rebased =
       this.viewType === ViewType.PROJECT
-        ? DockPointer.rebaseAssetsOntoProject(
-            canonical,
-            DockPointer.splitProjectPointer(this.pointer).projectId,
-          )
+        ? DockPointer.rebaseAssetsOntoProject(canonical, DockPointer.splitProjectPointer(this.pointer).projectId)
         : canonical;
-    return new DockPointer(
-      rebased.viewType,
-      rebased.pointer,
-      this.options,
-      this.layout,
-      this.page,
-    );
+    return new DockPointer(rebased.viewType, rebased.pointer, this.options, this.layout, this.page);
   }
 
   /**
@@ -1988,10 +1995,7 @@ export class DockPointer implements IDockPointer {
       }
     }
 
-    if (
-      (this.viewType === ViewType.EXPLORER || this.viewType === ViewType.EDITOR) &&
-      this.pointer
-    ) {
+    if ((this.viewType === ViewType.EXPLORER || this.viewType === ViewType.EDITOR) && this.pointer) {
       const parsed = VFSPath.parse(this.pointer);
       return parsed.isAbsolute ? parsed : null;
     }

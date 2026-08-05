@@ -6,9 +6,9 @@ import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
-import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
+import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
-import { AssetRefChips } from './AttachMenu';
+import { AssetRefChips, useAssetRefSelection } from './AttachMenu';
 import { EmojiPicker } from './EmojiPicker';
 import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
@@ -60,15 +60,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function PendingFileChip({
-  file,
-  disabled,
-  onRemove,
-}: {
-  file: File;
-  disabled?: boolean;
-  onRemove: () => void;
-}) {
+function PendingFileChip({ file, disabled, onRemove }: { file: File; disabled?: boolean; onRemove: () => void }) {
   const { t } = useLingui();
   const image = isImageFile(file);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -269,8 +261,7 @@ export function MessageComposer({
     });
   };
 
-  const addAssetRef = (d: AssetDescriptor) =>
-    setAssetRefs((prev) => (prev.some((a) => a.typeid === d.typeid && a.source === d.source) ? prev : [...prev, d]));
+  const assetSelection = useAssetRefSelection(assetRefs, setAssetRefs);
 
   const buildExtras = (effectivePrompt: QueuedPrompt | null): Parameters<typeof sendReply>[3] | undefined => {
     const extras: NonNullable<Parameters<typeof sendReply>[3]> = {};
@@ -279,8 +270,9 @@ export function MessageComposer({
       if (effectivePrompt.files.length > 0) extras.promptFiles = effectivePrompt.files;
     }
     // Assets (skill/agent/markdown/spec) ride as assetReferences.
-    const refs = assetRefs.map((a) => a.typeid);
-    if (refs.length > 0) extras.assetReferences = refs;
+    if (assetSelection.selectedTypeIds.length > 0) {
+      extras.assetReferences = assetSelection.selectedTypeIds;
+    }
     if (liveSessionId) extras.remoteWorkerSessionId = liveSessionId;
     return Object.keys(extras).length > 0 ? extras : undefined;
   };
@@ -303,7 +295,6 @@ export function MessageComposer({
     const outgoingFiles = liveSessionPrompt ? undefined : files.length > 0 ? files : undefined;
     setSending(true);
     setError(null);
-
 
     try {
       if (channel) {
@@ -410,8 +401,7 @@ export function MessageComposer({
     });
   };
 
-  const canSend =
-    (!!text.trim() || !!activePrompt || files.length > 0 || assetRefs.length > 0) && !isDisabled;
+  const canSend = (!!text.trim() || !!activePrompt || files.length > 0 || assetRefs.length > 0) && !isDisabled;
 
   // ── Shared building blocks (identical in both modes) ────────────────────
 
@@ -443,7 +433,7 @@ export function MessageComposer({
       >
         <Paperclip className="h-3.5 w-3.5" />
       </button>
-      <AssetPickerPopover
+      <AssetManagerPopover
         trigger={
           <button
             type="button"
@@ -455,8 +445,7 @@ export function MessageComposer({
             <Boxes className="h-3.5 w-3.5" />
           </button>
         }
-        onPick={addAssetRef}
-        filter={() => true}
+        {...assetSelection}
         side="top"
         searchPlaceholder={t`Search assets…`}
       />
@@ -513,12 +502,7 @@ export function MessageComposer({
       {files.length > 0 && (
         <ul className="space-y-1">
           {files.map((f, i) => (
-            <PendingFileChip
-              key={`${f.name}-${i}`}
-              file={f}
-              disabled={isDisabled}
-              onRemove={() => removeFile(i)}
-            />
+            <PendingFileChip key={`${f.name}-${i}`} file={f} disabled={isDisabled} onRemove={() => removeFile(i)} />
           ))}
         </ul>
       )}
@@ -533,10 +517,7 @@ export function MessageComposer({
           <AttachmentActionsRow
             actions={composerActions}
             preview={
-              <PromptAttachmentPreview
-                attachments={queuedPromptAttachments}
-                pendingFiles={activePrompt.files}
-              />
+              <PromptAttachmentPreview attachments={queuedPromptAttachments} pendingFiles={activePrompt.files} />
             }
           />
         </div>

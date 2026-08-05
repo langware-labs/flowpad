@@ -10,6 +10,8 @@
  * ballpark.
  */
 
+import type { WorkerCliVendor } from './process-cli-presentation';
+
 export const FONT_FAMILY = '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace';
 
 /**
@@ -29,27 +31,39 @@ export function openTerminalLink(_event: MouseEvent, uri: string): void {
 export const FONT_SIZE_PX = 14;
 
 /**
- * Restore the character-grid contract for RTL text on Windows.
+ * Restore the character-grid contract for RTL text, for the PTY apps that need it.
  *
- * PTY apps that compensate for bidi-less terminals emit Hebrew/Arabic
- * pre-reversed into VISUAL order (Claude Code does this on Windows,
- * matching Windows Terminal/conhost, which paint cells strictly
- * left-to-right). xterm's DOM renderer breaks that contract: row spans are
- * real DOM text, so the browser's Unicode bidi algorithm reorders the RTL
- * run a SECOND time and the words/letters display in reverse reading order.
- * The class added here (styled in styles/xterm.css) forces glyphs to paint
- * in buffer order, matching every native Windows terminal.
+ * Some PTY apps compensate for bidi-less terminals by emitting Hebrew/Arabic
+ * pre-reversed into VISUAL order (Claude Code does this on Windows, matching
+ * Windows Terminal/conhost, which paint cells strictly left-to-right). xterm's
+ * DOM renderer breaks that contract: row spans are real DOM text, so the
+ * browser's Unicode bidi algorithm reorders the RTL run a SECOND time and the
+ * words/letters display in reverse reading order. The class toggled here
+ * (styled in styles/xterm.css) forces glyphs to paint in buffer order.
  *
- * macOS PTY apps emit logical-order RTL text (native terminals there have
- * real bidi engines), and the browser's single reordering is exactly right
- * — so the override must NOT apply there. Client platform is used as the
- * proxy for the PTY host platform: the desktop provider always spawns PTYs
- * on the machine the UI runs on.
+ * The contract is a property of the APP as much as of the host, and the two
+ * are independent:
+ *
+ *              macOS                     Windows
+ *   claude     logical → browser bidi    pre-reversed → buffer order
+ *   codex      logical → browser bidi    logical → browser bidi
+ *
+ * codex links `unicode-width` but no bidi crate and has no reordering path, so
+ * it emits logical order everywhere; painting it in buffer order puts letters
+ * AND words left-to-right. Deciding from `navigator.platform` alone therefore
+ * has to get one of the two apps wrong on Windows.
+ *
+ * Only apps PROVEN to pre-reverse are listed below — everything else, known or
+ * unknown, gets the browser's bidi algorithm, which is what a program emitting
+ * logical order needs. Don't add a vendor here without a capture from that app
+ * on Windows showing pre-reversed bytes.
+ *
+ * Client platform stays the proxy for the PTY host platform: the desktop
+ * provider always spawns PTYs on the machine the UI runs on.
  */
-export function applyRtlGridContract(container: HTMLElement): void {
-  if (navigator.platform.toLowerCase().includes('win')) {
-    container.classList.add('xterm-rtl-grid');
-  }
+export function applyRtlGridContract(container: HTMLElement, vendor: WorkerCliVendor): void {
+  const isWindows = navigator.platform.toLowerCase().includes('win');
+  container.classList.toggle('xterm-rtl-grid', isWindows && vendor === 'claude');
 }
 
 /**
