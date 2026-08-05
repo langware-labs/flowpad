@@ -534,21 +534,51 @@ async def _drop_credential_row(user, credentials_name: str) -> None:
         logger.warning("could not drop credential row %s: %s", credentials_name, e)
 
 
-async def _save_github_token_to_sod(user_id: str, access_token: str) -> bool:
-    """Persist the token under ``github_credentials`` for the original session user."""
-    try:
-        from flow_sdk.request_context.methods import set_user_credentials
+async def record_credential(user, provider: str, value: Any) -> bool:
+    """THE place a provider credential is written. Latest login wins.
 
-        user = await _resolve_auth_session_user(user_id)
-        if not user:
-            logger.warning(f"_save_github_token_to_sod: no user found for id={user_id!r}")
-            return False
-        await set_user_credentials(user, "github_credentials", access_token, user.id)
-        await _mirror_credential_row(user, "github_credentials")
-        return True
-    except Exception as e:
-        logger.error(f"_save_github_token_to_sod failed: {e}")
+    One seam rather than a save function per provider, because "latest wins" is
+    not just an overwrite — it is a moment at which several things must become
+    true together: the value lands in SOD, the visibility row exists (without it
+    `merge_env_tables` reads a genuinely-connected provider as MISSING), and the
+    caches that answer "is this connected?" are dropped. Three writers each doing
+    their own subset is how those drift apart.
+
+    The credential NAME comes from the registry, never a literal — a name typed
+    at the write site and resolved from the registry at the read site is a
+    silently-unreadable token.
+    """
+    from flow_sdk.request_context.methods import set_user_credentials  # noqa: PLC0415
+
+    name = user_credentials_name(provider)
+    if not name:
+        logger.warning("record_credential: unknown provider %r", provider)
         return False
+    try:
+        await set_user_credentials(user, name, value, user.id)
+        await _mirror_credential_row(user, name)
+    except Exception as e:  # noqa: BLE001
+        logger.error("record_credential(%s) failed: %s", provider, e)
+        return False
+
+    # The provider catalogue caches connectedness for 10 minutes; a fresh grant
+    # that is not visible until then reads to the user as "it did not work".
+    try:
+        from flow_sdk.core.oauth.hub_providers import invalidate_hub_providers  # noqa: PLC0415
+
+        invalidate_hub_providers()
+    except Exception:  # noqa: BLE001 — never fail a good write on a cache drop
+        logger.debug("record_credential: could not invalidate provider cache", exc_info=True)
+    return True
+
+
+async def _save_token_for_session_user(user_id: str, provider: str, value: Any) -> bool:
+    """`record_credential` for a flow that only holds the session's user id."""
+    user = await _resolve_auth_session_user(user_id)
+    if not user:
+        logger.warning("no user found for id=%r while saving %s credential", user_id, provider)
+        return False
+    return await record_credential(user, provider, value)
 
 
 def _normalize_credential_dict(provider: LocalOAuthProvider, token_response: dict) -> dict:
@@ -597,27 +627,24 @@ def _normalize_credential_dict(provider: LocalOAuthProvider, token_response: dic
     return credentials
 
 
-async def _save_anthropic_token_to_sod(user_id: str, token_response: dict) -> bool:
-    """Persist Anthropic OAuth tokens in Flowpad-owned SOD, pinned to the auth session user."""
-    try:
-        from flow_sdk.request_context.methods import set_user_credentials
-
-        credentials = _normalize_credential_dict(get_local_provider(ANTHROPIC), token_response)
-        if not credentials.get("access_token"):
-            logger.warning("_save_anthropic_token_to_sod: token response did not include access_token")
-            return False
-
-        user = await _resolve_auth_session_user(user_id)
-        if not user:
-            logger.warning(f"_save_anthropic_token_to_sod: no user found for id={user_id!r}")
-            return False
-
-        await set_user_credentials(user, ANTHROPIC_CREDENTIALS_NAME, credentials, user.id)
-        await _mirror_credential_row(user, ANTHROPIC_CREDENTIALS_NAME)
-        return True
-    except Exception as e:
-        logger.error(f"_save_anthropic_token_to_sod failed: {e}")
+async def _save_token_response(user_id: str, provider_name: str, token_response: dict) -> bool:
+    """Normalize a token response to its provider's stored shape, then record it."""
+    provider = get_local_provider(provider_name)
+    if provider is None:
+        logger.warning("_save_token_response: unknown provider %r", provider_name)
         return False
+
+    if provider.token_shape is TokenShape.CREDENTIAL_DICT:
+        value: Any = _normalize_credential_dict(provider, token_response)
+        has_token = bool(value.get("access_token"))
+    else:
+        value = token_response.get("access_token")
+        has_token = bool(value)
+
+    if not has_token:
+        logger.warning("%s token response did not include access_token", provider_name)
+        return False
+    return await _save_token_for_session_user(user_id, provider_name, value)
 
 
 async def get_anthropic_token_for_current_user() -> tuple[dict | None, str | None]:
@@ -765,7 +792,7 @@ async def _poll_device_until_done(
             # /retry-save can recover the grant without forcing the user back
             # through github.com.
             session.pending_access_token = result["access_token"]
-            saved = await _save_github_token_to_sod(session.user_id, result["access_token"])
+            saved = await _save_token_for_session_user(session.user_id, session.provider, result["access_token"])
             await _broadcast_llm_config_msg(
                 is_configured=saved, auth_method="github",
                 oauth_request_id=session.state,
@@ -903,7 +930,7 @@ async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
             if not access_token:
                 return ApiFailResponse(message="No access token in response")
 
-            saved = await _save_anthropic_token_to_sod(session.user_id, token_response)
+            saved = await _save_token_response(session.user_id, session.provider, token_response)
             if not saved:
                 return ApiFailResponse(
                     message=(

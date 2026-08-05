@@ -169,3 +169,57 @@ def test_client_id_prefers_the_env_override(monkeypatch):
     monkeypatch.delenv("GITHUB_CLIENT_ID")
     assert registry.client_id_for("github") == "Ov23li9fNEH5ulTFINOZ"
     assert registry.client_id_for("not-a-provider") is None
+
+
+# ── record_credential: the one write seam ────────────────────────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_record_credential_writes_under_the_registry_name(sod_env, registered):
+    """The name comes from the registry, never from the call site — a literal
+    typed at the write site and resolved from the registry at the read site is a
+    token nobody can find."""
+    from flow_sdk.builtin.user import User
+    from flow_sdk.request_context.methods import get_user_credentials
+
+    registered(_dummy())
+    user = User(name="record-cred-user")
+    await user.save()
+
+    assert await do.record_credential(user, DUMMY, "tok-1") is True
+    assert await get_user_credentials(user, "dummyauth_credentials", user.id) == "tok-1"
+    # …and the visibility row, without which merge_env_tables reads a genuinely
+    # connected provider as MISSING.
+    assert user.get_env_var("dummyauth_credentials") is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_latest_login_wins(sod_env, registered):
+    """Two grants for one provider: the newest value is what is held."""
+    from flow_sdk.builtin.user import User
+    from flow_sdk.request_context.methods import get_user_credentials
+
+    registered(_dummy())
+    user = User(name="latest-wins-user")
+    await user.save()
+
+    await do.record_credential(user, DUMMY, "tok-first")
+    await do.record_credential(user, DUMMY, "tok-second")
+
+    assert await get_user_credentials(user, "dummyauth_credentials", user.id) == "tok-second"
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_an_unknown_provider_records_nothing(sod_env):
+    """Refuse rather than invent a name — a credential written under a name no
+    reader resolves is worse than no credential."""
+    from flow_sdk.builtin.user import User
+
+    user = User(name="unknown-provider-user")
+    await user.save()
+
+    assert await do.record_credential(user, "not-registered", "tok") is False
+    assert user.get_env_var("not-registered_credentials") is None
