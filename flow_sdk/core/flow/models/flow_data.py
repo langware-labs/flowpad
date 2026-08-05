@@ -67,24 +67,12 @@ class FlowDataType(StrEnum):
     ENTITY = "entity"
 
 
-class ViewType(StrEnum):
-    """UI view types for focus hints."""
-
-    CHAT = "chat"
-    SHELL = "shell"
-    EDITOR = "editor"
-    WEB_APP = "web-app"
-    ENVIRONMENT = "environment"
-    CONNECTIONS = "connections"
-    ARTIFACTS = "artifacts"
-    TRACE = "trace"
-    REASONING = "reasoning"
-    DIFF = "diff"
-    UNSUPPORTED = "unsupported"
-    MARKDOWN = "markdown"
-    DOCS = "docs"
-    ASSISTANCE = "assistance"
-    SURVEY = "survey"
+# UI view types for focus hints. Re-exported, NOT redeclared: this used to be a
+# local 15-member enum that had drifted from the frontend (it carried `trace`,
+# which the TypeScript `ViewType` never had — almost certainly a copy-paste of
+# `FlowElementType.TRACE` below). One vocabulary now, pinned against ts_sdk by
+# tests/fixtures/dock_address_contract.json.
+from flow_sdk.core.dock_address import ViewType as ViewType  # noqa: E402
 
 
 class FlowElementType(StrEnum):
