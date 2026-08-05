@@ -90,6 +90,56 @@ async def test_set_visible_does_not_touch_pty_mode_true(bootstrapped_client, use
 
 
 @pytest.mark.asyncio
+async def test_show_view_resolves_a_screen_and_persists_it(bootstrapped_client, user):
+    """`flow show view` — the SCREEN form, the one that needs no entity.
+
+    The address survives onto `last_shown` as the frontend's own dock fields, so
+    the client builds its DockPointer without re-parsing a URL.
+    """
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(f"{base}/show", json={"view": "assets/list/skill"})
+    assert resp.status_code == 200, resp.text
+    shown = ApiResponse(**resp.json()).data
+    assert shown["kind"] == "dock"
+    assert shown["view_type"] == "assets"
+    assert shown["pointer"] == "list/skill"
+    assert shown["page"] == "desk"
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert row["context_data"]["last_shown"] == shown
+
+
+async def test_show_view_carries_query_options(bootstrapped_client, user):
+    """Options ride the address, so `search?q=…` reaches the screen intact."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(f"{base}/show", json={"view": "search?q=dock-address"})
+    assert resp.status_code == 200, resp.text
+    shown = ApiResponse(**resp.json()).data
+    assert shown["view_type"] == "search"
+    assert shown["options"] == {"q": "dock-address"}
+
+
+@pytest.mark.parametrize(
+    "address",
+    ["nonsense", "skills", "helpdesk"],
+    ids=["unknown-view", "not-addressable", "pointer-required"],
+)
+async def test_show_view_rejects_a_bad_address_with_400(bootstrapped_client, user, address):
+    """Validation happens before anything is emitted — nothing lands on the stack."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(f"{base}/show", json={"view": address})
+    assert resp.status_code == 400, resp.text
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert "last_shown" not in (row.get("context_data") or {})
+
+
 async def test_show_last_shown_survives_stale_process_save(bootstrapped_client, user):
     """A transcript/status save from an older AP object must not wipe display focus."""
     pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)

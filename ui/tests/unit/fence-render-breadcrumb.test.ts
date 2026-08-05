@@ -26,7 +26,16 @@ sites:
     note: ${NOTE}
 `;
 
+/** Hosts this file attached to `document.body` (see `renderCard`), so they can
+ *  be detached again. jsdom is shared by every test FILE in a worker, so a host
+ *  left behind stays queryable by whatever runs next — a stray "Refresh from
+ *  the tag index" button once made an unrelated worldview test fail with
+ *  "found multiple elements with the role button". Leaking DOM is the test's
+ *  own mess to clear. */
+const attachedHosts: HTMLElement[] = [];
+
 afterEach(() => {
+  for (const host of attachedHosts.splice(0)) host.remove();
   __resetBreadcrumbContextCache();
   post.mockReset();
 });
@@ -100,6 +109,7 @@ describe('the card', () => {
     // no-op. A detached host in a test would silently never repaint.
     const el = document.createElement('div');
     document.body.appendChild(el);
+    attachedHosts.push(el);
     renderBreadcrumbCard(overrides.block ?? BLOCK, el, {
       theme: 'dark',
       blockId: 'b1',

@@ -193,21 +193,31 @@ No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
 9. **MCP host duplication**: ShowView and AppHost share near-identical
    AppRenderer scaffolding; both stub `onCallTool`.
 10. **`/sdk` mount dead**; `view_external_domain` vestigial in OSS.
-11. **Agents can only address entities and files — never a screen.** The
-    server→client directive vocabulary is exactly three kinds
-    (`navigate_entity`, `navigate_vfs`, `desktop_notify`;
-    `ui/src/hooks/use-ui-command-listener.ts`), and unknown kinds are logged and
-    dropped. So every pointerless surface is unreachable by an agent in both
-    modes: Events, Assets, Explorer, Preferences, Settings, Hooks, Capabilities,
-    Data Sources, Runs, Search, Desktop, Inbox, Credentials, Cron, Graph, Tag,
-    Worldview, K-Browser, Helpdesk, Discover, Home, and every `page=hub` surface.
-    On the left rail only **project** and **chats** are reachable, and only
-    because they happen to be entity-backed. The structural blocker is that
-    `ViewType` lives solely in `ts_sdk/src/utils/ui/view-types.ts` — the backend
-    has no twin and hand-builds exactly one URL shape (`dock_url` in
-    `display_target.py`). Nor can an agent switch view mode, manage tabs (the
-    `Tab` actions exist but have no CLI surface), or enumerate what is openable
-    (`flow schema list` covers entity types only).
+11. ~~**Agents can only address entities and files — never a screen.**~~
+    **RESOLVED** — screens are addressable. `flow_sdk/core/dock_address.py`
+    mirrors the frontend's `ViewType` vocabulary, pinned by
+    `tests/fixtures/dock_address_contract.json` (the same hand-authored,
+    neither-side-generates-it pattern as `asset_editor_contract.json`). On top of
+    it: a `DisplayTargetKind.DOCK` target, a fourth `ui_command` kind
+    `navigate_dock`, and the verbs `flow show view <address>` /
+    `flow navigate view <address>`, where an address is
+    `<viewType>[/<pointer>][?<opts>]`. `flow schema views` enumerates what is
+    openable — the view half of the vocabulary `flow schema list` covers for
+    entities. The address is validated server-side before the UI is touched, so
+    an unknown view or a missing required pointer is a clean exit 2 and an
+    entity-shaped pointer naming nothing is exit 4.
+
+    Still open, deliberately out of that scope: an agent cannot switch view mode,
+    and cannot manage tabs (the `Tab` actions exist but have no CLI surface).
+
+    Presentation differs by mode and is worth knowing: outside vibe a shown dock
+    mints a top-level tab after the calling process; in vibe it becomes a
+    workspace CHILD chip beside the Display, so the agent's pinned deliverable is
+    not evicted. That required widening the child-adoption allow-list — a dock
+    the agent SHOWED is workspace content by intent, while a dock the USER
+    navigated to keeps the narrower test (`isAdoptableChildDock`'s `shown` flag,
+    mirrored by `_pointer_is_adoptable_child` in `tab.py`). Workspace anchors
+    stay denied either way.
 
 ## 8. Open questions
 

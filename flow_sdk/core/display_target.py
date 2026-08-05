@@ -12,7 +12,12 @@ Resolution policy (the ``flow navigate file`` behaviour):
              (stable editor view), else a raw vfs pointer — this is what makes
              "agent writes hello.md, then shows it" work without indexing;
   * artifact_id → an app, with its live runtime derived from its companions;
-  * port   → a webapp preview (an entity-less dev server).
+  * port   → a webapp preview (an entity-less dev server);
+  * dock   → a SCREEN, addressed as ``<viewType>[/<pointer>][?<opts>]`` — the
+             one address form that reaches a view with no entity behind it
+             (Events, Preferences, Assets, …). Validated against the
+             ``flow_sdk.core.dock_address`` table, which is pinned to the
+             frontend's own vocabulary by a contract fixture.
 """
 
 from __future__ import annotations
@@ -35,6 +40,7 @@ class DisplayTargetKind(StrEnum):
     WEBAPP = "webapp"
     APP = "app"
     SHELL = "shell"
+    DOCK = "dock"
 
 
 class InvalidDisplayTarget(ValueError):
@@ -50,12 +56,13 @@ async def resolve_display_target(
     path: str | None = None,
     port: object = None,
     artifact_id: str | None = None,
+    dock: str | None = None,
     discover: bool = False,
 ) -> dict:
     """Resolve one display address to its payload dict.
 
-    Exactly one of ``typeid`` / ``path`` / ``artifact_id`` / ``port`` should be
-    given (checked in that priority order). Returns ``{"kind":
+    Exactly one of ``typeid`` / ``path`` / ``artifact_id`` / ``port`` / ``dock``
+    should be given (checked in that priority order). Returns ``{"kind":
     DisplayTargetKind, ...}``; raises ``InvalidDisplayTarget`` /
     ``DisplayTargetNotFound`` for the caller to map onto its own response shape
     (HTTP error body, exit code, ...).
@@ -122,7 +129,10 @@ async def resolve_display_target(
         except (TypeError, ValueError) as e:
             raise InvalidDisplayTarget(f"Invalid port: {port!r}") from e
 
-    raise InvalidDisplayTarget("Must include one of: typeid, path, port, artifact_id")
+    if dock:
+        return await dock_target(dock)
+
+    raise InvalidDisplayTarget("Must include one of: typeid, path, port, artifact_id, dock")
 
 
 async def _app_payload(artifact_id: str) -> dict:
@@ -315,6 +325,127 @@ def entity_target(type_name: str, entity_id: str, *, name: str | None = None) ->
         "id": entity_id,
         "name": name or None,
     }
+
+
+async def dock_target(address: str) -> dict:
+    """A DOCK DisplayTarget payload from a ``<viewType>[/<pointer>][?<opts>]``
+    address — the screen form.
+
+    This is the only target kind that can name a view with no entity behind it,
+    which is what lets an agent open Events or Preferences at all. Validation is
+    entirely ``dock_address``'s table (pinned to the frontend by
+    ``tests/fixtures/dock_address_contract.json``), so the rules cannot drift
+    from what the UI will actually accept:
+
+    * unknown view, or a view with no ``VIEWER_REGISTRY`` row (the retired
+      aliases, and the folded-away ``skills`` / ``session`` / ``atlas``) →
+      ``InvalidDisplayTarget``. Those still DECODE — history is forever — but
+      they are never a destination;
+    * a RETIRED view forwards first (``environment`` → ``credentials/environment``)
+      rather than erroring, so an address saved before the retirement still opens;
+    * a required pointer that is missing → ``InvalidDisplayTarget``;
+    * a pointer shaped like a TypeId is looked up, so ``conversation/<bogus>``
+      fails here instead of opening a dock that renders a load error. A
+      grammar-only view (``events``) never touches the DB.
+
+    The address is carried as the FRONTEND's own field names (``view_type`` /
+    ``pointer`` / ``options`` / ``page``) so the client builds its DockPointer
+    without re-parsing. Per the module's standing rule the payload carries the
+    ADDRESS, never a baked URL.
+    """
+    from flow_sdk.core import dock_address as da  # noqa: PLC0415
+
+    raw = (address or "").strip()
+    if not raw:
+        raise InvalidDisplayTarget("Empty dock address")
+
+    # Accept a full path too, so a pasted URL works as well as a bare address.
+    parsed = da.parse_dock_url(raw if raw.startswith("/") else f"/dock/{raw.lstrip('/')}")
+    if parsed is None:
+        # Name the actual problem — an agent reads this string and retries on it.
+        head = raw.lstrip("/").split("?", 1)[0].split("/", 1)[0]
+        if da.parse_view_type(head) is None:
+            raise InvalidDisplayTarget(
+                f"Unknown view '{head}'. Run `flow schema views` for the list."
+            )
+        raise InvalidDisplayTarget(f"Not a dock address: {address!r}")
+
+    view, pointer = da.normalize_retired(parsed.view_type, parsed.pointer)
+    meta = da.VIEW_META[view]
+    if not meta.addressable:
+        raise InvalidDisplayTarget(
+            f"View '{view.value}' is not addressable (it decodes for history only)"
+        )
+    if meta.pointer is da.PointerRequirement.REQUIRED and not pointer:
+        raise InvalidDisplayTarget(f"View '{view.value}' requires a pointer")
+
+    await _assert_pointer_entity_exists(view, pointer)
+
+    # Empty optionals are OMITTED, not sent as null: persistence drops null
+    # values from ``context_data``, so a payload carrying them would not survive
+    # the round trip byte-for-byte and `last_shown` would differ from the
+    # response the caller just got. Fewer keys, same information.
+    payload: dict = {
+        "kind": DisplayTargetKind.DOCK,
+        "view_type": view.value,
+        "page": parsed.page.value,
+    }
+    if pointer:
+        payload["pointer"] = pointer
+    if parsed.options:
+        payload["options"] = dict(parsed.options)
+    return payload
+
+
+async def _assert_pointer_entity_exists(view, pointer: str | None) -> None:
+    """Raise ``DisplayTargetNotFound`` when an entity-backed pointer names nothing.
+
+    Only the FIRST pointer segment is considered, and only in the two shapes
+    that actually carry an entity:
+
+    * a BARE id on a view whose name IS an entity type — ``conversation/<id>``,
+      ``spec/<id>``, ``plan/<id>``. This is the common case, and note the type
+      comes from the VIEW, not from the pointer;
+    * an explicit ``<type>-<id>`` TypeId — ``agentic_process-<id>``.
+
+    Every other pointer shape is grammar the view owns (``list/skill``,
+    ``graph/eng.db``, ``editor/markdown/typeid/...``, a file path) and is left
+    alone rather than guessed at. Guessing wrong would turn a working address
+    into a spurious 404, which is worse than letting the view render its own
+    not-found state.
+    """
+    if not pointer:
+        return
+    head = pointer.split("/", 1)[0]
+    if not head:
+        return
+
+    tid = None
+    if is_valid_entity_id(head):
+        # Bare id: the VIEW names the type, when it names one at all.
+        from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+        try:
+            EntityType(view.value)
+        except ValueError:
+            return  # a bare id on a non-entity view — not ours to resolve
+        tid = TypeId(f"{view.value}-{head}")
+    else:
+        try:
+            candidate = TypeId(head)
+        except (ValueError, IndexError):
+            return
+        if candidate.id and is_valid_entity_id(candidate.id):
+            tid = candidate
+    if tid is None:
+        return
+
+    try:
+        entity = await Entity.get_by_typeid(tid)
+    except ValueError:
+        entity = None  # unknown type collapses to "not found", as elsewhere here
+    if entity is None:
+        raise DisplayTargetNotFound(f"Entity not found: {tid}")
 
 
 def shell_target(shell: Entity) -> dict:

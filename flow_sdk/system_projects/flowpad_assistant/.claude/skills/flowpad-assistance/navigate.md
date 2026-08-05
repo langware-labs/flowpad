@@ -9,10 +9,10 @@ Drive the user's Flowpad browser tab to a specific entity. The CLI targets the t
 > beside your process) and never navigates. Reserve `flow navigate` for an
 > explicit "take me there".
 >
-> **Entities and file paths only.** There is no way to open a screen — Events,
-> Assets, Files, Preferences, Settings, Search, Inbox, Data Sources, Runs and the
-> other rail destinations are not addressable by either verb. Tell the user which
-> rail item to click instead.
+> **Screens have their own form.** Events, Assets, Files, Preferences, Search,
+> Inbox, Data Sources, Runs and the rest are addressed by VIEW NAME, not TypeId:
+> `flow show view <address>` / `flow navigate view <address>`. See "Opening a
+> screen" below.
 
 ## How to navigate
 
@@ -56,6 +56,24 @@ flow navigate entity <data.typeid>                        # navigate the browser
 ```
 
 No search needed — `data.typeid` is the entity to open.
+
+## Opening a screen
+
+A screen is addressed by **view name** plus an optional `/pointer` and `?opts`
+— the same string the URL bar carries after `/dock/`:
+
+```bash
+flow show view events                       # present it (never interrupts)
+flow show view assets/list/skill
+flow show view "search?q=widget"            # quote anything with a ?
+flow navigate view preferences/appearance   # only on an explicit "take me there"
+```
+
+`flow schema views` lists every addressable view and whether it requires a
+pointer — use it instead of guessing. The grammar is validated server-side, so a
+wrong view is exit `2` rather than a silent no-op.
+
+Screens are NOT TypeIds: `flow navigate entity events` is wrong and will fail.
 
 ## Expected output
 
