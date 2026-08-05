@@ -16,10 +16,26 @@ green — the suite reports success having asserted nothing. Set
 ``FLOWPAD_REQUIRE_HUB=1`` to turn that skip into a failure, which is what CI for
 this work should do.
 
-**The first test here is the adjudicator.** If the hub's value route will not
-release a token row's value, modes 2 and 3 cannot work by any mechanism and
-nothing else in this file matters — so it is written as a first-class
-expectation, never xfail.
+**The adjudicator earned its keep.** `test_the_hub_value_route_releases_a_token_rows_value`
+was written as a first-class expectation (never xfail) because if the hub will
+not release a token row's value, modes 2 and 3 cannot work by any mechanism. On
+its first real run it failed, and it took THREE hub defects with it — each of
+which only became visible once the one in front of it was fixed:
+
+1. `is_key`/`is_plain` were plain methods while their siblings were properties,
+   so `env_table.resolve_var_status` tested bound method objects and judged an
+   OAUTH_TOKEN row by a `visible_value` it does not have → MISSING.
+2. With that fixed the row resolved NA, because there was no branch at all for a
+   token the owner holds directly — so the value route's `ref_type is None`
+   dispatch, written to serve exactly those rows, was unreachable.
+3. With that fixed the read raised KeyError: the dispatch composed the
+   ENTITY-scoped SOD key while `save_oauth_credentials` had written the
+   USER-scoped one.
+
+Net effect before the fixes: the hub could store an OAuth token and never hand
+it back — to anyone, for any provider. That is almost certainly why
+`hub_oauth.py` says providers with no local consumer "keep their token on the
+hub and are resolved at launch time": releasing it had never worked.
 """
 
 from __future__ import annotations
