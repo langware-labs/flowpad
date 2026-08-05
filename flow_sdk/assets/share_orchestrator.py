@@ -26,6 +26,7 @@ into a commit a breadcrumb tool authored.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from dataclasses import dataclass, field
@@ -35,14 +36,20 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
-@dataclass
 class ShareBlocked(Exception):
-    """A gate refused. ``code`` is the stable vocabulary the CLI maps to exits."""
+    """A gate refused. ``code`` is the stable vocabulary the CLI maps to exits.
 
-    code: str
-    message: str
-    remediation: list[str] = field(default_factory=list)
-    data: dict = field(default_factory=dict)
+    A plain Exception, not a dataclass: a dataclass never calls
+    ``Exception.__init__``, so ``str(exc)`` comes back empty and the generated
+    ``__eq__`` makes it unhashable — both surprising in a traceback.
+    """
+
+    def __init__(self, code: str, message: str, remediation: list[str] | None = None, data: dict | None = None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.remediation = remediation or []
+        self.data = data or {}
 
 
 @dataclass
@@ -157,8 +164,16 @@ async def share_asset_to_hub(
         )
 
     project_info = {"id": str(project.id), "name": project.name, "linked": getattr(project, "remote", False) is True}
+    url = hub_asset_url(target, hub_origin=hub_origin, project_id=str(project.id))
 
-    # ── G4: is the project linked? THE LAST GATE BEFORE ANY MUTATION. ──
+    # ── G4: every path must live inside the repo. ──
+    # Ahead of the link gate on purpose: this is pure path arithmetic, and
+    # linking is a network mutation visible to every project member. Refusing a
+    # typo'd `--with` AFTER publishing a repo declaration would make the
+    # "nothing was mutated" promise below a lie.
+    repo_root, rel_paths = _repo_relative_paths(entity, mount, with_paths or [])
+
+    # ── G5: is the project linked? THE LAST GATE BEFORE ANY MUTATION. ──
     linked_now = False
     if not project_info["linked"]:
         if not link_project:
@@ -172,16 +187,21 @@ async def share_asset_to_hub(
                     f"Open Project Home for '{project.name}' and press \"Link to cloud\"",
                     "or re-run this command with --link-project",
                 ],
-                data={"project": project_info, "docs_path": CLOUD_SHARING_DOC_REL},
+                data={"project": project_info, "docs_path": "docs/collab/cloud-sharing.md"},
             )
-        if not dry_run:
-            await _link_project(project, actor)
-            linked_now = True
+        if dry_run:
+            # Report what WOULD happen without claiming it happened.
+            return ShareOutcome(
+                target=target,
+                project={**project_info, "would_link": True},
+                commit={"paths": rel_paths, "state": "dry-run"},
+                publish={"state": "dry-run"},
+                url=url,
+            )
+        await _link_project(project, actor)
+        linked_now = True
         project_info = {**project_info, "linked": True}
     project_info["linked_now"] = linked_now
-
-    # ── G5: every path must live inside the repo. ──
-    repo_root, rel_paths = _repo_relative_paths(entity, mount, with_paths or [])
 
     if dry_run:
         return ShareOutcome(
@@ -189,7 +209,7 @@ async def share_asset_to_hub(
             project=project_info,
             commit={"paths": rel_paths, "state": "dry-run"},
             publish={"state": "dry-run"},
-            url=hub_asset_url(target, hub_origin=hub_origin, project_id=str(project.id)),
+            url=url,
         )
 
     warnings: list[str] = []
@@ -203,15 +223,10 @@ async def share_asset_to_hub(
     publish_info = await _publish(entity, actor, warnings)
 
     # ── G8: the deliverable. ──
-    url = hub_asset_url(target, hub_origin=hub_origin, project_id=str(project.id))
     warnings.append("Reviewers need to be members of this project — add them in Members.")
     return ShareOutcome(
         target=target, project=project_info, commit=commit_info, publish=publish_info, url=url, warnings=warnings
     )
-
-
-#: Where the user-facing explanation of what cloud sharing uploads lives.
-CLOUD_SHARING_DOC_REL = "docs/collab/cloud-sharing.md"
 
 
 def _hub_app_origin() -> Optional[str]:
@@ -238,10 +253,15 @@ async def _link_project(project, actor) -> None:
     try:
         origin = await assert_project_publishable(project, actor)
     except ProjectPublishBlocked as blocked:
+        # Codes pass through verbatim (upper-snake). Collapsing the ones without
+        # a remediation hint to PROJECT_NOT_READY made `cloud_login_required`
+        # and `github_not_connected` unreachable — so the CLI could never tell a
+        # user which of the two they actually needed to fix.
+        hint = _PREFLIGHT_REMEDIATION.get(blocked.code)
         raise ShareBlocked(
-            code="PROJECT_NOT_READY" if blocked.code not in _PREFLIGHT_REMEDIATION else blocked.code.upper().replace("-", "_"),
+            code=blocked.code.upper().replace("-", "_"),
             message=blocked.message,
-            remediation=[_PREFLIGHT_REMEDIATION.get(blocked.code, "")] if blocked.code in _PREFLIGHT_REMEDIATION else [],
+            remediation=[hint] if hint else [],
             data=blocked.data(),
         ) from blocked
 
@@ -282,7 +302,7 @@ def _repo_relative_paths(entity, mount: str, with_paths: list[str]) -> tuple[str
 async def _commit_paths(repo_root: str, rel_paths: list[str], message: Optional[str], entity, warnings: list[str]) -> dict:
     from flow_sdk.utils.git import git_add_commit_push
 
-    dirty_others = _other_dirty_files(repo_root, rel_paths)
+    dirty_others = await _other_dirty_files(repo_root, rel_paths)
     result = await git_add_commit_push(repo_root, rel_paths, message or _default_message(entity))
     if not result.ok:
         raise ShareBlocked(
@@ -311,18 +331,34 @@ def _default_message(entity) -> str:
     return f"docs({entity.get_type()}): share {name}"
 
 
-def _other_dirty_files(repo_root: str, rel_paths: list[str]) -> int:
-    """How many OTHER files are dirty — reported, never committed."""
-    import subprocess
+async def _other_dirty_files(repo_root: str, rel_paths: list[str]) -> int:
+    """How many OTHER files are modified — reported, never committed.
+
+    Tracked files only (`-uno`): untracked files were never candidates for our
+    pathspec-scoped commit, and walking them is the expensive half of a status
+    on a large tree. Off the event loop like every other git call here.
+    """
+    from flow_sdk.utils.git import _run_git  # noqa: PLC0415
 
     try:
-        out = subprocess.run(
-            ["git", "status", "--porcelain"], cwd=repo_root, capture_output=True, text=True, timeout=15
-        )
+        out = await asyncio.to_thread(_run_git, ["git", "status", "--porcelain", "-uno"], repo_root)
     except Exception:  # noqa: BLE001 — a status we cannot read is not a reason to refuse
         return 0
     ours = set(rel_paths)
-    return sum(1 for line in out.stdout.splitlines() if line[3:].strip() and line[3:].strip() not in ours)
+    return sum(1 for line in out.stdout.splitlines() if (path := _porcelain_path(line)) and path not in ours)
+
+
+def _porcelain_path(line: str) -> str:
+    """The path a `git status --porcelain` line refers to.
+
+    Takes the NEW name of a rename (`R  old -> new`) and unquotes the form git
+    uses for paths with spaces or non-ASCII — without both, a file we just
+    committed fails to match `ours` and gets counted as somebody else's work.
+    """
+    path = line[3:].strip()
+    if " -> " in path:
+        path = path.split(" -> ", 1)[1]
+    return path.strip('"')
 
 
 async def _publish(entity, actor, warnings: list[str]) -> dict:

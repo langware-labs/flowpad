@@ -33,16 +33,6 @@ export function hubProjectAssetDock(projectId: string, assetTypeId: TypeId): Doc
   ).withPage(PageId.HUB);
 }
 
-/** Absolute Hub URL for an entity-backed asset inside a project. */
-export function hubProjectAssetUrl(
-  hubAppUrl: string | null | undefined,
-  projectId: string | null | undefined,
-  assetTypeId: TypeId | null | undefined,
-): string | null {
-  if (!hubAppUrl || !projectId || !assetTypeId) return null;
-  return `${trimHubHost(hubAppUrl)}${hubProjectAssetDock(projectId, assetTypeId).toUrl()}`;
-}
-
 /**
  * Entity types the hub console has a page route for. Mirrors the hub router's
  * own param→type table (`flowpad/ui/src/routes/loaders/console-loader.ts`:

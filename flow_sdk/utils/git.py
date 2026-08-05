@@ -386,13 +386,15 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
         def _run(args, cwd):
             return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=30)
 
-        present = [p for p in paths if Path(repo_path, p).exists()]
-        missing = [p for p in paths if p not in present]
+        present, missing = [], []
+        for path in paths:
+            (present if Path(repo_path, path).exists() else missing).append(path)
         if not present:
             return GitPushResult(ok=False, message=f"none of the given paths exist in {repo_path}: {paths}")
+        missing_warning = f"not found, so not committed: {', '.join(missing)}" if missing else None
 
-        for path in present:
-            await asyncio.to_thread(_run, ["git", "add", "--", path], repo_path)
+        # One invocation for every path — same semantics, one process.
+        await asyncio.to_thread(_run, ["git", "add", "--", *present], repo_path)
 
         # Scoped to OUR paths, so somebody else's staged work doesn't read as ours.
         staged = await asyncio.to_thread(_run, ["git", "diff", "--cached", "--quiet", "--", *present], repo_path)
@@ -405,7 +407,7 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
                 ok=True,
                 message="Nothing to commit",
                 branch=current_branch,
-                warning=_missing_paths_warning(missing),
+                warning=missing_warning,
             )
 
         commit = await asyncio.to_thread(_run, ["git", "commit", "-m", commit_message, "--", *present], repo_path)
@@ -441,7 +443,7 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
         return GitPushResult(
             ok=True,
             message="Pushed successfully",
-            warning=pull_warning or _missing_paths_warning(missing),
+            warning=pull_warning or missing_warning,
             sha=sha,
             committed=True,
             pushed=True,
@@ -451,10 +453,6 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
         logger.warning("[git] push error (non-fatal): %s", e)
         return GitPushResult(ok=False, message=str(e))
 
-
-def _missing_paths_warning(missing: list[str]) -> Optional[str]:
-    """Say which requested paths weren't there, rather than silently dropping them."""
-    return f"not found, so not committed: {', '.join(missing)}" if missing else None
 
 
 # ── Per-file revision history (local, no push) ────────────────────────────────
