@@ -1,6 +1,6 @@
 ---
 id: d8f7b76f-2547-4599-8d59-8125fddbecbf
-version: 2
+version: 3
 ---
 
 # Agent Records
@@ -987,7 +987,7 @@ record lookup.
 | `flow_sdk/builtin/agentic_process/cli_drivers/claude/driver.py`          | Claude driver, headless print-mode execution, transcript path/history             |
 | `flow_sdk/builtin/agentic_process/cli_drivers/claude/stream_worker.py`   | `claude -p --output-format stream-json` subprocess worker                         |
 | `flow_sdk/builtin/agentic_process/cli_drivers/claude/session_history.py` | JSONL-to-FlowData history loading                                                 |
-| `flow_sdk/builtin/agentic_process/cli_drivers/claude/cli.py`             | `ClaudeAgentOptions`, `--session-id`, `--resume`, `--fork-session` args             |
+| `flow_sdk/builtin/agentic_process/cli_drivers/claude/cli.py`             | `ClaudeAgentOptions`, `--session-id`, `--resume`, `--fork-session` args           |
 | `flow_sdk/builtin/shell.py`                                              | DB-backed `Shell` entity, PTY launch/read/write/runtime checks                    |
 | `flow_sdk/builtin/faas/pty_actions.py`                                   | PTY creation, ShellRecord creation/update, replay/attach routes                   |
 | `flow_sdk/core/entity/entity_model.py`                                   | `Entity.from_record()`, `get_record()`, `store()`, refresh                        |
