@@ -66,6 +66,11 @@ msgstr ""
 msgid "\"{0}\" is over {MAX_FILE_SIZE_LABEL} and was not attached."
 msgstr ""
 
+#. placeholder {0}: deleting?.name || deleting?.provider || ''
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
+msgstr ""
+
 #. placeholder {0}: pendingDelete?.title ?? ''
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "\"{0}\" will be removed. This cannot be undone."
@@ -149,6 +154,11 @@ msgstr ""
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "[[{name}]] not found"
+msgstr ""
+
+#. placeholder {0}: source.stream_count
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "{0, plural, one {# stream} other {# streams}}"
 msgstr ""
 
 #. placeholder {0}: button.label
@@ -242,6 +252,11 @@ msgstr ""
 #: src/components/connections-manager.tsx
 #~ msgid "{0} icon"
 #~ msgstr ""
+
+#. placeholder {0}: agent.name
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "{0} is already deployed"
+msgstr ""
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
@@ -476,8 +491,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
-msgid "{total} file events"
-msgstr ""
+#~ msgid "{total} file events"
+#~ msgstr ""
 
 #. placeholder {0}: totalOrphans === 1 ? '' : 's'
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -564,12 +579,12 @@ msgid "+{hiddenCount} more…"
 msgstr ""
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
-msgid "+{remaining} more"
-msgstr ""
+#~ msgid "+{remaining} more"
+#~ msgstr ""
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
-msgid "+{truncated} not stored"
-msgstr ""
+#~ msgid "+{truncated} not stored"
+#~ msgstr ""
 
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "<0/>Hard refresh"
@@ -716,6 +731,10 @@ msgstr ""
 msgid "A project with that name exists"
 msgstr ""
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
+msgstr ""
+
 #: src/components/triggers-view/TriggersList.tsx
 msgid "About FSOp triggers"
 msgstr ""
@@ -738,6 +757,10 @@ msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "Access requested"
+msgstr ""
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Account key"
 msgstr ""
 
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -842,6 +865,10 @@ msgstr ""
 msgid "Add a comment…"
 msgstr ""
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Add a data source"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Add a key in \"LLM API keys\" above to use it here"
 msgstr ""
@@ -921,6 +948,10 @@ msgstr ""
 #~ msgid "Add custom label..."
 #~ msgstr ""
 
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Add data source"
+msgstr ""
+
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/components/wiki-toolbar/WikiToolbar.tsx
 msgid "Add entity link"
@@ -953,6 +984,10 @@ msgstr ""
 #: src/components/account/secrets-section.tsx
 #: src/components/account/secrets-section.tsx
 msgid "Add secret"
+msgstr ""
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Add source"
 msgstr ""
 
 #: src/components/assets/TagFilterBar.tsx
@@ -993,12 +1028,21 @@ msgstr ""
 msgid "Add Variable"
 msgstr ""
 
+#. placeholder {0}: source.name
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Added {0}"
+msgstr ""
+
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Added vibe agent"
 msgstr ""
 
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Adding…"
+msgstr ""
+
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Additional assets"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -1015,6 +1059,7 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/conversation/ExecutePromptDialog.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 msgid "Advanced"
 msgstr ""
 
@@ -2087,6 +2132,8 @@ msgstr ""
 #: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/cron-view/CronForm.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
+#: src/components/data-sources/ReplayDialog.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -2352,6 +2399,10 @@ msgstr ""
 msgid "Choose folder…"
 msgstr ""
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Choose the project it loads, and any asset packages to bring with it."
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Choose which model each tier uses, or add your own — per assistant and provider."
 msgstr ""
@@ -2435,6 +2486,7 @@ msgstr ""
 msgid "Cleanup failed"
 msgstr ""
 
+#: src/components/events/EventFeed.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
@@ -3032,8 +3084,8 @@ msgid "Connected to GitHub"
 msgstr ""
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "Connected, but still no access to this repo."
-msgstr ""
+#~ msgid "Connected, but still no access to this repo."
+#~ msgstr ""
 
 #: src/components/chat-input.tsx
 #~ msgid "Connected: {0}"
@@ -3363,7 +3415,9 @@ msgid "Could not delete"
 msgstr ""
 
 #. placeholder {0}: connection.provider
+#. placeholder {0}: source.name || source.provider
 #: src/components/connections-manager.tsx
+#: src/components/data-sources/DataSourcesView.tsx
 msgid "Could not delete {0}"
 msgstr ""
 
@@ -3413,6 +3467,15 @@ msgstr ""
 msgid "Could not give this project access to {0}."
 msgstr ""
 
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Could not link asset to cloud"
+msgstr ""
+
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Could not link project to cloud"
+msgstr ""
+
 #: src/components/EnvVarsManager.tsx
 msgid "Could not load environment variables"
 msgstr ""
@@ -3425,13 +3488,22 @@ msgstr ""
 msgid "Could not open skill"
 msgstr ""
 
-#: src/components/entity-actions/CloudAssetPublishButton.tsx
-msgid "Could not publish asset"
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "Could not pause"
 msgstr ""
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#~ msgid "Could not publish asset"
+#~ msgstr ""
 
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Could not publish project"
+#~ msgid "Could not publish project"
+#~ msgstr ""
+
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Could not pull {0}"
 msgstr ""
 
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
@@ -3448,6 +3520,11 @@ msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Could not rename context"
+msgstr ""
+
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Could not replay {0}."
 msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
@@ -3530,6 +3607,11 @@ msgstr ""
 msgid "Could not update"
 msgstr ""
 
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Could not update {0}"
+msgstr ""
+
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Could not update attached secrets"
 msgstr ""
@@ -3537,6 +3619,11 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Could not upload avatar"
+msgstr ""
+
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Could not verify {0}"
 msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
@@ -3838,6 +3925,11 @@ msgstr ""
 msgid "Data privacy mode"
 msgstr ""
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Data sources"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "Database Backed Up"
 msgstr ""
@@ -3955,6 +4047,8 @@ msgstr ""
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/data-sources/DataSourcesView.tsx
+#: src/components/data-sources/SourceMenu.tsx
 #: src/components/directory-tree/DirectoryTree.tsx
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -4158,6 +4252,10 @@ msgstr ""
 msgid "Delete this conversation"
 msgstr ""
 
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "Delete this data source?"
+msgstr ""
+
 #: src/components/account/system-diagnoses.tsx
 msgid "Delete this diagnosis? This cannot be undone."
 msgstr ""
@@ -4218,6 +4316,10 @@ msgstr ""
 msgid "Deploy failed."
 msgstr ""
 
+#: src/components/webapp-viewer/webapp-deployments-tab.tsx
+msgid "Deploy to cloud"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Deployed"
 msgstr ""
@@ -4240,6 +4342,10 @@ msgstr ""
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "depth"
+msgstr ""
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "derived from the fields above"
 msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -4697,6 +4803,21 @@ msgstr ""
 msgid "Drop items here"
 msgstr ""
 
+#. placeholder {0}: result.removed
+#. placeholder {1}: result.streams
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Dropped {0} records across {1} streams"
+msgstr ""
+
+#. placeholder {0}: result.removed
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Dropped {0} records since {since}"
+msgstr ""
+
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Drops this source's records and clears its sync position, so the next poll re-reads them. Local state — read and starred — does not come back."
+msgstr ""
+
 #: src/components/task-bar/TaskDetailPanel.tsx
 #~ msgid "Due date"
 #~ msgstr ""
@@ -4753,6 +4874,7 @@ msgstr ""
 
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/data-sources/SourceMenu.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Edit"
 msgstr ""
@@ -4771,6 +4893,10 @@ msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Edit attached prompt"
+msgstr ""
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Edit data source"
 msgstr ""
 
 #: src/components/favorites/FavoriteStar.tsx
@@ -4852,6 +4978,15 @@ msgstr ""
 msgid "Email:"
 msgstr ""
 
+#. placeholder {0}: event.id
+#: src/components/events/InjectorPanel.tsx
+msgid "Emitted {0} — watch for it in the feed."
+msgstr ""
+
+#: src/components/events/InjectorPanel.tsx
+msgid "Emitted, but nothing on the backend is subscribed to that tag."
+msgstr ""
+
 #: src/components/conversation/EmojiPicker.tsx
 #: src/components/ui/icon-picker.tsx
 #: src/components/ui/icon-picker.tsx
@@ -4870,11 +5005,15 @@ msgstr ""
 msgid "Empty folder"
 msgstr ""
 
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Empty replays everything. With a date, only records from then on are dropped — undated records are kept, and the sync window is widened if it does not reach that far back."
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
 msgid "Empty trace"
 msgstr ""
 
-#: src/components/hooks/sniffer_view_mock.tsx
+#: src/components/data-sources/SourceMenu.tsx
 #~ msgid "Enable"
 #~ msgstr ""
 
@@ -4915,10 +5054,15 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Enabled"
 msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+#~ msgid "Enabled — it polls on the next tick."
+#~ msgstr ""
 
 #: src/components/collaboration/RoomHeader.tsx
 msgid "End room"
@@ -5180,6 +5324,8 @@ msgstr ""
 msgid "Event: "
 msgstr ""
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/data-sources/SourceMenu.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Events"
 msgstr ""
@@ -5799,8 +5945,8 @@ msgid "File"
 msgstr ""
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
-msgid "File change"
-msgstr ""
+#~ msgid "File change"
+#~ msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "File mtime is newer than DB updated_date"
@@ -5868,6 +6014,10 @@ msgstr ""
 msgid "Filter by session"
 msgstr ""
 
+#: src/components/events/EventFeed.tsx
+msgid "Filter by tag, subject or rule…"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Filter files"
 msgstr ""
@@ -5924,12 +6074,20 @@ msgstr ""
 msgid "Filters"
 msgstr ""
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Finish setup, then press Verify."
+msgstr ""
+
 #: src/components/assets/editor/AssetDiscussButton.tsx
 msgid "Finishing asset load…"
 msgstr ""
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Fire (synthetic test)"
+msgstr ""
+
+#: src/components/events/InjectorPanel.tsx
+msgid "Fire onto the bus"
 msgstr ""
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -5947,6 +6105,10 @@ msgstr ""
 #. placeholder {0}: liveOrTrigger.counter ?? 0
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "fires: {0}"
+msgstr ""
+
+#: src/components/events/InjectorPanel.tsx
+msgid "Firing…"
 msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
@@ -6184,8 +6346,8 @@ msgid "FSIndexer + transcript analyzer · this can take a few seconds"
 msgstr ""
 
 #: src/components/triggers-view/TriggersList.tsx
-msgid "FSOp Triggers"
-msgstr ""
+#~ msgid "FSOp Triggers"
+#~ msgstr ""
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "FSOp triggers watch a file or folder and fire on changes. They run a configured action (callback, script, or NotifyEntity) each time."
@@ -6294,8 +6456,8 @@ msgid "Git readiness"
 msgstr ""
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "Git repo (optional)"
-msgstr ""
+#~ msgid "Git repo (optional)"
+#~ msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/context-folder-sources.tsx
@@ -6310,6 +6472,10 @@ msgstr ""
 msgid "Git tooling installed"
 msgstr ""
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Git URL"
+msgstr ""
+
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
@@ -6322,6 +6488,10 @@ msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "GitHub connected — no private repos visible to this token."
+msgstr ""
+
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "GitHub connected — private repos are available."
 msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
@@ -6554,6 +6724,10 @@ msgstr ""
 msgid "Help desk files removed"
 msgstr ""
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Help desks or skills repos to load alongside it."
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "Helpers used"
 msgstr ""
@@ -6579,6 +6753,10 @@ msgstr ""
 
 #: src/components/graph-view/ui/FilterChips.tsx
 msgid "Hide {type}"
+msgstr ""
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Hide advanced"
 msgstr ""
 
 #: src/components/graph-view/ui/FilterChips.tsx
@@ -6710,16 +6888,16 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/triggers-view/TriggersList.tsx
-msgid "Hook Triggers"
-msgstr ""
+#~ msgid "Hook Triggers"
+#~ msgstr ""
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "Hook triggers come from rule files at <0>~/.flow/skill_rules/</0>. Drop in a Python rule, then click <1>Discover</1> to load it."
 msgstr ""
 
 #: src/components/triggers-view/TriggersView.tsx
-msgid "Hook triggers come from rule files under <0>~/.flow/skill_rules/</0>. FSOp triggers are installed by the system or via the API."
-msgstr ""
+#~ msgid "Hook triggers come from rule files under <0>~/.flow/skill_rules/</0>. FSOp triggers are installed by the system or via the API."
+#~ msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Hook Type"
@@ -6782,6 +6960,10 @@ msgstr ""
 msgid "How privacy modes work"
 msgstr ""
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "How to finish setup"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "How to install"
 #~ msgstr ""
@@ -6802,6 +6984,10 @@ msgstr ""
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
+msgstr ""
+
+#: src/components/version-popover/hub-release-label.tsx
+msgid "Hub release, and the UI build serving it"
 msgstr ""
 
 #: src/components/account/user-info.tsx
@@ -7028,6 +7214,10 @@ msgstr ""
 msgid "Initializing…"
 msgstr ""
 
+#: src/components/events/InjectorPanel.tsx
+msgid "Inject an event"
+msgstr ""
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Inline code"
 msgstr ""
@@ -7243,8 +7433,8 @@ msgid "Inviting…"
 msgstr ""
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
-msgid "Invocations"
-msgstr ""
+#~ msgid "Invocations"
+#~ msgstr ""
 
 #: src/components/workflow-runner/learning/PastAttemptsPane.tsx
 #~ msgid "Issue"
@@ -7435,6 +7625,10 @@ msgstr ""
 msgid "Last message"
 msgstr ""
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Last successful sync"
+msgstr ""
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "last triggered"
 msgstr ""
@@ -7569,6 +7763,28 @@ msgstr ""
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Link copied to clipboard"
+msgstr ""
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Link to cloud"
+msgstr ""
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Linked to cloud"
+msgstr ""
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Linking failed."
+msgstr ""
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Linking…"
 msgstr ""
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -7870,6 +8086,10 @@ msgstr ""
 msgid "Loading resources..."
 msgstr ""
 
+#: src/components/events/EventsView.tsx
+msgid "Loading rules…"
+msgstr ""
+
 #: src/components/persistent-iframe.tsx
 msgid "Loading server..."
 msgstr ""
@@ -7916,8 +8136,8 @@ msgid "Loading transcript…"
 msgstr ""
 
 #: src/components/triggers-view/TriggersView.tsx
-msgid "Loading triggers..."
-msgstr ""
+#~ msgid "Loading triggers..."
+#~ msgstr ""
 
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 msgid "Loading whiteboard…"
@@ -7958,7 +8178,6 @@ msgstr ""
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
-#: src/components/triggers-view/TriggerInvocationsPanel.tsx
 #: src/pages/discover-page/discover-page.tsx
 #: src/pages/hub-browse/HubEntityView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
@@ -8331,6 +8550,10 @@ msgstr ""
 msgid "Minimize to the journey icon"
 msgstr ""
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Minimum 60 — the heartbeat only ticks once a minute."
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
 msgstr ""
@@ -8400,6 +8623,7 @@ msgid "More"
 msgstr ""
 
 #: src/components/conversation/AttachmentChip.tsx
+#: src/components/data-sources/SourceMenu.tsx
 msgid "More actions"
 msgstr ""
 
@@ -8472,6 +8696,7 @@ msgstr ""
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/EnvVarsManager.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -8501,8 +8726,8 @@ msgid "Name is required"
 msgstr ""
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "Name it, and optionally set it up from a git repo."
-msgstr ""
+#~ msgid "Name it, and optionally set it up from a git repo."
+#~ msgstr ""
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "Name this entity"
@@ -8697,12 +8922,15 @@ msgstr ""
 msgid "New repo"
 msgstr ""
 
+#: src/components/events/EventsView.tsx
+msgid "New schedule rule"
+msgstr ""
+
 #: src/components/triggers-view/TriggersList.tsx
 msgid "New schedule trigger"
 msgstr ""
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
-#: src/components/triggers-view/TriggersView.tsx
 msgid "New Schedule Trigger"
 msgstr ""
 
@@ -8741,12 +8969,21 @@ msgstr ""
 msgid "Next"
 msgstr ""
 
+#. placeholder {0}: timeUntil(source.next_poll_at)
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "next {0}"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "Next prompt — injected when the agent next goes idle. Press Enter to add."
+msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Next scheduled poll"
 msgstr ""
 
 #: src/components/ui/carousel.tsx
@@ -9124,8 +9361,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
-msgid "No invocations yet"
-msgstr ""
+#~ msgid "No invocations yet"
+#~ msgstr ""
 
 #: src/components/browseable-tree/BrowseableTree.tsx
 msgid "No items"
@@ -9429,6 +9666,10 @@ msgstr ""
 msgid "No records of this type"
 msgstr ""
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "no repo"
+msgstr ""
+
 #: src/components/git/RepoPicker.tsx
 msgid "No repos accessible with this token"
 msgstr ""
@@ -9579,6 +9820,10 @@ msgstr ""
 msgid "No spec specified."
 msgstr ""
 
+#: src/components/data-sources/SourceStreams.tsx
+msgid "No streams yet — this source has not polled."
+msgstr ""
+
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "No subfolders"
 msgstr ""
@@ -9641,8 +9886,8 @@ msgid "No triggers configured for this hook"
 msgstr ""
 
 #: src/components/triggers-view/TriggersView.tsx
-msgid "No triggers yet"
-msgstr ""
+#~ msgid "No triggers yet"
+#~ msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "No turns yet — send a prompt below to start working on {hostName}'s machine."
@@ -9748,6 +9993,10 @@ msgstr ""
 msgid "not reachable"
 msgstr ""
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Not ready yet"
+msgstr ""
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "not respected"
 msgstr ""
@@ -9808,6 +10057,10 @@ msgstr ""
 msgid "Nothing open to bookmark"
 msgstr ""
 
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Nothing selected — launches an empty desktop."
+msgstr ""
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Nothing shared in this conversation."
 msgstr ""
@@ -9856,6 +10109,10 @@ msgstr ""
 #: src/components/history-dropdown.tsx
 #~ msgid "Nothing yet!"
 #~ msgstr ""
+
+#: src/components/events/EventFeed.tsx
+msgid "Nothing yet. Rule fires are read from each rule's log; live events show what the backend has forwarded since it started — the bus keeps no history of its own."
+msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Notification"
@@ -9915,8 +10172,20 @@ msgstr ""
 msgid "on"
 msgstr ""
 
+#: src/components/triggers-view/TriggersList.tsx
+msgid "On agent hook"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "On Disk"
+msgstr ""
+
+#: src/components/triggers-view/TriggersList.tsx
+msgid "On file change"
+msgstr ""
+
+#: src/components/triggers-view/TriggersList.tsx
+msgid "On schedule"
 msgstr ""
 
 #: src/components/graph-view/ui/EntityIcon.tsx
@@ -9935,6 +10204,10 @@ msgstr ""
 #~ msgid "one is enough to get started"
 #~ msgstr ""
 
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
 msgstr ""
@@ -9951,7 +10224,6 @@ msgstr ""
 #~ msgid "open"
 #~ msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -10267,7 +10539,6 @@ msgstr ""
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
-#: src/components/triggers-view/TriggerInvocationsPanel.tsx
 #: src/notifications/NotificationProcessLine.tsx
 #: src/notifications/NotificationProcessLine.tsx
 msgid "Open process"
@@ -10598,6 +10869,10 @@ msgstr ""
 msgid "Parent folder to clone into…"
 msgstr ""
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull changes</1> clears the latch."
+msgstr ""
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Participants"
 msgstr ""
@@ -10679,12 +10954,30 @@ msgid "pattern"
 msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/data-sources/SourceMenu.tsx
+#: src/components/events/EventFeed.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Pause"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "Pause failed."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+msgid "Pause this machine"
+msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+#~ msgid "paused"
+#~ msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Paused"
+msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Paused."
 msgstr ""
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
@@ -10943,6 +11236,10 @@ msgstr ""
 msgid "Point this project at another folder so agents can read it as background — code, docs or assets that live outside the project, without copying anything."
 msgstr ""
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Poll interval (seconds)"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Port"
 msgstr ""
@@ -10956,8 +11253,8 @@ msgid "Post Tool Use"
 msgstr ""
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
-msgid "Post-tool"
-msgstr ""
+#~ msgid "Post-tool"
+#~ msgstr ""
 
 #: src/components/powered-by.tsx
 msgid "Powered by"
@@ -10968,8 +11265,8 @@ msgid "Pre Tool Use"
 msgstr ""
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
-msgid "Pre-tool"
-msgstr ""
+#~ msgid "Pre-tool"
+#~ msgstr ""
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Preferences"
@@ -11143,6 +11440,10 @@ msgstr ""
 msgid "Project is fixed after the first message — start a new session to change it."
 msgstr ""
 
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Project linked to cloud"
+msgstr ""
+
 #: src/components/contact-picker/use-computed-groups.ts
 msgid "Project Members"
 msgstr ""
@@ -11169,8 +11470,8 @@ msgid "Project not found."
 msgstr ""
 
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Project published"
-msgstr ""
+#~ msgid "Project published"
+#~ msgstr ""
 
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Project renamed"
@@ -11182,6 +11483,10 @@ msgstr ""
 
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Project secrets on this machine"
+msgstr ""
+
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Project to load"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
@@ -11196,7 +11501,6 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
-#: src/components/triggers-view/TriggerInvocationsPanel.tsx
 msgid "Prompt"
 msgstr ""
 
@@ -11286,6 +11590,7 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/connections-manager.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Provider"
 msgstr ""
@@ -11321,35 +11626,35 @@ msgstr ""
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Publish"
-msgstr ""
+#~ msgid "Publish"
+#~ msgstr ""
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Publish failed."
-msgstr ""
+#~ msgid "Publish failed."
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Publish this agent to the cloud and give it a machine that logs in as itself."
 msgstr ""
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
-msgid "Publish to cloud"
-msgstr ""
+#~ msgid "Publish to cloud"
+#~ msgstr ""
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Published"
-msgstr ""
+#~ msgid "Published"
+#~ msgstr ""
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
-msgid "Published to cloud"
-msgstr ""
+#~ msgid "Published to cloud"
+#~ msgstr ""
 
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Publishing…"
-msgstr ""
+#~ msgid "Publishing…"
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull & Open"
@@ -11357,6 +11662,10 @@ msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull and open task"
+msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Pull changes"
 msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -11455,6 +11764,10 @@ msgstr ""
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Re-create it"
+msgstr ""
+
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Re-fetch happens on the next poll."
 msgstr ""
 
 #: src/components/assets/AssetsPage.tsx
@@ -11777,6 +12090,11 @@ msgstr ""
 msgid "Remove"
 msgstr ""
 
+#. placeholder {0}: source.name
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Remove {0}"
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove {label}"
@@ -11920,6 +12238,27 @@ msgstr ""
 msgid "replay"
 msgstr ""
 
+#. placeholder {0}: source?.name || source?.provider || ''
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Replay {0}"
+msgstr ""
+
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Replay everything"
+msgstr ""
+
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Replay failed"
+msgstr ""
+
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Replay since {since}"
+msgstr ""
+
+#: src/components/data-sources/SourceMenu.tsx
+msgid "Replay…"
+msgstr ""
+
 #: src/components/conversation/ConversationView.tsx
 #~ msgid "Reply — drafted into {0}"
 #~ msgstr ""
@@ -11938,8 +12277,8 @@ msgid "Repo"
 msgstr ""
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "Repo is not public — connect GitHub to continue."
-msgstr ""
+#~ msgid "Repo is not public — connect GitHub to continue."
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -12097,6 +12436,8 @@ msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/data-sources/SourceMenu.tsx
+#: src/components/events/EventFeed.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/journey/JourneyViewer.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -12130,6 +12471,10 @@ msgstr ""
 
 #: src/journey/JourneyViewer.tsx
 msgid "Resume this run"
+msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Resumed — it polls on the next tick."
 msgstr ""
 
 #: src/components/assets/editor/EntityResolutionGate.tsx
@@ -12288,10 +12633,15 @@ msgstr ""
 #~ msgid "Rule Not Found"
 #~ msgstr ""
 
+#: src/components/events/EventFeed.tsx
+msgid "rule: {ruleFilterName}"
+msgstr ""
+
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
 #~ msgid "rule.md files require YAML frontmatter with at least a name field."
 #~ msgstr ""
 
+#: src/components/triggers-view/TriggersNavigator.tsx
 #: src/components/ui/settings-pane.tsx
 msgid "Rules"
 msgstr ""
@@ -12422,6 +12772,7 @@ msgid "Running…"
 msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/data-sources/SourceMenu.tsx
 msgid "Runs"
 msgstr ""
 
@@ -12467,6 +12818,7 @@ msgstr ""
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/cron-view/CronForm.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -12623,12 +12975,12 @@ msgid "schedule"
 msgstr ""
 
 #: src/components/triggers-view/TriggersList.tsx
-msgid "Schedule Triggers"
-msgstr ""
+#~ msgid "Schedule Triggers"
+#~ msgstr ""
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
-msgid "Scheduled"
-msgstr ""
+#~ msgid "Scheduled"
+#~ msgstr ""
 
 #: src/components/cron-view/CronView.tsx
 #~ msgid "Scheduled Jobs"
@@ -12795,6 +13147,10 @@ msgstr ""
 msgid "Search records..."
 msgstr ""
 
+#: src/components/triggers-view/TriggersNavigator.tsx
+msgid "Search rules…"
+msgstr ""
+
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 msgid "Search settings"
@@ -12935,6 +13291,10 @@ msgstr ""
 msgid "Select a project to view resources"
 msgstr ""
 
+#: src/components/events/EventsView.tsx
+msgid "Select a rule to edit it, or watch everything here."
+msgstr ""
+
 #: src/components/collaboration/CollaborationPage.tsx
 msgid "Select a shared session, or execute a prompt to start one."
 msgstr ""
@@ -12948,12 +13308,12 @@ msgid "Select a task"
 msgstr ""
 
 #: src/components/triggers-view/TriggersView.tsx
-msgid "Select a trigger to view"
-msgstr ""
+#~ msgid "Select a trigger to view"
+#~ msgstr ""
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
-msgid "Select a trigger to view invocations"
-msgstr ""
+#~ msgid "Select a trigger to view invocations"
+#~ msgstr ""
 
 #: src/components/assets/AssetsPage.tsx
 msgid "Select a type to browse"
@@ -13028,6 +13388,7 @@ msgstr ""
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Select project"
 msgstr ""
 
@@ -13659,8 +14020,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-msgid "Signals"
-msgstr ""
+#~ msgid "Signals"
+#~ msgstr ""
 
 #: src/components/account/user-info.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
@@ -13673,6 +14034,10 @@ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Simple actions — click to show all git operations"
+msgstr ""
+
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Since (optional)"
 msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -14125,7 +14490,6 @@ msgid "Still working — waiting on the cloud. This can take a minute."
 msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
-#: src/components/triggers-view/TriggerInvocationsPanel.tsx
 msgid "Stop"
 msgstr ""
 
@@ -14312,6 +14676,11 @@ msgstr ""
 msgid "Sync {0} changes"
 msgstr ""
 
+#. placeholder {0}: timeSince(source.last_synced_at)
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "synced {0}"
+msgstr ""
+
 #: src/components/graph-view/GraphView.tsx
 #~ msgid "Syncing…"
 #~ msgstr ""
@@ -14357,6 +14726,10 @@ msgstr ""
 msgid "Tab failed to open"
 msgstr ""
 
+#: src/components/events/InjectorPanel.tsx
+msgid "tag e.g. entity.created"
+msgstr ""
+
 #: src/components/graph-view/TagGraphView.tsx
 msgid "Tag Graph"
 msgstr ""
@@ -14380,6 +14753,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "target"
+msgstr ""
+
+#: src/components/events/InjectorPanel.tsx
+msgid "target e.g. usage_report:abc"
 msgstr ""
 
 #: src/components/tasks-viewer/TasksViewer.tsx
@@ -14407,7 +14784,6 @@ msgstr ""
 msgid "Tasked"
 msgstr ""
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Tasks"
 msgstr ""
@@ -14450,8 +14826,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
-msgid "test"
-msgstr ""
+#~ msgid "test"
+#~ msgstr ""
 
 #: src/components/connections-manager.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -14535,6 +14911,14 @@ msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "The assets published with this project — its skills, agents, specs, and docs."
+msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "The change was not saved."
+msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "The check did not run."
 msgstr ""
 
 #: src/components/connections-manager.tsx
@@ -14627,6 +15011,14 @@ msgstr ""
 
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "The session transcript could not be read."
+msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "The source was not queued."
+msgstr ""
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "The source was not removed."
 msgstr ""
 
 #: src/pages/flow-page/content-panel/content-panel.tsx
@@ -14836,6 +15228,10 @@ msgstr ""
 msgid "This session is running remotely by {guestName} on your machine."
 msgstr ""
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "This source's remote identity — one source per account."
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "This trace is not linked to a worker session."
 msgstr ""
@@ -14905,6 +15301,10 @@ msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Tip: connect GitHub to clone private repos."
+msgstr ""
+
+#: src/pages/hub-home/NewDesktopDialog.tsx
+msgid "Tip: connect GitHub to use private repos."
 msgstr ""
 
 #: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
@@ -15134,7 +15534,6 @@ msgstr ""
 #~ msgid "Trigger"
 #~ msgstr ""
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/hooks-manager/index.tsx
 msgid "Triggers"
 msgstr ""
@@ -15393,6 +15792,11 @@ msgstr ""
 msgid "Update plan based on <plan-note> sections"
 msgstr ""
 
+#. placeholder {0}: editing.name
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Updated {0}"
+msgstr ""
+
 #. placeholder {0}: data.generated
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Updated: {0}"
@@ -15470,6 +15874,7 @@ msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
+#: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Use"
 msgstr ""
 
@@ -15613,12 +16018,17 @@ msgstr ""
 msgid "Verified"
 msgstr ""
 
+#: src/components/data-sources/DataSourceCard.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Verify"
 msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Verify the machine can authenticate with the FlowPad API"
+msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Verify the setup first."
 msgstr ""
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
@@ -15962,6 +16372,10 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Who this agent is. Becomes its system prompt."
+msgstr ""
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Window (days)"
 msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx

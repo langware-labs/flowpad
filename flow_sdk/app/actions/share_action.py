@@ -83,64 +83,19 @@ async def share_entity() -> ApiResponse:
 
     project_git_origin = None
     if isinstance(entity, Project):
-        actor = request_info.someone_typeid
-        if not actor:
-            return ApiFailResponse(
-                status_code=401,
-                message="Sign in before publishing a Project",
-                data={"code": "authenticated_user_required"},
-            )
-
-        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        from flow_sdk.core.oauth.github_credentials import get_github_token  # noqa: PLC0415
-
-        credentials = load_credentials()
-        if not credentials or not credentials.api_key:
-            return ApiFailResponse(
-                status_code=401,
-                message="Cloud login required before publishing a Project",
-                data={"code": "cloud_login_required"},
-            )
-        if not await get_github_token(actor):
-            return ApiFailResponse(
-                status_code=409,
-                message="Connect GitHub before publishing a Project",
-                data={"code": "github_not_connected"},
-            )
-
-        from flow_sdk.app.actions.git_share_preflight_action import (  # noqa: PLC0415
-            git_share_preflight,
+        # One owner for "what it takes to link a Project" — the Project Home
+        # button and `flow record share --link-project` both come through here,
+        # so they cannot enforce different preconditions.
+        from flow_sdk.app.actions.project_publish import (  # noqa: PLC0415
+            ProjectPublishBlocked,
+            assert_project_publishable,
         )
-        from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
 
         try:
-            preflight = await git_share_preflight(Project.get_type(), str(entity.id))
-        except Exception:  # noqa: BLE001 — publication eligibility fails closed
-            logger.exception("[share] Project Git preflight failed for %s", entity.id)
-            preflight = {
-                "available": False,
-                "reason": "Couldn't read the repository's Git status.",
-                "code": "status-failure",
-                "git_origin": None,
-            }
-        if not preflight.get("available"):
-            code = str(preflight.get("code") or "status-failure")
+            project_git_origin = await assert_project_publishable(entity, request_info.someone_typeid)
+        except ProjectPublishBlocked as blocked:
             return ApiFailResponse(
-                status_code=409,
-                message=str(preflight.get("reason") or "Project is not ready to publish"),
-                data={
-                    "code": code,
-                    "reason": preflight.get("reason"),
-                    "git_origin": preflight.get("git_origin"),
-                },
-            )
-        try:
-            project_git_origin = GitOrigin.model_validate(preflight.get("git_origin"))
-        except Exception:  # noqa: BLE001 — malformed success must fail closed
-            return ApiFailResponse(
-                status_code=409,
-                message="Couldn't determine a valid Git origin for this Project",
-                data={"code": "status-failure"},
+                status_code=blocked.status_code, message=blocked.message, data=blocked.data()
             )
         # Carry the exact origin that passed the authoritative preflight into
         # the share operation and, below, into the durable local row.

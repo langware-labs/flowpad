@@ -445,7 +445,7 @@ class GithubAccountRunner(CapabilityRunner):
             user = await User.get_local()
             if user is None:
                 return None
-            # Same FK convention as _save_github_token_to_sod's write side.
+            # Same FK convention as record_credential's write side.
             return await get_user_credentials(user, "github_credentials", user.id)
         except Exception:
             return None

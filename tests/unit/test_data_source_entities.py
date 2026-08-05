@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.ingest.health import SourceError, SourceHealth, classify, worst_of
 
@@ -20,35 +20,54 @@ NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 def _source(**kw) -> DataSource:
     base = dict(provider="rss", account_key=f"acct-{uuid.uuid4().hex[:8]}", name="Test feed")
     base.update(kw)
-    return DataSource(
-        id=DataSource.allocate_deterministic_id(base["provider"], base["account_key"]), **base
-    )
+    return DataSource(**base)
 
 
-def test_id_is_deterministic_per_provider_and_account():
-    a = DataSource.allocate_deterministic_id("rss", "acct-1")
-    b = DataSource.allocate_deterministic_id("rss", "acct-1")
-    c = DataSource.allocate_deterministic_id("rss", "acct-2")
-    assert a == b and a != c
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_two_sources_may_serve_one_account():
+    """Ids are uuid4 and `account_key` is descriptive, not a key.
+
+    Whether a second poller on one account is worth its request cost is the
+    operator's call — nothing in the entity, the create path or the UI form
+    refuses it. Pinned because the previous design derived the id FROM the
+    account, which made this impossible by construction.
+    """
+    account = f"acct-{uuid.uuid4().hex[:8]}"
+    first = _source(account_key=account)
+    second = _source(account_key=account)
+    await first.save()
+    await second.save()
+
+    assert first.id != second.id
+    both = await DataSource.get_all({"account_key": account})
+    assert {s.id for s in both} == {first.id, second.id}
+
+
+def _active(**kw) -> DataSource:
+    return _source(status=SourceStatus.ACTIVE.value, **kw)
 
 
 def test_due_selection():
-    never_polled = _source()
-    assert never_polled.is_due(NOW) is True, "a source that has never run is due"
+    never_polled = _active()
+    assert never_polled.is_due(NOW) is True, "an active source that has never run is due"
 
-    later = _source(next_poll_at=NOW + timedelta(seconds=30))
+    later = _active(next_poll_at=NOW + timedelta(seconds=30))
     assert later.is_due(NOW) is False
 
-    ready = _source(next_poll_at=NOW - timedelta(seconds=1))
+    ready = _active(next_poll_at=NOW - timedelta(seconds=1))
     assert ready.is_due(NOW) is True
 
-    assert _source(enabled=False).is_due(NOW) is False
+    # Every non-ACTIVE state is un-due, and for different reasons: DISABLED is a
+    # person's decision, SETUP is unfinished configuration, NEW is undecided.
+    for status in (SourceStatus.DISABLED, SourceStatus.SETUP, SourceStatus.NEW):
+        assert _source(status=status.value).is_due(NOW) is False, status
 
     # A config error needs a human; re-polling burns quota to re-learn it.
-    broken = _source(health=SourceHealth.CONFIG_ERROR.value)
+    broken = _active(health=SourceHealth.CONFIG_ERROR.value)
     assert broken.is_due(NOW) is False
     # ...but a transient one must keep trying at the ordinary cadence.
-    flaky = _source(health=SourceHealth.TRANSIENT_ERROR.value)
+    flaky = _active(health=SourceHealth.TRANSIENT_ERROR.value)
     assert flaky.is_due(NOW) is True
 
 

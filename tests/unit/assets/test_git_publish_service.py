@@ -29,7 +29,7 @@ async def test_project_must_already_be_published_before_git_mutation(tmp_path, m
         project_id=project.id,
         asset_ref=str(tmp_path / "agent" / "q" / "agent.md"),
     )
-    monkeypatch.setattr("flow_sdk.assets._publish_service._owning_project", AsyncMock(return_value=project))
+    monkeypatch.setattr("flow_sdk.assets._publish_service.owning_project", AsyncMock(return_value=project))
     resolve = Mock()
     monkeypatch.setattr("flow_sdk.assets._publish_service.AssetGitWorktree.resolve", resolve)
 
@@ -102,7 +102,7 @@ async def test_publish_sends_project_id_only_and_updates_only_asset_cache(tmp_pa
             posted.update({"path": path, "payload": payload})
             return {"asset": {"id": agent.id, "type": "agent"}}
 
-    monkeypatch.setattr("flow_sdk.assets._publish_service._owning_project", AsyncMock(return_value=project))
+    monkeypatch.setattr("flow_sdk.assets._publish_service.owning_project", AsyncMock(return_value=project))
     monkeypatch.setattr("flow_sdk.assets._publish_service.AssetGitWorktree.resolve", lambda _: worktree)
     monkeypatch.setattr("flow_sdk.assets._publish_service.project_asset_tree", lambda **_: projection)
     monkeypatch.setattr(

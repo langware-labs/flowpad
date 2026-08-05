@@ -143,6 +143,13 @@ async def share_var_with(
                 var_type=EnvVarType.OAUTH_TOKEN,
                 ref_type=BuiltinEntityType(sharing_entity.type),
                 ref_name=var_name,
+                # WHICH account this consent was given for. Latest login wins at
+                # the credential, so without this the borrower keeps reading
+                # AVAILABLE after the owner re-authorizes as somebody else —
+                # pointed at a workspace nobody here agreed to. Compared in
+                # `resolve_var_status`; None (a provider that does not identify
+                # its accounts) simply never mismatches.
+                bound_account_key=shared_var.account_key,
             )
         )
         await shared_with.update()

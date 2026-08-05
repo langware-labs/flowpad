@@ -259,6 +259,12 @@ async def _migrate_vfs_record_to_data_ref(conn) -> None:
         )
 
 
+# Per-class caches of derived field lists. Both are pure functions of the class
+# (stable after class creation) but were recomputed on every save.
+_PERSIST_FIELDS_CACHE: "dict[type, tuple[str, ...]]" = {}
+_REL_PERSIST_FIELDS_CACHE: "dict[type, tuple[str, ...]]" = {}
+
+
 class SQLiteDBDriver(DBDriver):
     """SQLAlchemy/SQLite database driver for testing."""
 
@@ -322,7 +328,7 @@ class SQLiteDBDriver(DBDriver):
                 self.reader_session_factory = self._make_reader_session_factory()
             return
         from sqlalchemy.ext.asyncio import create_async_engine
-        from sqlalchemy.pool import NullPool
+        from sqlalchemy.pool import AsyncAdaptedQueuePool, NullPool
 
         # Lazy per-instance resolution — see ``__init__`` for rationale.
         if not self.config.database:
@@ -330,14 +336,17 @@ class SQLiteDBDriver(DBDriver):
             self._database_was_lazy = True
         db_path = self.config.database or ":memory:"
         url = get_database_url(db_path)
-        # NullPool: every operation opens a fresh aiosqlite connection
-        # and closes it deterministically on session.close(). Shared with
-        # AsyncAdaptedQueuePool we leaked connections to GC under the
-        # test scaffolding's between-test cache invalidation. Per-op
-        # connection setup is ~10ms which is fine for a desktop app
-        # that already amortizes via the indexer's shared `session()`
-        # context (single connection across hundreds of records).
-        self.engine = create_async_engine(url, echo=False, poolclass=NullPool)
+        # Pool connections by default. With NullPool every operation opened a
+        # fresh aiosqlite connection (a new OS thread) and replayed six PRAGMAs
+        # before doing any work — ~3.7ms of setup per operation, paid by every
+        # DB call in the app, against ~0.02ms for the write itself.
+        # ``DBConfig.pooled=False`` opts out; see there for who needs that.
+        if self.config.pooled:
+            self.engine = create_async_engine(
+                url, echo=False, poolclass=AsyncAdaptedQueuePool, pool_size=2, max_overflow=8
+            )
+        else:
+            self.engine = create_async_engine(url, echo=False, poolclass=NullPool)
         install_pragmas_and_immediate(self.engine)
 
         # Create tables
@@ -438,6 +447,35 @@ class SQLiteDBDriver(DBDriver):
             )
         )
 
+        # Partial expression index on a SourceItem's natural key. Ingestion
+        # resolves every record by (data_source, stream, external id) rather
+        # than by a derived id, and does it on EVERY poll to consult the digest
+        # gate — the read that is supposed to cost one indexed lookup and
+        # nothing else. These are JSON fields, not columns, so without this the
+        # gate degrades to a full scan of the type: a 500-item page against a
+        # source holding 50k records compares the IN list against every row,
+        # every minute, forever.
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_source_item_natural_key "
+                "ON entities(json_extract(data, '$.data_source_id'), "
+                "json_extract(data, '$.stream_key'), "
+                "json_extract(data, '$.external_id')) "
+                "WHERE type = 'source_item'"
+            )
+        )
+
+        # The same lookup for cursors: `ensure_for` resolves one per stream per
+        # source on every poll, and `data_source_id` alone is selective enough
+        # (a source has streams in the tens, not thousands).
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_cursor_by_source "
+                "ON entities(json_extract(data, '$.data_source_id')) "
+                "WHERE type = 'data_source_cursor'"
+            )
+        )
+
     async def close(self):
         """Close database connection and ensure worker threads stop."""
         if self.engine:
@@ -519,14 +557,6 @@ class SQLiteDBDriver(DBDriver):
             return
 
         async with self._session_ctx() as session:
-            await session.execute(
-                text("""
-                CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
-                    entity_id, type, name, title, description, content,
-                    tokenize='porter unicode61'
-                )
-            """)
-            )
             await self._fts_delete_batch(session, [e.entity_id for e in entries], batch_size)
             await self._fts_insert_batch(session, entries, batch_size)
 
@@ -558,14 +588,6 @@ class SQLiteDBDriver(DBDriver):
 
         fts_query = " ".join(_fts_term(t) for t in query.split())
         async with self._session_ctx(write=False) as session:
-            await session.execute(
-                text("""
-                CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
-                    entity_id, type, name, title, description, content,
-                    tokenize='porter unicode61'
-                )
-            """)
-            )
             # Build the SQL — snippet() on title (col 3) and content (col 5)
             # Columns: 0=entity_id, 1=type, 2=name, 3=title, 4=description, 5=content
             cal = calibration or SearchCalibration()
@@ -1224,7 +1246,7 @@ class SQLiteDBDriver(DBDriver):
 
         # Create owner relationship
         if owner:
-            await self._create_owner_relationship(entity, owner)
+            await self._create_owner_relationship(entity, owner, known_new=True)
         elif entity.get_type() == BuiltinEntityType.USER.value.lower():
             # For users without an explicit owner, create self-loop relationship
             await self._create_owner_relationship(entity, entity.typeid)
@@ -1753,7 +1775,9 @@ class SQLiteDBDriver(DBDriver):
 
     # ==================== Relationship CRUD ====================
 
-    async def save_relationship(self, relationship: DBBaseRelationship, create: bool = True) -> DBBaseRelationship:
+    async def save_relationship(
+        self, relationship: DBBaseRelationship, create: bool = True, *, known_new: bool = False
+    ) -> DBBaseRelationship:
         """Save relationship to database.
 
         The `create` flag controls which audit fields are applied:
@@ -1770,8 +1794,10 @@ class SQLiteDBDriver(DBDriver):
         async with self._session_ctx() as session:
             schema = self._relationship_to_schema(relationship)
 
-            # Check if relationship exists
-            existing = await session.get(RelationshipSchema, relationship.id)
+            # ``known_new`` skips this probe for an edge minted alongside a
+            # brand-new entity — it cannot pre-exist, so the round-trip could
+            # only ever return None. A genuine race still hits the PK on insert.
+            existing = None if known_new else await session.get(RelationshipSchema, relationship.id)
             if existing:
                 # Update existing relationship
                 for key, value in schema.to_dict().items():
@@ -2324,7 +2350,7 @@ class SQLiteDBDriver(DBDriver):
 
     # ==================== Helper Methods ====================
 
-    async def _create_owner_relationship(self, entity: DBBaseRecord, owner: TypeId):
+    async def _create_owner_relationship(self, entity: DBBaseRecord, owner: TypeId, *, known_new: bool = False):
         """Create owner role relationship."""
         from flow_sdk.db.rolerelationship import RoleRelationship
 
@@ -2334,7 +2360,7 @@ class SQLiteDBDriver(DBDriver):
         role_rel = RoleRelationship(from_typeid=owner, to_typeid=entity.typeid)
         role_rel.set_mapping(from_role, "owner")
         role_rel.is_child = True
-        return await self.save_relationship(role_rel)
+        return await self.save_relationship(role_rel, known_new=known_new)
 
     async def _find_by_unique_fields(self, entity: DBBaseRecord, session: AsyncSession) -> Optional[EntitySchema]:
         """Find existing entity with same unique field values."""
@@ -2377,6 +2403,12 @@ class SQLiteDBDriver(DBDriver):
         for field in entity.unique_fields():
             # uname is enforced by the type_uname unique column — skip app-level check
             if field == "uname":
+                continue
+            # ``id`` is the PRIMARY KEY: the DB enforces it, and the query below
+            # would be ``id = <entity.id> AND id != <entity.id>`` — structurally
+            # unsatisfiable, so it could only ever return zero rows. It cost a
+            # full round-trip per save to prove nothing.
+            if field == "id":
                 continue
 
             field_value = getattr(entity, field, None)
@@ -2594,14 +2626,21 @@ class SQLiteDBDriver(DBDriver):
         ``DBBaseRecord.is_db_excluded`` classmethod so inherited
         ``db_exclude=True`` flags are honored across the MRO.
         """
-        base_fields = set(DBBaseRecord.model_fields.keys())
-        blob_fields = set(entity.__class__.get_blob_fields_names())
+        # Which fields persist into the ``data`` JSON is a pure function of the
+        # CLASS (model_fields, blob flags, db_exclude across the MRO), but this
+        # rebuilt two sets and re-walked the MRO per field on EVERY save.
+        cls = entity.__class__
+        persist_fields = _PERSIST_FIELDS_CACHE.get(cls)
+        if persist_fields is None:
+            base_fields = set(DBBaseRecord.model_fields.keys())
+            blob_fields = set(cls.get_blob_fields_names())
+            persist_fields = tuple(
+                n for n in cls.model_fields
+                if n not in base_fields and n not in blob_fields and not cls.is_db_excluded(n)
+            )
+            _PERSIST_FIELDS_CACHE[cls] = persist_fields
         data = {}
-        for field_name in entity.__class__.model_fields:
-            if field_name in base_fields or field_name in blob_fields:
-                continue
-            if entity.__class__.is_db_excluded(field_name):
-                continue
+        for field_name in persist_fields:
             value = getattr(entity, field_name, None)
             if value is not None:
                 serialized = self._serialize_value(value)
@@ -2713,16 +2752,20 @@ class SQLiteDBDriver(DBDriver):
     def _relationship_to_schema(self, rel: DBBaseRelationship) -> RelationshipSchema:
         """Convert relationship to schema."""
         # Get extra data
-        base_fields = set(DBBaseRelationship.model_fields.keys()) | {"from_role", "to_role", "is_child", "is_final"}
+        # Same per-class derivation, and same reason, as _get_entity_data_dict.
+        rcls = rel.__class__
+        extra_fields = _REL_PERSIST_FIELDS_CACHE.get(rcls)
+        if extra_fields is None:
+            base_fields = set(DBBaseRelationship.model_fields.keys()) | {
+                "from_role", "to_role", "is_child", "is_final",
+            }
+            extra_fields = tuple(n for n in rcls.model_fields if n not in base_fields)
+            _REL_PERSIST_FIELDS_CACHE[rcls] = extra_fields
         data = {}
-        for field_name in rel.__class__.model_fields:
-            if field_name not in base_fields:
-                value = getattr(rel, field_name, None)
-                if value is not None:
-                    if hasattr(value, "model_dump"):
-                        data[field_name] = value.model_dump()
-                    else:
-                        data[field_name] = value
+        for field_name in extra_fields:
+            value = getattr(rel, field_name, None)
+            if value is not None:
+                data[field_name] = value.model_dump() if hasattr(value, "model_dump") else value
 
         # Use instance's type attribute instead of get_type() classmethod
         # This is important for generic Relationship objects with dynamic types

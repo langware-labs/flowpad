@@ -64,7 +64,7 @@ export default function InstallLanding() {
     setStarted(true);
     void launch({
       name: repo.name,
-      gitSetup: {
+      sandboxProject: {
         name: repo.name,
         gitOrigin: { ...repo.git_origin, branch: branch.name },
         install: contentInstallSpec(intent),

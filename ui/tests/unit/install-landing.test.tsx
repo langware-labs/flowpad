@@ -124,7 +124,7 @@ describe('/install landing', () => {
 
     expect(mocks.launch).toHaveBeenCalledWith({
       name: 'website',
-      gitSetup: {
+      sandboxProject: {
         name: 'website',
         gitOrigin: { ...existingRepo.git_origin, branch: 'develop' },
         install: {
@@ -149,7 +149,7 @@ describe('/install landing', () => {
     expect(mocks.launch).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'new-support-site',
-        gitSetup: expect.objectContaining({
+        sandboxProject: expect.objectContaining({
           gitOrigin: expect.objectContaining({ owner: 'demo-user', name: 'new-support-site', branch: 'main' }),
         }),
       }),

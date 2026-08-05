@@ -24,12 +24,11 @@ from flow_sdk.builtin.source_item import SourceItem
 
 
 def _item(**kw) -> SourceItem:
-    """A SourceItem whose id is derived, exactly as the ingestor mints it."""
+    """A SourceItem carrying the natural key the ingestor resolves rows by."""
     data_source_id = kw.pop("data_source_id", "ds-test")
     stream_key = kw.pop("stream_key", "stream-test")
     external_id = kw.pop("external_id", uuid.uuid4().hex)
     return SourceItem(
-        id=SourceItem.allocate_deterministic_id(data_source_id, stream_key, external_id),
         data_source_id=data_source_id,
         stream_key=stream_key,
         external_id=external_id,
@@ -75,13 +74,23 @@ async def test_a_word_only_in_the_body_is_searchable():
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_reingest_converges_on_one_row():
-    """The derived id is the whole idempotency story — prove it survives a save."""
+    """The natural-key lookup is the whole idempotency story — prove it upserts.
+
+    Ids are uuid4, so constructing a second row and hoping it lands on the first
+    one's id is exactly what must NOT work. Convergence comes from resolving
+    ``(source, stream, external id)`` to the row that already exists, which is
+    what ``ingest_item`` does before it writes.
+    """
     external_id = f"ext-{uuid.uuid4().hex[:8]}"
     first = _item(external_id=external_id, name="v1", body="first body")
     await first.save()
 
-    second = _item(external_id=external_id, name="v2", body="second body")
-    assert second.id == first.id, "same (source, stream, external id) must derive the same id"
+    second = await SourceItem.find_existing("ds-test", "stream-test", external_id)
+    assert second is not None and second.id == first.id, (
+        "the natural key did not resolve the row the ingestor would have updated"
+    )
+    second.name = "v2"
+    second.body = "second body"
     await second.save()
 
     rows = await SourceItem.get_all({"external_id": external_id})

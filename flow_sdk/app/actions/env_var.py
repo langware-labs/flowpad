@@ -392,7 +392,7 @@ async def update_env_var(env_var_info: EnvVarInfo) -> ApiResponse[EnvVarApiInfoO
         raise HTTPException(status_code=400, detail="env var data not provided")
 
     # Prevent value updates for env_vars with key_id (API keys)
-    if env_var_api_info.value and entity_var.has_key_id():
+    if env_var_api_info.value and entity_var.has_key_id:
         raise HTTPException(
             status_code=400,
             detail="Cannot update value for API key. API keys are immutable. Use the api-keys action to manage API keys.",

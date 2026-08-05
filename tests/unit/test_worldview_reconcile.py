@@ -13,8 +13,21 @@ from flow_sdk.worldview.models import (
     InventorySnapshot,
     OrganizationInventory,
 )
-from flow_sdk.worldview.reconcile import gcp_deployment_id, reconcile_snapshot
+from flow_sdk.worldview.reconcile import reconcile_snapshot
 from flow_sdk.worldview.service import link_artifact
+
+
+async def _find(full_resource_name: str) -> Deployment | None:
+    """Look the row up by its NATURAL KEY — the provider's own resource name.
+
+    There is no derived id to reconstruct any more: convergence is a lookup, so
+    the tests converge the same way the reconciler does.
+    """
+    rows = await Deployment.get_all({"match": {"type": Deployment.get_type()}})
+    return next(
+        (r for r in rows if r.origin and r.origin.external_id == full_resource_name),
+        None,
+    )
 
 
 def _snapshot(org_id: str, resources: list[InventoryResource], *, error: str | None = None):
@@ -54,20 +67,22 @@ async def test_reconcile_is_idempotent_and_projects_links_and_hierarchy():
 
     first = await reconcile_snapshot(_snapshot(org_id, [resource]))
     second = await reconcile_snapshot(_snapshot(org_id, [resource]))
-    deployment = await Deployment.get_by_id(gcp_deployment_id(full_name))
-    assert first.created >= 3  # org, project, resource; the singleton root may pre-exist
+    deployment = await _find(full_name)
+    # ONE row, for the one real resource. The org/folder/project chain is
+    # provider coordinates on `target.scope`, not entities of its own.
+    assert first.created == 1
     assert second.created == 0
     assert deployment is not None
-    assert deployment.parent_type_id is not None
+    assert deployment.target.scope == f"organizations/{org_id}/projects/101"
     assert deployment.artifact_id == artifact.id
 
     graph = await build_worldview()
     kinds = {edge.kind for edge in graph.edges}
-    assert {"child", "deployed_as"}.issubset(kinds)
+    assert "deployed_as" in kinds
     assert graph.schema_version == 1
     assert graph.projection == "deployment"
-    assert graph.root is not None
-    assert {edge.kind: edge.topology for edge in graph.edges}["child"] == "hierarchy"
+    # No synthetic root: a discovered resource is a root of its own forest.
+    assert graph.root is None
     assert {edge.kind: edge.topology for edge in graph.edges}["deployed_as"] == "association"
     assert graph.counts.model_dump() == {"nodes": len(graph.nodes), "edges": len(graph.edges)}
 
@@ -90,7 +105,7 @@ async def test_manual_artifact_link_survives_later_provider_sync():
     )
 
     await reconcile_snapshot(_snapshot(org_id, [resource]))
-    deployment_id = gcp_deployment_id(full_name)
+    deployment_id = (await _find(full_name)).id
     await link_artifact(deployment_id, manual_artifact.id)
     await reconcile_snapshot(_snapshot(org_id, [resource]))
 
@@ -113,8 +128,9 @@ async def test_inventory_reconcile_preserves_provider_enrichment_observations():
         provider_state="ACTIVE",
     )
     await reconcile_snapshot(_snapshot(org_id, [initial]))
-    deployment_id = gcp_deployment_id(full_name)
-    deployment = await Deployment.get_by_id(deployment_id)
+    deployment = await _find(full_name)
+    deployment_id = deployment.id if deployment else ""
+
     assert deployment is not None
     deployment.observations = {
         "cost": DeploymentObservation(
@@ -155,7 +171,7 @@ async def test_invalid_provider_artifact_label_is_ignored():
     )
 
     report = await reconcile_snapshot(_snapshot(org_id, [resource]))
-    deployment = await Deployment.get_by_id(gcp_deployment_id(full_name))
+    deployment = await _find(full_name)
     assert deployment is not None
     assert deployment.artifact_id is None
     assert any("ignored invalid flowpad_artifact_id label" in item for item in report.warnings)
@@ -174,13 +190,13 @@ async def test_reconcile_marks_unseen_stale_but_preserves_failed_org_rows():
     )
     await reconcile_snapshot(_snapshot(org_id, [resource]))
     stale_report = await reconcile_snapshot(_snapshot(org_id, []))
-    deployment = await Deployment.get_by_id(gcp_deployment_id(full_name))
+    deployment = await _find(full_name)
     assert stale_report.stale >= 1
     assert deployment is not None and deployment.status.sync_state == "stale"
 
     await reconcile_snapshot(_snapshot(org_id, [resource]))
     failed = await reconcile_snapshot(_snapshot(org_id, [], error="permission denied"))
-    preserved = await Deployment.get_by_id(gcp_deployment_id(full_name))
+    preserved = await _find(full_name)
     assert failed.organizations_failed == 1
     assert preserved is not None and preserved.status.sync_state == "current"
 
@@ -232,8 +248,8 @@ async def test_partial_multi_org_sync_continues_and_preserves_failed_scope():
     )
 
     report = await reconcile_snapshot(snapshot)
-    current = await Deployment.get_by_id(gcp_deployment_id(success_name))
-    preserved = await Deployment.get_by_id(gcp_deployment_id(preserved_name))
+    current = await _find(success_name)
+    preserved = await _find(preserved_name)
     assert report.state == "partial"
     assert report.organizations_succeeded == 1
     assert report.organizations_failed == 1
@@ -242,7 +258,7 @@ async def test_partial_multi_org_sync_continues_and_preserves_failed_scope():
 
 
 @pytest.mark.asyncio
-async def test_organization_asset_never_becomes_its_own_parent():
+async def test_inventoried_resources_are_not_parented():
     org_id = "worldview-org-self-edge"
     full_name = f"//cloudresourcemanager.googleapis.com/organizations/{org_id}"
     org_asset = InventoryResource(
@@ -253,7 +269,7 @@ async def test_organization_asset_never_becomes_its_own_parent():
     )
 
     await reconcile_snapshot(_snapshot(org_id, [org_asset]))
-    organization = await Deployment.get_by_id(gcp_deployment_id(full_name))
+    organization = await _find(full_name)
     assert organization is not None
     assert organization.parent_type_id != str(organization.typeid)
 

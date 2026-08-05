@@ -20,7 +20,7 @@ import {
  * coming back.
  */
 
-const ALL_GATES: Record<RailGate, boolean> = { project: true, conversations: true, tasks: true };
+const ALL_GATES: Record<RailGate, boolean> = { project: true, conversations: true };
 
 const idsFor = (mode: ViewMode, gates = ALL_GATES): RailItemId[] =>
   resolveRail(mode, gates).map((item) => item.id);
@@ -49,11 +49,21 @@ describe('resolveRail — modes are strictly additive', () => {
   });
 
   it('each mode adds the items declared at it', () => {
-    expect(idsFor(ViewMode.Advanced)).toContain('triggers');
+    // `events` merged the old `triggers` (Advanced) and `signals` (Dev) items.
+    // It stays at Advanced, not Dev: dropping to Dev would have removed rules
+    // from a mode that already had them, which is a subtraction the additive
+    // chain above forbids.
+    expect(idsFor(ViewMode.Advanced)).toContain('events');
     expect(idsFor(ViewMode.Advanced)).toContain('hooks');
-    expect(idsFor(ViewMode.Standard)).not.toContain('triggers');
+    expect(idsFor(ViewMode.Standard)).not.toContain('events');
+    // The merged ids are gone, not merely relocated.
+    expect(idsFor(ViewMode.Dev)).not.toContain('triggers');
+    expect(idsFor(ViewMode.Dev)).not.toContain('signals');
     expect(idsFor(ViewMode.Dev)).toEqual(expect.arrayContaining(['discover', 'graph-workflows', 'capabilities']));
     expect(idsFor(ViewMode.Advanced)).not.toContain('discover');
+    // Data sources took the Tasks slot, but at Advanced rather than Vibe.
+    expect(idsFor(ViewMode.Advanced)).toContain('data-sources');
+    expect(idsFor(ViewMode.Standard)).not.toContain('data-sources');
   });
 });
 
@@ -67,18 +77,17 @@ describe('resolveRail — order is the same in every mode', () => {
   }
 
   it('holds when gates drop items out of the middle', () => {
-    const gated = idsFor(ViewMode.Dev, { project: false, conversations: false, tasks: true });
+    const gated = idsFor(ViewMode.Dev, { project: false, conversations: true });
     expect(isSubsequence(gated, specOrder)).toBe(true);
     expect(gated).not.toContain('project');
-    expect(gated).not.toContain('inbox');
-    expect(gated).toContain('tasks');
+    expect(gated).toContain('inbox');
   });
 
   it('places the top rail in the agreed order', () => {
     const top = resolveRail(ViewMode.Vibe, ALL_GATES)
       .filter((item) => item.placement === 'top')
       .map((item) => item.id);
-    expect(top).toEqual(['home', 'project', 'chats', 'bookmarks', 'inbox', 'tasks']);
+    expect(top).toEqual(['home', 'project', 'chats', 'bookmarks', 'inbox']);
   });
 });
 
@@ -87,23 +96,23 @@ describe('resolveRail — content gates', () => {
     const none = idsFor(ViewMode.Dev, NO_GATES);
     expect(none).not.toContain('project');
     expect(none).not.toContain('inbox');
-    expect(none).not.toContain('tasks');
-    // Ungated neighbours survive.
-    expect(none).toEqual(expect.arrayContaining(['home', 'chats', 'bookmarks']));
+    // Ungated neighbours survive — including data-sources, which must NOT be
+    // gated on "a source exists": this screen is where the first one is made.
+    expect(none).toEqual(expect.arrayContaining(['home', 'chats', 'bookmarks', 'data-sources']));
   });
 
-  it('gates are independent — tasks content does not reveal inbox', () => {
-    const tasksOnly = idsFor(ViewMode.Vibe, { project: false, conversations: false, tasks: true });
-    expect(tasksOnly).toContain('tasks');
-    expect(tasksOnly).not.toContain('inbox');
+  it('gates are independent — a project does not reveal inbox', () => {
+    const projectOnly = idsFor(ViewMode.Vibe, { project: true, conversations: false });
+    expect(projectOnly).toContain('project');
+    expect(projectOnly).not.toContain('inbox');
 
-    const convsOnly = idsFor(ViewMode.Vibe, { project: false, conversations: true, tasks: false });
+    const convsOnly = idsFor(ViewMode.Vibe, { project: false, conversations: true });
     expect(convsOnly).toContain('inbox');
-    expect(convsOnly).not.toContain('tasks');
+    expect(convsOnly).not.toContain('project');
   });
 
   it('a fresh instance with a project shows exactly Home, Project, Chats, Bookmarks', () => {
-    const top = resolveRail(ViewMode.Vibe, { project: true, conversations: false, tasks: false })
+    const top = resolveRail(ViewMode.Vibe, { project: true, conversations: false })
       .filter((item) => item.placement === 'top')
       .map((item) => item.id);
     expect(top).toEqual(['home', 'project', 'chats', 'bookmarks']);
@@ -113,6 +122,13 @@ describe('resolveRail — content gates', () => {
 describe('RAIL_ITEMS — spec integrity', () => {
   it('has no Assets entry (the project item already opens them)', () => {
     expect(RAIL_ITEMS.find((item) => (item.id as string) === 'assets')).toBeUndefined();
+  });
+
+  it('has no Tasks entry — the project item owns the list/task surface', () => {
+    // Data sources took this slot. Re-adding Tasks re-creates the "one click
+    // lights two rail buttons" problem the onTasks/onAssets subtraction existed
+    // to avoid, which is why that subtraction is now gone too.
+    expect(RAIL_ITEMS.find((item) => (item.id as string) === 'tasks')).toBeUndefined();
   });
 
   it('declares each id exactly once', () => {

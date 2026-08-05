@@ -1402,6 +1402,128 @@ async def resolve_helpdesk(project_id: Optional[str] = None) -> Optional[Helpdes
     return await _hub_default_helpdesk()
 
 
+async def _ticket_context_typeids(project_id: Optional[str]) -> tuple[list[str], Optional[str]]:
+    """``(context_typeids, session_typeid)`` for a ticket.
+
+    The context list is what the desk needs to triage: the requester's project,
+    the agent session they were running when they asked, and that session's
+    transcript. The session typeid is returned separately because it is also
+    the thing whose BYTES get attached — naming a transcript and shipping one
+    are different jobs, and only the second gives the assignee something to
+    open.
+
+    Best-effort by design — a ticket must never fail to open because context
+    could not be gathered. Returns ``([], None)`` rather than raising.
+
+    The session is resolved as the project's most recently active
+    ``AgenticProcess``, which is what "what was I doing when this went wrong"
+    means from the requester's side.
+    """
+    out: list[str] = []
+    session_typeid: Optional[str] = None
+    if not project_id:
+        return out, session_typeid
+    try:
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        project = await Project.get_by_id(project_id)
+        if project is None:
+            return out, session_typeid
+        out.append(str(project.typeid))
+
+        from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
+            AgenticProcess,
+        )
+
+        # AgenticProcess is project-FIELD scoped, not graph-scoped — a scoped
+        # query returns 0 rows. Filter on the field.
+        processes = await AgenticProcess.get_all({"project_id": project_id})
+        latest = max(
+            (p for p in processes if getattr(p, "updated_date", None)),
+            key=lambda p: p.updated_date,
+            default=None,
+        )
+        if latest is not None:
+            out.append(str(latest.typeid))
+            session_id = getattr(latest, "session_id", None)
+            if session_id:
+                session_typeid = f"claude_session-{session_id}"
+                out.append(session_typeid)
+    except Exception as e:  # noqa: BLE001
+        logger.info("[helpdesk-start-ticket] context gather skipped: %s", e)
+    return out, session_typeid
+
+
+#: How much transcript rides with a ticket. Enough for an assignee to see what
+#: the agent actually tried; short enough that a desk is not handed a customer's
+#: entire working session. The tail, not the head — the failure is at the end.
+TICKET_TRANSCRIPT_CHARS = 4000
+
+
+async def _ticket_transcript_excerpt(session_typeid: Optional[str]) -> Optional[str]:
+    """A readable tail of the requester's session, for the ticket body.
+
+    A support ticket cannot carry the transcript as BYTES. The requester holds
+    the ``guest`` role on someone else's desk, and that role is deliberately
+    narrow — it permits ``start_guest_conversation`` and nothing else. A guest
+    can read the conversation they opened but cannot list its child messages
+    (the children route 401s), so there is no local message to attach a body
+    to and no way to address one on the hub. The bundle path
+    (``agenticProcessShareSource`` → ``upload_body``) needs both.
+
+    Sending the text is what makes the ticket answerable inside the permissions
+    that exist. The ``type_id`` attachment still travels alongside it, so once
+    the assignee picks the ticket up — and both sides are participants — the
+    full session can be pulled through the ordinary share path.
+
+    Best-effort: an unreadable or missing transcript yields ``None``.
+    """
+    if not session_typeid or not session_typeid.startswith("claude_session-"):
+        return None
+    try:
+        import json as _json  # noqa: PLC0415
+        from pathlib import Path  # noqa: PLC0415
+
+        from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: PLC0415
+
+        session_id = session_typeid.split("-", 1)[1]
+        session = await ClaudeSession.get_by_id(session_id)
+        # ``asset_ref`` IS the transcript jsonl — a session is a file-backed
+        # entity whose id is the Claude session id.
+        ref = getattr(session, "asset_ref", None) if session else None
+        path = Path(ref) if ref else None
+        if path is None or not path.is_file():
+            return None
+
+        turns: list[str] = []
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                row = _json.loads(line)
+            except ValueError:
+                continue
+            message = row.get("message") or {}
+            role = message.get("role") or row.get("type") or "?"
+            content = message.get("content")
+            if isinstance(content, list):
+                text = " ".join(
+                    part.get("text", "") for part in content if isinstance(part, dict)
+                ).strip()
+            else:
+                text = str(content or "").strip()
+            if text:
+                turns.append(f"{role}: {text}")
+        if not turns:
+            return None
+
+        excerpt = "\n".join(turns)
+        if len(excerpt) > TICKET_TRANSCRIPT_CHARS:
+            excerpt = "…\n" + excerpt[-TICKET_TRANSCRIPT_CHARS:]
+        return excerpt
+    except Exception as e:  # noqa: BLE001
+        logger.info("[helpdesk-start-ticket] transcript excerpt skipped: %s", e)
+        return None
+
+
 @action.post(action_name="helpdesk-start-ticket", types=None)
 async def helpdesk_start_ticket() -> ApiResponse:
     """Open a support ticket — a guest-authored ``helpdesk`` conversation under
@@ -1430,7 +1552,44 @@ async def helpdesk_start_ticket() -> ApiResponse:
             return ApiFailResponse(message="Help desk is unavailable on this hub")
         helpdesk_id = target.project_id
 
-        resp = await _hub_action("POST", f"/graph/project/{helpdesk_id}/start_guest_conversation", {"text": text})
+        # Context rides with the ticket. A desk answering for someone else's
+        # project cannot triage from prose alone — "which engagement is this,
+        # and what was the agent doing?" is the first question every time, and
+        # a round trip to ask it is the difference between a ticket answered
+        # today and one answered tomorrow.
+        #
+        # ``FlowMessage.context`` is a TypeId list the hub stores without
+        # inspecting, so this needs nothing hub-side. Ids only: the desk is a
+        # different machine and cannot read the requester's disk. Transcript
+        # BYTES travel separately, through the share bundle
+        # (``agenticProcessShareSource`` → ``upload_body``) — the assignee
+        # pulls them once they pick the ticket up.
+        hub_body: dict = {"text": text}
+        ticket_context, session_typeid = await _ticket_context_typeids(project_id or None)
+        if ticket_context:
+            hub_body["context"] = ticket_context
+
+        # The session rides two ways, because neither alone is enough. The
+        # ``type_id`` attachment is the durable reference the assignee resolves
+        # after pickup; the excerpt is what makes the ticket answerable BEFORE
+        # then, since a guest cannot upload a body bundle to someone else's
+        # desk (see ``_ticket_transcript_excerpt``).
+        excerpt = await _ticket_transcript_excerpt(session_typeid)
+        if session_typeid:
+            hub_body["attachment"] = [
+                # Lowercase: the wire value is the enum VALUE (``type_id``),
+                # not its Python name. The hub validates strictly and rejects
+                # ``TYPE_ID`` with a 400.
+                {"attachment_type": "type_id", "data": session_typeid}
+            ]
+        if excerpt:
+            hub_body["text"] = (
+                f"{text}\n\n--- agent session (last {TICKET_TRANSCRIPT_CHARS} chars) ---\n{excerpt}"
+            )
+
+        resp = await _hub_action(
+            "POST", f"/graph/project/{helpdesk_id}/start_guest_conversation", hub_body
+        )
         if not resp or resp.get("status") != "SUCCESS":
             msg = (resp or {}).get("message") or "hub unreachable"
             # 502, not the default 500: the failure is the UPSTREAM hub rejecting
@@ -1483,7 +1642,15 @@ async def helpdesk_start_ticket() -> ApiResponse:
             with remote_reflection():
                 await conv.save(someone_typeid, notify=False)
 
-        return ApiSuccessResponse(data={"conversation_id": conv_id, "project_id": helpdesk_id})
+        return ApiSuccessResponse(
+            data={
+                "conversation_id": conv_id,
+                "project_id": helpdesk_id,
+                "context": ticket_context,
+                "session": session_typeid,
+                "transcript_included": bool(excerpt),
+            }
+        )
     except Exception as e:
         logger.error("[flow_message_action] helpdesk-start-ticket error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed to start support ticket: {str(e)}")
@@ -1514,6 +1681,24 @@ async def conversation_pickup() -> ApiResponse:
         from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
 
         hub_ws_bridge.remember_hub_conversation(conv_id)
+
+        # Take the hub's metadata before syncing messages. Pickup used to
+        # create the local row as a side effect of the message sync
+        # (``ensure_conversation_entity``), which knows nothing about the hub
+        # conversation and therefore left ``kind`` at its default — so a
+        # support ticket materialized on the STAFF side as an ordinary
+        # ``direct`` chat and the desk's queue view could not recognise it.
+        # Pickup is a hub-authoritative materialization; it takes the same
+        # metadata seam every other sync path uses (mirrors invitation-accept:
+        # join → fetch → upsert).
+        try:
+            hub_conv = await _hub_action("GET", f"/graph/conversation/{conv_id}")
+            data = (hub_conv or {}).get("data")
+            if isinstance(data, dict) and data.get("id"):
+                await _upsert_hub_conversation_metadata(data, someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[conversation-pickup] metadata sync failed (non-fatal): %s", e)
+
         try:
             await _fetch_conversation_messages(conv_id, someone_typeid)
         except Exception as e:  # noqa: BLE001
@@ -1530,18 +1715,38 @@ async def helpdesk_tickets_list() -> ApiResponse:
     the hub). Returns the lightweight rows verbatim so the UI can render an
     "unpicked" queue — unpicked tickets don't fan out to non-participants, so
     this is the only way staff discover them. Picking one up materializes it
-    locally (see ``conversation-pickup``)."""
+    locally (see ``conversation-pickup``).
+
+    Two callers with opposite questions share this action:
+
+    * a REQUESTER asks "which desk serves me?" — pass ``project_id`` (the
+      project they are working in) and the desk is resolved from it.
+    * STAFF ask "what is queued on MY desk?" — pass ``desk_project_id``, the
+      hub project that owns the queue, and it is used verbatim.
+
+    Staff need the second form because resolution only ever answers the first
+    question: a desk owner's own project has no desk of its own, so resolving
+    from it walks past their queue to whatever desk serves *them* (the hub's
+    default), and they get "no valid access for role ['guest']" against a desk
+    that isn't theirs. Their own tickets were unreachable from the app.
+    """
     try:
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
             return ApiFailResponse(message="No authenticated user in request context")
 
         body = await request_info.get_post_data() or {}
-        project_id = (body.get("project_id") or "").strip()
-        target = await resolve_helpdesk(project_id or None)
-        if not target:
-            return ApiFailResponse(message="Help desk is unavailable on this hub")
-        helpdesk_id = target.project_id
+        # Explicit desk wins: the staff surface already knows which desk it is
+        # rendering, and asking it to be re-derived is what broke the case.
+        desk_project_id = (body.get("desk_project_id") or "").strip()
+        if desk_project_id:
+            helpdesk_id = desk_project_id
+        else:
+            project_id = (body.get("project_id") or "").strip()
+            target = await resolve_helpdesk(project_id or None)
+            if not target:
+                return ApiFailResponse(message="Help desk is unavailable on this hub")
+            helpdesk_id = target.project_id
 
         resp = await _hub_action("GET", f"/graph/project/{helpdesk_id}/helpdesk_conversations")
         # Propagate a hub authorization/transport failure instead of synthesizing
@@ -2656,13 +2861,22 @@ _conv_fetch_inflight: set[str] = set()
 _BG_FETCH_CONCURRENCY = 8
 
 
-async def _drain_conversation_message_fetches(conv_ids: list[str], someone_typeid: str) -> None:
+async def _drain_conversation_message_fetches(pending: dict[str, Optional[datetime]], someone_typeid: str) -> None:
     """Catch up message state for many conversations, bounded concurrency.
 
     Runs as ONE detached task OFF the request path, so the list handler returns
     before any fetch starts (no event-loop contention with the foreground
     reconcile). The process-local claim set preserves per-conversation
     single-flight across overlapping batches.
+
+    ``pending`` maps conversation id → the hub parent ``updated_date`` that
+    justified the fetch. On success that value becomes the conversation's new
+    ``hub_updated_date`` watermark — stamping it HERE, and only here, is what
+    makes the watermark mean "reconciled through this hub revision". Recording
+    it up-front (when the list merely SAW the row) would let a swallowed fetch
+    failure certify a convergence that never happened, and a count-neutral
+    change — a message edit, a delivery/body-status flip — would then stay
+    invisible until the hub moved again.
     """
     sem = asyncio.Semaphore(_BG_FETCH_CONCURRENCY)
 
@@ -2672,28 +2886,44 @@ async def _drain_conversation_message_fetches(conv_ids: list[str], someone_typei
         _conv_fetch_inflight.add(cid)
         try:
             async with sem:
-                await _fetch_conversation_messages(cid, someone_typeid)
+                if await _fetch_conversation_messages(cid, someone_typeid):
+                    await _record_hub_watermark(cid, pending.get(cid), someone_typeid)
         except Exception as e:  # noqa: BLE001
             logger.warning("[conv-msg-drain] %s failed: %s", cid[:8], e)
         finally:
             _conv_fetch_inflight.discard(cid)
 
-    await asyncio.gather(*[_one(c) for c in conv_ids], return_exceptions=True)
+    await asyncio.gather(*[_one(c) for c in pending], return_exceptions=True)
 
 
-def _dispatch_conversation_message_fetches(conv_ids: list[str], someone_typeid: str) -> None:
+async def _record_hub_watermark(conv_id: str, hub_updated: Optional[datetime], someone_typeid: str) -> None:
+    """Advance one conversation's reconciled-through watermark. Best-effort."""
+    if hub_updated is None:
+        return
+    try:
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv is None or Conversation._as_datetime(conv.hub_updated_date) == hub_updated:
+            return
+        conv.hub_updated_date = hub_updated
+        with remote_reflection():
+            await conv.save(someone_typeid, notify=False)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[conv-msg-drain] %s watermark not recorded: %s", conv_id[:8], e)
+
+
+def _dispatch_conversation_message_fetches(pending: dict[str, Optional[datetime]], someone_typeid: str) -> None:
     """Fire-and-forget a whole catch-up batch as one detached, bounded drain.
 
-    Deferred + bounded: the caller collects the drifted conv ids during its
+    Deferred + bounded: the caller collects the drifted conversations during its
     foreground work and dispatches them all here at the very end, so the fetches
     neither interleave with the reconcile loop nor flood the loop all at once.
     """
-    if not conv_ids:
+    if not pending:
         return
     try:
         asyncio.create_task(
-            _drain_conversation_message_fetches(conv_ids, someone_typeid),
-            name=f"conv-msg-drain-{len(conv_ids)}",
+            _drain_conversation_message_fetches(pending, someone_typeid),
+            name=f"conv-msg-drain-{len(pending)}",
         )
     except RuntimeError:
         # No running loop (e.g. a sync call context) — nothing to schedule.
@@ -2925,7 +3155,7 @@ def _clamp_invitation_ts(invitations: list[Pointer], merged: list[Pointer]) -> l
     ]
 
 
-async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> None:
+async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> bool:
     """Bring local message state for a single conversation up to the hub's.
 
     Lists the conversation's child FlowMessages via the children-list route
@@ -2942,7 +3172,11 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
     FM dicts, so the per-id GET loop is gone.
 
     All exceptions are logged and swallowed — this runs as a detached task and
-    must never crash the event loop.
+    must never crash the event loop. Returns True only when the reconcile
+    actually completed, so the caller can decide whether it may advance the
+    conversation's ``hub_updated_date`` watermark (see
+    ``_drain_conversation_message_fetches``). A swallowed failure must NOT be
+    allowed to certify convergence.
     """
     lock = _conv_fetch_locks.setdefault(conv_id, asyncio.Lock())
     async with lock:
@@ -2962,7 +3196,7 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
             # through the authoritative reconcile below.
             if children is None:
                 logger.warning("[conv-msg-fetch] %s: children listing unavailable, skipping", conv_id[:8])
-                return
+                return False
             child_list: list[dict] = []
             if isinstance(children, list):
                 child_list = children
@@ -3096,8 +3330,10 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
                 synced,
                 len(child_list),
             )
+            return True
         except Exception as e:  # noqa: BLE001
             logger.warning("[conv-msg-fetch] %s: aborted: %s", conv_id[:8], e)
+            return False
 
 
 async def _ensure_local_conversation_synced(conv_id: str, someone_typeid: str) -> None:
@@ -3327,7 +3563,13 @@ async def _upsert_hub_conversation_metadata(
                 logger.debug("[conv-upsert] address-book learn failed for conv=%s: %s", conv_id[:8], learn_err)
     if existing is None:
         payload: dict = {"id": conv_id, "remote": True}
-        for k in ("title", "participants", "remote_project_id", "remote_project_name", "shared_context_entities"):
+        # ``kind`` is hub-authoritative for a hub-owned conversation. Omitting
+        # it filed every picked-up support ticket as an ordinary ``direct``
+        # chat on the STAFF side — the hub said ``helpdesk``, the local row
+        # said otherwise, and the desk's own queue view could not recognise its
+        # own tickets. The requester side had been papering over this by
+        # re-stamping HELPDESK after the fact; pickup had no such workaround.
+        for k in ("title", "kind", "participants", "remote_project_id", "remote_project_name", "shared_context_entities"):
             if hub_conv.get(k) is not None:
                 payload[_local_roster_key(k)] = (
                     _normalize_participants(hub_conv[k])
@@ -3375,7 +3617,7 @@ async def _upsert_hub_conversation_metadata(
             return await conv.save(someone_typeid, notify=notify)
     # Update path: copy hub-owned fields without touching projections.
     changed = False
-    for k in ("title", "participants", "remote_project_id", "remote_project_name"):
+    for k in ("title", "kind", "participants", "remote_project_id", "remote_project_name"):
         v = hub_conv.get(k)
         if k == "participants" and isinstance(v, list):
             v = _normalize_participants(v)
@@ -3408,12 +3650,12 @@ async def _upsert_hub_conversation_metadata(
     # rows re-created locally with a bogus created_date (e.g. after a DB rebuild).
     if adopt_hub_created_date(existing, hub_conv):
         changed = True
-    # Deliberately NOT adopting the hub parent ``updated_date``: the hub re-stamps
-    # it on bare touches (a child's body re-download), which would surface a
-    # days-old conversation as "just now". Recency is owned by
+    # Deliberately NOT adopting the hub parent ``updated_date`` as local recency:
+    # the hub re-stamps it on bare touches (a child's body re-download), which
+    # would surface a days-old conversation as "just now". Recency stays owned by
     # ``project_pointers_to_entity`` (derived from messages' real-change clocks).
-    # ``_should_fetch_messages`` still consults the hub clock transiently to gate
-    # the reconcile; it's just never persisted as local recency.
+    # The hub clock IS persisted, as ``Conversation.hub_updated_date`` — but by the
+    # drain, once the reconcile it justified has actually succeeded, never here.
     if changed:
         # We just refreshed this row from a hub payload — stamp the boundary.
         existing.fetched_at = datetime.now(UTC)
@@ -3445,15 +3687,17 @@ def fetch_order(hub_messages: list[dict]) -> list[dict]:
     return sorted(hub_messages, key=lambda m: m.get("created_date") or "", reverse=True)
 
 
-def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict) -> bool:
+def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict, *, clock_moved: bool | None = None) -> bool:
     """Out-of-sync detection for one conversation — the dispatch gate of the
     list pipeline. Two independent signals, OR-ed (the hub is the source of
     truth; either one firing invalidates the local copy via the authoritative
     reconcile in ``_fetch_conversation_messages``):
 
-    - ``updated_date`` LWW (``Entity.is_stale``): the hub bumps the parent on
-      child add/edit/delete AND on delivery/body status changes, so one cheap
-      parent compare catches every content/status change.
+    - hub-clock watermark (``Conversation.hub_clock_moved``): the hub bumps the
+      parent on child add/edit/delete AND on delivery/body status changes, so one
+      cheap parent compare catches every content/status change. NOT
+      ``Entity.is_stale`` — see ``Conversation.hub_updated_date`` for why that
+      comparison never converges on this type.
     - ``message_count`` mismatch, BIDIRECTIONAL: catches drift the date can't
       prove — e.g. a local row re-created bare from the hub (carries the hub's
       updated_date, so is_stale says current, but reports 0 messages), or a
@@ -3476,7 +3720,9 @@ def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict) -
         return False
     if local_conv is None:
         return True
-    if Conversation.is_stale(local_conv, hub_conv):
+    if clock_moved is None:
+        clock_moved = Conversation.hub_clock_moved(local_conv, Conversation._as_datetime(hub_conv.get("updated_date")))
+    if clock_moved:
         return True
     raw_hub_count = hub_conv.get("message_count")
     if raw_hub_count is None:
@@ -3588,7 +3834,9 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     # delivery/body status, membership), so ``is_stale`` is a complete change
     # signal — see _should_fetch_messages. Skipping the unchanged majority avoids
     # a per-row get_one + save for every conversation on every list call.
-    bg_fetch_dispatched: list[str] = []
+    # conv id -> the hub revision that justified its fetch; the drain stamps it
+    # as the new watermark only if the reconcile actually succeeds.
+    bg_fetch_pending: dict[str, Optional[datetime]] = {}
     for hub_conv in hub_convs:
         conv_id = (hub_conv.get("id") or "").strip()
         if not conv_id:
@@ -3609,12 +3857,21 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
         # correct comparison baseline. Capture the fetch decision BEFORE the
         # upsert mutates ``existing.updated_date``.
         existing = local_index.get(conv_id)
-        should_fetch = _should_fetch_messages(existing, hub_conv)
-        # ``created_date`` can't ride is_stale (see ``hub_created_drift``). Compare
-        # it here against the cache (free, in-memory) so the repair branch in
-        # _upsert still runs; converged rows match and skip.
+        # Parsed once and reused by the fetch gate, the upsert gate and the
+        # watermark below — it is the same hub string in all three.
+        _hub_updated = Conversation._as_datetime(hub_conv.get("updated_date"))
+        _clock_moved = existing is None or Conversation.hub_clock_moved(existing, _hub_updated)
+        should_fetch = _should_fetch_messages(existing, hub_conv, clock_moved=_clock_moved)
+        # ``created_date`` is hub-authoritative and corruptible locally (a DB
+        # rebuild re-stamps it) without ever moving ``updated_date`` — so it can't
+        # ride is_stale. Compare it here against the cache (free, in-memory) so the
+        # repair branch in _upsert still runs; converged rows match and skip.
         _created_drift = hub_created_drift(existing, hub_conv)
-        if existing is None or not existing.remote or Conversation.is_stale(existing, hub_conv) or _created_drift:
+        # Same converging watermark as the fetch gate. With ``is_stale`` here the
+        # local metadata write also re-fired on every call for every already-synced
+        # conversation — a save + a WS ``data_op`` per conversation per call, which
+        # is what made the client re-list the whole Inbox dozens of times per login.
+        if existing is None or not existing.remote or _clock_moved or _created_drift:
             try:
                 await _upsert_hub_conversation_metadata(
                     hub_conv,
@@ -3627,7 +3884,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
         if should_fetch:
             # Collect now; dispatch the whole batch off-path at the end so these
             # fetches don't steal event-loop time from the reconcile above.
-            bg_fetch_dispatched.append(conv_id)
+            bg_fetch_pending[conv_id] = _hub_updated
 
     # (d) invitations through the new materializer: the hub embeds the
     # target Conversation + first FlowMessage in each invitation, so the
@@ -3682,7 +3939,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     response = ApiSuccessResponse(
         data={
             "conversations": [c.model_dump(mode="json") for c in merged],
-            "bg_fetch_dispatched": bg_fetch_dispatched,
+            "bg_fetch_dispatched": list(bg_fetch_pending),
             "pruned_ids": pruned_ids,
             "hub_reachable": hub_reachable,
             "auth_required": auth_required,
@@ -3694,7 +3951,7 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
     # fetches start as the response is sent (never contending with the loop above)
     # and only a few run at once. Their writes heal through the authoritative
     # reconcile in _fetch_conversation_messages and stream in via WS data_op.
-    _dispatch_conversation_message_fetches(bg_fetch_dispatched, someone_typeid)
+    _dispatch_conversation_message_fetches(bg_fetch_pending, someone_typeid)
     return response
 
 
