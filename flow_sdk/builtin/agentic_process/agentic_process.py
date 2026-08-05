@@ -689,7 +689,25 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
 # back-compat readers (standard-mode viewer). Capped; consecutive identical
 # targets refresh the timestamp instead of duplicating.
 DISPLAY_STACK_CAP = 50
-_DISPLAY_TARGET_KEYS = ("kind", "typeid", "type", "id", "path", "port")
+# Every field that can distinguish one display target from another. A kind that
+# adds its own address fields MUST list them here: the keys a payload does not
+# carry are ``None`` on both sides and compare equal, so an omission silently
+# collapses that whole kind into a single "same target" — the DOCK kind (whose
+# address is view_type/pointer/page/options and none of typeid/type/id/path/port)
+# was doing exactly that, refreshing one stack entry instead of appending each
+# screen the agent showed.
+_DISPLAY_TARGET_KEYS = (
+    "kind",
+    "typeid",
+    "type",
+    "id",
+    "path",
+    "port",
+    "view_type",
+    "pointer",
+    "page",
+    "options",
+)
 
 
 def _same_display_target(a: dict, b: dict) -> bool:
@@ -2877,11 +2895,12 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="show")
     async def _http_show(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Resolve a show target — ``{typeid}`` | ``{path}`` | ``{port}`` — and emit it.
+        """Resolve a show target — ``{typeid}`` | ``{path}`` | ``{port}`` | ``{view}`` — and emit it.
 
         Resolution is the shared ``resolve_display_target`` policy (same as
         ``flow navigate file``): indexed asset → its entity; unknown path →
-        raw vfs pointer; port → webapp preview.
+        raw vfs pointer; port → webapp preview; view → a dock address (a SCREEN,
+        the one form that reaches a view with no entity behind it).
         """
         from flow_sdk.core.display_target import (  # noqa: PLC0415
             DisplayTargetNotFound,
@@ -2898,6 +2917,7 @@ class AgenticProcess(Entity):
                 typeid=str(body.get("typeid") or "").strip() or None,
                 path=str(body.get("path") or "").strip() or None,
                 port=body.get("port"),
+                dock=str(body.get("view") or "").strip() or None,
                 discover=True,  # a display verb — see `flow show file`
             )
         except InvalidDisplayTarget as e:
