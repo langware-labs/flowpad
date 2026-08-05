@@ -37,6 +37,7 @@ import { splitLiveGroup, useTurnGroups, type TurnGroup } from '@src/components/f
 import { TurnGroupsList } from './TurnGroupsList';
 import { ChatActivityLine } from './ChatActivityLine';
 import { TurnEventChip } from '@src/components/floating-chat/TurnEventChip';
+import { useObservedTurn } from './hooks/useObservedTurn';
 import { useTurnActivity } from './hooks/useTurnActivity';
 import {
   buildHistorySubline,
@@ -407,6 +408,10 @@ export function EntityExecutionPanel({
   // the chat stays message-clean. Past turns keep their own inline collapsed
   // ToolEntryRow lists.
   const activity = useTurnActivity(dense ? activeProcess : null);
+  // Render a turn this panel did not start (a worker-driven turn, or one
+  // already running when the workspace opened). No-op unless such a turn is
+  // live — see useObservedTurn.
+  useObservedTurn(activeProcess);
   const { inlineGroups, liveEvents } = useMemo(
     () => splitLiveGroup(turnGroups, dense && activity.active),
     [dense, activity.active, turnGroups],
