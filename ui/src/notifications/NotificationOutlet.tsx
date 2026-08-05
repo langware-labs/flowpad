@@ -1,14 +1,6 @@
 import { toast as sonnerToast, Toaster as Sonner } from 'sonner';
 import { useTheme } from 'next-themes';
-import {
-  AlertCircle,
-  AlertTriangle,
-  CheckCircle2,
-  Info,
-  Loader2,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, Loader2, X, type LucideIcon } from 'lucide-react';
 import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import type { NotificationData, NotificationLevel } from './types';
@@ -64,9 +56,7 @@ export function renderToast(data: NotificationData, toastId: string) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium text-foreground">{data.title}</div>
-        {data.message && (
-          <div className="mt-0.5 whitespace-pre-line text-xs text-muted-foreground">{data.message}</div>
-        )}
+        {data.message && <div className="mt-0.5 whitespace-pre-line text-xs text-muted-foreground">{data.message}</div>}
         <NotificationProcessLine data={data} />
         {data.actions && data.actions.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">
@@ -86,7 +76,7 @@ export function renderToast(data: NotificationData, toastId: string) {
         )}
       </div>
       <div className="flex flex-shrink-0 items-center gap-0.5">
-        <DiagnoseIconButton data={data} />
+        <DiagnoseIconButton subject={data} />
         <button
           onClick={() => sonnerToast.dismiss(toastId)}
           aria-label="Dismiss notification"
