@@ -11,6 +11,13 @@ import pytest
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.contact_identity.rules: FAILING? one person is one row — read
+#       this tag's rules before editing
+# flowpad:endcapsule tag
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_upsert_by_email_creates_and_dedups_and_backfills():
