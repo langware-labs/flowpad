@@ -3621,6 +3621,11 @@ msgstr ""
 msgid "Could not upload avatar"
 msgstr ""
 
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Could not verify {0}"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
 msgstr ""
@@ -5009,8 +5014,8 @@ msgid "Empty trace"
 msgstr ""
 
 #: src/components/data-sources/SourceMenu.tsx
-msgid "Enable"
-msgstr ""
+#~ msgid "Enable"
+#~ msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Enable all"
@@ -5056,8 +5061,8 @@ msgid "Enabled"
 msgstr ""
 
 #: src/components/data-sources/DataSourceCard.tsx
-msgid "Enabled — it polls on the next tick."
-msgstr ""
+#~ msgid "Enabled — it polls on the next tick."
+#~ msgstr ""
 
 #: src/components/collaboration/RoomHeader.tsx
 msgid "End room"
@@ -6069,6 +6074,10 @@ msgstr ""
 msgid "Filters"
 msgstr ""
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Finish setup, then press Verify."
+msgstr ""
+
 #: src/components/assets/editor/AssetDiscussButton.tsx
 msgid "Finishing asset load…"
 msgstr ""
@@ -6949,6 +6958,10 @@ msgstr ""
 
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "How privacy modes work"
+msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "How to finish setup"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -9980,6 +9993,10 @@ msgstr ""
 msgid "not reachable"
 msgstr ""
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Not ready yet"
+msgstr ""
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "not respected"
 msgstr ""
@@ -10952,8 +10969,8 @@ msgid "Pause this machine"
 msgstr ""
 
 #: src/components/data-sources/DataSourceCard.tsx
-msgid "paused"
-msgstr ""
+#~ msgid "paused"
+#~ msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Paused"
@@ -12419,6 +12436,7 @@ msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/data-sources/SourceMenu.tsx
 #: src/components/events/EventFeed.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/journey/JourneyViewer.tsx
@@ -12453,6 +12471,10 @@ msgstr ""
 
 #: src/journey/JourneyViewer.tsx
 msgid "Resume this run"
+msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Resumed — it polls on the next tick."
 msgstr ""
 
 #: src/components/assets/editor/EntityResolutionGate.tsx
@@ -14895,6 +14917,10 @@ msgstr ""
 msgid "The change was not saved."
 msgstr ""
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "The check did not run."
+msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "The credential could not be removed."
 msgstr ""
@@ -15992,12 +16018,17 @@ msgstr ""
 msgid "Verified"
 msgstr ""
 
+#: src/components/data-sources/DataSourceCard.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Verify"
 msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Verify the machine can authenticate with the FlowPad API"
+msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Verify the setup first."
 msgstr ""
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
