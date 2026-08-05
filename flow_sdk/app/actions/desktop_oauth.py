@@ -21,7 +21,7 @@ import secrets
 import socket
 import time
 from typing import Any, Optional, Tuple
-from urllib.parse import quote
+from urllib.parse import urlencode
 
 import httpx
 import uvicorn
@@ -30,6 +30,15 @@ from fastapi.responses import HTMLResponse
 
 from flow_sdk.api.messages import LlmConfigMessage, OAuthMessageStatus
 from flow_sdk.app.actions.oauth_templates import OAUTH_ERROR_HTML, OAUTH_SUCCESS_HTML
+from flow_sdk.core.oauth.provider_registry import (
+    ANTHROPIC,
+    LocalOAuthProvider,
+    OAuthFlowKind,
+    TokenShape,
+    client_id_for,
+    get_local_provider,
+    user_credentials_name,
+)
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
@@ -37,30 +46,12 @@ logger = logging.getLogger(__name__)
 # OAuth callback timeout in seconds (2 minutes)
 OAUTH_CALLBACK_TIMEOUT = 120
 
-# Anthropic OAuth constants (from FlowPad plugins/anthropic/config.py)
-ANTHROPIC_CLIENT_ID_DEFAULT = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-ANTHROPIC_AUTH_URL = "https://claude.ai/oauth/authorize"
-ANTHROPIC_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
-ANTHROPIC_SCOPES = ["user:profile", "user:inference"]
-ANTHROPIC_CREDENTIALS_NAME = "anthropic_credentials"
-
-# GitHub OAuth Device Flow (RFC 8628). No client_secret — register OAuth App,
-# enable Device Flow, then set GITHUB_CLIENT_ID env var or replace the default.
-GITHUB_CLIENT_ID_DEFAULT = "Ov23li9fNEH5ulTFINOZ"  # flowpad.ai - dev (langware-labs)
-GITHUB_DEVICE_CODE_URL = "https://github.com/login/device/code"
-GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
-GITHUB_SCOPES = ["repo", "read:org"]
-GITHUB_DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
-
-
-def _get_anthropic_client_id() -> str:
-    """Get Anthropic OAuth client ID from env var or default."""
-    return os.getenv("ANTHROPIC_CLIENT_ID", ANTHROPIC_CLIENT_ID_DEFAULT)
-
-
-def _get_github_client_id() -> str:
-    """Get GitHub OAuth client ID from env var or default."""
-    return os.getenv("GITHUB_CLIENT_ID", GITHUB_CLIENT_ID_DEFAULT)
+# Endpoints, scopes and client ids live in `provider_registry` — one descriptor
+# per provider, so adding a third is a dict entry rather than a branch here. This
+# module used to hold them as constants AND compare `provider` against the
+# literals "github"/"anthropic", which is why a registered provider could still
+# not start a flow.
+ANTHROPIC_CREDENTIALS_NAME = user_credentials_name(ANTHROPIC) or "anthropic_credentials"
 
 
 def _coerce_int(value: Any, default: int) -> int:
@@ -77,7 +68,7 @@ def _coerce_int(value: Any, default: int) -> int:
 
 # Cap for slow_down growth (RFC 8628 §3.5 mandates +5s per slow_down, no upper
 # bound; we cap to keep the modal countdown from outracing the next poll).
-GITHUB_POLL_INTERVAL_CAP_SECONDS = 30
+DEVICE_POLL_INTERVAL_CAP_SECONDS = 30
 
 
 class DesktopOAuthSession:
@@ -104,7 +95,7 @@ class DesktopOAuthSession:
         self.user_code: Optional[str] = None
         self.verification_uri: Optional[str] = None
         self.expires_at_monotonic: Optional[float] = None  # time.monotonic() reference (clock-skew safe)
-        self.poll_interval: int = 5  # seconds; bumped on slow_down, capped at GITHUB_POLL_INTERVAL_CAP_SECONDS
+        self.poll_interval: int = 5  # seconds; bumped on slow_down, capped at DEVICE_POLL_INTERVAL_CAP_SECONDS
         # Set by /oauth/github/cancel — polling loop honors at its next iteration.
         self.cancel_event: Optional[asyncio.Event] = None
         # If save_to_sod fails after a successful authorization, the token is
@@ -267,119 +258,132 @@ async def _broadcast_oauth_msg(oauth_request_id: str, status: OAuthMessageStatus
         logger.error(f"Failed to broadcast OAuthMessage: {e}")
 
 
-def _build_anthropic_auth_url(
+def _build_authorize_url(
+    provider: LocalOAuthProvider,
     client_id: str,
     redirect_uri: str,
     state: str,
-    code_challenge: str,
-    scopes: list[str],
+    code_challenge: str = "",
 ) -> str:
-    """Build Anthropic OAuth authorization URL with PKCE parameters."""
-    scope_str = " ".join(scopes)
+    """The authorization URL for a code/loopback grant.
+
+    Uses ``urlencode`` rather than the hand-rolled encoder this replaced, which
+    ``quote()``d exactly two params and then joined with ``&`` — correct for
+    Anthropic's values by luck, and a silent corruption for any provider whose
+    scope or redirect happened to need different escaping.
+
+    PKCE params are sent only when the descriptor asks for them, and anything
+    provider-peculiar (Anthropic's bare ``code=true``) comes from
+    ``extra_authorize_params`` so it cannot leak to a provider that would reject it.
+    """
     params = {
         "client_id": client_id,
-        "scope": quote(scope_str, safe=""),
+        "scope": " ".join(provider.scopes),
         "state": state,
-        "redirect_uri": quote(redirect_uri, safe=""),
-        "code_challenge": code_challenge,
-        "code_challenge_method": "S256",
+        "redirect_uri": redirect_uri,
         "response_type": "code",
-        "code": "true",
     }
-    query_string = "&".join([f"{k}={v}" for k, v in params.items()])
-    return f"{ANTHROPIC_AUTH_URL}?{query_string}"
+    if provider.pkce and code_challenge:
+        params["code_challenge"] = code_challenge
+        params["code_challenge_method"] = "S256"
+    params.update(dict(provider.extra_authorize_params))
+    return f"{provider.endpoints.authorize_url}?{urlencode(params)}"
 
 
 async def get_desktop_oauth_auth_url(provider: str, user_id: str) -> ApiResponse:
-    """Start a desktop OAuth flow for the given provider.
+    """Start a desktop OAuth flow for ``provider``, driven by its descriptor.
 
-    Anthropic → loopback redirect + PKCE (returns ``{kind: "loopback", url, port, state}``).
-    GitHub    → RFC 8628 device flow      (returns ``{kind: "device", user_code,
-                                                      verification_uri, expires_in,
-                                                      interval, state}``).
+    Which grant runs comes from ``LocalOAuthProvider.kind``; where it goes comes
+    from ``.endpoints``. A provider with no endpoints is one only the hub can
+    run — it still has a Connections row and still routes to the hub, it just
+    has no local flow. That replaces a comparison against the literal strings
+    "github"/"anthropic", which meant a newly registered provider got a row in
+    the UI and then failed here.
     """
-    if provider == "github":
-        return await _start_github_device_flow(user_id)
-    if provider != "anthropic":
+    p = get_local_provider(provider)
+    if p is None or p.endpoints is None:
         return ApiFailResponse(message=f"Desktop OAuth not supported for provider: {provider}")
+    if p.kind is OAuthFlowKind.DEVICE:
+        return await _start_device_flow(p, user_id)
+    return await _start_loopback_flow(p, user_id)
 
-    client_id = _get_anthropic_client_id()
 
-    # Generate PKCE
-    code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("utf-8").rstrip("=")
-    code_challenge = (
-        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("utf-8")).digest()).decode("utf-8").rstrip("=")
-    )
+async def _start_loopback_flow(provider: LocalOAuthProvider, user_id: str) -> ApiResponse:
+    """Authorization code (+ PKCE when the descriptor asks) against a loopback port.
 
-    # Generate state
+    The redirect target is a port on THIS machine, which is what makes it a real
+    code grant without the provider needing to reach us.
+    """
+    client_id = client_id_for(provider.name)
+    if not client_id:
+        return ApiFailResponse(message=f"No client id configured for {provider.display_name}")
+
+    code_verifier = ""
+    code_challenge = ""
+    if provider.pkce:
+        code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("utf-8").rstrip("=")
+        code_challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("utf-8")).digest())
+            .decode("utf-8")
+            .rstrip("=")
+        )
+
     state = secrets.token_urlsafe(32)
-
-    # Find free port and create redirect URI
     callback_port = DesktopOAuthSession._find_free_port()
     redirect_uri = f"http://localhost:{callback_port}/callback"
 
-    # Create session
     session = DesktopOAuthSession(
         state=state,
         code_verifier=code_verifier,
         redirect_uri=redirect_uri,
         user_id=user_id,
-        provider=provider,
+        provider=provider.name,
     )
     session.callback_port = callback_port
-
-    # Start callback server
     session.callback_server = asyncio.create_task(session._start_callback_server(callback_port, state))
     _desktop_oauth_sessions[state] = session
 
-    # Build authorization URL
-    auth_url = _build_anthropic_auth_url(
-        client_id=client_id,
-        redirect_uri=redirect_uri,
-        state=state,
-        code_challenge=code_challenge,
-        scopes=ANTHROPIC_SCOPES,
-    )
-
-    logger.info(f"Desktop OAuth auth URL generated for {provider}, port={callback_port}")
+    auth_url = _build_authorize_url(provider, client_id, redirect_uri, state, code_challenge)
+    logger.info("Desktop OAuth auth URL generated for %s, port=%s", provider.name, callback_port)
 
     return ApiSuccessResponse(
-        data={
-            "kind": "loopback",
-            "url": auth_url,
-            "port": callback_port,
-            "state": state,
-        }
+        data={"kind": "loopback", "url": auth_url, "port": callback_port, "state": state}
     )
 
 
-async def _start_github_device_flow(user_id: str) -> ApiResponse:
-    """Initiate GitHub Device Flow (RFC 8628). No client_secret, no callback server."""
+async def _start_device_flow(provider: LocalOAuthProvider, user_id: str) -> ApiResponse:
+    """Initiate an RFC 8628 device grant. No client_secret, no callback server.
+
+    The vocabulary below (`authorization_pending`, `slow_down`, `expired_token`)
+    is the RFC's, not GitHub's — which is why this stays one implementation
+    rather than a per-provider branch.
+    """
     import time
 
-    client_id = _get_github_client_id()
-    if client_id.startswith("REPLACE_WITH_"):
+    client_id = client_id_for(provider.name)
+    if not client_id or client_id.startswith("REPLACE_WITH_"):
         return ApiFailResponse(
-            message="GitHub OAuth not configured. Register an OAuth App with Device Flow "
-            "enabled at https://github.com/settings/applications/new and set GITHUB_CLIENT_ID."
+            message=f"{provider.display_name} OAuth not configured. Register an OAuth App with "
+            f"Device Flow enabled and set {provider.client_id_env}."
         )
 
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                GITHUB_DEVICE_CODE_URL,
-                data={"client_id": client_id, "scope": " ".join(GITHUB_SCOPES)},
+                provider.endpoints.device_code_url,
+                data={"client_id": client_id, "scope": " ".join(provider.scopes)},
                 headers={"Accept": "application/json"},
                 timeout=15.0,
             )
             if response.status_code != 200:
                 return ApiFailResponse(
-                    message=f"GitHub device-code request failed ({response.status_code}): {response.text[:300]}"
+                    message=f"{provider.display_name} device-code request failed "
+                    f"({response.status_code}): {response.text[:300]}"
                 )
             body = response.json()
     except Exception as e:
-        logger.warning(f"GitHub device-code request error: {e}")
-        return ApiFailResponse(message=f"GitHub device-code request error: {e}")
+        logger.warning("%s device-code request error: %s", provider.display_name, e)
+        return ApiFailResponse(message=f"{provider.display_name} device-code request error: {e}")
 
     device_code = body.get("device_code")
     user_code = body.get("user_code")
@@ -387,7 +391,9 @@ async def _start_github_device_flow(user_id: str) -> ApiResponse:
     expires_in = _coerce_int(body.get("expires_in"), 900)
     interval = _coerce_int(body.get("interval"), 5)
     if not (device_code and user_code and verification_uri):
-        return ApiFailResponse(message=f"GitHub returned unexpected device-code body: {body}")
+        return ApiFailResponse(
+            message=f"{provider.display_name} returned unexpected device-code body: {body}"
+        )
 
     state = secrets.token_urlsafe(32)
     session = DesktopOAuthSession(
@@ -395,7 +401,7 @@ async def _start_github_device_flow(user_id: str) -> ApiResponse:
         code_verifier="",  # n/a for device flow
         redirect_uri="",   # n/a for device flow
         user_id=user_id,
-        provider="github",
+        provider=provider.name,
     )
     session.device_code = device_code
     session.user_code = user_code
@@ -405,7 +411,7 @@ async def _start_github_device_flow(user_id: str) -> ApiResponse:
     session.cancel_event = asyncio.Event()
     _desktop_oauth_sessions[state] = session
 
-    logger.info(f"GitHub device flow started for user {user_id}, user_code={user_code}")
+    logger.info("%s device flow started for user %s, user_code=%s", provider.name, user_id, user_code)
 
     return ApiSuccessResponse(
         data={
@@ -419,20 +425,23 @@ async def _start_github_device_flow(user_id: str) -> ApiResponse:
     )
 
 
-async def _exchange_github_device_code(session: DesktopOAuthSession) -> dict:
+async def _exchange_device_code(session: DesktopOAuthSession) -> dict:
     """One poll iteration. Returns {kind: 'pending'|'slow_down'|'denied'|'expired'|'success'|'error', ...}.
 
     Pure HTTP — caller decides what to do (loop / broadcast / save). All network
     failures are coerced to ``{kind: 'transient', message: ...}`` so the polling
     loop can decide whether to retry (transient) vs abort (error)."""
+    provider = get_local_provider(session.provider)
+    if provider is None or provider.endpoints is None:
+        return {"kind": "error", "message": f"unknown provider: {session.provider}"}
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                GITHUB_TOKEN_URL,
+                provider.endpoints.token_url,
                 data={
-                    "client_id": _get_github_client_id(),
+                    "client_id": client_id_for(provider.name),
                     "device_code": session.device_code,
-                    "grant_type": GITHUB_DEVICE_GRANT,
+                    "grant_type": provider.endpoints.device_grant,
                 },
                 headers={"Accept": "application/json"},
                 timeout=15.0,
@@ -542,8 +551,13 @@ async def _save_github_token_to_sod(user_id: str, access_token: str) -> bool:
         return False
 
 
-def _normalize_anthropic_token_response(token_response: dict) -> dict:
-    """Persist only Flowpad-owned Anthropic OAuth fields, never Claude Code credentials."""
+def _normalize_credential_dict(provider: LocalOAuthProvider, token_response: dict) -> dict:
+    """The stored shape for a CREDENTIAL_DICT provider.
+
+    Persists only Flowpad-owned OAuth fields — never the harness's own
+    credentials. Selected by ``TokenShape``, not by provider name, so this is
+    the one place a provider's token shape is allowed to matter.
+    """
     now = int(time.time() * 1000)
     expires_at = token_response.get("expires_at")
     expires_in = token_response.get("expires_in")
@@ -559,7 +573,7 @@ def _normalize_anthropic_token_response(token_response: dict) -> dict:
         scopes = scope.split()
 
     credentials = {
-        "provider": "anthropic",
+        "provider": provider.name,
         "access_token": token_response.get("access_token"),
         "refresh_token": token_response.get("refresh_token"),
         "token_type": token_response.get("token_type"),
@@ -588,7 +602,7 @@ async def _save_anthropic_token_to_sod(user_id: str, token_response: dict) -> bo
     try:
         from flow_sdk.request_context.methods import set_user_credentials
 
-        credentials = _normalize_anthropic_token_response(token_response)
+        credentials = _normalize_credential_dict(get_local_provider(ANTHROPIC), token_response)
         if not credentials.get("access_token"):
             logger.warning("_save_anthropic_token_to_sod: token response did not include access_token")
             return False
@@ -651,14 +665,14 @@ async def delete_anthropic_token_for_current_user() -> ApiResponse:
         return ApiFailResponse(message=f"Anthropic disconnect error: {e}")
 
 
-async def _poll_github_device_until_done(
+async def _poll_device_until_done(
     session: DesktopOAuthSession,
     http_timeout: Optional[float] = None,
 ) -> ApiResponse:
     """Poll GitHub's token endpoint until success / denied / expired / cancelled / http-timeout.
 
     Honors slow_down (RFC 8628 §3.5: +5s per occurrence) with a hard cap at
-    ``GITHUB_POLL_INTERVAL_CAP_SECONDS`` so the modal countdown can't outrun
+    ``DEVICE_POLL_INTERVAL_CAP_SECONDS`` so the modal countdown can't outrun
     polling. Uses ``time.monotonic()`` for the deadline so wall-clock skew
     (NTP step, sleep/resume) can't extend the window arbitrarily.
 
@@ -724,7 +738,7 @@ async def _poll_github_device_until_done(
             await asyncio.sleep(sleep_for)
 
         # 3. Token exchange — network failures are transient, retry next loop.
-        result = await _exchange_github_device_code(session)
+        result = await _exchange_device_code(session)
         kind = result["kind"]
 
         if kind == "pending":
@@ -736,7 +750,7 @@ async def _poll_github_device_until_done(
             continue
         if kind == "slow_down":
             session.poll_interval = min(
-                session.poll_interval + 5, GITHUB_POLL_INTERVAL_CAP_SECONDS,
+                session.poll_interval + 5, DEVICE_POLL_INTERVAL_CAP_SECONDS,
             )
             continue
         if kind == "denied":
@@ -803,7 +817,7 @@ async def wait_for_desktop_oauth_callback(state: str, timeout: int = OAUTH_CALLB
     # the same device_code. The WebSocket broadcast remains the canonical
     # signal whenever polling eventually finishes.
     if session.provider == "github":
-        return await _poll_github_device_until_done(session, http_timeout=timeout)
+        return await _poll_device_until_done(session, http_timeout=timeout)
 
     try:
         result = await session.wait_for_callback(timeout)
@@ -839,7 +853,10 @@ async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
         code_state = code_parts[1] if len(code_parts) > 1 else None
         final_state = code_state if code_state else state
 
-        client_id = _get_anthropic_client_id()
+        provider = get_local_provider(session.provider)
+        if provider is None or provider.endpoints is None:
+            return ApiFailResponse(message=f"Unknown provider on session: {session.provider}")
+        client_id = client_id_for(provider.name)
 
         # Prepare token exchange request
         token_data = {
@@ -854,7 +871,7 @@ async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
         # Exchange code for token
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                ANTHROPIC_TOKEN_URL,
+                provider.endpoints.token_url,
                 json=token_data,
                 headers={
                     "Content-Type": "application/json",

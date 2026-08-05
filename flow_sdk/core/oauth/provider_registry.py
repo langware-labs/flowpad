@@ -47,6 +47,41 @@ class OAuthFlowKind(str, Enum):
     DEVICE = "device"
 
 
+class TokenShape(str, Enum):
+    """What a provider's token response becomes once stored.
+
+    Providers do not agree, and the disagreement is load-bearing: GitHub's SOD
+    entry is the token string, Anthropic's is the whole normalized response
+    (``access_token``, ``refresh_token``, ``expires_at``, identity fields). This
+    is the ONE thing that stays provider-shaped after the flow is generic — and
+    it is selected by data rather than by a name comparison. See
+    ``provider_probe.token_from_credential``, which exists to read both.
+    """
+
+    #: The stored value IS the bearer token.
+    BEARER_STRING = "bearer_string"
+    #: The stored value is a dict carrying the token plus refresh/identity.
+    CREDENTIAL_DICT = "credential_dict"
+
+
+@dataclass(frozen=True)
+class OAuthEndpoints:
+    """Where a provider's flow actually goes.
+
+    Nested rather than flattened onto the provider because a device grant and a
+    code grant do not have the same URLs — a flat descriptor would carry three
+    ``None``s for every entry and invite "which of these apply to me?" at each
+    call site. Which ones are set is implied by ``LocalOAuthProvider.kind``.
+    """
+
+    token_url: str
+    #: CODE / LOOPBACK grants.
+    authorize_url: Optional[str] = None
+    #: DEVICE grant (RFC 8628).
+    device_code_url: Optional[str] = None
+    device_grant: Optional[str] = None
+
+
 @dataclass(frozen=True)
 class LocalOAuthProvider:
     """A provider this instance can complete an OAuth flow for by itself."""
@@ -57,6 +92,23 @@ class LocalOAuthProvider:
     icon: Optional[str] = None
     kind: OAuthFlowKind = OAuthFlowKind.LOOPBACK
     scopes: tuple[str, ...] = ()
+
+    #: Where the flow goes. ``None`` means "only the hub can run this one" — the
+    #: presence of endpoints IS the predicate that used to be a comparison
+    #: against the literals "github"/"anthropic" in `get_desktop_oauth_auth_url`.
+    #: A provider with a row here but no endpoints still renders in Connections
+    #: and still routes to the hub; it just cannot start a flow locally.
+    endpoints: Optional[OAuthEndpoints] = None
+    #: Env var that overrides the client id, and the fallback baked in here.
+    client_id_env: Optional[str] = None
+    client_id_default: Optional[str] = None
+    #: Whether the authorize step sends a PKCE challenge.
+    pkce: bool = False
+    #: Provider-specific authorize params that must NOT leak to other providers
+    #: (Anthropic sends a bare ``code=true``). Tuple-of-tuples to keep the
+    #: dataclass frozen and hashable.
+    extra_authorize_params: tuple[tuple[str, str], ...] = ()
+    token_shape: TokenShape = TokenShape.BEARER_STRING
 
 
 _PROVIDERS: dict[str, LocalOAuthProvider] = {
@@ -69,6 +121,16 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # code flow — see `_handle_auth`.
         kind=OAuthFlowKind.DEVICE,
         scopes=("repo", "read:org"),
+        # No client_secret — register an OAuth App, enable Device Flow, then set
+        # GITHUB_CLIENT_ID or replace the default. (flowpad.ai - dev, langware-labs)
+        endpoints=OAuthEndpoints(
+            token_url="https://github.com/login/oauth/access_token",
+            device_code_url="https://github.com/login/device/code",
+            device_grant="urn:ietf:params:oauth:grant-type:device_code",
+        ),
+        client_id_env="GITHUB_CLIENT_ID",
+        client_id_default="Ov23li9fNEH5ulTFINOZ",
+        token_shape=TokenShape.BEARER_STRING,
     ),
     ANTHROPIC: LocalOAuthProvider(
         name=ANTHROPIC,
@@ -77,8 +139,37 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         icon="ClaudeCode",
         kind=OAuthFlowKind.LOOPBACK,
         scopes=("user:profile", "user:inference"),
+        endpoints=OAuthEndpoints(
+            authorize_url="https://claude.ai/oauth/authorize",
+            token_url="https://console.anthropic.com/v1/oauth/token",
+        ),
+        client_id_env="ANTHROPIC_CLIENT_ID",
+        client_id_default="9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+        pkce=True,
+        # Anthropic's authorize step wants a bare `code=true` alongside
+        # `response_type=code`. Provider-specific and must not leak.
+        extra_authorize_params=(("code", "true"),),
+        token_shape=TokenShape.CREDENTIAL_DICT,
     ),
 }
+
+
+def client_id_for(name: str) -> Optional[str]:
+    """A provider's OAuth client id: env override, else the registry default.
+
+    One function instead of `_get_<provider>_client_id` per provider, so a new
+    provider's client id is a data change like everything else about it.
+    """
+    import os  # noqa: PLC0415
+
+    provider = get_local_provider(name)
+    if provider is None:
+        return None
+    if provider.client_id_env:
+        override = os.getenv(provider.client_id_env)
+        if override:
+            return override
+    return provider.client_id_default
 
 
 def get_local_provider(name: str) -> Optional[LocalOAuthProvider]:
