@@ -165,9 +165,9 @@ async def test_the_adopted_slack_token_actually_works(hub_session):
     if os.getenv("FLOWPAD_SKIP_LIVE_PROVIDER") == "1":
         pytest.skip("live provider calls disabled")
 
-    from flow_sdk.core.oauth.provider_probe import get_probe, run_probe
+    from flow_sdk.core.oauth.provider_probe import run_probe
 
     token = await hub_credential_value(HUB_NAME)
-    result = await run_probe(get_probe(SLACK), token)
-    assert result.ok is True, f"Slack refused the token: {result.error!r}"
-    assert result.identity, "auth.test returned no identity"
+    result = await run_probe(SLACK, token)
+    assert result.ok is True, f"Slack refused the token: {result.detail!r}"
+    assert result.identity, "auth.test accepted the token but named no identity"
