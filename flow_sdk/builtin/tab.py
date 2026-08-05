@@ -36,6 +36,7 @@ from flow_sdk.builtin.tab_order import (
     filter_for_project,
 )
 from flow_sdk.core import Entity
+from flow_sdk.core.dock_address import VIEW_META, PageId, ViewType, parse_view_type
 from flow_sdk.fs_store.identifier import is_valid_uuid, mint_uuid
 from flow_sdk.schema.types import EntityType
 
@@ -75,15 +76,48 @@ def _pointer_to_hash(pointer: str) -> str:
     return pointer
 
 
+def _is_page_id(segment: str) -> bool:
+    """Is this hash segment a `PageId` (i.e. a page prefix, not a viewType)?"""
+    try:
+        PageId(segment)
+    except ValueError:
+        return False
+    return True
+
+
 def _pointer_view_type(pointer: str | None) -> str | None:
-    """The dock viewType a stored pointer addresses. Derived from
-    ``_pointer_to_hash`` — the one owner of the pointer-format grammar — whose
-    canonical hash always leads with the viewType (``vt|sub``, and the
-    scope-keyed ``tabHash`` form too). A malformed pointer yields a string no
-    real viewType equals, so equality checks fail closed."""
+    """The dock viewType a stored pointer addresses.
+
+    Derived from ``_pointer_to_hash`` — the one owner of the pointer-format
+    grammar. Its canonical hash leads with the viewType (``vt|sub``, and the
+    scope-keyed form too) EXCEPT on a non-desk page, where the page namespaces
+    the identity and the hash is ``page|vt|sub``. Strip that prefix first, or a
+    hub tab reports its view as ``hub``.
+
+    Returns a raw string, deliberately NOT a
+    :class:`~flow_sdk.core.dock_address.ViewType`: the reaper below matches
+    ``display``, a view type that was REMOVED when the vibe display collapsed
+    back onto the shell dock. Coercing through the live enum would map those
+    legacy rows to ``None`` and silently stop reaping them. ``ViewType`` is a
+    ``StrEnum``, so callers can still compare against a member directly.
+
+    A malformed pointer yields a string no real viewType equals, so equality
+    checks fail closed.
+    """
     if not pointer:
         return None
-    return _pointer_to_hash(pointer).split('|', 1)[0] or None
+    segments = _pointer_to_hash(pointer).split('|')
+    # `desk` is never emitted, so a leading page segment is always non-desk.
+    if len(segments) > 2 and _is_page_id(segments[0]):
+        segments = segments[1:]
+    return segments[0] or None
+
+
+#: The viewType of the retired `/dock/display/<proc>` URL family. It is NOT a
+#: member of `ViewType` — the family was collapsed back onto the shell dock —
+#: but rows minted under it persist and are reaped by `list_all` below. Kept as
+#: a literal here precisely because the live enum can no longer express it.
+_LEGACY_DISPLAY_VIEW = "display"
 
 
 # Target types that can never be workspace CHILDREN. A vibe workspace groups the
@@ -107,8 +141,19 @@ def _pointer_is_adoptable_child(pointer: str | None) -> bool:
     mirror of the FE allow-list (``isAdoptableChildDock``): an assets
     ``editor/...`` pointer (typeid- or vfs-addressed), plain or project-rebased
     (``<project-id>/editor/...``), a raw ``editor`` file pointer, or a PLAIN
-    shell (a terminal). Navigation surfaces (assets lists / project-home,
-    explorer, project, inbox, …) and workspace anchors are never children.
+    shell (a terminal). Workspace anchors are never children.
+
+    **A plain SCREEN is also adoptable** (``events``, ``preferences``,
+    ``capabilities``, …): ``flow show view`` presents one into the session that
+    asked for it, and the frontend keeps the narrower test for a dock the USER
+    navigated to (``isAdoptableChildDock``'s ``shown`` flag — a distinction this
+    belt cannot see, since only a ``parent_tab_id`` hint reaches it).
+
+    The four view types above keep their bespoke rules rather than falling into
+    that clause, and ``assets`` is the reason: it is SCOPE-KEYED, so every
+    sub-pointer of a scope folds into ONE tab. Blanket-adopting an
+    ``assets/list/...`` pointer would drag the user's existing Assets tab for
+    that scope into the workspace instead of minting a new child.
 
     Complements ``_PARENT_FORBIDDEN_TARGET_TYPES``, which keys on the declared
     ``target_type`` — NULL for list surfaces, so only a pointer-shape check can
@@ -148,7 +193,10 @@ def _pointer_is_adoptable_child(pointer: str | None) -> bool:
         # is the launcher landing, never a materialized session.
         s = sub.strip()
         return bool(s) and s != 'new_terminal' and not s.startswith('agentic_process-')
-    return False
+    # Any other ADDRESSABLE screen. Unknown/retired view types are refused, so a
+    # malformed pointer still fails closed.
+    meta = VIEW_META.get(parse_view_type(vt))  # type: ignore[arg-type]
+    return bool(meta and meta.addressable)
 
 
 def tab_id_for(pointer: str) -> str:
@@ -559,7 +607,7 @@ async def _reap_orphans(
         for t in tabs
         if t.id not in deleted_ids
         and "display" in (t.pointer or "")
-        and _pointer_view_type(t.pointer) == "display"
+        and _pointer_view_type(t.pointer) == _LEGACY_DISPLAY_VIEW
     ]
     # Same-target shell siblings are live visible rows, so resolve them from the
     # already-loaded list — no extra query.
@@ -573,7 +621,7 @@ async def _reap_orphans(
                 and tab.target_type
                 and s.target_type == tab.target_type
                 and str(s.target_id) == str(tab.target_id)
-                and _pointer_view_type(s.pointer) == "shell"
+                and _pointer_view_type(s.pointer) == ViewType.SHELL
             ),
             None,
         )

@@ -120,6 +120,55 @@ def navigate_entity(
 
 
 @navigate_app.command(
+    "view",
+    # NB: no square brackets in help strings — Rich parses them as markup tags.
+    help=(
+        "Navigate the active browser tab to a SCREEN by dock address, "
+        "'viewType' plus an optional '/pointer' and '?opts'. Examples: "
+        "'events', 'assets/list/skill', 'preferences/appearance'. "
+        "Run `flow schema views`."
+    ),
+)
+def navigate_view(
+    address: Annotated[
+        str,
+        typer.Argument(
+            help="Dock address, e.g. 'events' or \"tag/graph/eng.db?view=tree\" (quote it if it has a ?)."
+        ),
+    ],
+    connection_id: Annotated[
+        Optional[str],
+        typer.Option("--connection-id", "-c", help="Target a specific WS connection by id."),
+    ] = None,
+) -> None:
+    """POST to /api/v1/agent/navigate/view and surface the server's verdict.
+
+    This HIJACKS the tab the user is looking at, so reserve it for an explicit
+    "take me there". To hand over a screen without interrupting, use
+    ``flow show view`` — it opens the same address as a tab and never navigates.
+    """
+    if not address or not address.strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_VIEW", "Empty view address")
+
+    port = _discover_port()
+    body: dict = {"view": address.strip()}
+    if connection_id:
+        body["connection_id"] = connection_id
+
+    _navigate(
+        f"http://127.0.0.1:{port}/api/v1/agent/navigate/view",
+        body,
+        ["connection_id", "mode", "view_type", "pointer"],
+        {
+            "NO_ACTIVE_TAB": EXIT_NO_ACTIVE_TAB,
+            "CONNECTION_NOT_FOUND": EXIT_ENTITY_NOT_FOUND,
+            "ENTITY_NOT_FOUND": EXIT_ENTITY_NOT_FOUND,
+            "INVALID_VIEW": EXIT_INVALID_ARG,
+        },
+    )
+
+
+@navigate_app.command(
     "file",
     help="Navigate the active browser tab to a file by path. Opens the indexed "
     "asset if the path is known, else a raw VFS view (no indexing required).",

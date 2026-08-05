@@ -326,7 +326,7 @@ export function HubHome() {
                   )}
                   <button
                     type="button"
-                    onClick={() => void openDesktop(d)}
+                    onClick={() => openDesktop(d)}
                     disabled={!desktopsEnabled}
                     aria-label={t`Open desktop`}
                     data-testid="desktop-open"

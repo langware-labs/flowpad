@@ -1,4 +1,4 @@
-import { editorForPath, ConnectionManager, DockPointerData, dataManager, TypeId, ViewType, type IDockPointer, type UiCommandMessage } from '@sdk';
+import { editorForPath, ConnectionManager, DockPointerData, dataManager, PageId, TypeId, ViewType, type IDockPointer, type UiCommandMessage } from '@sdk';
 import { useEffect } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
@@ -89,9 +89,33 @@ export function useUiCommandListener(): void {
       navigateTo(AssetDocPointer.forVfs(editor, msg.path).toDockPointer());
     };
 
+    // `navigate_dock`: go to a SCREEN. Unlike the two above there is nothing to
+    // resolve — the backend validated the view and its pointer requirement
+    // against the dock-address table, and sends the frontend's own field names,
+    // so this is a construction.
+    const handleNavigateDock = (msg: UiCommandMessage) => {
+      if (!msg.view_type) {
+        console.warn('[ui_command] navigate_dock missing view_type', msg);
+        return;
+      }
+      navigateTo(
+        new DockPointer(
+          msg.view_type as ViewType,
+          msg.pointer ?? undefined,
+          msg.options ?? undefined,
+          undefined,
+          msg.page as PageId | undefined,
+        ),
+      );
+    };
+
     const onUiCommand = (msg: UiCommandMessage) => {
       if (msg.kind === 'navigate_entity') {
         void handleNavigateEntity(msg);
+        return;
+      }
+      if (msg.kind === 'navigate_dock') {
+        handleNavigateDock(msg);
         return;
       }
       if (msg.kind === 'navigate_vfs') {
