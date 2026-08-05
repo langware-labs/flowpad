@@ -147,13 +147,13 @@ describe('ProjectPublishButton', () => {
   it('cloud-logs in and publishes through the canonical Project share action', async () => {
     render(<ProjectPublishButton project={project} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
 
     await waitFor(() => expect(mocks.project.share).toHaveBeenCalledTimes(1));
     expect(mocks.oauthStatus).toHaveBeenCalledTimes(1);
     expect(mocks.cloudLogin).toHaveBeenCalledTimes(1);
     expect(mocks.cloudLogin.mock.invocationCallOrder[0]).toBeLessThan(mocks.project.share.mock.invocationCallOrder[0]);
-    expect(screen.getByRole('link', { name: 'Published' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Linked to cloud' })).toBeInTheDocument();
     expect(mocks.success).toHaveBeenCalled();
   });
 
@@ -161,7 +161,7 @@ describe('ProjectPublishButton', () => {
     mocks.cloudLogin.mockResolvedValue({ ok: false, error: 'Cloud login required' });
     render(<ProjectPublishButton project={project} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
 
     await waitFor(() => expect(mocks.error).toHaveBeenCalled());
     expect(mocks.project.share).not.toHaveBeenCalled();
@@ -174,7 +174,7 @@ describe('ProjectPublishButton', () => {
     mocks.preflight.reason = 'A GitHub origin is required.';
     render(<ProjectPublishButton project={project} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
     expect(screen.getByTestId('git-share-gate')).toHaveAttribute('data-state', 'setup');
     await userEvent.click(screen.getByRole('button', { name: 'Set up Git' }));
 
@@ -198,7 +198,7 @@ describe('ProjectPublishButton', () => {
     mocks.preflight.reason = 'Commit and push the repository.';
     render(<ProjectPublishButton project={project} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
     expect(screen.getByTestId('git-share-gate')).toHaveAttribute('data-state', 'commit');
     await userEvent.click(screen.getByRole('button', { name: 'Commit and push' }));
 
@@ -209,7 +209,7 @@ describe('ProjectPublishButton', () => {
     mocks.oauthStatus.mockResolvedValueOnce({ has_token: false });
     render(<ProjectPublishButton project={project} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
 
     expect(mocks.oauthConnect).toHaveBeenCalledWith('github');
     expect(mocks.oauthEventOn).toHaveBeenCalledWith(OAuthEventType.OAUTH_FLOW_COMPLETE, expect.any(Function));
@@ -226,7 +226,7 @@ describe('ProjectPublishButton', () => {
     mocks.project.remote = true;
     render(<ProjectPublishButton project={project} />);
 
-    const link = screen.getByRole('link', { name: 'Published' });
+    const link = screen.getByRole('link', { name: 'Linked to cloud' });
     expect(mocks.hubPageUrl).toHaveBeenCalledWith('https://app.flowpad.test', mocks.project.typeId);
     expect(link).toHaveAttribute('href', 'https://app.flowpad.test/projects/004f3ab7-d33b-48c0-ae0e-6e61e181a343');
     await userEvent.click(link);

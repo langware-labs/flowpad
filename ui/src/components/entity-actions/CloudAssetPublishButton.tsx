@@ -34,18 +34,18 @@ export function CloudAssetPublishButton({ typeId, variant }: CloudAssetPublishBu
     setBusy(true);
     try {
       await entity.share();
-      notify.success({ title: t`Published`, message: t`The asset is now available to project members.` });
+      notify.success({ title: t`Linked to cloud`, message: t`The asset is now available to project members.` });
     } catch (error) {
       notify.error({
-        title: t`Could not publish asset`,
-        message: errorMessage(error, t`Publish failed.`),
+        title: t`Could not link asset to cloud`,
+        message: errorMessage(error, t`Linking failed.`),
       });
     } finally {
       setBusy(false);
     }
   };
 
-  const title = published ? t`Published to cloud` : t`Publish to cloud`;
+  const title = published ? t`Linked to cloud` : t`Link to cloud`;
   const Icon = published ? Cloud : CloudUpload;
   return (
     <button
@@ -63,7 +63,7 @@ export function CloudAssetPublishButton({ typeId, variant }: CloudAssetPublishBu
       }
     >
       <Icon className={busy ? 'h-3.5 w-3.5 animate-pulse' : 'h-3.5 w-3.5'} />
-      {variant === 'prominent' && (published ? <Trans>Published</Trans> : <Trans>Publish</Trans>)}
+      {variant === 'prominent' && (published ? <Trans>Linked to cloud</Trans> : <Trans>Link to cloud</Trans>)}
     </button>
   );
 }

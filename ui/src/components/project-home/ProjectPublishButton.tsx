@@ -54,17 +54,17 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
     try {
       const login = await requireCloudLogin();
       if (!login.ok) {
-        notify.error({ title: t`Could not publish project`, message: login.error });
+        notify.error({ title: t`Could not link project to cloud`, message: login.error });
         return;
       }
       const canonical = await project.share();
       if (canonical.remote !== true) {
-        throw new Error('The server did not confirm Project publication.');
+        throw new Error('The server did not confirm the cloud link.');
       }
       setGateOpen(false);
-      notify.success({ title: t`Project published`, message: t`This project is now available in the cloud.` });
+      notify.success({ title: t`Project linked to cloud`, message: t`This project is now available in the cloud.` });
     } catch (error) {
-      notify.error({ title: t`Could not publish project`, message: errorMessage(error, t`Publish failed.`) });
+      notify.error({ title: t`Could not link project to cloud`, message: errorMessage(error, t`Linking failed.`) });
     } finally {
       publishInFlight.current = false;
       setPublishing(false);
@@ -77,7 +77,7 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
     setSetupBusy(true);
     try {
       const result = await launchWizard('git-context-folder', {
-        title: 'Set up Git for project publishing',
+        title: 'Set up Git for cloud linking',
         targetTypeId: project.typeId.toString(),
         payload: {
           projectId: project.id,
@@ -198,11 +198,16 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
       <>
         <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
         <span>
-          <Trans>Published</Trans>
+          <Trans>Linked to cloud</Trans>
         </span>
         {url && <ExternalLink className="h-3 w-3" aria-hidden />}
       </>
     );
+    // `data-state` deliberately still says "published" while the label says
+    // "Linked to cloud": the label is copy, the state is a wire value asserted
+    // by three test files and matching the backend's `hub_published_at` /
+    // `project_not_published` vocabulary. Renaming it is a code change
+    // disguised as a copy change — don't.
     return url ? (
       <a
         href={url}
@@ -245,11 +250,11 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
           <CloudUpload className="h-3.5 w-3.5" aria-hidden />
         )}
         {publishing ? (
-          <Trans>Publishing…</Trans>
+          <Trans>Linking…</Trans>
         ) : checking ? (
           <Trans>Checking…</Trans>
         ) : (
-          <Trans>Publish</Trans>
+          <Trans>Link to cloud</Trans>
         )}
       </Button>
 
