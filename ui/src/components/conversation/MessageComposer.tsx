@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Boxes, File as FileIcon, MessageSquarePlus, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
 import { sendReply, sendToChannel } from '@sdk/entities/notifications';
@@ -53,6 +53,10 @@ interface MessageComposerProps {
 }
 
 const SAVE_DEBOUNCE_MS = 400;
+
+/** Ceiling for the auto-growing composer (~10 lines of text). Past this the
+ *  textarea scrolls instead of eating the conversation above it. */
+const MAX_COMPOSER_HEIGHT_PX = 240;
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -167,6 +171,17 @@ export function MessageComposer({
     if (onQueuedPromptChange) onQueuedPromptChange(p);
     else setLocalPrompt(p);
   };
+
+  // Auto-grow the composer to fit what's been typed so far — wrapped lines
+  // count, not just explicit newlines — up to MAX_COMPOSER_HEIGHT_PX, after
+  // which it scrolls. Height must be reset to 'auto' first so scrollHeight
+  // reports the content height rather than the current (larger) box.
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, MAX_COMPOSER_HEIGHT_PX)}px`;
+  }, [text, isDraftMode]);
 
   // Draft auto-save: persist edits into the FlowMessage so a reload doesn't
   // lose them. No-op outside draft mode.
@@ -579,9 +594,9 @@ export function MessageComposer({
               onKeyDown={handleKeyDown}
               onPaste={(e) => void handlePaste(e)}
               placeholder={dragging ? t`Drop files here` : t`Edit your draft…`}
-              rows={Math.max(2, Math.min(10, text.split('\n').length + 1))}
+              rows={2}
               disabled={isDisabled}
-              className="min-h-[2.5rem] w-full resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[2.5rem] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             />
             <div className="flex items-center gap-1.5">
               {attachButtons}
@@ -634,7 +649,7 @@ export function MessageComposer({
           placeholder={dragging ? t`Drop files here` : (placeholder ?? t`Reply to sender…`)}
           rows={1}
           disabled={isDisabled}
-          className="min-h-[1.5rem] flex-1 resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-h-[1.5rem] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
         />
         {promptButton}
         {sendButton}
