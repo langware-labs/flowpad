@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Project } from '@sdk';
+import { OAuthEventType, OAuthStatus, type OAuthFlowCompletePayload, type Project } from '@sdk';
 
 import { ProjectPublishButton } from '@src/components/project-home/ProjectPublishButton';
 
@@ -36,9 +36,9 @@ const mocks = vi.hoisted(() => ({
   launchWizard: vi.fn(),
   oauthConnect: vi.fn(),
   oauthStatus: vi.fn(),
-  connectionHandlers: [] as Array<(message: { auth_method?: string; status?: string }) => void>,
-  connectionOn: vi.fn(),
-  connectionOff: vi.fn(),
+  oauthEventHandlers: [] as Array<(message: OAuthFlowCompletePayload) => void>,
+  oauthEventOn: vi.fn(),
+  oauthEventOff: vi.fn(),
   openExternal: vi.fn(),
   hubPageUrl: vi.fn(),
   success: vi.fn(),
@@ -57,10 +57,10 @@ vi.mock('@sdk', async (importOriginal) => {
         id: 'a230187d-e13f-46eb-b606-e39a21830e9c',
       },
     },
-    dataManager: { callAction: mocks.oauthStatus },
-    connectionManager: {
-      on: mocks.connectionOn,
-      off: mocks.connectionOff,
+    dataManager: {
+      callAction: mocks.oauthStatus,
+      on: mocks.oauthEventOn,
+      off: mocks.oauthEventOff,
     },
     launchWizard: mocks.launchWizard,
     oauthService: { connect: mocks.oauthConnect },
@@ -123,9 +123,9 @@ beforeEach(() => {
   mocks.preflight.origin = 'git@github.com:flowpad/demo-project.git';
   mocks.pushBusy = false;
   mocks.hubMode = false;
-  mocks.connectionHandlers.length = 0;
-  mocks.connectionOn.mockImplementation((_event, handler) => {
-    mocks.connectionHandlers.push(handler);
+  mocks.oauthEventHandlers.length = 0;
+  mocks.oauthEventOn.mockImplementation((_event, handler) => {
+    mocks.oauthEventHandlers.push(handler);
   });
   mocks.cloudLogin.mockResolvedValue({ ok: true });
   mocks.push.mockResolvedValue(undefined);
@@ -147,13 +147,13 @@ describe('ProjectPublishButton', () => {
   it('cloud-logs in and publishes through the canonical Project share action', async () => {
     render(<ProjectPublishButton project={project} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
 
     await waitFor(() => expect(mocks.project.share).toHaveBeenCalledTimes(1));
     expect(mocks.oauthStatus).toHaveBeenCalledTimes(1);
     expect(mocks.cloudLogin).toHaveBeenCalledTimes(1);
     expect(mocks.cloudLogin.mock.invocationCallOrder[0]).toBeLessThan(mocks.project.share.mock.invocationCallOrder[0]);
-    expect(screen.getByRole('link', { name: 'Published' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Linked to cloud' })).toBeInTheDocument();
     expect(mocks.success).toHaveBeenCalled();
   });
 
@@ -161,7 +161,7 @@ describe('ProjectPublishButton', () => {
     mocks.cloudLogin.mockResolvedValue({ ok: false, error: 'Cloud login required' });
     render(<ProjectPublishButton project={project} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
 
     await waitFor(() => expect(mocks.error).toHaveBeenCalled());
     expect(mocks.project.share).not.toHaveBeenCalled();
@@ -174,7 +174,7 @@ describe('ProjectPublishButton', () => {
     mocks.preflight.reason = 'A GitHub origin is required.';
     render(<ProjectPublishButton project={project} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
     expect(screen.getByTestId('git-share-gate')).toHaveAttribute('data-state', 'setup');
     await userEvent.click(screen.getByRole('button', { name: 'Set up Git' }));
 
@@ -198,7 +198,7 @@ describe('ProjectPublishButton', () => {
     mocks.preflight.reason = 'Commit and push the repository.';
     render(<ProjectPublishButton project={project} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
     expect(screen.getByTestId('git-share-gate')).toHaveAttribute('data-state', 'commit');
     await userEvent.click(screen.getByRole('button', { name: 'Commit and push' }));
 
@@ -209,12 +209,14 @@ describe('ProjectPublishButton', () => {
     mocks.oauthStatus.mockResolvedValueOnce({ has_token: false });
     render(<ProjectPublishButton project={project} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
 
     expect(mocks.oauthConnect).toHaveBeenCalledWith('github');
-    expect(mocks.connectionOn).toHaveBeenCalledWith('on_llm_config_msg', expect.any(Function));
+    expect(mocks.oauthEventOn).toHaveBeenCalledWith(OAuthEventType.OAUTH_FLOW_COMPLETE, expect.any(Function));
     act(() => {
-      mocks.connectionHandlers.at(-1)?.({ auth_method: 'github', status: 'success' });
+      mocks.oauthEventHandlers
+        .at(-1)
+        ?.({ provider: 'github', status: OAuthStatus.SUCCESS, attachSuccess: null });
     });
     await waitFor(() => expect(mocks.project.share).toHaveBeenCalledTimes(1));
     expect(mocks.oauthStatus).toHaveBeenCalledTimes(2);
@@ -224,7 +226,7 @@ describe('ProjectPublishButton', () => {
     mocks.project.remote = true;
     render(<ProjectPublishButton project={project} />);
 
-    const link = screen.getByRole('link', { name: 'Published' });
+    const link = screen.getByRole('link', { name: 'Linked to cloud' });
     expect(mocks.hubPageUrl).toHaveBeenCalledWith('https://app.flowpad.test', mocks.project.typeId);
     expect(link).toHaveAttribute('href', 'https://app.flowpad.test/projects/004f3ab7-d33b-48c0-ae0e-6e61e181a343');
     await userEvent.click(link);

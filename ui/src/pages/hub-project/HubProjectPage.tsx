@@ -3,7 +3,6 @@ import {
   dataContext,
   dataManager,
   editorForType,
-  PageId,
   Project,
   QueryRequest,
   TypeId,
@@ -13,6 +12,7 @@ import {
 import { useQueries } from '@tanstack/react-query';
 import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { hubProjectAssetDock } from '@src/lib/hub-page-url';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -48,14 +48,6 @@ export function hubEditableAssetTypes(
     if (type && editorForType(type)) types.add(type);
   }
   return [...types].sort();
-}
-
-/** Canonical Hub project sub-route for an entity-backed asset. */
-export function hubProjectAssetDock(projectId: string, assetTypeId: TypeId): DockPointer {
-  return DockPointer.rebaseAssetsOntoProject(
-    DockPointer.forAssetEditorByTypeId(assetTypeId.type, assetTypeId),
-    projectId,
-  ).withPage(PageId.HUB);
 }
 
 function HubProjectAssets({ projectId }: { projectId: string }) {

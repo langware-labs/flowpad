@@ -14,6 +14,26 @@ export function hubProjectUrl(hubAppUrl: string | null | undefined, projectId: s
 }
 
 /**
+ * Canonical Hub sub-route for an entity-backed asset inside a project.
+ *
+ * The project rebase is MANDATORY, not cosmetic: a bare
+ * `/dock/assets/editor/...` on a hub-only server is redirected to
+ * `/dock/hub/home` by `pageRedirectUrl` (navigation/supported-pages.ts),
+ * because the hub does not serve the `desk` page.
+ *
+ * The other owner of this grammar is `hub_asset_url` in
+ * flow_sdk/core/display_target.py, which builds the same path so the backend
+ * can hand out a reviewer link. They are pinned against each other by the
+ * `hub_url_cases` rows in tests/fixtures/asset_editor_contract.json.
+ */
+export function hubProjectAssetDock(projectId: string, assetTypeId: TypeId): DockPointer {
+  return DockPointer.rebaseAssetsOntoProject(
+    DockPointer.forAssetEditorByTypeId(assetTypeId.type, assetTypeId),
+    projectId,
+  ).withPage(PageId.HUB);
+}
+
+/**
  * Entity types the hub console has a page route for. Mirrors the hub router's
  * own param→type table (`flowpad/ui/src/routes/loaders/console-loader.ts`:
  * pageId→page, flowId→flow, taskId→task, fsItemId→fs_item, agentId→agent,

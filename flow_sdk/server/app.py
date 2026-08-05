@@ -56,6 +56,7 @@ from flow_sdk.server import FlowServer
 
 from .routes import (
     agent_records_router,
+    asset_share_router,
     assets_router,
     auth_router,
     capabilities_router,
@@ -66,6 +67,7 @@ from .routes import (
     dep_graph_router,
     detection_router,
     directory_router,
+    display_router,
     docs_graph_router,
     favorites_router,
     git_router,
@@ -526,6 +528,8 @@ server.add_router(debug_router)
 server.add_router(ingest_router)
 server.add_router(runs_router)
 server.add_router(tags_router)
+server.add_router(display_router)
+server.add_router(asset_share_router)
 server.add_router(subgraph_router)
 server.add_router(navigate_router)
 server.add_router(agent_records_router)

@@ -7,6 +7,8 @@ now nothing in this repo tested them, so the two branches of
 never exercised here at all.
 """
 
+import uuid
+
 import pytest
 
 from flow_sdk.app.actions.env_var import owns_its_value, store_env_var_value
@@ -20,6 +22,7 @@ from flow_sdk.core.entity.entity_env.env_types import (
     EnvVarType,
 )
 from flow_sdk.core.entity.entity_env.env_utils import is_confidential, mask_confidential_value
+from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import get_entity_credentials
 from flow_sdk.schema.type_info import register_all
@@ -237,3 +240,95 @@ async def test_owns_its_value_distinguishes_owner_rows_from_borrowed_refs(sod_en
     assert owns_its_value(plain_owner, project) is True
     assert owns_its_value(self_pointing_owner, user) is True, "a user's own key is an owner row"
     assert owns_its_value(borrowed, project) is False, "a project borrowing a user's token owns nothing"
+
+
+# ── the predicate-shape contract ──────────────────────────────────────────────
+#
+# `resolve_var_status` reads `base_var.is_plain`/`is_key` without calling them.
+# They used to be plain methods while `is_ref`/`is_oauth_provider` were
+# properties, so that test was on two bound method objects — always truthy. The
+# branch ran for every row, NA became unreachable, and an OAUTH_TOKEN row was
+# judged by `visible_value` (None on a token row) and reported MISSING. Nothing
+# raised. These two tests are what would have caught it.
+
+
+def test_every_env_var_predicate_is_a_property_not_a_method():
+    """A bound method is truthy, so a method here is a silent always-true branch."""
+    plain = EnvVar(name="X", var_type=EnvVarType.PLAIN, visible_value="v")
+    for predicate in ("is_ref", "is_oauth_provider", "is_key", "is_plain",
+                      "is_flowpad_api_key", "has_key_id"):
+        value = getattr(plain, predicate)
+        assert isinstance(value, bool), (
+            f"EnvVar.{predicate} returned {type(value).__name__}, not bool — a "
+            "zero-argument predicate here must be a @property, or every call "
+            "site that reads it without parentheses silently sees True"
+        )
+
+
+def test_na_is_reachable_for_a_row_that_is_neither_plain_key_nor_ref():
+    """NA means "this row's status is not a question this table answers".
+
+    An OAUTH_TOKEN row is exactly that: it is the join target, not a base row,
+    so none of the typed branches apply. While the predicates were methods this
+    return was dead code — which is the cheapest proof the bug existed.
+    """
+    token_row = EnvVar(name="github_credentials", var_type=EnvVarType.OAUTH_TOKEN)
+    assert resolve_var_status(token_row, None) is EnvStatusEnum.NA
+
+
+# ── whose account is this? ────────────────────────────────────────────────────
+#
+# "Latest login wins" is the right rule for the credential store, but until the
+# account was recorded nothing could tell that the winner was a DIFFERENT
+# account. A consumer granted workspace A kept reading AVAILABLE while pointing
+# at workspace B, because the join only checks that a name-matching row exists.
+
+
+def _bound_pair(bound: str | None, held: str | None):
+    """A borrower's reference row + the owner's credential row it points at."""
+    borrower = EnvVar(
+        name="slack_in_project",
+        var_type=EnvVarType.OAUTH_TOKEN,
+        ref_type=BuiltinEntityType.USER,
+        ref_name="slack_credentials",
+        bound_account_key=bound,
+    )
+    owner = EnvVar(
+        name="slack_credentials",
+        var_type=EnvVarType.OAUTH_TOKEN,
+        account_key=held,
+    )
+    return borrower, owner
+
+
+def test_a_reconnect_as_a_different_account_needs_consent_again():
+    project = TypeId(type=BuiltinEntityType.PROJECT.value, id=str(uuid.uuid4()))
+    borrower, owner = _bound_pair(bound="T_OLD:U1", held="T_NEW:U1")
+    owner.share_with(project)
+
+    assert resolve_var_status(borrower, owner, project) is EnvStatusEnum.CONSENT_REQUIRED, (
+        "the held credential belongs to a different provider account than the one "
+        "this project was granted — silently following it would point the project "
+        "at a workspace nobody here agreed to"
+    )
+
+
+def test_the_same_account_stays_available_across_a_reconnect():
+    project = TypeId(type=BuiltinEntityType.PROJECT.value, id=str(uuid.uuid4()))
+    borrower, owner = _bound_pair(bound="T1:U1", held="T1:U1")
+    owner.share_with(project)
+
+    assert resolve_var_status(borrower, owner, project) is EnvStatusEnum.AVAILABLE
+
+
+def test_an_unidentified_account_never_counts_as_a_mismatch():
+    """Providers that do not identify their accounts leave both sides None.
+    A None must not be read as 'different' — that would break every provider
+    without an account_key extractor."""
+    project = TypeId(type=BuiltinEntityType.PROJECT.value, id=str(uuid.uuid4()))
+    for bound, held in ((None, "T1:U1"), ("T1:U1", None), (None, None)):
+        borrower, owner = _bound_pair(bound=bound, held=held)
+        owner.share_with(project)
+        assert resolve_var_status(borrower, owner, project) is EnvStatusEnum.AVAILABLE, (
+            f"bound={bound!r} held={held!r} must not be treated as a mismatch"
+        )

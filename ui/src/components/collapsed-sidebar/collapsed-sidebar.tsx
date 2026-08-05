@@ -13,7 +13,7 @@ import { Button } from '@src/components/ui/button';
 import { useNavigationState } from '@src/hooks/use-navigation-state';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ViewType } from '@src/types/ViewType';
+import { EVENTS_VIEW_TYPES, ViewType } from '@src/types/ViewType';
 import { useInboxManager } from '@src/hooks/useInboxManager';
 import {
   Sidebar,
@@ -23,16 +23,14 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
-import { PageId, Project } from '@sdk';
+import { DataSource, PageId, Project } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { WikiTip } from '@src/components/wiki-tip';
 import { useContext } from '@src/hooks/useContext';
 import { RUNTIME_CLASS } from '@src/components/environment-banner/runtime-appearance';
 import { useBannerMinimized } from '@src/components/environment-banner/use-banner-minimized';
-import { useProjectTasks } from '@src/hooks/use-project-tasks';
 import { useHasConversations } from '@src/hooks/use-has-conversations';
 import { useLastVibeChat } from '@src/pages/flow-page/use-last-vibe-chat';
-import { isTaskActive } from '@src/components/task-bar/constants';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
 import { tagAttrs } from '@src/tags/tag-attrs';
@@ -50,7 +48,6 @@ import {
   ArrowLeft,
   BadgeCheck,
   Bookmark,
-  CheckSquare,
   RefreshCw,
   Bug,
   ChevronDown,
@@ -64,7 +61,6 @@ import {
   Search,
   Workflow,
   Webhook,
-  Zap,
 } from 'lucide-react';
 import React, { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
@@ -139,13 +135,6 @@ export function CollapsedSidebar() {
   const openLastVibeChat = useLastVibeChat();
   const { t } = useLingui();
 
-  // Live count for the Tasks badge, and the Tasks existence gate. useProjectTasks
-  // is scoped to the active project — the same corpus the `list/task` surface the
-  // badge opens shows — and reactive (auto-refetches over WS on backend task
-  // writes), so both track the graph without any polling here. Gate = "any task in
-  // this project"; badge = the *active* ones, the subset needing attention now.
-  const { data: tasks } = useProjectTasks();
-  const activeTaskCount = tasks.filter(isTaskActive).length;
   const hasConversations = useHasConversations();
 
   /** Title/icon/target per id. A LOOKUP, not an order — see RAIL_ITEMS. */
@@ -153,14 +142,19 @@ export function CollapsedSidebar() {
     home: { title: t`Home`, icon: Home, viewType: null },
     chats: { title: t`Chats`, icon: MessageCircle, viewType: ViewType.SHELL },
     inbox: { title: t`Inbox`, icon: Mail, viewType: ViewType.INBOX },
-    tasks: { title: t`Tasks`, icon: CheckSquare, viewType: ViewType.TASKS },
     discover: { title: t`Discover`, icon: Compass, viewType: null },
-    triggers: { title: t`Triggers`, icon: Zap, viewType: ViewType.TRIGGERS },
+    events: { title: t`Events`, icon: RadioTower, viewType: ViewType.EVENTS },
     hooks: { title: t`Hooks`, icon: Webhook, viewType: ViewType.HOOKS },
     files: { title: t`Files`, icon: FolderOpen, viewType: ViewType.EXPLORER },
     capabilities: { title: t`Capabilities`, icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
     'graph-workflows': { title: t`Graph Workflows`, icon: Workflow, viewType: ViewType.GRAPH_WORKFLOWS },
-    signals: { title: t`Signals`, icon: RadioTower, viewType: ViewType.SIGNALS },
+    // Glyph from the type registry, never a literal — same rule the project
+    // item follows, so a TypeInfo icon change reaches the rail too.
+    'data-sources': {
+      title: t`Data sources`,
+      icon: iconForType(DataSource.type),
+      viewType: ViewType.DATA_SOURCES,
+    },
     'process-runs': { title: t`Runs`, icon: History, viewType: ViewType.PROCESS_RUNS },
   };
 
@@ -178,23 +172,18 @@ export function CollapsedSidebar() {
   const gates: Record<RailGate, boolean> = {
     project: !!project,
     conversations: hasConversations,
-    tasks: tasks.length > 0,
   };
   const railItems = hubMode ? [] : resolveRail(viewMode, gates);
   const topItems = railItems.filter((item) => item.placement === 'top');
   const overflowItems = railItems.filter((item) => item.placement === 'overflow');
 
   const currentView = currentDock?.viewType;
-  // Tasks ride the Assets viewType (`list/task`, or a task doc in the asset
-  // editor), so "is Tasks active" can't come from currentView alone — it reads
-  // the dock pointer. URL-first: derived from currentDock, never from an
-  // upstream click. The project item subtracts it so one click doesn't light
-  // two rail buttons.
   const currentPointer = currentDock?.pointer ?? '';
-  const onTasks =
-    currentView === ViewType.ASSETS &&
-    (currentPointer.startsWith('list/task') || currentPointer.includes('/task/typeid/'));
-  const onAssets = currentView === ViewType.ASSETS && !onTasks;
+  // The project item owns EVERY assets surface, `list/task` and a task doc in
+  // the editor included. It used to subtract those, because a Tasks rail entry
+  // claimed them and one click must not light two buttons — that entry is gone,
+  // so the subtraction would now just leave the rail dark on task URLs.
+  const onAssets = currentView === ViewType.ASSETS;
 
   // Hub-rail active state: pointer-carrying items (WorldView world/organization,
   // records/<type>) match on viewType + pointer; the rest on viewType alone.
@@ -223,14 +212,6 @@ export function CollapsedSidebar() {
           (window as Record<string, unknown>).__shellNavT0 = performance.now();
           console.log('[PERF] +0ms shell icon clicked');
         }
-        // Tasks is not a dock tab of its own: ViewType.TASKS is retired, and a
-        // task opens through the generic asset surface. openTasks() resolves to
-        // the `list/task` asset list, so route through it rather than openTab
-        // (which would land on the TasksRedirect shim and navigate twice).
-        if (viewType === ViewType.TASKS) {
-          navigation.openTasks();
-          return;
-        }
         // Assets is scope-aware: open the scope-keyed assets tab — the current
         // project's scope when a project is active (tab "<project>'s Assets"),
         // else global (the single "Assets" tab). Scope rides the navigation
@@ -258,8 +239,11 @@ export function CollapsedSidebar() {
         return bookmarks.open;
       case 'discover':
         return onDiscover;
-      case 'tasks':
-        return onTasks;
+      // One rail item, four URLs: the merged screen answers to its own view
+      // plus the three aliases it absorbed, so an old bookmark still lights the
+      // icon it belongs to instead of leaving the rail looking unselected.
+      case 'events':
+        return EVENTS_VIEW_TYPES.has(currentView as ViewType);
       default:
         return currentView === navMeta[id]?.viewType;
     }
@@ -271,8 +255,6 @@ export function CollapsedSidebar() {
     switch (id) {
       case 'inbox':
         return unreadCount;
-      case 'tasks':
-        return activeTaskCount;
       case 'bookmarks':
         return unopenedFavorites;
       default:
@@ -296,8 +278,8 @@ export function CollapsedSidebar() {
       case 'chats':
         // Vibe has no chats list — resume the last real UI chat in the project.
         // TODO(nav): this is the ONE mode-dependent target the component still
-        // resolves itself; `tasks`/`project` delegate to navigation.openTasks/
-        // openAssets. If a second one appears, move this into a
+        // resolves itself; `project` delegates to navigation.openAssets.
+        // If a second one appears, move this into a
         // `navigation.openChats()` so every entry point (spotlight, shortcuts,
         // journeys) agrees. Not moved yet because useLastVibeChat is async and
         // hook-shaped while NavigationActions methods are sync.

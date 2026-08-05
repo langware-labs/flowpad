@@ -11,6 +11,7 @@ export class SDKConfig implements ISDKConfig {
   flowpad_app_host: string;
   flowpad_app_port?: number;
   check_refresh_token: boolean;
+  ui_version: string;
 
   constructor(config: ISDKConfig) {
     this.api_protocol = config.api_protocol;
@@ -21,6 +22,7 @@ export class SDKConfig implements ISDKConfig {
     this.flowpad_app_host = config.flowpad_app_host;
     this.flowpad_app_port = config.flowpad_app_port;
     this.check_refresh_token = config.check_refresh_token;
+    this.ui_version = config.ui_version;
   }
 
   private needsPortInUrl(): boolean {

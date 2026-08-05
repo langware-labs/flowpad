@@ -109,6 +109,13 @@ async def test_limit_and_offset_apply_after_ordering(records_root, blob_storage)
     assert _ordered_ids(page2) == [middle, newest]
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.null_sort_order.rules: FAILING? read this tag's rules — missing
+#       sorts FIRST; never coerce it to ""
+# flowpad:endcapsule tag
 def test_sort_key_buckets_missing_values_instead_of_coercing():
     """NULL ordering, tested where a NULL is actually reachable.
 

@@ -172,8 +172,45 @@ class Conversation(ProjectedFields, Entity):
     # side. Defaults False (copy) — the sender opts in per conversation via the
     # Share dialog's Git toggle. Plain-text replies never change it.
     git_sharing_enabled: bool = APIField(default=False)
+    # The hub parent ``updated_date`` this device has RECONCILED THROUGH — the
+    # catch-up watermark, in the hub's clock, never the local one. Advanced only
+    # after a message reconcile actually succeeds (see the conversation-list
+    # drain), so it certifies work that happened rather than a row we merely saw.
+    #
+    # Why not reuse ``updated_date``: on Conversation that field is LOCAL recency,
+    # rewritten by ``ConversationRecord`` from the messages' own clocks (so a bare
+    # hub touch can't surface a days-old thread as "just now"). Those clocks are
+    # by construction EARLIER than the hub's parent stamp, so a synced row settles
+    # permanently BEHIND the hub: a ``hub.updated_date > local.updated_date`` gate
+    # never closes, and every catch-up re-ran the full per-conversation +
+    # per-message hub fan-out for conversations with nothing to fetch.
+    #
+    # Why not ``fetched_at``: that is a local wall clock, so it is skew-prone —
+    # and its own contract forbids using it as a correctness gate. Hub-clock to
+    # hub-clock has neither problem. LOCAL_ONLY: never sent to the hub.
+    hub_updated_date: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     projected_fields: ClassVar[FrozenSet[str]] = _PROJECTED_FIELDS
     projection_writer: ClassVar[str] = "ConversationRecord.sync_to_db"
+
+    @classmethod
+    def hub_clock_moved(cls, local: "Conversation", hub_updated: Optional[datetime]) -> bool:
+        """Has the hub row changed since we last reconciled it?
+
+        Hub clock vs hub clock — ``hub_updated`` against ``local.hub_updated_date``.
+        Lives here, beside the field it reads, because ``Entity.is_stale`` gives the
+        WRONG answer for a Conversation: it compares against ``updated_date``, which
+        on this type is a local projection rather than the hub's clock, so it never
+        converges (see the ``hub_updated_date`` comment above). Callers deciding
+        whether to re-pull a conversation from the hub must use this, not ``is_stale``.
+
+        A hub payload with no ``updated_date`` (old hub) cannot prove movement — the
+        caller's message-count check is then the only signal. A local row that has
+        never recorded a watermark IS drifted: that is the one-time pass for rows
+        written before this field existed, and it self-heals on first reconcile.
+        """
+        if hub_updated is None:
+            return False
+        return cls._as_datetime(local.hub_updated_date) != hub_updated
     # Strip-only dismissal. When set, the Recent Conversations strip hides
     # this row UNTIL a FlowMessage newer than ``dismissed_at`` is appended
     # (auto-revive on new activity). The Inbox ignores this field entirely.

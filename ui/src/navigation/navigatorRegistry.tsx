@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import { ViewType } from '@src/types/ViewType';
+import { EVENTS_VIEW_TYPES, ViewType } from '@src/types/ViewType';
 import { DocsNavigator } from '@src/components/docs-viewer/DocsNavigator';
 import { AssetsNavigator } from '@src/components/assets/AssetsNavigator';
 import { TriggersNavigator } from '@src/components/triggers-view/TriggersNavigator';
@@ -21,8 +21,9 @@ export const NAVIGATOR_REGISTRY: Partial<Record<ViewType, ComponentType>> = {
   [ViewType.DOCS]: DocsNavigator,
   [ViewType.ASSETS]: AssetsNavigator,
   [ViewType.PROJECT]: AssetsNavigator,
-  [ViewType.TRIGGERS]: TriggersNavigator,
-  [ViewType.CRON]: TriggersNavigator,
+  // The merged Events screen and its URL aliases, derived from the one set so
+  // adding or retiring an alias is a single edit.
+  ...Object.fromEntries([...EVENTS_VIEW_TYPES].map((v) => [v, TriggersNavigator])),
   [ViewType.SHELL]: ChatsNavigator,
   [ViewType.EXPLORER]: ExplorerNavigator,
   [ViewType.GRAPH_WORKFLOWS]: GraphWorkflowsNavigator,

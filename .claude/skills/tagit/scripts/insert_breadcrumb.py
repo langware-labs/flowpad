@@ -19,17 +19,25 @@ Placement rules this enforces, none of which are safe to leave to a model:
   first and its tags are merged, so re-running adds a tag instead of replacing
   the file's existing knowledge.
 
+``--print-fence`` additionally emits the ready-to-paste ```breadcrumb block for
+the rules doc. The capsule and that block state the same thing twice — the tag,
+the file, the line, the note — so having the script emit both is the only way
+they cannot disagree. It is the same argument as writing the capsule through
+this script rather than by hand.
+
 Usage:
     python insert_breadcrumb.py --file tests/unit/test_x.py \\
         --test test_catchup_pulls_backlog \\
         --tag breadcrumb.test.catchup_login.rules \\
-        --note "FAILING? read this tag's rules before editing"
+        --note "FAILING? read this tag's rules before editing" \\
+        --print-fence
 
 Exit codes: 0 written (or already correct); 2 bad arguments / test not found.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -111,6 +119,11 @@ def main() -> int:
     parser.add_argument("--test", required=True, help="Test function name")
     parser.add_argument("--tag", required=True, help="Tag, e.g. breadcrumb.test.foo.rules")
     parser.add_argument("--note", required=True, help="Imperative one-liner shown by `flow tag get`")
+    parser.add_argument(
+        "--print-fence",
+        action="store_true",
+        help="Also print the ```breadcrumb block to paste at the top of the rules doc",
+    )
     args = parser.parse_args()
 
     path = Path(args.file).expanduser()
@@ -135,7 +148,48 @@ def main() -> int:
         block for block in capsule.read_all(CAPSULE_NAME) if tag in (block.data.data.get("tags") or {})
     )
     print(f"{path}:{placed.line} {CAPSULE_NAME} -> {', '.join(sorted(tags))}")
+    if args.print_fence:
+        print()
+        print(render_fence(path, placed.line, tag, args.note.strip()))
     return 0
+
+
+def render_fence(path: Path, line: int, tag: str, note: str) -> str:
+    """The ```breadcrumb block for the top of the rules doc.
+
+    `rel_path` is relative to the repo root, because that is what the card
+    resolves against (the document's project root) and what the tag index
+    reports back for a code site — one shape for both halves of the hybrid.
+
+    The root is derived from the TARGET FILE, not from this script's own
+    location. Those are the same directory in the ordinary case and differ in
+    every interesting one — a sibling clone, a worktree, a monorepo package —
+    where anchoring on the script would emit an absolute path that no card can
+    resolve.
+
+    Values go out as JSON strings: a double-quoted YAML scalar escapes the same
+    way, and a note like "FAILING? read this" is not safe to emit bare (a
+    leading `?` is a YAML indicator).
+    """
+    resolved = path.resolve()
+    root = next((p for p in resolved.parents if (p / ".git").exists()), None)
+    try:
+        rel_path = resolved.relative_to(root or REPO_ROOT).as_posix()
+    except ValueError:
+        # Not inside any repo: emit what we were given and let the card report
+        # the unresolvable path rather than silently writing an absolute one.
+        rel_path = path.as_posix()
+    return "\n".join(
+        [
+            "```breadcrumb",
+            f"tag: {tag}",
+            "sites:",
+            f"  - rel_path: {json.dumps(rel_path)}",
+            f"    line: {line}",
+            f"    note: {json.dumps(note)}",
+            "```",
+        ]
+    )
 
 
 if __name__ == "__main__":

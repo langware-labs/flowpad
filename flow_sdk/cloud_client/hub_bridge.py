@@ -411,6 +411,8 @@ class HubWsBridge:
                 await self._handle_invitation_op(op, eid, data)
             elif etype == "task":
                 await self._handle_task_op(op, eid, data)
+            elif etype == "deployment":
+                await self._handle_deployment_op(op, eid, data)
             elif etype in MEMBERSHIP_MIRROR_TYPES:
                 await self._handle_membership_container_op(op, etype, eid, data)
             else:
@@ -1074,6 +1076,44 @@ class HubWsBridge:
             payload = await _fill_empty_blobs(Task, "task", task_id, {**data, "id": task_id})
             task = await materialize_remote_task(payload, local_user.typeid)
         logger.info("[bridge] task op %s materialized %s", op, getattr(task, "id", None))
+
+    async def _handle_deployment_op(self, op: str, deployment_id: str, data: dict) -> None:
+        """A placement changed on the hub — mirror it here, at the same id.
+
+        This is what makes "open a remote resource and it is correct" true
+        without anything polling: the hub is the only party that can see the
+        provider, so it re-observes and pushes, and the desktop takes the answer
+        through the ordinary staleness kernel.
+
+        A delete is honoured rather than ignored (unlike a task's): the row IS
+        the record of a cloud resource, so keeping a local copy of a placement
+        the hub no longer has would show a box that does not exist.
+        """
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+        existing = await Deployment.get_one({"id": deployment_id})
+        if op == "delete":
+            if existing is not None:
+                await existing.delete()
+            return
+
+        payload = {**(data or {}), "id": deployment_id}
+        if existing is None:
+            deployment = Deployment(**payload)
+            deployment.remote = True
+            await deployment.save()
+            logger.info("[bridge] deployment op %s materialized %s", op, deployment_id)
+            return
+
+        # The sender receives its OWN op too, so check staleness before doing any
+        # work — an echo would otherwise re-save and re-broadcast every time.
+        if not Deployment.is_stale(existing, payload):
+            return
+        merged = Deployment.merge_hub_payload(existing, payload)
+        refreshed = Deployment(**merged)
+        refreshed.remote = True
+        await refreshed.save()
+        logger.info("[bridge] deployment op %s refreshed %s", op, deployment_id)
 
     # ------------------------------------------------------------------
     # Outbound helpers — thin wrappers around send_request for callers that

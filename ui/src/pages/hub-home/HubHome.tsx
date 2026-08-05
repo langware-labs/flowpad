@@ -388,6 +388,10 @@ export function HubHome() {
         }}
         defaultName={nextDesktopName(desktops)}
         initialGitUrl={newDesktop?.gitUrl}
+        // The sandbox opens on the project you're working on unless you change
+        // it — same source the footer's StatusBar reads.
+        currentProject={currentProject}
+        projects={projects}
         onLaunch={(opts) => void launch(opts)}
       />
     </div>

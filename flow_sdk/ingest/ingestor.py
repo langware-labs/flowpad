@@ -15,8 +15,9 @@ committed. A refactor that moves emission to the caller, or into ``save()``'s
 notify path, breaks that silently: keep steps 5-7 in one function.
 
 **The digest gate is the performance story.** An unchanged item costs one
-primary-key read and nothing else — no save, no metadata.json write, no FTS
-write, no WS broadcast, no event. Feeds re-serve their whole window on every
+indexed read (the natural key, via ``ix_entities_source_item_natural_key``) and
+nothing else — no save, no metadata.json write, no FTS write, no WS broadcast,
+no event. Feeds re-serve their whole window on every
 poll, so without this gate a 5-minute poller rewrites and re-announces the same
 records forever.
 """
@@ -67,25 +68,33 @@ async def ingest_item(
     *,
     owner: Optional[TypeId] = None,
     mode: IngestMode = IngestMode.INCREMENTAL,
-    known: Optional[dict[str, SourceItem]] = None,
+    known: Optional[dict[tuple[str, str, str], SourceItem]] = None,
 ) -> IngestOutcome:
-    """``known`` is a pre-loaded ``{entity_id: row}`` map from ``ingest_items``;
-    without it this falls back to a single lookup."""
-    entity_id = SourceItem.allocate_deterministic_id(
-        item.source_id, item.stream_key, item.external_id
-    )
+    """``known`` is a pre-loaded ``{(source, stream, external_id): row}`` map
+    from ``ingest_items``; without it this falls back to a single lookup.
+
+    **Identity is the natural key, not the id.** The row is resolved by
+    ``(data_source, stream, external id)``; a genuinely new record gets an
+    ordinary ``uuid4``. That is what makes a re-poll idempotent — and it works
+    on rows written before ids were v4, because nothing here re-derives an id.
+    """
     digest = content_digest(item)
+    key = (item.source_id, item.stream_key, item.external_id)
 
     if known is not None:
-        existing = known.get(entity_id)
+        existing = known.get(key)
     else:
-        existing = await SourceItem.get_one({"id": entity_id})
+        existing = await SourceItem.find_existing(
+            item.source_id, item.stream_key, item.external_id
+        )
 
     # ── the gate ──────────────────────────────────────────────────────────
     if existing is not None and existing.content_digest == digest:
-        return IngestOutcome(entity_id=entity_id, external_id=item.external_id, status="unchanged")
+        return IngestOutcome(
+            entity_id=str(existing.id), external_id=item.external_id, status="unchanged"
+        )
 
-    row = existing or SourceItem(id=entity_id)
+    row = existing or SourceItem()
 
     for row_attr, item_attr in _SNAPSHOT_FIELDS.items():
         setattr(row, row_attr, getattr(item, item_attr))
@@ -103,6 +112,9 @@ async def ingest_item(
     await row.save(owner, notify=(mode is IngestMode.INCREMENTAL))
 
     # ── emit ──────────────────────────────────────────────────────────────
+    # AFTER the save, so the id in the event is the one the row actually holds
+    # (a new row's uuid4 is allocated by save, not before it).
+    entity_id = str(row.id)
     if mode is IngestMode.INCREMENTAL:
         emit_item_tag(item, entity_id, status)
 
@@ -117,10 +129,9 @@ async def ingest_items(
 ) -> IngestReport:
     """Ingest a page in order.
 
-    **Reads are batched, writes are not.** The ids are deterministic, so the
-    whole page's existing rows load in one indexed ``IN`` query — otherwise a
-    steady-state poll where nothing changed would still cost one SELECT per
-    item just to consult the digest gate.
+    **Reads are batched, writes are not.** The whole page's existing rows load
+    in one query — otherwise a steady-state poll where nothing changed would
+    still cost one SELECT per item just to consult the digest gate.
 
     The writes stay a sequential loop, deliberately: small per-item writes never
     hold the SQLite writer across a whole page, and an item that raises leaves
@@ -134,15 +145,37 @@ async def ingest_items(
     return report
 
 
-async def _load_existing(items: Sequence[IngestItem]) -> dict[str, SourceItem]:
-    """One query for the page's existing rows, keyed by entity id."""
-    ids = [
-        SourceItem.allocate_deterministic_id(i.source_id, i.stream_key, i.external_id)
-        for i in items
-    ]
-    if not ids:
+async def _load_existing(
+    items: Sequence[IngestItem],
+) -> dict[tuple[str, str, str], SourceItem]:
+    """The page's existing rows, keyed by the full natural key.
+
+    One query per ``(source, stream)`` group, which is ONE query for every real
+    page — a poll fetches a single stream of a single source (``sync.py``), and
+    only the write route can hand in a mixed batch.
+
+    All three key components are in the query AND in the map key, because both
+    halves matter: an external id is only unique within a stream (a Slack ``ts``
+    repeats across channels), so a partial key would hand the digest gate the
+    wrong row — re-saving an unchanged record and clobbering its sibling. The
+    lookup rides ``ix_entities_source_item_natural_key``; without that index
+    this is a full scan of the type on every poll.
+    """
+    if not items:
         return {}
-    rows = await SourceItem.get_all(
-        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids]))
-    )
-    return {str(row.id): row for row in rows}
+    groups: dict[tuple[str, str], set[str]] = {}
+    for item in items:
+        groups.setdefault((item.source_id, item.stream_key), set()).add(item.external_id)
+
+    known: dict[tuple[str, str, str], SourceItem] = {}
+    for (source_id, stream_key), external_ids in groups.items():
+        rows = await SourceItem.get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=[
+                ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", source_id]),
+                ExpressionNode(op=QueryOp.EQ, operands=["stream_key", stream_key]),
+                ExpressionNode(op=QueryOp.IN, operands=["external_id", list(external_ids)]),
+            ]))
+        )
+        for row in rows:
+            known[(source_id, stream_key, str(row.external_id))] = row
+    return known

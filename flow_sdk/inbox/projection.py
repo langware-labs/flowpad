@@ -189,8 +189,15 @@ async def project_source_item(item, *, source=None, notify: bool = True, recount
         ).model_dump(),
     }
     if item.reply_to_external_id:
-        parent = SourceItem.allocate_deterministic_id(item.data_source_id, item.stream_key, item.reply_to_external_id)
-        payload["reply_to_id"] = mint_uuid(f"flow_message:source_item:{parent}")
+        # The parent is resolved by its natural key, not derived: SourceItem ids
+        # are uuid4. A parent that has not arrived yet simply yields no
+        # `reply_to_id` — the same outcome the derived form produced for a
+        # message id that pointed at nothing.
+        parent = await SourceItem.find_existing(
+            item.data_source_id, item.stream_key, item.reply_to_external_id
+        )
+        if parent is not None:
+            payload["reply_to_id"] = mint_uuid(f"flow_message:source_item:{parent.id}")
 
     # `bundle_ts` becomes the conversation pointer's timestamp, which is what
     # orders the feed — so a backfill lands in message time, not arrival order.

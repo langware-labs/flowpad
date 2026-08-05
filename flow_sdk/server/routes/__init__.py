@@ -1,6 +1,7 @@
 """Route modules for the flow_sdk server."""
 
 from .agent_records import router as agent_records_router
+from .asset_share import router as asset_share_router
 from .assets import router as assets_router
 from .auth import router as auth_router
 from .bootstrap import router as bootstrap_router
@@ -12,6 +13,7 @@ from .debug import router as debug_router
 from .dep_graph import router as dep_graph_router
 from .detection import router as detection_router
 from .directory import router as directory_router
+from .display import router as display_router
 from .docs_graph import router as docs_graph_router
 from .favorites import router as favorites_router
 from .git import router as git_router
@@ -69,6 +71,8 @@ __all__ = [
     "runs_router",
     "subgraph_router",
     "tags_router",
+    "asset_share_router",
+    "display_router",
     "navigate_router",
     "agent_records_router",
     "transcripts_router",

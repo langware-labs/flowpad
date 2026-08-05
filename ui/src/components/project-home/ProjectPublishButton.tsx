@@ -1,4 +1,5 @@
-import { OAUTH_PROVIDERS, cloudManager, connectionManager, launchWizard, oauthService, type Project } from '@sdk';
+import { OAUTH_PROVIDERS, OAuthStatus, cloudManager, launchWizard, oauthService, type Project } from '@sdk';
+import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { GitShareGateDialog } from '@src/components/share-to-conversation/GitShareGateDialog';
 import { gitShareGateState } from '@src/components/share-to-conversation/git-share-gate-state';
@@ -43,17 +44,8 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
   const [oauthConnecting, setOauthConnecting] = useState(false);
   const [resumeWhenReady, setResumeWhenReady] = useState(false);
   const publishInFlight = useRef(false);
-  const oauthHandler = useRef<((message: { auth_method?: string; status?: string }) => void) | null>(null);
 
   const { push, busy: pushBusy } = useGitPush('@local', project.fs_storage_mount_path ?? null, preflight.refetch);
-
-  const clearOAuthHandler = useCallback(() => {
-    if (!oauthHandler.current) return;
-    connectionManager.off('on_llm_config_msg', oauthHandler.current);
-    oauthHandler.current = null;
-  }, []);
-
-  useEffect(() => clearOAuthHandler, [clearOAuthHandler]);
 
   const publishReadyProject = useCallback(async () => {
     if (publishInFlight.current || project.remote === true) return;
@@ -62,17 +54,17 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
     try {
       const login = await requireCloudLogin();
       if (!login.ok) {
-        notify.error({ title: t`Could not publish project`, message: login.error });
+        notify.error({ title: t`Could not link project to cloud`, message: login.error });
         return;
       }
       const canonical = await project.share();
       if (canonical.remote !== true) {
-        throw new Error('The server did not confirm Project publication.');
+        throw new Error('The server did not confirm the cloud link.');
       }
       setGateOpen(false);
-      notify.success({ title: t`Project published`, message: t`This project is now available in the cloud.` });
+      notify.success({ title: t`Project linked to cloud`, message: t`This project is now available in the cloud.` });
     } catch (error) {
-      notify.error({ title: t`Could not publish project`, message: errorMessage(error, t`Publish failed.`) });
+      notify.error({ title: t`Could not link project to cloud`, message: errorMessage(error, t`Linking failed.`) });
     } finally {
       publishInFlight.current = false;
       setPublishing(false);
@@ -85,7 +77,7 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
     setSetupBusy(true);
     try {
       const result = await launchWizard('git-context-folder', {
-        title: 'Set up Git for project publishing',
+        title: 'Set up Git for cloud linking',
         targetTypeId: project.typeId.toString(),
         payload: {
           projectId: project.id,
@@ -115,42 +107,40 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
     await push();
   }, [push]);
 
+  // Subscribed only while this button's own connect is pending, so an abandoned
+  // flow can't leave a listener behind and someone else's connect can't publish.
+  useOAuthFlowComplete(
+    OAUTH_PROVIDERS.GITHUB,
+    (message) => {
+      setOauthConnecting(false);
+      if (message.status !== OAuthStatus.SUCCESS) {
+        notify.error({ title: t`Could not connect GitHub`, message: t`GitHub authorization did not complete.` });
+        return;
+      }
+      void fetchGithubStatus().then((connected) => {
+        if (connected === false) {
+          notify.error({ title: t`Could not connect GitHub`, message: t`GitHub authorization did not complete.` });
+          return;
+        }
+        void publishReadyProject();
+      });
+    },
+    oauthConnecting,
+  );
+
   const connectGitHub = useCallback(async () => {
     if (oauthConnecting) return;
-    clearOAuthHandler();
     setOauthConnecting(true);
-    const handler = (message: { auth_method?: string; status?: string }) => {
-      if (message.auth_method !== OAUTH_PROVIDERS.GITHUB) return;
-      clearOAuthHandler();
-      setOauthConnecting(false);
-      if (message.status === 'success') {
-        void fetchGithubStatus().then((connected) => {
-          if (connected === false) {
-            notify.error({
-              title: t`Could not connect GitHub`,
-              message: t`GitHub authorization did not complete.`,
-            });
-            return;
-          }
-          void publishReadyProject();
-        });
-      } else {
-        notify.error({ title: t`Could not connect GitHub`, message: t`GitHub authorization did not complete.` });
-      }
-    };
-    oauthHandler.current = handler;
-    connectionManager.on('on_llm_config_msg', handler);
     try {
       await oauthService.connect(OAUTH_PROVIDERS.GITHUB);
     } catch (error) {
-      clearOAuthHandler();
       setOauthConnecting(false);
       notify.error({
         title: t`Could not connect GitHub`,
         message: errorMessage(error, t`GitHub authorization did not complete.`),
       });
     }
-  }, [clearOAuthHandler, oauthConnecting, publishReadyProject, t]);
+  }, [oauthConnecting, t]);
 
   const checkGithubAndPublish = useCallback(async () => {
     if (githubChecking || oauthConnecting || publishing) return;
@@ -208,11 +198,16 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
       <>
         <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
         <span>
-          <Trans>Published</Trans>
+          <Trans>Linked to cloud</Trans>
         </span>
         {url && <ExternalLink className="h-3 w-3" aria-hidden />}
       </>
     );
+    // `data-state` deliberately still says "published" while the label says
+    // "Linked to cloud": the label is copy, the state is a wire value asserted
+    // by three test files and matching the backend's `hub_published_at` /
+    // `project_not_published` vocabulary. Renaming it is a code change
+    // disguised as a copy change — don't.
     return url ? (
       <a
         href={url}
@@ -255,11 +250,11 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
           <CloudUpload className="h-3.5 w-3.5" aria-hidden />
         )}
         {publishing ? (
-          <Trans>Publishing…</Trans>
+          <Trans>Linking…</Trans>
         ) : checking ? (
           <Trans>Checking…</Trans>
         ) : (
-          <Trans>Publish</Trans>
+          <Trans>Link to cloud</Trans>
         )}
       </Button>
 

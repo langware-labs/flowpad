@@ -5,7 +5,7 @@ import type {
   DeploymentStatus,
   DeploymentSyncState,
   DeploymentTarget,
-  ExternalResourceRef,
+  CloudOrigin,
 } from '../entities/deployment';
 import type { FSOriginField } from '../models/FSOrigin';
 import { isValidUUIDv4 } from '../models/TypeId';
@@ -27,9 +27,14 @@ export interface WorldViewEndpoint {
 export interface WorldViewNodeProperties extends Record<string, unknown> {
   kind?: string;
   parent_type_id?: string | null;
-  origin?: FSOriginField | null;
+  /**
+   * Where the node came from. An Artifact answers with its FILES (`FSOrigin`);
+   * a Deployment answers with the cloud RESOURCE it places (`CloudOrigin`).
+   * One key, because the question is the same one — the projection is a mixed
+   * node list and callers narrow on `type`.
+   */
+  origin?: FSOriginField | CloudOrigin | null;
   target?: DeploymentTarget | null;
-  resource?: ExternalResourceRef | null;
   provider_labels?: Record<string, string>;
   observations?: Partial<Record<DeploymentObservationKind, DeploymentObservation>>;
   status?: DeploymentStatus | null;

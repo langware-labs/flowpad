@@ -1,0 +1,137 @@
+{
+  "comment": "Cross-language asset-editor contract. Parsed by tests/unit/test_asset_editor_contract.py (Python, flow_sdk/core/asset_editor.py) and ui/tests/unit/asset-editor-contract.test.ts (TypeScript, ts_sdk/src/models/asset-editor.ts). Neither side generates this file: it is an independent third statement, so a change to one language map fails the other language suite. Extension routing is NOT here \u2014 it is TypeScript-only (see ui/tests/unit/editor-for-path.test.ts). `hub_url_cases` pins the HUB grammar the same way: Python `hub_asset_url` vs TypeScript `hubProjectAssetDock`. Change this only with both suites in hand.",
+  "editors": [
+    "code",
+    "markdown",
+    "subagent",
+    "agent",
+    "skill",
+    "task",
+    "whiteboard",
+    "deck_template",
+    "deck",
+    "spreadsheet",
+    "agent_trace",
+    "dynamic_workflow",
+    "usage_report",
+    "asset_cleanup_report",
+    "journey",
+    "html",
+    "mcp_app",
+    "image",
+    "video",
+    "audio",
+    "pdf"
+  ],
+  "editor_types": {
+    "code": [],
+    "markdown": [
+      "markdown",
+      "claude_md",
+      "claude_memory",
+      "claude_rules",
+      "command",
+      "plan",
+      "prompt"
+    ],
+    "subagent": [
+      "subagent"
+    ],
+    "agent": [
+      "agent"
+    ],
+    "skill": [
+      "skill"
+    ],
+    "task": [
+      "task"
+    ],
+    "whiteboard": [
+      "whiteboard"
+    ],
+    "deck_template": [
+      "deck_template"
+    ],
+    "deck": [
+      "deck"
+    ],
+    "spreadsheet": [
+      "spreadsheet"
+    ],
+    "agent_trace": [
+      "agent_trace"
+    ],
+    "dynamic_workflow": [
+      "dynamic_workflow"
+    ],
+    "usage_report": [
+      "usage_report"
+    ],
+    "asset_cleanup_report": [
+      "asset_cleanup_report"
+    ],
+    "journey": [
+      "journey"
+    ],
+    "html": [],
+    "mcp_app": [],
+    "image": [],
+    "video": [],
+    "audio": [],
+    "pdf": []
+  },
+  "type_to_editor": {
+    "markdown": "markdown",
+    "claude_md": "markdown",
+    "claude_memory": "markdown",
+    "claude_rules": "markdown",
+    "command": "markdown",
+    "plan": "markdown",
+    "prompt": "markdown",
+    "subagent": "subagent",
+    "agent": "agent",
+    "skill": "skill",
+    "task": "task",
+    "whiteboard": "whiteboard",
+    "deck_template": "deck_template",
+    "deck": "deck",
+    "spreadsheet": "spreadsheet",
+    "agent_trace": "agent_trace",
+    "dynamic_workflow": "dynamic_workflow",
+    "usage_report": "usage_report",
+    "asset_cleanup_report": "asset_cleanup_report",
+    "journey": "journey"
+  },
+  "url_cases": [
+    {
+      "type": "markdown",
+      "typeid": "markdown-550e8400-e29b-41d4-a716-446655440000",
+      "path": "/dock/assets/editor/markdown/typeid/markdown-550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "type": "skill",
+      "typeid": "skill-6ba7b810-9dad-4d11-80b4-00c04fd430c8",
+      "path": "/dock/assets/editor/skill/typeid/skill-6ba7b810-9dad-4d11-80b4-00c04fd430c8"
+    }
+  ],
+  "no_editor_types": [
+    "shell",
+    "project",
+    "conversation",
+    "compute_node"
+  ],
+  "hub_url_cases": [
+    {
+      "type": "markdown",
+      "typeid": "markdown-550e8400-e29b-41d4-a716-446655440000",
+      "project_id": "12345678-0000-4000-8000-000000000000",
+      "path": "/dock/hub/project/12345678-0000-4000-8000-000000000000/editor/markdown/typeid/markdown-550e8400-e29b-41d4-a716-446655440000"
+    },
+    {
+      "type": "skill",
+      "typeid": "skill-6ba7b810-9dad-4d11-80b4-00c04fd430c8",
+      "project_id": "12345678-0000-4000-8000-000000000000",
+      "path": "/dock/hub/project/12345678-0000-4000-8000-000000000000/editor/skill/typeid/skill-6ba7b810-9dad-4d11-80b4-00c04fd430c8"
+    }
+  ]
+}

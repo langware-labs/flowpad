@@ -174,9 +174,14 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
     ("datasource.feed.rss", "RSS/Atom feed", "A syndication feed polled on a schedule"),
     ("datasource.api.hackernews", "Hacker News", "The Hacker News Firebase API"),
     ("gcp", "GCP", "Provider-minted GCP resource kinds (gcp.<service>.<resource>)"),
-    ("local", "Local runtime", "Locally-hosted runtime placements"),
-    ("local.runtime.web", "Local web runtime", "A locally-served web app deployment"),
-    ("local.runtime.agent", "Local agent runtime", "An agent deployment placed on this machine"),
+    # WHAT is placed. WHERE it runs is `Deployment.target.provider` — the two
+    # were one string (`local.runtime.web`) until the same question started
+    # being asked three different ways across the codebase.
+    ("runtime", "Runtime placements", "Things placed on a machine to run (runtime.<what>)"),
+    ("runtime.web", "Web runtime", "A web app served from a dev server or a sandbox"),
+    ("runtime.agent", "Agent runtime", "An agent placed on a machine of its own"),
+    ("compute", "Compute", "Machines placed for someone to use"),
+    ("compute.node", "Desktop", "A cloud desktop — a compute node placed for a human"),
 )
 
 # System-owned first segments — the our-world / user-world boundary, DERIVED

@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 
 /**
@@ -30,6 +31,21 @@ export const SHARED_DEDUPE = [
   'mobx-utils',
   'yaml',
 ];
+
+/** The flow_sdk release this bundle was built from, for `__UI_VERSION__`.
+ *
+ *  Not `package.json`'s version — that is an unmaintained `0.0.1` placeholder.
+ *  Read from source rather than taken from the backend because the frontend is
+ *  deployed independently of it: the hub reports ITS version, not the UI's.
+ *  Empty string rather than a build failure if the file ever moves. */
+export function sdkVersion(repoRoot: string): string {
+  try {
+    const src = fs.readFileSync(path.resolve(repoRoot, 'flow_sdk/_version.py'), 'utf-8');
+    return /__version__\s*=\s*["']([^"']+)["']/.exec(src)?.[1] ?? '';
+  } catch {
+    return '';
+  }
+}
 
 /** `@sdk` / `@src` — the two path aliases both builds resolve. */
 export function sharedAliases(uiDir: string) {

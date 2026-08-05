@@ -2,6 +2,7 @@ import type { GitProvider, RepoSummary } from '@sdk';
 import { Input } from '@src/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { useGitRepos } from '@src/hooks/use-git-providers';
+import { formatRelative } from './relative-time';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { GitFork, Loader2, Lock, RefreshCw, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -16,19 +17,6 @@ interface RepoPickerProps {
    *  the token actually reaches — e.g. whether private repos are visible —
    *  without issuing its own request. */
   onReposLoaded?: (repos: RepoSummary[]) => void;
-}
-
-function formatRelative(iso: string): string {
-  if (!iso) return '';
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return iso.slice(0, 10);
-  const ageMs = Date.now() - then;
-  const days = Math.floor(ageMs / 86_400_000);
-  if (days < 1) return 'today';
-  if (days < 30) return `${days}d ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  return `${Math.floor(months / 12)}y ago`;
 }
 
 function roleBadgeClass(role: RepoSummary['role']): string {

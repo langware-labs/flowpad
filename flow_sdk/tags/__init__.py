@@ -12,7 +12,9 @@ from flow_sdk.tags.bus import (
     TagEventBus,
     emit_tag,
     event_bus,
+    make_tag_event,
     on_tag,
+    publish_tag,
     validate_bus_pattern,
 )
 from flow_sdk.tags.envelope import FlowEvent, FlowEventCtx, target_of
@@ -26,5 +28,7 @@ __all__ = [
     "target_of",
     "emit_tag",
     "event_bus",
+    "make_tag_event",
     "on_tag",
+    "publish_tag",
 ]

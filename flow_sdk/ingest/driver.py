@@ -84,6 +84,30 @@ class SendOutcome:
 
 
 @dataclass(frozen=True)
+class SetupVerdict:
+    """Whether a source's setup is complete, and what is missing if not.
+
+    ``pending`` is per-stream because that is the granularity a person acts at:
+    "invite the bot to #eng and #design" is actionable, "some channels are not
+    readable" is not.
+    """
+
+    ready: bool
+    #: One line, in the user's words, shown verbatim on the card.
+    detail: str = ""
+    #: Stream keys still waiting on a human.
+    pending: tuple[str, ...] = ()
+
+    @classmethod
+    def ok(cls, detail: str = "") -> "SetupVerdict":
+        return cls(ready=True, detail=detail)
+
+    @classmethod
+    def waiting(cls, detail: str, pending: tuple[str, ...] = ()) -> "SetupVerdict":
+        return cls(ready=False, detail=detail, pending=pending)
+
+
+@dataclass(frozen=True)
 class StreamRef:
     """One syncable unit within a source — a feed URL, a channel."""
 
@@ -181,6 +205,20 @@ class IngestDriver(Protocol):
         """
         ...
 
+    async def verify(self, source: "DataSource") -> "SetupVerdict":
+        """OPTIONAL. Can this source actually read what it was configured for?
+
+        Distinct from health, which is about whether the LAST run worked. This
+        answers "is the setup finished" — and for several providers that is a
+        step only a human can take. Slack will not let an app read a channel the
+        bot was never invited to, and no amount of correct configuration on our
+        side changes that.
+
+        A driver that omits this needs no setup beyond its config, and its
+        sources go straight to ACTIVE.
+        """
+        ...
+
     def streams(self, source: "DataSource") -> list[StreamRef]:
         """The syncable units of ``source``, derived from its config."""
         ...
@@ -209,6 +247,20 @@ def channel_of_driver(driver: "IngestDriver", source: "DataSource") -> str:
             # like a successful poll.
             logger.exception("[ingest] channel_for failed for %s; falling back to provider", getattr(source, "id", "?"))
     return str(getattr(driver, "provider", "") or "")
+
+
+#: The `context_data` key naming the source a spawned worker belongs to.
+#: Paired with `SCOPES["data_source_id"]` (flow_sdk/server/routes/runs.py) and
+#: `PROCESS_RUN_SCOPE_KEYS` (ui/src/navigation/DockPointer.ts) — an ingest worker
+#: has no spawning entity to browse from, so this key is the only handle the Runs
+#: list has on it. One definition on the producing side; the two consumers name
+#: it back.
+RUN_SOURCE_KEY = "data_source_id"
+
+
+def ingest_run_context(source: "DataSource") -> dict[str, str]:
+    """The provenance every ingest-spawned worker carries."""
+    return {RUN_SOURCE_KEY: str(getattr(source, "id", "") or "")}
 
 
 _REGISTRY: dict[str, IngestDriver] = {}

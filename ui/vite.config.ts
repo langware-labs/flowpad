@@ -2,7 +2,7 @@ import react from '@vitejs/plugin-react-swc';
 import { lingui } from '@lingui/vite-plugin';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
-import { SHARED_DEDUPE, sharedAliases } from './vite.shared';
+import { SHARED_DEDUPE, sdkVersion, sharedAliases } from './vite.shared';
 
 const envDir = path.resolve(__dirname, '..');
 
@@ -22,6 +22,7 @@ export default defineConfig(({ mode }) => {
       // Don't bake it into the bundle; that turned every published wheel into
       // a dev-mode-on artifact regardless of the user's runtime.
       __CHECK_REFRESH_TOKEN__: JSON.stringify(env.VITE_CHECK_REFRESH_TOKEN === 'true'),
+      __UI_VERSION__: JSON.stringify(sdkVersion(envDir)),
     },
     build: {
       sourcemap: true,

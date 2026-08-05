@@ -50,6 +50,7 @@ async def resolve_display_target(
     path: str | None = None,
     port: object = None,
     artifact_id: str | None = None,
+    discover: bool = False,
 ) -> dict:
     """Resolve one display address to its payload dict.
 
@@ -58,6 +59,14 @@ async def resolve_display_target(
     DisplayTargetKind, ...}``; raises ``InvalidDisplayTarget`` /
     ``DisplayTargetNotFound`` for the caller to map onto its own response shape
     (HTTP error body, exit code, ...).
+
+    Resolution is READ-ONLY by default. ``discover=True`` additionally recovers
+    a not-yet-indexed file by parsing it and ``sync_to_db``-ing the result — a
+    mini index. That is right for a display verb ("show me the file I just
+    wrote") and wrong for a query ("what is this file's URL"), so the mutation
+    is opt-in and visible at the call site rather than inherited by omission.
+    Without it, an unindexed path answers VFS and the caller can say
+    "index it first".
     """
     if typeid:
         try:
@@ -86,7 +95,7 @@ async def resolve_display_target(
             if entity is not None and getattr(entity, "id", None):
                 return {**_entity_payload(entity), "path": resolved}
         rec_type, rec_path = _typed_asset_shape(resolved)
-        if rec_type:
+        if rec_type and discover:
             # Fresh asset (created seconds ago, not yet indexed): recover it
             # with the targeted single-file discovery — no tree walks — so the
             # bespoke editor renders instead of a raw file view.
@@ -332,3 +341,67 @@ def _entity_payload(entity: Entity) -> dict:
         entity.id,
         name=getattr(entity, "name", None) or getattr(entity, "title", None) or None,
     )
+
+
+def dock_url(target: dict, *, port: int, host: str = "localhost") -> str | None:
+    """The absolute asset-editor deep link for a resolved display target.
+
+    The one Python owner of the URL grammar
+    ``/dock/assets/editor/<editor>/typeid/<type>-<id>``, whose other owner is
+    ``assetEditorPointer`` in ts_sdk/src/APIEntity.ts (the two editor maps are
+    pinned by tests/fixtures/asset_editor_contract.json).
+
+    ``None`` — not an exception — for every address this grammar does not
+    cover: an entity whose type has no asset editor, and the SHELL / WEBAPP /
+    APP / VFS kinds, which have their own pointer forms owned elsewhere.
+    Inventing a segment for those would put a second, wrong owner of each
+    grammar on the backend.
+
+    ``port`` is a parameter rather than read from instance settings so this
+    stays a pure function — and so its caller is forced to decide *which* port,
+    which matters: the UI is served by Vite on a different port than the API in
+    every dev instance.
+    """
+    from flow_sdk.core.asset_editor import editor_for_type  # noqa: PLC0415
+
+    if target.get("kind") != DisplayTargetKind.ENTITY:
+        return None
+    typeid = target.get("typeid")
+    editor = editor_for_type(str(target.get("type") or ""))
+    if not typeid or editor is None:
+        return None
+    return f"http://{host}:{port}/dock/assets/editor/{editor.value}/typeid/{typeid}"
+
+
+def hub_asset_url(target: dict, *, hub_origin: str, project_id: str) -> str | None:
+    """The HUB's project-rebased asset-editor URL for a resolved display target.
+
+    ``<hub_origin>/dock/hub/project/<project_id>/editor/<editor>/typeid/<type>-<id>``
+
+    Its other owner is ``hubProjectAssetDock`` in ui/src/lib/hub-page-url.ts
+    (``rebaseAssetsOntoProject ∘ forAssetEditorByTypeId ∘ withPage(HUB)``); the
+    two are pinned by the ``hub_url_cases`` rows in
+    tests/fixtures/asset_editor_contract.json.
+
+    **The project rebase is mandatory, not cosmetic.** A bare
+    ``/dock/assets/editor/...`` on a hub-only server is redirected to
+    ``/dock/hub/home`` (ui/src/navigation/supported-pages.ts), because the hub
+    does not serve the ``desk`` page — so the un-rebased form silently lands the
+    reviewer on a home screen instead of the document.
+
+    ``None`` for the same reasons as :func:`dock_url`, plus a missing origin or
+    project id. Callers must treat that as "there is no reviewer link", never
+    as a URL to guess at.
+    """
+    from flow_sdk.core.asset_editor import editor_for_type  # noqa: PLC0415
+
+    if not hub_origin or not project_id:
+        return None
+    if target.get("kind") != DisplayTargetKind.ENTITY:
+        return None
+    typeid = target.get("typeid")
+    editor = editor_for_type(str(target.get("type") or ""))
+    if not typeid or editor is None:
+        return None
+    origin = hub_origin.rstrip("/")
+    return f"{origin}/dock/hub/project/{project_id}/editor/{editor.value}/typeid/{typeid}"

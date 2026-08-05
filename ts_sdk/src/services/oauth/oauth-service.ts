@@ -32,9 +32,37 @@ export enum OAuthEventType {
   OAUTH_MSG = 'on_oauth_msg',
   WINDOW_CLOSE = 'on_window_close',
   OAUTH_FLOW_COMPLETE = 'on_oauth_flow_complete',
+  /** A stored credential was dropped. Deliberately NOT a flow completion: no
+   *  flow ran, so a pending Connect must not treat it as its own success. */
+  OAUTH_DISCONNECTED = 'on_oauth_disconnected',
   /** Fired when an OAuth flow requires the user to enter a device code
    *  (RFC 8628). UI listens and renders a modal with `user_code` + verify URL. */
   DEVICE_FLOW_START = 'on_oauth_device_flow_start',
+}
+
+/**
+ * Payload emitted by OAUTH_FLOW_COMPLETE — the ONE event a UI should listen to
+ * for "an OAuth flow for provider X finished".
+ *
+ * It is deliberately runtime-agnostic. The desktop backend broadcasts
+ * `llm_config_msg` on a completed grant and the hub broadcasts only
+ * `oauth_msg`, so a component listening to either raw WS message works on one
+ * runtime and silently does nothing on the other. Both paths converge here, as
+ * does the device flow (RFC 8628) and `disconnect`.
+ */
+export interface OAuthFlowCompletePayload {
+  provider: string;
+  status: OAuthStatus;
+  /** Correlates with the flow's state; always set for popup + device flows. */
+  oauth_request_id?: string;
+  targetEntity?: TypeId;
+  /** true/false when an attach was attempted, null when it wasn't. */
+  attachSuccess: boolean | null;
+}
+
+/** Payload emitted by OAUTH_DISCONNECTED. */
+export interface OAuthDisconnectedPayload {
+  provider: string;
 }
 
 /** Payload emitted by DEVICE_FLOW_START. */
@@ -109,6 +137,12 @@ function oauthErrorText(error: unknown, fallback: string): string {
   return envelope?.message || envelope?.detail || (error instanceof Error ? error.message : fallback);
 }
 
+/** Coerce a backend-supplied status string to the two-valued enum. Anything
+ *  that isn't an explicit success is an error — a flow that didn't grant. */
+function toOAuthStatus(raw: string | undefined): OAuthStatus {
+  return raw === OAuthStatus.SUCCESS ? OAuthStatus.SUCCESS : OAuthStatus.ERROR;
+}
+
 export class OauthFlow extends EventEmitter {
   public readonly oAuthRequestInfo: OAuthClientRequestInfo;
   public readonly authWindow: OAuthWindow | null = null;
@@ -157,52 +191,51 @@ export class OAuthService {
   private static instance: OAuthService;
   private oAuthFlows: Map<string, OauthFlow> = new Map();
 
+  /** Typed wrapper so every emit site produces the same payload shape. */
+  private emitFlowComplete(payload: OAuthFlowCompletePayload) {
+    dataManager.emit(OAuthEventType.OAUTH_FLOW_COMPLETE, payload);
+  }
+
   public async onOAuthMessage(data: OAuthMessage) {
     const oauthFlow = this.oAuthFlows.get(data.oauth_request_id);
-    if (oauthFlow) {
-      oauthFlow.closeWindow();
-
-      // If OAuth authentication succeeded and we have a target entity, automatically attach
-      if (data.status === OAuthStatus.SUCCESS && oauthFlow.targetEntity) {
-        try {
-          await this.attach(oauthFlow.oAuthRequestInfo.provider, oauthFlow.targetEntity, oauthFlow.sharedEntityVarName);
-
-          // Emit custom event to notify that the complete OAuth flow (auth + attach) is done
-          dataManager.emit(OAuthEventType.OAUTH_FLOW_COMPLETE, {
-            ...data,
-            provider: oauthFlow.oAuthRequestInfo.provider,
-            targetEntity: oauthFlow.targetEntity,
-            attachSuccess: true,
-          });
-        } catch (error) {
-          console.error(`[OAuthService] Auto-attach failed for ${oauthFlow.oAuthRequestInfo.provider}:`, error);
-
-          // Emit event even if attach failed - OAuth auth was successful
-          dataManager.emit(OAuthEventType.OAUTH_FLOW_COMPLETE, {
-            ...data,
-            provider: oauthFlow.oAuthRequestInfo.provider,
-            targetEntity: oauthFlow.targetEntity,
-            attachSuccess: false,
-            attachError: error instanceof Error ? error.message : 'Unknown error',
-          });
-        }
-      } else if (data.status === OAuthStatus.SUCCESS && !oauthFlow.targetEntity) {
-        // Emit event for auth-only success (no attach needed)
-        dataManager.emit(OAuthEventType.OAUTH_FLOW_COMPLETE, {
-          ...data,
-          provider: oauthFlow.oAuthRequestInfo.provider,
-          targetEntity: undefined,
-          attachSuccess: null, // No attach attempted
-        });
-      }
-
-      // Clean up the OAuth flow
-      this.oAuthFlows.delete(data.oauth_request_id);
-    } else if (data.oauth_request_id !== OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
+    if (!oauthFlow) {
       // FlowpadCloud is owned by cloudManager — its WS messages don't go through this map.
-      console.error(`[OAuthService] OAuth flow not found for request id:`, data.oauth_request_id);
-      console.error(`[OAuthService] Available flows:`, Array.from(this.oAuthFlows.keys()));
+      if (data.oauth_request_id !== OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
+        console.error(`[OAuthService] OAuth flow not found for request id:`, data.oauth_request_id);
+        console.error(`[OAuthService] Available flows:`, Array.from(this.oAuthFlows.keys()));
+      }
+      return;
     }
+
+    oauthFlow.closeWindow();
+    this.oAuthFlows.delete(data.oauth_request_id);
+
+    const provider = oauthFlow.oAuthRequestInfo.provider;
+    const status = toOAuthStatus(data.status);
+
+    // A grant with a target entity attaches before the flow counts as done.
+    // `null` = no attach was attempted, which is not the same as one that failed.
+    let attachSuccess: boolean | null = null;
+    if (status === OAuthStatus.SUCCESS && oauthFlow.targetEntity) {
+      try {
+        await this.attach(provider, oauthFlow.targetEntity, oauthFlow.sharedEntityVarName);
+        attachSuccess = true;
+      } catch (error) {
+        // The auth itself succeeded — only the attach didn't.
+        console.error(`[OAuthService] Auto-attach failed for ${provider}:`, error);
+        attachSuccess = false;
+      }
+    }
+
+    // A denied/failed grant is reported too: consumers spin on "connecting"
+    // until the flow says it ended, whichever way it ended.
+    this.emitFlowComplete({
+      provider,
+      status,
+      oauth_request_id: data.oauth_request_id,
+      targetEntity: oauthFlow.targetEntity,
+      attachSuccess,
+    });
   }
 
   private constructor() {
@@ -321,9 +354,10 @@ export class OAuthService {
           if (msg.auth_method !== provider) return;
           if (msg.oauth_request_id && msg.oauth_request_id !== payload.state) return;
           connectionManager.off('on_llm_config_msg', completionHandler);
-          dataManager.emit(OAuthEventType.OAUTH_FLOW_COMPLETE, {
-            ...msg,
+          this.emitFlowComplete({
             provider,
+            status: toOAuthStatus(msg.status),
+            oauth_request_id: msg.oauth_request_id ?? payload.state,
             targetEntity,
             attachSuccess: null,
           });
@@ -472,10 +506,7 @@ export class OAuthService {
       if (provider === OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
         const { cloudManager } = await import('../cloud_login');
         await cloudManager.logout();
-        dataManager.emit(OAuthEventType.OAUTH_FLOW_COMPLETE, {
-          provider,
-          disconnectSuccess: true,
-        });
+        dataManager.emit(OAuthEventType.OAUTH_DISCONNECTED, { provider } as OAuthDisconnectedPayload);
         return { remaining_attachment_count: 0 } as OAuthDetachResult;
       }
 
@@ -489,10 +520,7 @@ export class OAuthService {
         await this.createOAuthPopupWindow(response.browser_url, provider);
       }
 
-      dataManager.emit(OAuthEventType.OAUTH_FLOW_COMPLETE, {
-        provider,
-        disconnectSuccess: true,
-      });
+      dataManager.emit(OAuthEventType.OAUTH_DISCONNECTED, { provider } as OAuthDisconnectedPayload);
 
       return response;
     } catch (error) {

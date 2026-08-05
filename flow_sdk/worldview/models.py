@@ -180,27 +180,6 @@ class DeploymentTarget(BaseModel):
         return text or None
 
 
-class ExternalResourceRef(BaseModel):
-    full_resource_name: str
-    asset_type: str
-    parent_full_resource_name: str | None = None
-    provider_uid: str | None = None
-
-    @field_validator("full_resource_name", "asset_type", mode="before")
-    @classmethod
-    def _required_text(cls, value: Any) -> str:
-        text = str(value).strip() if value is not None else ""
-        if not text:
-            raise ValueError("value must not be empty")
-        return text
-
-    @field_validator("parent_full_resource_name", "provider_uid", mode="before")
-    @classmethod
-    def _optional_text(cls, value: Any) -> str | None:
-        text = str(value).strip() if value is not None else ""
-        return text or None
-
-
 class DeploymentStatus(BaseModel):
     sync_state: DeploymentSyncState = DeploymentSyncState.CURRENT
     provider_state: str | None = None
@@ -390,7 +369,6 @@ __all__ = [
     "DeploymentStatus",
     "DeploymentSyncState",
     "DeploymentTarget",
-    "ExternalResourceRef",
     "InventoryOrganization",
     "InventoryResource",
     "InventorySnapshot",

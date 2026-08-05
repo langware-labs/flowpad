@@ -29,10 +29,28 @@ def resolve_var_status(base_var: EnvVar, join_var: EnvVar, base_entity_typeid: T
         if join_var is None:
             return EnvStatusEnum.MISSING
         if base_entity_typeid:
-            if join_var.is_allowed(base_entity_typeid):
-                return EnvStatusEnum.AVAILABLE
-            else:
+            if not join_var.is_allowed(base_entity_typeid):
                 return EnvStatusEnum.CONSENT_REQUIRED
+            # Consent was granted for a specific provider ACCOUNT. Latest login
+            # wins at the credential, so the account underneath a borrowed
+            # reference can change without anything here changing — the row goes
+            # on reading AVAILABLE while pointing at a stranger's workspace.
+            # CONSENT_REQUIRED rather than a sixth state: consent for account A
+            # is not consent for account B, which is exactly what this is.
+            if (
+                base_var.bound_account_key
+                and join_var.account_key
+                and base_var.bound_account_key != join_var.account_key
+            ):
+                logging.warning(
+                    "%s is bound to account %s but the held credential is now %s — "
+                    "the connection was re-authorized as a different account",
+                    base_var.name,
+                    base_var.bound_account_key,
+                    join_var.account_key,
+                )
+                return EnvStatusEnum.CONSENT_REQUIRED
+            return EnvStatusEnum.AVAILABLE
     if base_var.is_plain or base_var.is_key:
         if base_var.visible_value:
             return EnvStatusEnum.AVAILABLE

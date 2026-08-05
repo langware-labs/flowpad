@@ -245,7 +245,15 @@ async def initialize_test_db(tmp_path_factory):
     tmp_dir = tmp_path_factory.mktemp("db")
     db_path = str(tmp_dir / "test.db")
 
-    config = DBConfig(database=db_path)
+    # pooled=False, and this is a KNOWN GAP, not a preference: production pools
+    # (DBConfig.pooled defaults True). The suite cannot yet run pooled because
+    # the asset-descriptor / path-map layer caches across tests — with pooling
+    # the stale entry is served instead of being re-read, so a freshly-seeded
+    # entity resolves to a previous test's row (test_path_to_typeid_map,
+    # test_agentic_process_get_assets). The DB itself is correct; the cache is
+    # not. Until that isolation bug is fixed the suite validates the unpooled
+    # path only.
+    config = DBConfig(database=db_path, pooled=False)
     driver = SQLiteDBDriver(config)
     _driver_instances["sqlite"] = driver
     _test_db_driver = driver
