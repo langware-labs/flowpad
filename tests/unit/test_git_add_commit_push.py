@@ -32,7 +32,13 @@ def _write(repo, rel, text="x\n"):
 def repo(tmp_path):
     """A repo with an `origin` it can actually push to (a local bare clone)."""
     origin = tmp_path / "origin.git"
-    _git(tmp_path, "init", "--bare", str(origin))
+    # `-b main` explicitly, never the ambient `init.defaultBranch`: the bare repo's
+    # HEAD is what `git clone` checks out, and a machine defaulting to `master`
+    # leaves it pointing at a branch this fixture never creates. The clone then
+    # warns "remote HEAD refers to nonexistent ref" and lands on an unborn branch,
+    # so a second clone's push is a no-op and the upstream never moves — which
+    # reads as an unrelated assertion failure, only on machines not set to `main`.
+    _git(tmp_path, "init", "--bare", "-b", "main", str(origin))
 
     work = tmp_path / "work"
     work.mkdir()
