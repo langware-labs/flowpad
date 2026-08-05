@@ -7,7 +7,7 @@
  * empty is the "everything" case rather than a separate verb.
  */
 import { useEffect, useState } from 'react';
-import { DataSource } from '@sdk';
+import type { DataSource } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import {
@@ -20,17 +20,18 @@ import {
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
+import { notify } from '@src/notifications';
+import { errorMessage } from '@src/lib/error-message';
 
 export function ReplayDialog({
   source,
   open,
   onOpenChange,
-  onDone,
 }: {
-  source: DataSource;
+  /** Null while closed — the view owns one dialog, not one per card. */
+  source: DataSource | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onDone: (message: string) => void;
 }) {
   const { t } = useLingui();
   const [since, setSince] = useState('');
@@ -41,19 +42,29 @@ export function ReplayDialog({
   }, [open]);
 
   const submit = async () => {
+    if (!source) return;
     setBusy(true);
     try {
       // A bare `yyyy-mm-dd` from the date input is a valid ISO date; the backend
       // reads a naive value as UTC, same as every other timestamp on the entity.
       const result = await source.replay(since || undefined);
-      onDone(
-        since
-          ? t`Dropped ${result.removed} records since ${since}; re-fetch on the next poll.`
-          : t`Dropped ${result.removed} records across ${result.streams} streams; re-fetch on the next poll.`,
-      );
+      notify.success({
+        title: since
+          ? t`Dropped ${result.removed} records since ${since}`
+          : t`Dropped ${result.removed} records across ${result.streams} streams`,
+        // The verb is not synchronous — say when the data comes back, or the
+        // empty list a user sees next looks like the replay ate everything.
+        message: t`Re-fetch happens on the next poll.`,
+      });
       onOpenChange(false);
-    } catch (e) {
-      onDone(e instanceof Error ? e.message : String(e));
+    } catch (error) {
+      notify.error({
+        title: t`Replay failed`,
+        // `errorMessage` before `instanceof Error`: an AxiosError is BOTH, and
+        // its `.message` is the useless status line while the server's actual
+        // explanation sits in the envelope.
+        message: errorMessage(error, t`Could not replay ${source.name || source.provider}.`),
+      });
     } finally {
       setBusy(false);
     }
@@ -64,7 +75,7 @@ export function ReplayDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            <Trans>Replay {source.name || source.provider}</Trans>
+            <Trans>Replay {source?.name || source?.provider || ''}</Trans>
           </DialogTitle>
           <DialogDescription>
             <Trans>

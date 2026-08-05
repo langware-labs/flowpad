@@ -25,6 +25,7 @@ class DataSourceMeta(BaseMeta):
     enabled: Optional[bool] = None
     poll_interval_seconds: Optional[int] = None
     window_days: Optional[int] = None
+    stream_count: Optional[int] = None
     required_capabilities: Optional[list] = None
     health: Optional[str] = None
 

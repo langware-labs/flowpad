@@ -134,6 +134,30 @@ async def test_one_failing_stream_does_not_stall_its_siblings():
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_rollup_records_the_stream_count():
+    """So a list can show it without watching the cursor table.
+
+    Cursors are written once per stream per poll — the highest-churn rows on the
+    instance. A UI that subscribes to them live just to render a COUNT repaints
+    on every tick for a number that only moves when a stream is added or
+    removed. `_roll_up` already holds the cursors and already saves this row, so
+    carrying the count costs nothing.
+    """
+    src = await _source()
+    feeds = ["https://a.test/f", "https://b.test/f", "https://c.test/f"]
+    register_driver(_FakeDriver(feeds, {f: FetchResult(items=[]) for f in feeds}))
+
+    await sync_source(src, now=NOW, budget=1)
+
+    refreshed = await DataSource.get_one({"id": src.id})
+    assert refreshed.stream_count == 3, (
+        "the count must cover every stream the driver declares, not just the "
+        f"budgeted slice fetched this run (got {refreshed.stream_count})"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_unchanged_result_advances_nothing_and_ingests_nothing():
     src = await _source()
     key = "https://static.test/f"

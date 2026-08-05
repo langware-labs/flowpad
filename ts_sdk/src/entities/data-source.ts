@@ -26,6 +26,7 @@ export interface IDataSource extends IEntity {
   enabled?: boolean;
   poll_interval_seconds?: number;
   window_days?: number;
+  stream_count?: number;
   next_poll_at?: string | null;
   last_synced_at?: string | null;
   health?: SourceHealth;
@@ -53,6 +54,10 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   enabled: boolean = true;
   poll_interval_seconds: number = 300;
   window_days: number = 7;
+  /** Streams this source has, rolled up by the poller. Read from here rather
+   *  than counting cursor rows: cursors churn on every poll, so watching them
+   *  live for a count repaints a list every tick. */
+  stream_count: number = 0;
   next_poll_at: string | null = null;
   last_synced_at: string | null = null;
   health: SourceHealth = 'never_synced';
@@ -72,6 +77,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     this.enabled = entity.enabled ?? this.enabled;
     this.poll_interval_seconds = entity.poll_interval_seconds ?? this.poll_interval_seconds;
     this.window_days = entity.window_days ?? this.window_days;
+    this.stream_count = entity.stream_count ?? this.stream_count;
     this.next_poll_at = entity.next_poll_at ?? this.next_poll_at;
     this.last_synced_at = entity.last_synced_at ?? this.last_synced_at;
     this.health = entity.health ?? this.health;
