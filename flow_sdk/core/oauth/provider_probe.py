@@ -87,7 +87,8 @@ def token_from_credential(value: Any) -> Optional[str]:
     Providers do not agree on this. GitHub's SOD entry is the token string;
     Anthropic's is the whole normalized OAuth response — a dict with
     ``access_token``, ``refresh_token``, ``expires_at`` and identity fields
-    (``desktop_oauth._normalize_anthropic_token_response``). Handing that dict
+    (``desktop_oauth._normalize_credential_dict``, selected by the provider's
+    ``TokenShape``). Handing that dict
     to a probe would send ``Bearer {'provider': 'anthropic', ...}`` and read the
     provider's refusal as a dead token.
 

@@ -61,6 +61,17 @@ class EnvVar(BaseModel):
     #: ``var_status``, which answers "may this project use it", not "does it work".
     needs_reauth: bool = False
 
+    # EVERY predicate here is a property, and that uniformity is the point.
+    # `is_key` and `is_plain` were plain methods while their siblings were
+    # properties, so `if var.is_plain or var.is_key:` in `resolve_var_status`
+    # tested two bound METHOD OBJECTS — always truthy. That branch therefore ran
+    # for every row of every type, `EnvStatusEnum.NA` became unreachable, and an
+    # OAUTH_TOKEN row was judged by `visible_value` (None on a token row) and
+    # reported MISSING. Nothing raised; the status was just wrong.
+    #
+    # A mixed convention on same-shaped predicates is what made that invisible at
+    # the call site. Do not add a zero-argument predicate here as a method.
+
     @property
     def is_ref(self) -> bool:
         return self.ref_type is not None
@@ -69,16 +80,20 @@ class EnvVar(BaseModel):
     def is_oauth_provider(self) -> bool:
         return self.var_type == EnvVarType.OAUTH_PROVIDER_ID
 
+    @property
     def is_key(self) -> bool:
         return self.var_type == EnvVarType.API_KEY
 
+    @property
     def is_flowpad_api_key(self) -> bool:
         """Check if this is a FlowPad API key (has key_id reference)"""
         return self.key_id is not None
 
+    @property
     def is_plain(self) -> bool:
         return self.var_type == EnvVarType.PLAIN
 
+    @property
     def has_key_id(self) -> bool:
         """Check if this env_var is linked to an API key"""
         return self.key_id is not None

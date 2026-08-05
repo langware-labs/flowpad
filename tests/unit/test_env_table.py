@@ -237,3 +237,37 @@ async def test_owns_its_value_distinguishes_owner_rows_from_borrowed_refs(sod_en
     assert owns_its_value(plain_owner, project) is True
     assert owns_its_value(self_pointing_owner, user) is True, "a user's own key is an owner row"
     assert owns_its_value(borrowed, project) is False, "a project borrowing a user's token owns nothing"
+
+
+# ── the predicate-shape contract ──────────────────────────────────────────────
+#
+# `resolve_var_status` reads `base_var.is_plain`/`is_key` without calling them.
+# They used to be plain methods while `is_ref`/`is_oauth_provider` were
+# properties, so that test was on two bound method objects — always truthy. The
+# branch ran for every row, NA became unreachable, and an OAUTH_TOKEN row was
+# judged by `visible_value` (None on a token row) and reported MISSING. Nothing
+# raised. These two tests are what would have caught it.
+
+
+def test_every_env_var_predicate_is_a_property_not_a_method():
+    """A bound method is truthy, so a method here is a silent always-true branch."""
+    plain = EnvVar(name="X", var_type=EnvVarType.PLAIN, visible_value="v")
+    for predicate in ("is_ref", "is_oauth_provider", "is_key", "is_plain",
+                      "is_flowpad_api_key", "has_key_id"):
+        value = getattr(plain, predicate)
+        assert isinstance(value, bool), (
+            f"EnvVar.{predicate} returned {type(value).__name__}, not bool — a "
+            "zero-argument predicate here must be a @property, or every call "
+            "site that reads it without parentheses silently sees True"
+        )
+
+
+def test_na_is_reachable_for_a_row_that_is_neither_plain_key_nor_ref():
+    """NA means "this row's status is not a question this table answers".
+
+    An OAUTH_TOKEN row is exactly that: it is the join target, not a base row,
+    so none of the typed branches apply. While the predicates were methods this
+    return was dead code — which is the cheapest proof the bug existed.
+    """
+    token_row = EnvVar(name="github_credentials", var_type=EnvVarType.OAUTH_TOKEN)
+    assert resolve_var_status(token_row, None) is EnvStatusEnum.NA
