@@ -1679,6 +1679,24 @@ async def conversation_pickup() -> ApiResponse:
         from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
 
         hub_ws_bridge.remember_hub_conversation(conv_id)
+
+        # Take the hub's metadata before syncing messages. Pickup used to
+        # create the local row as a side effect of the message sync
+        # (``ensure_conversation_entity``), which knows nothing about the hub
+        # conversation and therefore left ``kind`` at its default — so a
+        # support ticket materialized on the STAFF side as an ordinary
+        # ``direct`` chat and the desk's queue view could not recognise it.
+        # Pickup is a hub-authoritative materialization; it takes the same
+        # metadata seam every other sync path uses (mirrors invitation-accept:
+        # join → fetch → upsert).
+        try:
+            hub_conv = await _hub_action("GET", f"/graph/conversation/{conv_id}")
+            data = (hub_conv or {}).get("data")
+            if isinstance(data, dict) and data.get("id"):
+                await _upsert_hub_conversation_metadata(data, someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[conversation-pickup] metadata sync failed (non-fatal): %s", e)
+
         try:
             await _fetch_conversation_messages(conv_id, someone_typeid)
         except Exception as e:  # noqa: BLE001
