@@ -2233,6 +2233,86 @@ def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, fm_id: str) -> None
 # ---------------------------------------------------------------------------
 
 
+def _send_time_from_pointer_index(tmp_root: Path, fm_id: str) -> str | None:
+    """Recover a message's send-time from the pointer index inside the bundle.
+
+    ``_FM_FIELDS`` only gained ``created_date`` on 2026-06-30, so every bundle
+    packed by an older sender ships a header with no send-time — and those bundles
+    are frozen that way on the hub forever. Without a fallback the receiver stamps
+    ``now()``, which for a months-old message re-download throws the inbox order
+    out (and, once stamped, looks newer than the hub, so no later sync repairs it).
+
+    The time is not actually lost: ``_pack_conversation_attachment`` copies the
+    sender's ``conversation.jsonl`` into the bundle, and its Pointer for this
+    message carries the real send-time. Read it from there.
+    """
+    from flow_sdk.fs_store.pointer import Pointer  # noqa: PLC0415
+
+    attachment_dir = tmp_root / "attachment"
+    if not attachment_dir.is_dir():
+        return None
+    for entry_dir in sorted(attachment_dir.iterdir()):
+        jsonl_path = entry_dir / "conversation.jsonl"
+        if not jsonl_path.is_file():
+            continue
+        try:
+            lines = jsonl_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            line = line.strip()
+            if not line or fm_id not in line:
+                continue
+            try:
+                ptr = Pointer.from_jsonl_line(line)
+            except Exception:  # noqa: BLE001
+                continue
+            if ptr.id == fm_id and ptr.ts:
+                return str(ptr.ts)
+    return None
+
+
+def _restore_send_time(fm_data: dict, tmp_root: Path, fm_id: str, hub_updated: str | None = None) -> None:
+    """Fill a legacy bundle's missing send-time on ``fm_data``, in place.
+
+    THE one place that decides a message's send-time on receive. It must be
+    applied at EVERY site that can persist a FlowMessage out of a bundle — a
+    message rides a bundle twice (top-level header AND
+    ``attachment/flow_message-@<id>/header.json``), and the attachment entry is
+    written first. Restoring only at the top-level materialize is too late: the
+    row is already born stamped ``now()``, and the materialize then takes its
+    existing-row branch and never applies the recovered value.
+
+    Both clocks, not just ``created_date``: inbox recency is
+    ``max(message.updated_date)``, so leaving ``updated_date`` at ``now()``
+    drags the whole conversation to the sync instant.
+
+    ``updated_date`` is NOT the send-time and must not be guessed from it.
+    ``created_date`` is when the message was written; ``updated_date`` is when
+    the delivery lifecycle last touched it — in practice when it reached the
+    recipient, which the hub stamps (``received_at`` is ``HUB_WRITE``). Those
+    diverge by however long the message sat undelivered: days, for a backlog.
+    The pointer index only knows the send-time, so filling ``updated_date`` from
+    it sends the conversation DAYS into the past until the hub corrects it a
+    beat later — measured live at 10–11 inbox positions, dipping and snapping
+    back. Hence ``hub_updated``: the caller passes the hub's authoritative value
+    when it has one (it is sitting in the same payload that triggered the
+    download), so the row is born correct instead of corrected afterwards.
+
+    Falling back to the send-time is still right when there is no hub value — a
+    ``.flowmsg`` shared as a file has no delivery lifecycle and no second writer,
+    so nothing dips.
+    """
+    if fm_data.get("created_date"):
+        return
+    ts = _send_time_from_pointer_index(tmp_root, fm_id)
+    if not ts:
+        return
+    fm_data["created_date"] = ts
+    if not fm_data.get("updated_date"):
+        fm_data["updated_date"] = hub_updated or ts
+
+
 def _merge_conversation_jsonl(bundle_jsonl: Path, dest: Path) -> None:
     """Write a merged conversation.jsonl to dest.
 
@@ -2289,6 +2369,7 @@ async def unpack_bundle(
     local_user_id: str,
     *,
     overwrite: bool = False,
+    hub_updated: str | None = None,
 ) -> "FlowMessage":
     """Extract .flowmsg into the message's STAGING area, return FlowMessage.
 
@@ -2792,6 +2873,19 @@ async def unpack_bundle(
                         if existing_fm is not None and not overwrite:
                             continue  # already exists — skip without aborting the whole unpack
                         _rewrite_file_attachments(fm_data, tmp_root, fm_id)
+                        # This entry — not the top-level materialize — is where a
+                        # bundled message's row is actually born. Restore its
+                        # send-time here or it is stamped now() and every later
+                        # writer sees an existing row and leaves it alone.
+                        # ``hub_updated`` describes the TOP-level message only —
+                        # a nested entry is a different message and the caller
+                        # holds no hub payload for it.
+                        _restore_send_time(
+                            fm_data,
+                            tmp_root,
+                            fm_id,
+                            hub_updated if fm_id == top_fm_id else None,
+                        )
                         inner_fm = FlowMessage.model_validate(fm_data)
                         inner_fm.id = fm_id
                         await inner_fm.save(owner_typeid)
@@ -2860,6 +2954,14 @@ async def unpack_bundle(
             await _notify_staged_attachments(staged_mas)
             return saved_fm
 
+        # Send-time precedence, one place: the header (post-2026-06-30 senders) →
+        # the pointer index the bundle already carries (pre-fix senders) → now().
+        # Recovered time goes onto the ROW too, not just the pointer: the row's
+        # ``created_date`` is what the inbox sorts on, and a ``now()`` there is
+        # self-sealing (it outranks the hub, so no later sync repairs it).
+        # Same restore as the attachment entry above — this path is reached when the
+        # bundle has no per-message attachment entry, so the row is born here instead.
+        _restore_send_time(msg_data, tmp_root, top_fm_id, hub_updated)
         bundle_ts = msg_data.get("created_date") or datetime.now(UTC).isoformat()
         top_fm = await materialize_flow_message(
             msg_data,

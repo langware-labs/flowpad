@@ -1,0 +1,120 @@
+{
+ "conversations": [
+  {
+   "id": "f69ce445-2cdb-4bc5-9257-261d6a58d506",
+   "created_date": "2026-08-05 09:59:31.718674",
+   "updated_date": "2026-08-05 11:43:05.040794",
+   "title": "Integrate Supabase auth and persistence for game",
+   "remote": true,
+   "message_count": 5,
+   "shared_context_entities": [
+    "claude_session-6f2165ea-44d7-44c2-b360-f951ad778e1f",
+    "agentic_process-ef5bc935-7bdd-4eca-852f-4095cdf759c5"
+   ]
+  },
+  {
+   "id": "d813eec8-1aaa-4f54-b6bc-a971a7bd1f44",
+   "created_date": "2026-08-05 09:20:52.951079",
+   "updated_date": "2026-08-05 09:38:33.707255",
+   "title": "Explain Z Campus database login management with Supabase",
+   "remote": true,
+   "message_count": 4,
+   "shared_context_entities": [
+    "claude_session-2143b3b1-1225-45bd-af05-369682a288ef",
+    "agentic_process-238c72f4-933f-41f8-9b1c-ad6faedb1983"
+   ]
+  }
+ ],
+ "messages": [
+  {
+   "id": "d55a0a36-aa4b-4721-aeb0-4049623a67d2",
+   "created_date": "2026-08-05 10:25:36.856859",
+   "updated_date": "2026-08-05 11:43:05.040794",
+   "conversation_id": "f69ce445-2cdb-4bc5-9257-261d6a58d506",
+   "sender_name": "Gadi Tunes",
+   "sender_id": "090ffc4d-af90-4d74-9514-aa8650abca7a",
+   "text": "1. Use Supabase login, not z-school login\n2. Who signs up \u2014 the parent, or the t",
+   "delivery_status": "received"
+  },
+  {
+   "id": "26a5b03f-8578-42e2-87fd-193eabe62af7",
+   "created_date": "2026-08-05 10:12:01.918458",
+   "updated_date": "2026-08-05 10:12:03.874052",
+   "conversation_id": "f69ce445-2cdb-4bc5-9257-261d6a58d506",
+   "sender_name": "Shani Shuber",
+   "sender_id": "b5c37a16-358a-4981-8589-e885af058f55",
+   "text": "is there someone who can help to make the decisions? you or claude, my two team ",
+   "delivery_status": "received"
+  },
+  {
+   "id": "0711c6f3-ed02-4c42-9be5-df499dd8c36c",
+   "created_date": "2026-08-05 10:11:00.297015",
+   "updated_date": "2026-08-05 10:11:01.389217",
+   "conversation_id": "f69ce445-2cdb-4bc5-9257-261d6a58d506",
+   "sender_name": "Gadi Tunes",
+   "sender_id": "090ffc4d-af90-4d74-9514-aa8650abca7a",
+   "text": "Is there one that can help you with?",
+   "delivery_status": "received"
+  },
+  {
+   "id": "b4a77698-5c70-4bfb-b52c-e87d595ae3f6",
+   "created_date": "2026-08-05 10:10:47.222414",
+   "updated_date": "2026-08-05 10:10:59.304807",
+   "conversation_id": "f69ce445-2cdb-4bc5-9257-261d6a58d506",
+   "sender_name": "Gadi Tunes",
+   "sender_id": "090ffc4d-af90-4d74-9514-aa8650abca7a",
+   "text": "It wrote a few decisions you need to make before he can continue",
+   "delivery_status": "received"
+  },
+  {
+   "id": "d6de08e4-bc8e-4f88-aa31-9a1f4bfc26e5",
+   "created_date": "2026-08-05 09:59:35.145355",
+   "updated_date": "2026-08-05 09:59:45.207938",
+   "conversation_id": "f69ce445-2cdb-4bc5-9257-261d6a58d506",
+   "sender_name": "Shani Shuber",
+   "sender_id": "b5c37a16-358a-4981-8589-e885af058f55",
+   "text": "this is the answer",
+   "delivery_status": "received"
+  },
+  {
+   "id": "ebc84bc4-8517-4e26-b0c4-b73734ac74e8",
+   "created_date": "2026-08-05 09:38:31.447285",
+   "updated_date": "2026-08-05 09:38:33.707255",
+   "conversation_id": "d813eec8-1aaa-4f54-b6bc-a971a7bd1f44",
+   "sender_name": "Gadi Tunes",
+   "sender_id": "090ffc4d-af90-4d74-9514-aa8650abca7a",
+   "text": "Please run the following prompt:",
+   "delivery_status": "received"
+  },
+  {
+   "id": "ac2efaf7-1c95-461e-8431-0f143b114ea2",
+   "created_date": "2026-08-05 09:31:38.452205",
+   "updated_date": "2026-08-05 09:31:40.242201",
+   "conversation_id": "d813eec8-1aaa-4f54-b6bc-a971a7bd1f44",
+   "sender_name": "Shani Shuber",
+   "sender_id": "b5c37a16-358a-4981-8589-e885af058f55",
+   "text": "Prompt response: \"\u05d1\u05d3\u05e7\u05ea\u05d9 \u05d0\u05ea \u05d4\u05e7\u05d5\u05d3 \u05d1\u05e4\u05d5\u05e2\u05dc (`game_template.html`, `build_game.py`/`pu",
+   "delivery_status": "received"
+  },
+  {
+   "id": "21e6ce93-7c06-4ef9-ad2b-1d115c666b82",
+   "created_date": "2026-08-05 09:26:38.792079",
+   "updated_date": "2026-08-05 09:26:46.128387",
+   "conversation_id": "d813eec8-1aaa-4f54-b6bc-a971a7bd1f44",
+   "sender_name": "Gadi Tunes",
+   "sender_id": "090ffc4d-af90-4d74-9514-aa8650abca7a",
+   "text": "Please run the following prompt:",
+   "delivery_status": "received"
+  },
+  {
+   "id": "02f97d4e-2c71-4758-be72-d574d5205acd",
+   "created_date": "2026-08-05 09:21:05.640726",
+   "updated_date": "2026-08-05 09:21:11.791991",
+   "conversation_id": "d813eec8-1aaa-4f54-b6bc-a971a7bd1f44",
+   "sender_name": "Shani Shuber",
+   "sender_id": "b5c37a16-358a-4981-8589-e885af058f55",
+   "text": "zcampus",
+   "delivery_status": "received"
+  }
+ ]
+}
