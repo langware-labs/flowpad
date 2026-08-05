@@ -11,12 +11,14 @@ from flow_sdk.ingest.drivers.agentmail import AgentMailDriver
 from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver
 from flow_sdk.ingest.drivers.hackernews import HackerNewsDriver
 from flow_sdk.ingest.drivers.rss import RssDriver
+from flow_sdk.ingest.drivers.slack import SlackDriver
 
 register_driver(RssDriver())
 register_driver(HackerNewsDriver())
 register_driver(AgentDriver())
 register_driver(AgentMailDriver())
 register_driver(CloudEmailDriver())
+register_driver(SlackDriver())
 
 __all__ = [
     "AgentDriver",
@@ -24,4 +26,5 @@ __all__ = [
     "CloudEmailDriver",
     "HackerNewsDriver",
     "RssDriver",
+    "SlackDriver",
 ]

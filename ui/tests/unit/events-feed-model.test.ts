@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FlowEvent } from '@sdk/tags/EventBus';
 import type { TriggerLogEntry } from '@src/hooks/useTriggerLog';
-import { buildFeed, fireStatus } from '@src/components/events/feed-model';
+import { buildFeed, eventInScope, fireStatus } from '@src/components/events/feed-model';
 
 function ev(id: string, tag: string, at: string, extra: Partial<FlowEvent> = {}): FlowEvent {
   return {
@@ -104,5 +104,39 @@ describe('buildFeed', () => {
     );
     expect(rows).toHaveLength(2);
     expect(rows.filter((r) => r.kind === 'fire')).toHaveLength(1);
+  });
+});
+
+describe('eventInScope', () => {
+  const project = { mode: 'project', activeProjectId: 'p-1' } as const;
+
+  it('keeps an instance-level envelope while a project is selected', () => {
+    // The regression this exists for: a Slack source really did ingest 6
+    // messages, `ingest.slack.sync.completed` really was on the bus and in the
+    // server ring — and the feed rendered an empty list, because an envelope
+    // with no `project:` in its chain fell through to "user-scope only", which
+    // is false for `mode: 'project'`. A data source belongs to the instance;
+    // there is no project it could have carried instead.
+    const event = ev('e1', 'ingest.slack.sync.completed', '2026-08-05T10:00:00Z');
+    expect(eventInScope(event, project, 'p-1')).toBe(true);
+  });
+
+  it('keeps a matching project envelope and drops another project’s', () => {
+    const mine = ev('e2', 'graph_workflow.started', '2026-08-05T10:00:00Z', {
+      ctx: { origin: 'local_server', scope: ['project:p-1'] },
+    });
+    const theirs = ev('e3', 'graph_workflow.started', '2026-08-05T10:00:00Z', {
+      ctx: { origin: 'local_server', scope: ['project:p-2'] },
+    });
+
+    expect(eventInScope(mine, project, 'p-1')).toBe(true);
+    expect(eventInScope(theirs, project, 'p-1')).toBe(false);
+  });
+
+  it('keeps everything under an all scope', () => {
+    const theirs = ev('e4', 'graph_workflow.started', '2026-08-05T10:00:00Z', {
+      ctx: { origin: 'local_server', scope: ['project:p-2'] },
+    });
+    expect(eventInScope(theirs, { mode: 'all' }, 'p-1')).toBe(true);
   });
 });
