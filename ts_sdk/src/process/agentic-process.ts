@@ -74,6 +74,12 @@ export interface ShowTarget {
   path?: string;
   /** webapp: the dev-server port. */
   port?: number | string;
+  /** dock: a SCREEN — the frontend's own dock-address fields, so the client
+   *  builds its DockPointer without re-parsing a URL. */
+  view_type?: string;
+  pointer?: string | null;
+  options?: Record<string, string> | null;
+  page?: string;
 }
 
 /**
@@ -1106,7 +1112,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * `show` action (same channel as the worker-side `flow show` CLI). The
    * resolved payload comes back to subscribers via {@link onShow}.
    */
-  async show(target: { typeid?: string; path?: string; port?: number }): Promise<void> {
+  async show(target: { typeid?: string; path?: string; port?: number; view?: string }): Promise<void> {
     const actionInfo = new ActionInfo('show', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = target;
     await dataManager.callAction(actionInfo);

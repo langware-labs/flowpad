@@ -36,6 +36,21 @@ export function isPlainShellDock(dock: DockPointer): boolean {
  * Widening that predicate to cover terminals would silently change both. The
  * backend mirrors this allow-list in `_pointer_is_adoptable_child` (tab.py).
  */
-export function isAdoptableChildDock(dock: DockPointer): boolean {
-  return isContentAssetDock(dock) || isPlainShellDock(dock);
+export function isAdoptableChildDock(dock: DockPointer, opts: { shown?: boolean } = {}): boolean {
+  if (isContentAssetDock(dock) || isPlainShellDock(dock)) return true;
+  // A dock the AGENT showed is workspace content by intent, even when it is a
+  // navigation surface: `flow show view events` means "here is a screen for
+  // this session", not "leave". A dock the USER navigated to keeps the narrower
+  // test above, so the rule only widens where the intent is explicit.
+  //
+  // Workspace ANCHORS stay denied either way — adopting the process dock or a
+  // project dock is the nesting corruption this predicate exists to prevent,
+  // and no `shown` flag may override it.
+  return !!opts.shown && !isWorkspaceAnchorDock(dock);
+}
+
+/** The docks a workspace is MOUNTED OVER, which can never be its own children. */
+export function isWorkspaceAnchorDock(dock: DockPointer): boolean {
+  if (dock.viewType === ViewType.PROJECT) return true;
+  return dock.viewType === ViewType.SHELL && DockPointer.isAgenticProcessPointer(dock.pointer?.trim() ?? '');
 }

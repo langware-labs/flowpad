@@ -36,6 +36,35 @@ EXIT_CONNECTION_ERROR = 5
 
 
 @schema_app.command(
+    "views",
+    help="List every addressable dock view — what `flow show view` can open.",
+)
+def list_views() -> None:
+    """The view half of the addressing vocabulary (`list` is the entity half).
+
+    Each row carries `pointer: none|optional|required`, so an agent can tell
+    `flow show view events` (no pointer) from `flow show view helpdesk/<id>`
+    (required) without guessing and eating an exit 2.
+    """
+    port = _discover_port()
+    url = f"http://127.0.0.1:{port}/api/v1/agent/schema/views"
+    try:
+        resp = requests.get(url, timeout=10)
+    except requests.exceptions.RequestException as e:
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
+        return
+    try:
+        body = resp.json()
+    except ValueError:
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+        return
+    if resp.status_code == 200 and body.get("ok"):
+        _ok({"views": body.get("views") or []})
+        return
+    _fail(EXIT_CONNECTION_ERROR, str(body.get("error_code") or "UNKNOWN"), str(body.get("error") or "unknown"))
+
+
+@schema_app.command(
     "list",
     help="List every registered type with its TypeInfo metadata as JSON.",
 )
