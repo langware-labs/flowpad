@@ -16,7 +16,6 @@ from flow_sdk.worldview.models import (
     WorldViewProjection,
     WorldViewSyncReport,
 )
-from flow_sdk.worldview.reconcile import WORLDVIEW_ROOT_ID, sync_report_from_root
 
 
 def _artifact_node(artifact: Artifact) -> WorldViewNode:
@@ -41,7 +40,7 @@ def _deployment_node(deployment: Deployment) -> WorldViewNode:
         "artifact_id": deployment.artifact_id,
         "artifact_link_source": deployment.artifact_link_source,
         "target": deployment.target.model_dump(mode="json"),
-        "resource": deployment.resource.model_dump(mode="json") if deployment.resource else None,
+        "origin": deployment.origin.model_dump(mode="json") if deployment.origin else None,
         "provider_labels": dict(deployment.provider_labels),
         "observations": (
             {
@@ -62,6 +61,48 @@ def _deployment_node(deployment: Deployment) -> WorldViewNode:
     )
 
 
+async def _parent_nodes(deployments: list[Deployment], *, already: set[str]) -> list[WorldViewNode]:
+    """The deployed elements — Agent, Project, ComputeNode — as graph nodes.
+
+    Without these the hierarchy edge has nothing to attach to and every non-GCP
+    placement renders as an orphan. Resolved through the schema registry rather
+    than a per-type ``if`` ladder, so a new deployable element appears here for
+    free.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    wanted: dict[str, TypeId] = {}
+    for deployment in deployments:
+        if not deployment.parent_type_id:
+            continue
+        key = str(deployment.parent_type_id)
+        if key in already or key in wanted:
+            continue
+        try:
+            wanted[key] = TypeId(key)
+        except ValueError:
+            continue
+
+    nodes: list[WorldViewNode] = []
+    for key, ref in sorted(wanted.items()):
+        entity_cls = SchemaRegistry.get_entity_cls(ref.type)
+        if entity_cls is None:
+            continue
+        entity = await entity_cls.get_by_id(ref.id)
+        if entity is None:
+            continue
+        nodes.append(
+            WorldViewNode(
+                type=entity.type,
+                id=entity.id,
+                key=key,
+                label=getattr(entity, "name", "") or ref.type,
+                properties={"kind": getattr(entity, "kind", None) or entity.type},
+            )
+        )
+    return nodes
+
+
 async def build_worldview(
     *,
     sync_report: WorldViewSyncReport | None = None,
@@ -69,14 +110,15 @@ async def build_worldview(
     """Project all Artifacts and Deployments without using the dep-graph cache."""
 
     artifacts, deployments = await asyncio.gather(Artifact.get_all(), Deployment.get_all())
-    # Agent deployments are runtime placements on a machine, not inventoried
-    # infrastructure. They have no Artifact parent, so projecting them would add
-    # one permanently unattached node per agent per instance.
-    deployments = [d for d in deployments if not str(getattr(d, "kind", "") or "").endswith(".agent")]
+    # Every placement is projected, agents included. They used to be filtered out
+    # as "not inventoried infrastructure", but the real problem was that their
+    # parent (an Agent) is not a node here, so `add_edge` dropped the edge and
+    # left an orphan. The parents are projected below instead.
     artifacts.sort(key=lambda entity: entity.id)
     deployments.sort(key=lambda entity: entity.id)
     nodes = [_artifact_node(entity) for entity in artifacts]
     nodes.extend(_deployment_node(entity) for entity in deployments)
+    nodes.extend(await _parent_nodes(deployments, already={node.key for node in nodes}))
     node_keys = {node.key for node in nodes}
 
     edges: list[WorldViewEdge] = []
@@ -126,16 +168,16 @@ async def build_worldview(
                 WorldViewEdgeTopology.ASSOCIATION,
             )
 
-    root = next((item for item in deployments if item.id == WORLDVIEW_ROOT_ID), None)
-    report = sync_report if sync_report is not None else sync_report_from_root(root)
     edges.sort(key=lambda edge: (str(edge.from_.type), edge.from_.id, edge.to.type, edge.to.id, edge.kind))
     return WorldViewGraph(
         projection=WorldViewProjection.DEPLOYMENT,
-        root=str(root.typeid) if root is not None else None,
+        # No synthetic root: the provider tree that used to supply one is gone,
+        # and inventing a node to be the root of a forest is what produced it.
+        root=None,
         nodes=nodes,
         edges=edges,
         counts={"nodes": len(nodes), "edges": len(edges)},
-        sync=report,
+        sync=sync_report,
     )
 
 

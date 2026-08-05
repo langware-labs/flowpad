@@ -1,7 +1,6 @@
 """The run routing seam: a run is addressed to a machine, not to "here"."""
 import pytest
 
-from flow_sdk.builtin.agent_deployment import COMPUTE_NODE_LABEL
 from flow_sdk.builtin.agent_run import (
     TAG_RUN_FAILED,
     TAG_RUN_REQUESTED,
@@ -15,9 +14,8 @@ class _FakeDeployment:
 
     def __init__(self, node_id: str, local: bool, launch=None):
         self.id = "dep-1"
-        self.kind = "local.runtime.agent"
+        self.kind = "runtime.agent"
         self.parent_type_id = "agent-1"
-        self.provider_labels = {COMPUTE_NODE_LABEL: node_id}
         self.compute_node_id = node_id
         self.is_local = local
         self._launch = launch
@@ -90,7 +88,7 @@ def test_upsert_change_detection_compares_like_for_like():
     """The guard that decides whether resolving an agent writes to the DB.
 
     Regression: the first version compared `getattr(existing, field)` against
-    the raw payload, but `target`/`resource`/`status` are pydantic models and
+    the raw payload, but `target`/`origin`/`status` are pydantic models and
     the payload supplies dicts — `BaseModel.__eq__(dict)` is NotImplemented, so
     it reported "changed" on every call and every agent resolve wrote a row,
     broadcast to every client, and touched metadata.json. The comparison must
@@ -100,11 +98,11 @@ def test_upsert_change_detection_compares_like_for_like():
 
     payload = {
         "name": "probe (local)",
-        "kind": "local.runtime.agent",
+        "kind": "runtime.agent",
         "target": {"provider": "local", "scope": "s", "location": "l"},
-        "resource": {"full_resource_name": "r", "asset_type": "a"},
+        "origin": {"kind": "local", "provider": "local", "external_id": "n"},
         "status": {"sync_state": "current", "provider_state": "configured"},
-        "provider_labels": {"flowpad.compute.node_id": "n"},
+        "provider_labels": {"flowpad.agent.name": "probe"},
     }
     dep_id = "11111111-1111-4111-8111-111111111111"
     existing = Deployment(id=dep_id, **payload)
@@ -115,5 +113,5 @@ def test_upsert_change_detection_compares_like_for_like():
     assert existing.model_dump(mode="json", include=keys) == candidate.model_dump(mode="json", include=keys)
 
     # a real change -> write
-    changed = Deployment(id=dep_id, **{**payload, "kind": "e2b.runtime.agent"})
+    changed = Deployment(id=dep_id, **{**payload, "target": {"provider": "e2b", "scope": "s"}})
     assert existing.model_dump(mode="json", include=keys) != changed.model_dump(mode="json", include=keys)

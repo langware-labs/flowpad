@@ -3,8 +3,8 @@
 An Agent answers *who*; a ``Deployment`` answers *where and how*; an
 ``AgenticProcess`` records *what happened on one run*::
 
-    Agent.deploy()            -> AgentDeployment   (a Deployment, kind local.runtime.agent)
-    AgentDeployment.launch()  -> AgenticProcess
+    Agent.deploy()       -> Deployment        (kind ``runtime.agent``)
+    Deployment.launch()  -> AgenticProcess
 
 Folder layout (``AssetClass.REPO``, like Spec/Task/Deck)::
 
@@ -24,16 +24,11 @@ from typing import TYPE_CHECKING, ClassVar, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.type_id import TypeId
-
-#: The only deployment kind phase 1 ships — run it on this machine. Owned by
-#: agent_deployment (which mints the deployment id from it); two literals that
-#: must match are one too many.
-from flow_sdk.builtin.agent_deployment import LOCAL_DEPLOYMENT_KIND
+from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
 from flow_sdk.core import Entity, action
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.builtin.agent_deployment import AgentDeployment
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 
 #: The two vocabularies for "which CLI".
@@ -127,24 +122,54 @@ class Agent(Entity):
 
     # ── deployment ────────────────────────────────────────────────────────
 
-    async def deploy(self, kind: str = LOCAL_DEPLOYMENT_KIND) -> "AgentDeployment":
-        """Idempotent upsert of this agent's deployment for *kind*."""
-        from flow_sdk.builtin.agent_deployment import AgentDeployment  # noqa: PLC0415
+    async def deploy(self, provider: str = "local") -> Deployment:
+        """Idempotent upsert of this agent's placement on *provider*.
 
-        return await AgentDeployment.upsert_for(self, kind=kind)
-
-    async def local_deployment(self) -> "AgentDeployment":
-        """Get-or-create the ``local`` deployment — run it on this machine.
-
-        SDK-only by design: a local deployment describes THIS machine, so it is
-        ``Sharing.PRIVATE`` and never reaches the hub.
+        Converges through ``Deployment.find_existing`` rather than a derived id:
+        the row keeps whatever v4 it was first minted with, forever, on every
+        tier that holds it.
         """
-        return await self.deploy(LOCAL_DEPLOYMENT_KIND)
+        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
-    async def deployments(self) -> list["AgentDeployment"]:
-        from flow_sdk.builtin.agent_deployment import AgentDeployment  # noqa: PLC0415
+        machine = get_instance_settings().instance_name
+        return await Deployment.upsert(
+            parent_type_id=str(self.typeid),
+            provider=provider,
+            kind=KIND_AGENT,
+            element=self,
+            payload={
+                "name": f"{self.name or self.id} ({provider})",
+                "target": {
+                    "provider": provider,
+                    "scope": self.project_id or "machine",
+                    "location": machine,
+                },
+                "origin": {
+                    "kind": provider,
+                    "provider": provider,
+                    # The machine it runs on. `local` is, by definition, this
+                    # one; other providers pass their own node when the placement
+                    # is created for them.
+                    "external_id": ComputeNode._local_id() if provider == "local" else "",
+                },
+                "status": {"sync_state": "current", "provider_state": "configured"},
+                "provider_labels": {
+                    "flowpad.agent.name": str(self.name or ""),
+                    "flowpad.agent.worker": str(self.worker_type or ""),
+                    "flowpad.agent.model": str(self.model or ""),
+                },
+                "project_id": self.project_id,
+            },
+        )
 
-        return await AgentDeployment.for_agent(self)
+    async def local_deployment(self) -> Deployment:
+        """Get-or-create the placement that runs this agent on THIS machine."""
+        return await self.deploy("local")
+
+    async def deployments(self) -> list[Deployment]:
+        rows = await Deployment.get_all({"match": {"parent_type_id": str(self.typeid)}})
+        return [row.with_element(self) for row in rows]
 
     # ── publish ───────────────────────────────────────────────────────────
 
@@ -205,21 +230,10 @@ class Agent(Entity):
         The credentials live in this process, so the browser never talks to the
         hub directly.
         """
-        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
-
-        creds = load_credentials()
-        if not creds or not creds.api_key:
-            raise RuntimeError("Cloud login required before deploy")
+        from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud  # noqa: PLC0415
 
         await self.ensure_on_hub(actor)
-        path = build_hub_url(self, action="deploy")
-        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            # `post` already unwraps the envelope, and raises on a non-success
-            # one — so a hub-side refusal surfaces here rather than returning {}.
-            data = await client.post(path, {})
-        return data if isinstance(data, dict) else {}
+        return await deploy_entity_to_cloud(self)
 
     @action.post(action_name="deploy")
     async def deploy_action(self):
@@ -230,8 +244,8 @@ class Agent(Entity):
         practice the fix is 202-and-poll on the node's ``ops/status``, which
         already exists, not a longer client timeout.
         """
-        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         if not self.enabled:
             return ApiFailResponse(message=f"agent {self.name!r} is disabled")
@@ -296,7 +310,7 @@ class Agent(Entity):
         shape must stay byte-identical, because ``last_started_hash`` is an md5
         over it and any new/renamed key would flip ``restart_required`` on every
         running process. ``system_prompt`` deliberately does NOT appear here: it
-        travels via ``context_data.instructions`` (see ``AgentDeployment.launch``).
+        travels via ``context_data.instructions`` (see ``Deployment.build``).
 
         ``additional_dirs`` is deliberately absent too: both drivers overwrite
         ``cmd.add_dirs`` with ``AgenticProcess.resolved_add_dirs`` at spawn, so a

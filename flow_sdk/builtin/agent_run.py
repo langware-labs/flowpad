@@ -34,8 +34,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.builtin.agent_deployment import AgentDeployment
     from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.deployment import Deployment
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ def _emit(tag: str, node_id: str, data: dict[str, Any]) -> None:
 
 
 async def dispatch_agent_run(
-    deployment: "AgentDeployment",
+    deployment: "Deployment",
     prompt: str,
     **options: Any,
 ) -> "AgenticProcess":
@@ -72,7 +72,10 @@ async def dispatch_agent_run(
     quietly running here. A silent local fallback is exactly how "it ran in the
     cloud" becomes a lie, and it would be invisible in the returned process.
     """
-    node_id = deployment.compute_node_id
+    # An agent placement is always node-backed, so this resolves; the fallback
+    # keeps the lifecycle emission addressable rather than crashing the run if a
+    # row ever arrives with a provider that is not.
+    node_id = deployment.compute_node_id or "unknown"
     agent = await deployment.agent()
     agent_name = getattr(agent, "name", None) or str(deployment.parent_type_id)
 

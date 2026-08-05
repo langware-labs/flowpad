@@ -276,6 +276,7 @@
       "agent",
       "app",
       "application",
+      "compute",
       "content",
       "datasource",
       "entity",
@@ -283,9 +284,9 @@
       "graph_workflow",
       "hub",
       "ingest",
-      "local",
       "node",
       "resource",
+      "runtime",
       "workload"
     ]
   }

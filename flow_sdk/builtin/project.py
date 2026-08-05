@@ -1861,6 +1861,40 @@ class Project(Entity):
         except Exception:
             log.debug("[project] index-sentinel stamp on create failed", exc_info=True)
 
+    @action.post(action_name="deploy")
+    async def deploy_action(self) -> "ApiResponse":
+        """`POST /project/<id>/deploy` — run this project's app in a cloud box.
+
+        The web half of deployment, and the same verb an Agent gets. A micro app
+        is deployed by deploying the project that holds it: the project is what
+        has a repository, and the sandbox materializes exactly that. It is also
+        what a LOCAL web placement already parents to, so both tiers agree on
+        what a web deployment hangs off.
+
+        Sharing is implicit — a deploy names a project the hub has to already
+        know, so the two are never separately orderable by a caller.
+
+        Long by nature (E2B create + boot + health is tens of seconds); if that
+        becomes a timeout in practice the fix is 202-and-poll on the node's
+        ``ops/status``, which already exists, not a longer client timeout.
+        """
+        from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        actor = request_info.someone_typeid if request_info else None
+        if not actor:
+            return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
+        try:
+            if not self.remote:
+                await self.share()
+                self.remote = True
+                await self.save()
+            data = await deploy_entity_to_cloud(self)
+        except Exception as exc:
+            return ApiFailResponse(message=f"deploy failed: {exc}")
+        return ApiSuccessResponse(data={"project_id": self.id, **data})
+
     @action.post(action_name="activate")
     async def activate(self) -> "ApiResponse":
         """Project activation — the one "the user is now in this project" signal.
