@@ -182,13 +182,6 @@ def get_current_sod_store():
     return get_instance_settings().sod
 
 
-def get_current_email_provider():
-    service: FlowpadService | None = get_current_service()
-    if service is None:
-        return None
-    return service.email_provider
-
-
 def get_current_request_info():
     execution_context = get_execution_context()
     if execution_context is None:

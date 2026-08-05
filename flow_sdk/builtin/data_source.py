@@ -16,10 +16,14 @@ aspirational, and is exactly the phase-1 (credential-free) path.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from math import ceil
 from typing import ClassVar, Optional
 
+from pydantic import model_validator
+
+from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
 from flow_sdk.core import action as core_action
@@ -28,11 +32,37 @@ from flow_sdk.ingest.health import SourceHealth
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.types import EntityType
+
+logger = logging.getLogger(__name__)
 from flow_sdk.utils.serialization import iso_to_utc
 
 #: The heartbeat ticks once a minute, and every provider floor we care about is
 #: at least that. A source may ask for less frequent polling, never more.
 MIN_POLL_INTERVAL_SECONDS = 60
+
+
+class SourceStatus(StrEnum):
+    """Where a source is in its life — a SEPARATE axis from ``health``.
+
+    Status answers "should this be running"; health answers "is it working".
+    Collapsing them is how a source ends up reading OK while nobody has finished
+    setting it up, or reading broken because a human paused it.
+
+    This replaces the old ``enabled`` boolean, which could only say two of these
+    four things. A source awaiting a setup step the user must perform — inviting
+    a bot to a Slack channel — is not disabled (nobody turned it off) and not
+    active (it would fetch nothing); it is SETUP, and that state has to be
+    representable or the UI has to lie about one of them.
+    """
+
+    #: Created, not yet evaluated. Transient: the first save resolves it.
+    NEW = "new"
+    #: Waiting on a human. `setup_detail` says what for.
+    SETUP = "setup"
+    #: Polling.
+    ACTIVE = "active"
+    #: Paused by a person. Only a person moves it out.
+    DISABLED = "disabled"
 
 
 def parse_since(raw: str) -> "tuple[Optional[datetime], Optional[str]]":
@@ -91,8 +121,15 @@ class DataSource(Entity):
     # ── driver config — provider-opaque, the subsystem never reads inside ──
     config: dict = APIField(default_factory=dict)
 
+    # ── lifecycle ──
+    status: str = APIField(default=SourceStatus.NEW.value)
+    #: What SETUP is waiting for, in the user's words. Empty in every other
+    #: state. The card renders this verbatim, so it is a sentence, not a code.
+    setup_detail: str = APIField(default="")
+    #: When the last verify ran, whatever its verdict.
+    verified_at: Optional[datetime] = APIField(default=None)
+
     # ── sync policy ──
-    enabled: bool = APIField(default=True)
     poll_interval_seconds: int = APIField(default=300, ge=MIN_POLL_INTERVAL_SECONDS)
     window_days: int = APIField(default=7, ge=1, description="The 'since last pull' floor")
     next_poll_at: Optional[datetime] = APIField(default=None)
@@ -118,9 +155,41 @@ class DataSource(Entity):
 
     _api_visible: ClassVar[bool] = True
 
+    @model_validator(mode="before")
+    @classmethod
+    def _adopt_legacy_enabled(cls, data):
+        """Rows written before `status` existed carry `enabled` instead.
+
+        Without this they would load with the default status (NEW) and a source
+        someone deliberately paused would quietly come back — the one migration
+        outcome that is worse than an error.
+        """
+        if not isinstance(data, dict) or data.get("status"):
+            return data
+        if "enabled" in data:
+            data = dict(data)
+            legacy = data.pop("enabled")
+            data["status"] = (
+                SourceStatus.ACTIVE.value if legacy else SourceStatus.DISABLED.value
+            )
+        return data
+
+    @property
+    def enabled(self) -> bool:
+        """Read-compat for callers that still ask the old question.
+
+        Not a field any more — ACTIVE is the only state that polls, so this is
+        derived rather than stored. Kept because a boolean reads better than a
+        string comparison at a call site that only cares whether it runs.
+        """
+        return self.status == SourceStatus.ACTIVE.value
+
     def is_due(self, now: Optional[datetime] = None) -> bool:
         now = now or datetime.now(timezone.utc)
-        if not self.enabled:
+        if self.status != SourceStatus.ACTIVE.value:
+            # NEW and SETUP have not finished being configured; DISABLED is a
+            # person's decision. None of them are failures, so none of them
+            # touch health.
             return False
         if self.health == SourceHealth.CONFIG_ERROR.value:
             # Needs a human. Polling it every minute would burn quota to
@@ -190,7 +259,7 @@ class DataSource(Entity):
         self._make_due()
         await self.save()
         return ApiSuccessResponse(data={
-            "status": "due", "health": self.health, "enabled": self.enabled,
+            "status": "due", "health": self.health, "source_status": self.status,
             "detail": "queued for the next heartbeat tick (≤60s)",
         })
 
@@ -355,6 +424,119 @@ class DataSource(Entity):
         """The path `DELETE /api/v1/graph/data_source/{id}` takes."""
         await cls.delete_children_of(str(eid))
         return await super().delete_by_id(eid)
+
+    async def save(self, *args, **kwargs):
+        """Resolve NEW on the way in, so a source is never stuck un-runnable.
+
+        NEW is transient by design: it means "nobody has decided yet". The
+        decision is the driver's — one that declares `verify` has a setup step a
+        human must complete (Slack's bot invite), so it starts in SETUP; one that
+        does not is ready the moment it is configured, so it starts ACTIVE. That
+        keeps a plain RSS feed from demanding a Verify click it has no use for.
+        """
+        if self.status == SourceStatus.NEW.value:
+            driver = self._driver()
+            if driver is not None and callable(getattr(driver, "verify", None)):
+                self.status = SourceStatus.SETUP.value
+                if not self.setup_detail:
+                    self.setup_detail = "Finish setup, then press Verify."
+            else:
+                # Includes an UNKNOWN provider, deliberately: leaving it in NEW
+                # would park it silently, while ACTIVE lets the poller reach
+                # `sync_source`, which reports `unknown_provider` as a
+                # config_error the card can actually explain.
+                self.status = SourceStatus.ACTIVE.value
+        return await super().save(*args, **kwargs)
+
+    @core_action.post(action_name="verify")
+    async def verify_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/verify — is the setup finished?
+
+        Two layers, in this order, because they fail for different reasons and
+        the fix is different:
+
+        1. **The connection.** The standard OAuth probe — a real call to the
+           provider with the stored token. A dead or revoked token has to be
+           reported as that, not as "the bot is not in your channels".
+        2. **The setup.** The driver's own check. For Slack that is per-channel
+           readability, and every configured channel must pass: a source that
+           silently ingests three of five channels looks like it is working.
+
+        Moves the source to ACTIVE only when both pass. Nothing here polls or
+        waits — it is one round trip per layer.
+        """
+        driver = self._driver()
+        if driver is None:
+            return ApiFailResponse(message=f"no driver registered for {self.provider!r}")
+
+        connection = await self._verify_connection()
+        if connection is not None:
+            self.status = SourceStatus.SETUP.value
+            self.setup_detail = connection
+            self.verified_at = datetime.now(timezone.utc)
+            await self.save()
+            return ApiSuccessResponse(data={
+                "ready": False, "layer": "connection", "detail": connection,
+                "status": self.status,
+            })
+
+        verdict = await self._verify_setup(driver)
+        self.verified_at = datetime.now(timezone.utc)
+        if verdict.ready:
+            self.status = SourceStatus.ACTIVE.value
+            self.setup_detail = ""
+            # Due on the next tick rather than after a full interval: the user
+            # just finished setting it up and is watching.
+            self.next_poll_at = None
+        else:
+            self.status = SourceStatus.SETUP.value
+            self.setup_detail = verdict.detail
+        await self.save()
+        return ApiSuccessResponse(data={
+            "ready": verdict.ready,
+            "layer": "setup",
+            "detail": verdict.detail,
+            "pending": list(verdict.pending),
+            "status": self.status,
+        })
+
+    def _driver(self):
+        from flow_sdk.ingest.driver import get_driver  # noqa: PLC0415
+
+        return get_driver(self.provider)
+
+    async def _verify_connection(self) -> Optional[str]:
+        """None when the token works; otherwise why it does not.
+
+        Uses the same probe the Connections "Test" button runs, so the two can
+        never disagree about whether a provider is reachable.
+        """
+        if not self.channel:
+            return None  # nothing to probe against yet
+        from flow_sdk.core.oauth.provider_probe import get_probe, run_probe  # noqa: PLC0415
+
+        if get_probe(self.channel) is None:
+            return None  # no probe defined — not a failure, just unverifiable
+        from flow_sdk.app.actions.oauth_action import _handle_test  # noqa: PLC0415
+
+        result = await _handle_test(self.channel)
+        data = getattr(result, "data", None) or {}
+        if data.get("ok") is False:
+            return str(data.get("detail") or "the stored credential was refused")
+        return None
+
+    async def _verify_setup(self, driver) -> "SetupVerdict":
+        from flow_sdk.ingest.driver import SetupVerdict  # noqa: PLC0415
+
+        check = getattr(driver, "verify", None)
+        if not callable(check):
+            # A driver with no setup step is ready as soon as it is configured.
+            return SetupVerdict.ok()
+        try:
+            return await check(self)
+        except Exception as exc:  # noqa: BLE001 — a driver must not 500 the button
+            logger.warning("verify failed for %s: %s", self.id, exc, exc_info=True)
+            return SetupVerdict.waiting(f"could not verify: {exc}")
 
     async def delete(self):
         """The verb in-process callers actually use."""

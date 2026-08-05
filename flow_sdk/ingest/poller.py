@@ -26,7 +26,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.server.system_heartbeat import register_heartbeat_task
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,10 @@ async def dispatch_due_sources(
     dispatched: list[str] = []
 
     try:
-        sources = await DataSource.get_all({"enabled": True})
+        # ACTIVE only. NEW and SETUP have not finished being configured — a
+        # Slack source whose bot was never invited would otherwise be polled
+        # every minute to re-learn that.
+        sources = await DataSource.get_all({"status": SourceStatus.ACTIVE.value})
     except Exception:  # noqa: BLE001 — a housekeeping tick must never raise
         logger.debug("[ingest] could not list data sources", exc_info=True)
         return dispatched

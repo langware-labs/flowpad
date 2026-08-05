@@ -1,5 +1,5 @@
 /**
- * The four ingest drivers, as a form.
+ * The ingest drivers, as a form.
  *
  * **Hardcoded, deliberately.** The driver registry
  * (`flow_sdk/ingest/driver.py`) has `register_driver`/`get_driver` and no list
@@ -112,6 +112,27 @@ export const PROVIDERS: readonly ProviderSpec[] = [
     ],
   },
   {
+    id: 'slack',
+    label: 'Slack',
+    blurb:
+      'Channels in a connected Slack workspace. Connect Slack first, then invite the bot to each channel and press Verify.',
+    // The workspace is a property of the CONNECTION, not of this form — the
+    // OAuth token names it and the form never sees it. Left blank rather than
+    // filled with a channel id, which would describe the wrong thing.
+    accountKey: () => '',
+    fields: [
+      {
+        key: 'channels',
+        label: 'Channel IDs',
+        kind: 'lines',
+        required: true,
+        placeholder: 'C0123456789',
+        hint:
+          'One per line, and the ID — not the name. Slack: open the channel → its name → the ID is at the bottom. A renamed channel keeps its ID; keying on the name would fork its history.',
+      },
+    ],
+  },
+  {
     id: 'agentmail',
     label: 'AgentMail',
     blurb: 'A hosted mailbox over its HTTP API.',
@@ -140,6 +161,27 @@ export const PROVIDERS: readonly ProviderSpec[] = [
 export function providerSpec(id: string): ProviderSpec | undefined {
   return PROVIDERS.find((p) => p.id === id);
 }
+
+/**
+ * Wiki pages for the setup step a provider cannot do for you.
+ *
+ * A map rather than a field on `ProviderSpec` because it answers a different
+ * question — not "what does this form ask for" but "what does the user have to
+ * go do in another application". Only providers whose driver has a `verify`
+ * step belong here; anything else would offer help for a step that does not
+ * exist.
+ */
+const SETUP_WIKI: Record<string, string> = {
+  slack: 'Slack channels',
+};
+
+/** The wiki page explaining this provider's setup step, or undefined. */
+export function setupWiki(provider: string): string | undefined {
+  return SETUP_WIKI[(provider || '').trim().toLowerCase()];
+}
+
+/** Slack channel IDs: C (public), G (private), D (DM). Names are not IDs. */
+const SLACK_CHANNEL_ID = /^[CGD][A-Z0-9]{6,}$/;
 
 export interface SourceDraft {
   name: string;
@@ -241,6 +283,16 @@ export function validateDraft(draft: SourceDraft): string[] {
     // `streams()` returns nothing, so no cursor is ever created.
     if (urls.length && urls.some((u) => !isHttpUrl(u))) {
       problems.push('Every feed URL must be a full http(s) URL.');
+    }
+  }
+
+  if (draft.provider === 'slack') {
+    // A `#name` here is not a near miss — `streams()` keys on whatever it is
+    // given, so the source would poll a channel that does not exist and report
+    // `channel_not_found` from a Verify that looked correctly configured.
+    const bad = splitLines(draft.fields.channels ?? '').filter((c) => !SLACK_CHANNEL_ID.test(c));
+    if (bad.length) {
+      problems.push(`Not Slack channel IDs: ${bad.join(', ')}. Use the ID (C…), not the name.`);
     }
   }
 

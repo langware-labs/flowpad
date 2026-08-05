@@ -22,7 +22,7 @@ class DataSourceMeta(BaseMeta):
     account_key: Optional[str] = None
     account_identities: Optional[list] = None
     config: Optional[dict] = None
-    enabled: Optional[bool] = None
+    status: Optional[str] = None
     poll_interval_seconds: Optional[int] = None
     window_days: Optional[int] = None
     stream_count: Optional[int] = None
@@ -46,7 +46,7 @@ DATA_SOURCE = TypeMetadata(
     # a New button" affordance hint, not an authorization flag (see
     # `_uncreatable_reason`), and the dialog creates through the ordinary
     # generic create route either way.
-    index_fields=["name", "provider", "kind", "health"],
+    index_fields=["name", "provider", "kind", "status", "health"],
     meta_model=DataSourceMeta,
 )
 

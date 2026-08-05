@@ -9,7 +9,7 @@
  * which the form does set — through the field that owns it.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { DataSource } from '@sdk';
+import { DataSource, type SourceStatus } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
@@ -36,6 +36,18 @@ import {
   type SourceDraft,
 } from './provider-catalog';
 
+/**
+ * The switch's boolean → a lifecycle status.
+ *
+ * Un-pausing does NOT mean "active": a Slack source that was paused mid-setup
+ * must go back to needing its invite, not skip it. So it returns to `new` and
+ * lets the backend re-resolve — the one place that knows which drivers verify.
+ */
+function statusFor(enabled: boolean, current: SourceStatus): SourceStatus {
+  if (!enabled) return 'disabled';
+  return current === 'disabled' ? 'new' : current;
+}
+
 /** Config value → the string its input shows. Arrays rejoin the way they split. */
 function fieldValue(field: ProviderField, config: Record<string, unknown>): string {
   const raw = config?.[field.key];
@@ -59,7 +71,11 @@ function draftFrom(source: DataSource): SourceDraft {
     name: source.name,
     provider: source.provider,
     account_key: source.account_key,
-    enabled: source.enabled,
+    // The switch is "not paused", which is NOT "active": a source still in
+    // `setup` is unpaused and deliberately not running. Mapping it back through
+    // a boolean is why the toggle cannot resolve the lifecycle itself — see
+    // `statusFor`.
+    enabled: source.status !== 'disabled',
     poll_interval_seconds: source.poll_interval_seconds,
     window_days: source.window_days,
     fields,
@@ -101,9 +117,9 @@ export function DataSourceDialog({
       const account = accountKeyFor(draft);
       if (editing) {
         editing.name = draft.name.trim();
+        editing.status = statusFor(draft.enabled, editing.status);
         editing.account_key = account;
         editing.config = config;
-        editing.enabled = draft.enabled;
         editing.poll_interval_seconds = draft.poll_interval_seconds;
         editing.window_days = draft.window_days;
         await editing.save();
@@ -114,7 +130,10 @@ export function DataSourceDialog({
           provider: draft.provider,
           account_key: account,
           config,
-          enabled: draft.enabled,
+          // 'new' on purpose: the backend resolves it to `setup` or `active`
+          // depending on whether the driver has a verification step, and only
+          // it knows which drivers do.
+          status: draft.enabled ? 'new' : 'disabled',
           poll_interval_seconds: draft.poll_interval_seconds,
           window_days: draft.window_days,
         });
