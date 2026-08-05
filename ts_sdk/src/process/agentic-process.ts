@@ -2337,6 +2337,56 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Watch a turn this client did NOT start, and render it live.
+   *
+   * `prompt()` above carries a turn's content back to whoever sent it. Nobody
+   * else has a source — a turn typed into the xterm, watched from a second tab,
+   * or driven by a background worker leaves other surfaces on a stale list
+   * until history is reloaded at turn end. This opens the backend's read-only
+   * `observe-turn` stream and ingests it into the same `flowDataStream`.
+   *
+   * Deliberately NOT bracketed with `_setPromptingDelta`: `isPrompting` means
+   * "I am driving a turn", and that is exactly the flag callers use to decide
+   * whether to observe. Setting it here would make a watcher look like a
+   * sender.
+   *
+   * Resolves when the turn ends. Abort the controller (on unmount) to stop
+   * watching — the worker is unaffected, only the observation stops.
+   */
+  async observeTurn(abortController?: AbortController): Promise<void> {
+    const { FlowStreamProcessor } = await import('../flow_processing/flow-stream-processor');
+    const { FlowEvents } = await import('../flow_processing/flow-events');
+
+    const ctrl = abortController ?? new AbortController();
+    const actionInfo = new ActionInfo(
+      'observe-turn',
+      AgenticProcess.type,
+      this.id,
+      'POST',
+      false,
+      true, // streaming
+      ctrl.signal,
+    );
+
+    const response = await dataManager.callAction<unknown, Response>(actionInfo);
+    if (!response || !response.body) return; // nothing in flight — not an error
+
+    const processor = new FlowStreamProcessor();
+    processor.on(FlowEvents.DATA, (fd: FlowData) => {
+      try {
+        this.flowDataStream.ingest(fd);
+      } catch (err) {
+        console.error('[AgenticProcess.observeTurn] ingest error', err);
+      }
+    });
+    processor.on(FlowEvents.ERROR, (err) => {
+      console.error('[AgenticProcess.observeTurn] processor error', err);
+    });
+
+    await processor.ingestStream(response.body.getReader(), ctrl);
+  }
+
+  /**
    * Set ONLY tab-visibility (`visible`) — whether this process shows as a
    * terminal tab. Decoupled from transport: `visible` does NOT pick PTY vs
    * headless (that's `pty_mode`). Use this to show/hide the tab without
@@ -2402,7 +2452,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * assistant share one "stop generating" handler.
    */
   async interruptTurn(): Promise<void> {
-    if (this.visible && this.shell_id) {
+    // Keys on the TRANSPORT (`pty_mode`), never tab-visibility: a hidden live
+    // PTY (`visible=false, pty_mode=true`) is still a PTY, and routing it to
+    // cancelPrompt sent a cancel to a print-mode subprocess that doesn't exist
+    // — Stop silently did nothing.
+    if (this.pty_mode && this.shell_id) {
       const pty = this.ptyConnection ?? (await Shell.getById<Shell>(this.shell_id))?.ptyConnection;
       if (pty) {
         await pty.sendInput('\x03');
