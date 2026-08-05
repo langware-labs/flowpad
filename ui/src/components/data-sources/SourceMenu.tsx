@@ -55,8 +55,11 @@ export function SourceMenu({
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="end">
+        {/* "Pause" for anything that is not already paused, including a source
+            still in `setup` — pausing an unfinished source is a real thing to
+            want, and hiding the item would leave it with no way to stop. */}
         <DropdownMenuItem onSelect={onToggleEnabled}>
-          {source.enabled ? t`Pause` : t`Enable`}
+          {source.status === 'disabled' ? t`Resume` : t`Pause`}
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onEdit(source)}>
           <Pencil className="size-3.5" /> {t`Edit`}

@@ -49,7 +49,7 @@ describe('CloudAssetPublishButton', () => {
   it('publishes a Git-backed asset through the standard entity Share action', async () => {
     render(<CloudAssetPublishButton typeId={typeId} variant="compact" />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Publish to cloud' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
 
     await waitFor(() => expect(mocks.entity.share).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId('asset-cloud-publish')).toHaveAttribute('data-state', 'published');
@@ -67,7 +67,7 @@ describe('CloudAssetPublishButton', () => {
     mocks.entity.share.mockRejectedValue(new Error('project_not_published'));
     render(<CloudAssetPublishButton typeId={typeId} variant="compact" />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Publish to cloud' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Link to cloud' }));
 
     await waitFor(() => expect(mocks.error).toHaveBeenCalled());
     expect(screen.getByTestId('asset-cloud-publish')).toHaveAttribute('data-state', 'local');

@@ -64,11 +64,15 @@ export function eventInScope(
   currentProjectId: string | null,
 ): boolean {
   const projectTarget = (event.ctx?.scope ?? []).find((s) => s.startsWith('project:'));
-  return projectIdInScope(
-    projectTarget ? projectTarget.slice('project:'.length) : null,
-    scope,
-    currentProjectId,
-  );
+  // No project in the chain ⇒ instance-level, and instance-level is ALWAYS
+  // visible. It cannot go through `projectIdInScope`, whose "no project ⇒
+  // user-scope only" rule returns false for `mode: 'project'` — and since the
+  // dock defaults to the active project, that hid every `ingest.*`,
+  // `agent.status` and `node.*` envelope the moment a project was selected.
+  // A data source is a property of the instance; there is no project it could
+  // have carried instead.
+  if (!projectTarget) return true;
+  return projectIdInScope(projectTarget.slice('project:'.length), scope, currentProjectId);
 }
 
 /** What happened to a rule when an event reached it. */

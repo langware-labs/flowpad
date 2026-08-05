@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.core.asset_editor import EDITOR_TYPES, TYPE_TO_EDITOR, AssetEditor, editor_for_type
-from flow_sdk.core.display_target import DisplayTargetKind, dock_url
+from flow_sdk.core.display_target import DisplayTargetKind, dock_url, hub_asset_url
 from flow_sdk.schema.types import EntityType
 
 CONTRACT = json.loads((Path(__file__).parent.parent / "fixtures" / "asset_editor_contract.json").read_text())
@@ -52,7 +52,7 @@ def test_dock_url_builds_the_contract_pointer(case):
     clicked entity from landing in different places.
     """
     target = {"kind": DisplayTargetKind.ENTITY, "type": case["type"], "typeid": case["typeid"]}
-    assert dock_url(target, port=4098) == f"http://localhost:4098/dock/{case['pointer']}"
+    assert dock_url(target, port=4098) == f"http://localhost:4098{case['path']}"
 
 
 def test_every_mapped_type_is_a_registered_entity_type():
@@ -62,3 +62,31 @@ def test_every_mapped_type_is_a_registered_entity_type():
     known = {e.value for e in EntityType}
     unknown = sorted(set(TYPE_TO_EDITOR) - known)
     assert not unknown, f"not registered in EntityType: {unknown}"
+
+
+@pytest.mark.parametrize("case", CONTRACT["hub_url_cases"], ids=lambda c: c["type"])
+def test_hub_asset_url_builds_the_contract_pointer(case):
+    """The HUB grammar, crossing the language boundary.
+
+    The TS suite asserts `hubProjectAssetDock` produces the same `path` from the
+    same fixture row. The project rebase is the load-bearing part: a bare
+    `/dock/assets/editor/...` on a hub-only server redirects to hub home, so an
+    un-rebased link silently lands a reviewer on a home screen.
+    """
+    target = {"kind": DisplayTargetKind.ENTITY, "type": case["type"], "typeid": case["typeid"]}
+    url = hub_asset_url(target, hub_origin="https://hub.example", project_id=case["project_id"])
+    assert url == "https://hub.example" + case["path"]
+
+
+def test_hub_asset_url_refuses_rather_than_guessing():
+    entity = {"kind": DisplayTargetKind.ENTITY, "type": "markdown", "typeid": "markdown-x"}
+    assert hub_asset_url(entity, hub_origin="", project_id="p") is None
+    assert hub_asset_url(entity, hub_origin="https://h", project_id="") is None
+    assert hub_asset_url({"kind": DisplayTargetKind.VFS}, hub_origin="https://h", project_id="p") is None
+    shell = {"kind": DisplayTargetKind.ENTITY, "type": "shell", "typeid": "shell-x"}
+    assert hub_asset_url(shell, hub_origin="https://h", project_id="p") is None
+
+
+def test_hub_origin_trailing_slash_does_not_double_up():
+    target = {"kind": DisplayTargetKind.ENTITY, "type": "markdown", "typeid": "markdown-1"}
+    assert hub_asset_url(target, hub_origin="https://h/", project_id="p").startswith("https://h/dock/")

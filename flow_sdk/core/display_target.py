@@ -371,3 +371,37 @@ def dock_url(target: dict, *, port: int, host: str = "localhost") -> str | None:
     if not typeid or editor is None:
         return None
     return f"http://{host}:{port}/dock/assets/editor/{editor.value}/typeid/{typeid}"
+
+
+def hub_asset_url(target: dict, *, hub_origin: str, project_id: str) -> str | None:
+    """The HUB's project-rebased asset-editor URL for a resolved display target.
+
+    ``<hub_origin>/dock/hub/project/<project_id>/editor/<editor>/typeid/<type>-<id>``
+
+    Its other owner is ``hubProjectAssetDock`` in ui/src/lib/hub-page-url.ts
+    (``rebaseAssetsOntoProject ∘ forAssetEditorByTypeId ∘ withPage(HUB)``); the
+    two are pinned by the ``hub_url_cases`` rows in
+    tests/fixtures/asset_editor_contract.json.
+
+    **The project rebase is mandatory, not cosmetic.** A bare
+    ``/dock/assets/editor/...`` on a hub-only server is redirected to
+    ``/dock/hub/home`` (ui/src/navigation/supported-pages.ts), because the hub
+    does not serve the ``desk`` page — so the un-rebased form silently lands the
+    reviewer on a home screen instead of the document.
+
+    ``None`` for the same reasons as :func:`dock_url`, plus a missing origin or
+    project id. Callers must treat that as "there is no reviewer link", never
+    as a URL to guess at.
+    """
+    from flow_sdk.core.asset_editor import editor_for_type  # noqa: PLC0415
+
+    if not hub_origin or not project_id:
+        return None
+    if target.get("kind") != DisplayTargetKind.ENTITY:
+        return None
+    typeid = target.get("typeid")
+    editor = editor_for_type(str(target.get("type") or ""))
+    if not typeid or editor is None:
+        return None
+    origin = hub_origin.rstrip("/")
+    return f"{origin}/dock/hub/project/{project_id}/editor/{editor.value}/typeid/{typeid}"

@@ -8,12 +8,23 @@ Importing this package registers every shipped driver. Nothing outside
 from flow_sdk.ingest.driver import register_driver
 from flow_sdk.ingest.drivers.agent import AgentDriver
 from flow_sdk.ingest.drivers.agentmail import AgentMailDriver
+from flow_sdk.ingest.drivers.cloud_email import CloudEmailDriver
 from flow_sdk.ingest.drivers.hackernews import HackerNewsDriver
 from flow_sdk.ingest.drivers.rss import RssDriver
+from flow_sdk.ingest.drivers.slack import SlackDriver
 
 register_driver(RssDriver())
 register_driver(HackerNewsDriver())
 register_driver(AgentDriver())
 register_driver(AgentMailDriver())
+register_driver(CloudEmailDriver())
+register_driver(SlackDriver())
 
-__all__ = ["AgentDriver", "AgentMailDriver", "HackerNewsDriver", "RssDriver"]
+__all__ = [
+    "AgentDriver",
+    "AgentMailDriver",
+    "CloudEmailDriver",
+    "HackerNewsDriver",
+    "RssDriver",
+    "SlackDriver",
+]

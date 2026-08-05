@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.data_source import DataSource, SourceStatus
 from flow_sdk.ingest import poller
 from flow_sdk.ingest.health import SourceHealth
 
@@ -60,7 +60,7 @@ def _clear_inflight():
 async def test_only_due_sources_are_dispatched():
     due = await _source(next_poll_at=NOW - timedelta(seconds=1))
     later = await _source(next_poll_at=NOW + timedelta(hours=1))
-    disabled = await _source(enabled=False, next_poll_at=NOW - timedelta(seconds=1))
+    disabled = await _source(status=SourceStatus.DISABLED.value, next_poll_at=NOW - timedelta(seconds=1))
     broken = await _source(
         next_poll_at=NOW - timedelta(seconds=1), health=SourceHealth.CONFIG_ERROR.value
     )

@@ -39,7 +39,9 @@ vi.mock('@sdk', async (importOriginal) => {
 });
 
 import { TypeId } from '@sdk';
-import { HubProjectPage, hubEditableAssetTypes, hubProjectAssetDock } from '@src/pages/hub-project/HubProjectPage';
+import { hubProjectAssetDock } from '@src/lib/hub-page-url';
+
+import { HubProjectPage, hubEditableAssetTypes } from '@src/pages/hub-project/HubProjectPage';
 
 const PROJECT_ID = '12345678-0000-4000-8000-000000000000';
 const ASSET_ID = 'abcdef12-0000-4000-8000-000000000000';

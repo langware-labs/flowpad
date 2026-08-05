@@ -317,7 +317,7 @@ def _cleanup_identities() -> list[str]:
 # the fixture below, and ``test_org_login_and_invite`` has already had to weaken
 # an assertion ("which org is 'primary' is ambiguous once a user has several —
 # a test-only artifact of repeated runs") because of this exact pile.
-_CLEANUP_TYPES = ("conversation", "organization", "team", "skill", "task", "markdown")
+_CLEANUP_TYPES = ("conversation", "organization", "team", "skill", "task", "markdown", "agent")
 
 
 def _live_ids(token: str, entity_type: str) -> set[str]:

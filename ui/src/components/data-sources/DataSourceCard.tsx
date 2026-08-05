@@ -1,10 +1,14 @@
 /**
  * One configured source, and whether it is actually alive.
  *
- * "Alive" is not one field. A source can be enabled and still never poll —
- * `config_error` makes `is_due` refuse it permanently, which is exactly the
- * failure this card exists to make visible. So it shows health, the countdown to
- * the next poll, AND an explicit "parked" state when those disagree.
+ * "Alive" is not one field, and the card's job is to show the disagreements.
+ * Two axes: `status` (should this be running) and `health` (does it work). A
+ * source can be `active` and still never poll — `config_error` makes `is_due`
+ * refuse it permanently — and it can be perfectly healthy and still ingest
+ * nothing, because it is in `setup` waiting on the user to invite a bot to a
+ * Slack channel. Both of those read as healthy-and-idle if the card shows one
+ * field, so it shows the lifecycle chip, the health, the countdown, an explicit
+ * "parked" state, and a setup panel with the verb that ends it.
  *
  * Status plus ONE verb. Everything else is delegated: the rest of the actions to
  * `SourceMenu`, the stream rows to `SourceStreams`, and every dialog to the view
@@ -13,7 +17,7 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 import { DataSource, DataSourceCursor, QueryRequest } from '@sdk';
-import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -23,7 +27,10 @@ import { Card, CardContent, CardHeader } from '@src/components/ui/card';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
+import { WikiButton } from '@src/components/wiki-tip';
 import { healthStyle } from './health-style';
+import { setupWiki } from './provider-catalog';
+import { statusStyle } from './status-style';
 import { SourceMenu } from './SourceMenu';
 import { SourceStreams } from './SourceStreams';
 
@@ -78,14 +85,46 @@ export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
     }
   }, [source, t]);
 
-  const toggleEnabled = useCallback(async () => {
-    const next = !source.enabled;
+  /**
+   * Re-run the setup check. Idempotent, so it is safe to press after every
+   * attempt — which is the actual interaction: invite the bot, press, repeat
+   * for whatever is still listed.
+   */
+  const verify = useCallback(async () => {
+    setBusy(true);
     try {
-      source.enabled = next;
-      await source.save();
-      notify.success({ title: next ? t`Enabled — it polls on the next tick.` : t`Paused.` });
+      const result = await source.verify();
+      if (result.ready) {
+        notify.success({ title: source.name || source.provider, message: result.detail });
+      } else {
+        // Not an error — nothing failed, the user simply has one more step. A
+        // red toast here would send them looking for a broken thing.
+        notify.info({ title: t`Not ready yet`, message: result.detail });
+      }
     } catch (error) {
-      source.enabled = !next; // the save failed, so the row never moved
+      notify.error({
+        title: t`Could not verify ${source.name || source.provider}`,
+        message: errorMessage(error, t`The check did not run.`),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }, [source, t]);
+
+  const toggleEnabled = useCallback(async () => {
+    const previous = source.status;
+    // Un-pausing returns it to `new` rather than `active`: the backend decides
+    // whether this driver still owes a setup step, and a source paused mid-setup
+    // must not skip it.
+    const next = source.isActive || source.needsSetup ? 'disabled' : 'new';
+    try {
+      source.status = next;
+      await source.save();
+      notify.success({
+        title: next === 'disabled' ? t`Paused.` : t`Resumed — it polls on the next tick.`,
+      });
+    } catch (error) {
+      source.status = previous; // the save failed, so the row never moved
       notify.error({
         title: t`Could not update ${source.name || source.provider}`,
         message: errorMessage(error, t`The change was not saved.`),
@@ -93,13 +132,19 @@ export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
     }
   }, [source, t]);
 
-  // Enabled, but `is_due` will still refuse it. Without calling this out the
+  // Active, but `is_due` will still refuse it. Without calling this out the
   // card reads as healthy-but-idle and the user waits forever.
-  const parked = source.enabled && source.health === 'config_error';
+  const parked = source.isActive && source.health === 'config_error';
   const health = healthStyle(source.health);
+  const status = statusStyle(source.status);
+  // The lifecycle answers first. Health on a source that is not running is
+  // stale by construction — it describes the last time it ran, which for a
+  // source that never has is "never synced", i.e. no information at all.
+  const chip = source.isActive ? health : status;
+  const wiki = setupWiki(source.provider);
 
   return (
-    <Card className={cn('flex flex-col border-l-[3px]', health.border)}>
+    <Card className={cn('flex flex-col border-l-[3px]', chip.border)}>
       <CardHeader className="flex flex-row items-start gap-2 space-y-0 p-3 pb-1.5">
         <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
 
@@ -115,8 +160,8 @@ export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
           </div>
         </div>
 
-        <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', health.chip)}>
-          {source.enabled ? health.label : t`paused`}
+        <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', chip.chip)}>
+          {chip.label}
         </span>
 
         <SourceMenu
@@ -134,9 +179,34 @@ export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
             <Trans>synced {timeSince(source.last_synced_at)}</Trans>
           </span>
           <span title={t`Next scheduled poll`}>
-            {source.enabled ? <Trans>next {timeUntil(source.next_poll_at)}</Trans> : '—'}
+            {source.isActive ? <Trans>next {timeUntil(source.next_poll_at)}</Trans> : '—'}
           </span>
         </div>
+
+        {source.needsSetup && (
+          <div className="rounded bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
+            <div className="flex items-start gap-1.5">
+              <p className="flex-1">
+                {source.setup_detail || t`Finish setup, then press Verify.`}
+              </p>
+              {/* The info affordance is a wiki page, not a tooltip: "invite the
+                  bot" is a multi-step task performed in ANOTHER application, and
+                  a hover card cannot be read while doing it. */}
+              {wiki && <WikiButton wikiword={wiki} label={t`How to finish setup`} />}
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="mt-1.5 h-7 gap-1.5"
+              disabled={busy}
+              data-testid={`source-verify-${source.id}`}
+              onClick={() => void verify()}
+            >
+              <CheckCircle2 className="size-3.5" />
+              {t`Verify`}
+            </Button>
+          </div>
+        )}
 
         {parked && (
           <p className="rounded bg-destructive/10 px-2 py-1.5 text-[11px] leading-snug text-destructive">
@@ -153,7 +223,10 @@ export function DataSourceCard({ source, onEdit, onReplay, onDelete }: Props) {
             size="sm"
             variant="secondary"
             className="h-7 gap-1.5"
-            disabled={busy}
+            // Pulling an unverified source would fail in a way that says
+            // nothing useful — the driver refuses before it reaches the network.
+            disabled={busy || source.needsSetup}
+            title={source.needsSetup ? t`Verify the setup first.` : undefined}
             onClick={() => void pull()}
           >
             <RefreshCw className={cn('size-3.5', busy && 'animate-spin')} />

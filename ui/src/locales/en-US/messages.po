@@ -3467,6 +3467,15 @@ msgstr "Could not give access"
 msgid "Could not give this project access to {0}."
 msgstr "Could not give this project access to {0}."
 
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Could not link asset to cloud"
+msgstr "Could not link asset to cloud"
+
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Could not link project to cloud"
+msgstr "Could not link project to cloud"
+
 #: src/components/EnvVarsManager.tsx
 msgid "Could not load environment variables"
 msgstr "Could not load environment variables"
@@ -3484,13 +3493,13 @@ msgid "Could not pause"
 msgstr "Could not pause"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
-msgid "Could not publish asset"
-msgstr "Could not publish asset"
+#~ msgid "Could not publish asset"
+#~ msgstr "Could not publish asset"
 
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Could not publish project"
-msgstr "Could not publish project"
+#~ msgid "Could not publish project"
+#~ msgstr "Could not publish project"
 
 #. placeholder {0}: source.name || source.provider
 #: src/components/data-sources/DataSourceCard.tsx
@@ -3611,6 +3620,11 @@ msgstr "Could not update attached secrets"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Could not upload avatar"
 msgstr "Could not upload avatar"
+
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Could not verify {0}"
+msgstr "Could not verify {0}"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
@@ -5000,8 +5014,8 @@ msgid "Empty trace"
 msgstr "Empty trace"
 
 #: src/components/data-sources/SourceMenu.tsx
-msgid "Enable"
-msgstr "Enable"
+#~ msgid "Enable"
+#~ msgstr "Enable"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Enable all"
@@ -5047,8 +5061,8 @@ msgid "Enabled"
 msgstr "Enabled"
 
 #: src/components/data-sources/DataSourceCard.tsx
-msgid "Enabled — it polls on the next tick."
-msgstr "Enabled — it polls on the next tick."
+#~ msgid "Enabled — it polls on the next tick."
+#~ msgstr "Enabled — it polls on the next tick."
 
 #: src/components/collaboration/RoomHeader.tsx
 msgid "End room"
@@ -6063,6 +6077,10 @@ msgstr "Filter…"
 msgid "Filters"
 msgstr "Filters"
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Finish setup, then press Verify."
+msgstr "Finish setup, then press Verify."
+
 #: src/components/assets/editor/AssetDiscussButton.tsx
 msgid "Finishing asset load…"
 msgstr "Finishing asset load…"
@@ -6945,6 +6963,10 @@ msgstr "How does improving an asset work?"
 msgid "How privacy modes work"
 msgstr "How privacy modes work"
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "How to finish setup"
+msgstr "How to finish setup"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "How to install"
 #~ msgstr "How to install"
@@ -7745,6 +7767,28 @@ msgstr "Link copied"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Link copied to clipboard"
 msgstr "Link copied to clipboard"
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Link to cloud"
+msgstr "Link to cloud"
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Linked to cloud"
+msgstr "Linked to cloud"
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Linking failed."
+msgstr "Linking failed."
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Linking…"
+msgstr "Linking…"
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "List"
@@ -9952,6 +9996,10 @@ msgstr "Not found"
 msgid "not reachable"
 msgstr "not reachable"
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Not ready yet"
+msgstr "Not ready yet"
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "not respected"
 msgstr "not respected"
@@ -10926,8 +10974,8 @@ msgid "Pause this machine"
 msgstr "Pause this machine"
 
 #: src/components/data-sources/DataSourceCard.tsx
-msgid "paused"
-msgstr "paused"
+#~ msgid "paused"
+#~ msgstr "paused"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Paused"
@@ -11397,6 +11445,10 @@ msgstr "Project folder…"
 msgid "Project is fixed after the first message — start a new session to change it."
 msgstr "Project is fixed after the first message — start a new session to change it."
 
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Project linked to cloud"
+msgstr "Project linked to cloud"
+
 #: src/components/contact-picker/use-computed-groups.ts
 msgid "Project Members"
 msgstr "Project Members"
@@ -11423,8 +11475,8 @@ msgid "Project not found."
 msgstr "Project not found."
 
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Project published"
-msgstr "Project published"
+#~ msgid "Project published"
+#~ msgstr "Project published"
 
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Project renamed"
@@ -11579,35 +11631,35 @@ msgstr "PTY Viewer"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Publish"
-msgstr "Publish"
+#~ msgid "Publish"
+#~ msgstr "Publish"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Publish failed."
-msgstr "Publish failed."
+#~ msgid "Publish failed."
+#~ msgstr "Publish failed."
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Publish this agent to the cloud and give it a machine that logs in as itself."
 msgstr "Publish this agent to the cloud and give it a machine that logs in as itself."
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
-msgid "Publish to cloud"
-msgstr "Publish to cloud"
+#~ msgid "Publish to cloud"
+#~ msgstr "Publish to cloud"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Published"
-msgstr "Published"
+#~ msgid "Published"
+#~ msgstr "Published"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
-msgid "Published to cloud"
-msgstr "Published to cloud"
+#~ msgid "Published to cloud"
+#~ msgstr "Published to cloud"
 
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Publishing…"
-msgstr "Publishing…"
+#~ msgid "Publishing…"
+#~ msgstr "Publishing…"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull & Open"
@@ -12389,6 +12441,7 @@ msgstr "Results"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/data-sources/SourceMenu.tsx
 #: src/components/events/EventFeed.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/journey/JourneyViewer.tsx
@@ -12424,6 +12477,10 @@ msgstr "Resume the context process"
 #: src/journey/JourneyViewer.tsx
 msgid "Resume this run"
 msgstr "Resume this run"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Resumed — it polls on the next tick."
+msgstr "Resumed — it polls on the next tick."
 
 #: src/components/assets/editor/EntityResolutionGate.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
@@ -14869,6 +14926,10 @@ msgstr "The assets published with this project — its skills, agents, specs, an
 msgid "The change was not saved."
 msgstr "The change was not saved."
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "The check did not run."
+msgstr "The check did not run."
+
 #: src/components/connections-manager.tsx
 msgid "The credential could not be removed."
 msgstr "The credential could not be removed."
@@ -15966,6 +16027,7 @@ msgstr "verdict"
 msgid "Verified"
 msgstr "Verified"
 
+#: src/components/data-sources/DataSourceCard.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Verify"
 msgstr "Verify"
@@ -15973,6 +16035,10 @@ msgstr "Verify"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Verify the machine can authenticate with the FlowPad API"
 msgstr "Verify the machine can authenticate with the FlowPad API"
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Verify the setup first."
+msgstr "Verify the setup first."
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Version-bump + commit the asset"
