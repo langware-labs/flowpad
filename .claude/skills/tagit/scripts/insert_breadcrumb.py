@@ -57,17 +57,35 @@ def _fail(message: str) -> "None":
     raise SystemExit(2)
 
 
+def _declaration(test: str) -> "re.Pattern[str]":
+    """Match how `test` is declared, in either of the repo's test languages.
+
+    pytest names a test with an identifier; vitest/playwright name it with a
+    title string on ``test``/``it``/``describe`` (with optional modifiers such
+    as ``test.describe`` or ``it.each``). Both are anchored the same way — the
+    capsule is hoisted to the enclosing column-0 statement — so only the
+    declaration syntax differs.
+    """
+    quoted = re.escape(test)
+    return re.compile(
+        rf"^(\s*)(?:"
+        rf"(?:async\s+)?def\s+{quoted}\s*\("
+        rf"|(?:test|it|describe)(?:\.\w+)*\s*\(\s*['\"`]{quoted}['\"`]"
+        rf")"
+    )
+
+
 def resolve_anchor(lines: list[str], test: str) -> int:
     """1-indexed line the capsule must sit above, at column 0.
 
-    Walks up from the ``def`` over decorators; if the def is indented (a method
-    on a test class) the anchor is hoisted to the enclosing column-0 statement
-    so the block never lands inside a class body.
+    Walks up from the declaration over decorators; if it is indented (a method
+    on a test class, a case inside a ``describe`` block) the anchor is hoisted
+    to the enclosing column-0 statement so the block never lands inside a body.
     """
-    pattern = re.compile(rf"^(\s*)(?:async\s+)?def\s+{re.escape(test)}\s*\(")
+    pattern = _declaration(test)
     index = next((i for i, line in enumerate(lines) if pattern.match(line)), None)
     if index is None:
-        _fail(f"no def {test}(...) in the file")
+        _fail(f"no test named {test} in the file (looked for a def or a test/it/describe title)")
 
     if pattern.match(lines[index]).group(1):  # indented → hoist to the owner
         index = next(

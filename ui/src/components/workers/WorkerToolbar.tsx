@@ -4,10 +4,7 @@ import type { OpenerDescriptor } from '@src/components/terminal/openers/tab_open
 import { cn } from '@src/lib/utils';
 import { useIsDev } from '@src/components/view-mode';
 import { Trans, useLingui } from '@lingui/react/macro';
-import {
-  workerIcon,
-  workerLabel,
-} from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
+import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { LAUNCHABLE_WORKERS, type WorkerType } from '@src/components/workers/worker-types';
 import { useLastWorkerType } from '@src/components/terminal/openers/useLastWorkerType';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
@@ -21,7 +18,7 @@ export type WorkerToolbarVariant = 'icon-row' | 'menu-list';
  * the worker icons at the same size. Icons inside use `h-3.5 w-3.5`.
  */
 export const WORKER_ICON_BUTTON_CLASS =
-  'inline-flex h-7 w-7 items-center justify-center rounded border border-border text-foreground transition-colors hover:bg-muted disabled:opacity-50';
+  'inline-flex h-7 w-7 items-center justify-center rounded border border-border text-foreground transition-colors hover:bg-muted disabled:opacity-50 aria-disabled:opacity-50';
 
 /** Row style for the `menu-list` variant — shared by the vendor rows, the
  *  "More…" reveal, and the extra openers so they can't drift apart. */
@@ -92,7 +89,18 @@ export function WorkerToolbar({
 
   const effectiveMode: WorkerToolbarMode = mode ?? (isDev ? 'all' : 'lastOpened');
 
+  // The in-flight guard lives here (not on `disabled`) so a click during a
+  // launch still reaches us and can say so in the console. A `disabled` button
+  // dispatches no click event at all, which is exactly what made a stuck
+  // `starting` flag look like "the button does nothing" with no trace anywhere.
   const launch = (worker: WorkerType) => {
+    if (starting) {
+      console.warn(
+        `[WorkerToolbar] launch click IGNORED — a launch is already in flight (starting=true). ` +
+          `worker=${worker} surface=${testIdPrefix}. If no session ever opens, the launch promise never settled.`,
+      );
+      return;
+    }
     rememberWorker(worker);
     void onLaunch(worker);
   };
@@ -107,7 +115,9 @@ export function WorkerToolbar({
         title={openTitle ?? t`Open the session`}
       >
         <Play className="h-3.5 w-3.5 text-orange-500" />
-        <span><Trans>Open</Trans></span>
+        <span>
+          <Trans>Open</Trans>
+        </span>
       </button>
     );
   }
@@ -117,8 +127,7 @@ export function WorkerToolbar({
   // mode, show everything.
   const primary: WorkerType = lastWorker ?? defaultWorker;
   const rest = LAUNCHABLE_WORKERS.filter((w) => w !== primary);
-  const visibleWorkers: WorkerType[] =
-    effectiveMode === 'all' || expanded ? [primary, ...rest] : [primary];
+  const visibleWorkers: WorkerType[] = effectiveMode === 'all' || expanded ? [primary, ...rest] : [primary];
   const showChevron = effectiveMode === 'lastOpened' && !expanded && rest.length > 0;
 
   // Extra openers render from their descriptor in both variants — one source for
@@ -157,9 +166,9 @@ export function WorkerToolbar({
               key={worker}
               type="button"
               onClick={() => launch(worker)}
-              disabled={starting}
+              aria-disabled={starting}
               data-testid={`${testIdPrefix}-launch-${worker}`}
-              className={cn(MENU_ITEM_CLASS, 'text-foreground')}
+              className={cn(MENU_ITEM_CLASS, 'text-foreground', starting && 'opacity-50')}
             >
               <Icon className="h-3 w-3" />
               <Trans>Session — {workerLabel(worker)}</Trans>
@@ -192,7 +201,7 @@ export function WorkerToolbar({
             key={worker}
             type="button"
             onClick={() => launch(worker)}
-            disabled={starting}
+            aria-disabled={starting}
             data-testid={`${testIdPrefix}-launch-${worker}`}
             title={t`Start ${workerLabel(worker)}`}
             className={WORKER_ICON_BUTTON_CLASS}

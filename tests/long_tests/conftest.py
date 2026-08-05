@@ -60,6 +60,9 @@ _REAL_HOME_TEST_MODULES = frozenset(
         "test_asset_cleanup_agent",
         "test_context_folder_worker",
         "test_artifact_real_worker",
+        # Not a CLI test: reads the real ``~/.flow/instances/*`` rig (ports,
+        # pids) of two running instances, which the sandbox HOME hides.
+        "test_ws_reconnect_message_catchup",
     }
 )
 

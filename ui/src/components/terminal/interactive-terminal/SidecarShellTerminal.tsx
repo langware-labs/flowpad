@@ -128,7 +128,9 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
 
     try {
       term.open(container);
-      applyRtlGridContract(container);
+      // A plain shell emits logical order on every platform — no CLI here that
+      // pre-reverses, so this terminal always takes the browser-bidi contract.
+      applyRtlGridContract(container, 'unknown');
       terminalRef.current = term;
       fitAddonRef.current = fit;
       registerOsc52ClipboardWrite(term);

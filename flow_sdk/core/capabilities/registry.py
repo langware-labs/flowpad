@@ -38,8 +38,7 @@ class CapabilityRunner(ABC):
         )
 
     @abstractmethod
-    async def test(self, scope=None) -> CapabilityResult:
-        ...
+    async def test(self, scope=None) -> CapabilityResult: ...
 
     async def setup(self, scope=None) -> CapabilityResult:
         """Default install: start the capability's install agentic process.
@@ -49,6 +48,7 @@ class CapabilityRunner(ABC):
         refreshes the capability row after the worker reaches a terminal state.
         """
         return await run_capability_install_process(self.spec)
+
 
 class CliCapabilityRunner(CapabilityRunner):
     def __init__(
@@ -479,9 +479,7 @@ class GithubAccountRunner(CapabilityRunner):
                 ok=True,
                 available=accessible,
                 message=(
-                    "Project GitHub remote is accessible."
-                    if accessible
-                    else "Project GitHub remote is not accessible."
+                    "Project GitHub remote is accessible." if accessible else "Project GitHub remote is not accessible."
                 ),
                 details={
                     "scope_type": "project",
@@ -521,6 +519,7 @@ class GithubAccountRunner(CapabilityRunner):
             details={},
         )
 
+
 GH_INSTALL_PROMPT = (
     "Install the GitHub CLI (`gh`) on this machine using the appropriate "
     "package manager (brew on macOS, apt/dnf on Linux, winget on Windows) and "
@@ -541,6 +540,22 @@ DEFAULT_INSTALL_PROMPT = (
     "ask for confirmation — proceed autonomously."
 )
 _INSTALL_MONITOR_TASKS: set[asyncio.Task] = set()
+
+
+def install_prompt_for_spec(spec: CapabilitySpec) -> str:
+    """The full prompt the install worker runs: WHAT to install, then how.
+
+    The body alone says "this capability" with no antecedent — the worker was
+    being asked to install something without being told what. The kind is the
+    unambiguous handle (``harness.codex.cli``), the name is what the user sees,
+    and the homepage is where the real install instructions live. Prepended to
+    the connector-supplied ``spec.install_prompt`` too, so a custom prompt gets
+    the same identity without every catalog entry having to restate it.
+    """
+    target = f"Capability to install: {spec.name} ({spec.kind})."
+    if spec.homepage_url:
+        target += f" Official page with install instructions: {spec.homepage_url}"
+    return f"{target}\n\n{spec.install_prompt or DEFAULT_INSTALL_PROMPT}"
 
 
 async def resolve_default_harness_kind() -> str:
@@ -657,8 +672,9 @@ async def _monitor_capability_install_process(process_id: str, kind: str) -> Non
 async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResult:
     """Start a capability's install as a headless agentic process.
 
-    The worker runs the spec's ``install_prompt`` (or
-    ``DEFAULT_INSTALL_PROMPT``) using the default harness selected by the
+    The worker runs ``install_prompt_for_spec(spec)`` — the target capability
+    named up front, then the spec's ``install_prompt`` (or
+    ``DEFAULT_INSTALL_PROMPT``) — using the default harness selected by the
     ``harness`` capability. The result carries ``process_id`` immediately so UI
     surfaces can show/open the run while it is still active.
     """
@@ -669,7 +685,7 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
     from flow_sdk.instance_settings import get_instance_settings
     from flow_sdk.responses.response import ApiFailResponse
 
-    prompt = spec.install_prompt or DEFAULT_INSTALL_PROMPT
+    prompt = install_prompt_for_spec(spec)
     workdir = Path(get_instance_settings().flow_home) / "capability-installs"
     workdir.mkdir(parents=True, exist_ok=True)
 
@@ -753,9 +769,7 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
     probe_dir.mkdir(parents=True, exist_ok=True)
     probe_file = probe_dir / "chrome-authenticated-probe.html"
     probe_file.write_text(
-        "<!doctype html><html><body>"
-        f"<main id=\"flowpad-capability-probe\">{nonce}</main>"
-        "</body></html>",
+        f'<!doctype html><html><body><main id="flowpad-capability-probe">{nonce}</main></body></html>',
         encoding="utf-8",
     )
 
@@ -806,7 +820,9 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
     return CapabilityResult(
         ok=ok,
         available=ok,
-        message="Authenticated Chrome browsing probe passed." if ok else "Authenticated Chrome browsing probe returned the wrong value.",
+        message="Authenticated Chrome browsing probe passed."
+        if ok
+        else "Authenticated Chrome browsing probe returned the wrong value.",
         details={
             "expected": nonce,
             "actual": text[:1000],
@@ -952,6 +968,7 @@ class CapabilityRegistry:
     async def setup(self, kind: str, *, scope=None) -> CapabilityCheck:
         runner = self.get(kind)
         return CapabilityCheck(kind=kind, result=await runner.setup(scope))
+
 
 def _build_default_registry() -> CapabilityRegistry:
     registry = CapabilityRegistry()

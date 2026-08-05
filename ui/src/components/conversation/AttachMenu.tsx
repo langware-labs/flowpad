@@ -1,12 +1,34 @@
-import { useId, useRef, useState } from 'react';
+import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { Paperclip, FileUp, Boxes, X, ChevronDown } from 'lucide-react';
 import type { AssetDescriptor } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
-import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
-import {
-  displayLabelForTypeid,
-  parseTypeid,
-} from '@src/components/asset-manager/asset-row-helpers';
+import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
+import { displayLabelForTypeid, parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
+
+/**
+ * Wires a list of picked assets to `AssetManagerPopover`'s selection props.
+ *
+ * Selection is keyed by TYPEID, not `(typeid, source)`: the same asset reachable
+ * through two sources is one asset, and the wire payload (`assetReferences`) is
+ * a list of typeids — so a source-keyed dedupe would ship the same typeid twice.
+ * Every send surface that collects assets shares this, so that rule is stated
+ * once.
+ */
+export function useAssetRefSelection(assetRefs: AssetDescriptor[], onChange: (next: AssetDescriptor[]) => void) {
+  const selectedTypeIds = useMemo(() => assetRefs.map((a) => a.typeid), [assetRefs]);
+  const onPick = useCallback(
+    (d: AssetDescriptor) => {
+      if (assetRefs.some((a) => a.typeid === d.typeid)) return;
+      onChange([...assetRefs, d]);
+    },
+    [assetRefs, onChange],
+  );
+  const onUnpick = useCallback(
+    (d: AssetDescriptor) => onChange(assetRefs.filter((a) => a.typeid !== d.typeid)),
+    [assetRefs, onChange],
+  );
+  return { selectedTypeIds, onPick, onUnpick };
+}
 
 interface AttachMenuProps {
   assetRefs: AssetDescriptor[];
@@ -23,26 +45,17 @@ interface AttachMenuProps {
  *
  * Implemented as two stacked Radix Popovers driven by a single piece of state
  * (``view``): ``"menu"`` shows the File/Asset choice; ``"asset"`` swaps the
- * content for the AssetPickerPopover. We deliberately avoid nesting
+ * content for the AssetManagerPopover. We deliberately avoid nesting
  * DropdownMenu + Popover — the portal/focus cascade between two Radix
  * primitives keeps closing the inner popover immediately after open.
  */
-export function AttachMenu({
-  assetRefs,
-  onAssetRefsChange,
-  onFilesPicked,
-  disabled,
-  hideAssetList,
-}: AttachMenuProps) {
+export function AttachMenu({ assetRefs, onAssetRefsChange, onFilesPicked, disabled, hideAssetList }: AttachMenuProps) {
   const inputId = useId();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'menu' | 'asset'>('menu');
 
-  const handlePick = (d: AssetDescriptor) => {
-    if (assetRefs.some((a) => a.typeid === d.typeid && a.source === d.source)) return;
-    onAssetRefsChange([...assetRefs, d]);
-  };
+  const selection = useAssetRefSelection(assetRefs, onAssetRefsChange);
 
   const openMenu = (next: boolean) => {
     setOpen(next);
@@ -87,12 +100,10 @@ export function AttachMenu({
           </PopoverContent>
         </Popover>
 
-        {/* AssetPickerPopover — opens centered on screen when
-            ``view === 'asset'``. The trigger is incidental (the menu fans out
-            to it programmatically), so the picker renders as a centered modal
-            rather than anchored to the Attach button. */}
-        <AssetPickerPopover
-          trigger={<span className="sr-only" aria-hidden />}
+        {/* Opens centered on screen when ``view === 'asset'``. The menu fans out
+            to it programmatically with no anchor of its own, so it renders as a
+            centered modal rather than anchored to the Attach button. */}
+        <AssetManagerPopover
           centered
           open={open && view === 'asset'}
           onOpenChange={(next) => {
@@ -101,8 +112,7 @@ export function AttachMenu({
               setView('menu');
             }
           }}
-          onPick={handlePick}
-          filter={() => true}
+          {...selection}
           searchPlaceholder="Search assets…"
         />
 

@@ -232,5 +232,5 @@ existed only in the live stream and vanished on refresh.
 <!-- flowpad:capsule identity
 version: 1
 data:
-  id: f0ecd3aa-ccdb-4b61-8793-418858a98e7d
+  id: e64bb933-a999-4554-9a70-befeee0c6165
 flowpad:endcapsule identity -->
