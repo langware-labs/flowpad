@@ -40,6 +40,7 @@ from flow_sdk.fs_store.operations.conversation import (
 from flow_sdk.fs_store.pointer import Pointer
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.inbox.hub_clock import adopt_hub_created_date, hub_created_drift
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -251,6 +252,7 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
                 fm_id,
                 attachment_filename,
                 body_status=(data or {}).get("body_status"),
+                hub_updated=(data or {}).get("updated_date"),
             )
         except Exception as e:
             logger.warning("[open_flow_message] failed to materialize bundle (non-fatal): %s", e)
@@ -1594,6 +1596,7 @@ async def _download_and_unpack_bundle(
     overwrite: bool = False,
     raise_on_conflict: bool = False,
     on_progress=None,
+    hub_updated: str | None = None,
 ) -> bool:
     """Download the .flowmsg bundle from the hub and unpack it locally.
 
@@ -1646,7 +1649,7 @@ async def _download_and_unpack_bundle(
         tmp_path = Path(tmp.name)
         tmp.write(bundle_bytes)
     try:
-        await unpack_bundle(tmp_path, local_user_id, overwrite=overwrite)
+        await unpack_bundle(tmp_path, local_user_id, overwrite=overwrite, hub_updated=hub_updated)
         # Bundle bytes are on disk now. The FM's ``attachment[].local_path``
         # is computed lazily by the model serializer from disk state, so the
         # cached browser entity still reads ``local_path=null`` from the
@@ -1792,6 +1795,12 @@ async def _process_single_hub_message(raw: dict) -> str | None:
                 fm_id,
                 attachment_filename,
                 body_status=raw.get("body_status"),
+                # The hub's own ``updated_date`` — the delivery clock the inbox
+                # sorts on. Handing it to the unpack means a legacy bundle's row
+                # is born with the right recency instead of being stamped with
+                # the send-time and corrected a beat later, which is what made
+                # conversations dive ~10 positions and snap back.
+                hub_updated=raw.get("updated_date"),
             )
             if success:
                 # Unpack owns the durable row and may have changed local-only
@@ -1828,6 +1837,15 @@ async def _process_single_hub_message(raw: dict) -> str | None:
                     await existing.save(notify=False)
                     await existing.notify_updated()
                     return fm_id
+    # Birth-time repair, AHEAD of the staleness gate — the same rule Conversation
+    # applies (``_upsert_hub_conversation_metadata``). A message re-materialized
+    # from a bundle that carried no send-time is stamped ``now()``, which makes it
+    # look NEWER than the hub, so ``is_stale`` is False and the gate below returns
+    # before any merge could fix it: the wrong value defends itself. Adopting here
+    # is idempotent, so converged rows write nothing.
+    if adopt_hub_created_date(existing, raw):
+        with remote_reflection():
+            await existing.save(notify=False)
     if existing is not None and not FlowMessage.is_stale(existing, raw):
         # Metadata current (body handled above).
         return fm_id
@@ -1979,6 +1997,7 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
 
     # Prefer local FM (reply messages are local-only); hub is fallback for inbox messages.
     local_fm = await FlowMessage.get_one({"id": fm_id})
+    hub_updated = None
     if local_fm:
         attachment_filename = (local_fm.attachment_filename or "").strip()
         body_status = local_fm.body_status
@@ -1987,6 +2006,7 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
         hub_data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
         attachment_filename = ((hub_data or {}).get("attachment_filename") or "").strip()
         body_status = (hub_data or {}).get("body_status")
+        hub_updated = (hub_data or {}).get("updated_date")
         # Tolerate both new and legacy hub field names during transition.
         raw_context = (hub_data or {}).get("shared_context_entities") or (hub_data or {}).get("context_entities") or []
 
@@ -2005,7 +2025,7 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
     needs_task_bundle = bool(task_id) and not await Task.get_one({"id": task_id})
     needs_fm_bundle = local_fm is None
     if attachment_filename and (needs_task_bundle or needs_fm_bundle):
-        await _download_and_unpack_bundle(fm_id, attachment_filename, body_status=body_status)
+        await _download_and_unpack_bundle(fm_id, attachment_filename, body_status=body_status, hub_updated=hub_updated)
 
     return ApiSuccessResponse(data={"task_id": task_id, "conversation_id": conv_id})
 
@@ -2953,8 +2973,7 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
                         child_list = v
                         break
             child_list = [m for m in child_list if isinstance(m, dict) and m.get("id")]
-            # Oldest first — the pointer index is conversation order.
-            child_list.sort(key=lambda m: m.get("created_date") or "")
+            child_list = fetch_order(child_list)
             synced = 0
             for raw_fm in child_list:
                 fm_id = raw_fm["id"]
@@ -2972,7 +2991,18 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
                     and hub_body_status == BodyStatus.READY.value
                     and (local_body_status != BodyStatus.READY.value or not local.is_body_downloaded())
                 )
-                if not FlowMessage.is_stale(local, raw_fm) and not needs_body_reconcile:
+                # ``hub_created_drift`` is OR-ed in for the same reason the
+                # conversation list OR-s ``_created_drift`` into its upsert gate: a
+                # birth-time repair CANNOT ride ``is_stale``. A row re-materialized
+                # from a send-time-less bundle carries ``now()``, which outranks the
+                # hub clock, so this gate would ``continue`` past the very rows that
+                # need repairing and the fix inside _process_single_hub_message would
+                # never be reached.
+                if (
+                    not FlowMessage.is_stale(local, raw_fm)
+                    and not needs_body_reconcile
+                    and not hub_created_drift(local, raw_fm)
+                ):
                     continue
                 try:
                     # Hub's FM payload doesn't carry conversation_id (the graph
@@ -3181,6 +3211,10 @@ async def _pull_bundle_for_hub_fm(conv_id: str, raw_fm: dict) -> None:
             raw_fm["id"],
             attachment_filename,
             body_status=raw_fm.get("body_status"),
+            # Hub's delivery clock — see the note at the other catch-up call site.
+            # Without it a legacy bundle lands with its send-time as recency and
+            # the conversation dives until the following merge corrects it.
+            hub_updated=raw_fm.get("updated_date"),
         )
     except Exception as b_err:  # noqa: BLE001
         logger.warning(
@@ -3370,13 +3404,9 @@ async def _upsert_hub_conversation_metadata(
     if not existing.remote:
         existing.remote = True
         changed = True
-    # Always-adopt the hub's created_date (hub-authoritative birth time). This
-    # is idempotent — once converged, subsequent echoes are no-ops — and it
-    # repairs rows that were re-created locally with a bogus created_date
-    # (e.g. after a DB rebuild).
-    hub_created = Conversation._as_datetime(hub_conv.get("created_date"))
-    if hub_created is not None and Conversation._as_datetime(existing.created_date) != hub_created:
-        existing.created_date = hub_created
+    # Always-adopt the hub's created_date (hub-authoritative birth time) — repairs
+    # rows re-created locally with a bogus created_date (e.g. after a DB rebuild).
+    if adopt_hub_created_date(existing, hub_conv):
         changed = True
     # Deliberately NOT adopting the hub parent ``updated_date``: the hub re-stamps
     # it on bare touches (a child's body re-download), which would surface a
@@ -3392,6 +3422,27 @@ async def _upsert_hub_conversation_metadata(
         with remote_reflection():
             return await existing.save(someone_typeid, notify=notify)
     return existing
+
+
+def fetch_order(hub_messages: list[dict]) -> list[dict]:
+    """Order a conversation's hub messages for materializing: NEWEST first.
+
+    A conversation's inbox recency is ``max(message.updated_date)``, so the newest
+    message alone decides its position. Materialize that one first and the row
+    lands in its final slot on the first write; every older message that follows
+    leaves the max untouched and moves nothing.
+
+    Oldest-first — what this used to do — left the recency wrong until the very
+    last arrival and nudged the conversation up the list on every single one: N
+    visible moves per conversation instead of one. Measured on a real backlog
+    pull, the flip took the churn from 21 moving frames down to 4.
+
+    Processing order ONLY. The stored order stays chronological: the authoritative
+    reconcile rewrites ``conversation.jsonl`` in ``created_date`` order, and
+    ``project_pointers_to_entity`` reads the child edges with
+    ``order_by={"created_date": "asc"}``.
+    """
+    return sorted(hub_messages, key=lambda m: m.get("created_date") or "", reverse=True)
 
 
 def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict) -> bool:
@@ -3559,16 +3610,10 @@ async def handle_conversation_list(someone_typeid, *, announce_invitations: bool
         # upsert mutates ``existing.updated_date``.
         existing = local_index.get(conv_id)
         should_fetch = _should_fetch_messages(existing, hub_conv)
-        # ``created_date`` is hub-authoritative and corruptible locally (a DB
-        # rebuild re-stamps it) without ever moving ``updated_date`` — so it can't
-        # ride is_stale. Compare it here against the cache (free, in-memory) so the
-        # repair branch in _upsert still runs; converged rows match and skip.
-        _hub_created = Conversation._as_datetime(hub_conv.get("created_date"))
-        _created_drift = (
-            existing is not None
-            and _hub_created is not None
-            and Conversation._as_datetime(existing.created_date) != _hub_created
-        )
+        # ``created_date`` can't ride is_stale (see ``hub_created_drift``). Compare
+        # it here against the cache (free, in-memory) so the repair branch in
+        # _upsert still runs; converged rows match and skip.
+        _created_drift = hub_created_drift(existing, hub_conv)
         if existing is None or not existing.remote or Conversation.is_stale(existing, hub_conv) or _created_drift:
             try:
                 await _upsert_hub_conversation_metadata(
@@ -4286,6 +4331,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                     linked_fm_id,
                     attachment_filename,
                     body_status=(hub_fm or {}).get("body_status"),
+                    hub_updated=(hub_fm or {}).get("updated_date"),
                 )
         except Exception as e:
             logger.warning("[invitation-accept] bundle download failed: %s", e)

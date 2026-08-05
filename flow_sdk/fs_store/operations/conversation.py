@@ -214,7 +214,10 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
         if ts is not None and (new_updated is None or ts > new_updated):
             new_updated = ts
     if new_updated is None:
-        new_updated = datetime.now(UTC)
+        # No messages to derive from. Its own birth time is the honest recency —
+        # ``now()`` would re-stamp every empty conversation on every sync pass and
+        # float it to the top of the inbox above threads with real content.
+        new_updated = Conversation._as_datetime(conv.created_date) or datetime.now(UTC)
 
     projection_changed = not (conv.message_ids == new_ids and conv.message_count == new_count)
     recency_changed = Conversation._as_datetime(conv.updated_date) != new_updated

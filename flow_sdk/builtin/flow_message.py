@@ -367,15 +367,11 @@ class FlowMessage(Entity):
     )
     # The MessageThread this belongs to. None = ungrouped, which is how every
     # existing message renders — flat, exactly as before.
-    thread_id: Optional[str] = APIField(
-        None, description="MessageThread id; None = flat (no thread grouping)"
-    )
+    thread_id: Optional[str] = APIField(None, description="MessageThread id; None = flat (no thread grouping)")
     # The local FlowMessage this replies to. Provenance for quoting and reply
     # nesting — deliberately NOT how threading is decided (every channel worth
     # supporting ships a native thread id; see MessageThread).
-    reply_to_id: Optional[str] = APIField(
-        None, description="Local id of the message this one replies to"
-    )
+    reply_to_id: Optional[str] = APIField(None, description="Local id of the message this one replies to")
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
@@ -871,6 +867,9 @@ class FlowMessage(Entity):
         ok = await _download_and_unpack_bundle(
             self.id,
             filename,
+            # User-initiated download — no hub list payload here; the row already
+            # exists locally and its clocks are not rewritten by this path.
+            hub_updated=None,
             body_status=self.body_status,
             overwrite=overwrite,
             raise_on_conflict=True,

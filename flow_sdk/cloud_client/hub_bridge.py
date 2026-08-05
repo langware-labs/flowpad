@@ -139,7 +139,14 @@ async def _maybe_eager_pull_bundle(
     try:
         from flow_sdk.app.actions.flow_message_action import _download_and_unpack_bundle
 
-        await _download_and_unpack_bundle(fm_id, attachment_filename, body_status=body_status)
+        await _download_and_unpack_bundle(
+            fm_id,
+            attachment_filename,
+            # Live WS arrival: no hub list payload in hand, and the send-time is
+            # ~now anyway, so the bundle's own pointer index is the right source.
+            hub_updated=None,
+            body_status=body_status,
+        )
         logger.info("[bridge] eager bundle pulled fm=%s", fm_id)
     except Exception as e:  # noqa: BLE001
         logger.warning("[bridge] eager bundle pull failed fm=%s (non-fatal): %s", fm_id, e)
