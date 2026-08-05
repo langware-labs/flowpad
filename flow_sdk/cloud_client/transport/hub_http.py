@@ -282,6 +282,55 @@ async def hub_get(
         return None
 
 
+async def hub_get_or_raise(
+    entity_type: BuiltinEntityType,
+    entity_id: str | None = None,
+    action: str | None = None,
+    sub_path: str | None = None,
+    *,
+    scope: list[tuple[str, str]] | None = None,
+    params: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """GET a hub graph endpoint, PRESERVING the status. Raises ``HubError``.
+
+    The symmetric sibling of :func:`hub_post`, and the reason it exists is an
+    asymmetry that was quietly harmful: ``hub_get`` collapses *hub not
+    configured*, *signed out*, *network error*, *5xx* and a **definitive 404**
+    all to ``None``. A caller that must decide "is this permanently broken, or
+    just unreachable right now?" cannot, and picking either answer for ``None``
+    is wrong in one direction — park a healthy source on one dropped packet, or
+    retry a deleted resource every cycle forever while the UI shows a spinner
+    instead of "fix me".
+
+    That is the same three-way distinction :func:`hub_resolve_by_typeid`
+    documents; this returns the status so an ingest driver can map it through
+    ``SourceError.for_status`` — THE status→health table — instead of growing a
+    second copy of it.
+
+    ``HubError.status_code`` is 0 when there was no HTTP response at all; the
+    ``reason`` then separates "no hub URL configured" (a person must act) from a
+    transport failure (retry at the ordinary cadence).
+    """
+    url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
+    if not url:
+        raise HubError(0, "hub not configured")
+    try:
+        async with _hub_client() as client:
+            logger.info("[hub] GET %s params=%s", url, params)
+            resp = await client.request("GET", url, params=params or {}, timeout=httpx.Timeout(10))
+    except HubAuthExpiredError as e:
+        logger.warning("[hub] GET %s auth expired: %s", url, e)
+        raise HubError(401, "auth expired")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[hub] GET %s transport error: %s", url, e)
+        raise HubError(0, str(e))
+    if resp.status_code == 200:
+        return resp.json().get("data") or {}
+    reason = _extract_reason(resp)
+    logger.warning("[hub] GET %s returned %s: %s", url, resp.status_code, resp.text[:200])
+    raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
+
+
 # Result of a status-aware hub existence probe (see ``hub_resolve_by_typeid``):
 #   "present"       — the hub returned 200; the entity exists there.
 #   "absent"        — the hub returned a definitive 404; the entity is gone.
