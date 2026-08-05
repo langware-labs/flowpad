@@ -33,6 +33,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /** The port the FlowPad app serves on inside a workspace sandbox. */
 const WORKSPACE_PORT = 9007;
+
+/** The hub's name for the workspace app. The hub resolves it to a port; the
+ *  open path never does (`launchDesktop` still resolves a host by port — see
+ *  `resolveHostUrl`, which needs the raw origin to append the landing path).
+ *  Wire contract — pinned hub-side by `unit/test_open_service_route_contract.py`. */
+export const WORKSPACE_SERVICE = 'workspace';
 /** The flavor that marks a ComputeNode as a desktop (vs. an agent/exec-env node). */
 const WORKSPACE_FLAVOR = 'workspace';
 
@@ -171,6 +177,22 @@ function opsCall<T = unknown>(nodeId: string, op: string, body?: Record<string, 
 }
 
 /** A ComputeNode is a "desktop" iff it's an E2B node created from the workspace flavor. */
+/**
+ * The absolute URL that opens a desktop's workspace app.
+ *
+ * The hub owns readiness and authorization: it resumes a paused box, waits for
+ * the workspace to answer, and only then redirects. The client names the
+ * SERVICE and never a port.
+ *
+ * Exported so the wire-contract test asserts against the URL production
+ * actually navigates to, rather than re-deriving one from copied literals.
+ */
+export function workspaceServiceUrl(nodeId: string): string {
+  const info = new ActionInfo('open-service', ComputeNode.type, nodeId, 'GET');
+  info.subpath = WORKSPACE_SERVICE;
+  return info.fullActionUrl;
+}
+
 export function isDesktop(node: ComputeNode): boolean {
   const flavor = (node.node_config as { flavor?: string } | undefined)?.flavor;
   return readProvider(node) === ComputeProviderType.E2B && flavor === WORKSPACE_FLAVOR;
@@ -545,30 +567,16 @@ export function useDesktops() {
   );
 
   // ---- open an existing desktop ----
-  const openDesktop = useCallback(
-    async (node: ComputeNode) => {
-      // Claim the tab synchronously (this runs within the click gesture) before the
-      // async work below, so the browser doesn't block it as a popup.
-      const tab = window.open('', '_blank');
-      try {
-        // A paused sandbox's URL 404s until it's resumed; a gone one can't open at all.
-        const { status } = await probeDetails(node.id);
-        if (status === ExecutionEnvironmentStatus.NOT_FOUND || status === ExecutionEnvironmentStatus.ERROR) {
-          tab?.close();
-          return;
-        }
-        if (status === ExecutionEnvironmentStatus.PAUSED) {
-          await opsCall(node.id, 'resume');
-          setDetails((s) => ({ ...s, [node.id]: { status: ExecutionEnvironmentStatus.READY } }));
-        }
-        const url = await resolveHostUrl(node.id);
-        if (tab) tab.location.href = url;
-      } catch {
-        tab?.close();
-      }
-    },
-    [probeDetails],
-  );
+  const openDesktop = useCallback((node: ComputeNode) => {
+    // One navigation to the hub, which owns readiness and authorization: it
+    // resumes a paused box and waits for the workspace to answer before
+    // redirecting. A client-side probe/resume/navigate sequence cannot — `resume`
+    // returning means the VM is back, not that the app is listening.
+    //
+    // Opened with its final URL inside the click gesture: no blank tab to claim,
+    // and no async gap for a popup blocker to catch.
+    window.open(workspaceServiceUrl(node.id), '_blank');
+  }, []);
 
   // ---- delete / terminate ----
   const [deletingId, setDeletingId] = useState<string | null>(null);
