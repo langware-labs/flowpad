@@ -24,10 +24,17 @@ EXIT_INVALID_ARG = 2
 EXIT_CONNECTION_ERROR = 5
 
 
-def fail(exit_code: int, error_code: str, message: str) -> NoReturn:
-    """Print a parseable error envelope to stderr and exit with the given code."""
+def fail(exit_code: int, error_code: str, message: str, extra: "dict[str, Any] | None" = None) -> NoReturn:
+    """Print a parseable error envelope to stderr and exit with the given code.
+
+    ``extra`` merges structured fields into the envelope — a `remediation` list,
+    the project that needs linking, a docs path. An agent should be able to act
+    on a refusal without scraping the prose message for it.
+    """
     typer.echo(f"Error: {message}", err=True)
-    typer.echo(json.dumps({"ok": False, "error_code": error_code, "error": message}), err=True)
+    for step in (extra or {}).get("remediation") or []:
+        typer.echo(f"  → {step}", err=True)
+    typer.echo(json.dumps({"ok": False, "error_code": error_code, "error": message, **(extra or {})}), err=True)
     raise typer.Exit(exit_code)
 
 

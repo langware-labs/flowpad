@@ -150,6 +150,30 @@ down. On any of them, just print the path.
 
 Showing is not approval: ask the user to review the rules explicitly.
 
+**8 — Share it, only if the user asks for a reviewer link.**
+
+```bash
+flow record share docs/breadcrumbs/<slug>.md --with tests/.../test_x.py
+```
+
+Commits **exactly those two paths** (never `git add -A` — this repo is a shared
+checkout), pushes the branch, registers the doc with the cloud, and prints a
+`url` a reviewer can open. Paste that `url` into your reply.
+
+The `--with` is not optional in practice: the capsule is an edit to a *test
+file*, and a rules doc whose bound test isn't in the same commit tells a
+reviewer half the story.
+
+**Never pass `--link-project`.** If the project isn't linked to the cloud the
+command exits **3**, mutates nothing, and returns `remediation` — print those
+lines and stop. Linking publishes a repo declaration to every member of the
+project; that is the user's decision, not yours. What it does and does not
+upload is [docs/collab/cloud-sharing.md](../../../docs/collab/cloud-sharing.md).
+
+Exit codes: **3** = a gate the user can fix, nothing was touched; **4** =
+not indexed / no owning project; **7** = the commit, push or registration
+itself failed. Only 7 means something is broken.
+
 ## Rules
 
 * **User-invoked only.** Never chain yourself onto an RCA.
@@ -165,5 +189,6 @@ Showing is not approval: ask the user to review the rules explicitly.
 |---|---|
 | how the tag system binds docs and code | `docs/tags.md` |
 | how the `breadcrumb` fence renders and refreshes | `docs/renderable-fences.md` |
+| what cloud sharing does and does not upload | `docs/collab/cloud-sharing.md` |
 | capsule carriers, grammar, repeatable names | `docs/data-management/asset-capsules.md` |
 | reading a tag back | the `tag-context` skill |

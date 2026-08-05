@@ -18,7 +18,13 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.type_id import TypeId
 
 
-async def _owning_project(entity):
+async def owning_project(entity):
+    """The Project that owns a file-backed asset, or None.
+
+    Public because the share orchestrator needs the same answer before it
+    touches git — two definitions of "which project is this asset in" would
+    let the CLI publish under a different project than the one it gated on.
+    """
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
     project_id = getattr(entity, "project_id", None) or await entity.effective_project_id()
@@ -49,7 +55,7 @@ async def publish_git_asset_impl(entity, actor: TypeId) -> AssetPublishResult:
     if info is None or not info.git_publishable or not getattr(entity, "asset_ref", None):
         raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Entity is not a Git-publishable asset")
 
-    project = await _owning_project(entity)
+    project = await owning_project(entity)
     if not isinstance(project, Project):
         raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset has no owning Project")
     if getattr(project, "remote", False) is not True:
