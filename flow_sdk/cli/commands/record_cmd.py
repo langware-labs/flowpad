@@ -278,6 +278,9 @@ _SHARE_EXIT_CODES = {
     "DIRTY": EXIT_SHARE_BLOCKED,
     "UNPUSHED": EXIT_SHARE_BLOCKED,
     "STATUS_FAILURE": EXIT_SHARE_BLOCKED,
+    # From AssetPublishCode — both are gates the user can act on.
+    "ORIGIN_INVALID": EXIT_SHARE_BLOCKED,
+    "PROJECT_NOT_PUBLISHED": EXIT_SHARE_BLOCKED,
 }
 
 
@@ -328,12 +331,15 @@ def share_record(
     if not raw:
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "target is required")
 
+    # Same rule as `flow record url`: an existing path wins, because that is
+    # what the agent just wrote.
     expanded = os.path.abspath(os.path.expanduser(raw))
-    body: dict[str, Any] = {"path": expanded} if os.path.exists(expanded) else {}
-    if not body:
-        if "-" not in raw:
-            _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Not an existing path and not a TypeId: {raw!r}")
+    if os.path.exists(expanded):
+        body = {"path": expanded}
+    elif "-" in raw:
         body = {"typeid": raw}
+    else:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Not an existing path and not a TypeId: {raw!r}")
     body.update(
         {
             "with_paths": [os.path.abspath(os.path.expanduser(p)) for p in (with_paths or [])],

@@ -16,6 +16,7 @@ Neither can be satisfied alone. Adding a field to `Project` therefore forces a
 deliberate answer to "does this travel?" and forces the page to say so.
 """
 
+import inspect
 import json
 import re
 from pathlib import Path
@@ -93,19 +94,17 @@ def test_share_puts_three_stripped_fields_back(project):
     """
     for field in CONTRACT["readded_by_share"]:
         assert field not in project._hub_body()
-    source = (ROOT / "flow_sdk" / "builtin" / "project.py").read_text()
-    share_src = source[source.index("    async def share("):]
-    share_src = share_src[: share_src.index("\n    async def ", 10)]
+    share_src = inspect.getsource(Project.share)
     for field in CONTRACT["readded_by_share"]:
         assert f'body["{field}"]' in share_src, f"share() no longer re-adds {field}"
 
 
 def test_a_secret_declaration_carries_no_value():
     entry_fields = set(CONTRACT["secret_entry_fields"])
-    assert "value" not in entry_fields
-    source = (ROOT / "flow_sdk" / "builtin" / "project.py").read_text()
-    payload_src = source[source.index("    async def _shared_secret_origin_payload("):]
-    payload_src = payload_src[: payload_src.index("\n    async def ", 10)]
+    payload_src = inspect.getsource(Project._shared_secret_origin_payload)
+    # The assertion the test's name promises: no value in the CODE, not merely
+    # absent from a fixture two files away.
+    assert '"value"' not in payload_src
     for field in entry_fields:
         assert f'"{field}"' in payload_src, f"secret payload no longer carries {field}"
     # The machine-specific coordinate is stripped from a local locator.

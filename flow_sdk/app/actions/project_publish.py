@@ -25,7 +25,6 @@ that was checked.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -39,23 +38,33 @@ _STATUS_FAILURE = {
 }
 
 
-@dataclass
 class ProjectPublishBlocked(Exception):
-    """A gate refused. ``code`` is the stable machine vocabulary."""
+    """A gate refused. ``code`` is the stable machine vocabulary.
 
-    code: str
-    message: str
-    status_code: int = 409
-    reason: Optional[str] = None
-    git_origin: Optional[dict] = None
+    Plain Exception rather than a dataclass, matching ``AssetPublishError``: a
+    dataclass exception never calls ``Exception.__init__``, leaving ``str(exc)``
+    empty and the instance unhashable.
+    """
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        status_code: int = 409,
+        reason: Optional[str] = None,
+        git_origin: Optional[dict] = None,
+    ):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.status_code = status_code
+        self.reason = reason
+        self.git_origin = git_origin
 
     def data(self) -> dict:
-        payload: dict = {"code": self.code}
-        if self.reason is not None:
-            payload["reason"] = self.reason
-        if self.git_origin is not None:
-            payload["git_origin"] = self.git_origin
-        return payload
+        # `reason`/`git_origin` always present, as the inline version emitted
+        # them — a refactor should not quietly change the wire shape.
+        return {"code": self.code, "reason": self.reason, "git_origin": self.git_origin}
 
 
 async def assert_project_publishable(project, actor) -> "object":

@@ -38,12 +38,14 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { HUB_URL } from './helpers';
+
 const REPO = process.env.TAGIT_E2E_REPO ?? '';
 const TOKEN = process.env.TAGIT_E2E_GITHUB_TOKEN ?? '';
 const BACKEND = process.env.TAGIT_E2E_BACKEND_URL ?? '';
 const UI = process.env.TAGIT_E2E_UI_URL ?? '';
 const HUB_UI = process.env.TAGIT_E2E_HUB_UI_URL ?? '';
-const HUB = process.env.FLOWPAD_HUB_URL ?? 'http://localhost:8093';
+const HUB = HUB_URL;
 const HUB_EMAIL = process.env.TAGIT_E2E_HUB_EMAIL ?? '';
 const HUB_PASSWORD = process.env.TAGIT_E2E_HUB_PASSWORD ?? '';
 
