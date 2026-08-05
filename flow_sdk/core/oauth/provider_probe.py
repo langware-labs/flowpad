@@ -41,6 +41,12 @@ class ProviderProbe:
     #: ``cli/auth/lm_api_keys`` already uses for its key probes, so a provider
     #: that authenticates differently is a data change here.
     headers: Callable[[str], dict[str, str]] = lambda token: {"Authorization": f"Bearer {token}"}
+    #: The provider's opaque id for the ACCOUNT a token belongs to, read from a
+    #: token response or a probe body. Not the display identity above: that is
+    #: for humans and may change, this is compared for equality to notice that a
+    #: connection was re-authorized as somebody else. None when the provider does
+    #: not say — and a None never counts as a match.
+    account_key: Optional[Callable[[dict[str, Any]], Optional[str]]] = None
     #: True when this probe has NOT been exercised against a live token of this
     #: provider. A rejection from an unverified probe may mean "the endpoint does
     #: not accept this token type" rather than "the token is bad", so it is
@@ -51,6 +57,9 @@ class ProviderProbe:
 
 _PROBES: dict[str, ProviderProbe] = {
     "github": ProviderProbe(
+        # The numeric id, never `login` — a GitHub account can be renamed, and a
+        # renamed account is still the same account.
+        account_key=lambda body: str(body["id"]) if body.get("id") is not None else None,
         # The canonical "who am I" for a user token. Read-only, no scopes needed
         # beyond what any token has.
         url="https://api.github.com/user",
@@ -72,6 +81,13 @@ _PROBES: dict[str, ProviderProbe] = {
         unverified=True,
     ),
     "slack": ProviderProbe(
+        # `auth.test` returns team_id + user_id; the pair is the account, because
+        # one user across two workspaces is two different connections.
+        account_key=lambda body: (
+            f"{body.get('team_id')}:{body.get('user_id')}"
+            if body.get("team_id") and body.get("user_id")
+            else None
+        ),
         # Slack's own token-test endpoint, and it is documented as exactly this:
         # verify the token and return the identity it belongs to.
         url="https://slack.com/api/auth.test",
@@ -79,6 +95,22 @@ _PROBES: dict[str, ProviderProbe] = {
         body_error=lambda body: None if body.get("ok") else str(body.get("error") or "invalid_auth"),
     ),
 }
+
+
+def account_key_from(provider: str, body: dict[str, Any]) -> Optional[str]:
+    """The account id this body identifies, or None when the provider is silent.
+
+    Lives beside the probes because they already own "who is this token" — one
+    table answering both halves of that question rather than a second one that
+    can disagree with it.
+    """
+    probe = _PROBES.get((provider or "").strip().lower())
+    if probe is None or probe.account_key is None:
+        return None
+    try:
+        return probe.account_key(body or {})
+    except Exception:  # noqa: BLE001 — a provider body is untrusted input
+        return None
 
 
 def token_from_credential(value: Any) -> Optional[str]:

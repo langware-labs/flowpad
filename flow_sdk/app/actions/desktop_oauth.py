@@ -534,6 +534,28 @@ async def _drop_credential_row(user, credentials_name: str) -> None:
         logger.warning("could not drop credential row %s: %s", credentials_name, e)
 
 
+async def _stamp_identity(user, name: str, provider: str, value: Any) -> None:
+    """Record WHICH provider account the freshly-held token belongs to.
+
+    Latest login wins is right, but a consumer that was granted account A must be
+    able to notice it is now pointed at account B. Best effort: a provider that
+    does not say leaves `account_key` None, and a None never counts as a match.
+    """
+    from flow_sdk.core.oauth.provider_probe import account_key_from  # noqa: PLC0415
+
+    try:
+        body = value if isinstance(value, dict) else {}
+        row = user.get_env_var(name)
+        if row is None:
+            return
+        row.account_key = account_key_from(provider, body)
+        row.connected_at = int(time.time())
+        user.set_env_var(row)
+        await user.update()
+    except Exception:  # noqa: BLE001 — never fail a good credential write on this
+        logger.debug("could not stamp identity on %s", name, exc_info=True)
+
+
 async def record_credential(user, provider: str, value: Any) -> bool:
     """THE place a provider credential is written. Latest login wins.
 
@@ -557,6 +579,7 @@ async def record_credential(user, provider: str, value: Any) -> bool:
     try:
         await set_user_credentials(user, name, value, user.id)
         await _mirror_credential_row(user, name)
+        await _stamp_identity(user, name, provider, value)
     except Exception as e:  # noqa: BLE001
         logger.error("record_credential(%s) failed: %s", provider, e)
         return False
