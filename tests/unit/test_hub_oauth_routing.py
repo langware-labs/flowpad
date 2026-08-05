@@ -1,9 +1,13 @@
 """Which side runs an OAuth flow, and how a hub provider's credential is named.
 
 The desktop can only complete flows for providers it holds a client id for
-(GitHub, Anthropic). Everything the hub defines — Slack, Jira, Google — has its
+(GitHub, Anthropic, Slack). Everything the hub defines — Jira, Google — has its
 client SECRET and its registered redirect URI on the hub, so the hub runs the
 flow and the desktop only carries the browser to it.
+
+Pick the provider a case needs from the side it is testing: Slack moved into the
+local registry when the desktop learned to hold its token, so it is no longer a
+stand-in for "hub-only" — Jira is.
 """
 
 import pytest
@@ -26,14 +30,18 @@ async def test_local_provider_resolves_from_the_registry(monkeypatch):
 @pytest.mark.asyncio
 async def test_hub_provider_resolves_from_its_row(monkeypatch):
     """The name was always on the provider row. Reading only the local registry
-    is what made every hub provider fail attach as 'Unknown OAuth provider'."""
+    is what made every hub provider fail attach as 'Unknown OAuth provider'.
+
+    Jira, not Slack: this asserts the HUB row supplies the name, so the provider
+    must be one the local registry does not also define — otherwise local-first
+    resolution answers and the hub lookup is never exercised."""
 
     async def hub_rows():
-        return EntityEnvVars(values=[provider_env_var("slack", "slack", "SLACK_OAUTH_USER_TOKEN", None)])
+        return EntityEnvVars(values=[provider_env_var("jira", "jira", "JIRA_OAUTH_USER_TOKEN", None)])
 
     monkeypatch.setattr("flow_sdk.core.oauth.hub_providers.hub_provider_rows", hub_rows)
 
-    assert await resolve_user_credentials_name("slack") == "SLACK_OAUTH_USER_TOKEN"
+    assert await resolve_user_credentials_name("jira") == "JIRA_OAUTH_USER_TOKEN"
 
 
 @pytest.mark.asyncio
@@ -187,9 +195,13 @@ async def test_a_dead_callback_host_falls_back_instead_of_refusing(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_a_dead_callback_host_with_no_local_grant_says_why(monkeypatch):
-    """Slack has no local grant, so there is nothing to fall back to — and the
+    """Jira has no local grant, so there is nothing to fall back to — and the
     refusal must name the dead redirect rather than "not supported", which would
-    send someone looking in the wrong place entirely."""
+    send someone looking in the wrong place entirely.
+
+    Jira, not Slack: the case needs a provider the desktop genuinely cannot
+    complete. Slack gained a local grant, so it no longer reaches the
+    hub-refusal path this asserts on."""
     from flow_sdk.app.actions import oauth_action
     from flow_sdk.responses.response import ApiFailResponse
 
@@ -197,7 +209,7 @@ async def test_a_dead_callback_host_with_no_local_grant_says_why(monkeypatch):
         return ApiFailResponse(message=f"Desktop OAuth not supported for provider: {provider}")
 
     async def hub(provider):
-        return {"auth_url": "https://slack.com/oauth/v2/authorize?redirect_uri=https%3A%2F%2Fgone.test%2Fcb"}
+        return {"auth_url": "https://auth.atlassian.com/authorize?redirect_uri=https%3A%2F%2Fgone.test%2Fcb"}
 
     async def dead(auth_url):
         return "nothing is serving https://gone.test (ERR_NGROK_3200)"
@@ -206,7 +218,7 @@ async def test_a_dead_callback_host_with_no_local_grant_says_why(monkeypatch):
     monkeypatch.setattr(oauth_action, "hub_start_auth", hub)
     monkeypatch.setattr(oauth_action, "redirect_unreachable_reason", dead)
 
-    result = await oauth_action._handle_auth("slack", None)
+    result = await oauth_action._handle_auth("jira", None)
 
     assert "ERR_NGROK_3200" in result.message
     assert "not supported" not in result.message
