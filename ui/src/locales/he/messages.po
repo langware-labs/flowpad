@@ -3467,6 +3467,15 @@ msgstr ""
 msgid "Could not give this project access to {0}."
 msgstr ""
 
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+msgid "Could not link asset to cloud"
+msgstr ""
+
+#: src/components/project-home/ProjectPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Could not link project to cloud"
+msgstr ""
+
 #: src/components/EnvVarsManager.tsx
 msgid "Could not load environment variables"
 msgstr ""
@@ -3484,13 +3493,13 @@ msgid "Could not pause"
 msgstr ""
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
-msgid "Could not publish asset"
-msgstr ""
+#~ msgid "Could not publish asset"
+#~ msgstr ""
 
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Could not publish project"
-msgstr ""
+#~ msgid "Could not publish project"
+#~ msgstr ""
 
 #. placeholder {0}: source.name || source.provider
 #: src/components/data-sources/DataSourceCard.tsx
@@ -7746,6 +7755,28 @@ msgstr "הקישור הועתק"
 msgid "Link copied to clipboard"
 msgstr "הקישור הועתק ללוח"
 
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Link to cloud"
+msgstr ""
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Linked to cloud"
+msgstr ""
+
+#: src/components/entity-actions/CloudAssetPublishButton.tsx
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Linking failed."
+msgstr ""
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Linking…"
+msgstr ""
+
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "List"
 msgstr "רשימה"
@@ -11397,6 +11428,10 @@ msgstr "תיקיית פרויקט…"
 msgid "Project is fixed after the first message — start a new session to change it."
 msgstr "הפרויקט קבוע לאחר ההודעה הראשונה — התחל סשן חדש כדי לשנות אותו."
 
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Project linked to cloud"
+msgstr ""
+
 #: src/components/contact-picker/use-computed-groups.ts
 msgid "Project Members"
 msgstr "חברי הפרויקט"
@@ -11423,8 +11458,8 @@ msgid "Project not found."
 msgstr ""
 
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Project published"
-msgstr ""
+#~ msgid "Project published"
+#~ msgstr ""
 
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Project renamed"
@@ -11579,35 +11614,35 @@ msgstr "מציג PTY"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Publish"
-msgstr ""
+#~ msgid "Publish"
+#~ msgstr ""
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Publish failed."
-msgstr ""
+#~ msgid "Publish failed."
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Publish this agent to the cloud and give it a machine that logs in as itself."
 msgstr ""
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
-msgid "Publish to cloud"
-msgstr ""
+#~ msgid "Publish to cloud"
+#~ msgstr ""
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Published"
-msgstr ""
+#~ msgid "Published"
+#~ msgstr ""
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
-msgid "Published to cloud"
-msgstr ""
+#~ msgid "Published to cloud"
+#~ msgstr ""
 
 #: src/components/project-home/ProjectPublishButton.tsx
-msgid "Publishing…"
-msgstr ""
+#~ msgid "Publishing…"
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull & Open"
