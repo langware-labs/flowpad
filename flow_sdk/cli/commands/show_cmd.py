@@ -14,8 +14,8 @@ the entity action ``/api/v1/graph/agentic_process/<id>/show``.
 Error contract (agents parse these):
 
     exit 0 — show event recorded (NOT a guarantee anyone is watching)
-    exit 2 — invalid arguments (malformed typeid/port, no process scope)
-    exit 4 — entity not found (typeid form only)
+    exit 2 — invalid arguments (malformed typeid/port/view, no process scope)
+    exit 4 — entity not found (typeid form, or an entity-shaped view pointer)
     exit 5 — connection error (server unreachable)
 """
 
@@ -102,6 +102,35 @@ def show_file(
     if not path or not path.strip():
         _fail(EXIT_INVALID_ARG, "INVALID_PATH", "Empty path")
     _post_show(process, {"path": path})
+
+
+@show_app.command(
+    "view",
+    # NB: no square brackets in help strings — Rich parses them as markup tags.
+    help=(
+        "Show a SCREEN by dock address, 'viewType' plus an optional "
+        "'/pointer' and '?opts'. Examples: 'events', 'assets/list/skill', "
+        "'preferences/appearance'. Run `flow schema views` for the list."
+    ),
+)
+def show_view(
+    address: Annotated[
+        str,
+        typer.Argument(
+            help="Dock address, e.g. 'events' or \"tag/graph/eng.db?view=tree\" (quote it if it has a ?)."
+        ),
+    ],
+    process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
+) -> None:
+    """Show a dock address — the only form that reaches a view with no entity.
+
+    Grammar is validated server-side against the dock-address table, so a bad
+    view or a missing required pointer comes back as exit 2 rather than a silent
+    no-op in the browser.
+    """
+    if not address or not address.strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_VIEW", "Empty view address")
+    _post_show(process, {"view": address.strip()})
 
 
 @show_app.command(

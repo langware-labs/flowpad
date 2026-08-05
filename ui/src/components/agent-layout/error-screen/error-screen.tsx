@@ -7,10 +7,25 @@ import { useRouteError } from 'react-router';
 import { isBackendUnreachable } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 
+/** The loosely-typed shape this screen reads off an unknown route error. */
+interface ErrorLike {
+  status?: number;
+  message?: string;
+  response?: { status?: number; data?: { message?: string } };
+}
+
 const ErrorScreen = () => {
   const { t } = useLingui();
   const error = useRouteError();
   const [showDetails, setShowDetails] = useState(false);
+
+  // `useRouteError` is `unknown`; the 404 and message branches below read it
+  // structurally. This declaration was MISSING — every render that reached
+  // those branches threw `ReferenceError: errorAny is not defined`, so the
+  // error boundary itself crashed and a failed route showed a blank page
+  // instead of this screen. Found by the dock sweep, which navigates to docks
+  // whose target does not exist.
+  const errorAny = (error ?? null) as ErrorLike | null;
 
   // ERROR HIERARCHY (check in this exact order):
 
