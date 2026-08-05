@@ -46,6 +46,10 @@ record_app = typer.Typer(
 
 EXIT_OK = 0
 EXIT_INVALID_ARG = 2
+#: "You need to do something, nothing is damaged." Distinct from ACTION_FAILED
+#: (7) so an agent can tell a fixable gate from a broken operation without
+#: parsing prose.
+EXIT_SHARE_BLOCKED = 3
 EXIT_NOT_FOUND = 4
 EXIT_CONNECTION_ERROR = 5
 EXIT_INDEX_FAILED = 6
@@ -243,6 +247,119 @@ def url_record(
         )
 
     data = _post_graph_json(url, body, timeout=15, on_error=_on_error)
+    _ok({"target": raw, **data})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# `flow record share` — put an asset in the cloud, get a reviewer's link
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: Route `error_code` → exit code. Everything a user can fix is exit 3; only a
+#: genuinely broken operation is 7.
+_SHARE_EXIT_CODES = {
+    "INVALID_ARG": EXIT_INVALID_ARG,
+    "NOT_PUBLISHABLE": EXIT_INVALID_ARG,
+    "NOT_FOUND": EXIT_NOT_FOUND,
+    "NOT_INDEXED": EXIT_NOT_FOUND,
+    "NO_PROJECT": EXIT_NOT_FOUND,
+    "PROJECT_NOT_LINKED": EXIT_SHARE_BLOCKED,
+    "PROJECT_NOT_READY": EXIT_SHARE_BLOCKED,
+    "CLOUD_LOGIN_REQUIRED": EXIT_SHARE_BLOCKED,
+    "AUTHENTICATED_USER_REQUIRED": EXIT_SHARE_BLOCKED,
+    "GITHUB_NOT_CONNECTED": EXIT_SHARE_BLOCKED,
+    "LOCAL_MODE": EXIT_SHARE_BLOCKED,
+    "BRANCH_AHEAD": EXIT_SHARE_BLOCKED,
+    "BRANCH_DIVERGED": EXIT_SHARE_BLOCKED,
+    "NOT_IN_REPO": EXIT_SHARE_BLOCKED,
+    "MISSING_REMOTE": EXIT_SHARE_BLOCKED,
+    "UNSUPPORTED_ORIGIN": EXIT_SHARE_BLOCKED,
+    "DETACHED_HEAD": EXIT_SHARE_BLOCKED,
+    "NO_COMMIT": EXIT_SHARE_BLOCKED,
+    "DIRTY": EXIT_SHARE_BLOCKED,
+    "UNPUSHED": EXIT_SHARE_BLOCKED,
+    "STATUS_FAILURE": EXIT_SHARE_BLOCKED,
+}
+
+
+@record_app.command(
+    "share",
+    help=(
+        "Put a git-backed asset in the cloud and print a link a reviewer can "
+        "open. Commits ONLY the paths named — the asset plus each --with — and "
+        "pushes the branch. Read-only until every gate has passed."
+    ),
+)
+def share_record(
+    target: Annotated[
+        str,
+        typer.Argument(help="A file path, or a TypeId ('<type>-<uuid>'). An existing path wins."),
+    ],
+    with_paths: Annotated[
+        Optional[list[str]],
+        typer.Option("--with", help="Another repo path to commit alongside it (repeatable)."),
+    ] = None,
+    message: Annotated[Optional[str], typer.Option("--message", "-m", help="Commit message.")] = None,
+    link_project: Annotated[
+        bool,
+        typer.Option(
+            "--link-project",
+            help="Also link the owning project to the cloud if it isn't already. Off by default: "
+            "linking publishes a repo declaration to every member, so it is never a side effect.",
+        ),
+    ] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report every gate, mutate nothing.")] = False,
+    no_commit: Annotated[
+        bool, typer.Option("--no-commit", help="Publish only; assume the paths are already committed and pushed.")
+    ] = False,
+) -> None:
+    """Share an asset and print its cloud URL.
+
+    Exit codes:
+
+        0 — shared; ``url`` is in the payload
+        2 — INVALID_ARG / NOT_PUBLISHABLE
+        3 — a gate you can fix (project not linked, git not ready, no GitHub);
+            nothing was committed or pushed
+        4 — NOT_FOUND / NOT_INDEXED / NO_PROJECT
+        5 — the instance or the server is unreachable
+        7 — the operation itself failed (commit, push, or hub registration)
+    """
+    raw = (target or "").strip()
+    if not raw:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "target is required")
+
+    expanded = os.path.abspath(os.path.expanduser(raw))
+    body: dict[str, Any] = {"path": expanded} if os.path.exists(expanded) else {}
+    if not body:
+        if "-" not in raw:
+            _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Not an existing path and not a TypeId: {raw!r}")
+        body = {"typeid": raw}
+    body.update(
+        {
+            "with_paths": [os.path.abspath(os.path.expanduser(p)) for p in (with_paths or [])],
+            "link_project": link_project,
+            "dry_run": dry_run,
+            "no_commit": no_commit,
+        }
+    )
+    if message:
+        body["message"] = message
+
+    port = _discover_port()
+    url = f"http://127.0.0.1:{port}/api/v1/assets/share"
+
+    def _on_error(status_code: int, rbody: dict) -> "NoReturn":
+        data = rbody.get("data") or {}
+        code = str(data.get("error_code") or "ACTION_FAILED")
+        extra = {k: v for k, v in data.items() if k != "error_code"}
+        _fail(
+            _SHARE_EXIT_CODES.get(code, EXIT_ACTION_FAILED),
+            code,
+            str(rbody.get("message") or f"HTTP {status_code}"),
+            extra or None,
+        )
+
+    data = _post_graph_json(url, body, timeout=180, on_error=_on_error)
     _ok({"target": raw, **data})
 
 

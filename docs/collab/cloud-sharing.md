@@ -110,3 +110,41 @@ reads the file at that commit.
 * Your local filesystem paths never leave your machine at all.
 * Linking a project is not the same as inviting people. Access is granted
   separately, in the project's Members list.
+
+## Proving it end to end
+
+`ui/tests/hub_playwright/tagit_share_real_github.spec.ts` runs the whole chain
+unstubbed. It **skips** unless the env below is set, so it stays green on a
+machine without credentials.
+
+It needs a real GitHub repo because nothing cheaper reaches the last mile:
+`AssetGitWorktree` requires an `https://github.com/...` origin (a `file://`
+bare repo gives `ORIGIN_INVALID`), and the hub serves the document by cloning
+from GitHub with the *viewer's* token — so "a reviewer can read it" is only
+true if a real clone really happens.
+
+```bash
+# once: a throwaway private repo seeded with one commit on `main`,
+# and a PAT with contents:read+write on it (verify with a manual push).
+
+cd ../test_flowpad/FlowPad && uv run python flowpad/run.py     # hub :8093
+scripts/instance_ctl.sh launch tagit-1                          # FE 500X / BE 600X
+cd ui && npx vite --mode hubtest --port 4096 --strictPort       # hub UI
+
+TAGIT_E2E_REPO=https://github.com/<you>/flowpad-tagit-e2e.git \
+TAGIT_E2E_GITHUB_TOKEN=<pat> \
+TAGIT_E2E_BACKEND_URL=http://localhost:6001 \
+TAGIT_E2E_UI_URL=http://localhost:5002 \
+TAGIT_E2E_HUB_UI_URL=http://localhost:4096 \
+TAGIT_E2E_HUB_EMAIL=tagit-1@local.test TAGIT_E2E_HUB_PASSWORD=tagit-1-pw-1234 \
+npx playwright test --config=tests/hub_playwright/playwright.config.ts tagit_share_real_github
+```
+
+`--port 4096 --strictPort` is load-bearing: `.env.hubtest.local` uses 4098 and
+so does the alice UI default, and a silent collision would assert against the
+desktop runtime. The spec re-checks `supported_pages === ["hub"]` in the page
+rather than trusting the port.
+
+Everything it creates is namespaced by a run id and torn down: the branch
+`tagit-e2e/<runId>` is deleted (never `main`), local and hub rows are deleted,
+and stale branches older than a day are swept on the next run.
