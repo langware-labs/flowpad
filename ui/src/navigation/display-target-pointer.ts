@@ -1,4 +1,4 @@
-import { TypeId } from '@sdk';
+import { PageId, TypeId } from '@sdk';
 import { AssetDocPointer } from './AssetDocPointer';
 import { editorForType } from './asset-doc-types';
 import { DockPointer } from './DockPointer';
@@ -36,6 +36,13 @@ export interface DisplayTargetLike {
   artifact_id?: string;
   runtime?: string;
   name?: string;
+  /** kind: 'dock' — a SCREEN. The backend sends the frontend's own field names
+   *  (`flow_sdk/core/dock_address.py`, pinned by dock_address_contract.json) so
+   *  the pointer is built here without re-parsing a URL. */
+  view_type?: string;
+  pointer?: string | null;
+  options?: Record<string, string> | null;
+  page?: string;
 }
 
 /** Port targets (`webapp`, and an `app` whose dev server is up) → the port preview. */
@@ -61,6 +68,20 @@ export function dockForDisplayTarget(target: DisplayTargetLike | null | undefine
   // entity branch below would otherwise try to resolve to an editor.
   const shellId = shellIdFromShowTarget(target);
   if (shellId) return DockPointer.forShell(shellId);
+
+  // A SCREEN is already a dock address — the backend validated the view and its
+  // pointer requirement, so this is a construction, not a resolution. Checked
+  // before the entity/path branches because a dock target carries neither a
+  // `type` nor a `path` for them to match on.
+  if (target.kind === 'dock' && target.view_type) {
+    return new DockPointer(
+      target.view_type as ViewType,
+      target.pointer ?? undefined,
+      target.options ?? undefined,
+      undefined,
+      (target.page as PageId | undefined) ?? undefined,
+    );
+  }
 
   if (target.kind === 'webapp' || target.kind === 'app') return webAppPointer(target.port);
 

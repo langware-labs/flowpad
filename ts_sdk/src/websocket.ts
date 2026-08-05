@@ -136,13 +136,20 @@ export interface TagMsg extends BaseMessage {
 export interface UiCommandMessage extends BaseMessage {
   message_type: 'ui_command';
   /** Discriminator for the specific action the UI should perform. */
-  kind: 'navigate_entity' | 'navigate_vfs' | string;
+  kind: 'navigate_entity' | 'navigate_vfs' | 'navigate_dock' | string;
   /** For `navigate_entity`: the entity's type (e.g. "shell", "project"). */
   type?: string;
   /** For `navigate_entity`: the entity's id. */
   id?: string;
   /** For `navigate_vfs`: the absolute file path to open in the asset editor. */
   path?: string;
+  /** For `navigate_dock`: the dock address — a SCREEN. Already validated
+   *  server-side against the dock-address table, so the UI constructs rather
+   *  than resolves. */
+  view_type?: string;
+  pointer?: string | null;
+  options?: Record<string, string> | null;
+  page?: string;
   /** For `desktop_notify`: the notification kind (e.g. "message"). */
   notify_type?: string;
   /** For `desktop_notify`: the kind-specific payload (conversation_id, message_id, sender_name, preview, …). */

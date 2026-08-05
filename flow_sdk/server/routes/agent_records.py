@@ -147,6 +147,42 @@ async def list_schema():
     return {"ok": True, "types": types}
 
 
+# MUST stay above `/schema/{type_name}` — FastAPI matches in registration order,
+# so the parameterized route would otherwise swallow "views" as a type name.
+@router.get("/api/v1/agent/schema/views")
+async def list_schema_views():
+    """Return every ADDRESSABLE dock view — what `flow show view` can open.
+
+    This is the view half of the agent's addressing vocabulary; `/schema` above
+    is the entity half. Non-addressable views (the retired aliases, and the
+    folded-away `skills`/`session`/`atlas`) are omitted: they still DECODE for
+    history, but offering them as a destination would be a lie.
+
+    Output shape:
+        {
+          ok: true,
+          views: [ { view_type, pointer: none|optional|required,
+                     folds_pointer, scope_keyed, can_be_tab } ]
+        }
+    """
+    from flow_sdk.core import dock_address as da  # noqa: PLC0415
+
+    views = [
+        {
+            "view_type": view.value,
+            "pointer": meta.pointer.value,
+            "folds_pointer": meta.folds_pointer,
+            "scope_keyed": meta.scope_keyed,
+            # Pointer-bearing views are asked with a placeholder so the answer
+            # reflects the addressable form, not the bare-viewType form.
+            "can_be_tab": da.can_be_tab(view, "x"),
+        }
+        for view, meta in da.VIEW_META.items()
+        if meta.addressable
+    ]
+    return {"ok": True, "views": views}
+
+
 @router.get("/api/v1/agent/schema/{type_name}")
 async def get_schema_info(type_name: str):
     """Return TypeInfo + creation hint for a single type.

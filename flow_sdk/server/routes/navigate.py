@@ -218,6 +218,67 @@ async def navigate_file(req: NavigateFileRequest):
     return {"ok": True, "connection_id": connection_id, "mode": "vfs", "path": resolved["path"]}
 
 
+class NavigateViewRequest(BaseModel):
+    """Body for POST /api/v1/agent/navigate/view.
+
+    ``view`` is a dock address — ``<viewType>[/<pointer>][?<opts>]``, e.g.
+    ``events``, ``assets/list/skill``, ``preferences/appearance``. This is the
+    only navigate form that reaches a SCREEN rather than an entity or a file.
+    """
+
+    view: str
+    connection_id: Optional[str] = None
+
+
+@router.post("/api/v1/agent/navigate/view")
+async def navigate_view(req: NavigateViewRequest):
+    """Navigate the active browser tab to a dock address (a screen).
+
+    The address is validated against the ``dock_address`` table BEFORE the UI is
+    touched — an unknown view or a missing required pointer is a clean 400 the
+    agent can act on, not a silent no-op in the browser. Entity-shaped pointers
+    are looked up too, so ``conversation/<bogus>`` 404s here rather than opening
+    a dock that renders a load error.
+    """
+    from flow_sdk.core.display_target import (  # noqa: PLC0415
+        DisplayTargetNotFound,
+        InvalidDisplayTarget,
+        resolve_display_target,
+    )
+
+    raw = (req.view or "").strip()
+    if not raw:
+        return _error(400, "INVALID_VIEW", "Missing view")
+
+    try:
+        resolved = await resolve_display_target(dock=raw)
+    except InvalidDisplayTarget as e:
+        return _error(400, "INVALID_VIEW", str(e))
+    except DisplayTargetNotFound as e:
+        return _error(404, "ENTITY_NOT_FOUND", str(e))
+
+    target = _pick_target(req.connection_id)
+    if isinstance(target, JSONResponse):
+        return target
+    connection_id, ws = target
+
+    await _send_ui_command(
+        ws,
+        "navigate_dock",
+        view_type=resolved["view_type"],
+        pointer=resolved.get("pointer"),
+        options=resolved.get("options"),
+        page=resolved.get("page"),
+    )
+    return {
+        "ok": True,
+        "connection_id": connection_id,
+        "mode": "dock",
+        "view_type": resolved["view_type"],
+        "pointer": resolved.get("pointer"),
+    }
+
+
 @router.get("/api/v1/agent/context")
 async def get_browser_context(connection_id: Optional[str] = None):
     """Return the UI's data-context snapshot for a connection.
