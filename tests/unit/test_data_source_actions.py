@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from flow_sdk.builtin.data_source import DataSource, parse_since
+from flow_sdk.builtin.data_source import DataSource, SourceStatus, parse_since
 from flow_sdk.builtin.data_source_cursor import DataSourceCursor
 from flow_sdk.builtin.source_item import SourceItem
 from flow_sdk.ingest.health import SourceHealth
@@ -92,7 +92,7 @@ async def test_poll_now_is_the_only_unlatch_for_config_error():
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_poll_now_does_not_wake_a_disabled_source():
     """Disabled is a user decision; 'poll now' must not override it."""
-    src = await _source(enabled=False)
+    src = await _source(status=SourceStatus.DISABLED.value)
     await src.poll_now_action()
     refreshed = await DataSource.get_one({"id": src.id})
     assert refreshed.is_due(NOW) is False

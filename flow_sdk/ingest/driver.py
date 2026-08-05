@@ -84,6 +84,30 @@ class SendOutcome:
 
 
 @dataclass(frozen=True)
+class SetupVerdict:
+    """Whether a source's setup is complete, and what is missing if not.
+
+    ``pending`` is per-stream because that is the granularity a person acts at:
+    "invite the bot to #eng and #design" is actionable, "some channels are not
+    readable" is not.
+    """
+
+    ready: bool
+    #: One line, in the user's words, shown verbatim on the card.
+    detail: str = ""
+    #: Stream keys still waiting on a human.
+    pending: tuple[str, ...] = ()
+
+    @classmethod
+    def ok(cls, detail: str = "") -> "SetupVerdict":
+        return cls(ready=True, detail=detail)
+
+    @classmethod
+    def waiting(cls, detail: str, pending: tuple[str, ...] = ()) -> "SetupVerdict":
+        return cls(ready=False, detail=detail, pending=pending)
+
+
+@dataclass(frozen=True)
 class StreamRef:
     """One syncable unit within a source — a feed URL, a channel."""
 
@@ -178,6 +202,20 @@ class IngestDriver(Protocol):
 
         Optional. Drivers that are their own channel (rss, hackernews) inherit
         the default in ``channel_of_driver``.
+        """
+        ...
+
+    async def verify(self, source: "DataSource") -> "SetupVerdict":
+        """OPTIONAL. Can this source actually read what it was configured for?
+
+        Distinct from health, which is about whether the LAST run worked. This
+        answers "is the setup finished" — and for several providers that is a
+        step only a human can take. Slack will not let an app read a channel the
+        bot was never invited to, and no amount of correct configuration on our
+        side changes that.
+
+        A driver that omits this needs no setup beyond its config, and its
+        sources go straight to ACTIVE.
         """
         ...
 

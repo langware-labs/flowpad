@@ -35,9 +35,10 @@ from flow_sdk.ingest.models import IngestMode, IngestReport
 
 logger = logging.getLogger(__name__)
 
-#: Streams fetched per run by default. Providers with a hard request ceiling
-#: (Slack: one history call a minute) pass a smaller budget; the loop then
-#: round-robins by ``last_attempted_at`` so every stream still converges.
+#: Streams fetched per run by default. A provider with a hard request ceiling
+#: (Slack: one history call a minute) declares a smaller ``stream_budget`` on
+#: its driver; the loop then round-robins by ``last_attempted_at`` so every
+#: stream still converges, just over more ticks.
 DEFAULT_STREAM_BUDGET = 5
 
 
@@ -77,7 +78,9 @@ async def sync_source(
     emit_sync_tag(source.provider, source.id, "started")
 
     cursors = await _cursors_for(source, driver)
-    due = _round_robin(cursors, budget)
+    # The driver's ceiling is a limit, not a preference — `min`, so a caller
+    # asking for more streams cannot spend a budget the provider does not have.
+    due = _round_robin(cursors, min(budget, getattr(driver, "stream_budget", budget)))
 
     for cursor in due:
         combined.outcomes.extend((await _sync_stream(source, driver, cursor, now)).outcomes)

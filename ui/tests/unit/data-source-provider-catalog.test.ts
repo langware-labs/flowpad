@@ -13,6 +13,7 @@ import {
   emptyDraft,
   MIN_POLL_INTERVAL_SECONDS,
   PROVIDERS,
+  setupWiki,
   validateDraft,
   type SourceDraft,
 } from '@src/components/data-sources/provider-catalog';
@@ -24,10 +25,53 @@ const draft = (over: Partial<SourceDraft> = {}): SourceDraft => ({
 });
 
 describe('provider catalog', () => {
-  it('covers exactly the four registered drivers', () => {
+  it('covers exactly the registered drivers', () => {
     // flow_sdk/ingest/drivers/__init__.py registers these and nothing else.
     // There is no endpoint listing them, so this list IS the contract.
-    expect(PROVIDERS.map((p) => p.id).sort()).toEqual(['agent', 'agentmail', 'hackernews', 'rss']);
+    expect(PROVIDERS.map((p) => p.id).sort()).toEqual([
+      'agent',
+      'agentmail',
+      'hackernews',
+      'rss',
+      'slack',
+    ]);
+  });
+
+  it('offers a setup wiki page only where the driver actually verifies', () => {
+    // Offering "how to finish setup" for a provider with no setup step sends
+    // the user looking for work that does not exist.
+    expect(setupWiki('slack')).toBe('Slack channels');
+    expect(setupWiki('SLACK')).toBe('Slack channels');
+    expect(setupWiki('rss')).toBeUndefined();
+    expect(setupWiki('')).toBeUndefined();
+  });
+});
+
+describe('validation — slack', () => {
+  const slack = (channels: string) =>
+    validateDraft(draft({ provider: 'slack', fields: { channels } })).join(' ');
+
+  it('accepts channel IDs', () => {
+    expect(slack('C0123456789\nG0987654321')).toBe('');
+  });
+
+  it('rejects a channel NAME, which would fail as `channel_not_found`', () => {
+    // Not a near miss: `streams()` keys on whatever it is given, so the source
+    // would poll a channel that does not exist while looking configured.
+    expect(slack('#engineering')).toMatch(/Use the ID/);
+    expect(slack('engineering')).toMatch(/Not Slack channel IDs/);
+  });
+
+  it('requires at least one channel', () => {
+    // Zero channels is not an empty source, it is one that can never poll:
+    // `streams()` returns nothing, so no cursor is ever created.
+    expect(slack('')).toMatch(/required/i);
+  });
+
+  it('does not name the workspace from a channel', () => {
+    // `account_key` describes the remote ACCOUNT, and the workspace lives on
+    // the OAuth connection — the form never sees it.
+    expect(accountKeyFor(draft({ provider: 'slack', fields: { channels: 'C0123456789' } }))).toBe('');
   });
 });
 
