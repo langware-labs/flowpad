@@ -124,7 +124,7 @@ function WarningItem({ warning, onClick }: WarningItemProps) {
   const colors = colorMap[warning.color] || colorMap.yellow;
 
   return (
-    <div className={`${ITEM_CLASS} ${colors.border}`}>
+    <div className={`${ITEM_CLASS} ${colors.border}`} data-testid="warnings-popover-warning">
       <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-start gap-3 text-left">
         <div className={`rounded-md p-1.5 ${colors.bg}`}>
           <Icon className={`h-4 w-4 ${colors.text}`} />
@@ -134,7 +134,12 @@ function WarningItem({ warning, onClick }: WarningItemProps) {
           {warning.description && <p className="mt-0.5 text-xs text-muted-foreground">{warning.description}</p>}
         </div>
       </button>
-      <CopyButton text={warning.description ? `${warning.message}\n${warning.description}` : warning.message} />
+      <div className="flex shrink-0 items-center gap-0.5">
+        <CopyButton text={warning.description ? `${warning.message}\n${warning.description}` : warning.message} />
+        {/* Everything in this popover is a warning by construction, so a derived
+            condition (cloud down, no harness) is diagnosable just like a logged one. */}
+        <DiagnoseIconButton subject={{ level: 'warning', title: warning.message, message: warning.description }} />
+      </div>
     </div>
   );
 }
@@ -178,7 +183,7 @@ function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: (
       </div>
       <div className="flex shrink-0 items-center gap-0.5">
         <CopyButton text={alert.message ? `${alert.title}\n${alert.message}` : alert.title} />
-        <DiagnoseIconButton data={alert} />
+        <DiagnoseIconButton subject={alert} />
         <button
           type="button"
           onClick={onDismiss}
