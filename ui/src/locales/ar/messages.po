@@ -156,7 +156,7 @@ msgstr ""
 msgid "[[{name}]] not found"
 msgstr ""
 
-#. placeholder {0}: cursors.length
+#. placeholder {0}: source.stream_count
 #: src/components/data-sources/DataSourceCard.tsx
 msgid "{0, plural, one {# stream} other {# streams}}"
 msgstr ""
@@ -3415,7 +3415,9 @@ msgid "Could not delete"
 msgstr ""
 
 #. placeholder {0}: connection.provider
+#. placeholder {0}: source.name || source.provider
 #: src/components/connections-manager.tsx
+#: src/components/data-sources/DataSourcesView.tsx
 msgid "Could not delete {0}"
 msgstr ""
 
@@ -3490,6 +3492,11 @@ msgstr ""
 msgid "Could not publish project"
 msgstr ""
 
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Could not pull {0}"
+msgstr ""
+
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "Could not reach support"
 msgstr ""
@@ -3504,6 +3511,11 @@ msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Could not rename context"
+msgstr ""
+
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/ReplayDialog.tsx
+msgid "Could not replay {0}."
 msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
@@ -3584,6 +3596,11 @@ msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not update"
+msgstr ""
+
+#. placeholder {0}: source.name || source.provider
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "Could not update {0}"
 msgstr ""
 
 #: src/components/machine-overview/node-secrets.tsx
@@ -12179,6 +12196,10 @@ msgid "Replay everything"
 msgstr ""
 
 #: src/components/data-sources/ReplayDialog.tsx
+msgid "Replay failed"
+msgstr ""
+
+#: src/components/data-sources/ReplayDialog.tsx
 msgid "Replay since {since}"
 msgstr ""
 
@@ -14835,6 +14856,10 @@ msgstr ""
 msgid "The assets published with this project — its skills, agents, specs, and docs."
 msgstr ""
 
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "The change was not saved."
+msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "The credential could not be removed."
 msgstr ""
@@ -14925,6 +14950,14 @@ msgstr ""
 
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "The session transcript could not be read."
+msgstr ""
+
+#: src/components/data-sources/DataSourceCard.tsx
+msgid "The source was not queued."
+msgstr ""
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "The source was not removed."
 msgstr ""
 
 #: src/pages/flow-page/content-panel/content-panel.tsx
