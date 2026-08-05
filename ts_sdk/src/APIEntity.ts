@@ -24,12 +24,17 @@ import { Callable } from './types';
  */
 export interface ReceiveShowTarget {
   /** Mirrors python `DisplayTargetKind` (flow_sdk/core/display_target.py). */
-  kind?: 'entity' | 'vfs' | 'webapp' | 'app' | 'shell';
+  kind?: 'entity' | 'vfs' | 'webapp' | 'app' | 'shell' | 'dock';
   typeid?: string;
   type?: string;
   id?: string;
   path?: string;
   port?: number | string;
+  /** dock: a SCREEN, addressed by view rather than by entity or file. */
+  view_type?: string;
+  pointer?: string | null;
+  options?: Record<string, string> | null;
+  page?: string;
 }
 
 /**

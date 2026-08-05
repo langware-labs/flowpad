@@ -101,32 +101,42 @@ export function useShowTargetListener(): void {
     // most-recently-active one and poison both scope-entry and the default
     // placement anchor for the next tab.
     //
-    // No `parentTabId`: a show is a top-level tab. Standard mode never
-    // registers a workspace parent, so omitting it is already correct — being
-    // explicit keeps it that way if that ever changes.
-    await Tab.getFromDockPointer(placed, { afterTabId: anchor?.id ?? null });
+    // `parentTabId` only in vibe, and only for a SCREEN. Outside vibe a show is
+    // a top-level tab (standard mode registers no workspace parent). In vibe a
+    // shown screen belongs to the session that opened it, so it joins the
+    // workspace's child strip beside the Display — which keeps the agent's
+    // pinned deliverable instead of evicting it, and gives the screen full
+    // width when its chip is clicked.
+    const parentTabId = isVibe && target.kind === 'dock' ? (anchor?.id ?? null) : null;
+    await Tab.getFromDockPointer(placed, { afterTabId: anchor?.id ?? null, parentTabId });
     // `getFromDockPointer` returns the PROJECT-SCOPED list, which must never be
     // adopted globally (it would erase every other project's tabs). Re-read the
     // unscoped list for adoption, exactly as `materializeTab` does.
     applyAllTabs(await Tab.listAll());
-  }, []);
+  }, [isVibe]);
 
   const handle = useCallback(
     (processId: string, target: DisplayTargetLike | null | undefined): void => {
       if (!target || !processId) return;
+      // The mode gate lives HERE, not on the subscriptions, because it depends
+      // on the target's KIND. Vibe pins a deliverable (file / entity / webapp)
+      // in its Display pane, so this listener leaves those alone — but a SCREEN
+      // has no place in that pane, so vibe mints it as a workspace child.
+      // Every other mode has no pane at all and mints every kind.
+      if (isVibe && target.kind !== 'dock') return;
       const key = `${processId}:${JSON.stringify(target)}`;
       if (handledKeyRef.current === key) return;
       handledKeyRef.current = key;
       void showTarget(processId, target);
     },
-    [showTarget],
+    [showTarget, isVibe],
   );
 
   // Live channel — the transient `on_show` entity event. Manager-level rather
   // than bound to one process instance: outside vibe there is no "session", and
   // since nothing steals focus it is safe to serve every process at once.
   useEffect(() => {
-    if (isVibe) return;
+    // No mode gate here — `handle` decides per target (see `mintsTab`).
     // The `dataManager` SINGLETON is the emitter (`FlowSync/store.ts` surfaces
     // every entity event at manager level). Note `dataContext.dataManager` is
     // NOT it — that property does not exist, so reading the manager from the
@@ -137,7 +147,7 @@ export function useShowTargetListener(): void {
     };
     dataManager.on('on_entity_event', onEntityEvent);
     return () => dataManager.off('on_entity_event', onEntityEvent);
-  }, [handle, isVibe]);
+  }, [handle]);
 
   // Durable channel — `on_show` persists `context_data.last_shown` BEFORE it
   // emits the transient event, so any process update carries the newest target
@@ -155,7 +165,6 @@ export function useShowTargetListener(): void {
   // because each instance watches exactly one process; this one cannot.)
   const onProcessOp = useCallback(
     (typeId: TypeId, _op: 'create' | 'update' | 'delete', data: IEntity): void => {
-      if (isVibe) return;
       const context = (
         data as IEntity & {
           context_data?: { last_shown?: DisplayTargetLike; display_stack?: Array<{ shown_at?: string }> };
@@ -166,7 +175,7 @@ export function useShowTargetListener(): void {
       if (!isFreshShow(context?.display_stack, mountedAtRef.current)) return;
       handle(typeId.id, shown);
     },
-    [handle, isVibe],
+    [handle],
   );
   useEntityOps(PROCESS_TYPES, onProcessOp);
 }
