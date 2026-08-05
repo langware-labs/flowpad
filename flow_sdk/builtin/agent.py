@@ -212,6 +212,70 @@ class Agent(Entity):
             data={"agent_id": self.id, "published": published, "already_on_hub": not published}
         )
 
+    # ── the mailbox ───────────────────────────────────────────────────────
+
+    async def provision_inbox(self, actor: TypeId, **options) -> dict:
+        """Give this agent an email address of its own.
+
+        Publish is implicit for the same reason it is on ``deploy_to_cloud``: the
+        mailbox hangs off the agent's row at the backend, so that row has to
+        exist before anything can be allocated against it. ``ensure_on_hub`` is a
+        no-op for an already-published agent.
+
+        **Adopt before allocating.** An agent that already has an active mailbox
+        gets that one back — never a second address. This is not just tidiness:
+        an address is billable and permanent, and callers retry (the UI creates
+        the DataSource in a second step, which can fail). Idempotence is what
+        makes that retry safe, and it is enforced on both sides — here, and again
+        at the backend.
+        """
+        from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
+
+        await self.ensure_on_hub(actor)
+        driver = get_email_inbox_driver()
+
+        existing = await driver.get_inbox(self.id)
+        if existing:
+            return {"inbox": existing, "already_allocated": True}
+        return {"inbox": await driver.create_inbox(self.id, **options), "already_allocated": False}
+
+    @action.post(action_name="provision_inbox")
+    async def provision_inbox_action(self):
+        """`POST /agent/<id>/provision_inbox` — allocate (or adopt) its mailbox.
+
+        Declares NO parameters. This module carries ``from __future__ import
+        annotations`` and the dispatcher resolves an annotated ``request`` by
+        identity, so an annotated parameter would 400 at runtime while every
+        direct-call test still passed.
+        """
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        actor = request_info.someone_typeid if request_info else None
+        if not actor:
+            return ApiFailResponse(
+                message="provisioning a mailbox requires an authenticated user", status_code=401
+            )
+        body = await request_info.get_post_data() or {}
+        options = {k: v for k, v in (body or {}).items() if k in ("username", "display_name")}
+        try:
+            result = await self.provision_inbox(actor, **options)
+        except Exception as exc:  # noqa: BLE001 — surfaced as a message, not a 500
+            return ApiFailResponse(message=f"could not provision a mailbox: {exc}")
+        return ApiSuccessResponse(data={"agent_id": self.id, **result})
+
+    async def decommission_inbox(self) -> bool:
+        """Release this agent's address. False when it had none.
+
+        Deliberately NOT called from ``delete()``: the address is the agent's
+        public identity, and dropping it is a decision with consequences outside
+        this machine (mail to it starts bouncing). It stays an explicit verb.
+        """
+        from flow_sdk.builtin.email_inbox_driver import get_email_inbox_driver  # noqa: PLC0415
+
+        return await get_email_inbox_driver().delete_inbox(self.id)
+
     # ── deploy to the cloud ───────────────────────────────────────────────
 
     async def deploy_to_cloud(self, actor: TypeId) -> dict:

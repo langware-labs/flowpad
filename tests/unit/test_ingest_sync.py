@@ -24,7 +24,7 @@ from flow_sdk.ingest.sync import sync_source
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
 #: Provider-private state keys. None of these may appear outside drivers/.
-_PROVIDER_STATE_KEYS = ("etag", "last_modified", "last_update_ptr", "oldest_ts")
+_PROVIDER_STATE_KEYS = ("etag", "last_modified", "last_update_ptr", "oldest_ts", "boundary_ids")
 
 
 def test_cursor_state_is_opaque_to_the_subsystem():
