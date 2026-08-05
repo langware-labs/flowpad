@@ -14,49 +14,11 @@
  * testable without rendering anything.
  */
 
-import type { SourceHealth } from '@sdk';
-
 /** Mirror of `MIN_POLL_INTERVAL_SECONDS` (flow_sdk/builtin/data_source.py:32),
  *  enforced there by `APIField(ge=60)`. The heartbeat ticks once a minute, so a
  *  smaller interval cannot mean anything. Duplicated here only to turn a 422
  *  into a sentence the user can act on. */
 export const MIN_POLL_INTERVAL_SECONDS = 60;
-
-/**
- * Health → everything the UI says about it. Mirrors `SourceHealth`
- * (flow_sdk/ingest/health.py); `config_error` reads as "needs attention"
- * because that is what it means operationally: the scheduler has parked it.
- *
- * One table rather than three parallel ones — keyed by the `SourceHealth` union
- * so adding a state is a type error here instead of a silently unstyled chip.
- */
-export const HEALTH_STYLE: Record<SourceHealth, { label: string; chip: string; border: string }> = {
-  ok: {
-    label: 'ok',
-    chip: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    border: 'border-l-emerald-500/60',
-  },
-  never_synced: {
-    label: 'never synced',
-    chip: 'bg-muted text-muted-foreground',
-    border: 'border-l-border',
-  },
-  transient_error: {
-    label: 'retrying',
-    chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-    border: 'border-l-amber-500/70',
-  },
-  config_error: {
-    label: 'needs attention',
-    chip: 'bg-destructive/10 text-destructive',
-    border: 'border-l-destructive/70',
-  },
-};
-
-/** The style row for a health value, tolerating one the backend added first. */
-export function healthStyle(health: string | undefined) {
-  return HEALTH_STYLE[(health || 'never_synced') as SourceHealth] ?? HEALTH_STYLE.never_synced;
-}
 
 export type FieldKind = 'text' | 'password' | 'number' | 'lines' | 'csv';
 

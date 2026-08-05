@@ -98,6 +98,19 @@ class DataSource(Entity):
     next_poll_at: Optional[datetime] = APIField(default=None)
     last_synced_at: Optional[datetime] = APIField(default=None)
 
+    #: How many streams this source has, rolled up with health so a list can
+    #: show it without querying the cursor table. Cursors are the highest-churn
+    #: rows on the instance (one write per stream per poll), so a UI that
+    #: watches them live to render a COUNT repaints on every tick for a number
+    #: that only changes when a stream is added or removed.
+    #:
+    #: Set by ``_roll_up``, so it reflects the last run that got far enough to
+    #: enumerate streams. A source that fails before that — unknown provider, a
+    #: missing capability — reads 0 even if it has cursors from an earlier life.
+    #: That is the honest reading: those failures happen before the driver is
+    #: ever asked what its streams are.
+    stream_count: int = APIField(default=0)
+
     # ── health, rolled up worst-of from this source's cursors ──
     health: str = APIField(default=SourceHealth.NEVER_SYNCED.value)
     error_code: Optional[str] = APIField(default=None)
