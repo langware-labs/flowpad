@@ -17,7 +17,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { StepList } from '@src/components/ui/step-list';
-import { useDesktops } from '@src/hooks/use-desktops';
+import { useSandboxes } from '@src/hooks/use-sandboxes';
 import { useAuth } from '@src/hooks/useAuth';
 import { contentInstallSpec, parseInstallIntent } from '@src/lib/content-install';
 import { Trans } from '@lingui/react/macro';
@@ -29,7 +29,7 @@ type PickerView = 'repos' | 'branches' | 'create' | 'confirm';
 export default function InstallLanding() {
   const parsed = useMemo(() => parseInstallIntent(window.location.search), []);
   const { user } = useAuth();
-  const { launch, steps, launchUrl } = useDesktops();
+  const { launch, steps, launchUrl } = useSandboxes();
   const [view, setView] = useState<PickerView>('repos');
   const [repo, setRepo] = useState<RepoSummary | null>(null);
   const [branch, setBranch] = useState<BranchSummary | null>(null);

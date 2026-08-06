@@ -12,17 +12,18 @@ import {
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
 import { notify } from '@src/notifications';
-import { Loader2 } from 'lucide-react';
+import { Check, Copy, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
-  DESKTOP_SHARE_ROLE,
-  DESKTOP_TRANSFER_ROLE_TO_KEEP,
   pickInvitableEmails,
+  SANDBOX_SHARE_ROLE,
+  SANDBOX_TRANSFER_ROLE_TO_KEEP,
+  sandboxShareLink,
   setAutoLogin,
-  shareDesktopByEmail,
   shareFailureText,
-} from './share-desktop';
+  shareSandboxByEmail,
+} from './share-sandbox';
 
 interface Participant {
   email?: string | null;
@@ -30,23 +31,23 @@ interface Participant {
   id?: string;
 }
 
-export interface ShareDesktopDialogProps {
+export interface ShareSandboxDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The desktop being shared. Only `id`/`name`/`auto_login` and the inherited
+  /** The sandbox being shared. Only `id`/`name`/`auto_login` and the inherited
    *  APIEntity methods are read. */
-  desktop: ComputeNode | null;
+  sandbox: ComputeNode | null;
   /** Whether the caller owns this box. Gates the auto-login control — the hub
    *  enforces it too; this only stops us offering a button that will 403. */
   isOwner?: boolean;
   currentUserId?: string | null;
   currentUserEmail?: string | null;
-  /** Refresh the desktop list after a share/transfer changes what's visible. */
+  /** Refresh the sandbox list after a share/transfer changes what's visible. */
   onShared?: () => void;
 }
 
 /**
- * "Share this desktop" — invite by email, or hand the box over.
+ * "Share this sandbox" — invite by email, or hand the box over.
  *
  * The hub already does all the work (`POST <node>/members` → Invitation →
  * shadow account → role grant → email). This dialog only chooses the role, the
@@ -56,15 +57,15 @@ export interface ShareDesktopDialogProps {
  * irreversible-ish and neither is guessable from the word "share": a recipient
  * can DELETE the box, and ticking auto-login gives it away.
  */
-export function ShareDesktopDialog({
+export function ShareSandboxDialog({
   open,
   onOpenChange,
-  desktop,
+  sandbox,
   isOwner = false,
   currentUserId,
   currentUserEmail,
   onShared,
-}: ShareDesktopDialogProps) {
+}: ShareSandboxDialogProps) {
   const { t } = useLingui();
   const [selected, setSelected] = useState<Participant[]>([]);
   const [transfer, setTransfer] = useState(false);
@@ -72,6 +73,24 @@ export function ShareDesktopDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failures, setFailures] = useState<{ email: string; message: string }[]>([]);
+  const [copied, setCopied] = useState(false);
+
+  const shareLink = sandbox ? sandboxShareLink(sandbox) : '';
+
+  const handleCopy = useCallback(async () => {
+    if (!shareLink) return;
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      setCopied(true);
+      // Revert the affordance rather than leaving a permanent tick, which would
+      // read as "this link is copied" state rather than "that click worked".
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can be refused (permissions, insecure context). The
+      // input is selectable, so the user still has the link -- silently doing
+      // nothing is better than an error toast over a copy button.
+    }
+  }, [shareLink]);
 
   // Reset on open so a second share never inherits the first one's state —
   // especially `transfer`, where a stale tick would give away a different box.
@@ -79,30 +98,30 @@ export function ShareDesktopDialog({
     if (!open) return;
     setSelected([]);
     setTransfer(false);
-    setAutoLoginState(desktop?.auto_login ?? true);
+    setAutoLoginState(sandbox?.auto_login ?? true);
     setBusy(false);
     setError(null);
     setFailures([]);
-  }, [open, desktop]);
+  }, [open, sandbox]);
 
   const handleAutoLogin = useCallback(
     async (next: boolean) => {
-      if (!desktop || !isOwner) return;
+      if (!sandbox || !isOwner) return;
       const previous = autoLogin;
       setAutoLoginState(next); // optimistic; the control is a toggle, not a form
       try {
-        const applied = await setAutoLogin(desktop, next);
+        const applied = await setAutoLogin(sandbox, next);
         setAutoLoginState(applied);
       } catch (err) {
         setAutoLoginState(previous);
         setError(shareFailureText(err, t`Could not change this setting`));
       }
     },
-    [desktop, isOwner, autoLogin, t],
+    [sandbox, isOwner, autoLogin, t],
   );
 
   const handleSubmit = useCallback(async () => {
-    if (!desktop) return;
+    if (!sandbox) return;
     const emails = pickInvitableEmails(selected, [], currentUserEmail);
     if (emails.length === 0) {
       setError(t`Pick a contact or enter an email`);
@@ -112,10 +131,10 @@ export function ShareDesktopDialog({
     setError(null);
     setFailures([]);
     try {
-      const outcome = await shareDesktopByEmail(desktop, emails, {
-        role: DESKTOP_SHARE_ROLE,
+      const outcome = await shareSandboxByEmail(sandbox, emails, {
+        role: SANDBOX_SHARE_ROLE,
         transfer,
-        roleToKeep: transfer ? DESKTOP_TRANSFER_ROLE_TO_KEEP : undefined,
+        roleToKeep: transfer ? SANDBOX_TRANSFER_ROLE_TO_KEEP : undefined,
       });
       setFailures(outcome.failed);
       if (outcome.granted.length > 0) {
@@ -123,7 +142,7 @@ export function ShareDesktopDialog({
           title: transfer
             ? t`Handed over to ${outcome.granted.join(', ')}`
             : t`Shared with ${outcome.granted.join(', ')}`,
-          message: t`They'll get an email, and the desktop is already in their list.`,
+          message: t`They'll get an email, and the sandbox is already in their list.`,
         });
         onShared?.();
       }
@@ -133,17 +152,17 @@ export function ShareDesktopDialog({
     } finally {
       setBusy(false);
     }
-  }, [desktop, selected, currentUserEmail, transfer, t, onOpenChange, onShared]);
+  }, [sandbox, selected, currentUserEmail, transfer, t, onOpenChange, onShared]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg" data-testid="share-desktop-dialog">
+      <DialogContent className="sm:max-w-lg" data-testid="share-sandbox-dialog">
         <DialogHeader>
           <DialogTitle>
-            <Trans>Share {desktop?.name || 'desktop'}</Trans>
+            <Trans>Share {sandbox?.name || 'sandbox'}</Trans>
           </DialogTitle>
           <DialogDescription>
-            <Trans>They'll get an email with a link that opens this desktop.</Trans>
+            <Trans>They'll get an email with a link that opens this sandbox.</Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -155,7 +174,7 @@ export function ShareDesktopDialog({
             disabled={busy}
             includeGroups={false}
             placeholder={t`Share by name or email…`}
-            testId="share-desktop-input"
+            testId="share-sandbox-input"
           />
           <AddressBookButton value={selected} onChange={setSelected} excludeUserId={currentUserId ?? undefined} />
         </div>
@@ -163,11 +182,11 @@ export function ShareDesktopDialog({
         {/* The two things "share" does not imply. Stated, not tucked into a
             tooltip — a recipient really can destroy this box. */}
         <div className="rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground">
-          <Trans>Anyone you share with can open, use and delete this desktop.</Trans>
+          <Trans>Anyone you share with can open, use and delete this sandbox.</Trans>
         </div>
 
         {isOwner && (
-          <label className="flex items-start gap-2 text-xs" data-testid="share-desktop-auto-login">
+          <label className="flex items-start gap-2 text-xs" data-testid="share-sandbox-auto-login">
             <Checkbox
               checked={autoLogin}
               onCheckedChange={(v) => void handleAutoLogin(v === true)}
@@ -175,13 +194,13 @@ export function ShareDesktopDialog({
               className="mt-0.5"
             />
             <span className="text-muted-foreground">
-              <Trans>Auto login user — this desktop belongs to one person.</Trans>
+              <Trans>Auto login user — this sandbox belongs to one person.</Trans>
             </span>
           </label>
         )}
 
         {isOwner && (
-          <label className="flex items-start gap-2 text-xs" data-testid="share-desktop-transfer">
+          <label className="flex items-start gap-2 text-xs" data-testid="share-sandbox-transfer">
             <Checkbox
               checked={transfer}
               onCheckedChange={(v) => setTransfer(v === true)}
@@ -192,6 +211,38 @@ export function ShareDesktopDialog({
               <Trans>Hand it over — they become the owner and you keep view-only access.</Trans>
             </span>
           </label>
+        )}
+
+        {/* The same URL the card's Open button uses. Safe to paste anywhere:
+            it is not a bearer token -- the hub requires an authenticated
+            principal with at least `admin` on the node before it attaches the
+            cookie-gate secret, so a stranger following it gets a 403. Shown for
+            anyone who can open the box, not only after a successful send, since
+            "give me the link" is a reason to open this dialog on its own. */}
+        {shareLink && (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-muted-foreground">
+              <Trans>Or send them this link</Trans>
+            </span>
+            <div className="flex items-center gap-1.5">
+              <input
+                readOnly
+                value={shareLink}
+                onFocus={(e) => e.currentTarget.select()}
+                data-testid="share-sandbox-link"
+                className="min-w-0 flex-1 rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-xs text-muted-foreground"
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void handleCopy()}
+                aria-label={t`Copy link`}
+                data-testid="share-sandbox-copy"
+              >
+                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+          </div>
         )}
 
         {failures.length > 0 && (
@@ -213,7 +264,7 @@ export function ShareDesktopDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
             <Trans>Cancel</Trans>
           </Button>
-          <Button onClick={() => void handleSubmit()} disabled={busy} data-testid="share-desktop-submit">
+          <Button onClick={() => void handleSubmit()} disabled={busy} data-testid="share-sandbox-submit">
             {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
             {transfer ? <Trans>Hand over</Trans> : <Trans>Share</Trans>}
           </Button>
@@ -223,4 +274,4 @@ export function ShareDesktopDialog({
   );
 }
 
-export default ShareDesktopDialog;
+export default ShareSandboxDialog;

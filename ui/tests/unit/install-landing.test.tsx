@@ -54,8 +54,8 @@ vi.mock('@src/hooks/useAuth', () => ({
   useAuth: () => ({ user: { id: 'user-1' } }),
 }));
 
-vi.mock('@src/hooks/use-desktops', () => ({
-  useDesktops: () => ({ launch: mocks.launch, steps: [], launchUrl: null }),
+vi.mock('@src/hooks/use-sandboxes', () => ({
+  useSandboxes: () => ({ launch: mocks.launch, steps: [], launchUrl: null }),
 }));
 
 vi.mock('@src/components/git/RepoPicker', async () => {

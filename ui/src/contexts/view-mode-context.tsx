@@ -1,4 +1,12 @@
-import { dataContext, instancePreferences, onPreferenceChange, PREF_REGISTRY, PrefKey, type Project } from '@sdk';
+import {
+  dataContext,
+  instancePreferences,
+  isHubOnly,
+  onPreferenceChange,
+  PREF_REGISTRY,
+  PrefKey,
+  type Project,
+} from '@sdk';
 import { usePreference, usePreferenceResolved } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
 import { useEffect, useSyncExternalStore } from 'react';
@@ -227,6 +235,14 @@ export function getViewMode(): ViewMode {
 // lands here with an already-matching value and no-ops.
 function stampProjectViewMode(project: Project | null | undefined, val: ViewMode): void {
   if (!project || project.last_mode === val) return;
+  // Hub: view mode is a desk concept — the hub serves one page and its project
+  // schema has no `last_mode` to store, so this stamp can only ever be a
+  // no-op write. And it isn't harmless: `toJSON` emits only fields the SERVER's
+  // schema declares, and the hub publishes just the project-specific delta
+  // (artifacts/helpdesk/…) — so the resulting full-row PUT ships without
+  // `name` and wipes the name off every project the hub loads, including the
+  // one just created. Don't write projects from here on the hub.
+  if (isHubOnly()) return;
   project.last_mode = val;
   void project.save().catch((err) => {
     console.warn('[view-mode] failed to record last_mode on project', err);

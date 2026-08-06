@@ -527,27 +527,9 @@ export function EntityExecutionPanel({
     onProcessSelected?.(processId);
   }, [onProcessSelected]);
 
-  const liveAttachedRefs = useMemo(
-    () => (activeProcess?.embedded_asset_refs ?? []).map((r) => r.toString()),
-    [activeProcess?.embedded_asset_refs],
-  );
-  const effectiveAttachedRefs = activeProcess ? liveAttachedRefs : pendingAttachedRefs;
-
-  const handleAttach = useCallback(async (ref: string) => {
-    if (activeProcess) {
-      await activeProcess.embeddedAssets.attach(ref);
-    } else {
-      setPendingAttachedRefs((prev) => (prev.includes(ref) ? prev : [...prev, ref]));
-    }
-  }, [activeProcess]);
-
-  const handleDetach = useCallback(async (ref: string) => {
-    if (activeProcess) {
-      await activeProcess.embeddedAssets.detach(ref);
-    } else {
-      setPendingAttachedRefs((prev) => prev.filter((r) => r !== ref));
-    }
-  }, [activeProcess]);
+  // `pendingAttachedRefs` is still consumed when the process is created (it is
+  // attached ref-by-ref in `handleSend`); what went away is the UI that used to
+  // fill it — the asset manager is a read-only board now, not a picker.
 
   const handleSend = useCallback(async (text: string, opts?: { forceNewProcess?: boolean; files?: File[] }) => {
     if (!targetStr) return;
@@ -800,12 +782,7 @@ export function EntityExecutionPanel({
         noPastSessionsLabel={noPastSessionsLabel}
         settingsSlot={
           <>
-            <AssetManagerButton
-              process={activeProcess}
-              pendingRefs={effectiveAttachedRefs}
-              onAttach={activeProcess ? undefined : handleAttach}
-              onDetach={activeProcess ? undefined : handleDetach}
-            />
+            <AssetManagerButton process={activeProcess} />
             <ExecutionSettingsPopover
               activeProcess={activeProcess}
               projectId={activeProcess ? (activeProcess.project_id ?? null) : (pendingProjectId ?? effectiveProjectId ?? null)}

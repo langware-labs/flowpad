@@ -55,6 +55,7 @@ export function useProjectSecretOrigins(project: Project | null | undefined) {
       locator: SecretOriginLocator;
       sodStore?: SodStore;
       scope?: SecretPointerScope;
+      description?: string;
     }) => {
       const p = projectRef.current;
       if (!p || !opts.envVar || !opts.locator) return;
@@ -62,6 +63,7 @@ export function useProjectSecretOrigins(project: Project | null | undefined) {
         locator: opts.locator,
         scope: opts.scope ?? 'private',
         sodStore: opts.sodStore,
+        description: opts.description,
       });
       await refreshStatus();
     },

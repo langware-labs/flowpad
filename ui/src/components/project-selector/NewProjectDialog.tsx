@@ -11,9 +11,18 @@ export interface NewProjectDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Pre-fills the parent folder input. */
   defaultParentFolder?: string;
+  /**
+   * Whether the project is rooted in a folder on a filesystem. Desk: true — a
+   * project IS a directory, so the parent folder is required. Hub: false — a
+   * hub project is a pure entity with no folder behind it, so the field is
+   * dropped entirely and the name alone can create (leaving it in made Create
+   * permanently disabled there, since nothing could ever fill it).
+   */
+  withFolder?: boolean;
   /** When provided, renders a Browse button that calls this and writes the picked path. */
   onPickFolder?: () => Promise<string | null>;
-  /** Async callback invoked on submit. Throwing keeps the dialog open and toasts the error. */
+  /** Async callback invoked on submit. `parentFolder` is '' when `withFolder` is
+   *  false. Throwing keeps the dialog open and toasts the error. */
   onCreate: (name: string, parentFolder: string) => Promise<void>;
 }
 
@@ -21,6 +30,7 @@ export function NewProjectDialog({
   open,
   onOpenChange,
   defaultParentFolder = '',
+  withFolder = true,
   onPickFolder,
   onCreate,
 }: NewProjectDialogProps) {
@@ -37,13 +47,13 @@ export function NewProjectDialog({
     }
   }, [open, defaultParentFolder]);
 
-  const canCreate = !!name.trim() && !!parent.trim() && !isSubmitting;
+  const canCreate = !!name.trim() && (!withFolder || !!parent.trim()) && !isSubmitting;
 
   const handleCreate = useCallback(async () => {
     if (!canCreate) return;
     setIsSubmitting(true);
     try {
-      await onCreate(name.trim(), parent.trim());
+      await onCreate(name.trim(), withFolder ? parent.trim() : '');
       onOpenChange(false);
     } catch (err) {
       notify.error({
@@ -52,7 +62,7 @@ export function NewProjectDialog({
     } finally {
       setIsSubmitting(false);
     }
-  }, [canCreate, name, parent, onCreate, onOpenChange]);
+  }, [canCreate, name, parent, withFolder, onCreate, onOpenChange]);
 
   const handleBrowse = useCallback(async () => {
     if (!onPickFolder) return;
@@ -78,26 +88,28 @@ export function NewProjectDialog({
               if (e.key === 'Enter' && canCreate) void handleCreate();
             }}
           />
-          <div className="flex gap-2">
-            <Input
-              placeholder={t`Project folder`}
-              value={parent}
-              onChange={(e) => setParent(e.target.value)}
-              className="flex-1 font-mono text-xs"
-              spellCheck={false}
-            />
-            {onPickFolder && (
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => void handleBrowse()}
-                title={t`Browse…`}
-                type="button"
-              >
-                <FolderOpen className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
+          {withFolder && (
+            <div className="flex gap-2">
+              <Input
+                placeholder={t`Project folder`}
+                value={parent}
+                onChange={(e) => setParent(e.target.value)}
+                className="flex-1 font-mono text-xs"
+                spellCheck={false}
+              />
+              {onPickFolder && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => void handleBrowse()}
+                  title={t`Browse…`}
+                  type="button"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>

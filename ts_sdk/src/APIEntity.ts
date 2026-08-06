@@ -105,6 +105,38 @@ export const registerEntity = (constructor: new (json?: IEntity) => unknown) => 
   EntityFactory.registerEntity(constructor);
 };
 
+/**
+ * Persisted fields declared by this class itself — the shared columns every
+ * entity carries (Python ``DBBaseRecord`` + ``Entity``). They are db fields no
+ * matter what a per-type schema says, because the type schema only describes
+ * that type's OWN fields. See ``isDbField``.
+ *
+ * Read-only/computed slots (``expand``, ``members``, ``asset_occurrences``,
+ * ``duplicate_count``, ``orphan*``) stay OUT — they're server-owned and must
+ * not be echoed back on save.
+ */
+const BASE_WIRE_FIELDS = new Set<string>([
+  'id',
+  'uname',
+  'name',
+  'title',
+  'key',
+  'namespace',
+  'tags',
+  'labels',
+  'system',
+  'created_by',
+  'created_date',
+  'updated_by',
+  'updated_date',
+  'created_through',
+  'updated_through',
+  'schema_version',
+  'root_vfs_path',
+  'fs_storage_mount_path',
+  'visitor_role',
+]);
+
 export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   static type?: string = defaultEntityType;
   static autoLoadExpansions: ExpansionType[] = [];
@@ -706,6 +738,15 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   public isDbField(fieldName: string): boolean {
+    // The universal fields this class declares (lifted from Python
+    // ``DBBaseRecord``/``Entity``) belong to EVERY entity's wire contract by
+    // construction — a per-type schema is only authoritative about that type's
+    // own fields. The desk publishes each type's fully-resolved schema, so the
+    // distinction never showed; the hub publishes only the SUBCLASS DELTA
+    // (`project` → artifacts/helpdesk/shared_*_origins), which made `name` look
+    // like a non-db field and silently stripped it from every project POST/PUT
+    // — a project created on the hub came back nameless.
+    if (BASE_WIRE_FIELDS.has(fieldName)) return true;
     if (!this.schema) {
       console.warn('isDbField: Schema not found, cant check blobs', this.type);
       return false;

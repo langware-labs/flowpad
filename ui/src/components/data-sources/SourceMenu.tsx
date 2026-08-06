@@ -70,14 +70,14 @@ export function SourceMenu({
 
         <DropdownMenuSeparator />
 
-        {/* Through the factory, and unnarrowed on purpose. The feed cannot scope
-            to one source yet — `EventsView` reads `trigger`/`creating`/`system`
-            and nothing else — and a dock option is a URL contract, so minting a
-            `?filter=` nothing honours would bookmark a promise. When the feed
-            can narrow, the option gets added to `forEvents` and used here; the
-            right key is `target`, since a FlowEvent's target is already
-            `data_source:<id>`. */}
-        <DropdownMenuItem onSelect={() => navigation.openDock(DockPointer.forEvents())}>
+        {/* Narrowed to this source. `target` is the FlowEvent's own key, and
+            `ingest.*.sync.*` already targets `data_source:<id>` — so this is a
+            filter on the envelope, not a search over its text. */}
+        <DropdownMenuItem
+          onSelect={() =>
+            navigation.openDock(DockPointer.forEvents(undefined, { target: `data_source:${source.id}` }))
+          }
+        >
           <RadioTower className="size-3.5" /> {t`Events`}
         </DropdownMenuItem>
         <DropdownMenuItem

@@ -3,7 +3,7 @@ import { CredentialsSubview, PageId, ViewType } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { ApiKeysView } from '@src/components/api-keys-view/api-keys-view';
 import { ConnectionsManager } from '@src/components/connections-manager';
-import { EnvVarsManager } from '@src/components/EnvVarsManager';
+import { ProjectEnvironmentTab } from '@src/components/credentials-view/ProjectEnvironmentTab';
 import { ProjectSelector } from '@src/components/project-selector';
 import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
 import { Button } from '@src/components/ui/button';
@@ -40,7 +40,7 @@ export const CredentialsView: React.FC = () => {
       ? t`Connections`
       : id === CredentialsSubview.API_KEYS
         ? t`API Keys`
-        : t`Environment`;
+        : t`Project Environment`;
   const { user } = useAuth();
   const { navigation, currentDock } = useDockNavigation();
   const { projects, isLoading } = useProjects();
@@ -135,7 +135,7 @@ export const CredentialsView: React.FC = () => {
         <div className="min-h-0 flex-1 overflow-auto p-4">
           {tab === CredentialsSubview.ENVIRONMENT &&
             (selected ? (
-              <EnvVarsManager entityTypeId={selected.typeId} header={false} />
+              <ProjectEnvironmentTab project={selected} />
             ) : (
               <NoProjectPanel loading={isLoading} />
             ))}

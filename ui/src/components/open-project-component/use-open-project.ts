@@ -6,7 +6,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { agenticProcessIdForProjectEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useIsVibe, ViewMode } from '@src/contexts/view-mode-context';
 import { notify } from '@src/notifications';
-import { ContextEntitiesEnum, dataContext, Project, QueryRequest } from '@sdk';
+import { ContextEntitiesEnum, dataContext, isHubOnly, PageId, Project, QueryRequest } from '@sdk';
 import { useCallback } from 'react';
 import { useLingui } from '@lingui/react/macro';
 
@@ -67,6 +67,14 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
           // continuation errors shouldn't break the picker
         }
       } else {
+        // Hub: there's no desk home / vibe hero / tab strip to land on, and no
+        // build process to resume — the hub's own project card goes straight to
+        // the project dock on the hub page, so every hub open lands the same way.
+        if (isHubOnly()) {
+          await selectProjectContext(project);
+          navigation.openDock(DockPointer.forProject(project.id).withPage(PageId.HUB));
+          return;
+        }
         // On a home surface, switching a project stays home — on the new
         // project — in every view mode.
         if (isVibe) {
