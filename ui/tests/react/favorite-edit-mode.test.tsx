@@ -92,7 +92,7 @@ describe('FavoritesEditDialog', () => {
     render(<FavoritesEditDialog open onOpenChange={onOpenChange} selectedFavoriteId="bk-42" />);
     expect(screen.getByText('Edit favorites')).toBeInTheDocument();
     expect(screen.getByTestId('fav-menu').getAttribute('data-selected')).toBe('bk-42');
-    // No idle timer here (unlike the LeftSlider): advancing time must not close it.
+    // No idle timer here (unlike the AnchoredMenu): advancing time must not close it.
     act(() => {
       vi.advanceTimersByTime(6000);
     });

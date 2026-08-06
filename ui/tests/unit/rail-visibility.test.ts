@@ -87,7 +87,7 @@ describe('resolveRail — order is the same in every mode', () => {
     const top = resolveRail(ViewMode.Vibe, ALL_GATES)
       .filter((item) => item.placement === 'top')
       .map((item) => item.id);
-    expect(top).toEqual(['chats', 'bookmarks', 'inbox']);
+    expect(top).toEqual(['chats', 'inbox']);
   });
 });
 
@@ -97,7 +97,7 @@ describe('resolveRail — content gates', () => {
     expect(none).not.toContain('inbox');
     // Ungated neighbours survive — including data-sources, which must NOT be
     // gated on "a source exists": this screen is where the first one is made.
-    expect(none).toEqual(expect.arrayContaining(['chats', 'bookmarks', 'data-sources']));
+    expect(none).toEqual(expect.arrayContaining(['chats', 'data-sources']));
   });
 
   it('gates only the item they name', () => {
@@ -109,19 +109,20 @@ describe('resolveRail — content gates', () => {
     expect(neither).toContain('chats');
   });
 
-  it('a fresh instance shows exactly Chats and Bookmarks', () => {
-    // Home and the project used to lead this list; both now live in the top
-    // navigation bar, so the rail starts at Chats.
+  it('a fresh instance shows exactly Chats', () => {
+    // Home, the project, Files and Bookmarks all used to sit here; each moved to
+    // the top navigation bar, so Chats is what a fresh rail is down to.
     const top = resolveRail(ViewMode.Vibe, { conversations: false })
       .filter((item) => item.placement === 'top')
       .map((item) => item.id);
-    expect(top).toEqual(['chats', 'bookmarks']);
+    expect(top).toEqual(['chats']);
   });
 
-  it('has no Home or project entry — the top navigation bar owns both', () => {
+  it('leaves Home, project, Files and Bookmarks to the top navigation bar', () => {
     const ids = RAIL_ITEMS.map((item) => item.id as string);
-    expect(ids).not.toContain('home');
-    expect(ids).not.toContain('project');
+    for (const moved of ['home', 'project', 'files', 'bookmarks']) {
+      expect(ids, `${moved} should have moved to the top bar`).not.toContain(moved);
+    }
   });
 });
 

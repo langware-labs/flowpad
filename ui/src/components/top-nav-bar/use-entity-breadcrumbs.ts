@@ -6,6 +6,7 @@ import { iconForType, labelForType } from '@src/components/graph-view/icons/icon
 import { DockPointer } from '@src/navigation/DockPointer';
 import { resolveAncestorChain, type AncestorNode } from '@src/navigation/entity-ancestors';
 import { getAllTabsSnapshot } from '@src/tabs/all-tabs-store';
+import { ViewType } from '@src/types/ViewType';
 import { useContext } from '@src/hooks/useContext';
 
 /**
@@ -68,12 +69,20 @@ function entityLabel(entity: APIEntity<any> | null, typeId: TypeId | null): stri
   return typeId ? labelForType(typeId.type) : '';
 }
 
+/** What the last crumb says on the app root, which has no dock at all. Without
+ *  it the address would read as just the project name and look truncated. */
+const HOME_CRUMB_LABEL = 'Start';
+
+/** What the last crumb says on the project's own page, where the target IS the
+ *  leading crumb and repeating the name would read "Acme › Acme". */
+const PROJECT_HOME_CRUMB_LABEL = 'Home';
+
 /** Human label for a dock with no target entity (assets list, settings, a bare
  *  shell). The open tab already carries the app's canonical name for it. */
 function viewLabel(dock: DockPointer | null): string {
-  if (!dock) return '';
+  if (!dock) return HOME_CRUMB_LABEL;
   const tab = getAllTabsSnapshot().find((t) => t.getKey() === dock.tabHash);
-  return tab?.name?.trim() || labelForType(dock.viewType ?? '');
+  return tab?.name?.trim() || labelForType(dock.viewType ?? '') || HOME_CRUMB_LABEL;
 }
 
 export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumbs {
@@ -176,20 +185,37 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       });
     }
 
+    // On the project's OWN page the target is the project, so naming it again
+    // would read "Acme › Acme". It's the same shape as a site's root crumb — the
+    // trail still needs a last segment, it just isn't the name a second time.
+    //
+    // Both routes there count: `/dock/project/<id>` addresses the project as an
+    // entity, while a bare `/dock/project` has no target at all and would
+    // otherwise fall back to the view's type label ("Project").
+    const isProjectHome =
+      dock?.viewType === ViewType.PROJECT ||
+      (!!project && targetTypeId?.type === Project.type && targetTypeId.id === project.id);
+
     out.push(
       targetTypeId
         ? {
             key: targetTypeId.toString(),
-            label: targetTitle,
+            label: isProjectHome ? PROJECT_HOME_CRUMB_LABEL : targetTitle,
             Icon: iconForType(targetTypeId.type),
             pointer: null,
             kind: 'current',
           }
-        : { key: 'view', label: targetTitle, Icon: VIEW_CRUMB_ICON, pointer: null, kind: 'current' },
+        : {
+            key: 'view',
+            label: isProjectHome ? PROJECT_HOME_CRUMB_LABEL : targetTitle,
+            Icon: isProjectHome ? iconForType(Project.type) : VIEW_CRUMB_ICON,
+            pointer: null,
+            kind: 'current',
+          },
     );
 
     return out;
-  }, [project, ancestors, targetTypeId, targetTitle]);
+  }, [project, ancestors, targetTypeId, targetTitle, dock?.viewType]);
 
   return { crumbs, targetTypeId, targetTitle };
 }

@@ -1,10 +1,11 @@
 import { useLingui } from '@lingui/react/macro';
-import { ArrowLeft, ArrowRight, Home, RefreshCw, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, ArrowRight, FolderOpen, Home, RefreshCw, type LucideIcon } from 'lucide-react';
 import { compactEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useContext } from '@src/hooks/useContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ViewType } from '@src/types/ViewType';
 import { useHistoryNav } from '@src/navigation/use-history-nav';
 import { AddressField } from './AddressField';
 import { RuntimeChip } from './RuntimeChip';
@@ -59,6 +60,14 @@ export function TopNavBar() {
         testId="top-nav-reload"
       />
       <NavIconButton icon={Home} label={t`Home`} onClick={() => navigation.goHome()} testId="top-nav-home" />
+      {/* Files sat on the rail; same destination, same one-liner, just beside
+          the other place-buttons instead of below them. */}
+      <NavIconButton
+        icon={FolderOpen}
+        label={t`Files`}
+        onClick={() => navigation.openTab(ViewType.EXPLORER)}
+        testId="top-nav-files"
+      />
 
       <RuntimeChip kind={runtimeKind} />
       <AddressField crumbs={crumbs} />
