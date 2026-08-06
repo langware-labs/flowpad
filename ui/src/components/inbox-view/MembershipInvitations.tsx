@@ -3,7 +3,12 @@ import {
   Invitation,
   QueryRequest,
   acceptInvitation,
+  acceptInvitationOnHub,
   declineInvitation,
+  declineInvitationOnHub,
+  fetchPendingInvitations,
+  hubModeReady,
+  isHubOnly,
   isInvitationGoneError,
   normalizeEmail,
 } from '@sdk';
@@ -42,8 +47,47 @@ export function MembershipInvitations({
    *  backend-owned (InboxManager.unread) and never derived from this list. */
   onPendingCount?: (count: number) => void;
 }) {
+  // `isHubOnly()` reads its `[desk]` default until bootstrap resolves, so it is
+  // only trustworthy after `hubModeReady()` — checking it during the first
+  // render would classify a hub as a desktop and silently pick the wrong
+  // source. `null` means "not known yet", and neither source runs until it is.
+  const [hubMode, setHubMode] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void hubModeReady().then(() => {
+      if (alive) setHubMode(isHubOnly());
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const request = useMemo(() => new QueryRequest({ type: Invitation.type, query: {} }), []);
-  const { data: invitations = [], refetch } = useEntitiesQuery<Invitation>(request);
+  const { data: mirrored = [], refetch: refetchMirrored } = useEntitiesQuery<Invitation>(request, {
+    enabled: hubMode === false,
+  });
+
+  // Hub mode has no local mirror of these rows, and the generic query above
+  // cannot substitute for one: invitations are saved with NO owner, so a
+  // recipient holds no role on the row and the role-scoped read returns nothing
+  // for exactly the people it is addressed to. The hub's `pending` action
+  // self-scopes on the recipient's email instead.
+  const [fetched, setFetched] = useState<Invitation[]>([]);
+  const loadFromHub = useCallback(async () => {
+    try {
+      setFetched(await fetchPendingInvitations());
+    } catch {
+      // A failed poll keeps the previous rows rather than blanking the inbox.
+    }
+  }, []);
+  useEffect(() => {
+    if (hubMode) void loadFromHub();
+  }, [hubMode, loadFromHub]);
+
+  const invitations = hubMode ? fetched : mirrored;
+  const refetch = useCallback(() => {
+    void (hubMode ? loadFromHub() : refetchMirrored());
+  }, [hubMode, loadFromHub, refetchMirrored]);
 
   const pending = useMemo(() => {
     const email = normalizeEmail(recipientEmail);
@@ -69,13 +113,24 @@ export function MembershipInvitations({
   return (
     <div className="flex flex-col">
       {pending.map((inv) => (
-        <MembershipInvitationRow key={inv.id} invitation={inv} onResolved={() => void refetch()} />
+        <MembershipInvitationRow key={inv.id} invitation={inv} hubMode={!!hubMode} onResolved={() => void refetch()} />
       ))}
     </div>
   );
 }
 
-function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invitation; onResolved: () => void }) {
+function MembershipInvitationRow({
+  invitation,
+  onResolved,
+  hubMode,
+}: {
+  invitation: Invitation;
+  onResolved: () => void;
+  /** Hub and desktop expose DIFFERENT accept/decline endpoints — see
+   *  `acceptInvitationOnHub`. Passed down rather than re-derived so the row
+   *  cannot disagree with the list about which backend it is on. */
+  hubMode: boolean;
+}) {
   const inv = invitation as any;
   const [busy, setBusy] = useState<'accept' | 'decline' | null>(null);
   const targetType: string = inv.target_type;
@@ -92,7 +147,8 @@ function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invit
     if (!invitation.id) return;
     setBusy('accept');
     try {
-      await acceptInvitation({ invitation_id: invitation.id });
+      if (hubMode) await acceptInvitationOnHub(invitation.id);
+      else await acceptInvitation({ invitation_id: invitation.id });
       notify.success({
         title: 'Invitation accepted',
         message: `${targetLabel} is now available in your workspace.`,
@@ -115,13 +171,14 @@ function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invit
     } finally {
       setBusy(null);
     }
-  }, [invitation.id, targetLabel, onResolved]);
+  }, [invitation.id, targetLabel, onResolved, hubMode]);
 
   const decline = useCallback(async () => {
     if (!invitation.id) return;
     setBusy('decline');
     try {
-      await declineInvitation({ invitation_id: invitation.id });
+      if (hubMode) await declineInvitationOnHub(invitation.id);
+      else await declineInvitation({ invitation_id: invitation.id });
       onResolved();
     } catch (err) {
       if (isInvitationGoneError(err)) {
@@ -137,7 +194,7 @@ function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invit
     } finally {
       setBusy(null);
     }
-  }, [invitation.id, onResolved]);
+  }, [invitation.id, onResolved, hubMode]);
 
   return (
     <div className="flex items-center gap-3 border-b border-l-2 border-border/40 border-l-violet-500 px-3 py-2">

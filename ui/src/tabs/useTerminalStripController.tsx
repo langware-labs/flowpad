@@ -45,6 +45,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
 import { ProjectsCounterChip, type ProjectWorkerType } from '@src/components/terminal/ProjectsCounterChip';
+import { StripNavButtons } from '@src/components/tabs/StripNavButtons';
 import { AskInstallOneOfDialog } from '@src/components/terminal/openers/AskInstallOneOfDialog';
 import { TerminalOpenerToolbar } from '@src/components/terminal/openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor } from '@src/components/terminal/openers/tab_opener_types';
@@ -427,14 +428,29 @@ export function useTerminalStripController({
     [modLabel, handleStartClaude, handleStartTerminal, isAdvanced, handleOpenContext, ContextIcon],
   );
 
+  // Leading region: the Back/Refresh nav buttons (browser-style, at the very
+  // left of the bar — they used to sit on the left rail), then the project chip
+  // (the strip's project dropdown), then the anchor divider that separates this
+  // fixed cluster from the tab row.
   const leading = useMemo(
     () => (
-      <ProjectsCounterChip
-        currentProjectId={tabsProjectId}
-        currentProjectName={currentProjectName}
-        onLaunchProjectPath={handleLaunchProjectPath}
-        onOpenHistory={() => setHistoryModalOpen(true)}
-      />
+      <>
+        <StripNavButtons />
+        <ProjectsCounterChip
+          currentProjectId={tabsProjectId}
+          currentProjectName={currentProjectName}
+          onLaunchProjectPath={handleLaunchProjectPath}
+          onOpenHistory={() => setHistoryModalOpen(true)}
+        />
+        {/* Anchor divider: a full-height hairline that visually makes the
+            leading cluster the container the tab strip hangs off of, rather
+            than just another item in the row. `self-stretch` spans the band. */}
+        <span
+          aria-hidden
+          data-testid="projects-counter-anchor"
+          className="mx-1.5 w-px shrink-0 self-stretch bg-border"
+        />
+      </>
     ),
     [tabsProjectId, currentProjectName, handleLaunchProjectPath],
   );

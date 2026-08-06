@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Loader2, Stethoscope, XCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { streamDiagnose, type DiagnoseEvent } from '@src/components/diagnose/diagnose-stream';
-import { useDiagnoseErrorStore } from './diagnose-error-store';
+import { useDiagnoseErrorStore, type DiagnoseKind } from './diagnose-error-store';
 
 interface Line {
   kind: 'narration' | 'status' | 'error';
@@ -10,18 +10,19 @@ interface Line {
 }
 
 /** The prompt the diagnosis is seeded with — exactly what runs on confirm. */
-function diagnosePrompt(errorText: string): string {
-  return `analyze the error: ${errorText}`;
+function diagnosePrompt(detail: string, kind: DiagnoseKind): string {
+  return `analyze the ${kind}: ${detail}`;
 }
 
 /**
- * Global confirmation + run host for "diagnose this error". Mounted once in App.
- * An error toast/badge opens it via `useDiagnoseErrorStore.open(errorText)`; the
- * modal asks the user to confirm, then streams the Flowpad self-diagnosis seeded
- * with `analyze the error: <error details>`.
+ * Global confirmation + run host for "diagnose this error / warning". Mounted once
+ * in App. An error/warning toast, badge or warnings-popover row opens it via
+ * `useDiagnoseErrorStore.open(detail, kind)`; the modal asks the user to confirm,
+ * then streams the Flowpad self-diagnosis seeded with `analyze the <kind>: <detail>`.
  */
 export function DiagnoseErrorModal() {
-  const errorText = useDiagnoseErrorStore((s) => s.errorText);
+  const errorText = useDiagnoseErrorStore((s) => s.detail);
+  const kind = useDiagnoseErrorStore((s) => s.kind);
   const close = useDiagnoseErrorStore((s) => s.close);
 
   const [started, setStarted] = useState(false);
@@ -71,7 +72,7 @@ export function DiagnoseErrorModal() {
     abortRef.current = controller;
 
     try {
-      await streamDiagnose(diagnosePrompt(errorText), handleEvent, controller.signal);
+      await streamDiagnose(diagnosePrompt(errorText, kind), handleEvent, controller.signal);
     } catch (e) {
       if (!controller.signal.aborted) {
         const text = e instanceof Error ? e.message : String(e);
@@ -81,12 +82,22 @@ export function DiagnoseErrorModal() {
       setRunning(false);
       abortRef.current = null;
     }
-  }, [errorText, handleEvent]);
+  }, [errorText, kind, handleEvent]);
 
   const handleClose = useCallback(() => {
     abortRef.current?.abort();
     close();
   }, [close]);
+
+  // The detail block and heading follow what was clicked, so a diagnosed warning
+  // is never mislabelled (and never re-tinted) as an error.
+  const isWarning = kind === 'warning';
+  const detailBlockClass = isWarning
+    ? 'rounded-md border border-yellow-500/30 bg-yellow-500/5 px-3 py-2'
+    : 'rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2';
+  const detailLabelClass = isWarning
+    ? 'mb-1 text-[10px] font-semibold uppercase tracking-wide text-yellow-600 dark:text-yellow-500/80'
+    : 'mb-1 text-[10px] font-semibold uppercase tracking-wide text-destructive/80';
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
@@ -94,23 +105,21 @@ export function DiagnoseErrorModal() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Stethoscope className="h-4 w-4" />
-            Diagnose this error
+            {isWarning ? 'Diagnose this warning' : 'Diagnose this error'}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
           {!started && (
             <p className="text-xs text-muted-foreground">
-              Run a diagnosis on the error below? The assistant inspects Flowpad, repairs what's
-              safe, and records the result.
+              Run a diagnosis on the {isWarning ? 'warning' : 'error'} below? The assistant inspects Flowpad, repairs
+              what's safe, and records the result.
             </p>
           )}
 
-          {/* The error being diagnosed — formatted as a quoted code block. */}
-          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-destructive/80">
-              Error
-            </div>
+          {/* The subject being diagnosed — formatted as a quoted code block. */}
+          <div className={detailBlockClass}>
+            <div className={detailLabelClass}>{isWarning ? 'Warning' : 'Error'}</div>
             <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-foreground">
               {errorText}
             </pre>
@@ -147,11 +156,7 @@ export function DiagnoseErrorModal() {
                     done.ok ? 'text-green-600 dark:text-green-400' : 'text-destructive'
                   }`}
                 >
-                  {done.ok ? (
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                  ) : (
-                    <XCircle className="h-3.5 w-3.5" />
-                  )}
+                  {done.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
                   <span>{done.ok ? 'Diagnosis recorded.' : 'Diagnosis was not recorded — try again.'}</span>
                 </div>
               )}
