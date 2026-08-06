@@ -78,3 +78,9 @@ correctly keeps its authored rows when the answer comes back empty.
 
 The plugin adds no schema, parser or serializer; a document's markdown must be
 unchanged by the fence being rendered at all.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: 93293c2c-e30b-45c7-948b-ddc0c27a6903
+flowpad:endcapsule identity -->

@@ -526,7 +526,8 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
 
         attachments = [a.model_dump(mode="python") for a in (reply_fm.attachment or [])]
         shared_context_entities = [str(c) for c in (reply_fm.shared_context_entities or [])]
-        sendable_kind = FlowMessageKind.sendable(reply_fm.kind.value) if reply_fm.kind else None
+        kind_value = getattr(reply_fm.kind, "value", reply_fm.kind)
+        sendable_kind = FlowMessageKind.sendable(kind_value) if reply_fm.kind else None
         await conv.add_message(
             reply_fm.text,
             sender_name=reply_fm.sender_name or None,

@@ -751,6 +751,10 @@ msgstr ""
 msgid "Accept"
 msgstr ""
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Accepting adds it to your Desktops below."
+msgstr ""
+
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Accepting…"
 msgstr ""
@@ -1413,6 +1417,10 @@ msgstr ""
 msgid "Anyone with the link can join as a member. It's on your clipboard — it can't be shown again."
 msgstr ""
 
+#: src/pages/hub-home/ShareDesktopDialog.tsx
+msgid "Anyone you share with can open, use and delete this desktop."
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "API access denied (401 Unauthorized) - check API key and Machine ID"
 msgstr ""
@@ -1766,6 +1774,10 @@ msgstr ""
 #~ msgid "auto"
 #~ msgstr ""
 
+#: src/pages/hub-home/ShareDesktopDialog.tsx
+msgid "Auto login user — this desktop belongs to one person."
+msgstr ""
+
 #: src/components/tasks-viewer/TasksViewer.tsx
 #~ msgid "Auto-archive after..."
 #~ msgstr ""
@@ -1817,8 +1829,9 @@ msgstr "متاح على السحابة"
 #~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/tabs/StripNavButtons.tsx
+#: src/components/tabs/StripNavButtons.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "Back"
 msgstr ""
@@ -2183,6 +2196,7 @@ msgstr ""
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/ShareDesktopDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cancel"
 msgstr ""
@@ -3385,6 +3399,10 @@ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Could not change sign-in method"
+msgstr ""
+
+#: src/pages/hub-home/ShareDesktopDialog.tsx
+msgid "Could not change this setting"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -6635,6 +6653,19 @@ msgstr ""
 
 #: src/components/helpdesk/HelpdeskGuides.tsx
 msgid "Guides"
+msgstr ""
+
+#: src/pages/hub-home/ShareDesktopDialog.tsx
+msgid "Hand it over — they become the owner and you keep view-only access."
+msgstr ""
+
+#: src/pages/hub-home/ShareDesktopDialog.tsx
+msgid "Hand over"
+msgstr ""
+
+#. placeholder {0}: outcome.granted.join(', ')
+#: src/pages/hub-home/ShareDesktopDialog.tsx
+msgid "Handed over to {0}"
 msgstr ""
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
@@ -11025,6 +11056,7 @@ msgid "Personal note, actionable item"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/pages/hub-home/ShareDesktopDialog.tsx
 msgid "Pick a contact or enter an email"
 msgstr ""
 
@@ -11972,7 +12004,6 @@ msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/code-editor/AssetCompareView.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
@@ -11989,6 +12020,8 @@ msgstr ""
 #: src/components/markdown-viewer.tsx
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/tabs/StripNavButtons.tsx
+#: src/components/tabs/StripNavButtons.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/webapp-viewer.tsx
@@ -13720,7 +13753,13 @@ msgstr ""
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/pages/hub-home/ShareDesktopDialog.tsx
 msgid "Share"
+msgstr ""
+
+#. placeholder {0}: desktop?.name || 'desktop'
+#: src/pages/hub-home/ShareDesktopDialog.tsx
+msgid "Share {0}"
 msgstr ""
 
 #. placeholder {0}: folder.name
@@ -13728,9 +13767,17 @@ msgstr ""
 msgid "Share {0} over Git"
 msgstr ""
 
+#: src/pages/hub-home/ShareDesktopDialog.tsx
+msgid "Share by name or email…"
+msgstr ""
+
 #. placeholder {0}: currentProject.session_code
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Share code {0} to invite."
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Share desktop"
 msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
@@ -13783,6 +13830,11 @@ msgstr ""
 
 #: src/components/collaboration/SharedSessionsList.tsx
 msgid "Shared sessions"
+msgstr ""
+
+#. placeholder {0}: outcome.granted.join(', ')
+#: src/pages/hub-home/ShareDesktopDialog.tsx
+msgid "Shared with {0}"
 msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
@@ -15066,6 +15118,14 @@ msgstr ""
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "They will be downloaded again the next time you open the help desk."
+msgstr ""
+
+#: src/pages/hub-home/ShareDesktopDialog.tsx
+msgid "They'll get an email with a link that opens this desktop."
+msgstr ""
+
+#: src/pages/hub-home/ShareDesktopDialog.tsx
+msgid "They'll get an email, and the desktop is already in their list."
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
