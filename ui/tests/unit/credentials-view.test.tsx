@@ -38,9 +38,9 @@ vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: h.contex
 vi.mock('@src/hooks/use-projects', () => ({
   useProjects: () => ({ projects: h.projects, isLoading: false, refetch: vi.fn() }),
 }));
-vi.mock('@src/components/EnvVarsManager', () => ({
-  EnvVarsManager: ({ entityTypeId }: { entityTypeId: unknown }) => (
-    <div data-testid="pane-environment">{String(entityTypeId)}</div>
+vi.mock('@src/components/credentials-view/ProjectEnvironmentTab', () => ({
+  ProjectEnvironmentTab: ({ project }: { project: { typeId: unknown } }) => (
+    <div data-testid="pane-environment">{String(project?.typeId)}</div>
   ),
 }));
 vi.mock('@src/components/connections-manager', () => ({

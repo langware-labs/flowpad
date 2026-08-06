@@ -20,26 +20,30 @@ import { notify } from '@src/notifications';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
- * Desktops = cloud FlowPad instances running in E2B — a ComputeNode whose
+ * Sandboxes = cloud FlowPad instances running in E2B — a ComputeNode whose
  * `node_config.flavor === 'workspace'`. This hook lists them and drives the
- * hub's EXISTING ComputeNode API to launch/terminate them (no hub API changes).
+ * hub's EXISTING ComputeNode API to create/terminate them.
  *
- * The launch pipeline mirrors the hub's own `use-open-workspace.ts`:
- *   create (workspace-scoped) → ops/setup → ops/workspace-ready → get-host → open tab.
+ * Creating and opening are SEPARATE operations:
+ *   createSandbox: save (workspace-scoped) → ops/setup → ops/workspace-ready → project setup
+ *   openSandbox:   navigate to open-service/workspace
+ *
+ * They used to be one call that ended in `window.open`, which forced the whole
+ * pipeline to run inside a single click gesture with a placeholder tab claimed
+ * up front so a popup blocker wouldn't eat it. Splitting them means the open is
+ * its own gesture, so the tab is claimed with its real URL and the placeholder
+ * document, its progress painting, and the close-on-error path are all gone.
  *
  * Only meaningful against a hub backend: the `workspace` flavor + `workspace-ready`
  * op live in the hub, not the local desktop backend.
  */
 
-/** The port the FlowPad app serves on inside a workspace sandbox. */
-const WORKSPACE_PORT = 9007;
-
-/** The hub's name for the workspace app. The hub resolves it to a port; the
- *  open path never does (`launchDesktop` still resolves a host by port — see
- *  `resolveHostUrl`, which needs the raw origin to append the landing path).
+/** The hub's name for the workspace app. The client names a SERVICE and never a
+ *  port — the hub resolves it. This is now the only way anything here opens a
+ *  box; `get-host` is a hub-internal detail the UI no longer touches.
  *  Wire contract — pinned hub-side by `unit/test_open_service_route_contract.py`. */
 export const WORKSPACE_SERVICE = 'workspace';
-/** The flavor that marks a ComputeNode as a desktop (vs. an agent/exec-env node). */
+/** The flavor that marks a ComputeNode as a sandbox (vs. an agent/exec-env node). */
 const WORKSPACE_FLAVOR = 'workspace';
 
 // Step/StepStatus are the shared checklist model (`@src/hooks/use-step-flow`),
@@ -65,7 +69,7 @@ export type Step = GenericStep<StepId>;
  *  a row finishing IS a command returning — the checklist needs no separate
  *  progress channel. Which rows appear is decided by {@link plannedSteps}. */
 const STEP_LABELS: Record<StepId, string> = {
-  launch: 'Launching desktop',
+  launch: 'Creating the sandbox',
   health: 'Starting FlowPad and signing in',
   validate: 'Checking the project name',
   clone: 'Cloning the repository',
@@ -73,7 +77,7 @@ const STEP_LABELS: Record<StepId, string> = {
   index: 'Indexing the project',
   context: 'Attaching context projects',
   default: 'Choosing the project to open',
-  open: 'Opening desktop',
+  open: 'Finishing up',
 };
 
 /**
@@ -111,27 +115,6 @@ function plannedSteps(setup?: SandboxSetup): Step[] {
   return ids.map((id) => ({ id, label: STEP_LABELS[id], status: 'idle' }));
 }
 
-/** Id of the step-label element in the placeholder document (updated in place). */
-const PREPARING_LINE_ID = 'step';
-
-// Placeholder shown in the claimed tab while a desktop launches; replaced with the
-// real URL only once every step succeeds. It's a standalone blank-tab document (no
-// app stylesheet in scope), so the colors are inlined rather than theme tokens.
-// Written ONCE — later steps only swap the line's text, so the dot animation runs
-// continuously instead of restarting on every transition.
-const PREPARING_DESKTOP_HTML =
-  '<!doctype html><meta charset="utf-8"><title>Preparing desktop…</title>' +
-  '<style>html,body{height:100%;margin:0;display:grid;place-items:center;' +
-  'background:#0b0b0c;color:#e5e5e5;font:14px system-ui,sans-serif}' +
-  '.w{display:flex;flex-direction:column;align-items:center;gap:14px}' +
-  // Three-dot spinner: the "still working, next step coming" cue while a step runs.
-  '.d{display:flex;gap:6px}.d i{width:6px;height:6px;border-radius:50%;background:#8b8b90;' +
-  'animation:b 1.4s ease-in-out infinite}.d i:nth-child(2){animation-delay:.2s}' +
-  '.d i:nth-child(3){animation-delay:.4s}' +
-  '@keyframes b{0%,80%,100%{opacity:.25;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}' +
-  '</style>' +
-  `<div class="w"><div id="${PREPARING_LINE_ID}"></div><div class="d"><i></i><i></i><i></i></div></div>`;
-
 /** Only the fields we read from ops/workspace-ready. */
 interface WorkspaceReadyResult {
   healthy: boolean;
@@ -140,11 +123,11 @@ interface WorkspaceReadyResult {
 }
 
 /**
- * Live per-desktop info from `ops/status` (one cheap get_info). `started_at` is
+ * Live per-sandbox info from `ops/status` (one cheap get_info). `started_at` is
  * the current run's start (resets on resume); `end_at` is when the sandbox
  * auto-pauses/expires. Fields beyond `status` are E2B-only.
  */
-export interface DesktopDetails {
+export interface SandboxDetails {
   status: ExecutionEnvironmentStatus;
   started_at?: string | null;
   end_at?: string | null;
@@ -176,9 +159,8 @@ function opsCall<T = unknown>(nodeId: string, op: string, body?: Record<string, 
   return dataManager.callAction<Record<string, unknown> | undefined, T>(info);
 }
 
-/** A ComputeNode is a "desktop" iff it's an E2B node created from the workspace flavor. */
 /**
- * The absolute URL that opens a desktop's workspace app.
+ * The absolute URL that opens a sandbox's workspace app.
  *
  * The hub owns readiness and authorization: it resumes a paused box, waits for
  * the workspace to answer, and only then redirects. The client names the
@@ -193,32 +175,37 @@ export function workspaceServiceUrl(nodeId: string): string {
   return info.fullActionUrl;
 }
 
-export function isDesktop(node: ComputeNode): boolean {
+/**
+ * A ComputeNode is a "sandbox" iff it's an E2B node created from the workspace
+ * flavor. Named `isSandbox`, not `isDesktop`: `dataContext.isDesktop` already
+ * means "running in Electron", and the two answered different questions under
+ * one name.
+ */
+export function isSandbox(node: ComputeNode): boolean {
   const flavor = (node.node_config as { flavor?: string } | undefined)?.flavor;
   return readProvider(node) === ComputeProviderType.E2B && flavor === WORKSPACE_FLAVOR;
 }
 
-/** Next auto-name: one past the highest existing "Desktop N" (so it reads as latest). */
-export function nextDesktopName(desktops: ComputeNode[]): string {
+/**
+ * Next auto-name: one past the highest existing box number, so it reads as latest.
+ *
+ * Matches the legacy "Desktop N" spelling as well as the current one. Boxes
+ * created before the rename are still called "Desktop 3", and a regex that only
+ * saw "Sandbox N" would restart the count at 1 and hand the user a "Sandbox 1"
+ * sitting under a "Desktop 3" they made yesterday. Existing names are left
+ * alone — this reads them, it does not rewrite them.
+ */
+export function nextSandboxName(sandboxes: ComputeNode[]): string {
   let max = 0;
-  for (const d of desktops) {
-    const m = /^Desktop (\d+)$/.exec(d.name ?? '');
+  for (const d of sandboxes) {
+    const m = /^(?:Desktop|Sandbox) (\d+)$/.exec(d.name ?? '');
     if (m) max = Math.max(max, parseInt(m[1], 10));
   }
-  return `Desktop ${max + 1}`;
-}
-
-/** Resolve a desktop's public URL via the hub's get-host action. */
-async function resolveHostUrl(nodeId: string): Promise<string> {
-  const host = new ActionInfo('get-host', ComputeNode.type, nodeId, 'GET');
-  host.queryParameters = { port: WORKSPACE_PORT, redirect: false };
-  const result = await dataManager.callAction<void, { url: string; port: number }>(host);
-  if (!result?.url) throw new Error('Could not resolve the desktop URL');
-  return result.url;
+  return `Sandbox ${max + 1}`;
 }
 
 /**
- * The project a freshly launched desktop is set up with — usually the one the
+ * The project a freshly created sandbox is set up with — usually the one the
  * user is working on.
  *
  * With a `gitOrigin` the hub clones it (authed when private, which is the only
@@ -398,165 +385,168 @@ async function attachContextProjects(
   return attached;
 }
 
-export function useDesktops() {
+export function useSandboxes() {
   const { user } = useAuth();
 
-  const desktopsRequest = useMemo(
-    () => new QueryRequest({ type: ComputeNode.type, query: null, scope: [], name: 'useDesktops-nodes' }),
+  const sandboxesRequest = useMemo(
+    () => new QueryRequest({ type: ComputeNode.type, query: null, scope: [], name: 'useSandboxes-nodes' }),
     [],
   );
 
-  const { data: nodes, isLoading, refetch } = useEntitiesQuery<ComputeNode>(desktopsRequest, { enabled: !!user });
+  const { data: nodes, isLoading, refetch } = useEntitiesQuery<ComputeNode>(sandboxesRequest, { enabled: !!user });
 
-  const desktops = useMemo(() => (nodes ?? []).filter(isDesktop), [nodes]);
-  // `launch` only needs the list to pick the next auto-name. Reading it through
-  // a ref keeps `launch` stable across every refetch — including the one it
-  // triggers itself — so consumers holding it as a prop don't re-render.
-  const desktopsRef = useRef(desktops);
-  desktopsRef.current = desktops;
+  const sandboxes = useMemo(() => (nodes ?? []).filter(isSandbox), [nodes]);
+  // `createSandbox` only needs the list to pick the next auto-name. Reading it
+  // through a ref keeps the callback stable across every refetch — including the
+  // one it triggers itself — so consumers holding it as a prop don't re-render.
+  const sandboxesRef = useRef(sandboxes);
+  sandboxesRef.current = sandboxes;
 
   // ---- live status (probed on load) ----
-  const [details, setDetails] = useState<Record<string, DesktopDetails>>({});
+  const [details, setDetails] = useState<Record<string, SandboxDetails>>({});
   const detailsRef = useRef(details);
   detailsRef.current = details;
 
-  const probeDetails = useCallback(async (nodeId: string): Promise<DesktopDetails> => {
+  const probeDetails = useCallback(async (nodeId: string): Promise<SandboxDetails> => {
     try {
-      const res = await opsCall<DesktopDetails>(nodeId, 'status');
+      const res = await opsCall<SandboxDetails>(nodeId, 'status');
       return res ?? { status: ExecutionEnvironmentStatus.ERROR };
     } catch {
       return { status: ExecutionEnvironmentStatus.ERROR };
     }
   }, []);
 
-  // Probe only desktops we haven't seen yet, and forget ones that vanished —
-  // re-probing the whole list on every add/delete would be one call per desktop.
+  // Probe only sandboxes we haven't seen yet, and forget ones that vanished —
+  // re-probing the whole list on every add/delete would be one call per sandbox.
   useEffect(() => {
-    const liveIds = new Set(desktops.map((d) => d.id));
+    const liveIds = new Set(sandboxes.map((d) => d.id));
     setDetails((prev) => {
       const kept = Object.entries(prev).filter(([id]) => liveIds.has(id));
       return kept.length === Object.keys(prev).length ? prev : Object.fromEntries(kept);
     });
-    const fresh = desktops.filter((d) => !(d.id in detailsRef.current));
+    const fresh = sandboxes.filter((d) => !(d.id in detailsRef.current));
     if (!fresh.length) return;
     void Promise.all(fresh.map(async (d) => [d.id, await probeDetails(d.id)] as const)).then((entries) =>
       setDetails((prev) => ({ ...prev, ...Object.fromEntries(entries) })),
     );
-  }, [desktops, probeDetails]);
+  }, [sandboxes, probeDetails]);
 
-  // ---- launch ----
+  // ---- create ----
   const [steps, setSteps] = useState<Step[]>(() => plannedSteps());
-  const [launching, setLaunching] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [launchUrl, setLaunchUrl] = useState<string | null>(null);
-  const launchingRef = useRef(false);
+  const creatingRef = useRef(false);
 
   const patch = useCallback((id: StepId, next: Partial<Step>) => {
     setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, ...next } : s)));
   }, []);
 
-  const launch = useCallback(async (opts?: { name?: string; sandboxProject?: SandboxSetup }) => {
-    if (launchingRef.current) return;
-    const sandboxProject = opts?.sandboxProject;
-    // Prefer the workspace scope (hub does workspace.add_child); fall back to
-    // owner scope ([]) when hub mode exposes no workspace — the node is still
-    // owned by the caller and listed by the role-scoped query.
-    const scope = dataContext.workspaceTypeId ? [dataContext.workspaceTypeId] : [];
-    launchingRef.current = true;
-    setLaunching(true);
-    setLaunchUrl(null);
-    setSteps(plannedSteps(sandboxProject));
+  /**
+   * Provision a sandbox and set its project up. Does NOT open anything.
+   *
+   * Separating this from the open is what lets the dialog stay on screen and
+   * report what happened: the caller awaits a node, and decides afterwards
+   * whether to open it. It also removes the popup-blocker workaround wholesale —
+   * nothing here needs to run inside a click gesture any more.
+   *
+   * Rejects on failure rather than swallowing, so a caller can leave the dialog
+   * open with the error visible. The step rows carry the detail.
+   */
+  const createSandbox = useCallback(
+    async (opts?: { name?: string; sandboxProject?: SandboxSetup }): Promise<ComputeNode | null> => {
+      // One create at a time per hook instance: a double-clicked button must not
+      // provision two boxes the user then has to find and delete.
+      if (creatingRef.current) return null;
+      const sandboxProject = opts?.sandboxProject;
+      // Prefer the workspace scope (hub does workspace.add_child); fall back to
+      // owner scope ([]) when hub mode exposes no workspace — the node is still
+      // owned by the caller and listed by the role-scoped query.
+      const scope = dataContext.workspaceTypeId ? [dataContext.workspaceTypeId] : [];
+      creatingRef.current = true;
+      setCreating(true);
+      setSteps(plannedSteps(sandboxProject));
 
-    // Claim the tab while we still hold the click gesture, but DON'T load the
-    // desktop into it yet — show a "preparing" placeholder and only navigate to
-    // the real URL once every launch step has succeeded (bug: the desktop must
-    // open only when ready, not flash a blank/half-ready tab).
-    const tab = window.open('', '_blank');
-    if (tab) {
-      tab.document.write(PREPARING_DESKTOP_HTML);
-      tab.document.close();
-    }
-    // Swap only the label so the dot animation keeps running across steps.
-    const paintTab = (line: string) => {
-      const el = tab?.document.getElementById(PREPARING_LINE_ID);
-      if (el) el.textContent = line;
-    };
-    paintTab('Preparing your desktop…');
-
-    const run = async <T,>(id: StepId, fn: () => Promise<T>): Promise<T> => {
-      patch(id, { status: 'loading', detail: undefined });
-      paintTab(`${STEP_LABELS[id]}…`);
-      try {
-        const result = await fn();
-        patch(id, { status: 'success' });
-        return result;
-      } catch (e) {
-        patch(id, { status: 'error', detail: e instanceof Error ? e.message : String(e) });
-        throw e;
-      }
-    };
-
-    try {
-      const node = await run('launch', async () => {
-        const draft = new ComputeNode({
-          name: opts?.name?.trim() || nextDesktopName(desktopsRef.current),
-          node_config: { flavor: WORKSPACE_FLAVOR },
-        });
-        await dataManager.save(draft.typeId, scope, hubEntityJson(draft) as never);
-        // A bare workspace needs no LM-proxy key, and minting one costs round-trips.
-        const providerId = await opsCall<string>(draft.id, 'setup', { skip_lm_proxy: true });
-        if (!providerId) throw new Error('setup returned no provider id (provider was dropped)');
-        return draft;
-      });
-
-      await run('health', async () => {
-        const result = await opsCall<WorkspaceReadyResult>(node.id, 'workspace-ready');
-        if (!result?.healthy) throw new Error('FlowPad did not come up in the sandbox');
-        patch('health', {
-          detail: result.logged_in ? `signed in as ${result.login_detail}` : 'opened without cloud sign-in',
-        });
-        // Don't let a failed cloud sign-in pass silently: the desktop opened, but
-        // couldn't reach the hub to sign in (e.g. hub down / WORKSPACE_HUB_URL unset).
-        if (!result.logged_in) {
-          notify.warning({
-            id: 'desktop-no-signin',
-            title: 'Desktop opened without cloud sign-in',
-            message: "Couldn't reach the hub to sign this desktop in — it may be down or unreachable. You can sign in from inside the desktop.",
-          });
+      const run = async <T,>(id: StepId, fn: () => Promise<T>): Promise<T> => {
+        patch(id, { status: 'loading', detail: undefined });
+        try {
+          const result = await fn();
+          patch(id, { status: 'success' });
+          return result;
+        } catch (e) {
+          patch(id, { status: 'error', detail: e instanceof Error ? e.message : String(e) });
+          throw e;
         }
-        return result;
-      });
+      };
 
-      // Set the git repo up by composing computeNodeTools, one command per step.
-      // The HUB clones (its token is the only one that reaches a private repo)
-      // and copies the tree in; the box places, indexes and links it. Runs after
-      // the box is up so copy_folder has a target.
-      const cloned = sandboxProject ? await provisionSandboxProject(node.id, sandboxProject, run, patch) : null;
+      try {
+        const node = await run('launch', async () => {
+          const draft = new ComputeNode({
+            name: opts?.name?.trim() || nextSandboxName(sandboxesRef.current),
+            node_config: { flavor: WORKSPACE_FLAVOR },
+          });
+          await dataManager.save(draft.typeId, scope, hubEntityJson(draft) as never);
+          // A bare workspace needs no LM-proxy key, and minting one costs round-trips.
+          const providerId = await opsCall<string>(draft.id, 'setup', { skip_lm_proxy: true });
+          if (!providerId) throw new Error('setup returned no provider id (provider was dropped)');
+          return draft;
+        });
 
-      const url = await run('open', async () => {
-        const host = await resolveHostUrl(node.id);
-        if (!cloned) return host;
-        // Land INSIDE the project that was just set up — for every git launch,
-        // not only a content install. Without this the box opens on its own
-        // front door and the project you asked for is merely one of the list.
-        return installProjectLandingUrl(host, cloned) ?? host;
-      });
+        await run('health', async () => {
+          const result = await opsCall<WorkspaceReadyResult>(node.id, 'workspace-ready');
+          if (!result?.healthy) throw new Error('FlowPad did not come up in the sandbox');
+          patch('health', {
+            detail: result.logged_in ? `signed in as ${result.login_detail}` : 'opened without cloud sign-in',
+          });
+          // Don't let a failed cloud sign-in pass silently: the sandbox came up, but
+          // couldn't reach the hub to sign in (e.g. hub down / WORKSPACE_HUB_URL unset).
+          if (!result.logged_in) {
+            notify.warning({
+              id: 'sandbox-no-signin',
+              title: 'Sandbox started without cloud sign-in',
+              message:
+                "Couldn't reach the hub to sign this sandbox in — it may be down or unreachable. You can sign in from inside the sandbox.",
+            });
+          }
+          return result;
+        });
 
-      // The just-launched sandbox is up — seed its status so the list effect
-      // doesn't re-probe it.
-      setDetails((s) => ({ ...s, [node.id]: { status: ExecutionEnvironmentStatus.READY } }));
-      setLaunchUrl(url);
-      if (tab) tab.location.href = url;
-      await refetch();
-    } catch {
-      tab?.close();
-    } finally {
-      launchingRef.current = false;
-      setLaunching(false);
-    }
-  }, [patch, refetch]);
+        // Set the git repo up by composing computeNodeTools, one command per step.
+        // The HUB clones (its token is the only one that reaches a private repo)
+        // and copies the tree in; the box places, indexes and links it. Runs after
+        // the box is up so copy_folder has a target.
+        if (sandboxProject) await provisionSandboxProject(node.id, sandboxProject, run, patch);
+
+        await run('open', async () => {
+          // Nothing to resolve any more: the link is derived from the node id, and
+          // the hub works out host, port, readiness and gate at click time. The row
+          // stays so the checklist still ends on a completed line.
+          return workspaceServiceUrl(node.id);
+        });
+
+        // The just-created sandbox is up — seed its status so the list effect
+        // doesn't re-probe it.
+        setDetails((s) => ({ ...s, [node.id]: { status: ExecutionEnvironmentStatus.READY } }));
+        // Best-effort, and deliberately AFTER the box is usable. The refetch only
+        // refreshes the list on the page behind; letting it reject here would
+        // report a perfectly good sandbox as a failed create, and — since the
+        // caller opens the box with what this returns — would refuse to open a
+        // machine that is already running and already paid for.
+        try {
+          await refetch();
+        } catch {
+          // The list is stale until the next refresh. The box is not.
+        }
+        return node;
+      } finally {
+        creatingRef.current = false;
+        setCreating(false);
+      }
+    },
+    [patch, refetch],
+  );
 
   // ---- rename ----
-  const renameDesktop = useCallback(
+  const renameSandbox = useCallback(
     async (node: ComputeNode, name: string) => {
       const trimmed = name.trim();
       if (!trimmed || trimmed === node.name) return;
@@ -566,22 +556,27 @@ export function useDesktops() {
     [refetch],
   );
 
-  // ---- open an existing desktop ----
-  const openDesktop = useCallback((node: ComputeNode) => {
-    // One navigation to the hub, which owns readiness and authorization: it
-    // resumes a paused box and waits for the workspace to answer before
-    // redirecting. A client-side probe/resume/navigate sequence cannot — `resume`
-    // returning means the VM is back, not that the app is listening.
-    //
-    // Opened with its final URL inside the click gesture: no blank tab to claim,
-    // and no async gap for a popup blocker to catch.
+  // ---- open a sandbox ----
+  /**
+   * THE way anything here opens a box — a freshly created one and one from the
+   * list take the identical path.
+   *
+   * One navigation to the hub, which owns readiness and authorization: it
+   * resumes a paused box and waits for the workspace to answer before
+   * redirecting. A client-side probe/resume/navigate sequence cannot — `resume`
+   * returning means the VM is back, not that the app is listening.
+   *
+   * Opened with its final URL inside the click gesture: no blank tab to claim,
+   * and no async gap for a popup blocker to catch.
+   */
+  const openSandbox = useCallback((node: ComputeNode) => {
     window.open(workspaceServiceUrl(node.id), '_blank');
   }, []);
 
   // ---- delete / terminate ----
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const deleteDesktop = useCallback(
+  const deleteSandbox = useCallback(
     async (node: ComputeNode) => {
       setDeletingId(node.id);
       try {
@@ -601,17 +596,50 @@ export function useDesktops() {
     [refetch],
   );
 
+  /**
+   * Create and open in one call, for the callers that genuinely mean "just get
+   * me into a box": the /launch and /install landings and `use-ensure-project`.
+   *
+   * The hub-home dialog deliberately does NOT use this — it wants the two halves
+   * apart so it can show the result and let the user choose.
+   */
+  const launch = useCallback(
+    async (opts?: { name?: string; sandboxProject?: SandboxSetup }) => {
+      setLaunchUrl(null);
+      // Swallows, unlike `createSandbox`. Every caller of this one is
+      // fire-and-forget (`void launch(...)`), so a rejection here would surface
+      // as an unhandled promise rejection rather than as anything a user sees.
+      // The failure is already on screen: the step row carries it. The dialog
+      // uses `createSandbox` directly precisely because it CAN await and report.
+      let node: ComputeNode | null = null;
+      try {
+        node = await createSandbox(opts);
+      } catch {
+        return null;
+      }
+      if (!node) return null;
+      // Published for the landing pages, which render it as a fallback link when
+      // the popup was blocked — the one case where the user needs the URL as
+      // something to click rather than something we navigated to.
+      setLaunchUrl(workspaceServiceUrl(node.id));
+      openSandbox(node);
+      return node;
+    },
+    [createSandbox, openSandbox],
+  );
+
   return {
-    desktops,
+    sandboxes,
     isLoading,
     refetch,
+    createSandbox,
+    creating,
     launch,
-    launching,
-    steps,
     launchUrl,
-    openDesktop,
-    renameDesktop,
-    deleteDesktop,
+    steps,
+    openSandbox,
+    renameSandbox,
+    deleteSandbox,
     deletingId,
     details,
   };

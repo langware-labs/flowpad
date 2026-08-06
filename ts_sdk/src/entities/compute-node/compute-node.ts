@@ -77,6 +77,14 @@ export interface IComputeNode extends IEntity {
   node_config?: Record<string, unknown>;
   fs_storage_mount_path?: string | null;
   home_dir?: string | null;
+  /** Whether the box belongs to a single person. Owner-only to change, and only
+   *  through the hub's `auto-login` action — it is in the hub's
+   *  `_immutable_update`, so a PUT carrying it is silently dropped. */
+  auto_login?: boolean;
+  /** Who the box last reported itself signed in as, cached hub-side. `null` (or
+   *  absent) means "not signed in as far as the hub knows", which includes
+   *  "never looked". Read-only: server-owned, never sent. */
+  logged_in_user?: string | null;
 }
 
 /**
@@ -92,6 +100,8 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   node_config?: Record<string, unknown>;
   fs_storage_mount_path?: string | null;
   home_dir?: string | null;
+  auto_login?: boolean;
+  logged_in_user?: string | null;
   static type: string = 'compute_node';
 
   /**

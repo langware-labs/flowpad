@@ -27,7 +27,7 @@ const h = vi.hoisted(() => ({
 vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   class FakeActionInfo {
-    subpath: string[] = [];
+    subpath: string[] | string = [];
     bodyParameters: Record<string, unknown> | undefined;
     queryParameters: Record<string, unknown> | undefined;
     constructor(
@@ -36,6 +36,16 @@ vi.mock('@sdk', async (importOriginal) => {
       public id?: string,
       public method?: string,
     ) {}
+    /**
+     * The url `openSandbox` navigates to. The real ActionInfo builds this from
+     * the configured api base; the fake reproduces only the SHAPE, which is what
+     * these tests assert on. `open-sandbox-service-url.test.ts` pins the real
+     * builder against the hub's own route contract.
+     */
+    get fullActionUrl(): string {
+      const sub = Array.isArray(this.subpath) ? this.subpath : [this.subpath];
+      return ['/api/v1/graph', this.type, this.id, this.action, ...sub].filter(Boolean).join('/');
+    }
   }
   return {
     ...actual,
@@ -60,7 +70,7 @@ vi.mock('@sdk/react/hooks', () => ({
 
 vi.mock('@src/notifications', () => ({ notify: { warning: vi.fn(), error: vi.fn() } }));
 
-import { useDesktops } from '@src/hooks/use-desktops';
+import { useSandboxes } from '@src/hooks/use-sandboxes';
 
 const ORIGIN = { provider: 'github', owner: 'langware-labs', name: 'flowpad-hub', branch: 'main', rel_path: '.' };
 const PROJECT_ID = 'a4acdbfb-3ad0-45ac-a8d1-812485a376ce';
@@ -87,23 +97,18 @@ beforeEach(() => {
   h.responses.clear();
   h.openedUrl = null;
   answers({
-    'get-host': { url: 'https://box.e2b.dev/?next=/', port: 9007 },
     setup: 'provider-1',
     'workspace-ready': { healthy: true, logged_in: true, login_detail: 'someone' },
     'validate-project-name': { available: true, suggested: 'flowpad-hub' },
     'clone-project': { project: { id: PROJECT_ID }, path: '/root/workspace/flowpad-hub', manifest: [] },
   });
-  vi.stubGlobal('open', () => ({
-    document: { write: vi.fn(), close: vi.fn(), getElementById: () => null },
-    // The hook assigns `tab.location.href`; record it as "what the user ends up
-    // looking at", which is the assertion every landing test makes.
-    location: {
-      set href(value: string) {
-        h.openedUrl = value;
-      },
-    },
-    close: vi.fn(),
-  }));
+  // The tab is now opened WITH its final url — there is no placeholder document
+  // to write and no `location.href` assigned afterwards, so the url to assert on
+  // is simply the first argument.
+  vi.stubGlobal('open', (url?: string) => {
+    h.openedUrl = url ?? null;
+    return { close: vi.fn() };
+  });
 });
 
 afterEach(() => {
@@ -113,7 +118,7 @@ afterEach(() => {
 
 /** Launch with a sandbox project of whatever shape the test needs. */
 async function launchWith(sandboxProject: Record<string, unknown>) {
-  const { result } = renderHook(() => useDesktops());
+  const { result } = renderHook(() => useSandboxes());
   await act(async () => {
     await result.current.launch({ name: String(sandboxProject.name), sandboxProject: sandboxProject as never });
   });
@@ -145,11 +150,25 @@ describe('sandbox provisioning composes computeNodeTools', () => {
     ]);
   });
 
-  it('lands the tab INSIDE the project it just created', async () => {
+  it('opens through open-service, and never resolves a host itself', async () => {
     await launchWithGit();
 
-    // The whole point: not the box's front door.
-    expect(h.openedUrl).toContain(PROJECT_ID);
+    // ONE public link, whatever the box was set up with. The hub owns the rest:
+    // authorization, resuming a paused machine, waiting for the app to answer,
+    // and only then the redirect. A client-resolved host could do none of that.
+    expect(h.openedUrl).toContain('/open-service/workspace');
+    expect(h.openedUrl).not.toContain('e2b.dev');
+    expect(ops()).not.toContain('get-host');
+  });
+
+  it('no longer deep-links into the cloned project', async () => {
+    // An accepted consequence of collapsing the two open paths into one:
+    // open-service takes no landing path, so a box created with a repo opens on
+    // its front door rather than inside that project. Asserted rather than left
+    // implicit, so re-adding a landing path is a deliberate change to this test.
+    await launchWithGit();
+
+    expect(h.openedUrl).not.toContain(PROJECT_ID);
   });
 
   it('adopts one project id across hub and box, and names it as the default', async () => {
@@ -240,9 +259,12 @@ describe('sandbox provisioning composes computeNodeTools', () => {
     // Nothing was fetched, so there is nothing to scan — no index step, no row.
     expect(ops()).not.toContain('index-project');
     expect(rows(result)).toEqual(['launch', 'health', 'init', 'default', 'open']);
-    // Still the project the tab opens on.
+    // Still the project the box opens on — but that is now the BOX's doing, set
+    // via set-default-project, not something encoded in the url. open-service
+    // takes no landing path.
     expect(bodyOf('set-default-project')?.project_id).toBe(PROJECT_ID);
-    expect(h.openedUrl).toContain(PROJECT_ID);
+    expect(h.openedUrl).toContain('/open-service/workspace');
+    expect(h.openedUrl).not.toContain(PROJECT_ID);
   });
 
   it('shows the rows the launch will actually run, not a fixed list', async () => {
@@ -275,14 +297,14 @@ describe('sandbox provisioning composes computeNodeTools', () => {
     expect(bodyOf('attach-context-project')).toMatchObject({ project_id: PROJECT_ID, scope: 'shared' });
   });
 
-  it('skips every git command when launching a bare desktop', async () => {
-    const { result } = renderHook(() => useDesktops());
+  it('skips every git command when launching a bare sandbox', async () => {
+    const { result } = renderHook(() => useSandboxes());
     await act(async () => {
-      await result.current.launch({ name: 'Desktop 2' });
+      await result.current.launch({ name: 'Sandbox 2' });
     });
 
     expect(ops()).toEqual(['setup', 'workspace-ready']);
-    expect(h.openedUrl).toBe('https://box.e2b.dev/?next=/');
+    expect(h.openedUrl).toContain('/open-service/workspace');
     expect(result.current.steps.map((s) => s.id)).toEqual(['launch', 'health', 'open']);
   });
 });

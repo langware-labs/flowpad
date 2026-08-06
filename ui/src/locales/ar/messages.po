@@ -66,6 +66,11 @@ msgstr ""
 msgid "\"{0}\" is over {MAX_FILE_SIZE_LABEL} and was not attached."
 msgstr ""
 
+#. placeholder {0}: confirmDeleteProject?.displayName ?? ''
+#: src/pages/hub-home/HubHome.tsx
+msgid "\"{0}\" will be deleted for everyone it is shared with. This cannot be undone."
+msgstr ""
+
 #. placeholder {0}: deleting?.name || deleting?.provider || ''
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "\"{0}\" will be removed along with its streams and every record it ingested. This cannot be undone."
@@ -125,6 +130,10 @@ msgstr ""
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "(none)"
+msgstr ""
+
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "(optional — you can provide it later)"
 msgstr ""
 
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
@@ -394,6 +403,14 @@ msgstr ""
 
 #: src/components/conversation/ThreadStack.tsx
 msgid "{earlier} earlier in this thread"
+msgstr ""
+
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "{envVar} already exists here. This records where it comes from; the current value is kept."
+msgstr ""
+
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "{envVar} is now declared for this project."
 msgstr ""
 
 #. placeholder {0}: ids.length
@@ -687,6 +704,10 @@ msgstr ""
 msgid "15 minutes"
 msgstr ""
 
+#: src/components/secrets/OriginChip.tsx
+msgid "1Password"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "2. Copy & open the sign-in page"
 msgstr ""
@@ -752,7 +773,11 @@ msgid "Accept"
 msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Accepting adds it to your Desktops below."
+#~ msgid "Accepting adds it to your Desktops below."
+#~ msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Accepting adds it to your Sandboxes below."
 msgstr ""
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -786,7 +811,7 @@ msgstr ""
 #: src/components/account/system-diagnoses.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/connections-manager.tsx
-#: src/components/EnvVarsManager.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -1029,8 +1054,8 @@ msgid "Add Trigger"
 msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Add Variable"
-msgstr ""
+#~ msgid "Add Variable"
+#~ msgstr ""
 
 #. placeholder {0}: source.name
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -1045,7 +1070,7 @@ msgstr ""
 msgid "Adding…"
 msgstr ""
 
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Additional assets"
 msgstr ""
 
@@ -1076,7 +1101,7 @@ msgstr ""
 msgid "agent"
 msgstr ""
 
-#: src/components/environment-banner/EnvironmentBanner.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Agent"
 msgstr ""
 
@@ -1418,7 +1443,11 @@ msgid "Anyone with the link can join as a member. It's on your clipboard — it 
 msgstr ""
 
 #: src/pages/hub-home/ShareDesktopDialog.tsx
-msgid "Anyone you share with can open, use and delete this desktop."
+#~ msgid "Anyone you share with can open, use and delete this desktop."
+#~ msgstr ""
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "Anyone you share with can open, use and delete this sandbox."
 msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
@@ -1651,6 +1680,7 @@ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/AssetsPage.tsx
@@ -1669,6 +1699,10 @@ msgstr ""
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Assistant"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Assistant assets"
 msgstr ""
 
 #: src/components/entity-execution-panel/execution-message/execution-message.tsx
@@ -1775,7 +1809,11 @@ msgstr ""
 #~ msgstr ""
 
 #: src/pages/hub-home/ShareDesktopDialog.tsx
-msgid "Auto login user — this desktop belongs to one person."
+#~ msgid "Auto login user — this desktop belongs to one person."
+#~ msgstr ""
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "Auto login user — this sandbox belongs to one person."
 msgstr ""
 
 #: src/components/tasks-viewer/TasksViewer.tsx
@@ -1784,6 +1822,10 @@ msgstr ""
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Auto-detect direction from first strong character"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "auto-login off"
 msgstr ""
 
 #: src/components/conversation/ExecutePromptDialog.tsx
@@ -1830,8 +1872,7 @@ msgstr "متاح على السحابة"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/tabs/StripNavButtons.tsx
-#: src/components/tabs/StripNavButtons.tsx
+#: src/components/top-nav-bar/TopNavBar.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "Back"
 msgstr ""
@@ -1958,11 +1999,11 @@ msgid "Bookmark what's open"
 msgstr ""
 
 #: src/components/favorites/FavoritesAddRow.tsx
+#: src/components/top-nav-bar/TopBarActions.tsx
 msgid "Bookmarked view"
 msgstr ""
 
 #: src/components/bookmarks-slider/BookmarksSlider.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Bookmarks"
 msgstr ""
 
@@ -1996,6 +2037,10 @@ msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Browse and run LLM-generated folder indexes (MarkdownIndex entities). Each indexer (re)builds a Merkle tree of <0>index.md</0> files over a docs root."
+msgstr ""
+
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Browse GitHub"
 msgstr ""
 
 #: src/components/project-selector/NewProjectDialog.tsx
@@ -2144,11 +2189,12 @@ msgstr ""
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+#: src/components/credentials-view/ProvideValueInline.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/ReplayDialog.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
-#: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -2195,8 +2241,8 @@ msgstr ""
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
-#: src/pages/hub-home/NewDesktopDialog.tsx
-#: src/pages/hub-home/ShareDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cancel"
 msgstr ""
@@ -2259,6 +2305,10 @@ msgstr ""
 #: src/components/footer/LanguageSelector.tsx
 #: src/components/footer/LanguageSelector.tsx
 msgid "Change language"
+msgstr ""
+
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "Change origin"
 msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
@@ -2372,6 +2422,7 @@ msgstr ""
 #~ msgid "Checking..."
 #~ msgstr ""
 
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Checking…"
@@ -2413,7 +2464,7 @@ msgstr ""
 msgid "Choose folder…"
 msgstr ""
 
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Choose the project it loads, and any asset packages to bring with it."
 msgstr ""
 
@@ -2781,6 +2832,10 @@ msgstr ""
 msgid "Closed"
 msgstr ""
 
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "Cloud"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -2791,7 +2846,7 @@ msgstr ""
 msgid "Cloud hub"
 msgstr ""
 
-#: src/components/environment-banner/EnvironmentBanner.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Cloud Sandbox"
 msgstr ""
 
@@ -2912,6 +2967,14 @@ msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Columns & Trace"
+msgstr ""
+
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "Comes from"
+msgstr ""
+
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "coming soon"
 msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
@@ -3054,7 +3117,7 @@ msgstr ""
 #: src/components/connections-manager.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/journey/JourneyTray.tsx
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
 msgstr ""
 
@@ -3063,11 +3126,16 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect GitHub"
 msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Connect GitHub and the gh CLI with a guided setup."
+msgstr ""
+
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Connect GitHub to pick from your repos, including private ones."
 msgstr ""
 
 #: src/components/InputSection.tsx
@@ -3081,6 +3149,7 @@ msgstr ""
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Connected"
 msgstr ""
 
@@ -3137,7 +3206,13 @@ msgid "Connection Info"
 msgstr ""
 
 #: src/components/credentials-view/CredentialsView.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Connections"
+msgstr ""
+
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "Consent required"
 msgstr ""
 
 #: src/components/contact-picker/AddressBookButton.tsx
@@ -3238,6 +3313,10 @@ msgstr ""
 #~ msgid "Conversations"
 #~ msgstr ""
 
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Coordinate"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -3337,6 +3416,7 @@ msgstr ""
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Copy link"
 msgstr ""
 
@@ -3401,7 +3481,7 @@ msgstr ""
 msgid "Could not change sign-in method"
 msgstr ""
 
-#: src/pages/hub-home/ShareDesktopDialog.tsx
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Could not change this setting"
 msgstr ""
 
@@ -3422,6 +3502,10 @@ msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Could not copy the code"
+msgstr ""
+
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Could not declare"
 msgstr ""
 
 #: src/components/project-home/EnvLocalCard.tsx
@@ -3494,7 +3578,7 @@ msgstr ""
 msgid "Could not link project to cloud"
 msgstr ""
 
-#: src/components/EnvVarsManager.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Could not load environment variables"
 msgstr ""
 
@@ -3526,6 +3610,10 @@ msgstr ""
 
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "Could not reach support"
+msgstr ""
+
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "Could not remove"
 msgstr ""
 
 #: src/components/connections-manager.tsx
@@ -3621,6 +3709,10 @@ msgstr ""
 msgid "Could not stop"
 msgstr ""
 
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "Could not store value"
+msgstr ""
+
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not update"
 msgstr ""
@@ -3646,6 +3738,10 @@ msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Couldn't delete the project."
 msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
@@ -3680,7 +3776,7 @@ msgstr ""
 msgid "Couldn't set up the project"
 msgstr ""
 
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Couldn't start GitHub connection."
 msgstr ""
 
@@ -3726,6 +3822,7 @@ msgstr ""
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Create"
 msgstr ""
 
@@ -3874,10 +3971,12 @@ msgstr ""
 #: src/components/assets/editor/WikiResolveView.tsx
 #: src/components/collaboration/StartRoomDialog.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Creating…"
 msgstr ""
 
 #: src/components/credentials-view/CredentialsView.tsx
+#: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Credentials"
 msgstr ""
 
@@ -4002,10 +4101,21 @@ msgstr ""
 msgid "Debug logging"
 msgstr ""
 
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/project-home/EnvLocalCard.tsx
 msgid "Declare"
 msgstr ""
 
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Declare an environment variable"
+msgstr ""
+
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "Declare origin"
+msgstr ""
+
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/project-home/EnvLocalCard.tsx
 msgid "Declared"
 msgstr ""
@@ -4065,6 +4175,7 @@ msgstr ""
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/directory-tree/DirectoryTree.tsx
@@ -4081,6 +4192,7 @@ msgstr ""
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
+#: src/pages/hub-home/HubHome.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Delete"
 msgstr ""
@@ -4111,8 +4223,10 @@ msgstr ""
 msgid "Delete {0} credential?"
 msgstr ""
 
+#. placeholder {0}: confirming?.envVar ?? ''
 #. placeholder {0}: request?.name ?? 'asset'
 #: src/components/assets/delete-asset-modal.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Delete {0}?"
 msgstr ""
 
@@ -4182,8 +4296,8 @@ msgid "Delete credential"
 msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Delete desktop"
-msgstr ""
+#~ msgid "Delete desktop"
+#~ msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
@@ -4234,6 +4348,7 @@ msgid "Delete message"
 msgstr ""
 
 #: src/components/assets/AssetsPage.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Delete project"
 msgstr ""
 
@@ -4241,6 +4356,14 @@ msgstr ""
 #: src/components/project-sidebar/ProjectSidebar.tsx
 #~ msgid "Delete Project"
 #~ msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Delete project?"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Delete sandbox"
+msgstr ""
 
 #: src/components/account/secrets-section.tsx
 msgid "Delete secret"
@@ -4293,6 +4416,11 @@ msgstr ""
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #~ msgid "Delete Workflow"
 #~ msgstr ""
+
+#. placeholder {0}: project.displayName
+#: src/pages/hub-home/HubHome.tsx
+msgid "Deleted {0}"
+msgstr ""
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -4406,8 +4534,8 @@ msgstr ""
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assistance-viewer/TaskDetail.tsx
-#: src/components/EnvVarsManager.tsx
-#: src/components/EnvVarsManager.tsx
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Description"
@@ -4422,17 +4550,16 @@ msgid "Description like prepare my daily brief"
 msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Description of this environment variable"
-msgstr ""
+#~ msgid "Description of this environment variable"
+#~ msgstr ""
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Description:"
 msgstr ""
 
-#: src/components/environment-banner/EnvironmentBanner.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/desktop/DesktopPage.tsx
-#: src/pages/hub-home/HubHome.tsx
 msgid "Desktop"
 msgstr ""
 
@@ -4441,8 +4568,8 @@ msgid "Desktop version"
 msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Desktops"
-msgstr ""
+#~ msgid "Desktops"
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #~ msgid "Detach"
@@ -4724,6 +4851,7 @@ msgstr ""
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/wizard/WizardHost.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Done"
 msgstr ""
 
@@ -5035,6 +5163,10 @@ msgstr ""
 msgid "Empty trace"
 msgstr ""
 
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Empty uses the variable name."
+msgstr ""
+
 #: src/components/data-sources/SourceMenu.tsx
 #~ msgid "Enable"
 #~ msgstr ""
@@ -5086,6 +5218,10 @@ msgstr ""
 #~ msgid "Enabled — it polls on the next tick."
 #~ msgstr ""
 
+#: src/components/secrets/OriginChip.tsx
+msgid "Encrypted keychain"
+msgstr ""
+
 #: src/components/collaboration/RoomHeader.tsx
 msgid "End room"
 msgstr ""
@@ -5115,7 +5251,7 @@ msgstr ""
 #~ msgid "Enter a valid email"
 #~ msgstr ""
 
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Enter a valid GitHub repository URL."
 msgstr ""
 
@@ -5160,8 +5296,8 @@ msgid "Enter the code here"
 msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Enter the variable value"
-msgstr ""
+#~ msgid "Enter the variable value"
+#~ msgstr ""
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Enter trigger description"
@@ -5171,6 +5307,7 @@ msgstr ""
 msgid "Enter trigger name"
 msgstr ""
 
+#: src/components/credentials-view/ProvideValueInline.tsx
 #: src/components/project-home/SecretsCard.tsx
 msgid "Enter value"
 msgstr ""
@@ -5217,24 +5354,28 @@ msgid "ENV_VAR"
 msgstr ""
 
 #: src/components/credentials-view/CredentialsView.tsx
-msgid "Environment"
+#~ msgid "Environment"
+#~ msgstr ""
+
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Environment variable"
 msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Environment variable created successfully"
-msgstr ""
+#~ msgid "Environment variable created successfully"
+#~ msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Environment variable deleted successfully"
-msgstr ""
+#~ msgid "Environment variable deleted successfully"
+#~ msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Environment variable updated successfully"
-msgstr ""
+#~ msgid "Environment variable updated successfully"
+#~ msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Environment Variables"
-msgstr ""
+#~ msgid "Environment Variables"
+#~ msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "error"
@@ -5255,14 +5396,8 @@ msgstr ""
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/api-keys-view/use-user-api-keys.ts
 #: src/components/api-keys-view/use-user-api-keys.ts
-#: src/components/EnvVarsManager.tsx
-#: src/components/EnvVarsManager.tsx
-#: src/components/EnvVarsManager.tsx
-#: src/components/EnvVarsManager.tsx
-#: src/components/EnvVarsManager.tsx
-#: src/components/EnvVarsManager.tsx
-#: src/components/EnvVarsManager.tsx
-#: src/components/EnvVarsManager.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/machine-overview/node-secrets.tsx
 #: src/components/project-home/BindSecretDialog.tsx
@@ -5480,7 +5615,7 @@ msgstr ""
 msgid "Expert Assistance"
 msgstr ""
 
-#: src/components/environment-banner/EnvironmentBanner.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Explanation of Flowpad's runtime environments."
 msgstr ""
 
@@ -5605,6 +5740,10 @@ msgstr ""
 #~ msgid "Failed to create workflow"
 #~ msgstr ""
 
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Failed to declare the environment variable"
+msgstr ""
+
 #: src/components/artifacts/artifacts-list.tsx
 msgid "Failed to delete"
 msgstr ""
@@ -5618,8 +5757,8 @@ msgid "Failed to delete API key"
 msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Failed to delete environment variable"
-msgstr ""
+#~ msgid "Failed to delete environment variable"
+#~ msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -5784,6 +5923,11 @@ msgstr ""
 msgid "Failed to open project"
 msgstr ""
 
+#. placeholder {0}: row.envVar
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "Failed to remove {0}"
+msgstr ""
+
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Failed to remove image"
 msgstr ""
@@ -5895,6 +6039,10 @@ msgstr ""
 #~ msgid "Failed to stop services"
 #~ msgstr ""
 
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "Failed to store the value"
+msgstr ""
+
 #: src/components/project-home/SecretsCard.tsx
 msgid "Failed to store value"
 msgstr ""
@@ -6003,8 +6151,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/assets/MarkdownIndexPanel.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Files"
 msgstr ""
 
@@ -6196,7 +6344,11 @@ msgid "Flowpad Assistant"
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir."
+#~ msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir."
+#~ msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
@@ -6231,6 +6383,10 @@ msgstr ""
 #: src/components/footer.tsx
 #~ msgid "Flowpad docs"
 #~ msgstr ""
+
+#: src/components/secrets/OriginChip.tsx
+msgid "Flowpad Hub"
+msgstr ""
 
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
@@ -6320,6 +6476,7 @@ msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
+#: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Forward"
 msgstr ""
 
@@ -6343,6 +6500,10 @@ msgstr ""
 #~ msgid "From"
 #~ msgstr ""
 
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "from .env.local"
+msgstr ""
+
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "From {senderName}"
 msgstr ""
@@ -6358,6 +6519,14 @@ msgstr ""
 #: src/components/quick-create/QuickCreateModal.tsx
 #~ msgid "From Git"
 #~ msgstr ""
+
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "from the keychain"
+msgstr ""
+
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "from the provider"
+msgstr ""
 
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "From:"
@@ -6494,7 +6663,7 @@ msgstr ""
 msgid "Git tooling installed"
 msgstr ""
 
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Git URL"
 msgstr ""
 
@@ -6513,8 +6682,8 @@ msgid "GitHub connected — no private repos visible to this token."
 msgstr ""
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "GitHub connected — private repos are available."
-msgstr ""
+#~ msgid "GitHub connected — private repos are available."
+#~ msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "GitHub connected — private repos included."
@@ -6528,7 +6697,7 @@ msgstr ""
 msgid "GitHub connected."
 msgstr ""
 
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "GitHub connection failed."
 msgstr ""
 
@@ -6605,6 +6774,10 @@ msgstr ""
 msgid "Go up"
 msgstr ""
 
+#: src/components/secrets/OriginChip.tsx
+msgid "Google Secret Manager"
+msgstr ""
+
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgstr ""
@@ -6655,16 +6828,16 @@ msgstr ""
 msgid "Guides"
 msgstr ""
 
-#: src/pages/hub-home/ShareDesktopDialog.tsx
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Hand it over — they become the owner and you keep view-only access."
 msgstr ""
 
-#: src/pages/hub-home/ShareDesktopDialog.tsx
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Hand over"
 msgstr ""
 
 #. placeholder {0}: outcome.granted.join(', ')
-#: src/pages/hub-home/ShareDesktopDialog.tsx
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Handed over to {0}"
 msgstr ""
 
@@ -6759,7 +6932,7 @@ msgstr ""
 msgid "Help desk files removed"
 msgstr ""
 
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Help desks or skills repos to load alongside it."
 msgstr ""
 
@@ -6860,9 +7033,9 @@ msgstr ""
 msgid "History"
 msgstr ""
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Home"
 msgstr ""
 
@@ -7007,7 +7180,7 @@ msgstr ""
 msgid "HTML Preview"
 msgstr ""
 
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "https://github.com/owner/repo"
 msgstr ""
 
@@ -7015,7 +7188,6 @@ msgstr ""
 msgid "https://github.com/owner/repo.git"
 msgstr ""
 
-#: src/components/environment-banner/EnvironmentBanner.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
@@ -7259,6 +7431,10 @@ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Inline persona — no backing entity"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Inline persona — no file on disk"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -7688,7 +7864,7 @@ msgstr ""
 msgid "Latest on PyPI"
 msgstr ""
 
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Launch"
 msgstr ""
 
@@ -7709,8 +7885,8 @@ msgid "Launch workspace"
 msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Launching…"
-msgstr ""
+#~ msgid "Launching…"
+#~ msgstr ""
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Layers"
@@ -7733,9 +7909,13 @@ msgstr ""
 msgid "Leave conversation"
 msgstr ""
 
-#: src/components/EnvVarsManager.tsx
-msgid "Leave empty to keep current value"
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Leave empty to declare the need only"
 msgstr ""
+
+#: src/components/EnvVarsManager.tsx
+#~ msgid "Leave empty to keep current value"
+#~ msgstr ""
 
 #: src/components/inbox-view/InboxView.tsx
 msgid "Leave this conversation?"
@@ -8026,8 +8206,8 @@ msgid "Loading document..."
 msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Loading environment variables..."
-msgstr ""
+#~ msgid "Loading environment variables..."
+#~ msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Loading errors..."
@@ -8203,6 +8383,7 @@ msgstr ""
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/collaboration/CollaborationPage.tsx
 #: src/components/collaboration/SharedSessionsList.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -8224,7 +8405,7 @@ msgstr ""
 msgid "Local"
 msgstr ""
 
-#: src/components/environment-banner/EnvironmentBanner.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Local Browser"
 msgstr ""
 
@@ -8253,6 +8434,7 @@ msgstr ""
 #~ msgid "Local Variables"
 #~ msgstr ""
 
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Location"
 msgstr ""
@@ -8292,9 +8474,6 @@ msgid "Login required"
 msgstr ""
 
 #: src/components/credentials-view/LoginRequiredPanel.tsx
-#: src/components/EnvVarsManager.tsx
-#: src/components/EnvVarsManager.tsx
-#: src/components/EnvVarsManager.tsx
 msgid "Login Required"
 msgstr ""
 
@@ -8548,6 +8727,11 @@ msgstr ""
 msgid "Messages"
 msgstr ""
 
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "Met"
+msgstr ""
+
 #: src/components/artifacts/artifact-form.tsx
 #~ msgid "Metadata"
 #~ msgstr ""
@@ -8573,12 +8757,12 @@ msgid "Minimize"
 msgstr ""
 
 #: src/components/environment-banner/EnvironmentBanner.tsx
-msgid "Minimize environment banner"
-msgstr ""
+#~ msgid "Minimize environment banner"
+#~ msgstr ""
 
 #: src/components/environment-banner/EnvironmentBanner.tsx
-msgid "Minimize to the Home icon (returns on restart)"
-msgstr ""
+#~ msgid "Minimize to the Home icon (returns on restart)"
+#~ msgstr ""
 
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
@@ -8593,6 +8777,7 @@ msgstr ""
 msgid "Mis-Sc"
 msgstr ""
 
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/project-home/SecretsCard.tsx
 msgid "Missing"
 msgstr ""
@@ -8732,13 +8917,12 @@ msgstr ""
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
-#: src/components/EnvVarsManager.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Name"
 msgstr ""
 
@@ -8747,8 +8931,8 @@ msgid "name (e.g. coding)"
 msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Name (uppercase letters, numbers, and underscores only)"
-msgstr ""
+#~ msgid "Name (uppercase letters, numbers, and underscores only)"
+#~ msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
@@ -8756,7 +8940,6 @@ msgid "Name *"
 msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
-#: src/components/EnvVarsManager.tsx
 msgid "Name is required"
 msgstr ""
 
@@ -8866,12 +9049,12 @@ msgid "New contacts group"
 msgstr ""
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "New desktop"
-msgstr ""
+#~ msgid "New desktop"
+#~ msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "New Desktop"
-msgstr ""
+#~ msgid "New Desktop"
+#~ msgstr ""
 
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #: src/components/collaboration/sidebar/NewDocButton.tsx
@@ -8957,6 +9140,14 @@ msgstr ""
 msgid "New repo"
 msgstr ""
 
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "New sandbox"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "New Sandbox"
+msgstr ""
+
 #: src/components/events/EventsView.tsx
 msgid "New schedule rule"
 msgstr ""
@@ -8991,8 +9182,8 @@ msgid "New Terminal"
 msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "New Value (optional, max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
-msgstr ""
+#~ msgid "New Value (optional, max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
+#~ msgstr ""
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #: src/components/workflows-view/WorkflowsNavigator.tsx
@@ -9624,6 +9815,10 @@ msgstr ""
 msgid "No projects found"
 msgstr ""
 
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "No projects to choose from — use GitHub or a git URL."
+msgstr ""
+
 #: src/components/credentials-view/CredentialsView.tsx
 msgid "No projects yet"
 msgstr ""
@@ -9701,7 +9896,7 @@ msgstr ""
 msgid "No records of this type"
 msgstr ""
 
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "no repo"
 msgstr ""
 
@@ -10013,6 +10208,7 @@ msgid "Not configured"
 msgstr ""
 
 #: src/components/connections-manager.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Not connected"
 msgstr ""
 
@@ -10040,7 +10236,7 @@ msgstr ""
 msgid "Not runnable here"
 msgstr ""
 
-#: src/components/EnvVarsManager.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Not set"
 msgstr ""
 
@@ -10062,6 +10258,10 @@ msgstr ""
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Note: File is missing"
+msgstr ""
+
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "Nothing declared yet. Declare what this project needs — a declaration can sit unmet until someone provides the value."
 msgstr ""
 
 #: src/components/machine-overview/node-secrets.tsx
@@ -10092,8 +10292,12 @@ msgstr ""
 msgid "Nothing open to bookmark"
 msgstr ""
 
-#: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "Nothing selected — launches an empty desktop."
+#: src/pages/hub-home/NewSandboxDialog.tsx
+#~ msgid "Nothing selected — launches an empty desktop."
+#~ msgstr ""
+
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Nothing selected — launches an empty sandbox."
 msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -10179,6 +10383,10 @@ msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "OAuth + PKCE"
+msgstr ""
+
+#: src/components/secrets/OriginChip.tsx
+msgid "OAuth connection"
 msgstr ""
 
 #: src/components/InputSection.tsx
@@ -10273,6 +10481,7 @@ msgstr ""
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/workers/WorkerToolbar.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Open"
 msgstr ""
 
@@ -10364,12 +10573,12 @@ msgid "Open DB Folder"
 msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Open desktop"
-msgstr ""
+#~ msgid "Open desktop"
+#~ msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Open desktop →"
-msgstr ""
+#~ msgid "Open desktop →"
+#~ msgstr ""
 
 #: src/components/version-popover/diagnosis-report-modal.tsx
 msgid "Open diagnosis as a tab"
@@ -10587,10 +10796,9 @@ msgstr ""
 msgid "Open Project"
 msgstr ""
 
-#. placeholder {0}: proj.displayName
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-msgid "Open project assets — {0}"
-msgstr ""
+#~ msgid "Open project assets — {0}"
+#~ msgstr ""
 
 #: src/pages/flow-page/vibe-new-chat.tsx
 #~ msgid "Open project folder"
@@ -10612,6 +10820,10 @@ msgstr ""
 #: src/components/task-bar/TaskCard.tsx
 #~ msgid "Open report"
 #~ msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Open sandbox"
+msgstr ""
 
 #: src/tabs/useTerminalStripController.tsx
 msgid "Open sandbox terminal (E2B)"
@@ -10750,6 +10962,7 @@ msgid "Open worker session"
 msgstr ""
 
 #: src/components/account/secrets-section.tsx
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
 msgid "OPENAI_API_KEY"
 msgstr ""
 
@@ -10796,6 +11009,10 @@ msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
 msgid "Optional description"
+msgstr ""
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "Or send them this link"
 msgstr ""
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
@@ -11056,7 +11273,7 @@ msgid "Personal note, actionable item"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
-#: src/pages/hub-home/ShareDesktopDialog.tsx
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Pick a contact or enter an email"
 msgstr ""
 
@@ -11217,16 +11434,16 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Please login in order to add a new variable"
-msgstr ""
+#~ msgid "Please login in order to add a new variable"
+#~ msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Please login in order to edit environment variables"
-msgstr ""
+#~ msgid "Please login in order to edit environment variables"
+#~ msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Please login in order to save environment variables"
-msgstr ""
+#~ msgid "Please login in order to save environment variables"
+#~ msgstr ""
 
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
 msgid "Please make sure the server is running."
@@ -11379,6 +11596,10 @@ msgstr ""
 msgid "Private Context"
 msgstr ""
 
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Private to me"
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "problem"
 msgstr ""
@@ -11431,6 +11652,10 @@ msgstr ""
 msgid "Project"
 msgstr ""
 
+#: src/components/secrets/OriginChip.tsx
+msgid "Project .env.local"
+msgstr ""
+
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "Project (local)"
 msgstr ""
@@ -11458,6 +11683,10 @@ msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Project Commands (.claude/commands/)"
+msgstr ""
+
+#: src/components/credentials-view/CredentialsView.tsx
+msgid "Project Environment"
 msgstr ""
 
 #: src/components/project-selector/NewProjectDialog.tsx
@@ -11521,7 +11750,7 @@ msgstr ""
 msgid "Project secrets on this machine"
 msgstr ""
 
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Project to load"
 msgstr ""
 
@@ -11946,6 +12175,7 @@ msgid "Reconnect"
 msgstr ""
 
 #: src/components/connections-manager.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Reconnect needed"
 msgstr ""
 
@@ -11960,6 +12190,10 @@ msgstr ""
 
 #: src/components/account/user-info.tsx
 msgid "Reconnected"
+msgstr ""
+
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Record where {lockedEnvVar} comes from"
 msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
@@ -12020,8 +12254,6 @@ msgstr ""
 #: src/components/markdown-viewer.tsx
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/components/tabs/StripNavButtons.tsx
-#: src/components/tabs/StripNavButtons.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/webapp-viewer.tsx
@@ -12114,6 +12346,10 @@ msgstr ""
 msgid "Relative path"
 msgstr ""
 
+#: src/components/top-nav-bar/TopNavBar.tsx
+msgid "Reload"
+msgstr ""
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Reload the MarkdownIndex list."
 msgstr ""
@@ -12122,17 +12358,17 @@ msgstr ""
 #~ msgid "Remind in {count} {0}"
 #~ msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Remove"
 msgstr ""
 
+#. placeholder {0}: row.envVar
 #. placeholder {0}: source.name
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Remove {0}"
 msgstr ""
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove {label}"
 msgstr ""
@@ -12266,6 +12502,7 @@ msgstr ""
 msgid "Reopen"
 msgstr ""
 
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Replace"
 msgstr ""
@@ -12827,6 +13064,7 @@ msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Sandbox"
 msgstr ""
 
@@ -12851,12 +13089,16 @@ msgstr ""
 msgid "Sandbox unavailable"
 msgstr ""
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Sandboxes"
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
+#: src/components/credentials-view/ProvideValueInline.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
-#: src/components/EnvVarsManager.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -13023,6 +13265,7 @@ msgstr ""
 #~ msgid "Scheduled Jobs"
 #~ msgstr ""
 
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
@@ -13297,6 +13540,11 @@ msgstr ""
 msgid "Select a context."
 msgstr ""
 
+#: src/components/top-nav-bar/AddressField.tsx
+#: src/components/top-nav-bar/AddressField.tsx
+msgid "Select a different project"
+msgstr ""
+
 #: src/components/docs-viewer/DocsViewer.tsx
 msgid "Select a document"
 msgstr ""
@@ -13425,7 +13673,7 @@ msgstr ""
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Select project"
 msgstr ""
 
@@ -13450,8 +13698,8 @@ msgid "Select text to add a link"
 msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Select variable type"
-msgstr ""
+#~ msgid "Select variable type"
+#~ msgstr ""
 
 #: src/components/webapp-viewer.tsx
 #~ msgid "Select webapp..."
@@ -13670,6 +13918,7 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/project-home/SecretsCard.tsx
 #: src/journey/JourneyTray.tsx
 #: src/journey/SetupJourneyButton.tsx
@@ -13753,12 +14002,12 @@ msgstr ""
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
-#: src/pages/hub-home/ShareDesktopDialog.tsx
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Share"
 msgstr ""
 
-#. placeholder {0}: desktop?.name || 'desktop'
-#: src/pages/hub-home/ShareDesktopDialog.tsx
+#. placeholder {0}: sandbox?.name || 'sandbox'
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Share {0}"
 msgstr ""
 
@@ -13767,7 +14016,7 @@ msgstr ""
 msgid "Share {0} over Git"
 msgstr ""
 
-#: src/pages/hub-home/ShareDesktopDialog.tsx
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Share by name or email…"
 msgstr ""
 
@@ -13777,7 +14026,11 @@ msgid "Share code {0} to invite."
 msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Share desktop"
+#~ msgid "Share desktop"
+#~ msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Share sandbox"
 msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
@@ -13833,8 +14086,12 @@ msgid "Shared sessions"
 msgstr ""
 
 #. placeholder {0}: outcome.granted.join(', ')
-#: src/pages/hub-home/ShareDesktopDialog.tsx
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Shared with {0}"
+msgstr ""
+
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Shared with the project"
 msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
@@ -13885,6 +14142,10 @@ msgstr ""
 #~ msgid "Show {0} more labels"
 #~ msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Show {label} in Files"
+msgstr ""
+
 #: src/components/graph-view/ui/FilterChips.tsx
 msgid "Show {type}"
 msgstr ""
@@ -13928,6 +14189,10 @@ msgstr ""
 
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Show hidden files"
+msgstr ""
+
+#: src/components/top-nav-bar/AddressField.tsx
+msgid "Show hidden path segments"
 msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
@@ -14040,7 +14305,11 @@ msgid "Sign in to choose one of your GitHub repositories."
 msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
-msgid "Sign in to create desktops"
+#~ msgid "Sign in to create desktops"
+#~ msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Sign in to create sandboxes"
 msgstr ""
 
 #: src/pages/entry/InstallLanding.tsx
@@ -14084,8 +14353,16 @@ msgstr ""
 msgid "Signed in"
 msgstr ""
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "signed in as {loggedInUser}"
+msgstr ""
+
 #: src/components/project-home/ProjectGitChip.tsx
 msgid "Signed in to the remote"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "signed out"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -14490,7 +14767,6 @@ msgstr ""
 
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/connections-manager.tsx
-#: src/components/EnvVarsManager.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -14547,6 +14823,15 @@ msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Stop"
+msgstr ""
+
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "Stop declaring"
+msgstr ""
+
+#. placeholder {0}: confirming.envVar
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "Stop declaring {0}?"
 msgstr ""
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -14621,8 +14906,8 @@ msgstr ""
 #: src/components/EnvVarsManager.tsx
 #: src/components/EnvVarsManager.tsx
 #: src/components/EnvVarsManager.tsx
-msgid "Success"
-msgstr ""
+#~ msgid "Success"
+#~ msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Suggest a prompt for the other user to approve"
@@ -15029,6 +15314,10 @@ msgstr ""
 msgid "The local secrets store is not enabled yet."
 msgstr ""
 
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "The project will no longer ask for it. The stored value is not deleted."
+msgstr ""
+
 #: src/components/prompt-library/PromptEditDialog.tsx
 msgid "The prompt text…"
 msgstr ""
@@ -15081,6 +15370,10 @@ msgstr ""
 msgid "The tab content could not be prepared."
 msgstr ""
 
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "The value is removed from this project."
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 msgid "The value is stored in your operating system keychain and never readable from this UI."
 msgstr ""
@@ -15121,11 +15414,19 @@ msgid "They will be downloaded again the next time you open the help desk."
 msgstr ""
 
 #: src/pages/hub-home/ShareDesktopDialog.tsx
-msgid "They'll get an email with a link that opens this desktop."
+#~ msgid "They'll get an email with a link that opens this desktop."
+#~ msgstr ""
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "They'll get an email with a link that opens this sandbox."
 msgstr ""
 
 #: src/pages/hub-home/ShareDesktopDialog.tsx
-msgid "They'll get an email, and the desktop is already in their list."
+#~ msgid "They'll get an email, and the desktop is already in their list."
+#~ msgstr ""
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "They'll get an email, and the sandbox is already in their list."
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
@@ -15368,8 +15669,8 @@ msgid "Tip: connect GitHub to clone private repos."
 msgstr ""
 
 #: src/pages/hub-home/NewDesktopDialog.tsx
-msgid "Tip: connect GitHub to use private repos."
-msgstr ""
+#~ msgid "Tip: connect GitHub to use private repos."
+#~ msgstr ""
 
 #: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
 #~ msgid "Tip: Press Ctrl+Enter to save"
@@ -15628,8 +15929,6 @@ msgid "Two quick steps in your browser:"
 msgstr ""
 
 #: src/components/account/db-stats.tsx
-#: src/components/EnvVarsManager.tsx
-#: src/components/EnvVarsManager.tsx
 #: src/components/graph-view/ui/TopBar.tsx
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -15721,6 +16020,7 @@ msgid "Unique identifier for this hook within the settings file."
 msgstr ""
 
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "Unknown"
 msgstr ""
@@ -15743,8 +16043,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Unknown error occurred"
-msgstr ""
+#~ msgid "Unknown error occurred"
+#~ msgstr ""
 
 #: src/components/account/organization-panel.tsx
 #: src/components/account/user-info.tsx
@@ -15915,6 +16215,10 @@ msgstr ""
 msgid "Uploading…"
 msgstr ""
 
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Uppercase letters, numbers and underscores only."
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "URL"
 msgstr ""
@@ -15938,7 +16242,7 @@ msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
-#: src/pages/hub-home/NewDesktopDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Use"
 msgstr ""
 
@@ -15994,6 +16298,10 @@ msgstr ""
 msgid "User Prompt Submit"
 msgstr ""
 
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "user-set"
+msgstr ""
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "uses"
@@ -16030,37 +16338,58 @@ msgstr ""
 
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
-#: src/components/EnvVarsManager.tsx
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Value"
 msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Value (max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
+#~ msgid "Value (max {MAX_ENV_VAR_VALUE_LENGTH} characters)"
+#~ msgstr ""
+
+#: src/components/credentials-view/ProvideValueInline.tsx
+msgid "Value for {envVar}"
 msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Value is required for new variables"
+#~ msgid "Value is required for new variables"
+#~ msgstr ""
+
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Value too long"
 msgstr ""
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Value:"
 msgstr ""
 
-#: src/components/EnvVarsManager.tsx
-msgid "VAR_NAME"
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Values are limited to {MAX_ENV_VAR_VALUE_LENGTH} characters."
 msgstr ""
+
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Values for this location are held elsewhere — the declaration records the need and reads as missing until that location has it."
+msgstr ""
+
+#: src/components/EnvVarsManager.tsx
+#~ msgid "VAR_NAME"
+#~ msgstr ""
 
 #: src/components/skills-viewer/amd-editor/components/blocks/SetBlock.tsx
 #~ msgid "variable"
 #~ msgstr ""
 
-#: src/components/EnvVarsManager.tsx
-msgid "Variable name must contain only uppercase letters, numbers, and underscores"
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "Variable"
 msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "Variable type is required"
-msgstr ""
+#~ msgid "Variable name must contain only uppercase letters, numbers, and underscores"
+#~ msgstr ""
+
+#: src/components/EnvVarsManager.tsx
+#~ msgid "Variable type is required"
+#~ msgstr ""
 
 #: src/components/agentic-progress/shared/variables-inspector.tsx
 #~ msgid "Variables"
@@ -16308,6 +16637,10 @@ msgstr ""
 msgid "Welcome bookmark + feed entry, seeded on first run. Status: {onboardingStatus}"
 msgstr ""
 
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "What are Flowpad's runtime environments?"
+msgstr ""
+
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "What can flowpad do for you ?"
 msgstr ""
@@ -16362,8 +16695,8 @@ msgid "What is Git sharing?"
 msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-msgid "What is project?"
-msgstr ""
+#~ msgid "What is project?"
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "What is this agent for?"
@@ -16387,6 +16720,14 @@ msgstr ""
 
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "What should the worker do with this message?"
+msgstr ""
+
+#: src/components/credentials-view/ProjectEnvironmentTab.tsx
+msgid "What this project needs, where each value comes from, and whether it is met here."
+msgstr ""
+
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "What this secret is for"
 msgstr ""
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
@@ -16424,6 +16765,10 @@ msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "What's in the box."
+msgstr ""
+
+#: src/components/credentials-view/DeclareEnvVarDialog.tsx
+msgid "Where does it come from?"
 msgstr ""
 
 #: src/components/asset-manager/EntityTypeBar.tsx
@@ -16581,8 +16926,8 @@ msgid "You must be logged in"
 msgstr ""
 
 #: src/components/EnvVarsManager.tsx
-msgid "You must be logged in to delete environment variables"
-msgstr ""
+#~ msgid "You must be logged in to delete environment variables"
+#~ msgstr ""
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx

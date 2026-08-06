@@ -165,6 +165,7 @@ def extract_secret_origin(ref: FSRef, resolved_id: str) -> list[FSRecord]:
             "env_var": data.get("env_var") or "",
             "locator": data.get("locator") or {},
             "sod_store": data.get("sod_store") or "",
+            "description": data.get("description") or "",
         },
     )
     object.__setattr__(rec, "_asset_ref", FSRef(path))

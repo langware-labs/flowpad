@@ -1,6 +1,7 @@
 import {
   AgenticProcess,
   ClaudeSession,
+  CredentialsSubview,
   GraphWorkflow,
   Layout,
   PageId,
@@ -41,6 +42,7 @@ import { dockOptionsToSideWindows, withSideWindowsOptions, type SideWindowsState
 import type { ViewMode } from '@src/contexts/view-mode-context';
 import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/types/WorldViewColorMode';
 import { DEFAULT_GRAPH_PRESENTATION, type GraphPresentation } from '@src/types/GraphPresentation';
+import { credentialsPointer } from '@src/components/credentials-view/credentials-pointer';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -521,12 +523,17 @@ export class DockPointer implements IDockPointer {
    */
   static forEvents(
     ruleId?: string,
-    opts?: { creating?: string; system?: boolean },
+    opts?: { creating?: string; system?: boolean; target?: string },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const options: Record<string, string> = {};
     if (ruleId) options.trigger = ruleId;
     if (opts?.creating) options.creating = opts.creating;
+    // `target` narrows the feed to one subject, in the colon form a FlowEvent
+    // already uses (`data_source:<id>`, `graph_workflow:<id>`, …) — so "show me
+    // what this thing produced" is a link from anywhere that holds an entity,
+    // not a search the user has to retype.
+    if (opts?.target) options.target = opts.target;
     // `system` rides the URL rather than component state because BOTH panes
     // need it: the ScopeFilter shape is `{mode, user, projects}` and cannot
     // carry `system`, so system-scoped rules have always ridden a separate
@@ -1718,6 +1725,22 @@ export class DockPointer implements IDockPointer {
    */
   static forPreferences(category?: string, layout: Layout = Layout.DOCK): DockPointer {
     return new DockPointer(ViewType.PREFERENCES, category, {}, layout);
+  }
+
+  /**
+   * Create dock pointer for the Credentials screen.
+   *
+   * The pointer grammar (`<subview>[/<projectId>]`) is not restated here —
+   * `credentialsPointer` owns it, so a change there reaches every caller.
+   * @param tab - Which tab is active; omitted lands on the caller's leading tab
+   * @param projectId - Project whose environment is shown (Environment tab)
+   */
+  static forCredentials(
+    tab: CredentialsSubview = CredentialsSubview.CONNECTIONS,
+    projectId?: string,
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    return new DockPointer(ViewType.CREDENTIALS, credentialsPointer(tab, projectId), {}, layout);
   }
 
   /**

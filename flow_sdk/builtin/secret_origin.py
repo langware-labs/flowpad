@@ -74,6 +74,12 @@ class SecretOrigin(Entity):
         description="Which SOD store the setup wizard caches a provided value into: "
         "'sodot' | 'env-local'. Empty = derive from locator kind.",
     )
+    description: str = APIField(
+        default="",
+        description="What this secret is for, in the declarer's words. Lives here rather than on the "
+        "EnvVar row because a declaration may have no value yet, and an EnvVar cannot be created "
+        "without one — see app/actions/env_var.py::create_env_var.",
+    )
     project_id: str = APIField(
         sharing=Sharing.PRIVATE,
         default="",
@@ -104,6 +110,7 @@ class SecretOrigin(Entity):
             "env_var": self.env_var,
             "locator": self.locator.model_dump(mode="json"),
             "sod_store": self.effective_sod_store(),
+            "description": self.description or "",
         }
         assert_value_free(data, where="secret reference json")
         return {"data": data}
@@ -126,6 +133,7 @@ class SecretOrigin(Entity):
         scope: str,
         sod_store: str = "",
         typeid: str | None = None,
+        description: str = "",
     ) -> dict[str, Any]:
         data: dict[str, Any] = {
             "name": name,
@@ -134,6 +142,7 @@ class SecretOrigin(Entity):
             "locator": locator.model_dump(mode="json"),
             "sod_store": sod_store,
             "scope": scope,
+            "description": description,
         }
         if typeid:
             data["typeid"] = typeid
@@ -147,6 +156,7 @@ class SecretOrigin(Entity):
             scope=scope,
             sod_store=self.effective_sod_store(),
             typeid=str(self.typeid),
+            description=self.description or "",
         )
 
     @classmethod
@@ -158,6 +168,7 @@ class SecretOrigin(Entity):
         locator: SecretOriginLocator | dict[str, Any],
         name: str = "",
         sod_store: str = "",
+        description: str | None = None,
         remote: bool = False,
     ) -> "SecretOrigin":
         """Get-or-update the declaration of ``env_var`` in ``project_id``.
@@ -191,6 +202,11 @@ class SecretOrigin(Entity):
             if sod_store and existing.sod_store != sod_store:
                 existing.sod_store = sod_store
                 changed = True
+            # ``None`` means "not supplied" — a re-declare from a surface that
+            # carries no description must not wipe one someone already wrote.
+            if description is not None and existing.description != description:
+                existing.description = description
+                changed = True
             if remote and not existing.remote:
                 existing.remote = True
                 changed = True
@@ -205,6 +221,7 @@ class SecretOrigin(Entity):
             env_var=env_var,
             locator=loc,
             sod_store=sod_store,
+            description=description or "",
             remote=remote,
         )
         await ent.save()

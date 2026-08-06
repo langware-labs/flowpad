@@ -6,18 +6,19 @@
  * Neither side catches drift alone: the hub can only see what arrives, and this
  * can only see what is sent.
  *
- * The transport is the only thing mocked. `inviteMember`, `shareDesktopByEmail`
+ * The transport is the only thing mocked. `inviteMember`, `shareSandboxByEmail`
  * and the helpers under test all run for real.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ComputeNode, dataManager } from '@sdk';
 import {
-  DESKTOP_SHARE_ROLE,
-  desktopShareLandingPath,
+  SANDBOX_SHARE_ROLE,
+  sandboxShareLandingPath,
   pickInvitableEmails,
-  shareDesktopByEmail,
+  shareSandboxByEmail,
   shareFailureText,
-} from '@src/pages/hub-home/share-desktop';
+  sandboxShareLink,
+} from '@src/pages/hub-home/share-sandbox';
 
 const NODE_ID = '11111111-2222-4333-8444-555555555555';
 
@@ -44,7 +45,7 @@ afterEach(() => {
 describe('the landing path', () => {
   it('satisfies the hub validator that would otherwise 400 the invite', () => {
     // `is_safe_app_path`: leading slash, not protocol-relative, no scheme.
-    const path = desktopShareLandingPath();
+    const path = sandboxShareLandingPath();
 
     expect(path.startsWith('/')).toBe(true);
     expect(path.startsWith('//')).toBe(false);
@@ -54,7 +55,7 @@ describe('the landing path', () => {
   it('is a real app route, not a literal that can rot', () => {
     // Built from DockPointer, so renaming the hub home route breaks this test
     // rather than shipping invitations that land on the SPA catch-all.
-    expect(desktopShareLandingPath()).toContain('hub');
+    expect(sandboxShareLandingPath()).toContain('hub');
   });
 });
 
@@ -90,21 +91,21 @@ describe('pickInvitableEmails', () => {
   });
 });
 
-describe('shareDesktopByEmail wire contract', () => {
+describe('shareSandboxByEmail wire contract', () => {
   it('invites at the admission role, with a landing path', async () => {
-    await shareDesktopByEmail(node(), ['bob@example.com']);
+    await shareSandboxByEmail(node(), ['bob@example.com']);
 
     const body = lastBody();
     expect(body.recipient_email).toBe('bob@example.com');
-    expect(body.invitation_targets).toEqual([{ typeid: `${ComputeNode.type}-${NODE_ID}`, role: DESKTOP_SHARE_ROLE }]);
-    expect(body.callback_override).toBe(desktopShareLandingPath());
+    expect(body.invitation_targets).toEqual([{ typeid: `${ComputeNode.type}-${NODE_ID}`, role: SANDBOX_SHARE_ROLE }]);
+    expect(body.callback_override).toBe(sandboxShareLandingPath());
     // Not a transfer unless asked: these keys must be absent, not false/null.
     expect('transfer' in body).toBe(false);
     expect('role_to_keep' in body).toBe(false);
   });
 
   it('asks for owner and a kept role when handing over', async () => {
-    await shareDesktopByEmail(node(), ['bob@example.com'], { transfer: true, roleToKeep: 'reader' });
+    await shareSandboxByEmail(node(), ['bob@example.com'], { transfer: true, roleToKeep: 'reader' });
 
     const body = lastBody();
     expect(body.invitation_targets).toEqual([{ typeid: `${ComputeNode.type}-${NODE_ID}`, role: 'owner' }]);
@@ -113,7 +114,7 @@ describe('shareDesktopByEmail wire contract', () => {
   });
 
   it('sends role_to_keep: null for a complete handover', async () => {
-    await shareDesktopByEmail(node(), ['bob@example.com'], { transfer: true, roleToKeep: null });
+    await shareSandboxByEmail(node(), ['bob@example.com'], { transfer: true, roleToKeep: null });
 
     // null is meaningful to the hub ("keep nothing") and must not be dropped as
     // if it were an omitted field.
@@ -126,7 +127,7 @@ describe('shareDesktopByEmail wire contract', () => {
       .mockRejectedValueOnce({ response: { status: 400, data: { detail: 'use change_role' } } } as never)
       .mockResolvedValueOnce([]);
 
-    const outcome = await shareDesktopByEmail(node(), ['a@x.com', 'b@x.com', 'c@x.com']);
+    const outcome = await shareSandboxByEmail(node(), ['a@x.com', 'b@x.com', 'c@x.com']);
 
     expect(outcome.granted).toEqual(['a@x.com', 'c@x.com']);
     expect(outcome.failed).toHaveLength(1);
@@ -161,5 +162,41 @@ describe('shareFailureText', () => {
     };
 
     expect(shareFailureText(err, 'fallback')).toBe('Already has access');
+  });
+});
+
+/**
+ * The shareable link.
+ *
+ * It is the SAME url the card's Open button uses, and that is the point: one
+ * public entry point that resolves the machine's state at click time. It is safe
+ * to paste into a chat because it is not a bearer token — the hub requires an
+ * authenticated principal holding at least `admin` on the node before it will
+ * attach the cookie-gate secret.
+ */
+describe('sandboxShareLink', () => {
+  const node = { id: NODE_ID } as never;
+
+  it('is the open-service route for the node', () => {
+    const link = sandboxShareLink(node);
+
+    expect(link).toContain(NODE_ID);
+    expect(link.endsWith('/open-service/workspace')).toBe(true);
+  });
+
+  it('carries no secret, no host and no port', () => {
+    // The failure this guards is handing out `gated_host_url` instead: that url
+    // embeds the cookie-gate secret — the only authorization in front of the
+    // box's public provider url — and goes stale the moment the box pauses.
+    const link = sandboxShareLink(node);
+
+    expect(link).not.toContain('cookie-gate');
+    expect(link).not.toContain('e2b.dev');
+    expect(link).not.toContain('9007');
+    expect(link).not.toMatch(/[?&]port=/);
+  });
+
+  it('takes no landing path, so a shared link cannot aim anywhere but the box', () => {
+    expect(sandboxShareLink(node)).not.toContain('?');
   });
 });

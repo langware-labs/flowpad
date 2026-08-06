@@ -1,9 +1,10 @@
 import { ActionInfo, ComputeNode, dataManager, PageId } from '@sdk';
+import { workspaceServiceUrl } from '@src/hooks/use-sandboxes';
 import { errorMessage, errorStatus } from '@src/lib/error-message';
 import { DockPointer } from '@src/navigation/DockPointer';
 
 /**
- * Sharing a cloud desktop by email, and handing one over.
+ * Sharing a cloud sandbox by email, and handing one over.
  *
  * The hub side of this is entirely pre-existing: `POST <entity>/members` creates
  * the Invitation, provisions a shadow account for an unknown address, grants the
@@ -16,7 +17,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
  */
 
 /**
- * The role a shared desktop is granted at.
+ * The role a shared sandbox is granted at.
  *
  * `admin` is the floor for admission: `policies.json` grants `open-service` only
  * at admin, and `_may_receive_the_gate` requires the same rank before the
@@ -26,10 +27,10 @@ import { DockPointer } from '@src/navigation/DockPointer';
  * It also carries `delete`. That is a deliberate, accepted trade-off, not an
  * oversight: the dialog says so in as many words.
  */
-export const DESKTOP_SHARE_ROLE = 'admin';
+export const SANDBOX_SHARE_ROLE = 'admin';
 
-/** What the sender keeps after handing a desktop over. */
-export const DESKTOP_TRANSFER_ROLE_TO_KEEP = 'reader';
+/** What the sender keeps after handing a sandbox over. */
+export const SANDBOX_TRANSFER_ROLE_TO_KEEP = 'reader';
 
 /**
  * Where the emailed invitation lands the recipient.
@@ -39,7 +40,7 @@ export const DESKTOP_TRANSFER_ROLE_TO_KEEP = 'reader';
  * validates it with `is_safe_app_path` (leading `/`, no `//`, no `://`), which
  * this satisfies by construction.
  */
-export function desktopShareLandingPath(): string {
+export function sandboxShareLandingPath(): string {
   return DockPointer.forHome().withPage(PageId.HUB).toUrl();
 }
 
@@ -56,7 +57,7 @@ export interface ShareOutcome {
   failed: { email: string; message: string }[];
 }
 
-export interface ShareDesktopOptions {
+export interface ShareSandboxOptions {
   role?: string;
   transfer?: boolean;
   roleToKeep?: string | null;
@@ -99,8 +100,8 @@ export function shareFailureText(error: unknown, fallback: string): string {
   const status = errorStatus(error);
   const detail = errorMessage(error, '');
   if (status === 400 && /change_role/i.test(detail)) return 'Already has access';
-  if (status === 401) return 'Sign in to share this desktop';
-  if (status === 403) return detail || 'Only the desktop owner can share it';
+  if (status === 401) return 'Sign in to share this sandbox';
+  if (status === 403) return detail || 'Only the sandbox owner can share it';
   // The role was already granted before the mail step, so this is not a failed
   // share — saying "could not share" here would be wrong and would invite a
   // pointless retry.
@@ -116,18 +117,18 @@ export function shareFailureText(error: unknown, fallback: string): string {
  * rejection would silently discard the grants that already landed and leave the
  * sender with no idea which of them took.
  */
-export async function shareDesktopByEmail(
+export async function shareSandboxByEmail(
   node: ComputeNode,
   emails: string[],
-  opts: ShareDesktopOptions = {},
+  opts: ShareSandboxOptions = {},
 ): Promise<ShareOutcome> {
   const outcome: ShareOutcome = { granted: [], failed: [] };
-  const role = opts.transfer ? 'owner' : (opts.role ?? DESKTOP_SHARE_ROLE);
+  const role = opts.transfer ? 'owner' : (opts.role ?? SANDBOX_SHARE_ROLE);
 
   for (const email of emails) {
     try {
       await node.inviteMember(email, role, {
-        callbackOverride: desktopShareLandingPath(),
+        callbackOverride: sandboxShareLandingPath(),
         ...(opts.transfer ? { transfer: true, roleToKeep: opts.roleToKeep ?? null } : {}),
       });
       outcome.granted.push(email);
@@ -148,4 +149,22 @@ export async function shareDesktopByEmail(
 export async function setAutoLogin(node: ComputeNode, value: boolean): Promise<boolean> {
   const res = await autoLoginCall(node.id, value);
   return res?.auto_login ?? value;
+}
+
+/**
+ * The link to hand someone once they have access.
+ *
+ * Deliberately the SAME url the card's Open button uses — the open-service
+ * route, which resolves the machine's state at click time: it authorizes the
+ * caller, resumes a paused box, waits for the workspace to answer, and only then
+ * redirects.
+ *
+ * Safe to paste into a chat or an email because it is not a bearer token. The
+ * hub requires an authenticated principal holding at least `admin` on the node
+ * before it will even attach the cookie-gate secret, so a stranger who gets hold
+ * of this gets a 403, not a session. That is exactly why it must never be the
+ * raw gated host url, which carries that secret in its query string.
+ */
+export function sandboxShareLink(node: ComputeNode): string {
+  return workspaceServiceUrl(node.id);
 }

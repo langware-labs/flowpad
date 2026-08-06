@@ -31,6 +31,9 @@ function Host({ children }: { children: React.ReactNode }) {
 }
 
 describe('entity location text owned by interactive hosts', () => {
+  // The name chip is the OPEN-IN-EDITOR control, and it is what carries the
+  // entity icon — so it is the button that must carry the location text.
+  // Explorer ("show the file") and select are separate buttons alongside it.
   it('AssetRow appends cloud state to its native title and explicit action label', () => {
     const row = descriptor(true);
     render(
@@ -49,20 +52,17 @@ describe('entity location text owned by interactive hosts', () => {
       </Host>,
     );
 
-    // The name chip is the select control, and it is what carries the entity
-    // icon — "open" is its own button alongside it.
     const host = screen.getByTestId(`asset-manager-row-${row.typeid}-${row.source}`);
-    const pick = within(host).getByRole('button', {
-      name: 'Select Remote kit, Available on cloud',
-    });
-    expect(pick).toHaveAttribute('title', 'Select Remote kit\nAvailable on cloud');
-    expect(pick.querySelector('[data-entity-location="cloud"]')).toBeTruthy();
-    expect(within(host).getByTestId(`asset-manager-open-${row.typeid}-${row.source}`)).toHaveAccessibleName(
-      'Open Remote kit',
+    const open = within(host).getByTestId(`asset-manager-open-${row.typeid}-${row.source}`);
+    expect(open).toHaveAccessibleName('Open Remote kit, Available on cloud');
+    expect(open).toHaveAttribute('title', 'Open Remote kit\nAvailable on cloud');
+    expect(open.querySelector('[data-entity-location="cloud"]')).toBeTruthy();
+    expect(within(host).getByTestId(`asset-manager-explorer-${row.typeid}-${row.source}`)).toHaveAccessibleName(
+      'Show Remote kit in Files',
     );
   });
 
-  it('AssetRow appends local state to its select title and explicit action label', () => {
+  it('AssetRow appends local state to its open title and explicit action label', () => {
     const row = descriptor(false);
     render(
       <Host>
@@ -79,9 +79,9 @@ describe('entity location text owned by interactive hosts', () => {
     );
 
     const host = screen.getByTestId(`asset-manager-row-${row.typeid}-${row.source}`);
-    const pick = within(host).getByRole('button', { name: `Select ${row.typeid}, Local only` });
-    expect(pick).toHaveAttribute('title', `Select ${row.typeid}\nLocal only`);
-    expect(pick.querySelector('[data-entity-location="local"]')).toBeTruthy();
+    const open = within(host).getByRole('button', { name: `Open ${row.typeid}, Local only` });
+    expect(open).toHaveAttribute('title', `Open ${row.typeid}\nLocal only`);
+    expect(open.querySelector('[data-entity-location="local"]')).toBeTruthy();
   });
 
   it('SimpleDirTree icon button owns cloud title and accessible label', () => {
@@ -121,9 +121,9 @@ describe('entity location text owned by interactive hosts', () => {
     );
 
     const host = screen.getByTestId(`asset-manager-row-${row.typeid}-${row.source}`);
-    const pick = within(host).getByRole('button', { name: `Select ${row.typeid}` });
-    expect(pick.getAttribute('aria-label')).not.toMatch(/Available on cloud|Local only/);
-    expect(pick.getAttribute('title')).not.toMatch(/Available on cloud|Local only/);
-    expect(pick.querySelector('[data-entity-location="unknown"]')).toBeTruthy();
+    const open = within(host).getByRole('button', { name: `Open ${row.typeid}` });
+    expect(open.getAttribute('aria-label')).not.toMatch(/Available on cloud|Local only/);
+    expect(open.getAttribute('title')).not.toMatch(/Available on cloud|Local only/);
+    expect(open.querySelector('[data-entity-location="unknown"]')).toBeTruthy();
   });
 });

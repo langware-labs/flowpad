@@ -4,7 +4,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
  * Generic "checked steps" progress model — the checklist a long, multi-call
  * flow renders while it works (desktop launch, help-desk load, …).
  *
- * Lifted from the bespoke copy that grew inside `use-desktops.ts` and was then
+ * Lifted from the bespoke copy that grew inside `use-sandboxes.ts` and was then
  * duplicated between `HubHome` and `LaunchLanding`. Pair it with `<StepList>`
  * (`@src/components/ui/step-list`) for the rendering half.
  *

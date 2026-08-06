@@ -19,7 +19,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => h.hubOnly }));
-vi.mock('@src/hooks/use-desktops', () => ({ useDesktops: () => ({ launch: h.launch }) }));
+vi.mock('@src/hooks/use-sandboxes', () => ({ useSandboxes: () => ({ launch: h.launch }) }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock: vi.fn() }, currentDock: null }),
 }));
