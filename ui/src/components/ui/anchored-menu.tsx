@@ -3,9 +3,6 @@ import { useIdleAutoClose } from '@src/hooks/use-idle-auto-close';
 import { X } from 'lucide-react';
 import { useEffect, useRef, useState, type PointerEventHandler, type ReactNode } from 'react';
 
-/** Rail-anchored offset (matches RAIL_WIDTH_CLASS = w-[50px]). The slider floats
- *  against the rail's right edge. */
-const RAIL_OFFSET = 50;
 /** Where the menu sits when the owner passes no anchor. */
 const ANCHOR_FALLBACK_TOP = 8;
 /** Cap before the body scrolls. */
@@ -16,12 +13,17 @@ const MIN_WIDTH = 224;
 const VIEWPORT_GUTTER = 8;
 
 /**
- * LeftSlider — a generic left-edge slide-in MENU, anchored beside the rail
- * control that opens it. A transient, non-modal flyout: it floats over content
- * (the rail stays interactive) and dismisses on outside pointer-down, Escape,
- * and — unless a hover-driven owner opts out with `idleMs={null}` — 5s of idle
- * (see `useIdleAutoClose`). Reusable layout element — the `headerRight` slot is
- * the canonical home for a scope filter, so any "scoped menu" drops in.
+ * AnchoredMenu — a slide-in MENU whose right edge is pinned under the control
+ * that opens it, growing leftward. A transient, non-modal flyout: it floats over
+ * content (the trigger stays interactive) and dismisses on outside pointer-down,
+ * Escape, and — unless a hover-driven owner opts out with `idleMs={null}` — 5s
+ * of idle (see `useIdleAutoClose`). Reusable layout element — the `headerRight`
+ * slot is the canonical home for a scope filter, so any "scoped menu" drops in.
+ *
+ * It used to be `LeftSlider`, pinned beside the rail and growing rightward. That
+ * mode went with the rail's bookmarks icon; keeping a second branch nothing
+ * selects would have left a `RAIL_OFFSET` and a z-order rationale describing a
+ * relationship that no longer exists.
  *
  * Sized to its CONTENT, capped by `maxHeight`, not stretched to the viewport.
  * That is the flyout-menu pattern rather than the navigation-drawer one, and the
@@ -30,17 +32,18 @@ const VIEWPORT_GUTTER = 8;
  * away. Hugging the content also means a short menu barely overlaps the rail
  * even mid-animation.
  *
- * The toggle control that opens this must carry `data-left-slider-ignore` so a
+ * The toggle control that opens this must carry `data-anchored-menu-ignore` so a
  * click on it doesn't register as an outside-dismiss (which would fight the
  * toggle).
  */
-export function LeftSlider({
+export function AnchoredMenu({
   open,
   onOpenChange,
   title,
   headerRight,
   width = 320,
   anchorTop = ANCHOR_FALLBACK_TOP,
+  anchorRight = VIEWPORT_GUTTER,
   idleMs,
   onPointerEnter,
   onPointerLeave,
@@ -55,6 +58,11 @@ export function LeftSlider({
   /** Viewport y the menu's top edge aligns to — pass the trigger's own top so
    *  the menu reads as belonging to it. */
   anchorTop?: number;
+  /** Distance from the VIEWPORT's right edge to the menu's right edge — i.e.
+   *  `window.innerWidth - triggerRect.right`, so the two line up. Defaulted
+   *  because the owner measures in a layout effect, which lands after this
+   *  child's first commit. */
+  anchorRight?: number;
   /** `null` opts out of the idle auto-close — for a hover-driven slider that
    *  owns its own dismissal via pointer-leave. See useIdleAutoClose. */
   idleMs?: number | null;
@@ -93,7 +101,7 @@ export function LeftSlider({
       const target = e.target as HTMLElement | null;
       if (!target) return;
       if (panelRef.current?.contains(target)) return;
-      if (target.closest('[data-left-slider-ignore]')) return;
+      if (target.closest('[data-anchored-menu-ignore]')) return;
       onOpenChange(false);
     };
     window.addEventListener('keydown', onKey);
@@ -116,7 +124,9 @@ export function LeftSlider({
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
       style={{
-        left: RAIL_OFFSET,
+        // Pin the right edge to the trigger; the left is free to move as the
+        // content sizes it, which is what makes the menu grow leftward.
+        right: anchorRight,
         top: anchorTop,
         // Size to content, not a fixed slab: short bookmark names left most of a
         // 320px panel empty. Clamped between a min that fits the header and
@@ -129,21 +139,23 @@ export function LeftSlider({
         maxHeight: `min(${MAX_HEIGHT}, calc(100vh - ${anchorTop}px - ${VIEWPORT_GUTTER}px))`,
       }}
       className={cn(
-        'fixed z-40 flex flex-col overflow-hidden rounded-lg border border-border bg-background shadow-lg',
+        // z-[60] out-ranks the rail (z-50) outright: this hangs off the top bar,
+        // which renders EARLIER in the DOM, so an equal z would lose the tie and
+        // let the rail paint over the menu on a narrow window.
+        'fixed z-[60] flex flex-col overflow-hidden rounded-lg border border-border bg-background shadow-lg',
         'transition-transform duration-200 ease-in-out',
-        // `-translate-x-full` parks the panel at left = RAIL_OFFSET - width, so
-        // while it is animating in or out it sits directly ON TOP of the rail
-        // that opens it. It must not hit-test there: a hover-driven owner would
+        // Parked off the right edge while closed, so the slide travels toward
+        // the content. It must not hit-test there: a hover-driven owner would
         // otherwise receive pointerenter from its own off-screen panel while the
-        // pointer is really on a rail icon, reopen, slide away, get pointerleave,
+        // pointer is really on the trigger, reopen, slide away, get pointerleave,
         // close, slide back under the pointer — an oscillation that never
         // settles. Only a shown panel takes the pointer.
-        shown ? 'translate-x-0' : '-translate-x-full pointer-events-none',
+        shown ? 'translate-x-0' : 'translate-x-full pointer-events-none',
       )}
     >
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         {title != null && <div className="text-sm font-semibold text-foreground">{title}</div>}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ms-auto flex items-center gap-1">
           {headerRight}
           <button
             type="button"

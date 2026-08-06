@@ -23,9 +23,7 @@ import { useHasConversations } from '@src/hooks/use-has-conversations';
 import { useLastVibeChat } from '@src/pages/flow-page/use-last-vibe-chat';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
-import { BookmarksSlider } from '@src/components/bookmarks-slider/BookmarksSlider';
-import { useUnopenedFavoritesCount } from '@src/hooks/use-unopened-favorites-count';
-import { useHoverIntent } from '@src/hooks/use-hover-intent';
+import { NavBadge } from '@src/components/ui/nav-badge';
 import { useLingui } from '@lingui/react/macro';
 
 /**
@@ -35,11 +33,9 @@ import { useLingui } from '@lingui/react/macro';
 export const RAIL_WIDTH_CLASS = 'w-[50px]';
 import {
   BadgeCheck,
-  Bookmark,
   Bug,
   ChevronDown,
   Compass,
-  FolderOpen,
   Mail,
   History,
   MessageCircle,
@@ -48,14 +44,13 @@ import {
   Workflow,
   Webhook,
 } from 'lucide-react';
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 // Membership AND order both come from RAIL_ITEMS (rail-visibility.ts). This file
 // supplies each id's title/icon/target and renders the resolved list in the order
-// it arrives — it must never re-sort or filter it. The bespoke entries (project,
-// bookmarks, discover) are ordinary members of that list; only their renderers
-// live here, in `renderBespoke`.
+// it arrives — it must never re-sort or filter it. Every entry now renders
+// through the one generic path; `discover` differs only in where its click goes.
 // RailIcon / HubItem live with the hub-rail builder so it can type its own return.
 
 /** Stable empty rail for desk renders, so the memo below doesn't hand React a
@@ -63,25 +58,12 @@ import { useLocation, useNavigate } from 'react-router';
 const NO_HUB_ITEMS: readonly HubItem[] = [];
 
 /** Title/icon/target for a DESK rail id. `viewType: null` = not a dock tab
- *  (Home, and the bespoke Discover route). */
+ *  (the Discover route, which is a top-level page). */
 type NavItem = {
   title: string;
   icon: RailIcon;
   viewType: ViewType | null;
 };
-
-/** The rail's count chip. Shared by every rail button that carries one so they
- *  can't drift apart. Module scope, not the render body: a component declared
- *  inside render is a NEW type on every render, so React would remount the span
- *  rather than reconcile it. */
-function NavBadge({ count }: { count: number }) {
-  if (count <= 0) return null;
-  return (
-    <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-bold leading-none text-destructive-foreground">
-      {count > 99 ? '99+' : count}
-    </span>
-  );
-}
 
 export function CollapsedSidebar() {
   const { navigation, currentDock } = useDockNavigation();
@@ -89,23 +71,8 @@ export function CollapsedSidebar() {
   const location = useLocation();
   const onDiscover = location.pathname === '/discover';
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
-  // Rest-to-open; the rail button and panel share one intent (see useHoverIntent).
-  const bookmarks = useHoverIntent();
-  // Align the menu's top edge with the button that opens it, so it reads as
-  // belonging to that icon. Measured rather than a constant: the rail's layout
-  // shifts with view mode and the collapsed-items expander.
-  //
-  // useLayoutEffect, not useEffect: a passive effect lands AFTER paint, so the
-  // menu would render one frame at the fallback top and then jump to the button.
-  const bookmarksBtnRef = useRef<HTMLButtonElement>(null);
-  const [bookmarksAnchorTop, setBookmarksAnchorTop] = useState<number | undefined>(undefined);
-  useLayoutEffect(() => {
-    if (!bookmarks.open) return;
-    setBookmarksAnchorTop(bookmarksBtnRef.current?.getBoundingClientRect().top);
-  }, [bookmarks.open]);
   const devMode = useDevMode();
   const { unread: unreadCount } = useInboxManager();
-  const unopenedFavorites = useUnopenedFavoritesCount();
   const viewMode = useViewMode();
   // Derived, not a second useIsVibe() subscription — that hook IS this comparison.
   const isVibe = viewMode === ViewMode.Vibe;
@@ -121,7 +88,6 @@ export function CollapsedSidebar() {
     discover: { title: t`Discover`, icon: Compass, viewType: null },
     events: { title: t`Events`, icon: RadioTower, viewType: ViewType.EVENTS },
     hooks: { title: t`Hooks`, icon: Webhook, viewType: ViewType.HOOKS },
-    files: { title: t`Files`, icon: FolderOpen, viewType: ViewType.EXPLORER },
     capabilities: { title: t`Capabilities`, icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
     'graph-workflows': { title: t`Graph Workflows`, icon: Workflow, viewType: ViewType.GRAPH_WORKFLOWS },
     // Glyph from the type registry, never a literal — same rule the project
@@ -204,8 +170,6 @@ export function CollapsedSidebar() {
    *  item can't mean one thing above the chevron and another below it. */
   const isActiveId = (id: RailItemId): boolean => {
     switch (id) {
-      case 'bookmarks':
-        return bookmarks.open;
       case 'discover':
         return onDiscover;
       // One rail item, four URLs: the merged screen answers to its own view
@@ -224,8 +188,6 @@ export function CollapsedSidebar() {
     switch (id) {
       case 'inbox':
         return unreadCount;
-      case 'bookmarks':
-        return unopenedFavorites;
       default:
         return 0;
     }
@@ -234,9 +196,6 @@ export function CollapsedSidebar() {
   /** THE click router for desk rail entries. */
   const handleRailClick = (id: RailItemId) => {
     switch (id) {
-      case 'bookmarks':
-        bookmarks.set(!bookmarks.open);
-        return;
       case 'discover':
         // Full-page marketplace: a top-level route, not a dock tab.
         void navigate('/discover');
@@ -260,39 +219,8 @@ export function CollapsedSidebar() {
     }
   };
 
-  /** The bookmarks button: opens the favorites desktop as a left slide-in flyout
-   *  (not a dock tab), so it toggles local state rather than routing. */
-  const renderBookmarksItem = () => (
-    <SidebarMenuButton
-      ref={bookmarksBtnRef}
-      data-rail-item="bookmarks"
-      // No tooltip: SidebarMenuButton places them side="right", i.e. on top of
-      // the menu this opens. aria-label carries the name.
-      aria-label={t`Bookmarks`}
-      isActive={isActiveId('bookmarks')}
-      {...bookmarks.hoverProps}
-      onClick={() => handleRailClick('bookmarks')}
-      // Keeps this click from registering as an outside-dismiss on the slider
-      // and fighting the toggle.
-      data-left-slider-ignore
-      className="relative w-full justify-center px-2"
-    >
-      <Bookmark className="h-5 w-5" />
-      <NavBadge count={badgeForId('bookmarks')} />
-    </SidebarMenuButton>
-  );
-
-  /** Entries whose button isn't the generic one. Position still comes from
-   *  RAIL_ITEMS — only the rendering is bespoke. */
-  const renderBespoke = (id: RailItemId): ReactNode | null => {
-    if (id === 'bookmarks') return renderBookmarksItem();
-    return null;
-  };
-
-  /** One desk rail entry, bespoke or generic, wrapped in its menu item. */
+  /** One desk rail entry, wrapped in its menu item. */
   const renderRailItem = (spec: RailSpec) => {
-    const bespoke = renderBespoke(spec.id);
-    if (bespoke) return <SidebarMenuItem key={spec.id}>{bespoke}</SidebarMenuItem>;
     const meta = navMeta[spec.id];
     if (!meta) return null;
     const Icon = meta.icon;
@@ -330,14 +258,12 @@ export function CollapsedSidebar() {
     );
   };
 
-  // `bookmarks` is ungated and rides from Vibe, so it is present on every desk rail.
-  const showBookmarksSlider = !hubMode;
-
   return (
     <>
-      {/* Above the slider (z-40): the slider's closed transform parks it over the
-          rail, where it would otherwise paint an opaque strip and swallow the
-          rail's hover. On top, the menu emerges from behind the rail instead. */}
+      {/* z-50 keeps the rail above the content column. It used to also be the
+          number that let the bookmarks flyout (z-40) emerge from behind it;
+          that menu now hangs off the top bar's star and out-ranks the rail
+          deliberately (z-[60]), since it opens on the far side of the window. */}
       <Sidebar collapsible="none" className={`relative z-50 flex ${RAIL_WIDTH_CLASS} flex-col border-r`}>
         <SidebarContent className="flex-1">
           <SidebarGroup className="px-0 py-2">
@@ -404,14 +330,6 @@ export function CollapsedSidebar() {
           <UserDropdown />
         </div>
       </Sidebar>
-      {showBookmarksSlider && (
-        <BookmarksSlider
-          open={bookmarks.open}
-          onOpenChange={bookmarks.set}
-          hoverProps={bookmarks.hoverProps}
-          anchorTop={bookmarksAnchorTop}
-        />
-      )}
     </>
   );
 }

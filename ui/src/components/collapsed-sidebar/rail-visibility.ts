@@ -15,11 +15,10 @@ import { ViewMode } from '@src/contexts/view-mode-context';
  *
  *  2. **Array order is render order, in every mode.** A mode's rail is a
  *     subsequence of {@link RAIL_ITEMS} — so icons can never reshuffle when the
- *     mode changes. This is why the bespoke entries (bookmarks / discover) are
- *     listed here too: they used to be JSX slots pinned after the render loop,
- *     which made their position unexpressible and mode-dependent. They keep
- *     their custom renderers in collapsed-sidebar.tsx; only their PLACEMENT
- *     lives here.
+ *     mode changes. This is why `discover` is listed here too: it used to be a
+ *     JSX slot pinned after the render loop, which made its position
+ *     unexpressible and mode-dependent. Its custom click target still lives in
+ *     collapsed-sidebar.tsx; only its PLACEMENT lives here.
  *
  * To change the rail: edit {@link RAIL_ITEMS}. Nothing else orders or filters it.
  */
@@ -28,12 +27,10 @@ import { ViewMode } from '@src/contexts/view-mode-context';
 export type RailItemId =
   | 'chats'
   | 'inbox'
-  | 'bookmarks'
   | 'discover'
   /** Rules and the events they fire on — replaced `triggers` + `signals`. */
   | 'events'
   | 'hooks'
-  | 'files'
   | 'capabilities'
   | 'graph-workflows'
   | 'data-sources'
@@ -93,11 +90,11 @@ export const MODE_CHAIN = [
 /**
  * The rail, top to bottom.
  *
- * NOTE on the absence of `home`, `project` and `assets` entries: all three are
- * deliberate. Home and the project moved to the top navigation bar (a nav button
- * and the leading breadcrumb); assets are reached through the project. Each
- * would otherwise be a second door onto the same room, lighting two buttons for
- * one destination.
+ * NOTE on what is deliberately ABSENT. `home`, `files` and `bookmarks` moved to
+ * the top navigation bar — Home and Files as nav buttons, bookmarks onto the
+ * star that also toggles the current favorite. `project` is the bar's leading
+ * breadcrumb, and `assets` is reached through it. Each would otherwise be a
+ * second door onto the same room, lighting two buttons for one destination.
  *
  * Standard adds no icon of its own: it differs from Vibe only in what `chats`
  * targets (the chats list vs. resuming the last UI chat). That is the intended
@@ -105,7 +102,6 @@ export const MODE_CHAIN = [
  */
 export const RAIL_ITEMS: readonly RailSpec[] = [
   { id: 'chats', from: ViewMode.Vibe, placement: 'top' },
-  { id: 'bookmarks', from: ViewMode.Vibe, placement: 'top' },
   { id: 'inbox', from: ViewMode.Vibe, placement: 'top', gate: 'conversations' },
   // Took the Tasks slot. Ungated on purpose: this screen is where the FIRST
   // source is created, so gating it on "a source exists" would make it
@@ -122,7 +118,6 @@ export const RAIL_ITEMS: readonly RailSpec[] = [
   // and the answer was previously unreachable for any run without a
   // spawning entity to browse to.
   { id: 'process-runs', from: ViewMode.Advanced, placement: 'top' },
-  { id: 'files', from: ViewMode.Vibe, placement: 'overflow' },
   { id: 'hooks', from: ViewMode.Advanced, placement: 'overflow' },
   { id: 'capabilities', from: ViewMode.Dev, placement: 'overflow' },
 ];

@@ -1,10 +1,9 @@
 import { useLingui } from '@lingui/react/macro';
 import type { TypeId } from '@sdk';
 import { AssetDiscussButton } from '@src/components/assets/editor/AssetDiscussButton';
-import { compactEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
-import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
+import { BookmarksStarButton } from './BookmarksStarButton';
 import type { DockPointer } from '@src/navigation/DockPointer';
 
 /**
@@ -31,14 +30,32 @@ export function TopBarActions({
 }) {
   const { t } = useLingui();
 
+  // The star is rendered HERE in both branches, never by the toolbar
+  // (`hideFavorite`). It has to be wrapped to carry the bookmarks menu, and the
+  // toolbar's copy would be a second star sitting beside it.
+  const favorite = favoriteTargetForDock(
+    dock,
+    targetTypeId ? { typeId: targetTypeId, entity: null } : null,
+    targetTitle || t`Bookmarked view`,
+  );
+
   if (targetTypeId) {
     return (
       <EntityActionsToolbar
         typeId={targetTypeId}
         favoriteTitle={targetTitle}
         variant="compact"
-        trailing={<AssetDiscussButton />}
         className="shrink-0"
+        // The bar owns the star (it carries the bookmarks menu), so the toolbar
+        // must not draw a second one. Riding the `trailing` slot keeps it inside
+        // the toolbar's own row rather than in a wrapper repeating its classes.
+        hideFavorite
+        trailing={
+          <>
+            <AssetDiscussButton />
+            {favorite && <BookmarksStarButton favorite={favorite} />}
+          </>
+        }
       />
     );
   }
@@ -47,19 +64,11 @@ export function TopBarActions({
   // still bookmarkable BY ITS DOCK — resolved through the same rule the
   // bookmarks menu uses, so a star set here is the row shown there. Sharing has
   // no subject, so it simply isn't offered.
-  const favorite = favoriteTargetForDock(dock, null, targetTitle || t`Bookmarked view`);
   if (!favorite) return null;
   return (
     <div className="flex shrink-0 items-center gap-0.5" data-testid="top-nav-actions">
-      <FavoriteStar
-        entityType={favorite.entityType}
-        entityId={favorite.entityId}
-        title={favorite.title}
-        nav={favorite.nav}
-        size={14}
-        className={`${compactEntityActionClassName} p-0`}
-      />
       <AssetDiscussButton />
+      <BookmarksStarButton favorite={favorite} />
     </div>
   );
 }

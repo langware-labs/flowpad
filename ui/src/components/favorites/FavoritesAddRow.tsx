@@ -75,7 +75,7 @@ export function FavoritesAddRow({ parentId }: { parentId: string }) {
       {/* A green "+" marks the row as a create toolbar. Not a button — no
           hover, default cursor. `text-green-500` is the app's cross-theme green
           (reads on both light and dark). */}
-      <Plus className="mr-1 h-4 w-4 shrink-0 cursor-default select-none text-green-500" aria-hidden />
+      <Plus className="me-1 h-4 w-4 shrink-0 cursor-default select-none text-green-500" aria-hidden />
 
       {folderName !== null ? (
         <input

@@ -23,7 +23,14 @@ export const LEAF_TOOLTIP_MS = 250;
  * (`onOpen` → `markOpened`) — a pointer sweeping down the menu must not clear
  * every unread badge.
  */
-export function FavoritesTreeMenu({ filter }: { filter?: (b: Bookmark) => boolean }) {
+export function FavoritesTreeMenu({
+  filter,
+  mirrored,
+}: {
+  filter?: (b: Bookmark) => boolean;
+  /** The host panel grows LEFTWARD — flip the tree's direction cues with it. */
+  mirrored?: boolean;
+}) {
   const { navigation, currentDock } = useDockNavigation();
   const roots = useFavoritesTreeRoots({ filter });
 
@@ -37,6 +44,7 @@ export function FavoritesTreeMenu({ filter }: { filter?: (b: Bookmark) => boolea
         activePointer={currentDock ?? null}
         onNavigate={(p) => navigation.openDock(p)}
         hoverExpandMs={HOVER_EXPAND_MS}
+        mirrored={mirrored}
         // Build-as-you-browse: the last row of every level adds into THAT level.
         levelFooter={(parentId) => <FavoritesAddRow parentId={parentId} />}
         // No persistKey on purpose: hover-expansion is exploratory and cheap to
