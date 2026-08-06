@@ -1817,8 +1817,9 @@ msgstr "متاح على السحابة"
 #~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/tabs/StripNavButtons.tsx
+#: src/components/tabs/StripNavButtons.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "Back"
 msgstr ""
@@ -11972,7 +11973,6 @@ msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/code-editor/AssetCompareView.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
@@ -11989,6 +11989,8 @@ msgstr ""
 #: src/components/markdown-viewer.tsx
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/tabs/StripNavButtons.tsx
+#: src/components/tabs/StripNavButtons.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/webapp-viewer.tsx

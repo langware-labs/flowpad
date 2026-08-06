@@ -3,14 +3,8 @@ import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import { useViewMode, ViewMode } from '@src/components/view-mode';
 import { buildHubRailItems, type HubItem, type RailIcon } from './hub-rail';
-import {
-  resolveRail,
-  type RailGate,
-  type RailItemId,
-  type RailSpec,
-} from './rail-visibility';
+import { resolveRail, type RailGate, type RailItemId, type RailSpec } from './rail-visibility';
 import { Button } from '@src/components/ui/button';
-import { useNavigationState } from '@src/hooks/use-navigation-state';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { EVENTS_VIEW_TYPES, ViewType } from '@src/types/ViewType';
@@ -45,10 +39,8 @@ import { useLingui } from '@lingui/react/macro';
  */
 export const RAIL_WIDTH_CLASS = 'w-[50px]';
 import {
-  ArrowLeft,
   BadgeCheck,
   Bookmark,
-  RefreshCw,
   Bug,
   ChevronDown,
   Compass,
@@ -110,7 +102,6 @@ export function CollapsedSidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const onDiscover = location.pathname === '/discover';
-  const { goBack, canGoBack } = useNavigationState();
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
   // Rest-to-open; the rail button and panel share one intent (see useHoverIntent).
   const bookmarks = useHoverIntent();
@@ -403,24 +394,6 @@ export function CollapsedSidebar() {
         <SidebarContent className="flex-1">
           <SidebarGroup className="px-0 py-2">
             <SidebarMenu>
-              <SidebarMenuItem className="flex flex-row">
-                <SidebarMenuButton
-                  tooltip={t`Back`}
-                  onClick={goBack}
-                  disabled={!canGoBack}
-                  className="h-6 w-1/2 justify-center px-0"
-                >
-                  <ArrowLeft className="h-3 w-3" />
-                </SidebarMenuButton>
-                <SidebarMenuButton
-                  tooltip={t`Refresh`}
-                  onClick={() => window.location.reload()}
-                  className="h-6 w-1/2 justify-center px-0"
-                >
-                  <RefreshCw className="h-3 w-3" />
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
               {hubMode ? hubItems.map(renderHubItem) : topItems.map(renderRailItem)}
 
               {overflowItems.length > 0 && (
