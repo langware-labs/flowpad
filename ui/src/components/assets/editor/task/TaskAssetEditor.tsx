@@ -109,6 +109,16 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
     }
   }, []);
 
+  /**
+   * "Leave this task" is a DESTINATION, not a history step — the same shape
+   * ConversationRoute uses to leave a conversation. It lands in the task list
+   * every time, including for a task opened by deep link, where a history step
+   * would have had nowhere to go. The navigation bar owns going back.
+   */
+  const closeTask = useCallback(() => {
+    navigation.openDock(DockPointer.forTasks());
+  }, [navigation]);
+
   const commitTitle = useCallback(() => {
     const trimmed = title.trim();
     if (trimmed && trimmed !== taskRef.current?.title) void save({ title: trimmed });
@@ -132,7 +142,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
 
   // Received / shared tasks keep the collaboration surface (mapping + conversation).
   if (task.shared_by_id) {
-    return <SharedTaskView task={task} conversationId={null} onClose={() => navigation.goBack()} />;
+    return <SharedTaskView task={task} conversationId={null} onClose={closeTask} />;
   }
 
   const status = normStatus(task.status);
@@ -180,7 +190,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
         <div className="flex items-center justify-between border-b px-6 py-3">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => navigation.goBack()}
+              onClick={closeTask}
               className="flex items-center gap-1 rounded p-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
@@ -262,7 +272,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
       <div className="flex flex-col gap-3 border-b px-6 py-4">
         <div className="flex items-center justify-between">
           <button
-            onClick={() => navigation.goBack()}
+            onClick={closeTask}
             className="flex items-center gap-1 rounded p-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <ArrowLeft className="h-3.5 w-3.5" />

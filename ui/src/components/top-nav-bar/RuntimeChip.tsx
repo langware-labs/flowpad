@@ -1,51 +1,48 @@
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { X } from 'lucide-react';
+import { Bot, Cloud, Globe, Monitor, Network, type LucideIcon } from 'lucide-react';
 import { dataManager, FLOWPAD_ASSISTANT_PROJECT_UNAME, Layout, Project, RuntimeKind, TypeId } from '@sdk';
-import { useContext } from '@src/hooks/useContext';
-import { RUNTIME_CLASS } from './runtime-appearance';
-import { minimizeBanner, useBannerMinimized } from './use-banner-minimized';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { MarkdownView } from '@src/components/markdown-view';
 import { notify } from '@src/notifications';
+import { RUNTIME_CLASS } from './runtime-appearance';
 
 /**
- * EnvironmentBanner — the app's topmost strip, spanning the FULL window width
- * above the rail and the content column (mounted once in `FlowPage`, not per
- * page), color-coding which FlowPad runtime this UI is serving.
+ * Which machine this UI is serving, as a colored chip in the navigation bar.
  *
  * It DETECTS NOTHING. The kind is resolved by the backend and arrives on
- * `bootstrapInfo.runtime.kind`; this component only maps it to a label and a
- * color. The previous version guessed from `window.location.hostname` and could
- * not tell the Electron shell from a browser tab, nor an agent's box from a
- * user's — both of which are now distinct kinds the server reports.
+ * `bootstrapInfo.runtime.kind`; this only maps it to a label and a color. An
+ * earlier version guessed from `window.location.hostname` and could not tell
+ * the Electron shell from a browser tab, nor an agent's box from a user's.
  *
- * Clicking the label opens the "Runtime environments" wiki page (a system doc
- * shipped with the Flowpad Assistant project). Closing it minimizes the strip
- * into the rail's Home icon, which then carries the runtime color — the signal
- * is never lost, only made small. See `use-banner-minimized` for why that lasts
- * exactly until the next restart.
+ * This is a safety signal — on a cloud sandbox or an agent's box it is how you
+ * know whose machine you are looking at — which is why it lives in permanent
+ * chrome and has no dismiss affordance. (It used to be a closable strip that
+ * handed its color to the rail's Home icon when minimized; the bar is not
+ * dismissible, so the signal can no longer be silenced at all.)
  *
- * The root is a `div`, not a `button`: it holds two independent controls (open
- * the wiki, minimize), and a button inside a button is invalid HTML that React
- * will warn about and screen readers mis-announce.
- *
- * Desk/e2b: the `@local` wiki alias resolves against the CURRENT project, so
- * the click resolves the assistant project's own default wiki and opens the
- * page in that space via the dock wiki view.
- *
- * Hub: the hub has NO `wiki` graph entity (both graph resolve paths 422), so
- * the shared WikiResolveView cannot render there. Its one wiki surface is the
- * legacy `GET /api/v1/wiki/resolve?name=...`, which serves the system doc's
- * markdown `content` directly — fetch that and render it in a local dialog.
+ * Clicking it opens the "Runtime environments" wiki page.
  */
 
 const WIKI_PAGE = 'Runtime environments';
 
+/** Per-runtime glyphs. These describe RUNTIMES, not entity types — there is no
+ *  TypeInfo for "a cloud sandbox", so `iconForType` has nothing to resolve. */
+const RUNTIME_ICON: Record<RuntimeKind, LucideIcon> = {
+  [RuntimeKind.HUB]: Network,
+  [RuntimeKind.SANDBOX]: Cloud,
+  [RuntimeKind.AGENT]: Bot,
+  [RuntimeKind.DESKTOP]: Monitor,
+  [RuntimeKind.BROWSER]: Globe,
+};
+
 function RuntimeLabel({ kind }: { kind: RuntimeKind }) {
-  if (kind === RuntimeKind.HUB) return <Trans>Hub</Trans>;
+  // "Cloud", not "Hub": the chip answers "whose machine am I on", and to a user
+  // the hub backend is simply the cloud. "Hub" is our internal word for the
+  // component, and it collides with the hub PAGE you can open from a desktop.
+  if (kind === RuntimeKind.HUB) return <Trans>Cloud</Trans>;
   if (kind === RuntimeKind.SANDBOX) return <Trans>Cloud Sandbox</Trans>;
   if (kind === RuntimeKind.AGENT) return <Trans>Agent</Trans>;
   if (kind === RuntimeKind.BROWSER) return <Trans>Local Browser</Trans>;
@@ -83,14 +80,16 @@ async function fetchHubWikiContent(name: string): Promise<string | null> {
   return typeof content === 'string' ? content : null;
 }
 
-export function EnvironmentBanner() {
+export function RuntimeChip({ kind }: { kind: RuntimeKind }) {
   const { navigation } = useDockNavigation();
-  const { runtimeKind: kind } = useContext();
   const { t } = useLingui();
-  const minimized = useBannerMinimized();
   const [hubDoc, setHubDoc] = useState<string | null>(null);
 
   const openWiki = async () => {
+    // Hub: the hub has NO `wiki` graph entity (both graph resolve paths 422), so
+    // the shared WikiResolveView cannot render there. Its one wiki surface is
+    // the legacy `GET /api/v1/wiki/resolve?name=...`, which serves the system
+    // doc's markdown `content` directly — fetch that and render it locally.
     if (kind === RuntimeKind.HUB) {
       try {
         const content = await fetchHubWikiContent(WIKI_PAGE);
@@ -104,44 +103,31 @@ export function EnvironmentBanner() {
       }
       return;
     }
+    // Desk/e2b: the `@local` wiki alias resolves against the CURRENT project, so
+    // resolve the assistant project's own default wiki and open the page there.
     const wikiRef = await assistantWikiRef();
     navigation.openDock(DockPointer.forWiki(WIKI_PAGE, Layout.DOCK, wikiRef ?? undefined));
   };
 
-  // Minimized: the rail's Home icon carries the color instead. Rendering
-  // nothing here (rather than a zero-height strip) keeps the layout honest —
-  // the content column really does get the row back.
-  if (minimized) return null;
+  const Icon = RUNTIME_ICON[kind] ?? Monitor;
 
   return (
     <>
-      <div
-        data-testid="environment-banner"
+      <button
+        type="button"
+        onClick={() => void openWiki()}
+        data-testid="top-nav-runtime-chip"
         data-runtime={kind}
-        className={`relative flex w-full shrink-0 items-center justify-center py-1 text-xs font-medium ${RUNTIME_CLASS[kind]}`}
+        title={t`What are Flowpad's runtime environments?`}
+        className={`inline-flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-[11px] font-semibold hover:opacity-90 ${RUNTIME_CLASS[kind]}`}
       >
-        <button
-          type="button"
-          onClick={() => void openWiki()}
-          data-testid="environment-banner-label"
-          title="What are Flowpad's runtime environments?"
-          className="cursor-pointer hover:opacity-90"
-        >
+        <Icon className="h-3 w-3 shrink-0" />
+        {/* Narrow windows keep the color and drop the word — the color is the
+            signal, the label is the explanation. */}
+        <span className="hidden sm:inline">
           <RuntimeLabel kind={kind} />
-        </button>
-        {/* Absolutely positioned so the label stays centred on the WINDOW, not
-            on the space left over beside the close button. */}
-        <button
-          type="button"
-          onClick={minimizeBanner}
-          data-testid="environment-banner-close"
-          title={t`Minimize to the Home icon (returns on restart)`}
-          aria-label={t`Minimize environment banner`}
-          className="absolute right-1 flex h-4 w-4 cursor-pointer items-center justify-center rounded-sm opacity-70 hover:bg-black/20 hover:opacity-100"
-        >
-          <X className="h-3 w-3" />
-        </button>
-      </div>
+        </span>
+      </button>
       <Dialog open={hubDoc !== null} onOpenChange={(open) => !open && setHubDoc(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>

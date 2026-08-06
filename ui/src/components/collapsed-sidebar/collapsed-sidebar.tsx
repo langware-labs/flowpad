@@ -17,17 +17,12 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
-import { DataSource, PageId, Project } from '@sdk';
+import { DataSource, PageId } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
-import { WikiTip } from '@src/components/wiki-tip';
-import { useContext } from '@src/hooks/useContext';
-import { RUNTIME_CLASS } from '@src/components/environment-banner/runtime-appearance';
-import { useBannerMinimized } from '@src/components/environment-banner/use-banner-minimized';
 import { useHasConversations } from '@src/hooks/use-has-conversations';
 import { useLastVibeChat } from '@src/pages/flow-page/use-last-vibe-chat';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
-import { tagAttrs } from '@src/tags/tag-attrs';
 import { BookmarksSlider } from '@src/components/bookmarks-slider/BookmarksSlider';
 import { useUnopenedFavoritesCount } from '@src/hooks/use-unopened-favorites-count';
 import { useHoverIntent } from '@src/hooks/use-hover-intent';
@@ -45,7 +40,6 @@ import {
   ChevronDown,
   Compass,
   FolderOpen,
-  Home,
   Mail,
   History,
   MessageCircle,
@@ -91,14 +85,6 @@ function NavBadge({ count }: { count: number }) {
 
 export function CollapsedSidebar() {
   const { navigation, currentDock } = useDockNavigation();
-  const { project, runtimeKind } = useContext();
-  // When the environment banner is minimized, the Home icon carries the runtime
-  // color in its place — the signal shrinks, it does not disappear. Stated once
-  // and used by BOTH rails (`home` exists on desk and hub alike), so the rule
-  // can't come to mean different things on the two surfaces.
-  const bannerMinimized = useBannerMinimized();
-  const homeTint = bannerMinimized ? RUNTIME_CLASS[runtimeKind] : '';
-  const railBtnClass = (id: string) => `relative w-full justify-center px-2 ${id === 'home' ? homeTint : ''}`;
   const navigate = useNavigate();
   const location = useLocation();
   const onDiscover = location.pathname === '/discover';
@@ -130,7 +116,6 @@ export function CollapsedSidebar() {
 
   /** Title/icon/target per id. A LOOKUP, not an order — see RAIL_ITEMS. */
   const navMeta: Partial<Record<RailItemId, NavItem>> = {
-    home: { title: t`Home`, icon: Home, viewType: null },
     chats: { title: t`Chats`, icon: MessageCircle, viewType: ViewType.SHELL },
     inbox: { title: t`Inbox`, icon: Mail, viewType: ViewType.INBOX },
     discover: { title: t`Discover`, icon: Compass, viewType: null },
@@ -155,13 +140,12 @@ export function CollapsedSidebar() {
   // Built only in hub mode (desk is the common case — don't allocate/translate 7
   // unused entries every desk render).
   const hubItems = useMemo(
-    () => (hubMode ? buildHubRailItems(t, project?.id ?? null) : NO_HUB_ITEMS),
-    [hubMode, t, project?.id],
+    () => (hubMode ? buildHubRailItems(t) : NO_HUB_ITEMS),
+    [hubMode, t],
   );
 
   // Content gates: an icon earns its slot only once the thing it opens exists.
   const gates: Record<RailGate, boolean> = {
-    project: !!project,
     conversations: hasConversations,
   };
   const railItems = hubMode ? [] : resolveRail(viewMode, gates);
@@ -174,7 +158,6 @@ export function CollapsedSidebar() {
   // the editor included. It used to subtract those, because a Tasks rail entry
   // claimed them and one click must not light two buttons — that entry is gone,
   // so the subtraction would now just leave the rail dark on task URLs.
-  const onAssets = currentView === ViewType.ASSETS;
 
   // Hub-rail active state: pointer-carrying items (WorldView world/organization,
   // records/<type>) match on viewType + pointer; the rest on viewType alone.
@@ -195,8 +178,7 @@ export function CollapsedSidebar() {
         // pushState, which React Router's location can lag — currentView reads
         // stale-falsy on a real dock URL and would swallow this navigation.
         // TODO(nav): fix at the root — commit through the router in
-        // NavigationActions (or reconcile currentDock against window.location in
-        // use-navigation-state) so ALL consumers stop seeing stale locations.
+        // NavigationActions so ALL consumers stop seeing stale locations.
         if (window.location.pathname !== '/') void navigate('/');
       } else {
         if (import.meta.env.DEV && viewType === ViewType.SHELL) {
@@ -222,10 +204,6 @@ export function CollapsedSidebar() {
    *  item can't mean one thing above the chevron and another below it. */
   const isActiveId = (id: RailItemId): boolean => {
     switch (id) {
-      case 'home':
-        return !currentView;
-      case 'project':
-        return onAssets;
       case 'bookmarks':
         return bookmarks.open;
       case 'discover':
@@ -263,9 +241,6 @@ export function CollapsedSidebar() {
         // Full-page marketplace: a top-level route, not a dock tab.
         void navigate('/discover');
         return;
-      case 'project':
-        handleClick(ViewType.ASSETS);
-        return;
       case 'chats':
         // Vibe has no chats list — resume the last real UI chat in the project.
         // TODO(nav): this is the ONE mode-dependent target the component still
@@ -283,32 +258,6 @@ export function CollapsedSidebar() {
       default:
         handleClick(navMeta[id]?.viewType ?? null);
     }
-  };
-
-  /** The active project's rail button: opens that project's assets, behind the
-   *  "Flowpad project" wiki page the footer's project name points at. The glyph
-   *  is the project type's registry icon, never a hardcoded one. */
-  const renderProjectItem = (proj: NonNullable<ReturnType<typeof useContext>['project']>) => {
-    const ProjectIcon = iconForType(Project.type);
-    return (
-      /* side="right": the rail's regular tooltips open to the right; the
-         WikiTip default (top) would pop the card above the button instead. */
-      <WikiTip wikiword="Flowpad project" label={t`What is project?`} side="right">
-        {/* Same tag as the footer's project name: a journey highlighting
-            `ProjectPage` lights BOTH ways into the project, and a click on
-            either emits the same bus target. */}
-        <SidebarMenuButton
-          {...tagAttrs('ProjectPage', 'button')}
-          data-rail-item="project"
-          isActive={isActiveId('project')}
-          onClick={() => handleRailClick('project')}
-          aria-label={t`Open project assets — ${proj.displayName}`}
-          className="relative w-full justify-center px-2"
-        >
-          <ProjectIcon className="h-5 w-5" />
-        </SidebarMenuButton>
-      </WikiTip>
-    );
   };
 
   /** The bookmarks button: opens the favorites desktop as a left slide-in flyout
@@ -336,7 +285,6 @@ export function CollapsedSidebar() {
   /** Entries whose button isn't the generic one. Position still comes from
    *  RAIL_ITEMS — only the rendering is bespoke. */
   const renderBespoke = (id: RailItemId): ReactNode | null => {
-    if (id === 'project') return project ? renderProjectItem(project) : null;
     if (id === 'bookmarks') return renderBookmarksItem();
     return null;
   };
@@ -355,7 +303,7 @@ export function CollapsedSidebar() {
           data-rail-item={spec.id}
           isActive={isActiveId(spec.id)}
           onClick={() => handleRailClick(spec.id)}
-          className={railBtnClass(spec.id)}
+          className="relative w-full justify-center px-2"
         >
           <Icon className="h-5 w-5" />
           <NavBadge count={badgeForId(spec.id)} />
@@ -374,7 +322,7 @@ export function CollapsedSidebar() {
           isActive={hubActive(item)}
           onClick={() => handleClick(item.viewType, item.pointer)}
           data-rail-item={item.id}
-          className={railBtnClass(item.id)}
+          className="relative w-full justify-center px-2"
         >
           <Icon className="h-5 w-5" />
         </SidebarMenuButton>

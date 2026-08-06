@@ -45,7 +45,6 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
 import { ProjectsCounterChip, type ProjectWorkerType } from '@src/components/terminal/ProjectsCounterChip';
-import { StripNavButtons } from '@src/components/tabs/StripNavButtons';
 import { AskInstallOneOfDialog } from '@src/components/terminal/openers/AskInstallOneOfDialog';
 import { TerminalOpenerToolbar } from '@src/components/terminal/openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor } from '@src/components/terminal/openers/tab_opener_types';
@@ -428,14 +427,15 @@ export function useTerminalStripController({
     [modLabel, handleStartClaude, handleStartTerminal, isAdvanced, handleOpenContext, ContextIcon],
   );
 
-  // Leading region: the Back/Refresh nav buttons (browser-style, at the very
-  // left of the bar — they used to sit on the left rail), then the project chip
-  // (the strip's project dropdown), then the anchor divider that separates this
-  // fixed cluster from the tab row.
+  // Leading region: the project chip (the strip's project dropdown), then the
+  // anchor divider that separates this fixed cluster from the tab row.
+  //
+  // History controls do NOT belong here. They live in the top navigation bar,
+  // which is the app's one browser-style chrome — two sets of Back buttons on
+  // one screen is worse than none.
   const leading = useMemo(
     () => (
       <>
-        <StripNavButtons />
         <ProjectsCounterChip
           currentProjectId={tabsProjectId}
           currentProjectName={currentProjectName}
