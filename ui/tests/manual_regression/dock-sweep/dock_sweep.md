@@ -44,3 +44,9 @@ which is the deliverable: the list of screens that were quietly broken.
   explicitly and never inherits the default.
 - Timeouts are the category budgets (60s test / 15s expect) and are never
   raised — a dock too slow for them is the finding, not the budget.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: e93eebbf-21cd-4ee7-b78c-db54b2e43b98
+flowpad:endcapsule identity -->

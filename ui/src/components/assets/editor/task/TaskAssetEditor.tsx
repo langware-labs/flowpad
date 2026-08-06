@@ -16,6 +16,7 @@ import { MemberTasksSection } from './MemberTasksSection';
 import { OwnerButton } from './OwnerButton';
 import { ParentTaskBlock } from './ParentTaskBlock';
 import { TaskAttachments } from './TaskAttachments';
+import { TaskDescription } from './TaskDescription';
 import { AssetCollisionBadge } from '../AssetCollisionUI';
 import { TaskComments } from './TaskComments';
 
@@ -54,7 +55,8 @@ function toDateInput(v?: Date | string | null): string {
  * Task asset editor — the redesigned task surface. Task is a folder asset:
  * `task.md` holds the fields (owns_main_ref ⇒ the entity is the source of truth,
  * re-rendered on every save). The metadata is edited through a purpose-built
- * header bound to the entity, and the body is the Attachments section (the
+ * header bound to the entity, and the body is the editable Description (free
+ * text, stored in `description`) over the Attachments section (the
  * files/folders this task is about, stored in `artifacts`). Received tasks
  * (`shared_by_id`) fall through to the collaboration `SharedTaskView`.
  *
@@ -351,6 +353,9 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
           TaskAttachments' internal `flex-1` is neutralized by the plain block
           wrapper so it can't grow and overlap the comments below it. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="shrink-0">
+          <TaskDescription task={task} save={save} />
+        </div>
         <MemberTasksSection task={task} />
         <div className="shrink-0">
           <TaskAttachments task={task} save={save} />
