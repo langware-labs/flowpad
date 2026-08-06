@@ -90,8 +90,7 @@ export function getProxy<T extends Manageable & { [key: string | symbol]: any }>
         // component" warning: a getter-with-side-effects (e.g. `flowDataStream`)
         // mutated `_flowDataStream` during a sibling component's render and
         // synchronously dispatched setState across all subscribers.
-        const isInternal =
-          typeof property === 'string' && property.startsWith('_');
+        const isInternal = typeof property === 'string' && property.startsWith('_');
         if (!isInternal && property !== 'dirty') {
           target.dirty = true;
           dataManager.notifyPropertyChanged(target.typeId, property as string);
@@ -475,17 +474,13 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     // ``private_context_entities`` (Pydantic computed_field).
     const fromWireShared = (this as any).shared_context_entities as Array<unknown> | undefined;
     if (Array.isArray(fromWireShared) && fromWireShared.length > 0) {
-      this._shared_context_entities_ = fromWireShared.map((v) =>
-        v instanceof TypeId ? v : new TypeId(String(v)),
-      );
+      this._shared_context_entities_ = fromWireShared.map((v) => (v instanceof TypeId ? v : new TypeId(String(v))));
     }
     delete (this as any).shared_context_entities;
 
     const fromWirePrivate = (this as any).private_context_entities as Array<unknown> | undefined;
     if (Array.isArray(fromWirePrivate) && fromWirePrivate.length > 0) {
-      this._private_context_entities_ = fromWirePrivate.map((v) =>
-        v instanceof TypeId ? v : new TypeId(String(v)),
-      );
+      this._private_context_entities_ = fromWirePrivate.map((v) => (v instanceof TypeId ? v : new TypeId(String(v))));
     }
     delete (this as any).private_context_entities;
 
@@ -801,12 +796,8 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   public async share(recipients?: string[]): Promise<T> {
     const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
-    const cleaned = recipients
-      ?.map((r) => normalizeEmail(r))
-      .filter((r): r is string => !!r);
-    info.bodyParameters = cleaned?.length
-      ? { ...this.toJSON(), recipients: cleaned }
-      : {};
+    const cleaned = recipients?.map((r) => normalizeEmail(r)).filter((r): r is string => !!r);
+    info.bodyParameters = cleaned?.length ? { ...this.toJSON(), recipients: cleaned } : {};
     const response = await dataManager.callAction<unknown, unknown>(info);
     if (
       response &&
@@ -868,13 +859,29 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    *
    * ``role`` defaults to ``member``. The reflection layer returns the refreshed
    * roster; seed the cache from it when it comes back as an array.
+   *
+   * ``opts`` are all optional and all omitted from the body when absent — an
+   * always-present ``undefined`` would change the wire shape of every existing
+   * caller:
+   *  - ``callbackOverride``: app-relative path the recipient lands on after
+   *    accepting. Without it the hub falls back to the target's entity URL,
+   *    which for most types the SPA has no route for.
+   *  - ``transfer`` + ``roleToKeep``: hand the entity OVER rather than share it.
+   *    ``roleToKeep: null`` means keep nothing. Owner-only, enforced hub-side by
+   *    ``can_assign``'s TRANSFER branch — never assume it from the UI.
    */
-  public async inviteMember(email: string, role: string = 'member'): Promise<void> {
+  public async inviteMember(
+    email: string,
+    role: string = 'member',
+    opts?: { callbackOverride?: string; transfer?: boolean; roleToKeep?: string | null },
+  ): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = {
       recipient_email: normalizeEmail(email) ?? '',
       invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
+      ...(opts?.callbackOverride ? { callback_override: opts.callbackOverride } : {}),
+      ...(opts?.transfer ? { transfer: true, role_to_keep: opts.roleToKeep ?? null } : {}),
     };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);
     this._membersCache = Array.isArray(res) ? res : undefined;
@@ -1064,15 +1071,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (!this.expand?.auth_scopes) {
       return [];
     }
-    const parsedScopes: TypeId[][] = this.expand.auth_scopes.map((scope) =>
-      scope.map((raw) => new TypeId(raw)),
-    );
+    const parsedScopes: TypeId[][] = this.expand.auth_scopes.map((scope) => scope.map((raw) => new TypeId(raw)));
     let selectedScope = parsedScopes.find((scope) =>
       workspaceTypeId
-        ? scope.some(
-            (typeId) =>
-              typeId.id === workspaceTypeId.id && typeId.type === workspaceTypeId.type,
-          )
+        ? scope.some((typeId) => typeId.id === workspaceTypeId.id && typeId.type === workspaceTypeId.type)
         : false,
     );
     if (!selectedScope && parsedScopes.length > 0) {
@@ -1253,9 +1255,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (targets.length === 0) return [...this._shared_context_entities_];
     const info = new ActionInfo('share-context', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters =
-      targets.length === 1
-        ? { typeid: targets[0].toString() }
-        : { typeids: targets.map((t) => t.toString()) };
+      targets.length === 1 ? { typeid: targets[0].toString() } : { typeids: targets.map((t) => t.toString()) };
     const result = await dataManager.callAction<
       { typeid?: string; typeids?: string[] },
       { ok: boolean; id: string; type: string; shared_context_entities: string[] }
@@ -1272,9 +1272,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (targets.length === 0) return [...this._shared_context_entities_];
     const info = new ActionInfo('unshare-context', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters =
-      targets.length === 1
-        ? { typeid: targets[0].toString() }
-        : { typeids: targets.map((t) => t.toString()) };
+      targets.length === 1 ? { typeid: targets[0].toString() } : { typeids: targets.map((t) => t.toString()) };
     const result = await dataManager.callAction<
       { typeid?: string; typeids?: string[] },
       { ok: boolean; id: string; type: string; shared_context_entities: string[] }
