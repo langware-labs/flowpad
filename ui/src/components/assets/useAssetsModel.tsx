@@ -17,7 +17,14 @@ import { useProjectAssetMenu } from '@src/hooks/use-project-asset-menu';
 import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { useIsDev } from '@src/contexts/view-mode-context';
-import { assetScopeBucket, defaultScopeFilter, projectScope, unionAssetBucket } from '@src/lib/scope-filter';
+import {
+  assetScopeBucket,
+  defaultScopeFilter,
+  pinnedProjectId,
+  projectScope,
+  unionAssetBucket,
+} from '@src/lib/scope-filter';
+import { isProjectHomeSurface } from './asset-body-content';
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
@@ -123,8 +130,7 @@ export function useAssetsModel() {
     () => currentDock?.scopeFilter ?? projectSeedScope ?? defaultScopeFilter(currentProjectId),
     [currentDock, projectSeedScope, currentProjectId],
   );
-  const scopeProjectId =
-    urlProjectId ?? (urlScope.mode === 'project' ? (urlScope.activeProjectId ?? null) : currentProjectId);
+  const scopeProjectId = urlProjectId ?? pinnedProjectId(urlScope) ?? currentProjectId;
   const scopeProjectName = scopeProjectId === currentProjectId ? currentProjectName : null;
 
   // The scoped project entity, watched so `include_dirs` edits (add/remove
@@ -476,7 +482,19 @@ export function useAssetsModel() {
   // separate, read-only resource cursor after the URL-addressed entity resolves.
   // The tree uses that cursor only to reveal the corresponding filesystem row;
   // clicks and route identity continue to use `treeActivePointer`.
-  const treeActivePointer = currentDock ?? null;
+  //
+  // Through the SAME predicate the body uses: a bare sub-pointer under a project
+  // scope renders the project home, and the tree compares node pointers
+  // literally — so without naming that row here, the row whose content fills the
+  // body reads as unselected. Re-deriving the rule locally is how the two drift.
+  const treeActivePointer = useMemo(() => {
+    if (!currentDock || currentDock.viewType !== ViewType.ASSETS || currentDock.pointer) return currentDock ?? null;
+    const homeProjectId = pinnedProjectId(urlScope);
+    if (!homeProjectId) return currentDock;
+    return isProjectHomeSurface({ isProjectView: false, pointer: currentDock.pointer, scopedProjectId: homeProjectId })
+      ? DockPointer.forAssetProjectHome({ scope: projectScope(homeProjectId) })
+      : currentDock;
+  }, [currentDock, urlScope]);
   const treeActiveResourcePointer = useMemo(() => {
     if (!openAssetTypeId || !openAssetFields?.asset_ref) return null;
     return DockPointer.forAssetEditor(openAssetTypeId.type, openAssetFields.asset_ref);
