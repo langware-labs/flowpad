@@ -890,7 +890,12 @@ export function InboxView() {
         <Icon className="h-3.5 w-3.5" />
         <span>{label}</span>
         {active && visibleCount > 0 && (
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{visibleCount}</span>
+          // Fixed min-width + tabular figures: the badge keeps the same box up
+          // to three digits, so a growing count doesn't reflow the search input
+          // and the buttons to its right.
+          <span className="inline-block min-w-[30px] rounded bg-muted px-1.5 py-0.5 text-center text-[10px] tabular-nums text-muted-foreground">
+            {visibleCount}
+          </span>
         )}
       </button>
     );

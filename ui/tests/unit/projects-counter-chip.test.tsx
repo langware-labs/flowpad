@@ -88,15 +88,15 @@ describe('ProjectsCounterChip', () => {
     return { projectA, projectB };
   }
 
-  it('counts active projects while including open-tab total in the label', () => {
+  it('shows the project name plus the open-projects count, tabs count in the label only', () => {
     const { projectA } = seedBuckets();
 
     render(<ProjectsCounterChip currentProjectId={projectA} />);
 
     const chip = screen.getByTestId('projects-counter-chip');
-    expect(chip.textContent).toContain('2');
-    // The chip labels the current project as a prefix segment (added 5937eaa4):
-    // `<projectName> — <count summary>`.
+    // Scope label + the open-PROJECTS count (2 buckets). The open-TABS count
+    // (3) is not painted — it lives in the tooltip and the aria-label.
+    expect(chip.textContent).toBe('111111112');
     expect(chip.getAttribute('aria-label')).toBe('11111111 — 2 open projects, 3 open tabs');
   });
 

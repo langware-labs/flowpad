@@ -13,7 +13,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockForGlobalEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
-import { AppWindow, ChevronLeft, Globe, History, Loader2, RotateCcw } from 'lucide-react';
+import { ChevronLeft, Globe, History, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
 /** Agentic worker kinds offered by the picker's worker toolbar. Alias of the
@@ -317,13 +317,13 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   // tab, not by picking it from within a project). It is then always the current
   // scope: a violet "Global" label + a current-marked row above the projects.
   const isGlobalScope = currentProjectId == null && globalTabCount > 0;
-  // The active scope's label — a project name, or "Global" — or null when the
-  // chip is a bare counter. `scopeLabel != null` is the single "chip carries a
-  // label" predicate used for both styling and the counts muting.
+  // The active scope's label — a project name, or "Global" — or null when there
+  // is no scope to name. The chip IS its label now (the counts moved into the
+  // tooltip), so a null label means there is nothing to render.
   const scopeLabel = hasProject ? projectName : isGlobalScope ? 'Global' : null;
-  // Nothing to advertise: no project owns a tab and we're not in a populated
-  // Global scope. A bare "0 / 0" chip represents nothing, so it stays hidden.
-  const isEmpty = projectTotal === 0 && !isGlobalScope;
+  // Nothing to advertise: no scope to name, or no project owns a tab and we're
+  // not in a populated Global scope. Either way the chip stays hidden.
+  const isEmpty = !scopeLabel || (projectTotal === 0 && !isGlobalScope);
 
   // Spelled-out, singular-aware labels for each count — used both in the
   // hover tooltip (one line each so it's unmistakable which number is which)
@@ -344,17 +344,13 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     [buckets],
   );
 
-  // Three scope treatments, all within the same design language (height, radius,
-  // border weight): a PROJECT scope reads as a subtle primary-tinted pill; the
-  // GLOBAL scope gets a distinct violet accent so it never looks like a regular
-  // project; a scope-less strip falls back to the plain neutral chip so it isn't
-  // washed in accent color.
+  // Two scope treatments within one design language (height, radius, border
+  // weight): a PROJECT scope reads as a subtle primary-tinted pill; the GLOBAL
+  // scope gets a distinct violet accent so it never looks like a regular project.
   const chipClass = `ml-1 inline-flex h-7 shrink-0 items-center gap-1.5 self-center rounded-md border px-2.5 text-xs font-medium tabular-nums focus:outline-none focus:ring-1 focus:ring-ring ${
     hasProject
       ? 'border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10'
-      : isGlobalScope
-        ? 'border-violet-500/30 bg-violet-500/5 text-foreground hover:bg-violet-500/10'
-        : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
+      : 'border-violet-500/30 bg-violet-500/5 text-foreground hover:bg-violet-500/10'
   }`;
 
   // Per-type icon from the backend TypeInfo registry (CLAUDE.md: never hardcode
@@ -362,39 +358,30 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   // Global is a pseudo-scope (not an entity type), so it uses a plain `Globe` glyph.
   const ProjectIcon = iconForType(Project.type);
 
-  // Shared trigger content: the scope label (project name, or "Global") followed
-  // by the open-projects / tabs counts. The label is the hero (accent glyph,
-  // foreground weight); the counts ride along muted and divided off.
+  // Trigger content: the scope label (project name, or "Global") with its accent
+  // glyph, then the OPEN-PROJECTS count behind a divider — the per-type project
+  // glyph paired with its number so the meaning is unambiguous. The open-TABS
+  // count is deliberately not painted here; it lives in the hover tooltip (and
+  // the aria-label), spelled out.
   const triggerContent = (
     <>
       {hasProject ? (
         <>
           <ProjectIcon className="h-3 w-3 shrink-0 text-primary" />
           <span className="max-w-[9rem] truncate">{projectName}</span>
-          <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-border" />
         </>
-      ) : isGlobalScope ? (
+      ) : (
         <>
           <Globe className="h-3 w-3 shrink-0 text-violet-500" />
           <span className="max-w-[9rem] truncate">
             <Trans>Global</Trans>
           </span>
-          <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-border" />
         </>
-      ) : null}
-      {/* Counts — each number is paired with its own meaning-carrying icon so
-          it's never ambiguous which is which: the per-type PROJECT glyph for
-          open projects, an app-window glyph for open tabs. The tabs count
-          (the high-frequency one) carries a subtle primary tint; a small dot
-          separates the two. Hover the chip for the spelled-out tooltip. */}
+      )}
+      <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-border" />
       <span className="inline-flex items-center gap-1">
         <ProjectIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
         {projectTotal}
-      </span>
-      <span aria-hidden className="mx-0.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
-      <span className="inline-flex items-center gap-1">
-        <AppWindow className="h-3 w-3 shrink-0 text-primary" />
-        {tabTotal}
       </span>
     </>
   );
@@ -465,7 +452,6 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   const hasActions = !!onLaunchProjectPath || !!onOpenHistory;
 
   return (
-    <>
     <TooltipProvider delayDuration={400}>
       <Popover open={open} onOpenChange={handleOpenChange}>
         <Tooltip>
@@ -538,7 +524,9 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
                 // TypeInfo registry (never a hardcoded glyph); a missing row
                 // swaps in its recover affordance instead.
                 let leadingIcon: React.ReactNode = (
-                  <ProjectIcon className={`h-3.5 w-3.5 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <ProjectIcon
+                    className={`h-3.5 w-3.5 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`}
+                  />
                 );
                 if (isMissing) {
                   leadingIcon = isRecovering ? (
@@ -616,11 +604,5 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
         </PopoverContent>
       </Popover>
     </TooltipProvider>
-      {/* Anchor divider (Option B): a full-height hairline that visually makes
-          the project chip the container the tab strip hangs off of, rather than
-          just another item in the row. Sibling of the chip in the strip's
-          `items-end` band; `self-stretch` spans the band's full height. */}
-      <span aria-hidden data-testid="projects-counter-anchor" className="mx-1.5 w-px shrink-0 self-stretch bg-border" />
-    </>
   );
 };

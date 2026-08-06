@@ -1,4 +1,5 @@
 import {
+  type ComputeNode,
   CredentialsSubview,
   dataContext,
   ExecutionEnvironmentStatus,
@@ -18,9 +19,11 @@ import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
 import { useDesktops, nextDesktopName, type DesktopDetails } from '@src/hooks/use-desktops';
 import { StepList } from '@src/components/ui/step-list';
 import { NewDesktopDialog } from './NewDesktopDialog';
-import { Building2, ExternalLink, FolderGit2, Globe, Loader2, KeyRound, Monitor, Trash2 } from 'lucide-react';
+import { ShareDesktopDialog } from './ShareDesktopDialog';
+import { MembershipInvitations } from '@src/components/inbox-view/MembershipInvitations';
+import { Building2, ExternalLink, FolderGit2, Globe, Loader2, KeyRound, Monitor, Trash2, UserPlus } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // Live desktop status styling, keyed off the backend `ExecutionEnvironmentStatus`
 // (`ops/status`). `card` tints the whole desktop block so status reads at a glance.
@@ -125,6 +128,7 @@ export function HubHome() {
     deleteDesktop,
     deletingId,
     details,
+    refetch,
   } = useDesktops();
   const launchStarted = steps.some((s) => s.status !== 'idle');
   // Absent on older hubs that don't advertise the flag yet — treat as enabled.
@@ -148,6 +152,19 @@ export function HubHome() {
   // pre-filled from a `?setup_git=<git-url>` deep link.
   // One state: null = closed. Open sites can't disagree about the prefill.
   const [newDesktop, setNewDesktop] = useState<{ gitUrl?: string } | null>(null);
+  // The desktop whose share dialog is open, or null. Holds the node itself so
+  // the dialog can read `auto_login` without a second fetch.
+  const [sharing, setSharing] = useState<ComputeNode | null>(null);
+  // Drives the "accepting adds it below" hint, and lets the desktop list
+  // refresh once an invitation is accepted (the granted node appears in it).
+  const [pendingInviteCount, setPendingInviteCount] = useState(0);
+  const prevPendingInvites = useRef(0);
+  useEffect(() => {
+    // A count that DROPS means one was accepted or declined; on accept the
+    // recipient now holds a role on the node, so the list below is stale.
+    if (pendingInviteCount < prevPendingInvites.current) void refetch();
+    prevPendingInvites.current = pendingInviteCount;
+  }, [pendingInviteCount, refetch]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const gitUrl = params.get('setup_git');
@@ -254,6 +271,21 @@ export function HubHome() {
           )}
         </div>
 
+        {/* Pending invitations.
+            Lives here because the hub page has no Inbox: `renderHubBody`
+            (content-panel.tsx) has no ViewType.INBOX case, so `InboxView` — and
+            with it the usual home for `MembershipInvitations` — never renders
+            under page=hub. Without this the rows are fetchable and have nowhere
+            to appear. Above Desktops deliberately: a desktop share is the
+            invitation this page will mostly receive, and accepting one changes
+            the list directly below it. Renders nothing when there are none. */}
+        <MembershipInvitations recipientEmail={currentUser?.email ?? null} onPendingCount={setPendingInviteCount} />
+        {pendingInviteCount > 0 && (
+          <p className="-mt-2 text-xs text-muted-foreground">
+            <Trans>Accepting adds it to your Desktops below.</Trans>
+          </p>
+        )}
+
         {/* Desktops — cloud FlowPad instances running in E2B (ComputeNode flavor=workspace) */}
         <div className="flex flex-col gap-3">
           <h2 className="text-sm font-medium text-muted-foreground">
@@ -336,6 +368,16 @@ export function HubHome() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => setSharing(d)}
+                    disabled={!desktopsEnabled || !currentUser}
+                    aria-label={t`Share desktop`}
+                    data-testid="desktop-share"
+                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
                     onClick={openDesktopSecrets}
                     disabled={!desktopsEnabled}
                     aria-label={t`Machine secrets`}
@@ -393,6 +435,20 @@ export function HubHome() {
         currentProject={currentProject}
         projects={projects}
         onLaunch={(opts) => void launch(opts)}
+      />
+
+      {/* Share / hand over a desktop. `isOwner` is a UI courtesy only — the hub
+          gates both the invite and the auto-login action on ownership. */}
+      <ShareDesktopDialog
+        open={!!sharing}
+        onOpenChange={(o) => {
+          if (!o) setSharing(null);
+        }}
+        desktop={sharing}
+        isOwner={!!sharing}
+        currentUserId={currentUser?.id}
+        currentUserEmail={currentUser?.email}
+        onShared={() => void refetch()}
       />
     </div>
   );

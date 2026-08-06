@@ -78,6 +78,11 @@ const ALERT_COLOR: Record<NotificationLevel, keyof typeof colorMap> = {
 const ITEM_CLASS = 'group flex w-full items-start gap-2 rounded-md border p-3 transition-colors hover:bg-accent';
 const ICON_BTN_CLASS =
   'flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100';
+/** Same 24px box as ICON_BTN_CLASS, minus the hover-reveal: the stethoscope is
+ *  an offer, so it stays visible. Sharing the box keeps it on the same icon
+ *  grid as Copy and Dismiss instead of floating a few pixels off. */
+const DIAGNOSE_BTN_CLASS =
+  'flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground';
 
 /** Copy-to-clipboard affordance, shared by derived warnings and logged alerts. */
 function CopyButton({ text }: { text: string }) {
@@ -134,11 +139,18 @@ function WarningItem({ warning, onClick }: WarningItemProps) {
           {warning.description && <p className="mt-0.5 text-xs text-muted-foreground">{warning.description}</p>}
         </div>
       </button>
-      <div className="flex shrink-0 items-center gap-0.5">
+      <div className="flex shrink-0 items-start gap-0.5">
         <CopyButton text={warning.description ? `${warning.message}\n${warning.description}` : warning.message} />
         {/* Everything in this popover is a warning by construction, so a derived
             condition (cloud down, no harness) is diagnosable just like a logged one. */}
-        <DiagnoseIconButton subject={{ level: 'warning', title: warning.message, message: warning.description }} />
+        <DiagnoseIconButton
+          subject={{ level: 'warning', title: warning.message, message: warning.description }}
+          className={DIAGNOSE_BTN_CLASS}
+        />
+        {/* A derived warning is never dismissible, but its neighbours are: hold
+            the empty dismiss slot so the stethoscope lands in the same top-right
+            column on every row, warning and error alike. */}
+        <span className="h-6 w-6 shrink-0" aria-hidden="true" />
       </div>
     </div>
   );
@@ -181,9 +193,9 @@ function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: (
           </div>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-0.5">
+      <div className="flex shrink-0 items-start gap-0.5">
         <CopyButton text={alert.message ? `${alert.title}\n${alert.message}` : alert.title} />
-        <DiagnoseIconButton subject={alert} />
+        <DiagnoseIconButton subject={alert} className={DIAGNOSE_BTN_CLASS} />
         <button
           type="button"
           onClick={onDismiss}
