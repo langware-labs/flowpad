@@ -95,7 +95,7 @@ silently.
 comment block:
 
 ```bash
-python .claude/skills/tagit/scripts/insert_breadcrumb.py \
+python "<this skill's directory>/scripts/insert_breadcrumb.py" \
   --file tests/.../test_x.py --test <test_function> \
   --tag breadcrumb.test.<slug>.rules \
   --note "FAILING? read this tag's rules before editing" \

@@ -7,7 +7,8 @@ the renderer is actually registered in the shipped editor, that the live
 refresh reaches a real backend, and that a chip click opens the real
 `FilePreviewSheet`.
 
-Written by the `tagit` skill; see `.claude/skills/tagit/SKILL.md` and
+Written by the `tagit` skill; see
+`flow_sdk/system_projects/flowpad_assistant/.claude/skills/tagit/SKILL.md` and
 `docs/renderable-fences.md`.
 
 ## Setup
