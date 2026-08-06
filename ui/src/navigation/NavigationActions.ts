@@ -1,6 +1,7 @@
 import {
   AgenticProcess,
   ComputeNode,
+  CredentialsSubview,
   dataContext,
   DockPointerData,
   type IDockPointer,
@@ -18,6 +19,7 @@ import { EVENTS_VIEW_TYPES } from '@src/types/ViewType';
 import type { ViewMode } from '@src/contexts/view-mode-context';
 import { CAPABILITY_PARAM, DockPointer, HIGHLIGHT_PARAM, JOURNEY_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
+import { getHistoryPosition } from './history-position-store';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
@@ -215,6 +217,25 @@ export class NavigationActions {
     const url = rest ? `/?${rest}` : '/';
     if (NavigationActions.getCurrentBrowserUrl() === url) return;
     this.commitBrowserNavigation(url, url);
+  }
+
+  /**
+   * "Take me home" — the destination, wherever it is asked from.
+   *
+   * The two surfaces differ: the hub keeps every navigation under `page=hub`
+   * (a desk factory would revert the page and land on the desk home), while the
+   * desk home is the app root, which is NOT a dock URL and so needs
+   * `openHomeRoot` to carry the sticky options forward. Stated once here so the
+   * nav bar — and the next entry point (spotlight, a shortcut, a journey) —
+   * can't each re-derive the branch, and so the pending `TODO(nav)` about
+   * committing through the router has exactly one place left to land.
+   */
+  goHome(): void {
+    if (this.currentDock?.page === PageId.HUB) {
+      this.openPage(PageId.HUB);
+      return;
+    }
+    this.openHomeRoot();
   }
 
   /**
@@ -863,6 +884,16 @@ export class NavigationActions {
     this.openDock(pointer);
   }
 
+  /**
+   * Open the Credentials screen (Environment / Connections / API Keys)
+   * @param tab - Which tab is active; defaults to Connections
+   * @param projectId - Project whose environment is shown
+   */
+  openCredentials(tab?: CredentialsSubview, projectId?: string): void {
+    const pointer = DockPointer.forCredentials(tab, projectId);
+    this.openDock(pointer);
+  }
+
   // ========== Entity Navigation ==========
 
   openEntity(entity: unknown): void {
@@ -882,40 +913,35 @@ export class NavigationActions {
 
   // ========== History Navigation ==========
 
+  /**
+   * Step back one entry — but only if there IS one. Unguarded, `navigate(-1)`
+   * on a freshly deep-linked page walks out of the app entirely (to whatever
+   * the tab showed before, or a blank page in the Electron shell).
+   *
+   * This is the HISTORY affordance and nothing else. A view that wants "leave
+   * this thing" should name its destination — `openDock(DockPointer.forX())` —
+   * rather than depend on where the user happened to come from.
+   */
   goBack(): void {
-    toplog.log('navigation', 'NavigationActions.goBack → navigate(-1)', {
+    const { canGoBack, idx } = getHistoryPosition();
+    toplog.log('navigation', 'NavigationActions.goBack', {
+      canGoBack,
+      idx,
       currentUrl: NavigationActions.getCurrentBrowserUrl(),
       currentDock: NavigationActions.dockLabel(this.currentDock),
-      historyLen: window.history.length,
     });
+    if (!canGoBack) return;
     void this.navigate(-1);
   }
 
   goForward(): void {
-    toplog.log('navigation', 'NavigationActions.goForward → navigate(1)', {
+    const { canGoForward, idx } = getHistoryPosition();
+    toplog.log('navigation', 'NavigationActions.goForward', {
+      canGoForward,
+      idx,
       currentUrl: NavigationActions.getCurrentBrowserUrl(),
-      historyLen: window.history.length,
     });
+    if (!canGoForward) return;
     void this.navigate(1);
-  }
-
-  // ========== Sharing ==========
-
-  getShareableUrl(): string {
-    const baseUrl = window.location.origin;
-    const currentPath = window.location.pathname + window.location.search;
-    return `${baseUrl}${currentPath}`;
-  }
-
-  async copyShareableUrl(): Promise<boolean> {
-    const url = this.getShareableUrl();
-    try {
-      await navigator.clipboard.writeText(url);
-      console.log('[Navigation] Copied shareable URL:', url);
-      return true;
-    } catch (error) {
-      console.error('[Navigation] Failed to copy URL:', error);
-      return false;
-    }
   }
 }

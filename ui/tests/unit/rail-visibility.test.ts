@@ -20,7 +20,7 @@ import {
  * coming back.
  */
 
-const ALL_GATES: Record<RailGate, boolean> = { project: true, conversations: true };
+const ALL_GATES: Record<RailGate, boolean> = { conversations: true };
 
 const idsFor = (mode: ViewMode, gates = ALL_GATES): RailItemId[] =>
   resolveRail(mode, gates).map((item) => item.id);
@@ -77,45 +77,51 @@ describe('resolveRail — order is the same in every mode', () => {
   }
 
   it('holds when gates drop items out of the middle', () => {
-    const gated = idsFor(ViewMode.Dev, { project: false, conversations: true });
+    const gated = idsFor(ViewMode.Dev, { conversations: false });
     expect(isSubsequence(gated, specOrder)).toBe(true);
-    expect(gated).not.toContain('project');
-    expect(gated).toContain('inbox');
+    expect(gated).not.toContain('inbox');
+    expect(gated).toContain('chats');
   });
 
   it('places the top rail in the agreed order', () => {
     const top = resolveRail(ViewMode.Vibe, ALL_GATES)
       .filter((item) => item.placement === 'top')
       .map((item) => item.id);
-    expect(top).toEqual(['home', 'project', 'chats', 'bookmarks', 'inbox']);
+    expect(top).toEqual(['chats', 'bookmarks', 'inbox']);
   });
 });
 
 describe('resolveRail — content gates', () => {
   it('drops gated items when their gate is unsatisfied', () => {
     const none = idsFor(ViewMode.Dev, NO_GATES);
-    expect(none).not.toContain('project');
     expect(none).not.toContain('inbox');
     // Ungated neighbours survive — including data-sources, which must NOT be
     // gated on "a source exists": this screen is where the first one is made.
-    expect(none).toEqual(expect.arrayContaining(['home', 'chats', 'bookmarks', 'data-sources']));
+    expect(none).toEqual(expect.arrayContaining(['chats', 'bookmarks', 'data-sources']));
   });
 
-  it('gates are independent — a project does not reveal inbox', () => {
-    const projectOnly = idsFor(ViewMode.Vibe, { project: true, conversations: false });
-    expect(projectOnly).toContain('project');
-    expect(projectOnly).not.toContain('inbox');
-
-    const convsOnly = idsFor(ViewMode.Vibe, { project: false, conversations: true });
+  it('gates only the item they name', () => {
+    const convsOnly = idsFor(ViewMode.Vibe, { conversations: true });
     expect(convsOnly).toContain('inbox');
-    expect(convsOnly).not.toContain('project');
+
+    const neither = idsFor(ViewMode.Vibe, NO_GATES);
+    expect(neither).not.toContain('inbox');
+    expect(neither).toContain('chats');
   });
 
-  it('a fresh instance with a project shows exactly Home, Project, Chats, Bookmarks', () => {
-    const top = resolveRail(ViewMode.Vibe, { project: true, conversations: false })
+  it('a fresh instance shows exactly Chats and Bookmarks', () => {
+    // Home and the project used to lead this list; both now live in the top
+    // navigation bar, so the rail starts at Chats.
+    const top = resolveRail(ViewMode.Vibe, { conversations: false })
       .filter((item) => item.placement === 'top')
       .map((item) => item.id);
-    expect(top).toEqual(['home', 'project', 'chats', 'bookmarks']);
+    expect(top).toEqual(['chats', 'bookmarks']);
+  });
+
+  it('has no Home or project entry — the top navigation bar owns both', () => {
+    const ids = RAIL_ITEMS.map((item) => item.id as string);
+    expect(ids).not.toContain('home');
+    expect(ids).not.toContain('project');
   });
 });
 

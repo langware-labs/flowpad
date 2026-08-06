@@ -29,6 +29,7 @@ import {
   useLocation,
   type ShouldRevalidateFunctionArgs,
 } from 'react-router';
+import { bindHistoryPosition } from '@src/navigation/history-position-store';
 
 /**
  * Root-level `/dev/<anything-not-main-or-hooks>` URLs forward to `/dock/<same>`.
@@ -175,3 +176,12 @@ export const router = createBrowserRouter(
     basename: BASE_PATH,
   },
 );
+
+/**
+ * The router is the sole event source for "where am I in history", which the
+ * nav bar's Back/Forward buttons read. Bound here, at module scope, because by
+ * this point `createBrowserHistory` has already stamped its initial `idx` — and
+ * because subscribing here catches pops the app never initiated (browser chrome
+ * buttons, the macOS swipe, the Electron mouse buttons) for free.
+ */
+bindHistoryPosition(router);

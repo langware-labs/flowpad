@@ -35,7 +35,6 @@ describe('buildHubRailItems', () => {
 
   it('keeps the content browsers ahead of it, in order', () => {
     expect(buildHubRailItems(t).map((i) => i.id)).toEqual([
-      'home',
       'inbox',
       'tasks',
       'docs',
@@ -45,17 +44,14 @@ describe('buildHubRailItems', () => {
     ]);
   });
 
-  it('places project home right after Home, only while a project is selected', () => {
-    // Gated because the entry addresses its destination by id: with no pointer
-    // `HubProjectPage` renders "Project not found".
-    expect(buildHubRailItems(t).map((i) => i.id)).not.toContain('project');
+  it('leaves Home and the project to the top navigation bar', () => {
+    // Both moved there: Home is a nav button, the project is the leading
+    // breadcrumb. The bar renders on the hub too, so a rail copy would be a
+    // second button onto the same destination.
+    const ids = buildHubRailItems(t).map((i) => i.id);
 
-    const withProject = buildHubRailItems(t, 'proj-1');
-    expect(withProject.map((i) => i.id).slice(0, 2)).toEqual(['home', 'project']);
-
-    const project = withProject.find((i) => i.id === 'project');
-    expect(project?.viewType).toBe(ViewType.PROJECT);
-    expect(project?.pointer).toBe('proj-1');
+    expect(ids).not.toContain('home');
+    expect(ids).not.toContain('project');
   });
 
   it('points each record browser at a type the HUB serves', () => {

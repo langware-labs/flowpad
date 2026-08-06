@@ -384,7 +384,13 @@ export const TabStrip: React.FC<TabStripProps> = ({
           tabRefs.current[key] = node;
         }}
         style={sizing}
-        className={`group relative flex select-none items-center overflow-hidden rounded-t-lg border py-1.5 transition-colors ${
+        // `border-t-2` on EVERY state, colored only when active: the accent has
+        // to follow the `rounded-t-lg` curve, and a border does that natively.
+        // It used to be an absolutely-positioned 2px bar, which `overflow-hidden`
+        // clipped into a straight chord across the corner curve — the ends came
+        // out visibly pointed. Uniform on all states so activation never changes
+        // a chip's metrics.
+        className={`group relative flex select-none items-center overflow-hidden rounded-t-lg border border-t-2 py-1.5 transition-colors ${
           iconOnly ? 'justify-center gap-0 px-1' : 'gap-2 px-3'
         } ${
           isDisabled
@@ -395,7 +401,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 ? // Active tab shares the body background and opens its bottom edge
                   // (-mb-px over the baseline) so it reads as one surface with the
                   // content below — a folder-tab continuum lifted off the muted band.
-                  'z-10 -mb-px cursor-pointer border-border border-b-transparent bg-background text-foreground shadow-sm'
+                  // Its top border IS the accent, so it hugs the rounded corners.
+                  'z-10 -mb-px cursor-pointer border-border border-b-transparent border-t-primary bg-background text-foreground shadow-sm'
                 : // Inactive tabs are flat on the band (Chrome-style); the
                   // transparent border keeps their box metrics identical to the
                   // active chip so activation never shifts neighbors.
@@ -412,10 +419,6 @@ export const TabStrip: React.FC<TabStripProps> = ({
         data-active={isActive ? 'true' : undefined}
         {...(item.dataAttributes ?? {})}
       >
-        {/* Active accent — absolutely positioned so it never shifts tab height. */}
-        {isActive && !hasError && (
-          <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-primary" />
-        )}
         {item.icon}
         {!iconOnly && item.badge}
         {isEditing ? (
