@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ActionInfo, AgenticProcess, dataManager, GitWorkdir, type AssetDescriptor, type TypeId } from '@sdk';
+import { ActionInfo, AgenticProcess, dataManager, GitWorkdir, type AssetDescriptor } from '@sdk';
 import { Boxes, GitCommitHorizontal, Loader2, WandSparkles } from 'lucide-react';
 import {
   Dialog,
@@ -36,15 +36,6 @@ import {
 import { useProcessAssets } from './useProcessAssets';
 import { AssetManagerPopover } from './AssetManagerPopover';
 
-const EMPTY_REFS: string[] = [];
-
-function arraysShallowEqual(a: readonly string[], b: readonly string[]): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
-
 function normalizeTranscriptWorker(workerType: string | null | undefined): TranscriptWorkerType {
   const w = (workerType ?? 'claude').toLowerCase();
   if (w.includes('codex')) return 'codex';
@@ -69,18 +60,12 @@ interface AssetImproveTarget {
 interface AssetManagerButtonProps {
   /** The process whose assets are managed. Null before first-send. */
   process: AgenticProcess | null;
-  /** Pre-attached refs (typeid strings); used while process is null for staging. */
-  pendingRefs?: string[];
-  /** Called after the popover attaches a ref. Caller persists the change. */
-  onAttach?: (ref: string) => Promise<void> | void;
-  /** Called after detach. */
-  onDetach?: (ref: string) => Promise<void> | void;
   /** Optional element used as the trigger; defaults to a small icon button. */
   trigger?: React.ReactNode;
 }
 
 /**
- * "Manage assets for this process" button — the process HOST for
+ * "Assets for this process" button — the process HOST for
  * `AssetManagerPopover`.
  *
  * The popover itself is presentational. This component owns everything that
@@ -89,19 +74,16 @@ interface AssetManagerButtonProps {
  * removing `--add-dir` folders, and running the asset improvement flow. Each of
  * those is handed down as a *status prop* plus an *event*, so the popover can be
  * reused by surfaces that have no process at all.
+ *
+ * Deliberately NOT a picker: it passes no `onPick`/`onUnpick`, so the list is a
+ * read-only board of what this run used vs what is available to it. Picking an
+ * asset is a different question from browsing what the process can see, and
+ * conflating them made every name click mutate `embedded_asset_refs` (and flip
+ * `restart_required`) as a side effect of looking around.
  */
-export function AssetManagerButton({
-  process,
-  pendingRefs = EMPTY_REFS,
-  onAttach,
-  onDetach,
-  trigger,
-}: AssetManagerButtonProps) {
+export function AssetManagerButton({ process, trigger }: AssetManagerButtonProps) {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
-  // Live attached set — read off the process when present, fall back to
-  // pendingRefs when staging pre-create.
-  const [attachedRefs, setAttachedRefs] = useState<string[]>([]);
   const [fixDescriptor, setFixDescriptor] = useState<AssetDescriptor | null>(null);
   const [fixText, setFixText] = useState('');
   // The improve input dialog — on submit it genie-flies into the footer's
@@ -119,11 +101,6 @@ export function AssetManagerButton({
 
   const dataCtx = useDataContext();
   const { navigation } = useDockNavigation();
-
-  useEffect(() => {
-    const next = process ? ((process.embedded_asset_refs ?? []) as TypeId[]).map((r) => r.toString()) : pendingRefs;
-    setAttachedRefs((prev) => (arraysShallowEqual(prev, next) ? prev : next));
-  }, [process, process?.embedded_asset_refs, pendingRefs]);
 
   // Subscribe to entity-field changes (additional_dirs, restart_required,
   // load_flowpad_assistant, …) so the popover re-renders when the backend
@@ -211,32 +188,6 @@ export function AssetManagerButton({
   // reads as disabled. Toggling writes an explicit boolean. Stays `undefined`
   // with no process, which is what hides the toggle entirely.
   const assistantEnabled = activeProcess ? activeProcess.load_flowpad_assistant !== false : undefined;
-
-  // The list speaks descriptors; the process speaks refs. `descriptor.typeid`
-  // IS the ref, so the adaptation is one property read.
-  const handlePick = useCallback(
-    async (descriptor: AssetDescriptor) => {
-      const ref = descriptor.typeid;
-      if (process) {
-        await process.embeddedAssets.attach(ref);
-      }
-      setAttachedRefs((prev) => (prev.includes(ref) ? prev : [...prev, ref]));
-      await onAttach?.(ref);
-    },
-    [process, onAttach],
-  );
-
-  const handleUnpick = useCallback(
-    async (descriptor: AssetDescriptor) => {
-      const ref = descriptor.typeid;
-      if (process) {
-        await process.embeddedAssets.detach(ref);
-      }
-      setAttachedRefs((prev) => prev.filter((r) => r !== ref));
-      await onDetach?.(ref);
-    },
-    [process, onDetach],
-  );
 
   const handleToggleAssistant = useCallback(async () => {
     if (!activeProcess) return;
@@ -477,9 +428,6 @@ export function AssetManagerButton({
         open={open}
         onOpenChange={setOpen}
         assets={assets}
-        selectedTypeIds={attachedRefs}
-        onPick={handlePick}
-        onUnpick={handleUnpick}
         assistantEnabled={assistantEnabled}
         additionalDirs={additionalDirs}
         improveBusyKey={busyAssetKey}

@@ -2,13 +2,16 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   assetDescriptorHasUsage,
+  dataContext,
   dataManager,
   FLOWPAD_ASSISTANT_PROJECT_NAME,
+  FLOWPAD_ASSISTANT_PROJECT_UNAME,
   isReadOnlySource,
   isTypeId,
   Project,
   QueryRequest,
   TypeId,
+  VFSPath,
   type AssetDescriptor,
 } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -35,11 +38,14 @@ import {
 } from './asset-row-helpers';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
+
 import { cn } from '@src/lib/utils';
 import {
   ArrowLeft,
   ArrowDownAZ,
   Boxes,
+  ChevronRight,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -59,7 +65,7 @@ const ASSET_IMPROVEMENT_WIKI = 'Asset improvement';
  * One column template, applied identically to every row (asset rows and dir
  * rows alike) so cells line up down the list:
  *
- *   name chip │ scope icon │ scope name │ open │ wand │ un-select
+ *   name chip │ scope icon │ scope name │ explorer │ wand │ select
  *
  * Deliberately not CSS subgrid: a row carries its own background (selected rows
  * are tinted) and bottom border, which `display: contents` would throw away.
@@ -146,9 +152,16 @@ export interface AssetManagerPopoverProps {
    * `embedded` row appear, and both must read as selected.
    */
   selectedTypeIds?: readonly string[];
-  /** A row was chosen. Receives the whole descriptor — hosts that only want the
-   *  ref read `d.typeid`, while pick surfaces need `posix_path`/`source`. */
-  onPick: (descriptor: AssetDescriptor) => void | Promise<void>;
+  /**
+   * A row was chosen. Receives the whole descriptor — hosts that only want the
+   * ref read `d.typeid`, while pick surfaces need `posix_path`/`source`.
+   *
+   * Optional: omitting it makes the surface a READ-ONLY board — no select
+   * control renders at all, and the two sections read purely as "what this run
+   * used" vs "what is available". That is what the process asset manager wants;
+   * pick surfaces (composer attach, favorites, automation rail) supply it.
+   */
+  onPick?: (descriptor: AssetDescriptor) => void | Promise<void>;
   /**
    * A selected row was un-chosen. Absent ⇒ this is a one-shot surface: no
    * un-select control, and the list closes after a pick. Supplying it is what
@@ -237,7 +250,7 @@ export function AssetManagerPopover({
     },
     [isControlled, onOpenChange],
   );
-  const [view, setView] = useState<'list' | 'pick-project'>('list');
+  const [view, setView] = useState<'list' | 'pick-project' | 'assistant'>('list');
   const [listFilter, setListFilter] = useState('');
   const [sortBy, setSortBy] = useState<'scope' | 'name'>('scope');
 
@@ -245,7 +258,34 @@ export function AssetManagerPopover({
   // project-wide staging list ourselves. `enabled` is false whenever the host
   // owns the data, so only one fetch is ever in flight.
   const ownAssets = useProcessAssets(null, { enabled: open && !assets });
-  const { descriptors, isLoading } = assets ?? ownAssets;
+
+  // ── Flowpad Assistant drill-down ────────────────────────────────────────
+  // The assistant's assets are mounted wholesale via `--add-dir`, so they never
+  // appear as individual rows in the main list — one location row stands in for
+  // the lot. Clicking it descends INTO that project: the same `get-assets`
+  // action, asked of `@flowpad_assistant` instead of the current subject, so
+  // the rows are the same shape and render through the same grid.
+  const browsingAssistant = view === 'assistant';
+  const assistantAssets = useProcessAssets(null, {
+    enabled: open && browsingAssistant,
+    projectId: `@${FLOWPAD_ASSISTANT_PROJECT_UNAME}`,
+  });
+  // The assistant's OWN assets: the action's scan-dir policy always folds in the
+  // user home, and those rows belong to the user, not to the assistant. Read
+  // through the scope model rather than the raw source string, so a backend
+  // source rename degrades the chip instead of silently emptying this list.
+  const assistantDescriptors = useMemo(
+    () => assistantAssets.descriptors.filter((d) => assetScope(d).kind === 'project'),
+    [assistantAssets.descriptors],
+  );
+
+  // What the body lists. A drill-down is a foreign, READ-ONLY board: its own
+  // source and loading flag, one section, no host filter, no dirs, no select or
+  // improve. Decided once here so the rest of the render reads a value instead
+  // of re-asking "are we in the drill-down?" at every row and section.
+  const { descriptors: listDescriptors, isLoading: listIsLoading } = browsingAssistant
+    ? { descriptors: assistantDescriptors, isLoading: assistantAssets.isLoading }
+    : (assets ?? ownAssets);
 
   // Project picker — load once when entering pick-project mode.
   const projectsQuery = useMemo(() => new QueryRequest({ type: Project.type }), []);
@@ -253,6 +293,19 @@ export function AssetManagerPopover({
     enabled: open && view === 'pick-project',
   });
   const [projectQuery, setProjectQuery] = useState('');
+
+  /** Leave a drill-down / picker, dropping the filter that belonged to it. */
+  const backToList = useCallback(() => {
+    setView('list');
+    setListFilter('');
+    setProjectQuery('');
+  }, []);
+
+  /** Descend into the Flowpad Assistant's own assets. Same list, new subject. */
+  const openAssistant = useCallback(() => {
+    setListFilter('');
+    setView('assistant');
+  }, []);
 
   const handlePickProject = useCallback(
     async (path: string) => {
@@ -273,8 +326,8 @@ export function AssetManagerPopover({
   // raw ``<type>-<uuid>`` typeid until something else loads them.
   const [entityVersion, setEntityVersion] = useState(0);
   useEffect(() => {
-    if (!descriptors.length) return;
-    const missing = descriptors
+    if (!listDescriptors.length) return;
+    const missing = listDescriptors
       .filter((d) => isTypeId(d.typeid))
       .map((d) => new TypeId(d.typeid))
       .filter((t) => !dataManager.getByTypeIdFromCache(t));
@@ -286,7 +339,7 @@ export function AssetManagerPopover({
     return () => {
       cancelled = true;
     };
-  }, [descriptors]);
+  }, [listDescriptors]);
 
   // The list has two nested axes, and they are different questions:
   //   section — is this asset already in play (selected, or used by the run)?
@@ -305,7 +358,9 @@ export function AssetManagerPopover({
     // otherwise re-derive them O(n log n) times — ~20k times for a 1000-asset
     // staging list, on every keystroke in the filter box.
     const selected = new Set(selectedTypeIds);
-    const candidates = filter ? descriptors.filter(filter) : descriptors;
+    // The host's `filter` scopes what it will accept a pick of; the assistant
+    // drill-down picks nothing, so it shows the project whole.
+    const candidates = filter && !browsingAssistant ? listDescriptors.filter(filter) : listDescriptors;
     const rows = candidates.map((d) => ({
       d,
       type: _parseTypeid(d.typeid).type,
@@ -351,6 +406,13 @@ export function AssetManagerPopover({
       );
     };
 
+    // The drill-down has no usage axis of its own — nothing in another project
+    // is "used by" or "selected for" this run — so it collapses to one section.
+    if (browsingAssistant) {
+      const groups = groupByType(filtered);
+      return groups.length ? [{ key: 'available' as const, label: t`Assistant assets`, groups }] : [];
+    }
+
     // "Used" is only meaningful where a run reported usage. With no process
     // behind the list the top section holds purely the user's picks, so it is
     // labelled for what it actually contains.
@@ -366,7 +428,7 @@ export function AssetManagerPopover({
         groups: groupByType(filtered.filter((r) => !r.selected && !r.used)),
       },
     ].filter((s) => s.groups.length > 0);
-  }, [canImprove, descriptors, entityVersion, filter, listFilter, selectedTypeIds, sortBy, t]);
+  }, [browsingAssistant, canImprove, entityVersion, filter, listDescriptors, listFilter, selectedTypeIds, sortBy, t]);
 
   const filteredDirs = useMemo(() => {
     const q = listFilter.trim().toLowerCase();
@@ -402,6 +464,7 @@ export function AssetManagerPopover({
 
   const handlePick = useCallback(
     async (descriptor: AssetDescriptor) => {
+      if (!onPick) return;
       // A surface with no un-select is one-shot: close on pick. Settle our own
       // open state BEFORE emitting, because such a host routinely unmounts this
       // component from inside `onPick` (the automation rail swaps itself for a
@@ -420,7 +483,7 @@ export function AssetManagerPopover({
           <button
             type="button"
             className="-ml-1 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted"
-            onClick={() => setView('list')}
+            onClick={backToList}
             title={t`Back`}
             data-testid="asset-manager-back"
           >
@@ -428,8 +491,28 @@ export function AssetManagerPopover({
           </button>
         )}
         <Boxes className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="text-xs font-medium">
-          {view === 'pick-project' ? <Trans>Pick project folder</Trans> : <Trans>Assets</Trans>}
+        {/* Breadcrumb — the root crumb is itself the way back up, so the trail
+            and the back button are the same navigation, written twice on
+            purpose (one is discoverable, the other is where the eye already is). */}
+        <span className="flex min-w-0 items-center gap-1 text-xs font-medium" data-testid="asset-manager-breadcrumb">
+          {view === 'list' ? (
+            <Trans>Assets</Trans>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={backToList}
+                className="rounded text-muted-foreground hover:text-foreground hover:underline"
+                data-testid="asset-manager-crumb-root"
+              >
+                <Trans>Assets</Trans>
+              </button>
+              <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0 truncate">
+                {view === 'pick-project' ? <Trans>Pick project folder</Trans> : FLOWPAD_ASSISTANT_PROJECT_NAME}
+              </span>
+            </>
+          )}
         </span>
         {view === 'list' && (
           <div className="ml-auto flex items-center gap-1">
@@ -506,7 +589,7 @@ export function AssetManagerPopover({
         )}
       </div>
 
-      {view === 'list' ? (
+      {view !== 'pick-project' ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-1.5 border-b bg-muted/20 px-2 py-1.5">
             <Search className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
@@ -539,12 +622,15 @@ export function AssetManagerPopover({
             {/* Flowpad Assistant location marker — its assets live inside the
                   installed package and are mounted via --add-dir, so they don't
                   show as individual rows. A light-bordered location row marks
-                  where the flowpad assets come from when the toggle is on. */}
-            {assistantEnabled && !listFilter.trim() && (
-              <div
-                className="m-1 flex items-center gap-2 rounded border border-primary/40 bg-primary/5 px-2.5 py-1.5"
+                  where the flowpad assets come from when the toggle is on, and
+                  descends into them on click. */}
+            {!browsingAssistant && assistantEnabled && !listFilter.trim() && (
+              <button
+                type="button"
+                onClick={openAssistant}
+                className="m-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded border border-primary/40 bg-primary/5 px-2.5 py-1.5 text-left hover:bg-primary/10"
                 data-testid="asset-manager-flowpad-location"
-                title={t`Flowpad Assistant — its skills & agents are mounted into this process via --add-dir.`}
+                title={t`Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them.`}
               >
                 <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
                 <span className="min-w-0 flex-1 truncate text-xs text-foreground">
@@ -553,14 +639,14 @@ export function AssetManagerPopover({
                 <span className="flex-shrink-0 rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-primary">
                   <Trans>mounted</Trans>
                 </span>
-              </div>
+                <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-primary" aria-hidden />
+              </button>
             )}
-            {filteredDirs.map((path) => (
-              <DirRow key={`dir|${path}`} path={path} onRemove={onRemoveDir} />
-            ))}
+            {!browsingAssistant &&
+              filteredDirs.map((path) => <DirRow key={`dir|${path}`} path={path} onRemove={onRemoveDir} />)}
             {sections.length === 0 &&
-              filteredDirs.length === 0 &&
-              (isLoading ? (
+              (browsingAssistant || filteredDirs.length === 0) &&
+              (listIsLoading ? (
                 <div
                   className="flex items-center justify-center gap-2 px-3 py-4 text-[11px] text-muted-foreground"
                   data-testid="asset-manager-loading"
@@ -589,12 +675,12 @@ export function AssetManagerPopover({
                         descriptor={row.d}
                         scope={row.scope}
                         label={row.label}
-                        selected={row.selected}
+                        selected={!browsingAssistant && row.selected}
                         improvable={row.improvable}
                         busy={improveBusyKey === row.key}
-                        onPick={handlePick}
-                        onUnpick={onUnpick}
-                        onImprove={onImprove}
+                        onPick={!browsingAssistant && onPick ? handlePick : undefined}
+                        onUnpick={browsingAssistant ? undefined : onUnpick}
+                        onImprove={browsingAssistant ? undefined : onImprove}
                       />
                     ))}
                   </Fragment>
@@ -751,7 +837,7 @@ export function AssetRow({
   selected: boolean;
   improvable: boolean;
   busy: boolean;
-  onPick: (descriptor: AssetDescriptor) => void | Promise<void>;
+  onPick?: (descriptor: AssetDescriptor) => void | Promise<void>;
   onUnpick?: (descriptor: AssetDescriptor) => void | Promise<void>;
   onImprove?: (descriptor: AssetDescriptor) => void;
 }) {
@@ -761,19 +847,37 @@ export function AssetRow({
   const readOnly = isReadOnlySource(descriptor.source);
   const openable = _isOpenableTypeid(descriptor.typeid);
   const locationText = useEntityLocationLabel(descriptor.remote);
-  // The name chip is the SELECT control — one row model across every surface,
-  // so "open the asset" gets its own button rather than owning the whole chip.
-  // Where un-selecting is possible the chip toggles, so a second click undoes
-  // the first instead of re-attaching what is already attached.
+  // The name chip OPENS the asset in its editor — clicking the thing you are
+  // looking at should show you the thing. Selecting is a separate, explicit
+  // control at the row end, and only exists where a host asked for it: on the
+  // process asset manager this list is a read-only "used vs available" board.
   const togglesOff = selected && !!onUnpick;
   const pickLabel = togglesOff ? t`Remove ${label}` : t`Select ${label}`;
-  const pickActionTitle = locationText ? `${pickLabel}\n${locationText}` : pickLabel;
-  const pickActionAria = locationText ? `${pickLabel}, ${locationText}` : pickLabel;
   const openActionLabel = !openable
     ? t`Inline persona — no backing entity`
     : readOnly
       ? t`View ${label} (read-only)`
       : t`Open ${label}`;
+  const openActionTitle = locationText ? `${openActionLabel}\n${locationText}` : openActionLabel;
+  const openActionAria = locationText ? `${openActionLabel}, ${locationText}` : openActionLabel;
+  // Explorer targets the FILE, so an asset with no path (inline persona) has
+  // nowhere to go — same "no backing file" story as a non-openable row.
+  const explorerPath = descriptor.posix_path ?? null;
+  const explorerLabel = explorerPath ? t`Show ${label} in Files` : t`Inline persona — no file on disk`;
+
+  const onOpenExplorerClick = useCallback(() => {
+    if (!explorerPath) return;
+    try {
+      // Read at CLICK time, not through `useContext`: that hook's snapshot spans
+      // ~30 fields that churn on a live process, and this list mounts one row
+      // per asset — subscribing per row would re-render the whole board on
+      // every terminal tick for a value only this handler ever reads.
+      const computeNode = dataContext.computeNode?.typeId ?? LOCAL_COMPUTE_NODE;
+      navigation.openDock(DockPointer.forExplorer(VFSPath.fromMachinePath(explorerPath, computeNode).absVfsPath));
+    } catch (err) {
+      console.error('[AssetRow] failed to open asset in explorer', explorerPath, err);
+    }
+  }, [explorerPath, navigation]);
 
   const onOpenClick = useCallback(() => {
     if (!openable || !id) return;
@@ -805,17 +909,18 @@ export function AssetRow({
     >
       <button
         type="button"
-        onClick={() => {
-          void (togglesOff ? onUnpick(descriptor) : onPick(descriptor));
-        }}
+        onClick={onOpenClick}
+        disabled={!openable}
+        data-openable={openable ? 'true' : 'false'}
         className={cn(
-          'flex min-w-0 items-center gap-1.5 rounded border px-1.5 py-0.5 text-xs',
+          'flex min-w-0 items-center gap-1.5 rounded border px-1.5 py-0.5 text-xs disabled:cursor-default disabled:opacity-60',
           selected
             ? 'border-primary/50 bg-primary/10 text-foreground hover:bg-primary/20'
             : 'border-border bg-muted/30 text-foreground hover:bg-muted',
         )}
-        title={pickActionTitle}
-        aria-label={pickActionAria}
+        title={openActionTitle}
+        aria-label={openActionAria}
+        data-testid={`asset-manager-open-${descriptor.typeid}-${descriptor.source}`}
       >
         <EntityIcon
           type={type}
@@ -829,13 +934,13 @@ export function AssetRow({
       <AssetScopeChip scope={scope} testidSuffix={`${descriptor.typeid}-${descriptor.source}`} />
       <button
         type="button"
-        onClick={onOpenClick}
-        disabled={!openable}
-        data-openable={openable ? 'true' : 'false'}
+        onClick={onOpenExplorerClick}
+        disabled={!explorerPath}
+        data-openable={explorerPath ? 'true' : 'false'}
         className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-default disabled:opacity-40"
-        title={openActionLabel}
-        aria-label={openActionLabel}
-        data-testid={`asset-manager-open-${descriptor.typeid}-${descriptor.source}`}
+        title={explorerLabel}
+        aria-label={explorerLabel}
+        data-testid={`asset-manager-explorer-${descriptor.typeid}-${descriptor.source}`}
       >
         <SquareArrowOutUpRight className="h-3 w-3" />
       </button>
@@ -859,20 +964,33 @@ export function AssetRow({
       ) : (
         <GridCellSpacer />
       )}
-      {/* No read-only guard here: read-only describes whether the asset FILE can
-          be edited, not whether the user's own selection can be undone. Most
-          staged rows are read-only sources, so gating on it hid the control
-          exactly where it is needed most. */}
-      {selected && onUnpick ? (
+      {/* The SELECT control. No read-only guard here: read-only describes whether
+          the asset FILE can be edited, not whether the user's own selection can
+          be undone. Most staged rows are read-only sources, so gating on it hid
+          the control exactly where it is needed most.
+
+          Absent entirely when the host supplied no selection callbacks — that is
+          what turns this list into a read-only availability board. */}
+      {togglesOff || onPick ? (
         <button
           type="button"
-          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          onClick={() => void onUnpick(descriptor)}
-          title={t`Remove`}
-          aria-label={t`Remove ${label}`}
-          data-testid={`asset-manager-unselect-${descriptor.typeid}-${descriptor.source}`}
+          className={cn(
+            'flex h-5 w-5 items-center justify-center rounded hover:bg-muted hover:text-foreground',
+            togglesOff ? 'text-primary' : 'text-muted-foreground',
+          )}
+          onClick={() => {
+            void (togglesOff ? onUnpick(descriptor) : onPick?.(descriptor));
+          }}
+          title={pickLabel}
+          aria-label={pickLabel}
+          aria-pressed={selected}
+          data-testid={
+            togglesOff
+              ? `asset-manager-unselect-${descriptor.typeid}-${descriptor.source}`
+              : `asset-manager-select-${descriptor.typeid}-${descriptor.source}`
+          }
         >
-          <X className="h-3 w-3" />
+          {togglesOff ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
         </button>
       ) : (
         <GridCellSpacer />
