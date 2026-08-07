@@ -3,6 +3,7 @@ import type { TypeId } from '@sdk';
 import { AssetDiscussButton } from '@src/components/assets/editor/AssetDiscussButton';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
+import { chromeActionClusterClassName } from '@src/components/entity-actions/action-button-styles';
 import { BookmarksStarButton } from './BookmarksStarButton';
 import type { DockPointer } from '@src/navigation/DockPointer';
 
@@ -45,7 +46,10 @@ export function TopBarActions({
         typeId={targetTypeId}
         favoriteTitle={targetTitle}
         variant="compact"
-        className="shrink-0"
+        // The chrome size is applied from the bar, not inside the toolbar —
+        // the toolbar's compact size belongs to the entity headers that share
+        // it.
+        className={`shrink-0 ${chromeActionClusterClassName}`}
         // The bar owns the star (it carries the bookmarks menu), so the toolbar
         // must not draw a second one. Riding the `trailing` slot keeps it inside
         // the toolbar's own row rather than in a wrapper repeating its classes.
@@ -66,7 +70,7 @@ export function TopBarActions({
   // no subject, so it simply isn't offered.
   if (!favorite) return null;
   return (
-    <div className="flex shrink-0 items-center gap-0.5" data-testid="top-nav-actions">
+    <div className={`flex shrink-0 items-center gap-0.5 ${chromeActionClusterClassName}`} data-testid="top-nav-actions">
       <AssetDiscussButton />
       <BookmarksStarButton favorite={favorite} />
     </div>

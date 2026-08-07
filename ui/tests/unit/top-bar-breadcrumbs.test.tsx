@@ -23,6 +23,8 @@ import * as ancestors from '@src/navigation/entity-ancestors';
 import { useEntityBreadcrumbs } from '@src/components/top-nav-bar/use-entity-breadcrumbs';
 
 const DOC = new TypeId('markdown', '11111111-1111-4111-8111-111111111111');
+const PROJECT_ID = '44444444-4444-4444-8444-444444444444';
+const OTHER_PROJECT_ID = '55555555-5555-4555-8555-555555555555';
 const FOLDER = new TypeId('markdown', '22222222-2222-4222-8222-222222222222');
 
 /**
@@ -127,6 +129,37 @@ describe('useEntityBreadcrumbs', () => {
     expect(result.current.crumbs).toHaveLength(2);
     expect(result.current.crumbs[1].label).toBeTruthy();
     expect(result.current.crumbs[1].pointer).toBeNull();
+  });
+
+  it('says Home on the project\'s own page rather than the name twice', async () => {
+    ctx.project = { displayName: 'Acme', id: PROJECT_ID };
+    const projectTypeId = new TypeId('project', PROJECT_ID);
+    vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue({
+      targetTypeId: projectTypeId,
+      target: { displayName: 'Acme', parent_type_id: null },
+      projectId: PROJECT_ID,
+    } as never);
+
+    const { result } = renderHook(() => useEntityBreadcrumbs(dock('p', projectTypeId)));
+
+    await waitFor(() => expect(result.current.crumbs[1].label).toBe('Home'));
+    expect(result.current.crumbs.map((c) => c.label)).toEqual(['Acme', 'Home']);
+  });
+
+  it('still names a DIFFERENT project normally', async () => {
+    // Only the active project collapses to "Home" — another project's page is
+    // a real destination and keeps its name.
+    ctx.project = { displayName: 'Acme', id: PROJECT_ID };
+    const otherProject = new TypeId('project', OTHER_PROJECT_ID);
+    vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue({
+      targetTypeId: otherProject,
+      target: { displayName: 'Other', parent_type_id: null },
+      projectId: OTHER_PROJECT_ID,
+    } as never);
+
+    const { result } = renderHook(() => useEntityBreadcrumbs(dock('p2', otherProject)));
+
+    await waitFor(() => expect(result.current.crumbs[1].label).toBe('Other'));
   });
 
   it('drops the project crumb when there is no project (hub)', () => {
