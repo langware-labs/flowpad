@@ -39,6 +39,10 @@ interface FavoriteStarProps extends FavoriteRef {
    * menu. Both of the default surfaces would otherwise fire first (300ms and
    * instantly, against the menu's 500ms dwell) and sit on top of it. Right-click
    * Rename/Remove is untouched, so nothing becomes unreachable.
+   *
+   * It also turns OFF the post-creation edit window: the star stays a star and
+   * a second click un-bookmarks, rather than the glyph becoming a pencil that
+   * opens a dialog. A host that owns the hover already offers editing there.
    */
   hoverSurface?: 'card' | 'none';
 }
@@ -76,6 +80,13 @@ export function FavoriteStar({
   // Post-creation "edit window": for FAVORITE_EDIT_WINDOW_MS after a favorite is
   // created, the star shows an edit glyph and a click opens the edit dialog
   // (pre-selecting the new favorite) instead of un-favoriting.
+  // ...but only where the star owns its own surfaces. When a HOST owns the
+  // hover (the navigation bar, whose hover opens the bookmarks menu), the morph
+  // is a second, silent mode on a glyph that already has two gestures: the star
+  // would turn into a pencil for five seconds and the next click would open a
+  // dialog instead of un-bookmarking. Rename and Remove are on right-click and
+  // in the menu, so nothing is lost by leaving the star a star.
+  const editWindowEnabled = hoverSurface !== 'none';
   const [editWindowActive, setEditWindowActive] = useState(false);
   const [newFavId, setNewFavId] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -134,13 +145,25 @@ export function FavoriteStar({
       // Creating a new favorite → open the 5s edit window on the just-created id.
       if (!favorited) {
         const created = await toggleFavorite({ entityType, entityId, title, icon, nav });
-        if (created?.id) armEditWindow(created.id);
+        if (created?.id && editWindowEnabled) armEditWindow(created.id);
         return;
       }
       // Already favorited (no active window) → remove, as before.
       void toggleFavorite({ entityType, entityId, title, icon, nav });
     },
-    [editWindowActive, favorited, clearEditWindow, armEditWindow, toggleFavorite, entityType, entityId, title, icon, nav],
+    [
+      editWindowActive,
+      editWindowEnabled,
+      favorited,
+      clearEditWindow,
+      armEditWindow,
+      toggleFavorite,
+      entityType,
+      entityId,
+      title,
+      icon,
+      nav,
+    ],
   );
 
   const startEditing = useCallback(() => {

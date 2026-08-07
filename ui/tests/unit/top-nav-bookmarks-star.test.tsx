@@ -154,6 +154,25 @@ describe('the bookmarks star', () => {
     expect(await screen.findByDisplayValue('Design notes')).toBeTruthy();
   });
 
+  // Elsewhere the star morphs into a pencil for 5s after you bookmark, and that
+  // click opens the edit dialog. Here it would be a third meaning on a glyph
+  // that already carries click-to-bookmark and hover-for-the-menu.
+  it('stays a star after bookmarking, so the next click un-bookmarks', async () => {
+    renderButton();
+    const star = screen.getByRole('button', { name: 'Add to favorites' });
+
+    await act(() => Promise.resolve(fireEvent.click(star)));
+
+    // No pencil, and no edit dialog waiting behind it.
+    expect(screen.queryByRole('button', { name: 'Edit favorite' })).toBeNull();
+    expect(star.querySelector('.lucide-pencil')).toBeNull();
+
+    // The second click reaches the toggle instead of being swallowed by an
+    // edit window.
+    await act(() => Promise.resolve(fireEvent.click(star)));
+    expect(fav.toggleFavorite).toHaveBeenCalledTimes(2);
+  });
+
   it('does not open its own hover card, which would sit on top of the menu', () => {
     vi.useFakeTimers();
     fav.state.current = { id: 'bk-1', name: 'Design notes' };
