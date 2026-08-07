@@ -213,3 +213,61 @@ def test_stored_missing_and_rekeyed_paths_are_pruned(tmp_path: Path) -> None:
     assert decision.primary_path is None
     assert decision.occurrences == ()
     assert decision.changed is True
+
+
+def test_evidence_is_carried_only_for_collided_groups(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lone occurrence stays byte-identical; a collided one explains itself.
+
+    The single-path case matters as much as the collided one: evidence there
+    would dirty every asset row in the corpus on the first index after upgrade,
+    for a panel that never renders.
+    """
+    a, b = str((tmp_path / "a.md").resolve()), str((tmp_path / "vendor" / "a.md").resolve())
+    monkeypatch.setattr(occurrence_module, "_trusted_birth_time", {a: OLD}.get)
+
+    lone = _resolve([("markdown", "solo", a)])[0].occurrences[0]
+    assert (lone.introduced_at, lone.birth_time, lone.rank_basis) == (None, None, "")
+    assert lone.origin == occurrence_module.ORIGIN_LOCAL
+    assert occurrence_module.asset_occurrence_dicts([lone]) == [
+        {"path": a, "first_seen_at": lone.first_seen_at.isoformat()}
+    ]
+
+    introduced = {a: NOW - timedelta(days=3)}
+    primary, duplicate = _resolve(
+        [("markdown", "dup", a), ("markdown", "dup", b)], git=introduced.get
+    )[0].occurrences
+    assert primary.path == a
+    assert primary.introduced_at == introduced[a]
+    assert primary.birth_time == OLD
+    # Git separated them, and only the primary explains the group's decision.
+    assert (primary.rank_basis, duplicate.rank_basis) == ("git", "")
+    assert duplicate.origin == occurrence_module.ORIGIN_DEPENDENCY
+
+
+def test_rank_basis_names_the_signal_that_actually_decided(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    a, b = str((tmp_path / "a.md").resolve()), str((tmp_path / "b.md").resolve())
+    candidates = [("markdown", "id", a), ("markdown", "id", b)]
+
+    monkeypatch.setattr(occurrence_module, "_trusted_birth_time", {a: OLD, b: NOW}.get)
+    assert _resolve(candidates)[0].occurrences[0].rank_basis == "created"
+
+    # No git, no birth time, no stored history: only the path separates them.
+    monkeypatch.setattr(occurrence_module, "_trusted_birth_time", lambda _path: None)
+    assert _resolve(candidates)[0].occurrences[0].rank_basis == "path"
+
+    stored = {("markdown", "id"): [AssetOccurrence(b, OLD)]}
+    assert _resolve(candidates, stored)[0].occurrences[0].rank_basis == "first_seen"
+
+
+def test_origin_classification_is_narrow_by_design() -> None:
+    classify = occurrence_module.classify_origin
+    assert classify("/repo/.venv/lib/python3.12/site-packages/pkg/doc.md") == (
+        occurrence_module.ORIGIN_INSTALLED_PACKAGE
+    )
+    assert classify("/repo/ui/node_modules/pkg/doc.md") == occurrence_module.ORIGIN_DEPENDENCY
+    # A real user folder that merely *contains* the substring is not vendored.
+    assert classify("/repo/docs/my-vendored-notes/doc.md") == occurrence_module.ORIGIN_LOCAL

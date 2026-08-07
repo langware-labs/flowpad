@@ -53,10 +53,30 @@ export interface EntityMember {
   [key: string]: unknown;
 }
 
-/** One backend-ranked on-disk occurrence of an asset identity. */
+/** Why a copy exists on disk, as classified by the backend path rules. */
+export type AssetOccurrenceOrigin = 'installed_package' | 'dependency' | 'local';
+
+/** Which signal separated the primary from the runner-up. Primary row only. */
+export type AssetRankBasis = 'git' | 'created' | 'first_seen' | 'path';
+
+/**
+ * One backend-ranked on-disk occurrence of an asset identity, with the
+ * evidence that ranked it. Evidence is present only on collided assets — a
+ * lone occurrence has nothing to explain — so every field past `first_seen_at`
+ * is optional and the UI must render around its absence.
+ */
 export interface AssetOccurrence {
   path: string;
+  /** When FlowPad first indexed this path. */
   first_seen_at: string;
+  /** Git introduction time, when the path is tracked in a repo. */
+  introduced_at?: string;
+  /** Filesystem birth time, when the filesystem reports a trustworthy one. */
+  birth_time?: string;
+  /** Omitted when `local`. */
+  origin?: AssetOccurrenceOrigin;
+  /** Set on the primary occurrence only. */
+  rank_basis?: AssetRankBasis;
 }
 import { defineGlobal } from './utils/globals';
 import { WikiLink } from './types/wiki';

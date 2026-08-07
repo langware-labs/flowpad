@@ -18,6 +18,13 @@ interface WikiLabelProps {
    * page. Both "Open" and "Preview" scroll to it once the markdown renders.
    */
   fragment?: string;
+  /**
+   * Wiki space to resolve the word in. Omitted means the `@local` alias — the
+   * ACTIVE project's wiki. Pass an explicit space for a shipped system doc,
+   * which lives in the assistant project and is invisible from anywhere else
+   * (see `useAssistantWikiSpace`).
+   */
+  space?: string;
 }
 
 /**
@@ -26,20 +33,20 @@ interface WikiLabelProps {
  * same page in a modal via `openWikiModal`. Both directions resolve the page
  * by name. See docs/wikitip.md.
  */
-export function WikiLabel({ wikiword, label, fragment }: WikiLabelProps) {
+export function WikiLabel({ wikiword, label, fragment, space }: WikiLabelProps) {
   const { navigation } = useDockNavigation();
   const previewWiki = useCallback(
-    () => openWikiModal(wikiword, undefined, fragment),
-    [wikiword, fragment],
+    () => openWikiModal(wikiword, space, fragment),
+    [wikiword, space, fragment],
   );
   // The hub page has no /dock/assets/wiki route (it redirects home), so hub
   // mode opens every wiki surface in the modal instead.
   const openWiki = useCallback(
     () =>
       isHubOnly()
-        ? openWikiModal(wikiword, undefined, fragment)
-        : navigation.openDock(DockPointer.forWiki(wikiword, Layout.DOCK, undefined, fragment)),
-    [navigation, wikiword, fragment],
+        ? openWikiModal(wikiword, space, fragment)
+        : navigation.openDock(DockPointer.forWiki(wikiword, Layout.DOCK, space, fragment)),
+    [navigation, wikiword, space, fragment],
   );
 
   return (
