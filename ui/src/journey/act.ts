@@ -1,9 +1,17 @@
-import { Capability, capabilityManager, dataContext, EventBus, FSRef, GitWorkdir, oauthService } from '@sdk';
+import {
+  Capability,
+  capabilityManager,
+  dataContext,
+  EventBus,
+  FSRef,
+  GitWorkdir,
+  type JourneyActSpec,
+  oauthService,
+} from '@sdk';
 
 import { getGitStatus } from '@src/lib/git-status-cache';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import { runInTerminal } from '@src/terminal/run-in-terminal';
-import type { JourneyActSpec } from './use-journey';
 
 /** A step's act landed / could not land. The step's `await` listens for these
  *  like any other bus event — gating stays ONE mechanism (see docs/tags.md). */

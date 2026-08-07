@@ -1,5 +1,5 @@
 import { Check, ChevronDown, ChevronUp, Circle, CircleDot, FileCheck2, GitBranch, KeyRound, Link2, Play, RotateCcw, Terminal, Type, Wrench, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Confetti from 'react-confetti';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -10,7 +10,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { animateMinimizeToElement } from '@src/lib/minimize-to-element';
 import { markJourneyDismissed } from './journey-dismissed';
 import { JourneyStepLive } from './JourneyStepLive';
-import { groupSteps, useBusyRun, type JourneyStep, type UseJourneyResult } from './use-journey';
+import type { JourneyStep } from '@sdk';
+import { useBusyRun, type UseJourneyResult } from './use-journey';
 import type { JourneyManagerView } from './useJourneyManager';
 
 /** Per-act-kind button face; unknown kinds fall back to `fill`. */
@@ -35,6 +36,8 @@ function ActButtonContent({ kind }: { kind: string }) {
     </>
   );
 }
+
+const NO_DONE_IDS: ReadonlySet<string> = new Set<string>();
 
 const INDIGO = '#5b5bf0';
 const AMBER = '#f6a723';
@@ -98,13 +101,10 @@ function elementSize(el: HTMLElement | null): { w: number; h: number } {
  */
 export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: JourneyManagerView }) {
   const { t } = useLingui();
-  const { journey, journal, steps, currentStep, cursorIndex, refresh } = state;
+  const { journey, journal, graph, currentStep, cursorIndex, refresh } = state;
   const { navigation } = useDockNavigation();
   const { busy, run } = useBusyRun(refresh);
-  const doneIds = useMemo(
-    () => new Set((journal?.entries ?? []).map((e) => e.node_id)),
-    [journal?.entries],
-  );
+  const doneIds = journal?.doneNodeIds() ?? NO_DONE_IDS;
 
   // ── position: default bottom-left; user-dragged position persists ──
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -212,7 +212,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
   if (!journey || typeof document === 'undefined') return null;
 
   const complete = journal?.status === 'complete';
-  const stepsLeft = journal?.steps_left ?? steps.length;
+  const stepsLeft = journal?.steps_left ?? graph.length;
 
   // Portal to document.body (the FloatingChatWindow pattern): the left rail is
   // also z-50, and inside the app tree the rail comes later in the DOM — a tie
@@ -284,9 +284,9 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
       </div>
 
       <ul className="flex max-h-64 flex-col gap-0.5 overflow-y-auto overscroll-contain p-2">
-        {groupSteps(steps).map((section) => {
+        {graph.sections.map((section) => {
           const isDone = (i: number) =>
-            complete || doneIds.has(steps[i].node_id) || (cursorIndex >= 0 && i < cursorIndex);
+            complete || doneIds.has(graph.steps[i].node_id) || (cursorIndex >= 0 && i < cursorIndex);
           const renderStep = (step: JourneyStep, i: number, indent: boolean) => {
             const done = isDone(i);
             const current = !complete && i === cursorIndex;
@@ -333,7 +333,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
           const rows = expanded ? section.indices : section.indices.filter((i) => i === cursorIndex);
           if (!rows.length) return null;
           if (section.group === null) {
-            return rows.map((i) => renderStep(steps[i], i, false));
+            return rows.map((i) => renderStep(graph.steps[i], i, false));
           }
           const groupDone = section.indices.every(isDone);
           const groupCurrent = !complete && section.indices.includes(cursorIndex);
@@ -354,7 +354,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
                 <span className={groupCurrent ? 'text-foreground' : 'text-muted-foreground'}>{section.group}</span>
               </div>
               <ul className="flex flex-col gap-0.5">
-                {rows.map((i) => renderStep(steps[i], i, true))}
+                {rows.map((i) => renderStep(graph.steps[i], i, true))}
               </ul>
             </li>
           );

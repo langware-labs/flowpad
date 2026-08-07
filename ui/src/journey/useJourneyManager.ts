@@ -1,4 +1,4 @@
-import { capabilityManager, dataContext, dataManager, Journey, Project, QueryFilter, QueryRequest, Shell, targetOf, TypeId, ViewType } from '@sdk';
+import { capabilityManager, dataContext, dataManager, Project, QueryFilter, QueryRequest, Shell, targetOf, TypeId, ViewType } from '@sdk';
 import { useOnTag, useProject } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
@@ -8,7 +8,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { projectScope } from '@src/lib/scope-filter';
 import { dockTarget } from '@src/tags/dock-target';
-import type { JourneyPresentDock, JourneyStep, UseJourneyResult } from './use-journey';
+import type { JourneyPresentDock } from '@sdk';
+import type { UseJourneyResult } from './use-journey';
 import { ACT_FAILED_TAG, actTarget, runAct } from './act';
 
 /** What the tray needs from the manager to render the step's own buttons. */
@@ -69,7 +70,7 @@ function pointerForDock(
  * Runs only while a journey is shown — clearing the param stops all of it.
  */
 export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
-  const { journey, journal, currentStep, start, refresh } = state;
+  const { journey, journal, graph, currentStep, refresh } = state;
   const { navigation, currentDock } = useDockNavigation();
   const { project } = useProject();
 
@@ -133,8 +134,8 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
     const present = currentStep.present ?? {};
     // A FRESH run begins at the journey's START dock (graph.json `start`): the
     // entry step inherits it as its surface when it doesn't name its own.
-    const fresh = (journal?.entries?.length ?? 0) === 0;
-    let dock = present.dock ?? (fresh ? (start ?? undefined) : undefined);
+    const fresh = journal?.isFresh ?? true;
+    let dock = present.dock ?? (fresh ? (graph.start ?? undefined) : undefined);
 
     // Consume the transparency flag: this step was reached by the user's own
     // click — they are already navigating; don't override their destination.
@@ -211,10 +212,7 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   // try-it steps must run THERE — a tour that says "the repo you're in IS
   // syncmd" was otherwise writing files into whatever project happened to be
   // active (and running `syncmd` outside a git repo, where it cannot work).
-  const journeyRoot = useMemo(
-    () => /^(.*)\/agentic-assets\/journey\/[^/]+\/?$/.exec(assetRef)?.[1] ?? null,
-    [assetRef],
-  );
+  const journeyRoot = journey?.projectRoot ?? null;
 
   const openTerminal = useCallback(async () => {
     // openNewShell already navigates to the new shell when we don't opt out.
@@ -330,5 +328,3 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   return { actPending: !!act && !actRan, doAct, armed };
 }
 
-export type { JourneyStep };
-export { Journey };
