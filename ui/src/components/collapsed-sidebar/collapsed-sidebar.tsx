@@ -21,7 +21,6 @@ import { DataSource, PageId } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useHasConversations } from '@src/hooks/use-has-conversations';
 import { useLastVibeChat } from '@src/pages/flow-page/use-last-vibe-chat';
-import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
 import { NavBadge } from '@src/components/ui/nav-badge';
 import { useLingui } from '@lingui/react/macro';
@@ -40,7 +39,6 @@ import {
   History,
   MessageCircle,
   RadioTower,
-  Search,
   Workflow,
   Webhook,
 } from 'lucide-react';
@@ -315,16 +313,6 @@ export function CollapsedSidebar() {
             </Button>
           )}
           <JourneyBadge />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => useSpotlightStore.getState().openSpotlight()}
-            title={t`Search (⌘K)`}
-            data-testid="sidebar-search-button"
-          >
-            <Search className="h-4 w-4" />
-          </Button>
           <FlowpadAssistantButton />
           <ThemeToggle />
           <UserDropdown />

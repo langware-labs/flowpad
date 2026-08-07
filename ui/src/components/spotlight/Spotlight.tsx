@@ -2,7 +2,6 @@ import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { useRecordSearch } from '@src/hooks/use-record-search';
 import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
-import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { Loader2 } from 'lucide-react';
@@ -10,6 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { EntityTypePopover } from './EntityTypePopover';
 import { ScopeFilterPopover } from './ScopeFilterPopover';
+import { activateSearchRow } from './activate-row';
 import { searchResultToRow, searchResultToTerminalRow } from './adapters';
 import { SpotlightResultRowContent } from './SpotlightResultRow';
 import { resolveProfile } from './profiles';
@@ -92,15 +92,7 @@ export function Spotlight() {
   const handleSelect = async (row: SpotlightRow) => {
     setOpening(row.key);
     try {
-      // Try onActivate first; if it signals false (e.g. terminal-profile row
-      // whose AgenticProcess has been pruned), fall through to the shared
-      // record-type-nav router using `searchResult` (typically opens the
-      // transcript lens). This avoids a dead-end toast when a graceful
-      // fallback is available.
-      const handled = row.onActivate ? await row.onActivate(navigation) : false;
-      if (!handled && row.searchResult) {
-        await navigateToResult(row.searchResult, navigation);
-      }
+      await activateSearchRow(row, navigation);
       closeSpotlight();
     } finally {
       setOpening(null);

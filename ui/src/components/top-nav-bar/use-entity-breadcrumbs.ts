@@ -45,6 +45,15 @@ export interface Crumb {
   /** null ⇒ not navigable (the current page, or a type no dock can address). */
   pointer: DockPointer | null;
   kind: 'project' | 'ancestor' | 'current';
+  /**
+   * Where the thing LIVES on disk, when it is file-backed — the absolute machine
+   * path and the real basename (with extension, unlike `label`). Both null for a
+   * conversation, a process or a list, which have no file. Only the current
+   * crumb carries them; they are what its details popover shows, and they moved
+   * here when the asset editor's own header row was removed.
+   */
+  path?: string | null;
+  filename?: string | null;
 }
 
 export interface EntityBreadcrumbs {
@@ -76,6 +85,12 @@ const HOME_CRUMB_LABEL = 'Start';
 /** What the last crumb says on the project's own page, where the target IS the
  *  leading crumb and repeating the name would read "Acme › Acme". */
 const PROJECT_HOME_CRUMB_LABEL = 'Home';
+
+/** Basename of an `asset_ref`, trailing separators ignored. */
+function basename(ref: string | null): string | null {
+  if (!ref) return null;
+  return ref.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || null;
+}
 
 /** Human label for a dock with no target entity (assets list, settings, a bare
  *  shell). The open tab already carries the app's canonical name for it. */
@@ -158,15 +173,16 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     // The project always leads — except on the hub, or in the transient window
     // where no project is selected, where there simply isn't one.
     //
-    // Clicking it OPENS the project, like every other crumb: a breadcrumb
-    // segment navigates to what it names. Changing projects is a different
-    // verb and gets its own control beside it (see AddressField).
+    // The one crumb that does NOT navigate: clicking it opens the projects
+    // list, which is what the chip it replaced did. Opening the project itself
+    // is the briefcase button up in the nav cluster — a destination, next to
+    // the other destinations, rather than a second meaning for this click.
     if (project) {
       out.push({
         key: 'project',
         label: project.displayName,
         Icon: iconForType(Project.type),
-        pointer: DockPointer.forProject(project.id),
+        pointer: null,
         kind: 'project',
       });
     }
@@ -196,6 +212,13 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       dock?.viewType === ViewType.PROJECT ||
       (!!project && targetTypeId?.type === Project.type && targetTypeId.id === project.id);
 
+    // Same precedence the asset editor's header used before it was removed: the
+    // route's own VFS path first (parsed, no fetch, right on the first frame),
+    // then the resolved entity's `asset_ref` for a typeid-addressed asset.
+    const assetRef = (resolved.entity as { asset_ref?: string | null } | null)?.asset_ref ?? null;
+    const path = dock?.resourceVfsPath?.machinePath || assetRef || null;
+    const filename = dock?.resourceVfsPath?.filename || basename(assetRef) || null;
+
     out.push(
       targetTypeId
         ? {
@@ -204,6 +227,8 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
             Icon: iconForType(targetTypeId.type),
             pointer: null,
             kind: 'current',
+            path,
+            filename,
           }
         : {
             key: 'view',
@@ -211,11 +236,13 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
             Icon: isProjectHome ? iconForType(Project.type) : VIEW_CRUMB_ICON,
             pointer: null,
             kind: 'current',
+            path,
+            filename,
           },
     );
 
     return out;
-  }, [project, ancestors, targetTypeId, targetTitle, dock?.viewType]);
+  }, [project, ancestors, targetTypeId, targetTitle, dock?.viewType, dockKey, resolved.entity]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { crumbs, targetTypeId, targetTitle };
 }

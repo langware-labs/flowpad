@@ -162,29 +162,15 @@ describe('the navigation bar', () => {
     expect(setContext).not.toHaveBeenCalled();
   });
 
-  it('opens the project from its crumb', async () => {
-    // A breadcrumb segment navigates to what it names — the project crumb is
-    // not an exception.
-    const pointer = { fake: 'project-pointer' };
-    crumbs.current = [crumb('Acme', 'project', pointer), crumb('Design notes', 'current')];
+  it('opens the projects list from the project crumb', async () => {
+    // The one crumb that does not navigate: it inherited the project chip's
+    // job, which was choosing a project. Opening the project itself is the
+    // briefcase button in the nav cluster.
     const user = userEvent.setup();
     renderBar();
 
+    expect(screen.queryByTestId('project-switcher')).toBeNull();
     await user.click(screen.getByText('Acme'));
-
-    expect(openDock).toHaveBeenCalledWith(pointer);
-    expect(screen.queryByTestId('project-switcher')).toBeNull();
-  });
-
-  it('changes project from the select button beside the crumb', async () => {
-    // Switching is a different verb from opening, so it gets its own control
-    // rather than stealing the crumb's click.
-    crumbs.current = [crumb('Acme', 'project', { fake: 'p' }), crumb('Design notes', 'current')];
-    const user = userEvent.setup();
-    renderBar();
-
-    expect(screen.queryByTestId('project-switcher')).toBeNull();
-    await user.click(screen.getByTestId('top-nav-project-select'));
 
     expect(screen.getByTestId('project-switcher')).toBeTruthy();
     expect(openDock).not.toHaveBeenCalled();
@@ -197,5 +183,22 @@ describe('the navigation bar', () => {
     await user.click(screen.getByText('Design notes'));
 
     expect(openDock).not.toHaveBeenCalled();
+  });
+
+  // Search is the bar's job now — the rail's magnifier is gone — and it takes
+  // over the address slot rather than opening beside it.
+  it('turns the address into a query field, and Escape gives it back', async () => {
+    const user = userEvent.setup();
+    renderBar();
+
+    await user.click(screen.getByTestId('top-nav-search-open'));
+
+    expect(document.activeElement).toBe(screen.getByTestId('top-nav-search-input'));
+    expect(screen.queryByTestId('top-nav-address')).toBeNull();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.getByTestId('top-nav-address')).toBeTruthy();
+    expect(screen.queryByTestId('top-nav-search-input')).toBeNull();
   });
 });

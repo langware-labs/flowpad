@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { ArrowLeftRight, ChevronRight } from 'lucide-react';
+import { ChevronRight, Search } from 'lucide-react';
 import {
   Breadcrumb,
   BreadcrumbEllipsis,
@@ -13,6 +13,8 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ADDRESS_PILL_CLASS } from './address-pill';
+import { CrumbDetailsPopover } from './CrumbDetailsPopover';
 import { selectVisibleCrumbs } from './crumb-overflow';
 import type { Crumb } from './use-entity-breadcrumbs';
 
@@ -24,11 +26,13 @@ import type { Crumb } from './use-entity-breadcrumbs';
  * new URL on the next render, which is also why nothing here tracks an "active"
  * crumb of its own.
  *
- * Every crumb navigates to what it names, the project included. CHANGING
- * project is a different verb, so it gets its own control beside that crumb —
- * the same `OpenProjectComponent` the footer's "Switch Project" button opens.
+ * Crumbs navigate to what they name — except the project, which opens the
+ * projects list (the same `OpenProjectComponent` the footer's "Switch Project"
+ * uses). That is what the project chip this replaced did, and "which project am
+ * I in" is the more useful question from an address bar; the briefcase button in
+ * the nav cluster opens the project itself.
  */
-export function AddressField({ crumbs }: { crumbs: Crumb[] }) {
+export function AddressField({ crumbs, onSearch }: { crumbs: Crumb[]; onSearch: () => void }) {
   const { navigation } = useDockNavigation();
   const { t } = useLingui();
   const [projectModalOpen, setProjectModalOpen] = useState(false);
@@ -64,6 +68,10 @@ export function AddressField({ crumbs }: { crumbs: Crumb[] }) {
   const { visible, hidden } = selectVisibleCrumbs(crumbs, widths, available);
 
   const go = (crumb: Crumb) => {
+    if (crumb.kind === 'project') {
+      setProjectModalOpen(true);
+      return;
+    }
     if (crumb.pointer) navigation.openDock(crumb.pointer);
   };
 
@@ -71,17 +79,35 @@ export function AddressField({ crumbs }: { crumbs: Crumb[] }) {
     const Icon = crumb.Icon;
     const body = (
       <>
-        <Icon className="h-3 w-3 shrink-0 opacity-70" />
+        {/* Sized as a control, not as decoration: these glyphs are slated to
+            become buttons of their own, so they carry a button's target size
+            already and only the click handler is missing. */}
+        <Icon className="h-4 w-4 shrink-0 opacity-70" />
         <span className="truncate">{crumb.label}</span>
       </>
     );
     // The current page is not a link, and neither is an ancestor of a type no
     // dock can address — a dead link is worse than plain text.
-    const navigable = !!crumb.pointer;
+    const navigable = crumb.kind === 'project' || !!crumb.pointer;
+    // The current crumb of a FILE-backed dock opens its details instead: the
+    // real filename, the path, and the two ways to go find it. That is where the
+    // asset editor's header row went.
+    const page = <BreadcrumbPage className="flex min-w-0 items-center gap-1 font-normal">{body}</BreadcrumbPage>;
     return (
       <BreadcrumbItem key={crumb.key} data-crumb className={isLast ? 'min-w-0 shrink' : 'shrink-0'}>
-        {isLast || !navigable ? (
-          <BreadcrumbPage className="flex min-w-0 items-center gap-1 font-normal">{body}</BreadcrumbPage>
+        {isLast && crumb.path ? (
+          <CrumbDetailsPopover label={crumb.label} filename={crumb.filename} path={crumb.path}>
+            <button
+              type="button"
+              data-testid="top-nav-crumb-details-trigger"
+              title={crumb.filename || crumb.label}
+              className="flex min-w-0 cursor-pointer items-center gap-1 rounded-sm hover:text-foreground"
+            >
+              {body}
+            </button>
+          </CrumbDetailsPopover>
+        ) : isLast || !navigable ? (
+          page
         ) : (
           <BreadcrumbLink
             className="flex cursor-pointer items-center gap-1 hover:text-foreground"
@@ -100,35 +126,19 @@ export function AddressField({ crumbs }: { crumbs: Crumb[] }) {
       <div
         ref={fieldRef}
         data-testid="top-nav-address"
-        className="flex h-7 min-w-0 flex-1 items-center overflow-hidden rounded-full border bg-background px-2.5 text-xs text-muted-foreground"
+        className={ADDRESS_PILL_CLASS}
       >
         <Breadcrumb className="min-w-0">
-          <BreadcrumbList ref={listRef} className="flex-nowrap gap-1 text-xs sm:gap-1">
+          <BreadcrumbList ref={listRef} className="flex-nowrap gap-1.5 text-sm sm:gap-1.5">
             {visible.map((crumb, i) => {
               const isLast = i === visible.length - 1;
               const showEllipsis = i === 0 && hidden.length > 0;
               return (
                 <React.Fragment key={crumb.key}>
                   {renderCrumb(crumb, isLast)}
-                  {/* Switching projects is a different verb from opening the
-                      one you're in, so it gets its own control rather than
-                      stealing the crumb's click. Same dialog the footer's
-                      "Switch Project" opens. */}
-                  {crumb.kind === 'project' && (
-                    <button
-                      type="button"
-                      onClick={() => setProjectModalOpen(true)}
-                      data-testid="top-nav-project-select"
-                      aria-label={t`Select a different project`}
-                      title={t`Select a different project`}
-                      className="flex h-5 shrink-0 cursor-pointer items-center rounded-sm px-0.5 hover:bg-accent hover:text-foreground"
-                    >
-                      <ArrowLeftRight className="h-3 w-3" />
-                    </button>
-                  )}
                   {!isLast && (
                     <BreadcrumbSeparator className="shrink-0">
-                      <ChevronRight className="h-3 w-3" />
+                      <ChevronRight className="h-3.5 w-3.5" />
                     </BreadcrumbSeparator>
                   )}
                   {showEllipsis && (
@@ -144,7 +154,7 @@ export function AddressField({ crumbs }: { crumbs: Crumb[] }) {
                               aria-label={t`Show hidden path segments`}
                               className="flex cursor-pointer items-center rounded-sm hover:text-foreground"
                             >
-                              <BreadcrumbEllipsis className="h-4 w-4" />
+                              <BreadcrumbEllipsis className="h-5 w-5" />
                             </button>
                           </PopoverTrigger>
                           <PopoverContent align="start" className="w-64 p-1">
@@ -156,9 +166,9 @@ export function AddressField({ crumbs }: { crumbs: Crumb[] }) {
                                   type="button"
                                   disabled={!h.pointer}
                                   onClick={() => go(h)}
-                                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent disabled:cursor-default disabled:opacity-60"
+                                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent disabled:cursor-default disabled:opacity-60"
                                 >
-                                  <HIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                                  <HIcon className="h-4 w-4 shrink-0 opacity-70" />
                                   <span className="truncate">{h.label}</span>
                                 </button>
                               );
@@ -167,7 +177,7 @@ export function AddressField({ crumbs }: { crumbs: Crumb[] }) {
                         </Popover>
                       </BreadcrumbItem>
                       <BreadcrumbSeparator className="shrink-0">
-                        <ChevronRight className="h-3 w-3" />
+                        <ChevronRight className="h-3.5 w-3.5" />
                       </BreadcrumbSeparator>
                     </>
                   )}
@@ -176,6 +186,20 @@ export function AddressField({ crumbs }: { crumbs: Crumb[] }) {
             })}
           </BreadcrumbList>
         </Breadcrumb>
+        {/* Search lives INSIDE the field, pinned to its right edge — the pill
+            is the thing that becomes the query box, so the control that turns
+            it into one belongs in it. `ml-auto` keeps it on the edge however
+            short the crumb trail is. */}
+        <button
+          type="button"
+          onClick={onSearch}
+          aria-label={t`Search`}
+          title={t`Search`}
+          data-testid="top-nav-search-open"
+          className="ml-auto flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+        >
+          <Search className="h-4 w-4" />
+        </button>
       </div>
       {/* Mounted only while open. The dialog renders its body regardless of
           `open`, and that body subscribes to the all-tabs store and warms

@@ -119,9 +119,9 @@ export function RuntimeChip({ kind }: { kind: RuntimeKind }) {
         data-testid="top-nav-runtime-chip"
         data-runtime={kind}
         title={t`What are Flowpad's runtime environments?`}
-        className={`inline-flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-[11px] font-semibold hover:opacity-90 ${RUNTIME_CLASS[kind]}`}
+        className={`inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-3 text-xs font-semibold hover:opacity-90 ${RUNTIME_CLASS[kind]}`}
       >
-        <Icon className="h-3 w-3 shrink-0" />
+        <Icon className="h-3.5 w-3.5 shrink-0" />
         {/* Narrow windows keep the color and drop the word — the color is the
             signal, the label is the explanation. */}
         <span className="hidden sm:inline">
