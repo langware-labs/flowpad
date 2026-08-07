@@ -13,7 +13,8 @@ from flow_sdk.schema.view_mode import ViewMode
 AGENT = TypeMetadata(
     type=EntityType.AGENT,
     displayName="Agents",
-    icon="Bot",
+    # Not Bot — that is SUBAGENT's; Brain/BrainCircuit are claude_memory/graph_context.
+    icon="BrainCog",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,
