@@ -1,24 +1,15 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Project } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
-import type { WorkerType } from '@src/components/workers/worker-types';
-import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
-import { canonicalPath, projectListToSelectorItems, ProjectSelector } from '@src/components/project-selector';
-import { Button } from '@src/components/ui/button';
+import { canonicalPath } from '@src/components/project-selector';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockForGlobalEntry, dockForProjectEntry } from '@src/tabs/project-entry';
-import { useAllProjects } from '@src/hooks/use-all-projects';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
-import { ChevronLeft, Globe, History, Loader2, RotateCcw } from 'lucide-react';
+import { Globe, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
-
-/** Agentic worker kinds offered by the picker's worker toolbar. Alias of the
- *  shared {@link WorkerType} (re-exported so the host can use it by name). */
-export type ProjectWorkerType = WorkerType;
 
 interface ProjectsCounterChipProps {
   /** Project that the surrounding tab strip is currently scoped to. Used to highlight that row. */
@@ -29,20 +20,6 @@ interface ProjectsCounterChipProps {
    * project with live terminals still labels itself even without this prop.
    */
   currentProjectName?: string | null;
-  /**
-   * When provided, the action strip below the bucket list carries one icon
-   * button per worker type. Clicking a worker opens the embedded picker with
-   * that worker armed; picking a project immediately calls this with the
-   * project's filesystem path and the armed worker type. The host owns
-   * ensure + launch.
-   */
-  onLaunchProjectPath?: (cwd: string, workerType: ProjectWorkerType) => void | Promise<void>;
-  /**
-   * When provided, the action strip gains a history icon button — yet another
-   * way to reopen a past session. Clicking it closes the popover and calls
-   * this; the host owns the history modal.
-   */
-  onOpenHistory?: () => void;
 }
 
 function bucketDisplayName(bucket: TabProjectBucket): string {
@@ -217,74 +194,9 @@ function RowGuides({ guides }: { guides: GuideCell[] }) {
   );
 }
 
-// Worker entries for the action strip — mirrors the tab strip's opener
-// buttons.
-/**
- * Picker panel shown after a worker icon on the action strip is clicked.
- * Mounted only then, so its data hooks (compute-node project
- * scan) never run for the plain counter chip. Projects that already have an
- * open bucket in the strip are excluded. The worker is already armed —
- * picking a project launches it immediately (one click).
- */
-const ProjectPickerPanel: React.FC<{
-  /** The armed worker — picking a project opens it with this worker. */
-  worker: ProjectWorkerType;
-  /** Canonical mount paths (see `canonicalPath`) of already-open projects, matched against item ids. */
-  excludePaths: ReadonlyArray<string>;
-  onBack: () => void;
-  onPick: (cwd: string) => void;
-}> = ({ worker, excludePaths, onBack, onPick }) => {
-  const { t } = useLingui();
-  const WorkerIcon = workerIcon(worker);
-  const { projects, isLoading } = useAllProjects();
-
-  const items = useMemo(() => projectListToSelectorItems(projects), [projects]);
-
-  return (
-    <div className="flex h-72 flex-col gap-1" data-testid="projects-counter-picker">
-      <div className="flex shrink-0 items-center gap-1">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label={t`Back to open projects`}
-          className="rounded p-1 hover:bg-muted"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" />
-        </button>
-        <WorkerIcon className="h-3.5 w-3.5 shrink-0" />
-        <span className="text-xs font-medium text-muted-foreground">
-          <Trans>Open {workerLabel(worker)} on…</Trans>
-        </span>
-      </div>
-      <div className="min-h-0 flex-1">
-        <ProjectSelector
-          projects={items}
-          selectedId={null}
-          excludeIds={excludePaths}
-          isLoading={isLoading}
-          emptyMessage={t`All projects are already open`}
-          onSelect={(id) => {
-            if (!id) return;
-            const picked = items.find((i) => i.id === id);
-            if (picked?.path) onPick(picked.path);
-          }}
-        />
-      </div>
-    </div>
-  );
-};
-
-export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
-  currentProjectId,
-  currentProjectName,
-  onLaunchProjectPath,
-  onOpenHistory,
-}) => {
+export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ currentProjectId, currentProjectName }) => {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
-  // Non-null while the picker is shown; carries the worker armed by the
-  // clicked icon on the action strip.
-  const [pickerWorker, setPickerWorker] = useState<ProjectWorkerType | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
   const { currentDock, navigation } = useDockNavigation();
   const { buckets: allBuckets, globalTabCount } = useTabProjectBuckets();
@@ -332,17 +244,6 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   const tabsLabel = `${tabTotal} open tab${tabTotal === 1 ? '' : 's'}`;
   const countTooltip = `${projectsLabel}, ${tabsLabel}`;
   const tooltipText = scopeLabel ? `${scopeLabel} — ${countTooltip}` : countTooltip;
-
-  // Canonical mount paths of projects already open in the strip — excluded
-  // from the picker so it only offers not-yet-open projects.
-  const openProjectPaths = useMemo(
-    () =>
-      buckets
-        .map((b) => b.project?.fs_storage_mount_path)
-        .filter((p): p is string => !!p)
-        .map(canonicalPath),
-    [buckets],
-  );
 
   // Two scope treatments within one design language (height, radius, border
   // weight): a PROJECT scope reads as a subtle primary-tinted pill; the GLOBAL
@@ -438,22 +339,9 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     navigation.openDock(await dockForGlobalEntry(currentDock));
   };
 
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next);
-    if (!next) setPickerWorker(null);
-  };
-
-  const handlePickProjectPath = (cwd: string) => {
-    const workerType = pickerWorker;
-    handleOpenChange(false);
-    if (workerType) void onLaunchProjectPath?.(cwd, workerType);
-  };
-
-  const hasActions = !!onLaunchProjectPath || !!onOpenHistory;
-
   return (
     <TooltipProvider delayDuration={400}>
-      <Popover open={open} onOpenChange={handleOpenChange}>
+      <Popover open={open} onOpenChange={setOpen}>
         <Tooltip>
           <TooltipTrigger asChild>
             <PopoverTrigger asChild>
@@ -477,130 +365,84 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
           className="w-72 p-1"
           data-testid="projects-counter-popover"
         >
-          {pickerWorker && onLaunchProjectPath ? (
-            <ProjectPickerPanel
-              worker={pickerWorker}
-              excludePaths={openProjectPaths}
-              onBack={() => setPickerWorker(null)}
-              onPick={handlePickProjectPath}
-            />
-          ) : (
-            <ul className="flex flex-col">
-              {isGlobalScope ? (
-                // The Global scope row — violet-accented so it never reads as a
-                // regular project, and always the current scope when shown.
-                <li key="__global__">
+          <ul className="flex flex-col">
+            {isGlobalScope ? (
+              // The Global scope row — violet-accented so it never reads as a
+              // regular project, and always the current scope when shown.
+              <li key="__global__">
+                <button
+                  type="button"
+                  aria-current="true"
+                  onClick={() => void handleSelectGlobal()}
+                  className="flex w-full items-center gap-2 rounded bg-violet-500/10 px-2 py-1.5 text-left text-sm font-medium hover:bg-violet-500/15"
+                  data-testid="projects-counter-global"
+                >
+                  <Globe className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+                  <span className="min-w-0 flex-1 truncate text-violet-600 dark:text-violet-300">
+                    <Trans>Global</Trans>
+                  </span>
+                  <span className="shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-xs tabular-nums text-violet-600 dark:text-violet-300">
+                    {globalTabCount}
+                  </span>
+                </button>
+              </li>
+            ) : null}
+            {isGlobalScope && treeRows.length > 0 ? (
+              // Small mid-title separating the Global row from the project
+              // buckets below it.
+              <li key="__projects_title__" aria-hidden>
+                <SectionHairlineTitle>
+                  <Trans>Active projects</Trans>
+                </SectionHairlineTitle>
+              </li>
+            ) : null}
+            {treeRows.map(({ bucket, guides }) => {
+              const isCurrent = bucket.projectId === currentProjectId;
+              const isRecovering = recoveringId === bucket.projectId;
+              const isMissing = bucket.state === 'missing';
+              // Live/loading rows lead with the per-type PROJECT icon from the
+              // TypeInfo registry (never a hardcoded glyph); a missing row
+              // swaps in its recover affordance instead.
+              let leadingIcon: React.ReactNode = (
+                <ProjectIcon
+                  className={`h-3.5 w-3.5 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`}
+                />
+              );
+              if (isMissing) {
+                leadingIcon = isRecovering ? (
+                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+                );
+              }
+              const rowClass = `flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted ${
+                isCurrent ? 'bg-muted/60 font-medium' : ''
+              } ${isMissing ? 'text-muted-foreground' : ''}`;
+              return (
+                <li key={bucket.projectId}>
                   <button
                     type="button"
-                    aria-current="true"
-                    onClick={() => void handleSelectGlobal()}
-                    className="flex w-full items-center gap-2 rounded bg-violet-500/10 px-2 py-1.5 text-left text-sm font-medium hover:bg-violet-500/15"
-                    data-testid="projects-counter-global"
+                    aria-current={isCurrent ? 'true' : undefined}
+                    disabled={bucket.state === 'loading' || isRecovering}
+                    onClick={() => void handleSelect(bucket)}
+                    className={rowClass}
                   >
-                    <Globe className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-                    <span className="min-w-0 flex-1 truncate text-violet-600 dark:text-violet-300">
-                      <Trans>Global</Trans>
-                    </span>
-                    <span className="shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-xs tabular-nums text-violet-600 dark:text-violet-300">
-                      {globalTabCount}
+                    <RowGuides guides={guides} />
+                    {leadingIcon}
+                    <span className="min-w-0 flex-1 truncate">{bucketRowLabel(bucket)}</span>
+                    {isMissing && !isRecovering ? (
+                      <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <Trans>recover</Trans>
+                      </span>
+                    ) : null}
+                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+                      {bucket.tabCount}
                     </span>
                   </button>
                 </li>
-              ) : null}
-              {isGlobalScope && treeRows.length > 0 ? (
-                // Small mid-title separating the Global row from the project
-                // buckets below it.
-                <li key="__projects_title__" aria-hidden>
-                  <SectionHairlineTitle>
-                    <Trans>Active projects</Trans>
-                  </SectionHairlineTitle>
-                </li>
-              ) : null}
-              {treeRows.map(({ bucket, guides }) => {
-                const isCurrent = bucket.projectId === currentProjectId;
-                const isRecovering = recoveringId === bucket.projectId;
-                const isMissing = bucket.state === 'missing';
-                // Live/loading rows lead with the per-type PROJECT icon from the
-                // TypeInfo registry (never a hardcoded glyph); a missing row
-                // swaps in its recover affordance instead.
-                let leadingIcon: React.ReactNode = (
-                  <ProjectIcon
-                    className={`h-3.5 w-3.5 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`}
-                  />
-                );
-                if (isMissing) {
-                  leadingIcon = isRecovering ? (
-                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-                  ) : (
-                    <RotateCcw className="h-3.5 w-3.5 shrink-0" />
-                  );
-                }
-                const rowClass = `flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted ${
-                  isCurrent ? 'bg-muted/60 font-medium' : ''
-                } ${isMissing ? 'text-muted-foreground' : ''}`;
-                return (
-                  <li key={bucket.projectId}>
-                    <button
-                      type="button"
-                      aria-current={isCurrent ? 'true' : undefined}
-                      disabled={bucket.state === 'loading' || isRecovering}
-                      onClick={() => void handleSelect(bucket)}
-                      className={rowClass}
-                    >
-                      <RowGuides guides={guides} />
-                      {leadingIcon}
-                      <span className="min-w-0 flex-1 truncate">{bucketRowLabel(bucket)}</span>
-                      {isMissing && !isRecovering ? (
-                        <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-                          <Trans>recover</Trans>
-                        </span>
-                      ) : null}
-                      <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
-                        {bucket.tabCount}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-              {hasActions ? (
-                // Action strip — compact icon buttons set apart from the
-                // bucket rows by a horizontal rule, no label line. Worker
-                // icons (shared WorkerToolbar) open the project picker with
-                // that worker armed (picking a project launches it
-                // immediately); the history icon reopens a past session (the
-                // host owns the modal). Meaning is carried by tooltips/aria.
-                <li className={isEmpty ? '' : 'mt-2 border-t border-border pt-2'}>
-                  <div
-                    data-testid="projects-counter-actions"
-                    className="flex w-full items-center justify-center gap-2 px-2 py-1"
-                  >
-                    {onLaunchProjectPath && (
-                      <WorkerToolbar
-                        onLaunch={(worker) => setPickerWorker(worker)}
-                        testIdPrefix="projects-counter-open"
-                      />
-                    )}
-                    {onOpenHistory && (
-                      <Button
-                        variant="secondary"
-                        size="icon"
-                        className="h-7 w-7 shrink-0 rounded"
-                        onClick={() => {
-                          handleOpenChange(false);
-                          onOpenHistory();
-                        }}
-                        aria-label={t`Open from history`}
-                        title={t`Open from history`}
-                        data-testid="projects-counter-open-history"
-                      >
-                        <History className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                </li>
-              ) : null}
-            </ul>
-          )}
+              );
+            })}
+          </ul>
         </PopoverContent>
       </Popover>
     </TooltipProvider>
