@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from flow_sdk.fs_store.path_utils import canonical_posix_path
+from flow_sdk.utils.serialization import iso_to_utc
 
 CandidateT = TypeVar("CandidateT")
 Identity = tuple[str, str, str]
@@ -32,14 +33,55 @@ def _utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+#: Path classes that explain *why* a copy exists. Ordered most-specific first;
+#: ``local`` is the default and means "a file the user put there".
+ORIGIN_INSTALLED_PACKAGE = "installed_package"
+ORIGIN_DEPENDENCY = "dependency"
+ORIGIN_LOCAL = "local"
+
+_INSTALLED_PACKAGE_SEGMENTS = frozenset({"site-packages", "dist-packages"})
+_DEPENDENCY_SEGMENTS = frozenset({"node_modules", ".venv", "venv", ".tox", "vendor"})
+
+
+def classify_origin(path: str) -> str:
+    """Classify an already-canonical posix path into the origin classes above.
+
+    Deliberately narrow: only path shapes that are unambiguously machine-made
+    are labelled. Anything else stays ``local`` — a wrong "this is vendored"
+    label is worse than no label, because it invites deleting a real file.
+    """
+    segments = set(path.split("/"))
+    if segments & _INSTALLED_PACKAGE_SEGMENTS:
+        return ORIGIN_INSTALLED_PACKAGE
+    if segments & _DEPENDENCY_SEGMENTS:
+        return ORIGIN_DEPENDENCY
+    return ORIGIN_LOCAL
+
+
+
 @dataclass(frozen=True, slots=True)
 class AssetOccurrence:
+    """One on-disk occurrence plus the evidence that ranked it.
+
+    The evidence fields are populated only for collided groups (>1 live path):
+    a lone occurrence has nothing to explain, and stamping it would rewrite
+    every asset row in the corpus for no user-visible gain.
+    """
+
     path: str
     first_seen_at: datetime
+    introduced_at: datetime | None = None
+    birth_time: datetime | None = None
+    origin: str = ORIGIN_LOCAL
+    rank_basis: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "path", canonical_posix_path(self.path))
         object.__setattr__(self, "first_seen_at", _utc(self.first_seen_at))
+        if self.introduced_at is not None:
+            object.__setattr__(self, "introduced_at", _utc(self.introduced_at))
+        if self.birth_time is not None:
+            object.__setattr__(self, "birth_time", _utc(self.birth_time))
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,11 +97,26 @@ class AssetCollision:
 def asset_occurrence_dicts(
     occurrences: Sequence[AssetOccurrence],
 ) -> list[dict[str, str]]:
-    """Serialize the canonical occurrence projection for DB/API boundaries."""
-    return [
-        {"path": occurrence.path, "first_seen_at": occurrence.first_seen_at.isoformat()}
-        for occurrence in occurrences
-    ]
+    """Serialize the canonical occurrence projection for DB/API boundaries.
+
+    Default-valued evidence is omitted so an uncollided asset serializes byte-
+    identically to before this projection grew — ``reflect_asset_occurrences``
+    compares against the stored list to decide whether to write, so emitting
+    empty keys would dirty every row on the first index after an upgrade.
+    """
+    out: list[dict[str, str]] = []
+    for occurrence in occurrences:
+        item = {"path": occurrence.path, "first_seen_at": occurrence.first_seen_at.isoformat()}
+        if occurrence.introduced_at is not None:
+            item["introduced_at"] = occurrence.introduced_at.isoformat()
+        if occurrence.birth_time is not None:
+            item["birth_time"] = occurrence.birth_time.isoformat()
+        if occurrence.origin and occurrence.origin != ORIGIN_LOCAL:
+            item["origin"] = occurrence.origin
+        if occurrence.rank_basis:
+            item["rank_basis"] = occurrence.rank_basis
+        out.append(item)
+    return out
 
 
 def stored_asset_occurrences(
@@ -108,12 +165,17 @@ def stored_asset_occurrences(
 def _coerce_occurrence(value: AssetOccurrence | Mapping[str, Any]) -> AssetOccurrence:
     if isinstance(value, AssetOccurrence):
         return value
-    first_seen = value.get("first_seen_at")
-    if isinstance(first_seen, str):
-        first_seen = datetime.fromisoformat(first_seen.replace("Z", "+00:00"))
-    if not isinstance(first_seen, datetime):
+    first_seen = iso_to_utc(value.get("first_seen_at"))
+    if first_seen is None:
         raise ValueError("asset occurrence first_seen_at must be a datetime")
-    return AssetOccurrence(path=str(value.get("path") or ""), first_seen_at=first_seen)
+    return AssetOccurrence(
+        path=str(value.get("path") or ""),
+        first_seen_at=first_seen,
+        introduced_at=iso_to_utc(value.get("introduced_at")),
+        birth_time=iso_to_utc(value.get("birth_time")),
+        origin=str(value.get("origin") or ORIGIN_LOCAL),
+        rank_basis=str(value.get("rank_basis") or ""),
+    )
 
 
 def _trusted_birth_time(path: str) -> datetime | None:
@@ -209,19 +271,56 @@ def resolve_asset_collisions(
                     introduced = None
                 git_introduced[path] = _utc(introduced) if introduced is not None else None
 
+        # Probed once per path rather than per comparison, so the evidence kept
+        # on the occurrence is exactly what ranked it — the panel can never
+        # explain the decision with a different number than the sort used.
+        # Gated like the git probe above: a lone path is never compared and
+        # never explained, so its stat() would buy nothing on every asset in
+        # the corpus.
+        birth_times = (
+            {path: _trusted_birth_time(path) for path in sorted(paths)} if len(paths) > 1 else {}
+        )
+
         def rank(path: str) -> tuple[Any, ...]:
-            introduced = git_introduced.get(path)
             return (
-                *_rank_time(introduced),
-                *_rank_time(_trusted_birth_time(path)),
+                *_rank_time(git_introduced.get(path)),
+                *_rank_time(birth_times.get(path)),
                 *_rank_time(first_seen.get(path)),
                 path,
             )
 
         ranked_paths = sorted(paths, key=rank)
+        collided = len(ranked_paths) > 1
+        # Name the signal that actually separated the primary from the
+        # runner-up by walking the same cascade ``rank`` uses, in the same
+        # order — one declaration, so a reorder can't leave the label behind.
+        basis = ""
+        if collided:
+            top, second = ranked_paths[0], ranked_paths[1]
+            basis = next(
+                (
+                    name
+                    for name, probe in (
+                        ("git", git_introduced),
+                        ("created", birth_times),
+                        ("first_seen", first_seen),
+                    )
+                    if _rank_time(probe.get(top)) != _rank_time(probe.get(second))
+                ),
+                "path",
+            )
         occurrences = tuple(
-            AssetOccurrence(path=path, first_seen_at=first_seen.get(path, observed_at))
-            for path in ranked_paths
+            AssetOccurrence(
+                path=path,
+                first_seen_at=first_seen.get(path, observed_at),
+                introduced_at=git_introduced.get(path) if collided else None,
+                birth_time=birth_times.get(path) if collided else None,
+                origin=classify_origin(path) if collided else ORIGIN_LOCAL,
+                # Only the primary carries the basis: it answers "why is this
+                # one live", which is a statement about the group, not the row.
+                rank_basis=basis if collided and index == 0 else "",
+            )
+            for index, path in enumerate(ranked_paths)
         )
         primary_path = ranked_paths[0] if ranked_paths else None
         duplicate_paths = tuple(ranked_paths[1:])

@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Bot, Cloud, Globe, Monitor, Network, type LucideIcon } from 'lucide-react';
-import { dataManager, FLOWPAD_ASSISTANT_PROJECT_UNAME, Layout, Project, RuntimeKind, TypeId } from '@sdk';
+import { Layout, RuntimeKind } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { MarkdownView } from '@src/components/markdown-view';
 import { notify } from '@src/notifications';
+import { assistantWikiRef } from '@src/components/wiki-tip/assistant-wiki';
 import { RUNTIME_CLASS } from './runtime-appearance';
 
 /**
@@ -47,22 +48,6 @@ function RuntimeLabel({ kind }: { kind: RuntimeKind }) {
   if (kind === RuntimeKind.AGENT) return <Trans>Agent</Trans>;
   if (kind === RuntimeKind.BROWSER) return <Trans>Local Browser</Trans>;
   return <Trans>Desktop</Trans>;
-}
-
-/** The Flowpad Assistant system project's default wiki id, where the shipped
- *  "Runtime environments" page lives — the `@local` alias would resolve the
- *  ACTIVE project's wiki instead, which doesn't carry the system docs. */
-async function assistantWikiRef(): Promise<string | null> {
-  try {
-    const project = await dataManager.getByTypeId<Project>(
-      new TypeId(Project.type, `@${FLOWPAD_ASSISTANT_PROJECT_UNAME}`),
-    );
-    if (!project) return null;
-    const wiki = await project.getDefaultWiki();
-    return wiki?.id ?? null;
-  } catch {
-    return null;
-  }
 }
 
 /** Fetch the page body from the hub's legacy wiki route. The route returns the
