@@ -35,7 +35,7 @@ After scenario-specific steps, verify ALL FIVE:
 
 1. **Tabs alive** — every tab in the tab bar is clickable; the active tab has a mounted `terminal-panel`. No `CLOSING` zombies. xterm cursor blinks (plain shell) or process status badge shows ready/running (Claude/Codex).
 2. **Expected content** — active panel shows only the content this scenario produced. Switching tabs never shows another tab's scrollback.
-3. **Counts correct** — `close-all-tabs-button` badge equals visible-tab count for the current project (and the button is hidden when count < 2). `projects-counter-chip` button shows the distinct project count (one per project with ≥1 open tab of ANY kind — terminal AND content); tooltip says `"<N> active project[s] with <M> open tab[s]"` (note the `chip` correctly singularizes per `projectTotal === 1 ? '' : 's'`).
+3. **Counts correct** — `close-all-tabs-button` badge equals visible-tab count for the current project (and the button is hidden when count < 2). `projects-counter-chip` button shows the distinct project count (one per project with ≥1 open tab of ANY kind — terminal AND content); the `aria-label` reads `"<scope> — <N> open project[s], <M> open tab[s]"` (note the `chip` correctly singularizes per `projectTotal === 1 ? '' : 's'`).
 4. **Project + workdir correct** — footer (`[data-testid="footer"]`) shows the active tab's project displayName/workdir; this matches `dataContext.project.id` for the active tab.
 5. **URL correct** — URL ends with `/dock/shell/<targetTypeId>`; agent segment if present matches the local agent.
 
@@ -188,9 +188,9 @@ test 10: Open invalid shell id (graceful fallback)
 - validate UI shows ONE of: explicit error page, default-tab redirect, or empty-state — record which one
 - run common validation block (the URL check applies to whatever resolves)
 
-test 11: Open the current session-history modal from the project chip
+test 11: Open the current session-history modal from the opener menu
 - create a disposable project + shell and navigate to its terminal
-- open `projects-counter-popover` and click `projects-counter-open-history`
+- open the history opener from the tab-opener toolbar (`openTabViaMenu(page, 'history')`)
 - validate the current `Recent Sessions` dialog contract: project-scope
   checkbox, refresh control, and search control
 
