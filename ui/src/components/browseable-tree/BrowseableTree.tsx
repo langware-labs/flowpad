@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
-import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
@@ -65,6 +65,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     persistKey,
     defaultExpandedIds,
     hoverExpandMs,
+    hoverSeenMs,
     levelFooter,
     mirrored = false,
   } = props;
@@ -209,6 +210,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             level={0}
             rootId={root.id}
             hoverExpandMs={hoverExpandMs}
+            hoverSeenMs={hoverSeenMs}
             mirrored={mirrored}
             levelFooter={levelFooter}
             tree={tree}
@@ -227,6 +229,24 @@ export function BrowseableTree(props: BrowseableTreeProps) {
       </div>
     </div>
   );
+}
+
+/** One hover dwell on a row: `start` schedules `run` after `ms` (a no-op when
+ *  `ms` is undefined, which is how every non-menu navigator opts out), `cancel`
+ *  drops a pending one. Unmount cancels itself, so a caller adding a dwell
+ *  never has to remember the cleanup. */
+function useDwell(ms: number | undefined, run: () => void) {
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const latest = useRef(run);
+  latest.current = run;
+  const cancel = useCallback(() => clearTimeout(timer.current), []);
+  const start = useCallback(() => {
+    if (!ms) return;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => latest.current(), ms);
+  }, [ms]);
+  useEffect(() => cancel, [cancel]);
+  return useMemo(() => ({ start, cancel }), [start, cancel]);
 }
 
 interface RowProps {
@@ -248,6 +268,8 @@ interface RowProps {
   /** Dwell (ms) before hover expands this row. Undefined ⇒ nothing is
    *  scheduled ⇒ ordinary navigators never expand on hover. */
   hoverExpandMs?: number;
+  /** Dwell (ms) before hover fires this row's `onHoverSeen`. Undefined ⇒ never. */
+  hoverSeenMs?: number;
   levelFooter?: (parentId: string) => React.ReactNode;
   /** Flip the direction cues for a leftward-growing menu — see BrowseableTreeProps. */
   mirrored?: boolean;
@@ -268,6 +290,7 @@ function BrowseableRow({
   onDragStart,
   onDragEnd,
   hoverExpandMs,
+  hoverSeenMs,
   levelFooter,
   mirrored,
 }: RowProps) {
@@ -369,10 +392,14 @@ function BrowseableRow({
     if (next && next !== node.label) await node.onRename?.(next);
   }, [draft, node]);
 
-  // Hover-expand (menu mode). Only ever EXPANDS — never toggles: the pointer
-  // rests on a row it just expanded, so a toggle would collapse it again and
-  // flicker. Collapse stays chevron / click / double-click.
-  const hoverExpandTimer = useRef<ReturnType<typeof setTimeout>>();
+  // The row's two hover dwells (menu mode). Hover-expand only ever EXPANDS —
+  // never toggles: the pointer rests on a row it just expanded, so a toggle
+  // would collapse it again and flicker. Collapse stays chevron / click /
+  // double-click. Hover-seen stamps "the user looked at this" without opening
+  // it; it re-fires on every qualifying dwell, so the stamp must be idempotent
+  // (Bookmark.markSeen is).
+  const expandDwell = useDwell(hoverExpandMs, () => void tree.expand(node));
+  const seenDwell = useDwell(hoverSeenMs, () => node.onHoverSeen?.());
   // An explicit collapse latches hover off until the pointer leaves and comes
   // back. Without it, collapsing via the chevron re-expands ~150ms later — the
   // chevron lives inside the row, so collapsing it never ends the hover.
@@ -380,20 +407,18 @@ function BrowseableRow({
 
   const handleRowPointerEnter = useCallback(
     (e: React.PointerEvent) => {
-      if (!hoverExpandMs || e.pointerType !== 'mouse') return;
-      if (!hasChildrenHint || expanded || suppressHoverExpand.current) return;
-      clearTimeout(hoverExpandTimer.current);
-      hoverExpandTimer.current = setTimeout(() => void tree.expand(node), hoverExpandMs);
+      if (e.pointerType !== 'mouse') return;
+      seenDwell.start();
+      if (hasChildrenHint && !expanded && !suppressHoverExpand.current) expandDwell.start();
     },
-    [hoverExpandMs, hasChildrenHint, expanded, node, tree],
+    [expandDwell, seenDwell, hasChildrenHint, expanded],
   );
 
   const handleRowPointerLeave = useCallback(() => {
-    clearTimeout(hoverExpandTimer.current);
+    expandDwell.cancel();
+    seenDwell.cancel();
     suppressHoverExpand.current = false;
-  }, []);
-
-  useEffect(() => () => clearTimeout(hoverExpandTimer.current), []);
+  }, [expandDwell, seenDwell]);
 
   /** The one way to toggle from a deliberate user action. Latches hover-expand
    *  off as it goes: the pointer is still on the row you just collapsed, so
@@ -691,6 +716,7 @@ function BrowseableRow({
               level={level + 1}
               rootId={rootId}
               hoverExpandMs={hoverExpandMs}
+              hoverSeenMs={hoverSeenMs}
               mirrored={mirrored}
               levelFooter={levelFooter}
               tree={tree}

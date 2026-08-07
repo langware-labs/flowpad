@@ -62,6 +62,52 @@ describe('Bookmark.markOpened', () => {
   });
 });
 
+// ── Bookmark.markSeen: clears the badge without counting as an open ──────────
+describe('Bookmark.markSeen', () => {
+  it('sets its own flag and leaves the open count alone — a hover is not an open', async () => {
+    vi.spyOn(dataManager, 'notifyEntityChanged').mockImplementation(() => {});
+    const b = favorite(); // counter undefined = never opened
+
+    await b.markSeen();
+    await b.markOpened();
+
+    expect(b.seen).toBe(true);
+    expect(b.counter).toBe(1); // the open, and only the open
+  });
+
+  it('is idempotent — a second sweep of the same menu writes nothing', async () => {
+    vi.spyOn(dataManager, 'notifyEntityChanged').mockImplementation(() => {});
+    const save = vi.fn(() => Promise.resolve());
+    const b = favorite(undefined, save);
+
+    await b.markSeen();
+    await b.markSeen();
+
+    expect(save).toHaveBeenCalledOnce();
+  });
+
+  it('is a no-op on an already-opened favorite — nothing left to clear', async () => {
+    const notify = vi.spyOn(dataManager, 'notifyEntityChanged').mockImplementation(() => {});
+    const save = vi.fn(() => Promise.resolve());
+    const b = favorite(3, save);
+
+    await b.markSeen();
+
+    expect(b.seen).toBeFalsy();
+    expect(save).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('notifies subscribers — this, not the save WS echo, is what clears the badge', async () => {
+    const notify = vi.spyOn(dataManager, 'notifyEntityChanged').mockImplementation(() => {});
+    const b = favorite();
+
+    await b.markSeen();
+
+    expect(notify).toHaveBeenCalledWith(b);
+  });
+});
+
 // ── onOpen: fires from BOTH arms, and only when something opened ─────────────
 describe('BrowseableGrid onOpen', () => {
   const node = (over: Partial<Browseable>): Browseable => ({

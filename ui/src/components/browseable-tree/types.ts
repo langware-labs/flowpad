@@ -115,6 +115,13 @@ export interface Browseable {
    *  write view state. */
   onOpen?: () => void;
 
+  /** Fired when the pointer RESTS on the row for the host's `hoverSeenMs` —
+   *  "the user looked at this", short of opening it. Same contract as
+   *  `onOpen`: a side-effect-only usage stamp, never navigation. Re-fires on
+   *  each qualifying dwell, so make it idempotent. Honored by the TREE only —
+   *  the grid has no dwell of its own. */
+  onHoverSeen?: () => void;
+
   /** Optional hover tooltip content (e.g. a live entity summary). Rendered by
    *  both the desktop grid and the tree. In the tree it doubles as the hover
    *  PREVIEW: hovering a row shows it without opening anything. */
@@ -244,6 +251,12 @@ export interface BrowseableTreeProps {
    *  Hover only ever EXPANDS; collapse stays on the chevron/click, and an
    *  explicit collapse suppresses hover until the pointer leaves the row. */
   hoverExpandMs?: number;
+
+  /** Dwell (ms) before hovering a row fires its `onHoverSeen` — menu mode.
+   *  Undefined (the default) never fires it, so ordinary navigators stamp
+   *  nothing on hover. Mouse only, and the dwell restarts on every entry, so a
+   *  pointer sweeping down a menu stamps nothing it merely crosses. */
+  hoverSeenMs?: number;
 
   /** Rendered as the last row of EVERY level: once at the root ('') and once at
    *  the end of each expanded folder's children (its id). Its use is a build-
