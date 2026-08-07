@@ -16,11 +16,13 @@ export function isFavoriteBookmark(b: Bookmark): boolean {
   return b.bookmark_type === BookmarkType.FAVORITE;
 }
 
-/** Never opened — the unread predicate behind every favorites badge. Absent
- *  `counter` (every row written before the field existed) reads as 0, so a
- *  pre-existing favorite correctly starts out "never opened". */
+/** Never opened AND never looked at — the unread predicate behind every
+ *  favorites badge. Absent `counter`/`seen` (every row written before those
+ *  fields existed) read as 0/false, so a pre-existing favorite correctly
+ *  starts out unread. The two are separate on purpose: resting on a row in the
+ *  menu clears the badge (`Bookmark.markSeen`) without claiming an open. */
 export function isUnopened(b: Bookmark): boolean {
-  return (b.counter ?? 0) === 0;
+  return (b.counter ?? 0) === 0 && !b.seen;
 }
 
 function isFolderBookmark(b: Bookmark): boolean {
