@@ -5,7 +5,7 @@ import { Capability, TypeId } from '@sdk';
 import { useCapability, useEntity } from '@sdk/react/hooks';
 import { RowProcess } from '@src/components/capabilities-view/CapabilitiesView';
 
-import type { JourneyActSpec } from './use-journey';
+import type { JourneyActSpec } from '@sdk';
 
 /**
  * Live sub-panel under the CURRENT step for the capability-setup acts:

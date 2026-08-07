@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
-import { dataManager, EventBus, Journey, JourneyJournal } from '@sdk';
+import { dataManager, EventBus, Journey, JourneyGraph, JourneyJournal, type JourneyStep } from '@sdk';
 import { useJourneyManager } from '@src/journey/useJourneyManager';
-import type { JourneyStep, UseJourneyResult } from '@src/journey/use-journey';
+import type { UseJourneyResult } from '@src/journey/use-journey';
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({
@@ -29,7 +29,7 @@ function makeState(step: JourneyStep): UseJourneyResult {
   return {
     journey,
     journal,
-    steps: [step],
+    graph: new JourneyGraph({ steps: [step] }),
     currentStep: step,
     cursorIndex: 0,
     loading: false,
