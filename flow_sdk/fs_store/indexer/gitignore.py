@@ -78,6 +78,19 @@ def is_denylisted(path: Path) -> bool:
     return path.name in _WALK_IGNORED or _is_claude_worktree(path)
 
 
+def is_under_denylisted_dir(path: Path | str) -> bool:
+    """True when any ANCESTOR directory of ``path`` is walk-denylisted.
+
+    ``is_denylisted`` answers this for one directory as a walk descends. A path
+    that was *stored* earlier has no walk to ride along with, so the offending
+    segment is an ancestor and has to be looked for explicitly — the seam that
+    lets retention apply the same policy discovery does. Pure string work: the
+    caller may be checking thousands of stored paths.
+    """
+    p = Path(path)
+    return any(part in _WALK_IGNORED for part in p.parts[:-1]) or _is_claude_worktree(p)
+
+
 def _is_force_include(path: Path, root: Path) -> bool:
     """True if any ancestor of ``path`` (up to ``root``) is in _FORCE_INCLUDE."""
     p = path

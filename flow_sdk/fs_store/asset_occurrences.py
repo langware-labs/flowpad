@@ -234,13 +234,27 @@ def resolve_asset_collisions(
             previous[(str(key[0]), str(key[1]))] = ()
 
     # A narrowed scan may not rediscover every persisted occurrence. Retain an
-    # out-of-scope path only when it still exists and its carrier still resolves
-    # to the same type+id. Missing and re-keyed occurrences are pruned.
+    # out-of-scope path only when it still exists, sits somewhere a walker would
+    # actually go, and its carrier still resolves to the same type+id. Missing,
+    # re-keyed and unwalkable occurrences are pruned.
+    #
+    # The denylist check is what keeps discovery and retention honest with each
+    # other. Discovery prunes `.venv`, `node_modules`, … as it descends; without
+    # the same test here, a path recorded by some earlier run re-admits itself
+    # on every subsequent index — existence plus a matching id was enough — so a
+    # single historical mistake became permanent and no later tightening of the
+    # ignore rules could evict it. Live candidates are deliberately NOT filtered:
+    # those come from a walk that already applied the policy, or from an explicit
+    # "index this exact file" request, which outranks it.
+    from flow_sdk.fs_store.indexer.gitignore import is_under_denylisted_dir  # noqa: PLC0415
+
     for key, occurrences in previous.items():
         for occurrence in occurrences:
             if occurrence.path in live.get(key, set()):
                 continue
             try:
+                if is_under_denylisted_dir(occurrence.path):
+                    continue
                 if not Path(occurrence.path).exists():
                     continue
                 identity = identity_reader(occurrence.path)
