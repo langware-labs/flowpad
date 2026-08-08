@@ -30,6 +30,7 @@
     "release:linux": "npm run build:flow-rs && npm run cleanup && electron-builder --linux --config electron-builder.config.cjs --publish always"
   },
   "dependencies": {
+    "electron-context-menu": "^3.6.1",
     "electron-log": "^5.1.1",
     "electron-updater": "^6.3.9"
   },

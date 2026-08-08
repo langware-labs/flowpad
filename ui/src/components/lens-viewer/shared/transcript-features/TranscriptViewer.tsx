@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
 import {
   Check,
   ChevronsDownUp,
@@ -18,6 +17,7 @@ import { useEntity } from '@sdk/react/hooks';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
 import { notify } from '@src/notifications';
+import { TRANSCRIPT_ENTRY_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTranscript, TranscriptFetchError, type WorkerType } from '@src/hooks/use-transcript';
 import { useSyncTranscriptTabName } from '@src/tabs/useTabs';
@@ -80,7 +80,6 @@ export function TranscriptViewer({
 }: Props) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
-  const [, setSearchParams] = useSearchParams();
   const { data, isLoading, error } = useTranscript({ workerType, path, sessionId: sessionIdProp });
 
   const entries = useMemo<UnifiedEntry[]>(() => (data ? groupEntriesByTurn(data.entries) : []), [data]);
@@ -336,13 +335,7 @@ export function TranscriptViewer({
             if (id) {
               setCurrentEntryId(id);
               urlUpdatedByScrollRef.current = true;
-              setSearchParams(
-                (prev) => {
-                  prev.set('transcript_entry_id', id);
-                  return prev;
-                },
-                { replace: true },
-              );
+              navigation.setOption(TRANSCRIPT_ENTRY_PARAM, id);
             }
           }, 150);
         }
@@ -382,13 +375,7 @@ export function TranscriptViewer({
         }
         if (best) {
           setPendingScrollId(best.id);
-          setSearchParams(
-            (prev) => {
-              prev.set('transcript_entry_id', best.id);
-              return prev;
-            },
-            { replace: true },
-          );
+          navigation.setOption(TRANSCRIPT_ENTRY_PARAM, best.id);
         }
       }
     }
@@ -478,13 +465,7 @@ export function TranscriptViewer({
       else next.add(id);
       return next;
     });
-    setSearchParams(
-      (prev) => {
-        prev.set('transcript_entry_id', id);
-        return prev;
-      },
-      { replace: true },
-    );
+    navigation.setOption(TRANSCRIPT_ENTRY_PARAM, id);
   };
   const toggleChatEntry = (id: string) => {
     setChatExpandedEntries((prev) => {
@@ -786,13 +767,7 @@ export function TranscriptViewer({
                     setDisplayTimestamp(ts);
                     setCurrentEntryId(entry.id);
                     urlUpdatedByScrollRef.current = true;
-                    setSearchParams(
-                      (prev) => {
-                        prev.set('transcript_entry_id', entry.id);
-                        return prev;
-                      },
-                      { replace: true },
-                    );
+                    navigation.setOption(TRANSCRIPT_ENTRY_PARAM, entry.id);
                   }}
                 >
                   <ChatEntryItem
@@ -870,13 +845,7 @@ export function TranscriptViewer({
                       setDisplayTimestamp(ts);
                       setCurrentEntryId(entry.id);
                       urlUpdatedByScrollRef.current = true;
-                      setSearchParams(
-                        (prev) => {
-                          prev.set('transcript_entry_id', entry.id);
-                          return prev;
-                        },
-                        { replace: true },
-                      );
+                      navigation.setOption(TRANSCRIPT_ENTRY_PARAM, entry.id);
                     }}
                   >
                     <TranscriptEntryItem

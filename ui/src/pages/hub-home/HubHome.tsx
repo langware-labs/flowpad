@@ -2,8 +2,11 @@ import {
   type ComputeNode,
   CredentialsSubview,
   dataContext,
+  dataManager,
   ExecutionEnvironmentStatus,
   PageId,
+  Project,
+  TypeId,
   ViewType,
   WorldViewProjection,
 } from '@sdk';
@@ -16,17 +19,21 @@ import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
 import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
-import { useDesktops, nextDesktopName, type DesktopDetails } from '@src/hooks/use-desktops';
+import { useSandboxes, nextSandboxName, type SandboxDetails } from '@src/hooks/use-sandboxes';
 import { StepList } from '@src/components/ui/step-list';
-import { NewDesktopDialog } from './NewDesktopDialog';
-import { ShareDesktopDialog } from './ShareDesktopDialog';
+import { NewSandboxDialog } from './NewSandboxDialog';
+import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { MembershipInvitations } from '@src/components/inbox-view/MembershipInvitations';
-import { Building2, ExternalLink, FolderGit2, Globe, Loader2, KeyRound, Monitor, Trash2, UserPlus } from 'lucide-react';
+import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { notify } from '@src/notifications';
+import { Building2, FolderGit2, Globe, Loader2, KeyRound, Monitor, Trash2, UserPlus } from 'lucide-react';
+import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { consumeInboundParams } from '@src/navigation/inbound-link';
 import { useEffect, useRef, useState } from 'react';
 
-// Live desktop status styling, keyed off the backend `ExecutionEnvironmentStatus`
-// (`ops/status`). `card` tints the whole desktop block so status reads at a glance.
+// Live sandbox status styling, keyed off the backend `ExecutionEnvironmentStatus`
+// (`ops/status`). `card` tints the whole sandbox block so status reads at a glance.
 const STATUS_STYLE: Record<ExecutionEnvironmentStatus, { dot: string; card: string }> = {
   [ExecutionEnvironmentStatus.READY]: { dot: 'bg-green-500', card: 'border-green-500/40 bg-green-500/5' },
   [ExecutionEnvironmentStatus.PAUSED]: { dot: 'bg-yellow-500', card: 'border-yellow-500/40 bg-yellow-500/5' },
@@ -35,7 +42,7 @@ const STATUS_STYLE: Record<ExecutionEnvironmentStatus, { dot: string; card: stri
   [ExecutionEnvironmentStatus.NEW]: { dot: 'bg-muted-foreground/40', card: 'border-border' },
 };
 
-/** Border/background tint for a desktop card, by live status. */
+/** Border/background tint for a sandbox card, by live status. */
 function statusCardClass(status?: ExecutionEnvironmentStatus): string {
   return (status && STATUS_STYLE[status]?.card) || 'border-border';
 }
@@ -52,14 +59,38 @@ function fmtSize(cpu?: number, memMb?: number): string | null {
   return `${cpu} vCPU · ${mem}`;
 }
 
-/** Second line of a desktop card: dot + label + (for running) time used / pauses-in + size. */
-function DesktopStatus({ info, now }: { info?: DesktopDetails; now: number }) {
+/**
+ * Second line of a sandbox card: dot + label + (for running) time used /
+ * pauses-in + size, then who the box is signed in as.
+ *
+ * The sign-in half comes from the node itself (`logged_in_user`), which the hub
+ * caches whenever it brings the workspace up — so it costs nothing to render and
+ * does not wake a paused machine to ask. Before this you could only learn whose
+ * session a shared box was running by opening the share dialog.
+ */
+function SandboxStatus({
+  info,
+  now,
+  loggedInUser,
+  autoLogin,
+}: {
+  info?: SandboxDetails;
+  now: number;
+  loggedInUser?: string | null;
+  autoLogin?: boolean;
+}) {
   const { t } = useLingui();
+  // The login half comes from the ENTITY, not from the status probe, so it must
+  // render even while the probe is outstanding — and even if it never lands. A
+  // box whose status is unreachable is exactly when "who is this signed in as"
+  // is worth reading.
+  const login = <LoginLine loggedInUser={loggedInUser} autoLogin={autoLogin} />;
   if (!info) {
     return (
       <span className="flex items-center gap-1.5 pl-7 text-[11px] text-muted-foreground/50">
         <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-muted-foreground/40" />
         {t`Checking…`}
+        {login}
       </span>
     );
   }
@@ -83,7 +114,33 @@ function DesktopStatus({ info, now }: { info?: DesktopDetails; now: number }) {
       <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_STYLE[status]?.dot ?? 'bg-muted-foreground/40'}`} />
       <span className="shrink-0">{labels[status] ?? status}</span>
       {parts.length > 0 && <span className="truncate text-muted-foreground/70">· {parts.join(' · ')}</span>}
+      {login}
     </span>
+  );
+}
+
+/** Who the box is signed in as, and whether it still signs itself in. */
+function LoginLine({ loggedInUser, autoLogin }: { loggedInUser?: string | null; autoLogin?: boolean }) {
+  const { t } = useLingui();
+  return (
+    <>
+      {/* `null` covers both "signed out" and "never looked" — indistinguishable
+          from here, and the honest rendering of both is the same. */}
+      {loggedInUser ? (
+        <span className="truncate text-muted-foreground/70" data-testid="sandbox-user">
+          · {t`signed in as ${loggedInUser}`}
+        </span>
+      ) : (
+        <span className="shrink-0 text-muted-foreground/50" data-testid="sandbox-user-none">
+          · {t`signed out`}
+        </span>
+      )}
+      {autoLogin === false && (
+        <span className="shrink-0 text-muted-foreground/50" data-testid="sandbox-auto-login-off">
+          · {t`auto-login off`}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -110,34 +167,64 @@ export function HubHome() {
    *  Deliberately does NOT attach anything inline: these cards drive a HUB
    *  backend, which does not have the attach actions, so the panel shows its
    *  own empty state there rather than this button pretending to work. */
-  const openDesktopSecrets = () => {
+  const openSandboxSecrets = () => {
     navigation.openPage(PageId.HUB, ViewType.CREDENTIALS, credentialsPointer(CredentialsSubview.ENVIRONMENT));
   };
   // Current project is the same source the footer's StatusBar reads
   // (dataContext.project), so the highlighted card and the footer always agree.
   const { project: currentProject } = useContext();
-  const { projects } = useProjects();
+  const { projects, refetch: refetchProjects } = useProjects();
   const {
-    desktops,
-    launch,
-    launching,
+    sandboxes,
+    createSandbox,
+    creating,
     steps,
-    launchUrl,
-    openDesktop,
-    renameDesktop,
-    deleteDesktop,
+    openSandbox,
+    renameSandbox,
+    deleteSandbox,
     deletingId,
     details,
     refetch,
-  } = useDesktops();
-  const launchStarted = steps.some((s) => s.status !== 'idle');
+  } = useSandboxes();
   // Absent on older hubs that don't advertise the flag yet — treat as enabled.
-  const desktopsEnabled = dataContext.bootstrapInfo?.desktops_enabled !== false;
-  // Creating a desktop needs BOTH a provisioning-capable hub (e2b key) and a
+  const sandboxesEnabled = dataContext.bootstrapInfo?.sandboxes_enabled !== false;
+  // Creating a sandbox needs BOTH a provisioning-capable hub (e2b key) and a
   // signed-in user — a visitor's launch would just 401.
-  const canCreateDesktop = desktopsEnabled && !!currentUser;
+  const canCreateSandbox = sandboxesEnabled && !!currentUser;
 
-  // Inline rename: single-click a desktop name to edit it.
+  // Deleting a project. Held as the whole entity, not an id, so the confirm can
+  // name what it is about to destroy.
+  const [confirmDeleteProject, setConfirmDeleteProject] = useState<Project | null>(null);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
+
+  /**
+   * Delete a project on the hub.
+   *
+   * `dataManager.delete` and NOT `Project.deleteWithChildren()`: that action is
+   * a flow_sdk route the hub does not register, so it would 404 here. The hub's
+   * generic entity DELETE is what exists (`graph_crud_actions.handle_delete_by_id`,
+   * owner-only), and it drops the project row itself.
+   */
+  const deleteProject = async (project: Project) => {
+    setDeletingProjectId(project.id);
+    try {
+      await dataManager.delete(new TypeId(Project.type, project.id));
+      await refetchProjects();
+      notify.success({ title: t`Deleted ${project.displayName}` });
+    } catch (e) {
+      // The hub refuses a delete the caller doesn't own with a message worth
+      // reading, so surface it instead of failing silently.
+      const ax = e as { response?: { data?: { message?: string } }; message?: string };
+      notify.error({
+        title: t`Couldn't delete the project.`,
+        message: ax.response?.data?.message ?? ax.message,
+      });
+    } finally {
+      setDeletingProjectId(null);
+    }
+  };
+
+  // Inline rename: single-click a sandbox name to edit it.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
 
@@ -148,14 +235,14 @@ export function HubHome() {
     return () => clearInterval(id);
   }, []);
 
-  // New-desktop modal (name + optional git). Opened by the New Desktop card, or
+  // New-sandbox modal (name + optional git). Opened by the New Sandbox card, or
   // pre-filled from a `?setup_git=<git-url>` deep link.
   // One state: null = closed. Open sites can't disagree about the prefill.
-  const [newDesktop, setNewDesktop] = useState<{ gitUrl?: string } | null>(null);
-  // The desktop whose share dialog is open, or null. Holds the node itself so
+  const [newSandbox, setNewSandbox] = useState<{ gitUrl?: string } | null>(null);
+  // The sandbox whose share dialog is open, or null. Holds the node itself so
   // the dialog can read `auto_login` without a second fetch.
   const [sharing, setSharing] = useState<ComputeNode | null>(null);
-  // Drives the "accepting adds it below" hint, and lets the desktop list
+  // Drives the "accepting adds it below" hint, and lets the sandbox list
   // refresh once an invitation is accepted (the granted node appears in it).
   const [pendingInviteCount, setPendingInviteCount] = useState(0);
   const prevPendingInvites = useRef(0);
@@ -166,14 +253,10 @@ export function HubHome() {
     prevPendingInvites.current = pendingInviteCount;
   }, [pendingInviteCount, refetch]);
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const gitUrl = params.get('setup_git');
+    // Read-and-scrub in one call, so a refresh cannot re-open the dialog.
+    const { setup_git: gitUrl } = consumeInboundParams(['setup_git']);
     if (!gitUrl) return;
-    // Clean the URL so a refresh doesn't re-open.
-    const url = new URL(window.location.href);
-    url.searchParams.delete('setup_git');
-    window.history.replaceState(null, '', url.toString());
-    setNewDesktop({ gitUrl });
+    setNewSandbox({ gitUrl });
   }, []);
 
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
@@ -244,27 +327,47 @@ export function HubHome() {
           <ProjectActionsRow variant="tiles" />
           {!!projects?.length && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {/* The card is a div wrapping the open button, not a button
+                  itself: the delete control lives inside it, and a button
+                  nested in a button is invalid and eats its own clicks. Same
+                  shape the sandbox cards below already use. */}
               {projects.map((p) => {
                 const isCurrent = currentProject?.id === p.id;
+                const deleting = deletingProjectId === p.id;
                 return (
-                  <button
+                  <div
                     key={p.id}
-                    type="button"
-                    aria-pressed={isCurrent}
-                    // Clicking opens the project dock, which sets CurrentProject
-                    // context — the same navigation the footer's name button uses,
-                    // so the footer follows the click. URL-first: only openDock.
-                    onClick={() => navigation.openDock(DockPointer.forProject(p.id).withPage(PageId.HUB))}
-                    className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:bg-accent ${
+                    data-testid="hub-project-card"
+                    className={`group flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors hover:bg-accent ${
                       isCurrent ? 'border-primary bg-primary/5' : 'border-border bg-card'
                     }`}
-                    title={p.displayName}
                   >
                     <FolderGit2
                       className={`h-4 w-4 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`}
                     />
-                    <span className="truncate text-sm">{p.displayName || t`Untitled project`}</span>
-                  </button>
+                    <button
+                      type="button"
+                      aria-pressed={isCurrent}
+                      // Clicking opens the project dock, which sets CurrentProject
+                      // context — the same navigation the footer's name button uses,
+                      // so the footer follows the click. URL-first: only openDock.
+                      onClick={() => navigation.openDock(DockPointer.forProject(p.id).withPage(PageId.HUB))}
+                      className="min-w-0 flex-1 truncate text-left text-sm"
+                      title={p.displayName}
+                    >
+                      {p.displayName || t`Untitled project`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteProject(p)}
+                      disabled={deleting}
+                      aria-label={t`Delete project`}
+                      data-testid="hub-project-delete"
+                      className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                    >
+                      {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </button>
+                  </div>
                 );
               })}
             </div>
@@ -276,52 +379,52 @@ export function HubHome() {
             (content-panel.tsx) has no ViewType.INBOX case, so `InboxView` — and
             with it the usual home for `MembershipInvitations` — never renders
             under page=hub. Without this the rows are fetchable and have nowhere
-            to appear. Above Desktops deliberately: a desktop share is the
+            to appear. Above Sandboxes deliberately: a sandbox share is the
             invitation this page will mostly receive, and accepting one changes
             the list directly below it. Renders nothing when there are none. */}
         <MembershipInvitations recipientEmail={currentUser?.email ?? null} onPendingCount={setPendingInviteCount} />
         {pendingInviteCount > 0 && (
           <p className="-mt-2 text-xs text-muted-foreground">
-            <Trans>Accepting adds it to your Desktops below.</Trans>
+            <Trans>Accepting adds it to your Sandboxes below.</Trans>
           </p>
         )}
 
-        {/* Desktops — cloud FlowPad instances running in E2B (ComputeNode flavor=workspace) */}
+        {/* Sandboxes — cloud FlowPad instances running in E2B (ComputeNode flavor=workspace) */}
         <div className="flex flex-col gap-3">
           <h2 className="text-sm font-medium text-muted-foreground">
-            <Trans>Desktops</Trans>
+            <Trans>Sandboxes</Trans>
           </h2>
-          {/* New desktop — same DesktopTile shape the Projects section uses. */}
+          {/* New sandbox — same DesktopTile shape the Projects section uses. */}
           <Tooltip>
             <TooltipTrigger asChild>
               <DesktopTile
                 Icon={Monitor}
-                label={launching ? t`Launching…` : t`New Desktop`}
-                loading={launching}
-                disabled={!canCreateDesktop}
-                onClick={() => setNewDesktop({})}
-                data-testid="new-desktop-button"
+                label={creating ? t`Creating…` : t`New Sandbox`}
+                loading={creating}
+                disabled={!canCreateSandbox}
+                onClick={() => setNewSandbox({})}
+                data-testid="new-sandbox-button"
               />
             </TooltipTrigger>
-            {!canCreateDesktop && (
+            {!canCreateSandbox && (
               <TooltipContent>
-                {!desktopsEnabled ? <Trans>Sandbox unavailable</Trans> : <Trans>Sign in to create desktops</Trans>}
+                {!sandboxesEnabled ? <Trans>Sandbox unavailable</Trans> : <Trans>Sign in to create sandboxes</Trans>}
               </TooltipContent>
             )}
           </Tooltip>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {desktops.map((d) => (
+            {sandboxes.map((d) => (
               <div
                 key={d.id}
-                data-testid="desktop-card"
+                data-testid="sandbox-card"
                 data-node-id={d.id}
                 data-provider-id={d.node_provider_id}
                 data-status={details[d.id]?.status}
-                title={desktopsEnabled ? undefined : t`Sandbox unavailable`}
+                title={sandboxesEnabled ? undefined : t`Sandbox unavailable`}
                 className={`group flex flex-col gap-1.5 rounded-lg border bg-card px-4 py-3 transition-colors ${statusCardClass(
                   details[d.id]?.status,
-                )} ${desktopsEnabled ? '' : 'opacity-60'}`}
+                )} ${sandboxesEnabled ? '' : 'opacity-60'}`}
               >
                 <div className="flex items-center gap-3">
                   <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -331,14 +434,14 @@ export function HubHome() {
                       value={draftName}
                       onChange={(e) => setDraftName(e.target.value)}
                       onBlur={() => {
-                        void renameDesktop(d, draftName);
+                        void renameSandbox(d, draftName);
                         setEditingId(null);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') e.currentTarget.blur();
                         else if (e.key === 'Escape') setEditingId(null);
                       }}
-                      data-testid="desktop-name-input"
+                      data-testid="sandbox-name-input"
                       className="min-w-0 flex-1 border-b border-border bg-transparent text-sm outline-none"
                     />
                   ) : (
@@ -348,50 +451,57 @@ export function HubHome() {
                         setDraftName(d.name || '');
                         setEditingId(d.id);
                       }}
-                      disabled={!desktopsEnabled}
+                      disabled={!sandboxesEnabled}
                       className="min-w-0 flex-1 truncate text-left text-sm hover:underline disabled:pointer-events-none"
-                      title={desktopsEnabled ? t`Click to rename` : undefined}
-                      data-testid="desktop-name"
+                      title={sandboxesEnabled ? t`Click to rename` : undefined}
+                      data-testid="sandbox-name"
                     >
-                      {d.name || t`Desktop`}
+                      {d.name || t`Sandbox`}
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => openDesktop(d)}
-                    disabled={!desktopsEnabled}
-                    aria-label={t`Open desktop`}
-                    data-testid="desktop-open"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                  {/* A labelled button, and visible WITHOUT hovering.
+                      Opening is the one thing you come to this card to do, and
+                      as a hover-only icon it was both undiscoverable and
+                      indistinguishable from the share/secrets/delete icons
+                      beside it. Those stay as hover icons — they are the rarer,
+                      more destructive actions. */}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => openSandbox(d)}
+                    disabled={!sandboxesEnabled}
+                    aria-label={t`Open sandbox`}
+                    data-testid="sandbox-open"
+                    className="h-7 shrink-0 px-2.5 text-xs"
                   >
-                    <ExternalLink className="h-4 w-4" />
-                  </button>
+                    <Trans>Open</Trans>
+                  </Button>
                   <button
                     type="button"
                     onClick={() => setSharing(d)}
-                    disabled={!desktopsEnabled || !currentUser}
-                    aria-label={t`Share desktop`}
-                    data-testid="desktop-share"
+                    disabled={!sandboxesEnabled || !currentUser}
+                    aria-label={t`Share sandbox`}
+                    data-testid="sandbox-share"
                     className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
                   >
                     <UserPlus className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
-                    onClick={openDesktopSecrets}
-                    disabled={!desktopsEnabled}
+                    onClick={openSandboxSecrets}
+                    disabled={!sandboxesEnabled}
                     aria-label={t`Machine secrets`}
-                    data-testid="desktop-secrets"
+                    data-testid="sandbox-secrets"
                     className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
                   >
                     <KeyRound className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => void deleteDesktop(d)}
-                    disabled={deletingId === d.id || !desktopsEnabled}
-                    aria-label={t`Delete desktop`}
-                    data-testid="desktop-delete"
+                    onClick={() => void deleteSandbox(d)}
+                    disabled={deletingId === d.id || !sandboxesEnabled}
+                    aria-label={t`Delete sandbox`}
+                    data-testid="sandbox-delete"
                     className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
                   >
                     {deletingId === d.id ? (
@@ -401,54 +511,67 @@ export function HubHome() {
                     )}
                   </button>
                 </div>
-                <DesktopStatus info={details[d.id]} now={now} />
+                <SandboxStatus
+                  info={details[d.id]}
+                  now={now}
+                  loggedInUser={d.logged_in_user}
+                  autoLogin={d.auto_login}
+                />
               </div>
             ))}
           </div>
 
-          {/* Live launch progress */}
-          {launchStarted && <StepList steps={steps} testId="desktop-launch-steps" />}
-          {launchUrl && (
-            <a
-              href={launchUrl}
-              target="_blank"
-              rel="noreferrer"
-              data-testid="desktop-launch-link"
-              className="text-sm text-primary hover:underline"
-            >
-              <Trans>Open desktop →</Trans>
-            </a>
-          )}
+          {/* Progress used to render HERE, behind a dialog that had already
+              closed. It now lives inside NewSandboxDialog, which stays open for
+              the whole create — so there is nothing left to show on the page. */}
         </div>
       </div>
 
-      {/* New-desktop modal: name + optional git repo (with the connect-GitHub gate). */}
-      <NewDesktopDialog
-        open={!!newDesktop}
+      {/* New-sandbox modal: name + optional git repo (with the connect-GitHub gate). */}
+      <NewSandboxDialog
+        open={!!newSandbox}
         onOpenChange={(o) => {
-          if (!o) setNewDesktop(null);
+          if (!o) setNewSandbox(null);
         }}
-        defaultName={nextDesktopName(desktops)}
-        initialGitUrl={newDesktop?.gitUrl}
+        defaultName={nextSandboxName(sandboxes)}
+        initialGitUrl={newSandbox?.gitUrl}
         // The sandbox opens on the project you're working on unless you change
         // it — same source the footer's StatusBar reads.
         currentProject={currentProject}
         projects={projects}
-        onLaunch={(opts) => void launch(opts)}
+        onCreate={createSandbox}
+        onOpen={openSandbox}
+        steps={steps}
       />
 
-      {/* Share / hand over a desktop. `isOwner` is a UI courtesy only — the hub
+      {/* Share / hand over a sandbox. `isOwner` is a UI courtesy only — the hub
           gates both the invite and the auto-login action on ownership. */}
-      <ShareDesktopDialog
+      <ShareSandboxDialog
         open={!!sharing}
         onOpenChange={(o) => {
           if (!o) setSharing(null);
         }}
-        desktop={sharing}
+        sandbox={sharing}
         isOwner={!!sharing}
         currentUserId={currentUser?.id}
         currentUserEmail={currentUser?.email}
         onShared={() => void refetch()}
+      />
+
+      {/* Deleting a project is not undoable and it is shared — the people it was
+          shared with lose it too — so it asks first, unlike the sandbox rows. */}
+      <ConfirmDialog
+        open={!!confirmDeleteProject}
+        onOpenChange={(o) => { if (!o) setConfirmDeleteProject(null); }}
+        title={t`Delete project?`}
+        description={t`"${confirmDeleteProject?.displayName ?? ''}" will be deleted for everyone it is shared with. This cannot be undone.`}
+        confirmLabel={t`Delete`}
+        variant="destructive"
+        onConfirm={() => {
+          const project = confirmDeleteProject;
+          setConfirmDeleteProject(null);
+          if (project) void deleteProject(project);
+        }}
       />
     </div>
   );

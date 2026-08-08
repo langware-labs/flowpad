@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { forwardRef, useCallback, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { AgenticProcess, GraphContext, ProcessKind, TypeId, isTypeId, type AssetDescriptor } from '@sdk';
 import { AssetManagerPopover, RUNNABLE_ASSETS } from '@src/components/asset-manager/AssetManagerPopover';
@@ -6,9 +6,21 @@ import { displayLabelForTypeid, parseTypeid } from '@src/components/asset-manage
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { SideDrawer } from '@src/components/ui/side-drawer';
 import { CollapsedSideRail } from '@src/components/ui/collapsed-side-rail';
-import { RunButton } from '@src/components/assets/editor/run/RunButton';
+import { Button } from '@src/components/ui/button';
 import { notify } from '@src/notifications';
 import { Play } from 'lucide-react';
+
+/** Drawer-header Run trigger. Forwards the ref so the Radix popover can use it via `asChild`. */
+const RunButton = forwardRef<HTMLButtonElement, { label: string; onClick?: () => void }>(
+  function RunButton({ label, onClick }, ref) {
+    return (
+      <Button ref={ref} size="sm" onClick={onClick} title={label}>
+        <Play className="mr-1 h-4 w-4" />
+        {label}
+      </Button>
+    );
+  },
+);
 
 /**
  * "Run Automation" surface for a GraphContext: pick an agent or a skill, launch
@@ -103,7 +115,7 @@ export function RunAutomationPanel({ ctx }: { ctx: GraphContext }) {
       onOpenChange={setOpen}
       width="w-96"
       data-testid="run-automation-drawer"
-      headerActions={<AssetManagerPopover trigger={<RunButton idleLabel={t`Run automation`} />} {...pickerProps} />}
+      headerActions={<AssetManagerPopover trigger={<RunButton label={t`Run automation`} />} {...pickerProps} />}
     >
       <EntityExecutionPanel
         target={ctx.typeId.toString()}

@@ -385,6 +385,66 @@ async def test_bootstrap_cloud_login_available_true(bootstrapped_client):
 
 
 @pytest.mark.asyncio
+async def test_bootstrap_carries_the_cloud_identity(bootstrapped_client):
+    """Bootstrap says WHO this instance is signed in as, not merely that it could be.
+
+    The sandbox identity race. A cloud sandbox is signed in by the hub over
+    loopback, but its own bootstrap carried only `cloud_login_available` — a bool —
+    and the local user. So the UI painted `currentUser = cloudUser ?? localUser`,
+    i.e. the template's "E2B Local", and only corrected itself when an async
+    `/cloud/status` landed. On a cold resume that call races a still-waking backend
+    and loses, and the user is left looking at the wrong account.
+
+    `login` here is the same block `/api/v1/cloud/status` returns, from the same
+    builder — the point is that the identity arrives WITH the first paint instead
+    of one round trip later.
+    """
+    import flow_sdk.server.routes.bootstrap as bootstrap_mod
+
+    bootstrap_mod._bootstrap_cache = None
+    user = {"id": "b0b00000-0000-4000-8000-000000000001", "type": "user", "email": "bob@local.test"}
+    with (
+        patch("flow_sdk.server.routes.bootstrap.is_cloud_login_available", new=AsyncMock(return_value=True)),
+        patch("flow_sdk.cli.auth.hub_login.is_logged_in", return_value=True),
+        patch("flow_sdk.cli.app_config.get_user", return_value=user),
+    ):
+        response = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+
+    assert response.status_code == 200
+    payload = response.json()
+    desktop_info = payload.get("data", {}).get("desktop_info") or payload.get("desktop_info")
+    assert desktop_info is not None
+    login = desktop_info.get("login")
+    assert login is not None, f"bootstrap carries no cloud identity: {sorted(desktop_info)}"
+    assert login["status"] == "logged_in"
+    assert login["user"]["email"] == "bob@local.test"
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_says_logged_out_when_it_is(bootstrapped_client):
+    """The negative half — an absent identity must be stated, not omitted.
+
+    A missing `login` block and a `logged_out` one mean different things to the
+    client: the first is an old server, the second is an answer.
+    """
+    import flow_sdk.server.routes.bootstrap as bootstrap_mod
+
+    bootstrap_mod._bootstrap_cache = None
+    with (
+        patch("flow_sdk.server.routes.bootstrap.is_cloud_login_available", new=AsyncMock(return_value=False)),
+        patch("flow_sdk.cli.auth.hub_login.is_logged_in", return_value=False),
+    ):
+        response = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+
+    payload = response.json()
+    desktop_info = payload.get("data", {}).get("desktop_info") or payload.get("desktop_info")
+    login = desktop_info.get("login")
+    assert login is not None
+    assert login["status"] == "logged_out"
+    assert login["user"] is None
+
+
+@pytest.mark.asyncio
 async def test_bootstrap_cloud_login_available_false(bootstrapped_client):
     """Bootstrap exposes desktop_info.cloud_login_available=False when the hub is unreachable."""
     import flow_sdk.server.routes.bootstrap as bootstrap_mod

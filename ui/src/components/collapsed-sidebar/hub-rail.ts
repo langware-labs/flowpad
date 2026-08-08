@@ -1,5 +1,5 @@
-import { Project, ViewType, WorldViewProjection } from '@sdk';
-import { Building2, Globe, Home, KeyRound, Mail } from 'lucide-react';
+import { ViewType, WorldViewProjection } from '@sdk';
+import { Building2, Globe, KeyRound, Mail } from 'lucide-react';
 import type React from 'react';
 
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -29,39 +29,22 @@ export type HubItem = {
  * into `RAIL_ITEMS` where it would render a silent `null`.
  *
  * `t` is passed in so the caller's `useLingui` owns re-translation on locale change.
- * `projectId` is the ACTIVE project (null when none is selected): the project
- * entry addresses its destination by id, so it can only exist once there is one —
- * the same "gate on the thing existing" rule `RAIL_ITEMS` applies on the desk.
  *
  * Glyphs come from the backend type registry via `iconForType(pointer)` wherever
  * the entry IS a type — the view it opens resolves its rows the same way, so a
  * hardcoded glyph would disagree with the destination it leads to. Entries that
  * name a lucide icon directly are the ones that are a PLACE rather than a type
- * (Home, WorldView, Credentials) — and Inbox, deliberately: it happens to open a
+ * (WorldView, Credentials) — and Inbox, deliberately: it happens to open a
  * `conversation` list, but the slot is the desk's Inbox, so it keeps that slot's
  * `Mail` (see `navMeta` in `collapsed-sidebar.tsx`) rather than the type's glyph.
  */
-export function buildHubRailItems(
-  t: (s: TemplateStringsArray) => string,
-  projectId?: string | null,
-): readonly HubItem[] {
+export function buildHubRailItems(t: (s: TemplateStringsArray) => string): readonly HubItem[] {
   return [
-    { id: 'home', title: t`Home`, icon: Home, viewType: ViewType.HOME },
-    // Project home — `ViewType.PROJECT` renders `ProjectHome`, the same component
-    // the desk project item lands on (`HubProjectPage`). Its pointer is the
-    // project id, which `DockPointer.splitProjectPointer` reads; without one the
-    // page renders "Project not found", hence the gate.
-    ...(projectId
-      ? [
-          {
-            id: 'project' as const,
-            title: t`Project`,
-            icon: iconForType(Project.type),
-            viewType: ViewType.PROJECT,
-            pointer: projectId,
-          },
-        ]
-      : []),
+    // `home` and `project` are deliberately ABSENT here, as on the desk rail:
+    // both moved to the top navigation bar, which renders on the hub too (its
+    // Home button keeps hub navigation under `page=hub`, and the project is the
+    // leading breadcrumb). Two buttons for one destination is the thing the
+    // rail has always avoided.
     // Inbox, matching the desk's Inbox slot (same `Mail` glyph). It lists the
     // hub's `conversation` entities over `graph/conversation`; the desk
     // `InboxView` is NOT reusable here, because everything it reads is desk-only

@@ -11,7 +11,6 @@ export const EntityTypes = {
   ComputeNode: 'compute_node',
   CronEvent: 'cron_event',
   Flow: 'flow',
-  FsItem: 'fs_item',
   Func: 'func',
   GraphContext: 'graph_context',
   Job: 'job',

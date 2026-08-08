@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
-import { useDesktops } from '@src/hooks/use-desktops';
+import { useSandboxes } from '@src/hooks/use-sandboxes';
 import { StepList } from '@src/components/ui/step-list';
 import { ExternalLink, GitBranch } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -22,7 +22,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
  * A link anyone can share: opening it lands here, and because the link came
  * from OUTSIDE the app, launching a cloud sandbox on its say-so is never
  * automatic — the repo is spelled out and the user approves it. On approve we
- * run the SAME pipeline the New Desktop dialog does (`useDesktops().launch`):
+ * run the SAME pipeline the New Sandbox dialog does (`useSandboxes().launch`):
  * create the box → wait for FlowPad + sign-in → open it ON its clone landing,
  * where the box clones the repo into a fresh indexed Project. The repo's own
  * auto-launch journey then greets the user inside.
@@ -32,7 +32,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 export default function LaunchLanding() {
   const { t } = useLingui();
   const [params] = useSearchParams();
-  const { launch, steps, launchUrl } = useDesktops();
+  const { launch, steps, launchUrl } = useSandboxes();
   const [declined, setDeclined] = useState(false);
 
   const repo = params.get('repo') ?? '';

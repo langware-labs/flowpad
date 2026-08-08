@@ -45,6 +45,18 @@ function root(over: Partial<BrowseableRoot>): BrowseableRoot {
   };
 }
 
+/** A childless row with a pointer arm — the shape every leaf test needs, so the
+ *  `as never` pointer escape lives in exactly one place. */
+const leaf = (over: Partial<Browseable>): BrowseableRoot =>
+  root({
+    id: 'leaf',
+    label: 'Welcome',
+    hasChildren: false,
+    listChildren: undefined,
+    pointer: { viewType: 'editor', pointer: 'x' } as never,
+    ...over,
+  });
+
 beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
 afterEach(() => {
   cleanup();
@@ -97,25 +109,75 @@ describe('BrowseableTree hover-expand', () => {
   });
 });
 
-describe('BrowseableTree hover never opens', () => {
-  // The invariant the whole never-opened badge rests on: `onOpen` marks a
-  // bookmark read, so if hover fired it, sweeping the menu would silently clear
-  // every unread dot — "never opened" would become "never hovered".
-  const leaf = (onOpen: () => void): BrowseableRoot =>
-    root({
-      id: 'leaf',
-      label: 'Welcome',
-      hasChildren: false,
-      listChildren: undefined,
-      pointer: { viewType: 'editor', pointer: 'x' } as never,
-      onOpen,
-    });
+describe('BrowseableTree hover-seen', () => {
+  it('does nothing on hover when hoverSeenMs is unset — the default for every other navigator', () => {
+    const onHoverSeen = vi.fn();
+    render(<BrowseableTree roots={[leaf({ onHoverSeen })]} activePointer={null} />);
 
+    hover('Welcome');
+    act(() => void vi.advanceTimersByTime(5000));
+
+    expect(onHoverSeen).not.toHaveBeenCalled();
+  });
+
+  it('fires after the dwell when hoverSeenMs is set', () => {
+    const onHoverSeen = vi.fn();
+    render(<BrowseableTree roots={[leaf({ onHoverSeen })]} activePointer={null} hoverSeenMs={250} />);
+
+    hover('Welcome');
+    act(() => void vi.advanceTimersByTime(249));
+    expect(onHoverSeen).not.toHaveBeenCalled();
+
+    act(() => void vi.advanceTimersByTime(1));
+    expect(onHoverSeen).toHaveBeenCalledTimes(1);
+  });
+
+  it('a pointer sweeping past cancels it — the badges survive a pass down the menu', () => {
+    const onHoverSeen = vi.fn();
+    render(<BrowseableTree roots={[leaf({ onHoverSeen })]} activePointer={null} hoverSeenMs={250} />);
+
+    hover('Welcome');
+    act(() => void vi.advanceTimersByTime(100));
+    unhover('Welcome');
+    act(() => void vi.advanceTimersByTime(5000));
+
+    expect(onHoverSeen).not.toHaveBeenCalled();
+  });
+
+  it('re-fires on a second dwell — the stamp, not the tree, owns the dedupe', () => {
+    const onHoverSeen = vi.fn();
+    render(<BrowseableTree roots={[leaf({ onHoverSeen })]} activePointer={null} hoverSeenMs={250} />);
+
+    hover('Welcome');
+    act(() => void vi.advanceTimersByTime(250));
+    unhover('Welcome');
+    hover('Welcome');
+    act(() => void vi.advanceTimersByTime(250));
+
+    expect(onHoverSeen).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores touch — a tap must not stamp', () => {
+    const onHoverSeen = vi.fn();
+    render(<BrowseableTree roots={[leaf({ onHoverSeen })]} activePointer={null} hoverSeenMs={250} />);
+
+    hover('Welcome', 'touch');
+    act(() => void vi.advanceTimersByTime(5000));
+
+    expect(onHoverSeen).not.toHaveBeenCalled();
+  });
+});
+
+describe('BrowseableTree hover never opens', () => {
+  // Hover marks a row SEEN (onHoverSeen, above); it must still never OPEN it.
+  // `onOpen` is the usage stamp that counts a real visit and the arm that
+  // navigates — firing either on hover would make a pass down the menu look
+  // like a pass through every bookmark.
   it('hovering a leaf does NOT open it or mark it read', () => {
     const onOpen = vi.fn();
     const onNavigate = vi.fn();
     render(
-      <BrowseableTree roots={[leaf(onOpen)]} activePointer={null} onNavigate={onNavigate} hoverExpandMs={150} />,
+      <BrowseableTree roots={[leaf({ onOpen })]} activePointer={null} onNavigate={onNavigate} hoverExpandMs={150} />,
     );
 
     hover('Welcome');
@@ -129,7 +191,7 @@ describe('BrowseableTree hover never opens', () => {
     const onOpen = vi.fn();
     const onNavigate = vi.fn();
     render(
-      <BrowseableTree roots={[leaf(onOpen)]} activePointer={null} onNavigate={onNavigate} hoverExpandMs={150} />,
+      <BrowseableTree roots={[leaf({ onOpen })]} activePointer={null} onNavigate={onNavigate} hoverExpandMs={150} />,
     );
 
     fireEvent.click(screen.getByText('Welcome'));

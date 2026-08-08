@@ -671,6 +671,13 @@ async def _find_message_committed_before_failure(
         logger.warning("[append_conversation] post-failure probe for conv=%s failed: %s", conv_id[:8], e)
         return None
     if not isinstance(rows, list):
+        # Includes the hub answering with an EMPTY list: ``hub_get`` maps
+        # ``data: []`` to ``{}`` (``resp.json().get("data") or {}``), so "the
+        # conversation has no messages yet" arrives here, not below.
+        logger.warning(
+            "[append_conversation] post-failure probe for conv=%s: hub listed no messages — re-sending",
+            conv_id[:8],
+        )
         return None
 
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
@@ -708,6 +715,22 @@ async def _find_message_committed_before_failure(
                 "rather than risk adopting another send's message",
                 len(candidates),
                 conv_id[:8],
+            )
+        else:
+            # The branch that mints the duplicate, and until now the only one
+            # that decided silently. "No match" cannot distinguish *never
+            # landed* from *landed but not yet visible*: this probe races the
+            # very write it asks about (it fires within ~10ms of the failed
+            # send, while the hub exposes the row on the conversation only at
+            # the end of its handler). Log what was asked so a duplicate in the
+            # field is attributable instead of invisible.
+            logger.warning(
+                "[append_conversation] post-failure probe for conv=%s found no unclaimed match among %d "
+                "hub row(s) created after %s — re-sending (a duplicate here means the hub had committed "
+                "the row but had not yet listed it)",
+                conv_id[:8],
+                len(rows),
+                sent_after.isoformat(),
             )
         return None
     return candidates[0][1]

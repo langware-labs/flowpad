@@ -87,12 +87,27 @@ class AssetPathCollisionError(ValueError):
     """A fresh owned asset would overwrite another entity's carrier."""
 
 
+def _carrier_identity_matches(info: "TypeInfo", asset_ref: FSRef, entity_id: str) -> bool:
+    """True when the carrier already on disk declares ``entity_id`` as its own.
+
+    Reads through ``TypeInfo.extract_id`` — the one adoption gate — so identity
+    here means exactly what it means everywhere else. A malformed or unreadable
+    capsule is never a match: it falls through to the ordinary path check and
+    the caller refuses, which is the safe direction.
+    """
+    try:
+        return info.extract_id(asset_ref) == entity_id
+    except Exception:
+        return False
+
+
 def assert_create_target_available(
     info: "TypeInfo",
     asset_ref: FSRef,
     *,
     entity_type: str,
     name: str,
+    entity_id: str | None = None,
 ) -> None:
     """Reject a fresh owned-asset target that already carries user data.
 
@@ -101,6 +116,14 @@ def assert_create_target_available(
     convention, so collision detection resolves the same carrier as the writer.
     An empty folder is adoptable; any non-empty folder or existing carrier is
     somebody else's bundle and must remain byte-identical.
+
+    "Somebody else's" is decided by IDENTITY, not by the path being occupied.
+    A carrier whose identity capsule already holds ``entity_id`` is *this*
+    entity's own carrier — re-materializing it (the receive path re-creating a
+    row it no longer holds, a re-scan after a local delete, or two instances
+    sharing one machine's ``user_home``) must adopt it rather than refuse. The
+    capsule is the authority, so an unidentified or foreign carrier still
+    collides exactly as before.
     """
     carrier = info.body_path_for(asset_ref._path)
     collision = carrier.exists() or carrier.is_symlink()
@@ -120,6 +143,10 @@ def assert_create_target_available(
                     collision = True
 
     if collision:
+        # Only now is the identity worth a read: an occupied path that already
+        # declares THIS entity is its own carrier, so adopt instead of refusing.
+        if entity_id and _carrier_identity_matches(info, asset_ref, entity_id):
+            return
         raise AssetPathCollisionError(
             f"An {entity_type} named '{name}' already exists in this scope"
         )

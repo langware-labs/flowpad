@@ -72,6 +72,11 @@ class Bookmark(Entity):
     # written before this field existed — means "never opened", which is what
     # the desktop's unread badges count. DB-only, like `order`.
     counter: int = APIField(0)
+    # Looked at without being opened — a rest of the pointer on the row in the
+    # favorites menu. Clears the unread badge alongside `counter`, but stays a
+    # separate flag so a hover never inflates the open count. DB-only, like
+    # `order`.
+    seen: bool = APIField(False)
 
     @property
     def display_name(self) -> str:

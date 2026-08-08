@@ -1,5 +1,6 @@
 import React, { type ReactNode } from 'react';
 import * as lucideIcons from 'lucide-react';
+import { isIconPath } from '@sdk';
 import { lucideByName } from './lucide-by-name';
 
 /**
@@ -7,11 +8,13 @@ import { lucideByName } from './lucide-by-name';
  *
  * The IconPicker stores either kind in one string field:
  *  - a lucide export name (e.g. "Search", "BookMarked") — the existing
- *    `lucideByName` convention, or
+ *    `lucideByName` convention,
+ *  - a path to a file the backend serves (e.g. "icons/agent.svg"), or
  *  - an emoji character (e.g. "🚀").
  *
  * `isLucideName` discriminates by checking the actual lucide export table —
- * never by guessing — so an emoji (or any unknown string) renders as text.
+ * never by guessing — and `isIconPath` by the one character a lucide export
+ * name can never contain, so an emoji (or any unknown string) renders as text.
  */
 
 export function isLucideName(value: string | null | undefined): boolean {
@@ -25,7 +28,10 @@ export function renderIconValue(
 ): ReactNode {
   const { className = 'h-4 w-4', color } = opts;
   if (!value) return null;
-  if (isLucideName(value)) {
+  // A file-shaped value goes through the same seam; without that test it would
+  // fall to the emoji branch and render as literal path text. `color` reaches a
+  // lucide glyph and is ignored by an image, which carries its own.
+  if (isLucideName(value) || isIconPath(value)) {
     const Icon = lucideByName(value);
     return <Icon className={className} style={color ? { color } : undefined} />;
   }

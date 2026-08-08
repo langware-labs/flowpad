@@ -16,6 +16,7 @@ import { DockPointer } from '@src/navigation';
 import { ViewType } from '@src/types/ViewType';
 import { clearDockLoadError } from './dock-load-error-store';
 import { DockLoadError, handleDockLoadError } from './dock-load-error';
+import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
 import { loadAssetRoute } from './load-asset';
 import { loadConversationRoute } from './load-conversation';
 import { loadLensRoute } from './load-lens';
@@ -39,7 +40,7 @@ export interface DockLoaderContext {
  * derivation: they run after this and their entity's project wins.
  * Best-effort — a missing project must not fail a browse landing.
  */
-async function adoptScopeProject(dock: DockPointer): Promise<void> {
+export async function adoptScopeProject(dock: DockPointer): Promise<void> {
   const projectId = dock.scopeProjectId;
   if (!projectId || dataContext.project?.id === projectId) return;
   await loadProject(new TypeId(Project.type, projectId)).catch(() => {});
@@ -229,6 +230,17 @@ function loadSubgraphRoute(dock: DockPointer): void {
 }
 
 export async function loadDockPointer(dock: DockPointer, context: DockLoaderContext): Promise<string> {
+  // `/dock/home` is the dock spelling of the app root, and the root's canonical
+  // URL is `/`. Without this redirect both spellings stay live: the address bar
+  // reads `/dock/home` while the pointer parsed from it serializes to `/`, so
+  // the URL silently changes under the user on their next navigation. Redirect
+  // rather than render, so one location keeps exactly one address — which is the
+  // point of making the root a pointer at all.
+  if (dock.isRoot) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(dock.toUrl(context.requestPath));
+  }
+
   const label = `loadDockPointer:${dock.viewType ?? 'unknown'}`;
   try {
     switch (dock.viewType) {
@@ -249,7 +261,7 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         await adoptScopeProject(dock);
         await loadAssetRoute(dock.pointer, {
           allowLocalWikiAlias: dock.page !== PageId.HUB,
-          wikiAuthority: dock.page === PageId.HUB ? 'hub' : 'local',
+          wikiAuthority: wikiAuthorityForPage(dock.page),
         });
         break;
       case ViewType.TASKS:

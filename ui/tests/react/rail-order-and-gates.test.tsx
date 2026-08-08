@@ -47,9 +47,6 @@ vi.mock('@src/components/theme-toggle/theme-toggle', () => ({ ThemeToggle: () =>
 vi.mock('@src/components/floating-chat', () => ({ FlowpadAssistantButton: () => null }));
 vi.mock('@src/pages/flow-page/content-panel/user-dropdown/user-dropdown', () => ({ UserDropdown: () => null }));
 vi.mock('@src/contexts/dev-mode-context', () => ({ useDevMode: () => false }));
-vi.mock('@src/hooks/use-navigation-state', () => ({
-  useNavigationState: () => ({ goBack: vi.fn(), canGoBack: false }),
-}));
 vi.mock('@src/store/use-inbox-store', () => ({ useInboxStore: () => ({ unreadCount: 0 }) }));
 vi.mock('@src/store/use-spotlight-store', () => ({
   useSpotlightStore: { getState: () => ({ openSpotlight: vi.fn() }) },
@@ -103,8 +100,11 @@ afterEach(() => {
 });
 
 describe('rail — order and gates', () => {
-  it('a fresh instance shows exactly Home, Project, Chats, Bookmarks', () => {
-    expect(renderRail().ids()).toEqual(['home', 'project', 'chats', 'bookmarks', 'files']);
+  it('a fresh instance shows exactly Chats', () => {
+    // Home, the project, Bookmarks and Files each moved to the top navigation
+    // bar (7c3e8d74a, 8d4d03dc4), so a fresh rail is down to Chats. The spec
+    // side of the same contract is tests/unit/rail-visibility.test.ts.
+    expect(renderRail().ids()).toEqual(['chats']);
   });
 
   it('drops the project item when no project is active', async () => {
@@ -114,7 +114,7 @@ describe('rail — order and gates', () => {
 
   it('reveals Inbox on the first conversation', () => {
     gates.conversations = true;
-    expect(renderRail().ids()).toEqual(['home', 'project', 'chats', 'bookmarks', 'inbox', 'files']);
+    expect(renderRail().ids()).toEqual(['chats', 'inbox']);
   });
 
   it('Data sources appears at Advanced, not before, and needs no content gate', () => {
@@ -177,24 +177,26 @@ describe('rail — Chats target forks on view mode', () => {
 
 describe('rail — one active resolver above and below the chevron', () => {
   it('an overflow item that is the current view renders active', () => {
+    // `hooks` is the Advanced overflow entry; `files` used to be the Vibe one
+    // until it moved to the top bar's Files button.
     setViewMode(ViewMode.Advanced);
-    dock.current = { viewType: ViewType.EXPLORER };
-    const files = renderRail().item('files');
-    expect(files, 'files overflow item').toBeTruthy();
-    expect(files!.getAttribute('data-active')).toBe('true');
+    dock.current = { viewType: ViewType.HOOKS };
+    const hooks = renderRail().item('hooks');
+    expect(hooks, 'hooks overflow item').toBeTruthy();
+    expect(hooks!.getAttribute('data-active')).toBe('true');
   });
 
-  it('the project item owns every assets surface, the task list included', () => {
-    // No rail entry claims `list/task` any more, so nothing may subtract it
-    // from the project item — subtracting would leave the rail dark there.
-    dock.current = { viewType: ViewType.ASSETS, pointer: 'list/task' };
-    const rail = renderRail();
-    expect(rail.item('tasks')).toBeNull();
-    expect(rail.item('project')!.getAttribute('data-active')).toBe('true');
-  });
-
-  it('the project item is active on a plain assets surface', () => {
-    dock.current = { viewType: ViewType.ASSETS, pointer: 'list/all' };
-    expect(renderRail().item('project')!.getAttribute('data-active')).toBe('true');
+  it('no rail entry claims an assets surface, the task list included', () => {
+    // Assets are reached through the top bar's project button now. Nothing on
+    // the rail may claim those URLs — a Tasks or Assets entry re-creates the
+    // "one click lights two buttons" problem those entries were removed for.
+    for (const pointer of ['list/task', 'list/all']) {
+      dock.current = { viewType: ViewType.ASSETS, pointer };
+      const rail = renderRail();
+      expect(rail.item('tasks'), `tasks entry on ${pointer}`).toBeNull();
+      expect(rail.item('assets'), `assets entry on ${pointer}`).toBeNull();
+      const lit = rail.ids().filter((id) => rail.item(id!)?.getAttribute('data-active') === 'true');
+      expect(lit, `rail lit on ${pointer}`).toEqual([]);
+    }
   });
 });

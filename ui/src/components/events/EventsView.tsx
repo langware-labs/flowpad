@@ -75,6 +75,9 @@ export function EventsView() {
   const isCreatingSchedule = currentDock?.options?.creating === 'schedule';
   // Shared with the rules navigator through the URL — see DockPointer.forEvents.
   const includeSystem = currentDock?.options?.system === '1';
+  // Narrow to one subject (`data_source:<id>`, …) — the "show me what this
+  // thing produced" link from any screen that holds an entity.
+  const targetFilter = currentDock?.options?.target ?? null;
 
   // Everything, across rules; `paused` stops the poll as well as the live
   // feed, so a paused screen is genuinely idle.
@@ -116,21 +119,35 @@ export function EventsView() {
     // A fire's visibility follows its RULE's, through the same predicate the
     // navigator lists by. A fire whose rule has since been deleted still
     // happened — keep it rather than losing history to a tidy-up.
-    return fires.filter((f) => {
-      const rule = rulesByName.get(f.rule_name);
-      return rule ? ruleInScope(rule, urlScope, includeSystem) : true;
-    });
-  }, [fires, rulesByName, urlScope, includeSystem, selectedRule]);
+    return fires
+      .filter((f) => !targetFilter || f.cause_target === targetFilter)
+      .filter((f) => {
+        const rule = rulesByName.get(f.rule_name);
+        return rule ? ruleInScope(rule, urlScope, includeSystem) : true;
+      });
+  }, [fires, rulesByName, urlScope, includeSystem, selectedRule, targetFilter]);
 
   const scopedEvents = useMemo(
-    () => events.filter((e) => eventInScope(e, urlScope, project?.id ?? null)),
-    [events, urlScope, project?.id],
+    () =>
+      events
+        .filter((e) => !targetFilter || e.target === targetFilter)
+        .filter((e) => eventInScope(e, urlScope, project?.id ?? null)),
+    [events, urlScope, project?.id, targetFilter],
   );
 
   const rows = useMemo(
     () => buildFeed(scopedEvents, scopedFires),
     [scopedEvents, scopedFires],
   );
+
+  const clearTargetFilter = useCallback(() => {
+    navigation.openDock(
+      DockPointer.forEvents(currentDock?.options?.trigger, {
+        creating: currentDock?.options?.creating,
+        system: includeSystem,
+      }).withScopeFilter(urlScope),
+    );
+  }, [navigation, currentDock, includeSystem, urlScope]);
 
   const clearSelection = useCallback(() => {
     navigation.openDock(DockPointer.forEvents(undefined, { system: includeSystem }).withScopeFilter(urlScope));
@@ -211,6 +228,8 @@ export function EventsView() {
           totalEvents={events.length}
           paused={paused}
           ruleFilterName={selectedRule?.name ?? null}
+          targetFilter={targetFilter}
+          onClearTarget={clearTargetFilter}
           onTogglePause={() => setPaused((p) => !p)}
           onClear={() => setEvents([])}
         />

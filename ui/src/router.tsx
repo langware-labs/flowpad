@@ -20,6 +20,7 @@ import LaunchLanding from '@src/pages/entry/LaunchLanding';
 import InstallLanding from '@src/pages/entry/InstallLanding';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
+import { devToDockPath } from '@src/navigation/url-builder';
 import {
   createBrowserRouter,
   createRoutesFromElements,
@@ -29,6 +30,7 @@ import {
   useLocation,
   type ShouldRevalidateFunctionArgs,
 } from 'react-router';
+import { bindHistoryPosition } from '@src/navigation/history-position-store';
 
 /**
  * Root-level `/dev/<anything-not-main-or-hooks>` URLs forward to `/dock/<same>`.
@@ -40,8 +42,7 @@ import {
  */
 function DevToDockRedirect() {
   const location = useLocation();
-  const rest = location.pathname.replace(/^\/dev\/?/, '');
-  const target = `/dock/${rest}${location.search}${location.hash}`;
+  const target = `${devToDockPath(location.pathname)}${location.search}${location.hash}`;
   return <Navigate to={target} replace />;
 }
 
@@ -175,3 +176,12 @@ export const router = createBrowserRouter(
     basename: BASE_PATH,
   },
 );
+
+/**
+ * The router is the sole event source for "where am I in history", which the
+ * nav bar's Back/Forward buttons read. Bound here, at module scope, because by
+ * this point `createBrowserHistory` has already stamped its initial `idx` — and
+ * because subscribing here catches pops the app never initiated (browser chrome
+ * buttons, the macOS swipe, the Electron mouse buttons) for free.
+ */
+bindHistoryPosition(router);

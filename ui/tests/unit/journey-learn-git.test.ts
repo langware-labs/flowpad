@@ -23,8 +23,8 @@ vi.mock('@sdk', async (importOriginal) => ({
     return ctx;
   },
 }));
-import { parseJourneyGraph } from '@src/journey/use-journey';
-import type { JourneyActSpec } from '@src/journey/use-journey';
+import { JourneyGraph } from '@sdk';
+import type { JourneyActSpec } from '@sdk';
 
 const GRAPH_PATH = path.resolve(
   __dirname,
@@ -35,7 +35,7 @@ const graphText = readFileSync(GRAPH_PATH, 'utf-8');
 
 describe('learn-git journey graph', () => {
   it('parses into the authored steps, all git ops gated by git_check acts', () => {
-    const { steps, start } = parseJourneyGraph(graphText);
+    const { steps, start } = JourneyGraph.parse(graphText);
     expect(start?.kind).toBe('home');
     expect(steps.map((s) => s.node_id)).toEqual([
       'intro', 'terminal', 'init', 'stage', 'commit', 'branch', 'change',
@@ -46,8 +46,9 @@ describe('learn-git journey graph', () => {
       expect(step.act?.kind).toBe('git_check');
       expect(step.act?.dir).toBe('git-playground');
       // the await gates on THIS act's bus identity — unique per step
-      expect(step.await?.tag).toBe('app.journey.act.done');
-      expect(step.await?.target).toBe(`git_check:${step.act?.target}`);
+      expect(step.waitFor).toEqual([
+        { event: { tag: 'app.journey.act.done', target: `git_check:${step.act?.target}` } },
+      ]);
     }
     expect(gitSteps.find((s) => s.act?.expect === 'branch')?.act?.branch).toBe('practice');
   });
@@ -55,11 +56,13 @@ describe('learn-git journey graph', () => {
   it('is deep-link-only and the intro/terminal steps use the standard gates', () => {
     const raw = JSON.parse(graphText) as { auto_launch?: boolean };
     expect(raw.auto_launch).toBe(false);
-    const { steps } = parseJourneyGraph(graphText);
-    expect(steps[0].await).toEqual({ tag: 'app.page.signal', target: 'next' });
+    const { steps } = JourneyGraph.parse(graphText);
+    expect(steps[0].waitFor).toEqual([{ event: { tag: 'app.page.signal', target: 'next' } }]);
     // the shell ROUTE, not agentic_process creation: a plain Terminal mints a
     // shell (no process), and every opener ends on a `dock:shell/…` navigation
-    expect(steps[1].await).toEqual({ tag: 'app.route.loaded', target: 'dock:shell/*' });
+    // Was a glob over a bus identity string (`dock:shell/*`); now it says what
+    // it means — the app is on a terminal.
+    expect(steps[1].waitFor).toEqual([{ location: { viewType: 'shell' } }]);
   });
 });
 

@@ -372,6 +372,39 @@ def test_owned_create_target_rejects_a_nonempty_agent_bundle(tmp_path):
         )
 
 
+def test_owned_create_target_adopts_a_carrier_that_is_this_entitys_own(tmp_path):
+    """An occupied carrier whose identity capsule names THIS entity is not a
+    competing bundle — re-materializing it (hub receive re-creating a row, a
+    re-scan after a local delete, two instances sharing one ``user_home``) must
+    adopt it. A DIFFERENT id in the capsule still collides."""
+    from flow_sdk.fs_store.fs_record import (
+        AssetPathCollisionError,
+        assert_create_target_available,
+    )
+    from flow_sdk.fs_store.fs_ref import FSRef
+
+    mine = "1b2d6c12-026e-456c-a9ab-ee66951758da"
+    theirs = "8a4d1e77-0000-4000-8000-0000000000ff"
+    bundle = tmp_path / "agentic-assets" / "agent" / "q"
+    bundle.mkdir(parents=True)
+    (bundle / "agent.md").write_text("# Q\n")
+    info = SchemaRegistry.get("agent")
+    info.mint_id(FSRef(bundle / "agent.md"), proposed_id=mine)
+    assert info.extract_id(FSRef(bundle / "agent.md")) == mine
+
+    # Same entity → adopted, no raise.
+    assert_create_target_available(
+        info, FSRef(bundle / "agent.md"), entity_type="agent", name="Q", entity_id=mine
+    )
+
+    # Another entity's carrier, and an unidentified caller, both still collide.
+    for other in (theirs, None):
+        with pytest.raises(AssetPathCollisionError, match="already exists in this scope"):
+            assert_create_target_available(
+                info, FSRef(bundle / "agent.md"), entity_type="agent", name="Q", entity_id=other
+            )
+
+
 @pytest.mark.parametrize("scope", [Scope.USER, Scope.PROJECT])
 def test_repo_resolve_destination_anchors_under_agentic_assets(scope, tmp_path):
     # A repo type resolves to <root>/agentic-assets/<type> in both scopes. Uses a

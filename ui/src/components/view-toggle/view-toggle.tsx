@@ -11,6 +11,7 @@ import {
   SEGMENTED_IDLE,
 } from '@src/components/ui/segmented';
 import { ViewMode, setViewMode, useViewMode } from '@src/contexts/view-mode-context';
+import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation';
 import { FlaskConical, MessageSquare, SquareTerminal, WandSparkles, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
@@ -31,6 +32,16 @@ const ICONS: Record<ViewMode, LucideIcon> = {
   [ViewMode.Standard]: MessageSquare,
   [ViewMode.Advanced]: SquareTerminal,
   [ViewMode.Dev]: FlaskConical,
+};
+
+/** Tag word per mode — the observable/highlightable name of each button.
+ *  Spelled out rather than derived from the enum so the vocabulary is greppable
+ *  (a journey authoring `ViewModeChat` should find this line). */
+const TAGS: Record<ViewMode, string> = {
+  [ViewMode.Vibe]: 'ViewModeVibe',
+  [ViewMode.Standard]: 'ViewModeChat',
+  [ViewMode.Advanced]: 'ViewModeTerminal',
+  [ViewMode.Dev]: 'ViewModeDev',
 };
 
 // Visual order of the segmented control: fullest → simplest, so newly revealed
@@ -97,6 +108,7 @@ export function ViewToggle() {
     <TooltipProvider>
       <div
         data-testid="view-toggle"
+        {...tagAttrs('ViewToggle', 'label')}
         role="radiogroup"
         aria-label="View mode"
         className={SEGMENTED_GROUP}
@@ -115,6 +127,12 @@ export function ViewToggle() {
                 // contract (and matches the persisted pref / `?viewMode` value),
                 // while the label is user-facing wording that may change.
                 data-testid={`view-toggle-${m}`}
+                // The tag is what makes each mode button observable and
+                // highlightable: a click on it becomes `app.ui.button.clicked`
+                // with this word as the target. The GROUP carries `ViewToggle`
+                // for highlighting the control as a whole; clicks resolve to
+                // the nearest tagged ancestor, which is always the button.
+                {...tagAttrs(TAGS[m], 'button')}
                 onClick={() => select(m)}
                 // Reveal-only: adds the next mode's button, never selects it.
                 // No dblclick/click disambiguation needed — the two preceding

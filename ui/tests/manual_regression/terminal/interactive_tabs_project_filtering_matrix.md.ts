@@ -19,7 +19,7 @@ import path from 'node:path';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { apiBase, apiContext } from '../_shared/api';
 import { withViewMode } from '../_shared/view-mode';
-import { dismissSetupModal, skipIfPtyExhausted } from './helpers';
+import { dismissSetupModal, openTabViaMenu, skipIfPtyExhausted } from './helpers';
 
 /**
  * Dismiss the "Cleaned invalid sessions … couldn't be restored" alertdialog and,
@@ -533,7 +533,7 @@ test.describe('Interactive tabs / project filtering matrix', () => {
     await rq.dispose();
   });
 
-  test('test 11: Open the current session-history modal from the project chip', async ({ page }) => {
+  test('test 11: Open the current session-history modal from the opener menu', async ({ page }) => {
     const rq = await api();
     const projectRoot = disposableProjectRoot('history-modal');
     const projectName = `History-${Date.now()}`;
@@ -545,8 +545,9 @@ test.describe('Interactive tabs / project filtering matrix', () => {
       await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible();
       await dismissCleanedSessionsOrSkip(page);
 
-      await openProjectsChipPopover(page);
-      await page.locator('[data-testid="projects-counter-open-history"]').click();
+      // The history entry point is the opener toolbar — the projects chip
+      // popover is a pure project list.
+      await openTabViaMenu(page, 'history');
 
       const dialog = page.getByRole('dialog');
       await expect(dialog.getByRole('heading', { name: 'Recent Sessions' })).toBeVisible();

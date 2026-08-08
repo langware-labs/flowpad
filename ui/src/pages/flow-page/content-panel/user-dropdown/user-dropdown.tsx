@@ -10,7 +10,7 @@ import {
 } from '@src/components/ui/dropdown-menu';
 import { SettingsPane } from '@src/components/ui/settings-pane';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { Cloud, HelpCircle, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
+import { Cloud, HelpCircle, KeyRound, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
 import { notify } from '@src/notifications';
 
 import { AccountInfo } from '@src/components/account/account-info';
@@ -449,6 +449,14 @@ export function UserDropdown() {
                 >
                   <Settings className="mr-2 h-4 w-4" />
                   <Trans>Preferences</Trans>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => navigation.openCredentials()}
+                  className="cursor-pointer"
+                  data-testid="app-credentials-button"
+                >
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  <Trans>Credentials</Trans>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setIsAccountDialogOpen(true)}

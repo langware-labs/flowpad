@@ -36,7 +36,9 @@ describe('pageRedirectUrl', () => {
   });
 
   it('redirects an unsupported hub page to the desk home', () => {
-    expect(pageRedirectUrl(hubDock, ['desk'])).toBe('/dock/home');
+    // The desk home is spelled `/` — one home, one location type. `/dock/home`
+    // was the second spelling of this exact surface.
+    expect(pageRedirectUrl(hubDock, ['desk'])).toBe('/');
   });
 
   it('redirects an unsupported desk page to the first supported page home', () => {
@@ -47,12 +49,14 @@ describe('pageRedirectUrl', () => {
   it('treats a missing/unknown list as desk-only', () => {
     // No usable list → desk is the sole supported page: desk stays, hub bounces.
     expect(pageRedirectUrl(deskDock, undefined)).toBeNull();
-    expect(pageRedirectUrl(hubDock, ['garbage'])).toBe('/dock/home');
+    expect(pageRedirectUrl(hubDock, ['garbage'])).toBe('/');
   });
 
   it('preserves the scope/base path prefix when redirecting', () => {
+    // The base path is still preserved; the desk home under it is the base
+    // itself rather than a `/dock/home` suffix.
     expect(pageRedirectUrl(hubDock, ['desk'], '/agent/a/flow/f/dock/hub/assets/list/skill')).toBe(
-      '/agent/a/flow/f/dock/home',
+      '/agent/a/flow/f',
     );
   });
 });

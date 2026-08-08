@@ -1,7 +1,3 @@
-import { Button } from '@src/components/ui/button';
-import { Card, CardContent, CardHeader } from '@src/components/ui/card';
-import { Trans, useLingui } from '@lingui/react/macro';
-import { useQuery } from '@tanstack/react-query';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 interface PersistentIframeProps {
@@ -11,7 +7,6 @@ interface PersistentIframeProps {
   testId?: string;
   onLoad?: () => void;
   onError?: (error: Error) => void;
-  onErrorRetry?: () => void;
 }
 
 export interface PersistentIframeHandle {
@@ -282,8 +277,7 @@ class IframeRegistry {
 const registry = IframeRegistry.getInstance();
 
 const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProps>(
-  ({ src, cacheKey, testId, onLoad, onError, onErrorRetry }, ref) => {
-    const { t } = useLingui();
+  ({ src, cacheKey, testId, onLoad, onError }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const ownerRef = useRef<IframeOwner>(Symbol('persistent-iframe-owner'));
     const [, forceUpdate] = useState({});
@@ -291,37 +285,21 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
     // Force re-render to get updated loading/error states
     const triggerUpdate = useCallback(() => forceUpdate({}), []);
 
-    const {
-      data: isPreFetchedSourceNotAvailable,
-      isLoading: isPreFetchedSourceLoading,
-      isError: isPreFetchedSourceError,
-      refetch: refetchSource,
-    } = useQuery({
-      queryKey: ['preFetchedSource', cacheKey, src],
-      queryFn: async () => {
-        try {
-          const res = await fetch(src, { method: 'GET', credentials: 'include', redirect: 'manual' });
-          if (res.status >= 400) {
-            const text = await res.text();
-            onError?.(new Error(text));
-            return true; // Not available
-          }
-          return false; // Available
-        } catch {
-          // Network error (connection refused, etc.)
-          onError?.(new Error(t`Unable to connect to webapp`));
-          return true; // Not available
-        }
-      },
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      retry: false, // Don't retry on network errors
-    });
+    // NOTE: there used to be a pre-flight availability probe here --
+    // `fetch(src, { redirect: 'manual' })`, treating `status >= 400` as "not
+    // available". It could never work. `src` is the backend's `get-host` action,
+    // which answers 307, and `redirect: 'manual'` turns that into an OPAQUE
+    // REDIRECT whose status is always 0 -- measured identical whether the dev
+    // server behind it was alive or refusing connections. It therefore reported
+    // "available" unconditionally, and its `catch` for connection-refused was
+    // unreachable. Availability is now decided by `useWebappDiagnostics`, which
+    // asks the backend to probe the port directly. This component is purely the
+    // mechanism: it mounts a frame and reports load state.
     const cacheKeyRef = useRef(cacheKey);
 
     const refreshIframe = useCallback(() => {
-      void refetchSource();
       registry.refresh(src);
-    }, [src, refetchSource]);
+    }, [src]);
 
     // Expose refresh + guest-post methods to parent via ref
     useImperativeHandle(
@@ -344,26 +322,19 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
     const isIframeLoading = registry.getLoadingState(src);
     const isIframeError = registry.getErrorState(src);
 
-    const isLoading = isPreFetchedSourceLoading || isIframeLoading;
-    const isError = isPreFetchedSourceNotAvailable || isPreFetchedSourceError || isIframeError;
+
 
     const showIframe = useCallback(() => {
-      if (containerRef.current && !isError) {
+      if (containerRef.current && !isIframeError) {
         registry.showIframeAt(src, containerRef.current, ownerRef.current);
         triggerUpdate();
       }
-    }, [src, isError, triggerUpdate]);
+    }, [src, isIframeError, triggerUpdate]);
 
     const hideIframe = useCallback(() => {
       registry.hideIframe(src, ownerRef.current);
       triggerUpdate();
     }, [src, triggerUpdate]);
-
-    const retryOnError = useCallback(() => {
-      void refetchSource();
-      registry.refresh(src);
-      onErrorRetry?.();
-    }, [onErrorRetry, refetchSource, src]);
 
     // Initialize iframe when component mounts
     useEffect(() => {
@@ -384,17 +355,17 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
 
     // Auto-show iframe when ready and container is available
     useEffect(() => {
-      if (!isError && !isLoading && containerRef.current) {
+      if (!isIframeError && !isIframeLoading && containerRef.current) {
         showIframe();
       }
-    }, [isError, isLoading, showIframe]);
+    }, [isIframeError, isIframeLoading, showIframe]);
 
     // Hide iframe when there's an error
     useEffect(() => {
-      if (isError) {
+      if (isIframeError) {
         hideIframe();
       }
-    }, [isError, hideIframe]);
+    }, [isIframeError, hideIframe]);
 
     // Handle component unmount
     useEffect(() => {
@@ -403,68 +374,14 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
       };
     }, [hideIframe]);
 
-    const renderContent = () => {
-      if (isLoading) {
-        return (
-          <div className="flex h-full w-full items-center justify-center bg-background">
-            <div className="flex flex-col items-center space-y-4">
-              <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-foreground" />
-              <div className="text-center">
-                <p className="text-sm font-medium text-foreground"><Trans>Loading server...</Trans></p>
-                <div className="mt-2 w-64 rounded-full bg-muted">
-                  <div className="h-2 animate-pulse rounded-full bg-primary" style={{ width: '100%' }} />
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground"><Trans>This may take up to 20 seconds</Trans></p>
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      if (isError) {
-        return (
-          <div className="flex h-full w-full items-center justify-center bg-muted/30">
-            <Card className="max-w-sm border-none bg-transparent text-center shadow-none">
-              <CardHeader className="pb-2">
-                <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="text-muted-foreground"
-                  >
-                    <path d="M18 6 6 18" />
-                    <path d="m6 6 12 12" />
-                  </svg>
-                </div>
-                <p className="text-lg font-semibold text-foreground"><Trans>Webapp Not Available</Trans></p>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  <Trans>The webapp server is not running. Start the services to view the app.</Trans>
-                </p>
-                <Button variant="outline" size="sm" onClick={retryOnError}>
-                  <Trans>Retry Connection</Trans>
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        );
-      }
-
-      return null;
-    };
-
+    // Renders nothing of its own: this component is the MECHANISM (a registry-
+    // parked iframe positioned over this slot), not a surface. Loading and error
+    // presentation belong to `WebappDisplay`, which is the only thing that can
+    // actually tell whether the guest is healthy — a cross-origin frame reports
+    // a refused navigation as a successful `onload`, so anything decided here
+    // would be guesswork competing with the real verdict.
     return (
-      <div className="relative h-full w-full" ref={containerRef} data-testid={testId ? `${testId}-host` : undefined}>
-        {renderContent()}
-      </div>
+      <div className="relative h-full w-full" ref={containerRef} data-testid={testId ? `${testId}-host` : undefined} />
     );
   },
 );

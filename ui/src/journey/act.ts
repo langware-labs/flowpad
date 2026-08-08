@@ -1,9 +1,17 @@
-import { Capability, capabilityManager, dataContext, EventBus, FSRef, GitWorkdir, oauthService } from '@sdk';
+import {
+  Capability,
+  capabilityManager,
+  dataContext,
+  EventBus,
+  FSRef,
+  GitWorkdir,
+  type JourneyActSpec,
+  oauthService,
+} from '@sdk';
 
 import { getGitStatus } from '@src/lib/git-status-cache';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import { runInTerminal } from '@src/terminal/run-in-terminal';
-import type { JourneyActSpec } from './use-journey';
 
 /** A step's act landed / could not land. The step's `await` listens for these
  *  like any other bus event — gating stays ONE mechanism (see docs/tags.md). */
@@ -29,6 +37,33 @@ function editableWithin(host: HTMLElement): HTMLElement | null {
   if (isEditable(host)) return host;
   return host.querySelector<HTMLElement>('input, textarea, [contenteditable="true"]');
 }
+
+/**
+ * Press a `data-tag`-tagged surface, as a user would.
+ *
+ * The tag is not always ON the control: a group like `ViewToggle` tags a wrapper
+ * and holds the real buttons inside, so clicking the host would hit a div and do
+ * nothing. The control is resolved the same way {@link performFill} resolves an
+ * editable — the host itself when it is clickable, else the first clickable
+ * descendant.
+ *
+ * `el.click()` dispatches a real click event, which is what React's synthetic
+ * handlers listen for — the same path a mouse takes.
+ *
+ * Returns false when the target isn't on screen, so the caller emits
+ * `app.journey.act.failed` and the step falls back to asking the user.
+ */
+export function performClick(target: string): boolean {
+  const host = document.querySelector<HTMLElement>(`[data-tag="${CSS.escape(target)}"]`);
+  if (!host) return false;
+  const el = host.matches(CLICKABLE) ? host : host.querySelector<HTMLElement>(CLICKABLE);
+  if (!el) return false;
+  el.click();
+  return true;
+}
+
+/** What counts as the control inside a tagged host. */
+const CLICKABLE = 'button, a[href], [role="button"], input[type="button"], input[type="submit"]';
 
 /**
  * Type `text` into a `data-tag`-tagged surface, as a user would.
@@ -248,6 +283,8 @@ async function runFsCheck(act: JourneyActSpec, ctx: ActContext): Promise<boolean
 /** Run a step's act and announce the outcome on the bus. */
 export function runAct(act: JourneyActSpec, ctx: ActContext = {}): boolean | Promise<boolean> {
   switch (act.kind) {
+    case 'click':
+      return announce(act, performClick(act.target));
     case 'fill':
       return announce(act, performFill(act.target, act.text ?? ''));
     case 'open_terminal':

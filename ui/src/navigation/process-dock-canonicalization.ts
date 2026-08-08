@@ -15,6 +15,13 @@ import { DockPointer } from './DockPointer';
  * Returns the redirect target (path + search) or null when already canonical.
  */
 export function canonicalProcessDockPath(pathname: string, search: string): string | null {
+  // Stays a regex on purpose, unlike its credentials sibling. That one maps
+  // RETIRED views, which are still decodable — `DockPointer.fromUrl` parses
+  // them and `normalizeRetiredDockPointer` resolves them forward. `display` is
+  // not retired but GONE: the identity was removed from the view registry
+  // entirely, so `fromUrl` rejects it and there is no pointer to transform.
+  // Reading a grammar the pointer model has deliberately forgotten is the one
+  // job a raw path match is still the right tool for.
   const match = pathname.match(/^(\/(?:dock|win))\/display\/([^/?]+)\/?$/);
   if (!match) return null;
   const [, layoutSeg, pointer] = match;

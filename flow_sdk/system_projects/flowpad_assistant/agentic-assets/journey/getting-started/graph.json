@@ -2,7 +2,7 @@
   "version": 1,
   "id": "5eaa7e57-1111-4222-8333-444455556666",
   "name": "Getting started",
-  "description": "Build your first vibe agent: a shopping master that finds the best deals \u2014 created, instructed, and put to work, step by step.",
+  "description": "Build your first vibe agent: a shopping master that finds the best deals — created, instructed, and put to work, step by step.",
   "enabled": true,
   "auto_launch": false,
   "config": {
@@ -17,12 +17,16 @@
       "node_data": {
         "status_line": "Click your highlighted project name in the footer to open its page.",
         "present": {
+          "dock": {
+            "kind": "root"
+          },
           "highlight": "ProjectPage"
         },
-        "await": {
-          "tag": "app.ui.button.clicked",
-          "target": "ProjectPage"
-        }
+        "waitFor": [
+          {
+            "click": "ProjectPage"
+          }
+        ]
       }
     },
     {
@@ -33,12 +37,16 @@
         "group": "Create your vibe agent",
         "status_line": "Click the highlighted Sub agent tile and name it \"shopping-master\".",
         "present": {
+          "dock": {
+            "kind": "root"
+          },
           "highlight": "Sub agents"
         },
-        "await": {
-          "tag": "app.ui.button.clicked",
-          "target": "Sub agents"
-        }
+        "waitFor": [
+          {
+            "click": "Sub agents"
+          }
+        ]
       }
     },
     {
@@ -49,18 +57,27 @@
         "group": "Create your vibe agent",
         "status_line": "Click \"Fill text\" to write the instructions, then Next.",
         "present": {
+          "dock": {
+            "kind": "root"
+          },
           "highlight": "AgentInstructions"
-        },
-        "await": {
-          "tag": "app.journey.act.done",
-          "target": "fill:AgentInstructions",
-          "manual": true
         },
         "act": {
           "kind": "fill",
           "target": "AgentInstructions",
           "text": "You are shopping master, find the best deal, always show product name and price"
-        }
+        },
+        "waitFor": [
+          {
+            "event": {
+              "tag": "app.journey.act.done",
+              "target": "fill:AgentInstructions"
+            }
+          },
+          {
+            "manual": true
+          }
+        ]
       }
     },
     {
@@ -68,15 +85,19 @@
       "node_type": "guided_step",
       "name": "Use your agent",
       "node_data": {
-        "status_line": "Click the highlighted Use agent button \u2014 it loads your agent into a live vibe workspace.",
+        "status_line": "Click the highlighted Use agent button — it loads your agent into a live vibe workspace.",
         "present": {
+          "dock": {
+            "kind": "root"
+          },
           "highlight": "UseAgent"
         },
-        "await": {
-          "tag": "app.ui.button.clicked",
-          "target": "UseAgent"
-        },
-        "group": "Use your vibe agent"
+        "group": "Use your vibe agent",
+        "waitFor": [
+          {
+            "click": "UseAgent"
+          }
+        ]
       }
     },
     {
@@ -86,14 +107,21 @@
       "node_data": {
         "group": "Use your vibe agent",
         "status_line": "Ask your shopping master to search for a smartphone.",
-        "present": {},
-        "await": {
-          "tag": "app.entity.updated",
-          "target": "agentic_process:*",
-          "matchEvent": {
-            "status": "running"
+        "present": {
+          "dock": {
+            "kind": "root"
           }
-        }
+        },
+        "waitFor": [
+          {
+            "entity": {
+              "type": "agentic_process",
+              "match": {
+                "status": "running"
+              }
+            }
+          }
+        ]
       }
     }
   ],

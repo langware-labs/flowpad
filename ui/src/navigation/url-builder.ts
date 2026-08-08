@@ -15,6 +15,43 @@ function keywordForLayout(layout: Layout): string {
   return LAYOUT_KEYWORDS.find((row) => row.layout === layout)?.keyword ?? DOCK_KEYWORD;
 }
 
+/**
+ * THE statement that the desk home is spelled `/`.
+ *
+ * The app root is an ordinary location — a `DockPointer` for the desk `HOME`
+ * view with no pointer — it just has a shorter URL than the dock grammar would
+ * give it. Both directions consult this one predicate, so `/` and
+ * `DockPointer.root()` can never disagree about which is which.
+ *
+ * Deliberately narrow. Three things are NOT the root and keep their dock URLs:
+ *  - `page=hub` — `/dock/hub/home` is the hub's own home, a different surface;
+ *  - HOME with a pointer — `/dock/home/<x>`, still addressed the normal way;
+ *  - a non-DOCK layout — collapsing `/win/home` to `/` would break a focus
+ *    window out of its own chrome.
+ */
+export function isRootAddress(
+  viewType: ViewType | undefined,
+  pointer: string | undefined,
+  layout: Layout,
+  page: PageId,
+): boolean {
+  return viewType === ViewType.HOME && !pointer && layout === Layout.DOCK && page === PageId.DESK;
+}
+
+/** The app root's path. The one place the literal lives. */
+export const ROOT_PATH = '/';
+
+/** The parse of a layout-less path: the root, under whatever base path it carries. */
+export function rootDockAddress(fullPath: string): ParsedDockUrl {
+  return {
+    ...parseBasePath(fullPath),
+    page: PageId.DESK,
+    viewType: ViewType.HOME,
+    pointer: undefined,
+    layout: Layout.DOCK,
+  };
+}
+
 interface LayoutToken {
   layout: Layout;
   keyword: string;
@@ -162,6 +199,19 @@ export function stripDockPortion(currentPath: string): string {
 }
 
 /**
+ * Rewrite a `/dev/…` URL into its `/dock/…` twin.
+ *
+ * `dev` and `dock` are interchangeable layout keywords to every parser here, so
+ * people arrive on `/dev/…` from copy/paste, stale links and hand-typed URLs —
+ * and without this the root catch-all swallows them into NotFound. Lives beside
+ * the keyword table it depends on rather than in the router, where it was a
+ * regex that would silently stop matching if a keyword were ever renamed.
+ */
+export function devToDockPath(pathname: string): string {
+  return `/${DOCK_KEYWORD}/${pathname.replace(new RegExp(`^/${DEV_KEYWORD}/?`), '')}`;
+}
+
+/**
  * Build a layout URL by replacing or appending the dock portion
  * Takes the current URL and replaces everything after dock/dev keyword
  *
@@ -203,8 +253,14 @@ export function buildDockUrl(
     layoutBase += `/${encodedPointer}`;
   }
 
-  // If viewType is undefined, use base, otherwise use layoutBase
-  const urlBase = typeof viewType === 'undefined' ? base : layoutBase;
+  // The root is the base path itself — `/` at the app root, or the agent/flow
+  // prefix when one is being preserved. `base` is '' for a bare root, so it is
+  // normalized here rather than at each call site.
+  const urlBase = isRootAddress(viewType, pointer, layout, page)
+    ? base || '/'
+    : typeof viewType === 'undefined'
+      ? base
+      : layoutBase;
 
   // Filter undefined values and build query string
   if (!queryParams) return urlBase;

@@ -115,6 +115,13 @@ export interface Browseable {
    *  write view state. */
   onOpen?: () => void;
 
+  /** Fired when the pointer RESTS on the row for the host's `hoverSeenMs` —
+   *  "the user looked at this", short of opening it. Same contract as
+   *  `onOpen`: a side-effect-only usage stamp, never navigation. Re-fires on
+   *  each qualifying dwell, so make it idempotent. Honored by the TREE only —
+   *  the grid has no dwell of its own. */
+  onHoverSeen?: () => void;
+
   /** Optional hover tooltip content (e.g. a live entity summary). Rendered by
    *  both the desktop grid and the tree. In the tree it doubles as the hover
    *  PREVIEW: hovering a row shows it without opening anything. */
@@ -245,11 +252,34 @@ export interface BrowseableTreeProps {
    *  explicit collapse suppresses hover until the pointer leaves the row. */
   hoverExpandMs?: number;
 
+  /** Dwell (ms) before hovering a row fires its `onHoverSeen` — menu mode.
+   *  Undefined (the default) never fires it, so ordinary navigators stamp
+   *  nothing on hover. Mouse only, and the dwell restarts on every entry, so a
+   *  pointer sweeping down a menu stamps nothing it merely crosses. */
+  hoverSeenMs?: number;
+
   /** Rendered as the last row of EVERY level: once at the root ('') and once at
    *  the end of each expanded folder's children (its id). Its use is a build-
    *  as-you-browse toolbar — "add into THIS level" — so the parent id is handed
    *  in. Undefined ⇒ no footer, unchanged for ordinary navigators. */
   levelFooter?: (parentId: string) => ReactNode;
+
+  /**
+   * Lay the rows out mirrored — for a menu that grows against the reading
+   * direction, i.e. the bookmarks flyout hanging off the top bar's right edge.
+   *
+   * The tree was built for a panel anchored on the LEFT (the rail's flyout):
+   * glyphs lead the label, indentation grows away from the panel, the collapsed
+   * chevron points right and row previews open right — all "into open space".
+   * Pinned to the window's right edge every one of those points back at the
+   * panel, and the preview opens off-screen.
+   *
+   * Implemented as a flex-axis reversal, NOT by setting `dir`: direction is a
+   * property of the LANGUAGE, owned solely by `locale-context.tsx`, and which
+   * way a panel happens to grow is not a statement about language. Reversing
+   * also composes with an RTL locale rather than cancelling against it.
+   */
+  mirrored?: boolean;
 
   /** The currently-active pointer (from URL). Drives exact row selection and
    *  remains the navigation cursor. */

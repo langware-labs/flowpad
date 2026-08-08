@@ -1,4 +1,4 @@
-import type { FSItem } from '@sdk';
+import type { FSEntry } from '@sdk';
 import { ExternalLink, File, FilePlus, Folder, FolderPlus, Link, Play, RefreshCw, Trash2 } from 'lucide-react';
 import type { ComponentType, CSSProperties, ReactNode } from 'react';
 
@@ -13,7 +13,7 @@ export interface ItemAction {
   /** Tooltip text */
   tooltip: string;
   /** Handler called when action is clicked */
-  onClick: (item: FSItem, event: React.MouseEvent) => void | Promise<void>;
+  onClick: (item: FSEntry, event: React.MouseEvent) => void | Promise<void>;
 }
 
 /**
@@ -21,7 +21,7 @@ export interface ItemAction {
  */
 type ActionConfig = ItemAction & {
   /** Determines if action should be visible for given item */
-  isVisible?: (item: FSItem) => boolean;
+  isVisible?: (item: FSEntry) => boolean;
 };
 
 /**
@@ -42,15 +42,15 @@ export interface ItemHandlerOptions {
    * Custom icon renderer for items.
    * If not provided, uses default folder/file icons with symlink indicator.
    */
-  renderIcon?: (item: FSItem) => ReactNode;
+  renderIcon?: (item: FSEntry) => ReactNode;
 
   /**
    * Custom item content renderer.
    * If not provided, renders item.name as text.
-   * @param item - The FSItem to render
+   * @param item - The FSEntry to render
    * @param level - Nesting level (0 = root)
    */
-  renderItem?: (item: FSItem, level: number) => ReactNode;
+  renderItem?: (item: FSEntry, level: number) => ReactNode;
 
   /**
    * Array of action definitions that can appear on hover.
@@ -62,13 +62,13 @@ export interface ItemHandlerOptions {
    * Determines if an item can be selected.
    * Default: all items are selectable.
    */
-  isSelectable?: (item: FSItem) => boolean;
+  isSelectable?: (item: FSEntry) => boolean;
 
   /**
    * Returns custom selection styling for an item.
    * Default: uses 'bg-accent' class.
    */
-  getSelectionStyle?: (item: FSItem) => SelectionStyle;
+  getSelectionStyle?: (item: FSEntry) => SelectionStyle;
 }
 
 /**
@@ -118,10 +118,10 @@ export class ItemHandler {
    * Renders the icon for an item.
    * Uses custom renderer if provided, otherwise defaults to folder/file icons.
    *
-   * @param item - The FSItem to render icon for
+   * @param item - The FSEntry to render icon for
    * @returns React node representing the icon
    */
-  renderIcon(item: FSItem): ReactNode {
+  renderIcon(item: FSEntry): ReactNode {
     if (this.options.renderIcon) {
       return this.options.renderIcon(item);
     }
@@ -132,11 +132,11 @@ export class ItemHandler {
    * Renders the content/label for an item.
    * Uses custom renderer if provided, otherwise returns item.name.
    *
-   * @param item - The FSItem to render
+   * @param item - The FSEntry to render
    * @param level - Nesting level (0 = root)
    * @returns React node representing the item content
    */
-  renderItem(item: FSItem, level: number): ReactNode {
+  renderItem(item: FSEntry, level: number): ReactNode {
     if (this.options.renderItem) {
       return this.options.renderItem(item, level);
     }
@@ -157,10 +157,10 @@ export class ItemHandler {
    * Returns actions visible for a given item based on visibility predicates.
    * Filters the configured actions to only those applicable to this item.
    *
-   * @param item - The FSItem to get actions for
+   * @param item - The FSEntry to get actions for
    * @returns Array of ItemAction objects visible for this item
    */
-  getHoverActions(item: FSItem): ItemAction[] {
+  getHoverActions(item: FSEntry): ItemAction[] {
     if (!this.options.actions) {
       return [];
     }
@@ -184,10 +184,10 @@ export class ItemHandler {
   /**
    * Determines if an item can be selected.
    *
-   * @param item - The FSItem to check
+   * @param item - The FSEntry to check
    * @returns true if the item can be selected
    */
-  isSelectable(item: FSItem): boolean {
+  isSelectable(item: FSEntry): boolean {
     if (this.options.isSelectable) {
       return this.options.isSelectable(item);
     }
@@ -199,10 +199,10 @@ export class ItemHandler {
    * Returns the selection style configuration for an item.
    * Allows different items to have different selection appearances.
    *
-   * @param item - The FSItem to get selection style for
+   * @param item - The FSEntry to get selection style for
    * @returns SelectionStyle object with className and/or style
    */
-  getSelectionStyle(item: FSItem): SelectionStyle {
+  getSelectionStyle(item: FSEntry): SelectionStyle {
     if (this.options.getSelectionStyle) {
       return this.options.getSelectionStyle(item);
     }
@@ -217,7 +217,7 @@ export class ItemHandler {
   /**
    * Default icon renderer - folder/file with symlink indicator
    */
-  private defaultRenderIcon(item: FSItem): ReactNode {
+  private defaultRenderIcon(item: FSEntry): ReactNode {
     return (
       <div className="relative flex items-center">
         {item.is_dir ? (
@@ -240,7 +240,7 @@ export class ItemHandler {
    *
    * @param onClick - Handler called when action is clicked
    */
-  static createFileAction(onClick: (item: FSItem, e: React.MouseEvent) => void | Promise<void>): ActionConfig {
+  static createFileAction(onClick: (item: FSEntry, e: React.MouseEvent) => void | Promise<void>): ActionConfig {
     return {
       name: 'create-file',
       icon: FilePlus,
@@ -256,7 +256,7 @@ export class ItemHandler {
    *
    * @param onClick - Handler called when action is clicked
    */
-  static createFolderAction(onClick: (item: FSItem, e: React.MouseEvent) => void | Promise<void>): ActionConfig {
+  static createFolderAction(onClick: (item: FSEntry, e: React.MouseEvent) => void | Promise<void>): ActionConfig {
     return {
       name: 'create-folder',
       icon: FolderPlus,
@@ -272,7 +272,7 @@ export class ItemHandler {
    *
    * @param onClick - Handler called when action is clicked
    */
-  static deleteAction(onClick: (item: FSItem, e: React.MouseEvent) => void | Promise<void>): ActionConfig {
+  static deleteAction(onClick: (item: FSEntry, e: React.MouseEvent) => void | Promise<void>): ActionConfig {
     return {
       name: 'delete',
       icon: Trash2,
@@ -288,7 +288,7 @@ export class ItemHandler {
    *
    * @param onClick - Handler called when action is clicked
    */
-  static refreshAction(onClick: (item: FSItem, e: React.MouseEvent) => void | Promise<void>): ActionConfig {
+  static refreshAction(onClick: (item: FSEntry, e: React.MouseEvent) => void | Promise<void>): ActionConfig {
     return {
       name: 'refresh',
       icon: RefreshCw,
@@ -304,7 +304,7 @@ export class ItemHandler {
    *
    * @param onClick - Handler called when action is clicked
    */
-  static openAction(onClick: (item: FSItem, e: React.MouseEvent) => void | Promise<void>): ActionConfig {
+  static openAction(onClick: (item: FSEntry, e: React.MouseEvent) => void | Promise<void>): ActionConfig {
     return {
       name: 'open',
       icon: ExternalLink,
@@ -320,7 +320,7 @@ export class ItemHandler {
    *
    * @param onClick - Handler called when action is clicked
    */
-  static runSkillAction(onClick: (item: FSItem, e: React.MouseEvent) => void | Promise<void>): ActionConfig {
+  static runSkillAction(onClick: (item: FSEntry, e: React.MouseEvent) => void | Promise<void>): ActionConfig {
     return {
       name: 'run-skill',
       icon: Play,

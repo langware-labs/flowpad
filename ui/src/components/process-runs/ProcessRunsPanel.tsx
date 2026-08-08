@@ -53,7 +53,8 @@ function runLabel(entry: ProcessEntry, n: number): string {
 
 interface ProcessRunsPanelProps {
   entries: ProcessEntry[];
-  currentEntry: ProcessEntry | null;
+  /** The live run to highlight, when the host tracks one. */
+  currentEntry?: ProcessEntry | null;
   /** Called when a row is clicked. Receives the process id. */
   onSelectRun?: (processId: string) => void;
 }

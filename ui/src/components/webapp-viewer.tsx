@@ -1,5 +1,6 @@
 import { ServiceStatusLed } from '@src/components/machine-overview/service-status-led';
-import PersistentIframe, { PersistentIframeHandle } from '@src/components/persistent-iframe';
+import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
+import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { WebappTerminalPanel } from '@src/components/webapp-viewer/webapp-terminal-panel';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { Button } from '@src/components/ui/button';
@@ -11,22 +12,20 @@ import { ViewType, WebappSubview } from '@sdk';
 import { useContext as useSdkContext } from '@sdk/react/hooks';
 import { hasElectronDisplayCapture } from '@src/components/display-toolbar/capture-region';
 import { ExternalLink, ImagePlus, RefreshCw, Terminal } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
 
 interface WebappViewerProps {
-  onWebappErrorRetry: (retryMessage: string) => void;
   onAnnotate?: (target: HTMLElement) => void;
 }
 
-export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry, onAnnotate }) => {
+export const WebappViewer: React.FC<WebappViewerProps> = ({ onAnnotate }) => {
   const { t } = useLingui();
   const { flow } = useAgentContext();
   const { isDesktop } = useSdkContext();
   const { currentContext } = useViewerStore();
   const { navigation, currentDock } = useDockNavigation();
-  const [webAppError, setWebAppError] = useState<string | undefined>();
   const iframeRef = useRef<PersistentIframeHandle>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -60,19 +59,9 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry, 
 
   const webAppConfig = useProcessWebApp(flow, webAppPort);
 
-  const onWebAppError = useCallback((error: Error) => {
-    setWebAppError(error.message);
-  }, []);
-
-  useEffect(() => {
-    setWebAppError('');
-  }, [webAppConfig.cacheKey]);
-
-  const handleErrorRetry = useCallback(() => {
-    const retryMessage =
-      t`The web app is not working, please try to fix it.` + (webAppError ? `\n\nError: ${webAppError}` : '');
-    onWebappErrorRetry(retryMessage);
-  }, [t, webAppError, onWebappErrorRetry]);
+  // Failure handling now lives in WebappDisplay: it diagnoses the app through
+  // the backend probe and runs the repair agent itself, so this viewer no longer
+  // has to route a generic "it's broken" prompt back up to the chat.
 
   const handleRefresh = useCallback(() => {
     iframeRef.current?.refresh();
@@ -183,12 +172,12 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry, 
         {/* Main content area - iframe or placeholder */}
         <div className={`relative w-full ${showPanel ? 'h-[60%]' : 'h-full'}`}>
           {hasWebApp ? (
-            <PersistentIframe
+            <WebappDisplay
               ref={iframeRef}
+              processId={flow?.id}
               src={webAppConfig.host}
+              port={webAppPort != null ? String(webAppPort) : null}
               cacheKey={webAppConfig.cacheKey}
-              onErrorRetry={handleErrorRetry}
-              onError={onWebAppError}
             />
           ) : (
             <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>No web app available</Trans></div>

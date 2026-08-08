@@ -1,9 +1,9 @@
 import type { AgenticProcess } from '@sdk';
 
-/** Epoch-ms from an epoch number or an ISO string, else 0. */
-export function toMs(value: number | string | null | undefined): number {
+/** Epoch-ms from an epoch number, a Date, or an ISO string, else 0. */
+export function toMs(value: number | string | Date | null | undefined): number {
   if (typeof value === 'number') return value;
-  const n = typeof value === 'string' ? Date.parse(value) : NaN;
+  const n = value instanceof Date ? value.getTime() : typeof value === 'string' ? Date.parse(value) : NaN;
   return Number.isNaN(n) ? 0 : n;
 }
 

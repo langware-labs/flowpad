@@ -2,7 +2,8 @@ import { WebappViewer } from '@src/components/webapp-viewer';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
-import PersistentIframe, { PersistentIframeHandle } from '@src/components/persistent-iframe';
+import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
+import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { DisplayToolbar, WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { captureElementAsImageFile } from '@src/components/display-toolbar/capture-region';
 import { annotateImage } from '@src/components/image-annotator/image-annotator-store';
@@ -20,6 +21,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { shellIdFromShowTarget } from '@src/navigation/shell-show-target';
 import { ViewMode } from '@src/contexts/view-mode-context';
+import { tagAttrs } from '@src/tags/tag-attrs';
 import { WorkspaceChildStrip } from './workspace-child-strip';
 import { useProcessSurface } from '@src/components/terminal/interactive-terminal/use-process-surface';
 import { ContentPanel } from './content-panel/content-panel';
@@ -222,7 +224,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     setCurrentContext({ viewerOptions: focus.port ? { port: focus.port } : {} });
   }, [shown, focus.viewType, focus.port, setCurrentContext]);
 
-  const onRetry = useCallback((msg: string) => void dataContext.agenticProcess?.prompt(msg), []);
 
   // Webapp host — resolved from the shown port (no artifact needed) so the
   // display can mount a BARE iframe under the two-tier toolbar instead of the
@@ -330,7 +331,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     // which carries its own chrome — left unwrapped.
     const preview = (
       <WebappViewer
-        onWebappErrorRetry={onRetry}
         onAnnotate={(target) => {
           void handleAnnotateDisplay(
             target,
@@ -410,7 +410,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
                 />
               }
             >
-              <PersistentIframe
+              <WebappDisplay
                 // Keyed by src so a runtime switch remounts the wrapper.
                 // Changing src in place leaves BOTH the outgoing and incoming
                 // frames parked at opacity-0 — the registry activates a
@@ -420,10 +420,12 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
                 // port-only path below effectively never does.
                 key={appDisplay.src}
                 ref={appFrameRef}
+                processId={activeProcess?.id}
                 testId="vibe-app-frame"
                 src={appDisplay.src}
+                port={appDisplay.port}
                 cacheKey={showNonce + refreshStamp}
-                onErrorRetry={() => onRetry(t`The web app is not working, please try to fix it.`)}
+                targetTypeId={appDisplay.microApp?.typeId?.toString() ?? null}
               />
             </DisplayToolbar>
           );
@@ -446,15 +448,16 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
                 />
               }
             >
-              <PersistentIframe
+              <WebappDisplay
                 ref={webappFrameRef}
+                processId={activeProcess?.id}
                 testId="vibe-webapp-frame"
                 src={webAppConfig.host}
+                port={webappPort}
                 // Reload on each re-show (same-port stale guard) AND on the
                 // agent's turn-end (rebuild picked up) — the registry keys the
                 // iframe by src, so a changing cacheKey is what forces a reload.
                 cacheKey={showNonce + refreshStamp}
-                onErrorRetry={() => onRetry(t`The web app is not working, please try to fix it.`)}
               />
             </DisplayToolbar>
           );
@@ -522,7 +525,6 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     focus.viewType,
     focus.path,
     focus.port,
-    onRetry,
     webAppConfig,
     webappPort,
     appDisplay,
@@ -540,7 +542,9 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={64} minSize={45}>
-        <div className="flex h-full flex-col">
+        {/* Tagged so a journey can point at the half of the workspace that
+            disappears the moment Vibe is left — the display and its tab strip. */}
+        <div className="flex h-full flex-col" {...tagAttrs('VibeDisplay', 'label')}>
           <WorkspaceChildStrip
             processTab={session.processTab}
             processDock={session.processDock}

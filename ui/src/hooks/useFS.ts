@@ -1,6 +1,5 @@
 import type { BrowseCache, ContentCache } from '@sdk';
-import { dataManager, fsManager, fsStore, type FSItem, type TypeId } from '@sdk';
-import { useEffect } from 'react';
+import { dataManager, fsManager, fsStore, type FSEntry, type TypeId } from '@sdk';
 import { notify } from '@src/notifications';
 import { useFSStore } from './useFSStore';
 
@@ -34,31 +33,9 @@ import { useFSStore } from './useFSStore';
  * ```
  */
 export function useFS(typeid?: TypeId) {
-  // Subscribe to WebSocket updates for this entity
-  useEffect(() => {
-    if (!typeid) {
-      return undefined;
-    }
-
-    // Check if dataManager and subscribe method are available
-    if (!dataManager || typeof dataManager.subscribe !== 'function') {
-      console.warn('dataManager.subscribe not available, WebSocket updates disabled');
-      return undefined;
-    }
-
-    const unsubscribe = dataManager.subscribe<FSItem>(typeid, (updatedItem) => {
-      // When a file changes, invalidate its cache
-      if (updatedItem && updatedItem.relativePath) {
-        fsStore.getState().invalidate(typeid, updatedItem.relativePath, 'all');
-
-        // Also invalidate parent directory exists cache
-        const parentPath = updatedItem.relativePath.substring(0, updatedItem.relativePath.lastIndexOf('/')) || '/';
-        fsStore.getState().invalidate(typeid, parentPath, 'exists');
-      }
-    });
-
-    return unsubscribe;
-  }, [typeid]);
+  // fs entries are transient values now (no fs_item entity rows), so there are
+  // no per-file WebSocket updates to subscribe to. Cache invalidation happens on
+  // explicit fs mutations through fsStore.
 
   // Use reactive Zustand selectors for content, exists, and browse
   const contentCache = useFSStore((state) => {
@@ -196,15 +173,15 @@ export function useFS(typeid?: TypeId) {
     /**
      * Fetch file metadata (fetches parent directory)
      * @param path - File path to fetch
-     * @returns FSItem or null if not found
+     * @returns FSEntry or null if not found
      */
-    fetch: async (path: string): Promise<FSItem | null> => {
+    fetch: async (path: string): Promise<FSEntry | null> => {
       const parentPath = path.substring(0, path.lastIndexOf('/')) || '/';
       const filename = path.substring(path.lastIndexOf('/') + 1);
 
       try {
         const browseResult = await fsManager.listDirectory(typeid, parentPath);
-        return browseResult?.items.find((item: FSItem) => item.name === filename) || null;
+        return browseResult?.items.find((item: FSEntry) => item.name === filename) || null;
       } catch {
         return null;
       }

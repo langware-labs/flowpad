@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { HighlightBeacon } from '@src/components/wiki-tip/HighlightBeacon';
 import { HIGHLIGHT_ENTER_MS, useHighlight, type HighlightPhase } from '@src/components/wiki-tip/highlight';
+import { tagSelector, useTaggedDomChanges } from './use-tagged-dom-changes';
 
 /** The standard highlight treatment, applied generically (same classes the
  *  wiki-tip components use — see docs/wikitip.md). */
@@ -37,63 +38,40 @@ export function TagHighlightObserver() {
   const [phase, setPhase] = useState<HighlightPhase>('idle');
 
   // Track the LIVE set of tagged elements for the whole highlight window.
-  useEffect(() => {
+  // Hoisted out of the effect so the shared DOM watch below can call the same
+  // function the cold-boot poll does — one definition of "re-read the set".
+  const sync = useCallback(() => {
     if (!word) {
       setEls([]);
       return;
     }
-    // CSS.escape is absent in some DOM environments (jsdom) — quote-escape fallback.
-    const esc =
-      typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
-        ? CSS.escape(word)
-        : word.replace(/["\\]/g, '\\$&');
-    const findAll = () => Array.from(document.querySelectorAll<HTMLElement>(`[data-tag="${esc}"]`));
-    let interval = 0;
-    const sync = () =>
-      setEls((prev) => {
-        const next = findAll();
-        // The cold-boot poll has done its job once anything is found; from
-        // here the (filtered) MutationObserver alone tracks replacements.
-        if (next.length > 0 && interval) {
-          window.clearInterval(interval);
-          interval = 0;
-        }
-        // Keep the previous array identity when the set is unchanged, so the
-        // effects below don't churn on every mutation/tick.
-        if (prev.length === next.length && prev.every((el, i) => el === next[i])) return prev;
-        return next;
-      });
-    sync();
-    // The highlight is PERSISTENT, so this observer lives for the whole step —
-    // it must not cost a full-tree query per unrelated mutation (streaming
-    // chat, live process output). Two dampeners: only mutations whose
-    // added/removed nodes are (or contain) a tagged element trigger a
-    // re-sync, and bursts coalesce into one query per animation frame.
-    let rafId = 0;
-    const touchesTag = (records: MutationRecord[]) =>
-      records.some((r) =>
-        [...r.addedNodes, ...r.removedNodes].some(
-          (n) => n instanceof HTMLElement && (n.dataset.tag !== undefined || n.querySelector('[data-tag]') !== null),
-        ),
-      );
-    const observer = new MutationObserver((records) => {
-      if (!touchesTag(records)) return;
-      if (rafId) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = 0;
-        sync();
-      });
+    setEls((prev) => {
+      const next = Array.from(document.querySelectorAll<HTMLElement>(tagSelector(word)));
+      // Keep the previous array identity when the set is unchanged, so the
+      // effects below don't churn on every mutation/tick.
+      if (prev.length === next.length && prev.every((el, i) => el === next[i])) return prev;
+      return next;
     });
-    observer.observe(document.body, { childList: true, subtree: true });
-    // Cold-boot only: render churn during app boot once slipped past the
-    // observer, so poll until the first hit — sync() self-cancels it.
-    interval = window.setInterval(sync, 500);
-    return () => {
-      observer.disconnect();
-      if (rafId) cancelAnimationFrame(rafId);
-      if (interval) window.clearInterval(interval);
-    };
   }, [word]);
+
+  useEffect(() => {
+    sync();
+    if (!word) return;
+    // Cold-boot only: render churn during app boot once slipped past the
+    // observer, so poll until the first hit. The interval clears itself once
+    // anything is found; from there the shared observer alone tracks
+    // replacements.
+    const interval = window.setInterval(() => {
+      sync();
+      if (document.querySelector(tagSelector(word))) window.clearInterval(interval);
+    }, 500);
+    return () => window.clearInterval(interval);
+  }, [word, sync]);
+
+  // The tagged-DOM watch is shared (`useTaggedDomChanges`) so the ring and a
+  // journey's `element` condition cannot drift on how it is dampened. The
+  // highlight is PERSISTENT, so it stays armed for the whole step.
+  useTaggedDomChanges(sync, !!word);
 
   // Lifecycle: enter (brief attention pulse) → linger — and STAY until the
   // word clears or the element set changes (which replays the entry pulse).

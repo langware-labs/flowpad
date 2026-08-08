@@ -24,6 +24,12 @@ export interface EntityActionsToolbarProps {
   variant?: Variant;
   /** Slot for caller-supplied extra trailing actions (e.g. <ExportEntityButton>). */
   trailing?: React.ReactNode;
+  /**
+   * Drop the favorite star. For a host that renders its OWN star because it
+   * needs to wrap it — the navigation bar hangs the bookmarks menu off it — so
+   * that there is exactly one star rather than two side by side.
+   */
+  hideFavorite?: boolean;
   onShared?: () => void;
   className?: string;
 }
@@ -43,6 +49,7 @@ export function EntityActionsToolbar({
   favoriteIcon,
   variant = 'compact',
   trailing,
+  hideFavorite = false,
   onShared,
   className,
 }: EntityActionsToolbarProps) {
@@ -78,14 +85,16 @@ export function EntityActionsToolbar({
         testId="entity-actions-share"
       />
 
-      <FavoriteStar
-        entityType={typeId.type}
-        entityId={typeId.id}
-        title={favoriteTitle}
-        icon={favoriteIcon}
-        size={variant === 'prominent' ? 16 : 14}
-        className={variant === 'compact' ? `${compactEntityActionClassName} p-0` : undefined}
-      />
+      {!hideFavorite && (
+        <FavoriteStar
+          entityType={typeId.type}
+          entityId={typeId.id}
+          title={favoriteTitle}
+          icon={favoriteIcon}
+          size={variant === 'prominent' ? 16 : 14}
+          className={variant === 'compact' ? `${compactEntityActionClassName} p-0` : undefined}
+        />
+      )}
 
       {trailing}
 

@@ -46,7 +46,11 @@ describe('file-op cross-link — end-to-end via real Claude Write tool', () => {
   it(
     'prompt → Claude writes hello.md → file.write event + Docs ↔ AP cross-link',
     async (context: any) => {
-      const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'file-op-e2e-'));
+      // realpath: on macOS `os.tmpdir()` is `/var/...`, a symlink to
+      // `/private/var/...`. The Write tool reports the CANONICAL path, so an
+      // un-resolved expectation compares two spellings of the same file and
+      // fails on the spelling, not on the behaviour.
+      const workdir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'file-op-e2e-')));
       const targetPath = path.join(workdir, 'hello.md');
 
       // Pre-create the Markdown (Docs) entity so cross_link_file_to_process

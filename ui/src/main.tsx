@@ -10,6 +10,7 @@ import { RouterProvider } from 'react-router';
 import '@src/contexts/dev-mode-context';
 import '@src/contexts/view-mode-context';
 import { initLocale } from '@src/contexts/locale-context';
+import { getHistoryPosition } from '@src/navigation/history-position-store';
 import { LocaleProviders } from '@src/contexts/LocaleProviders';
 import '@src/tabs/agentic-process-tab-adapter';
 import { router } from './router';
@@ -31,23 +32,30 @@ function bindMouseNavButtons() {
   // Runs before bootstrap, so it asks the shell directly rather than reading
   // `runtimeKind` — this is the same probe the SDK sends to the server.
   if (!isElectronShell()) return;
+  // These stay on `window.history` rather than routing through
+  // NavigationActions: this binds before React mounts, and the browser's own
+  // popstate already reaches react-router — which is what keeps the nav bar's
+  // buttons in sync with a mouse click. The position store is consulted only to
+  // guard the edges and to say WHY nothing happened in the trace.
   window.addEventListener('mouseup', e => {
     if (e.button === 3) {
       e.preventDefault();
-      toplog.log(
-        'navigation',
-        'mouse X1 (back) → history.back()',
-        { url: location.pathname + location.search, historyLen: window.history.length },
-      );
-      window.history.back();
+      const { canGoBack, idx } = getHistoryPosition();
+      toplog.log('navigation', 'mouse X1 (back)', {
+        canGoBack,
+        idx,
+        url: location.pathname + location.search,
+      });
+      if (canGoBack) window.history.back();
     } else if (e.button === 4) {
       e.preventDefault();
-      toplog.log(
-        'navigation',
-        'mouse X2 (forward) → history.forward()',
-        { url: location.pathname + location.search, historyLen: window.history.length },
-      );
-      window.history.forward();
+      const { canGoForward, idx } = getHistoryPosition();
+      toplog.log('navigation', 'mouse X2 (forward)', {
+        canGoForward,
+        idx,
+        url: location.pathname + location.search,
+      });
+      if (canGoForward) window.history.forward();
     }
   });
 }

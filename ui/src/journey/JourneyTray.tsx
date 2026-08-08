@@ -1,5 +1,5 @@
-import { Check, ChevronDown, ChevronUp, Circle, CircleDot, FileCheck2, GitBranch, KeyRound, Link2, Play, RotateCcw, Terminal, Type, Wrench, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronDown, ChevronUp, Circle, CircleDot, Play, RotateCcw, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Confetti from 'react-confetti';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -10,31 +10,12 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { animateMinimizeToElement } from '@src/lib/minimize-to-element';
 import { markJourneyDismissed } from './journey-dismissed';
 import { JourneyStepLive } from './JourneyStepLive';
-import { groupSteps, useBusyRun, type JourneyStep, type UseJourneyResult } from './use-journey';
+import type { JourneyStep } from '@sdk';
+import { useBusyRun, type UseJourneyResult } from './use-journey';
 import type { JourneyManagerView } from './useJourneyManager';
 
 /** Per-act-kind button face; unknown kinds fall back to `fill`. */
-const ACT_FACES: Record<string, { Icon: typeof Type; label: React.ReactNode }> = {
-  setup_capability: { Icon: Wrench, label: <Trans>Set up</Trans> },
-  oauth_connect: { Icon: Link2, label: <Trans>Connect</Trans> },
-  device_login: { Icon: KeyRound, label: <Trans>Log in</Trans> },
-  fill: { Icon: Type, label: <Trans>Fill text</Trans> },
-  git_check: { Icon: GitBranch, label: <Trans>Check</Trans> },
-  open_terminal: { Icon: Terminal, label: <Trans>Open terminal</Trans> },
-  run: { Icon: Terminal, label: <Trans>Run it</Trans> },
-  fs_check: { Icon: FileCheck2, label: <Trans>Verify</Trans> },
-};
-
-/** One lit act button per step — label/icon follow the act kind. */
-function ActButtonContent({ kind }: { kind: string }) {
-  const { Icon, label } = ACT_FACES[kind] ?? ACT_FACES.fill;
-  return (
-    <>
-      <Icon className="h-3 w-3" />
-      {label}
-    </>
-  );
-}
+const NO_DONE_IDS: ReadonlySet<string> = new Set<string>();
 
 const INDIGO = '#5b5bf0';
 const AMBER = '#f6a723';
@@ -98,13 +79,10 @@ function elementSize(el: HTMLElement | null): { w: number; h: number } {
  */
 export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: JourneyManagerView }) {
   const { t } = useLingui();
-  const { journey, journal, steps, currentStep, cursorIndex, refresh } = state;
+  const { journey, journal, graph, currentStep, cursorIndex, refresh } = state;
   const { navigation } = useDockNavigation();
   const { busy, run } = useBusyRun(refresh);
-  const doneIds = useMemo(
-    () => new Set((journal?.entries ?? []).map((e) => e.node_id)),
-    [journal?.entries],
-  );
+  const doneIds = journal?.doneNodeIds() ?? NO_DONE_IDS;
 
   // ── position: default bottom-left; user-dragged position persists ──
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -211,8 +189,12 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
 
   if (!journey || typeof document === 'undefined') return null;
 
-  const complete = journal?.status === 'complete';
-  const stepsLeft = journal?.steps_left ?? steps.length;
+  // The URL is the position; the journal is a record. A step named by the URL is
+  // shown even when an earlier run finished — otherwise re-opening
+  // `?journeyStep=2` on a completed journey rendered the finale instead of the
+  // step you asked for. "Completed" is the state of having no step to be on.
+  const complete = !currentStep && journal?.status === 'complete';
+  const stepsLeft = graph.length - Math.max(cursorIndex, 0);
 
   // Portal to document.body (the FloatingChatWindow pattern): the left rail is
   // also z-50, and inside the app tree the rail comes later in the DOM — a tie
@@ -284,9 +266,9 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
       </div>
 
       <ul className="flex max-h-64 flex-col gap-0.5 overflow-y-auto overscroll-contain p-2">
-        {groupSteps(steps).map((section) => {
+        {graph.sections.map((section) => {
           const isDone = (i: number) =>
-            complete || doneIds.has(steps[i].node_id) || (cursorIndex >= 0 && i < cursorIndex);
+            complete || doneIds.has(graph.steps[i].node_id) || (cursorIndex >= 0 && i < cursorIndex);
           const renderStep = (step: JourneyStep, i: number, indent: boolean) => {
             const done = isDone(i);
             const current = !complete && i === cursorIndex;
@@ -333,7 +315,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
           const rows = expanded ? section.indices : section.indices.filter((i) => i === cursorIndex);
           if (!rows.length) return null;
           if (section.group === null) {
-            return rows.map((i) => renderStep(steps[i], i, false));
+            return rows.map((i) => renderStep(graph.steps[i], i, false));
           }
           const groupDone = section.indices.every(isDone);
           const groupCurrent = !complete && section.indices.includes(cursorIndex);
@@ -354,7 +336,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
                 <span className={groupCurrent ? 'text-foreground' : 'text-muted-foreground'}>{section.group}</span>
               </div>
               <ul className="flex flex-col gap-0.5">
-                {rows.map((i) => renderStep(steps[i], i, true))}
+                {rows.map((i) => renderStep(graph.steps[i], i, true))}
               </ul>
             </li>
           );
@@ -362,12 +344,12 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
       </ul>
 
       <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
-        {!journal && (
+        {!currentStep && !complete && (
           <Button
             type="button"
             size="sm"
             disabled={busy}
-            onClick={() => run(() => journey.launch())}
+            onClick={() => run(() => journey.launch(), () => view?.start())}
             className="h-7 gap-1.5 px-3 text-xs text-white hover:brightness-110"
             style={{ backgroundColor: INDIGO }}
             data-testid="journey-tray-start"
@@ -376,48 +358,43 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
             <Trans>Start</Trans>
           </Button>
         )}
-        {journal && !complete && currentStep && (
+        {!complete && currentStep && (
           <>
-            {/* The step's own act comes FIRST and replaces Continue while it is
-                pending: one lit button at a time, so the tray always shows a
-                single obvious next move ("Fill text" → then "Next"). */}
-            {view?.actPending ? (
-              <Button
-                type="button"
-                size="sm"
-                disabled={busy}
-                onClick={view.doAct}
-                className="h-7 gap-1.5 px-3 text-xs text-white hover:brightness-110 animate-pulse"
-                style={{ backgroundColor: INDIGO }}
-                data-testid="journey-tray-act"
-              >
-                <ActButtonContent kind={currentStep.act?.kind ?? 'fill'} />
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                size="sm"
-                disabled={busy}
-                onClick={() => run(() => journey.advance(currentStep.node_id, 'done'))}
-                className={cn(
-                  'h-7 px-3 text-xs text-white hover:brightness-110',
-                  // A `manual` await keeps Next dark until its signal lands, then
-                  // lights it — the step's completion is visible, not guessed.
-                  currentStep.await?.manual && !view?.armed && 'opacity-60',
-                  currentStep.await?.manual && view?.armed && 'animate-pulse',
-                )}
-                style={{ backgroundColor: INDIGO }}
-                data-testid="journey-tray-continue"
-              >
-                {currentStep.await?.manual ? <Trans>Next</Trans> : <Trans>Continue</Trans>}
-              </Button>
-            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy || !view?.canGoBack}
+              onClick={() => view?.back()}
+              className="h-7 px-3 text-xs"
+              data-testid="journey-tray-back"
+            >
+              <Trans>Back</Trans>
+            </Button>
+            {/* ONE mover. Next runs whatever this step does and loads the next
+                one; if the step has a gate, the press waits for it and then
+                lands. Nothing else advances a journey — conditions used to, and
+                a walkthrough with two drivers is exactly what felt flaky. */}
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={() => view?.next()}
+              className={cn(
+                'h-7 px-3 text-xs text-white hover:brightness-110',
+                view?.waiting && 'opacity-60',
+              )}
+              style={{ backgroundColor: INDIGO }}
+              data-testid="journey-tray-continue"
+            >
+              {view?.waiting ? <Trans>Waiting…</Trans> : <Trans>Next</Trans>}
+            </Button>
             <Button
               type="button"
               size="sm"
               variant="outline"
               disabled={busy}
-              onClick={() => run(() => journey.advance(currentStep.node_id, 'skipped'))}
+              onClick={() => view?.skip()}
               className="h-7 px-3 text-xs"
               data-testid="journey-tray-skip"
             >
@@ -433,7 +410,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
             variant="ghost"
             disabled={busy}
             title={t`Restart this journey`}
-            onClick={() => run(() => journey.restart())}
+            onClick={() => run(() => journey.restart(), () => view?.start())}
             className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
             data-testid="journey-tray-restart"
           >

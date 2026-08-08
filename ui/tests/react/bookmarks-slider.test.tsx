@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Bookmark } from '@sdk';
 import { allScope, filterScope, projectScope, userScope } from '@src/lib/scope-filter';
 import { bookmarkInScope } from '@src/lib/bookmark-scope';
-import { LeftSlider } from '@src/components/ui/left-slider';
+import { AnchoredMenu } from '@src/components/ui/anchored-menu';
 
 // ── Part 2: scope predicate over favorites ───────────────────────────────────
 describe('bookmarkInScope', () => {
@@ -44,15 +44,15 @@ describe('bookmarkInScope', () => {
   });
 });
 
-// ── Part 1: LeftSlider primitive ─────────────────────────────────────────────
-describe('LeftSlider', () => {
+// ── Part 1: AnchoredMenu primitive ─────────────────────────────────────────────
+describe('AnchoredMenu', () => {
   afterEach(cleanup);
 
   it('renders title, headerRight, and children when open', () => {
     render(
-      <LeftSlider open onOpenChange={() => {}} title="My Slider" headerRight={<div data-testid="hdr" />}>
+      <AnchoredMenu open onOpenChange={() => {}} title="My Slider" headerRight={<div data-testid="hdr" />}>
         <div data-testid="body" />
-      </LeftSlider>,
+      </AnchoredMenu>,
     );
     expect(screen.getByText('My Slider')).toBeInTheDocument();
     expect(screen.getByTestId('hdr')).toBeInTheDocument();
@@ -61,9 +61,9 @@ describe('LeftSlider', () => {
 
   it('renders nothing when closed', () => {
     render(
-      <LeftSlider open={false} onOpenChange={() => {}} title="My Slider">
+      <AnchoredMenu open={false} onOpenChange={() => {}} title="My Slider">
         <div data-testid="body" />
-      </LeftSlider>,
+      </AnchoredMenu>,
     );
     expect(screen.queryByTestId('body')).not.toBeInTheDocument();
   });
@@ -71,9 +71,9 @@ describe('LeftSlider', () => {
   it('closes on Escape', () => {
     const onOpenChange = vi.fn();
     render(
-      <LeftSlider open onOpenChange={onOpenChange} title="My Slider">
+      <AnchoredMenu open onOpenChange={onOpenChange} title="My Slider">
         <div data-testid="body" />
-      </LeftSlider>,
+      </AnchoredMenu>,
     );
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -82,9 +82,9 @@ describe('LeftSlider', () => {
   it('closes on the header close button', () => {
     const onOpenChange = vi.fn();
     render(
-      <LeftSlider open onOpenChange={onOpenChange} title="My Slider">
+      <AnchoredMenu open onOpenChange={onOpenChange} title="My Slider">
         <div data-testid="body" />
-      </LeftSlider>,
+      </AnchoredMenu>,
     );
     fireEvent.click(screen.getByLabelText('Close'));
     expect(onOpenChange).toHaveBeenCalledWith(false);

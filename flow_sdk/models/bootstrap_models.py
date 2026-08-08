@@ -90,6 +90,22 @@ class LmInfo(BaseModel):
     llm_providers: List[str] = []
     installed_agents: List[str] = []  # List of agent names (e.g., "Claude Code", "Cursor")
     cloud_login_available: bool = False  # Whether cloud login is available
+    # WHO this instance is signed in as: ``{status, user, reason}``, the same block
+    # ``GET /api/v1/cloud/status`` returns, from the same builder
+    # (``cloud_client.auth_state.login_block``).
+    #
+    # `cloud_login_available` above answers a different question — "could you log
+    # in from here" — and the client used to fall back to it, applying a
+    # logged-in STATUS with a null USER. So `dataContext.cloudUser` stayed empty
+    # and the UI rendered `cloudUser ?? localUser`: on a cloud sandbox, the
+    # template's own "E2B Local" account instead of the person who opened it.
+    # The identity only appeared once an async /cloud/status landed, which on a
+    # cold resume loses the race against a still-waking backend.
+    #
+    # Untyped `dict` rather than a model: it is a passthrough of an existing wire
+    # shape shared with another route, and modelling it here would create a second
+    # definition to keep in step with that one.
+    login: Optional[dict] = None
     cloud_url: Optional[str] = None  # FLOWPAD_HUB_URL — shown in login button tooltip
     # Hub browser application origin. Distinct from ``cloud_url``, whose
     # historical wire value is the API base ending in ``/api/v1``.

@@ -106,7 +106,6 @@ def _detach_git_history(repo_root: Path) -> None:
     idempotent by design, since setup may be retried.
     """
     import shutil  # noqa: PLC0415
-    import subprocess  # noqa: PLC0415
 
     root = Path(repo_root).resolve()
     git_dir = root / ".git"
@@ -120,6 +119,8 @@ def _detach_git_history(repo_root: Path) -> None:
     # A fresh empty repo so the customer's first commit is theirs. No commit is
     # made — that needs a configured identity, and failing setup on a missing
     # ``user.email`` would be absurd.
+    import subprocess  # noqa: PLC0415
+
     subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True, timeout=30, check=False)
 
 
@@ -518,6 +519,7 @@ class Project(Entity):
                         "locator": locator,
                         "sod_store": entry.get("sod_store") or "",
                         "scope": entry.get("scope") or scope,
+                        "description": entry.get("description") or "",
                     }
                 )
         return out
@@ -856,6 +858,7 @@ class Project(Entity):
             name = entry.get("name") or ""
             env_var = entry.get("env_var") or ""
             sod_store = entry.get("sod_store") or ""
+            description = entry.get("description") or ""
             if not locator or not name or not env_var:
                 secret = await SecretOrigin.get_by_id(tid.id)
                 if secret is None:
@@ -864,6 +867,7 @@ class Project(Entity):
                 name = secret.name or ""
                 env_var = secret.env_var
                 sod_store = secret.effective_sod_store()
+                description = description or secret.description or ""
             # EVERY declaration travels, including ``local``. A receiver has to
             # SEE a declaration in order to be told they are missing its value —
             # dropping it would silently hide the secret the project needs. What
@@ -880,6 +884,9 @@ class Project(Entity):
                 "kind": locator.get("kind"),
                 "locator": locator,
                 "sod_store": sod_store,
+                # Travels: a receiver needs to know what the value they are being
+                # asked to provide is actually for.
+                "description": description,
             }
         return payload
 
@@ -1366,6 +1373,7 @@ class Project(Entity):
         sod_store: str = "",
         sod_name: str | None = None,
         secret_id: str | None = None,
+        description: str | None = None,
     ) -> "ApiResponse":
         """Attach a value-free secret pointer to this project and write its
         reference json under ``assets/sodot/<name>.json`` (indexed + travels)."""
@@ -1414,7 +1422,12 @@ class Project(Entity):
         # The name is the key — pointing it at a different provider is an edit,
         # not a second secret.
         secret = await SecretOrigin.mint_for(
-            project_id=str(self.id), env_var=env_var, locator=loc, name=name, sod_store=sod_store
+            project_id=str(self.id),
+            env_var=env_var,
+            locator=loc,
+            name=name,
+            sod_store=sod_store,
+            description=description,
         )
         data = secret.context_data(scope=scope)
         if scope == "shared":
@@ -1506,6 +1519,7 @@ class Project(Entity):
                     "env_var": env_var,
                     "kind": loc.kind,
                     "scope": entry.get("scope"),
+                    "description": entry.get("description") or "",
                     "sod_store": entry.get("sod_store") or hint.get("sod_store"),
                     "status": "available" if found_in else "missing",
                     "found_in": found_in,

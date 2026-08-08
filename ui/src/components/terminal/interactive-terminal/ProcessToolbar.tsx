@@ -12,7 +12,6 @@ import { AgenticProcess, copyToClipboard, dataContext, dataManager, openTerminal
 import { hasWorkerStarted, isProcessRunning, WorkerStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
-import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { ExportEntityButton } from '@src/components/entity-actions/ExportEntityButton';
 import { AssetManagerButton } from '@src/components/asset-manager';
 import { ViewSwap } from '@src/components/view-mode';
@@ -433,16 +432,10 @@ export function ProcessToolbar({
     </span>
   );
 
-  // Primary CTAs — Share + Bookmark (favorite), right-aligned in both layouts.
-  const actionsSlot = !embedded && (
-    <EntityActionsToolbar
-      typeId={process.typeId}
-      favoriteTitle={processDisplayName}
-      favoriteIcon="agentic_process"
-      variant="prominent"
-    />
-  );
-
+  // Share + Bookmark are NOT here: the top navigation bar carries them for
+  // whatever it is addressing, this session included, and a second copy of the
+  // same cluster on the same screen is the duplication that removed it from the
+  // asset editor too. Export stays — the bar has no equivalent for it.
   const downloadSlot = !embedded && <ExportEntityButton typeId={process.typeId} defaultTitle={processDisplayName} />;
 
   const rightSlot = (
@@ -535,7 +528,6 @@ export function ProcessToolbar({
       debug={debugSlot}
       restart={restartSlot}
       title={titleSlot}
-      actions={actionsSlot}
       download={downloadSlot}
       right={rightSlot}
     />
@@ -551,7 +543,7 @@ export function ProcessToolbar({
         <ViewSwap
           advanced={advancedHeader}
           standard={
-            <StandardInteractiveTabHeader title={titleSlot} actions={actionsSlot} />
+            <StandardInteractiveTabHeader title={titleSlot} />
           }
         />
       )}

@@ -97,3 +97,43 @@ async def test_install_for_intent_generic_fallback(monkeypatch) -> None:
     # Unknown intent → a synthetic spec carrying the generic setup prompt.
     assert spec.install_prompt and spec.install_prompt != "count till 10"
     assert "frobnicate the widget" in spec.install_prompt
+
+
+def test_worker_capability_kind_agrees_for_every_alias_of_a_worker() -> None:
+    """The capability kind must not depend on WHICH name for a worker you hold.
+
+    Claude registers ``worker_type="claude_code"`` against kind
+    ``harness.claude.cli``. Interpolating the worker type produced
+    ``harness.claude_code.cli`` -- a kind nothing registers -- so every lookup keyed
+    by the capability's worker_type reported the CLI as missing while the same lookup
+    keyed by the driver name (``claude``) succeeded. Codex and copilot hid it by
+    having identical names.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+
+    assert worker_capability_kind("claude_code") == CapabilityKind.CLAUDE_CLI.value
+    assert worker_capability_kind("claude") == CapabilityKind.CLAUDE_CLI.value
+    assert worker_capability_kind("codex") == CapabilityKind.CODEX_CLI.value
+    assert worker_capability_kind("copilot") == CapabilityKind.COPILOT_CLI.value
+
+
+def test_the_registry_pairing_is_what_the_drivers_resolve() -> None:
+    """Every registered harness CLI must round-trip worker_type -> kind.
+
+    Guards the pairing at its source: a new harness whose worker_type differs from
+    its kind segment (as claude's does) is caught here rather than surfacing as a
+    "CLI is not installed" message for a CLI that is installed.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.core.capabilities.registry import get_capability_registry
+
+    registry = get_capability_registry()
+    harnesses = [(kind, registry.worker_type_for_kind(kind)) for kind in registry.kinds()]
+    harnesses = [(kind, worker) for kind, worker in harnesses if worker]
+    assert harnesses, "no harness CLI runners registered — the guard would be vacuous"
+
+    for kind, worker_type in harnesses:
+        assert worker_capability_kind(worker_type) == kind, (
+            f"{worker_type!r} is registered against {kind!r} but resolves to "
+            f"{worker_capability_kind(worker_type)!r}"
+        )

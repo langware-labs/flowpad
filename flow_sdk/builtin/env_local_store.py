@@ -173,9 +173,10 @@ def gitignore_status(project: "Project") -> dict[str, Any]:
         # Ignore rules do NOT apply to files git already tracks, so a tracked
         # .env.local keeps getting committed however the ignore file reads.
         # This is the case a gitignore-only check reports as safe when it isn't.
-        tracked = _run_git(
-            ["git", "ls-files", "--error-unmatch", "--", ENV_LOCAL_FILENAME], cwd, timeout=10
-        ).returncode == 0
+        tracked = (
+            _run_git(["git", "ls-files", "--error-unmatch", "--", ENV_LOCAL_FILENAME], cwd, timeout=10).returncode
+            == 0
+        )
     except Exception as e:  # noqa: BLE001
         logger.warning("[env-local] gitignore probe failed for %s: %s", cwd, e)
         return _status(GITIGNORE_GIT_FAILURE)

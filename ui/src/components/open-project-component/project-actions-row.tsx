@@ -58,9 +58,11 @@ function ActionButton({
  * reaches its files over the VFS with git as the filesystem. So only ONE action
  * is desk-specific: **Open folder**, which drives the host's native folder
  * picker and has nothing to point at on a hub-only server (`isHubOnly()`).
- * It — and the "Browse" affordance inside the New-project dialog, same native
- * picker — is the only thing dropped there; open-existing / new / from-git all
- * work against the hub.
+ * It is the only ACTION dropped there; open-existing / new / from-git all work
+ * against the hub. The New-project dialog also drops its whole folder row on
+ * the hub (`withFolder`): a hub project is a pure entity with nothing on a
+ * filesystem behind it, and with the field still required — and no native
+ * picker or workspace default able to fill it — Create could never enable.
  *
  * **Open existing project** is gated on there BEING one: with an empty project
  * list the picker it opens has nothing to pick, so the tile would be a dead end.
@@ -153,9 +155,13 @@ export function ProjectActionsRow({
         open={isNewProjectOpen}
         onOpenChange={setIsNewProjectOpen}
         defaultParentFolder={defaultWorkspacePath}
+        // A hub project is a pure entity — no folder behind it — so the dialog
+        // asks for a name only. On the desk the project IS a directory, so the
+        // parent folder stays required.
+        withFolder={canPickHostFolder}
         onPickFolder={canPickHostFolder ? () => pickFolder(defaultWorkspacePath || undefined) : undefined}
         onCreate={async (name, parentFolder) => {
-          await ensureProjectAndSetContext(`${normalizePath(parentFolder)}/${name}`);
+          await ensureProjectAndSetContext(parentFolder ? `${normalizePath(parentFolder)}/${name}` : name);
         }}
       />
       {/* Mounted only while open — keeps the repo/branch pickers out of the

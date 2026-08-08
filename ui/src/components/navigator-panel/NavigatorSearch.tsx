@@ -3,12 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useLingui } from '@lingui/react/macro';
 import { useRecordSearch } from '@src/hooks/use-record-search';
 import { useMultiTypeSearch } from '@src/components/spotlight/useMultiTypeSearch';
+import { activateSearchRow } from '@src/components/spotlight/activate-row';
 import { searchResultToRow, searchResultToTerminalRow } from '@src/components/spotlight/adapters';
 import { SpotlightResultRowContent } from '@src/components/spotlight/SpotlightResultRow';
 import { EntityTypePopover } from '@src/components/spotlight/EntityTypePopover';
 import { ScopeFilterPopover } from '@src/components/spotlight/ScopeFilterPopover';
 import type { SpotlightRow } from '@src/components/spotlight/types';
-import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -98,11 +98,7 @@ export function useNavigatorSearch(config: NavigatorSearchConfig | null | undefi
     async (row: SpotlightRow) => {
       setOpening(row.key);
       try {
-        // Prefer the row's own activator (e.g. terminal-profile rows resume the
-        // live PTY); fall back to the shared record-type-nav router (transcript
-        // lens etc.) when it signals it didn't handle the click.
-        const handled = row.onActivate ? await row.onActivate(navigation) : false;
-        if (!handled && row.searchResult) await navigateToResult(row.searchResult, navigation);
+        await activateSearchRow(row, navigation);
         close();
       } finally {
         setOpening(null);

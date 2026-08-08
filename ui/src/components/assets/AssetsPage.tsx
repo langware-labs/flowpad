@@ -1,7 +1,7 @@
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { AssetEditor, AssetMode, AssetRoutingMethod, DEFAULT_WIKI_SPACE, EDITOR_TYPES, WIKI_FRAGMENT_PARAM } from '@src/navigation/asset-doc-types';
+import { AssetEditor, AssetMode, AssetRoutingMethod, DEFAULT_WIKI_SPACE, WIKI_FRAGMENT_PARAM } from '@src/navigation/asset-doc-types';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { ShareContextFolderButton } from '@src/components/assets/ShareContextFolderButton';
 import { useContextFolderForRel } from '@src/hooks/use-context-folder-for-rel';
@@ -12,18 +12,11 @@ import { getDescriptor } from '@src/components/quick-create';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { cloudManager, copyToClipboard, dataContext, FSRef, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
-import type { APIEntity, Project } from '@sdk';
-import { useContext as useDataContext } from '@src/hooks/useContext';
-import { useAssetGitLink } from '@src/hooks/use-asset-git-link';
-import { hubPageUrl } from '@src/lib/hub-page-url';
-import { useEntityByPath } from '@src/hooks/use-entity-by-path';
-import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
-import { AssetDiscussButton } from '@src/components/assets/editor/AssetDiscussButton';
-import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
+import { dataContext, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
+import type { Project } from '@sdk';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import apiClient from '@sdk/client';
-import { BookOpen, ChevronRight, Copy, PackageSearch, Trash2, X } from 'lucide-react';
+import { BookOpen, ChevronRight, PackageSearch, Trash2, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Breadcrumb,
@@ -40,6 +33,7 @@ import {
   applyScopeToParams,
   assetScopeBucket,
   defaultScopeFilter,
+  pinnedProjectId,
   projectScope,
   unionAssetBucket,
 } from '@src/lib/scope-filter';
@@ -48,7 +42,7 @@ import { useEntity } from '@sdk/react/hooks';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { ViewType } from '@src/types/ViewType';
 import { AssetListView } from './AssetListView';
-import { shouldShowIndexPrompt } from './asset-body-content';
+import { isProjectHomeSurface, shouldShowIndexPrompt } from './asset-body-content';
 import { ContextFolderBrowser } from './ContextFolderBrowser';
 import { MarkdownIndexPanel } from './MarkdownIndexPanel';
 import { useAssetTypes, type AssetTypeVault } from '@src/hooks/use-asset-types';
@@ -145,19 +139,6 @@ function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
     };
   }
   return empty;
-}
-
-/** Normalize a machine path only for identity comparison in the header. */
-function comparableMachinePath(path: string): string {
-  const normalized = path.replace(/\\/g, '/').replace(/^[A-Za-z]:/, '').replace(/\/+$/, '');
-  return normalized.startsWith('/') ? normalized : `/${normalized}`;
-}
-
-/** Folder-backed assets own every file below their asset_ref. */
-function assetRefOwnsPath(assetRef: string, resourcePath: string): boolean {
-  const owner = comparableMachinePath(assetRef);
-  const resource = comparableMachinePath(resourcePath);
-  return resource === owner || resource.startsWith(`${owner}/`);
 }
 
 /** Given a parsed folder pointer and a list of vaults, return the absolute
@@ -259,7 +240,6 @@ function FolderBreadcrumb({
 export function AssetsPage() {
   const { t } = useLingui();
   const { currentDock, navigation } = useDockNavigation();
-  const { activeEntity, activeEntityTypeId } = useDataContext();
   const { types: allTypes } = useAssetTypes({ vibeAsStandard: true });
   const { busy, resetAndRescan } = useSystemTools();
 
@@ -289,11 +269,12 @@ export function AssetsPage() {
     () => currentDock?.scopeFilter ?? projectSeedScope ?? defaultScopeFilter(currentProjectId),
     [currentDock, projectSeedScope, currentProjectId],
   );
+  /** The project THIS URL pins — null unless the scope is a single project. */
+  const urlScopeProjectId = pinnedProjectId(urlScope);
   // The project the scope filter points at: the URL project on a project page,
   // the explicit project scope on an assets page, else the context project.
   // Drives the Project mode + its tooltip name.
-  const scopeProjectId =
-    urlProjectId ?? (urlScope.mode === 'project' ? (urlScope.activeProjectId ?? null) : currentProjectId);
+  const scopeProjectId = urlProjectId ?? urlScopeProjectId ?? currentProjectId;
   // The scoped project entity. Drives the "Delete project" header action (which
   // gates itself on `isProjectView`) and the folder Share — the latter also runs
   // in the assets dock, so this resolves for any scoped project, not just a
@@ -442,91 +423,12 @@ export function AssetsPage() {
   const isFolderMode = mode === 'folder';
   const isWikiMode = mode === 'wiki';
   const isFsMode = mode === 'fs';
-  const isProjectHomeMode = isProjectView
-    ? !effectivePointer && !!scopeProjectId
-    : mode === 'projectHome' && urlScope.mode === 'project' && !!urlScope.activeProjectId;
+  const isProjectHomeMode = isProjectHomeSurface({
+    isProjectView,
+    pointer: effectivePointer,
+    scopedProjectId: isProjectView ? scopeProjectId : urlScopeProjectId,
+  });
 
-  // The loader is the single writer of active entity context. For a VFS route,
-  // accept that context only when the resolved entity owns the URL's resource
-  // path, so a miss can never leak the previously-open entity into this header.
-  const resourceVfsPath = isEditorMode ? currentDock?.resourceVfsPath ?? null : null;
-  const activeAssetRef = (activeEntity as { asset_ref?: string | null } | null)?.asset_ref ?? null;
-  const activeEntityMatchesResource =
-    !!resourceVfsPath?.machinePath &&
-    !!activeAssetRef &&
-    assetRefOwnsPath(activeAssetRef, resourceVfsPath.machinePath);
-  const headerEntityTypeId =
-    openAssetTypeId ??
-    (editorPointer?.method === AssetRoutingMethod.VFS && activeEntityMatchesResource
-      ? activeEntityTypeId
-      : null);
-  const editorEntityType =
-    editorPointer ? (EDITOR_TYPES[editorPointer.editor][0] as string | undefined) ?? null : null;
-  const editorPrimaryType = editorEntityType ?? editorPointer?.editor ?? null;
-  const resourceVfsValue = resourceVfsPath?.absVfsPath ?? null;
-  const unresolvedVfsRef = useMemo(
-    () => {
-      if (!resourceVfsValue || !editorEntityType || activeEntityMatchesResource) return null;
-      const path = VFSPath.parse(resourceVfsValue);
-      return path.typeId ? new FSRef(path.entitySubPath, path.typeId) : null;
-    },
-    [resourceVfsValue, editorEntityType, activeEntityMatchesResource],
-  );
-  // A just-created VFS file may not have resolved in the loader yet. Join the
-  // same cached path-resolution query used by the editor: React Query dedupes
-  // the lookup/discovery work, while this header remains render-only and never
-  // writes entity context itself.
-  const {
-    entity: vfsHeaderEntity,
-    state: vfsHeaderState,
-  } = useEntityByPath<APIEntity<APIEntity<unknown>>>(
-    unresolvedVfsRef ? editorEntityType : null,
-    unresolvedVfsRef,
-  );
-  const resolvedVfsHeaderEntity =
-    vfsHeaderState === 'resolved' ? vfsHeaderEntity : null;
-  const resolvedHeaderEntityTypeId =
-    headerEntityTypeId ?? resolvedVfsHeaderEntity?.typeId ?? null;
-  const headerAssetType = resolvedHeaderEntityTypeId?.type ?? editorPrimaryType;
-  const headerEntity = (openAsset ??
-    (activeEntityMatchesResource ? activeEntity : null) ??
-    resolvedVfsHeaderEntity) as {
-    asset_ref?: string | null;
-    displayName?: string | null;
-    name?: string | null;
-    remote?: boolean;
-  } | null;
-  const entityAssetName = headerEntity?.asset_ref
-    ?.replace(/[\\/]+$/, '')
-    .split(/[\\/]/)
-    .pop();
-  const editorHeaderTitle =
-    resourceVfsPath?.filename ||
-    entityAssetName ||
-    headerEntity?.displayName?.trim() ||
-    headerEntity?.name?.trim() ||
-    null;
-  const editorSourcePath = resourceVfsPath?.machinePath || headerEntity?.asset_ref || null;
-  // The open asset's three locations, each glyph going where it points: git (its
-  // repo page), cloud (its hub page), local (the OS file browser). The git probe
-  // shells out to git on the backend, so it is gated to a single open, on-disk,
-  // non-cloud asset — never a list, and never something with no path to resolve.
-  const assetGitLink = useAssetGitLink(
-    resolvedHeaderEntityTypeId,
-    isEditorMode && !!editorSourcePath && headerEntity?.remote !== true,
-  );
-  const assetCloudUrl = hubPageUrl(cloudManager.cloudAppUrl, resolvedHeaderEntityTypeId);
-  // Reveal through the compute node the path actually belongs to — the VFS
-  // pointer names it, so this keeps working for an asset on a remote node.
-  // `localComputeNodeId` is the same gate the markdown editor's reveal uses.
-  const revealLocal = useMemo(() => {
-    const nodeTypeId = resourceVfsPath?.typeId ?? new TypeId('compute_node', '@local');
-    const fsRef = editorSourcePath ? new FSRef(editorSourcePath, nodeTypeId) : null;
-    return fsRef?.localComputeNodeId ? () => void fsRef.open({ select: true }) : undefined;
-  }, [resourceVfsPath, editorSourcePath]);
-  const editorParentPath = editorSourcePath
-    ? editorSourcePath.replace(/[\\/]+$/, '').replace(/[\\/][^\\/]+$/, '') || editorSourcePath
-    : null;
 
   // The folder the header's Share acts on: the context folder CONTAINING the
   // browsed path when there is one (only its root is a repo — an `fs/` pointer
@@ -640,34 +542,25 @@ export function AssetsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
+      {/* Header — BROWSING modes only.
+          The editor has none: its name, path and actions all live in the top
+          navigation bar now (the crumb's details popover carries the path and
+          the reveal actions), and rendering them here too put the same identity
+          on screen twice, ~60px apart. What remains below is the browser's own
+          chrome — the Assets label, the folder share, the project delete —
+          which the bar has no equivalent for. */}
+      {!isEditorMode && (
       <div
         className="flex h-[52px] flex-shrink-0 items-center gap-1 border-b px-3"
         data-testid="assets-page-header"
       >
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          {isEditorMode && headerAssetType ? (
-            <EntityIcon
-              type={headerAssetType}
-              remote={headerEntity?.remote}
-              gitUrl={assetGitLink.url}
-              gitLabel={assetGitLink.repoLabel}
-              cloudUrl={assetCloudUrl}
-              onRevealLocal={revealLocal}
-              aria-label={editorHeaderTitle ?? headerAssetType}
-              className="h-4 w-4 flex-shrink-0 text-muted-foreground"
-              data-testid="assets-page-header-type-icon"
-            />
-          ) : (
-            <BookOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-          )}
+          <BookOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
           <div className="min-w-0">
             <div className="truncate text-sm font-medium">
-              {/* An open VFS document and a context folder get their own names
-                  as the pane title; everything else keeps Assets. */}
-              {isEditorMode && editorHeaderTitle ? (
-                editorHeaderTitle
-              ) : isFsMode && fsRelPath ? (
+              {/* A context folder gets its own name as the pane title;
+                  everything else keeps Assets. */}
+              {isFsMode && fsRelPath ? (
                 fsRelPath.replace(/\/+$/, '').split('/').pop() || <Trans>Assets</Trans>
               ) : isProjectView ? (
                 <Trans>Project assets</Trans>
@@ -675,42 +568,9 @@ export function AssetsPage() {
                 <Trans>Assets</Trans>
               )}
             </div>
-            {isEditorMode && editorParentPath && (
-              <div className="flex min-w-0 items-center gap-1">
-                <span
-                  className="min-w-0 truncate text-[11px] text-muted-foreground"
-                  title={editorParentPath}
-                  data-testid="assets-page-header-path"
-                >
-                  {editorParentPath}
-                </span>
-                {editorSourcePath && (
-                  <button
-                    type="button"
-                    title={t`Copy path`}
-                    aria-label={t`Copy path`}
-                    onClick={() => void copyToClipboard(editorSourcePath)}
-                    data-testid="assets-page-header-copy-path"
-                    className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  >
-                    <Copy className="h-3 w-3" />
-                  </button>
-                )}
-              </div>
-            )}
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {isEditorMode && resolvedHeaderEntityTypeId ? (
-            <EntityActionsToolbar
-              typeId={resolvedHeaderEntityTypeId}
-              favoriteTitle={editorHeaderTitle ?? resolvedHeaderEntityTypeId.toString()}
-              variant="compact"
-              trailing={<AssetDiscussButton />}
-            />
-          ) : isEditorMode ? (
-            <AssetDiscussButton />
-          ) : null}
           {/* Share the folder this pane is browsing. Only an fs pointer has a
               folder to share; the button hides itself for a legacy dir with no
               linked Folder entity. Search lives on the list's own bar below,
@@ -732,6 +592,7 @@ export function AssetsPage() {
           )}
         </div>
       </div>
+      )}
 
       <div className="flex min-h-0 flex-1">
         {/* Sidebar (asset tree + scope filter) moved to the shared left-menu
