@@ -5,6 +5,7 @@ import {
   type JourneyStep,
   type JourneyStepGroup,
 } from './journey-step';
+import { waitConditionProblems, type JourneyWaitFor } from './journey-wait';
 
 /** The raw `graph.json` document shape, as far as the journey cares. */
 interface RawGraphDoc {
@@ -118,7 +119,8 @@ export class JourneyGraph {
       if (dockKind !== undefined && !GUIDED_PRESENT_KINDS.has(dockKind)) {
         out.push(`${where}: unknown present.dock.kind "${dockKind}"`);
       }
-      if (!step.await?.tag) out.push(`${where}: await.tag is required`);
+      if (!step.waitFor?.length) out.push(`${where}: waitFor is required`);
+      step.waitFor?.forEach((condition) => out.push(...waitConditionProblems(condition, where)));
       if (step.act) {
         if (!GUIDED_ACT_KINDS.has(step.act.kind)) {
           out.push(`${where}: unknown act.kind "${step.act.kind}"`);
@@ -144,7 +146,7 @@ function parseSteps(doc: RawGraphDoc): JourneyStep[] {
         group: (data.group as string | undefined) || undefined,
         present: (data.present as JourneyStep['present']) ?? {},
         act: (data.act as JourneyStep['act']) ?? undefined,
-        await: (data.await as JourneyStep['await']) ?? {},
+        waitFor: (data.waitFor as JourneyWaitFor) ?? [],
       };
     });
 }

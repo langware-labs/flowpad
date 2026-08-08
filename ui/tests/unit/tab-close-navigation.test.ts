@@ -17,7 +17,9 @@
 
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { NavigationActions } from '@src/navigation/NavigationActions';
 
 const navigationActionsSource = readFileSync(
   resolve(__dirname, '../../src/navigation/NavigationActions.ts'),
@@ -55,8 +57,25 @@ describe('strip width containment (live-QA regression, 2026-06-11)', () => {
 });
 
 describe('closeDock from root-level dock URLs', () => {
-  it('normalizes the stripped base to the app root', () => {
-    expect(navigationActionsSource).toContain("stripDockPortion(currentPath) || '/'");
+  // Was a source-text assertion on the hand-rolled `stripDockPortion(...) || '/'`.
+  // Closing the dock IS going to the root, and the root is an ordinary pointer
+  // now, so assert the behaviour: a root-level dock URL lands on `/`, and one
+  // under an agent/flow prefix keeps that prefix.
+  const closeFrom = (path: string): string => {
+    window.history.pushState({}, '', path);
+    const navigate = vi.fn();
+    new NavigationActions(navigate, DockPointer.fromUrl(path)).openDock(null);
+    return String(navigate.mock.calls[0][0]);
+  };
+
+  afterEach(() => NavigationActions.resetPendingNavigationForTests());
+
+  it('lands on the app root', () => {
+    expect(closeFrom('/dock/assets/list/skill')).toBe('/');
+  });
+
+  it('keeps an agent/flow base path', () => {
+    expect(closeFrom('/agent/a/flow/f/dock/assets/list/skill')).toBe('/agent/a/flow/f');
   });
 });
 

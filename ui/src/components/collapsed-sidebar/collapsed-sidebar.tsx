@@ -24,6 +24,7 @@ import { useLastVibeChat } from '@src/pages/flow-page/use-last-vibe-chat';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
 import { NavBadge } from '@src/components/ui/nav-badge';
 import { useLingui } from '@lingui/react/macro';
+import { tagAttrs } from '@src/tags/tag-attrs';
 
 /**
  * The collapsed icon rail's fixed width (Tailwind class). Single source of truth so
@@ -50,6 +51,13 @@ import { useLocation, useNavigate } from 'react-router';
 // it arrives — it must never re-sort or filter it. Every entry now renders
 // through the one generic path; `discover` differs only in where its click goes.
 // RailIcon / HubItem live with the hub-rail builder so it can type its own return.
+
+/** The tag word for a rail slot: `chats` -> `RailChats`. Derived rather than
+ *  listed, so a new RAIL_ITEMS entry is observable and highlightable the moment
+ *  it exists — one less thing to remember. */
+export function railTag(id: string): string {
+  return `Rail${id.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('')}`;
+}
 
 /** Stable empty rail for desk renders, so the memo below doesn't hand React a
  *  fresh array every time. */
@@ -227,6 +235,7 @@ export function CollapsedSidebar() {
         <SidebarMenuButton
           tooltip={meta.title}
           data-rail-item={spec.id}
+          {...tagAttrs(railTag(spec.id), 'button')}
           isActive={isActiveId(spec.id)}
           onClick={() => handleRailClick(spec.id)}
           className="relative w-full justify-center px-2"

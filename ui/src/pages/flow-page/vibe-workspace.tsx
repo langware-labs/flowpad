@@ -20,6 +20,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { shellIdFromShowTarget } from '@src/navigation/shell-show-target';
 import { ViewMode } from '@src/contexts/view-mode-context';
+import { tagAttrs } from '@src/tags/tag-attrs';
 import { WorkspaceChildStrip } from './workspace-child-strip';
 import { useProcessSurface } from '@src/components/terminal/interactive-terminal/use-process-surface';
 import { ContentPanel } from './content-panel/content-panel';
@@ -540,7 +541,9 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={64} minSize={45}>
-        <div className="flex h-full flex-col">
+        {/* Tagged so a journey can point at the half of the workspace that
+            disappears the moment Vibe is left — the display and its tab strip. */}
+        <div className="flex h-full flex-col" {...tagAttrs('VibeDisplay', 'label')}>
           <WorkspaceChildStrip
             processTab={session.processTab}
             processDock={session.processDock}

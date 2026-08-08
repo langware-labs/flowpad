@@ -20,13 +20,21 @@ export { JourneyGraph } from './journey-graph';
 // Code-defined journeys — no folder, no rows, no network.
 export { getMemoryJourney, MemoryJourney, registerMemoryJourney } from './memory-journey';
 
+// What a step waits for — one vocabulary for every kind of "not yet".
+export { GUIDED_WAIT_KINDS, matchesElement, matchesLocation, waitConditionProblems } from './journey-wait';
+export type {
+  JourneyElementMatch,
+  JourneyEntityMatch,
+  JourneyLocationMatch,
+  JourneyWaitCondition,
+  JourneyWaitFor,
+} from './journey-wait';
+
 // The authoring vocabulary (twinned with the Python validator).
 export { GUIDED_ACT_KINDS, GUIDED_PRESENT_KINDS } from './journey-step';
 export type {
   JourneyActKind,
   JourneyActSpec,
-  JourneyAwaitSpec,
-  JourneyConfirmSpec,
   JourneyPresentDock,
   JourneyStep,
   JourneyStepGroup,

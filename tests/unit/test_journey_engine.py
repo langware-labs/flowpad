@@ -28,7 +28,7 @@ def _step(node_id, name=""):
         "node_data": {
             "status_line": f"Waiting at {node_id}",
             "present": {"dock": {"kind": "asset_editor", "vfs": f"{node_id}.html"}},
-            "await": {"tag": "app.route.loaded", "vfs": "next.html"},
+            "waitFor": [{"event": {"tag": "app.route.loaded"}}],
         },
     }
 
@@ -52,12 +52,17 @@ def test_guided_step_validates():
         "version": 1, "nodes": [_step("s1"),
                                 {"id": "bad", "node_type": "guided_step",
                                  "node_data": {"present": {"dock": {"kind": "nope"}},
-                                               "await": {"kind": "legacy-no-tag"}}}],
+                                               "waitFor": [{"teleport": "X"}]}},
+                                {"id": "empty", "node_type": "guided_step",
+                                 "node_data": {"present": {}}}],
         "edges": [],
     }))
     problems = "\n".join(doc.validate_graph())
     assert "present.dock.kind" in problems
-    assert "await.tag" in problems
+    assert "unknown waitFor condition 'teleport'" in problems
+    # A step that says nothing about what it waits for is an error, not a
+    # silently-Continue-only step.
+    assert "needs a non-empty node_data.waitFor" in problems
 
 
 @async_context
