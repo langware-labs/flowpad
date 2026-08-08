@@ -37,7 +37,70 @@ export class MemoryJourney extends Journey {
    * Null before launch, which is what makes the tray offer its Start button —
    * the same state a server journey that was never launched is in.
    */
-  private run: JourneyJournal | null = null;
+  private cached: JourneyJournal | null = null;
+  private hydrated = false;
+
+  /**
+   * The run, hydrated from (and written through to) per-tab storage.
+   *
+   * A server journey's run is a row, so a reload finds it again. This one was a
+   * field on a module singleton, so refreshing mid-journey silently started it
+   * over — against the tray's whole premise that `?journeyId=` restores where
+   * you were. `sessionStorage` is the matching durability: it survives a reload
+   * and dies with the tab, which is already what "this tab is running the
+   * journey" means everywhere else.
+   */
+  private get run(): JourneyJournal | null {
+    if (!this.hydrated) {
+      this.cached = this.readRun();
+      this.hydrated = true;
+    }
+    return this.cached;
+  }
+
+  private set run(value: JourneyJournal | null) {
+    this.cached = value;
+    this.hydrated = true;
+    this.writeRun();
+  }
+
+  /** Keyed by the URL's own handle, so one tab can hold a run per journey. */
+  private get storageKey(): string {
+    return `flowpad.journey.run.${this.identifier}`;
+  }
+
+  /** Absent under SSR/node, and throws outright in some privacy modes — a run
+   *  that cannot be persisted still works, it just does not survive a reload. */
+  private static storage(): Storage | null {
+    try {
+      return typeof sessionStorage === 'undefined' ? null : sessionStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  private readRun(): JourneyJournal | null {
+    const raw = MemoryJourney.storage()?.getItem(this.storageKey);
+    if (!raw) return null;
+    try {
+      // `toJSON` out, constructor in — the same pair every server-backed entity
+      // round-trips through, rather than a second hand-rolled shape.
+      return new JourneyJournal(JSON.parse(raw) as Partial<JourneyJournal>);
+    } catch {
+      return null;
+    }
+  }
+
+  private writeRun(): void {
+    const store = MemoryJourney.storage();
+    if (!store) return;
+    try {
+      if (this.cached) store.setItem(this.storageKey, JSON.stringify(this.cached.toJSON()));
+      else store.removeItem(this.storageKey);
+    } catch {
+      // Quota or a locked-down profile: the run stays live in memory.
+    }
+  }
 
   /**
    * Addressed by `uname`, so `?journeyId=@vibe-exits` needs no new grammar.
@@ -113,6 +176,9 @@ export class MemoryJourney extends Journey {
     run.cursor = next?.node_id ?? run.cursor;
     run.status = next ? 'launched' : 'complete';
     run.steps_left = Math.max(0, this.graph.length - run.entries.length);
+    // Mutated in place (one instance, as the tray's animation requires), so the
+    // write-through the setter would have done has to be asked for explicitly.
+    this.writeRun();
     return run;
   }
 
