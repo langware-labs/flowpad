@@ -93,6 +93,10 @@ export type ProcessRunScope = Partial<Record<(typeof PROCESS_RUN_SCOPE_KEYS)[num
 export type ProcessRunsPointerOptions = ProcessRunScope & { run?: string | null };
 
 export const HIGHLIGHT_PARAM = 'highlight';
+/** A transcript entry to scroll to and select. */
+export const TRANSCRIPT_ENTRY_PARAM = 'transcript_entry_id';
+/** A timestamp to seek a transcript to. */
+export const TRANSCRIPT_TIME_PARAM = 't';
 export const VIEW_MODE_PARAM = 'viewMode';
 
 /**
@@ -361,6 +365,16 @@ export class DockPointer implements IDockPointer {
    * writer that matches the `dockPointer.highlight = <wikiword>` mental model.
    * Pairs with the `highlight` getter.
    */
+  /** The transcript entry this dock selects, or null. */
+  get transcriptEntryId(): string | null {
+    return this.options?.[TRANSCRIPT_ENTRY_PARAM] ?? null;
+  }
+
+  /** The transcript timestamp this dock seeks to, or null. */
+  get transcriptTimestamp(): string | null {
+    return this.options?.[TRANSCRIPT_TIME_PARAM] ?? null;
+  }
+
   withHighlight(wikiword: string): DockPointer {
     return new DockPointer(
       this.viewType,

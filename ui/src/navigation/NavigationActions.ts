@@ -264,6 +264,19 @@ export class NavigationActions {
   }
 
   /**
+   * Set (or clear, with `null`) one URL option on the current surface.
+   *
+   * The typed form of "tweak a param in place" — composed on {@link here}, so a
+   * write during an in-flight navigation lands on the destination rather than
+   * rebuilding the location we already left. Call sites used `useSearchParams`'s
+   * setter, which reads React-state search params and therefore has exactly that
+   * staleness.
+   */
+  setOption(key: string, value: string | null): void {
+    this.commitPointer(this.here.withOption(key, value));
+  }
+
+  /**
    * Navigate to the app home root `/`, optionally with `?highlight=`.
    *
    * An ordinary `openDock` now: the root is a pointer, so sticky options
