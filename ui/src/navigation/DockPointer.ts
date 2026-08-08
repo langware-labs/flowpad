@@ -121,6 +121,17 @@ export const LANG_PARAM = 'lang';
  * and `navigation.showJourney()` / `closeJourney()`.
  */
 export const JOURNEY_PARAM = 'journeyId';
+/**
+ * Which step of that journey, 1-based. THE journey's position — there is no
+ * cursor anywhere else.
+ *
+ * Position used to live in the journal (a `node_id` on a server row), while the
+ * screen was composed by merging a partial step onto wherever the user already
+ * was. Nothing in that was addressable, so nothing was reproducible: the same
+ * step rendered differently depending on how you got there. A number in the URL
+ * is reloadable, shareable, and the same every time.
+ */
+export const JOURNEY_STEP_PARAM = 'journeyStep';
 
 /**
  * URL query-param key naming the capability the user was reaching for when they
@@ -433,6 +444,21 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Which step of the journey this dock is showing (1-based), or null when no
+   * journey is running. See {@link JOURNEY_STEP_PARAM}.
+   *
+   * Returns null for anything that is not a positive integer, so a hand-edited
+   * `?journeyStep=abc` reads as "no position" rather than throwing or landing
+   * the tray on NaN.
+   */
+  get journeyStep(): number | null {
+    const raw = this.options?.[JOURNEY_STEP_PARAM];
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 1 ? n : null;
+  }
+
+  /**
    * The capability kind this dock was opened FOR, or null. Set when a launch
    * surface routes to the Capabilities view because the thing the user asked
    * for looks unavailable; the view re-probes it on arrival. See
@@ -457,6 +483,11 @@ export class DockPointer implements IDockPointer {
   /** Clone this dock showing a journey, or close it (clear the param) with null. */
   withJourney(journeyId: string | null): DockPointer {
     return this.withOption(JOURNEY_PARAM, journeyId);
+  }
+
+  /** Clone this dock showing step `n` (1-based) of the running journey. */
+  withJourneyStep(n: number | null): DockPointer {
+    return this.withOption(JOURNEY_STEP_PARAM, n === null ? null : String(n));
   }
 
   /**

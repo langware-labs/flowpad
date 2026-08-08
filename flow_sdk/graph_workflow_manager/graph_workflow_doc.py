@@ -54,7 +54,7 @@ FunctionRuntime = Literal["inline", "subprocess"]
 # that the frontend orchestrator observes; when satisfied the orchestrator injects
 # this node's `done`, routed onward by the ordinary edge machinery. No new viewer,
 # no DOM interception — pure guidance/orchestration over standard surfaces.
-GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list", "root"}
+GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list", "root", "stay"}
 # What a guided step can do FOR the user, offered as a button on the step.
 # `run` types a command into the step's terminal; `fs_check` proves a file
 # landed. The frontend owns each kind's semantics — this is the vocabulary.
@@ -293,24 +293,34 @@ class GraphWorkflowDoc(BaseModel):
             if n.node_type == "guided_step":
                 nd = n.node_data
                 present = nd.get("present") or {}
-                # A dock is OPTIONAL: a step may highlight in place (moving the
-                # user off the surface they must click would defeat it), or
-                # present nothing at all and just wait. Only the kind is checked,
-                # and only when a dock is actually given.
+                # A dock is REQUIRED, and complete. Loading a step is a plain
+                # navigation to it — nothing is merged onto wherever the user
+                # already was, so a step renders the same however it was reached.
+                # It used to be optional ("highlight in place"), which made a
+                # step's appearance depend on the path taken to it.
                 dock = present.get("dock")
-                if dock is not None and dock.get("kind") not in GUIDED_PRESENT_KINDS:
+                if not isinstance(dock, dict):
+                    problems.append(
+                        f"node {n.id}: guided_step needs node_data.present.dock — "
+                        "a step names its whole destination"
+                    )
+                elif dock.get("kind") not in GUIDED_PRESENT_KINDS:
                     problems.append(
                         f"node {n.id}: guided_step present.dock.kind must be "
                         f"in {sorted(GUIDED_PRESENT_KINDS)}"
                     )
+                # `waitFor` is OPTIONAL and is a GATE, never a driver: it decides
+                # when a pressed Next may land, and nothing else. Most steps have
+                # nothing to wait for.
                 wait_for = nd.get("waitFor")
-                if not isinstance(wait_for, list) or not wait_for:
-                    problems.append(
-                        f"node {n.id}: guided_step needs a non-empty node_data.waitFor "
-                        f"(a list of conditions, e.g. [{{'click': 'ProjectPage'}}])"
-                    )
-                else:
-                    problems.extend(_wait_condition_problems(n.id, wait_for))
+                if wait_for is not None:
+                    if not isinstance(wait_for, list):
+                        problems.append(
+                            f"node {n.id}: guided_step node_data.waitFor must be a list "
+                            "of conditions, e.g. [{'entity': {'type': 'capability'}}]"
+                        )
+                    else:
+                        problems.extend(_wait_condition_problems(n.id, wait_for))
                 # `act` — what the journey OFFERS to do for the user (a step
                 # button, not an automatic side effect). It aims at a tag word
                 # like `present.highlight` does, so a missing target is dead.

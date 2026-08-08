@@ -53,16 +53,21 @@ def test_guided_step_validates():
                                 {"id": "bad", "node_type": "guided_step",
                                  "node_data": {"present": {"dock": {"kind": "nope"}},
                                                "waitFor": [{"teleport": "X"}]}},
-                                {"id": "empty", "node_type": "guided_step",
-                                 "node_data": {"present": {}}}],
+                                {"id": "nodock", "node_type": "guided_step",
+                                 "node_data": {"present": {}}},
+                                {"id": "nogate", "node_type": "guided_step",
+                                 "node_data": {"present": {"dock": {"kind": "root"}}}}],
         "edges": [],
     }))
     problems = "\n".join(doc.validate_graph())
     assert "present.dock.kind" in problems
     assert "unknown waitFor condition 'teleport'" in problems
-    # A step that says nothing about what it waits for is an error, not a
-    # silently-Continue-only step.
-    assert "needs a non-empty node_data.waitFor" in problems
+    # A step must name its whole destination: loading it is a plain navigation,
+    # with nothing merged onto wherever the user happened to be.
+    assert "guided_step needs node_data.present.dock" in problems
+    # But `waitFor` is a GATE and is optional — a step with nothing to wait for
+    # is the normal case, not an error.
+    assert "nogate" not in problems
 
 
 @async_context

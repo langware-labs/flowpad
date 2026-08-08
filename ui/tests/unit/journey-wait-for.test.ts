@@ -17,9 +17,8 @@ import { journeyStep } from '../utils/journey-fixtures';
  */
 
 describe('a step must say what it waits for', () => {
-  it('an empty waitFor is an authoring error', () => {
-    const graph = new JourneyGraph({ steps: [journeyStep('s1', { waitFor: [] })] });
-    expect(graph.problems().join('\n')).toContain('waitFor is required');
+  it('an absent waitFor is fine — it is a gate, and most steps have none', () => {
+    expect(new JourneyGraph({ steps: [journeyStep('s1')] }).problems()).toEqual([]);
   });
 });
 

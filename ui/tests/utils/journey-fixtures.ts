@@ -13,8 +13,8 @@ export function journeyStep(node_id: string, over: Partial<JourneyStep> = {}): J
     node_id,
     name: node_id,
     status_line: '',
-    present: {},
-    waitFor: [{ manual: true }],
+    // A step names its whole destination; `waitFor` is an optional gate.
+    present: { dock: { kind: 'root' } },
     ...over,
   };
 }

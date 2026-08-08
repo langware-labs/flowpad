@@ -14,3 +14,15 @@ import { useCurrentDock } from '@src/navigation/useDockNavigation';
 export function useActiveJourneyId(): string | null {
   return useCurrentDock()?.journeyId ?? null;
 }
+
+/**
+ * Which step of it, 1-based — or null when the URL names no position.
+ *
+ * THE cursor. A journey used to keep its position in the journal and compose the
+ * screen onto wherever the user already was, so the same step could render two
+ * different ways; the number in the URL is the whole position, which is what
+ * makes a step reloadable and shareable.
+ */
+export function useActiveJourneyStep(): number | null {
+  return useCurrentDock()?.journeyStep ?? null;
+}

@@ -124,9 +124,9 @@ describe('the memory-journey registry', () => {
     try {
       registerMemoryJourney({
         name: 'bad-probe',
-        graph: new JourneyGraph({ steps: [{ ...step('s1'), waitFor: [] }] }),
+        graph: new JourneyGraph({ steps: [{ ...step('s1'), present: {} as never }] }),
       });
-      expect(errors).toHaveBeenCalledWith(expect.stringContaining('waitFor is required'));
+      expect(errors).toHaveBeenCalledWith(expect.stringContaining('present.dock is required'));
     } finally {
       errors.mockRestore();
     }

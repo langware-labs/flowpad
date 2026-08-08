@@ -23,26 +23,21 @@ import { JourneyGraph, registerMemoryJourney, type JourneyStep, type JourneyWait
  * rewritten as fast as we can look at it — see `MemoryJourney`.
  */
 
-/** A read-and-Continue step: the tray's button is the only way forward. */
+/** Commentary: nothing to do, nothing to wait for — Next is the only way on.
+ *  `stay` because these steps talk about the surface already on screen. */
 function step(node_id: string, name: string, status_line: string, over: Partial<JourneyStep> = {}): JourneyStep {
-  return { node_id, name, status_line, present: {}, waitFor: [{ manual: true }], ...over };
+  return { node_id, name, status_line, present: { dock: { kind: 'stay' } }, ...over };
 }
 
 /**
- * A step that takes a real exit: it completes when the app HAS changed, not when
- * a button was pressed.
+ * A step that takes a real exit: Next presses the control, and the step does not
+ * land until the app HAS changed.
  *
- * Deliberately waits on state ALONE, with no click condition, for two reasons.
- * The obvious one: waiting on the click advanced ~100ms before the navigation
- * settled, so the step narrated a loss that had not happened yet. The subtler
- * one: an occurrence can only be seen from the moment the runtime subscribes,
- * so a click landing in the same frame as the previous step's advance is missed
- * — which a fast driver hits and a person does not. State has neither problem:
- * it is re-read whenever it changes AND checked the moment the step arrives.
- *
- * It also reads better. The highlight already says which control to press; the
- * condition should say what must become true, and it does not care whether the
- * user got there by the button, a shortcut, or the back button.
+ * The gate is state ALONE, never the click. An occurrence only proves a button
+ * was pressed — the loss this journey is about is the workspace actually going,
+ * and those are ~100ms apart, which is exactly long enough for the tour to
+ * narrate a loss that has not happened yet. State also survives the user getting
+ * there another way (a shortcut, the back button).
  */
 function exitStep(
   node_id: string,
@@ -52,19 +47,18 @@ function exitStep(
   becomes: JourneyWaitCondition,
 ): JourneyStep {
   return step(node_id, name, status_line, {
-    present: { highlight: tag },
-    // The step can press its own control. A demonstration has to MOVE the app —
-    // walking with Next used to narrate "this is your workspace" over a screen
-    // where nothing had been opened. The act does it; `becomes` still proves it
-    // actually happened, so the act can never claim a consequence it didn't get.
+    present: { dock: { kind: 'stay' }, highlight: tag },
+    // Next presses the control for you — a demonstration has to MOVE the app.
+    // `becomes` is the gate on that same press, so the step cannot land claiming
+    // a consequence it did not get.
     act: { kind: 'click', target: tag },
     waitFor: [becomes],
   });
 }
 
 export const VIBE_EXIT_MODE_SWITCH = new JourneyGraph({
-  // Starts OUTSIDE vibe on purpose: the first step demonstrates the entrance,
-  // and it cannot demonstrate a state the journey already put the app in.
+  // Every step names its own dock, so `start` is only where Start lands before
+  // step 1 loads — step 1 says where it wants to be regardless.
   start: { kind: 'root', viewMode: 'standard' },
   steps: [
     // ── in ──
@@ -84,7 +78,10 @@ export const VIBE_EXIT_MODE_SWITCH = new JourneyGraph({
       'Start in Vibe',
       'Click the wand in the footer. Vibe is the workspace a non-technical user is meant to live in.',
       {
-        present: { highlight: 'ViewModeVibe' },
+        // Named outright, and NOT vibe: a journey about entering Vibe cannot
+        // start in it, or its first step is already satisfied and there is
+        // nothing to demonstrate.
+        present: { dock: { kind: 'root', viewMode: 'standard' }, highlight: 'ViewModeVibe' },
         act: { kind: 'click', target: 'ViewModeVibe' },
         waitFor: [{ location: { options: { viewMode: 'vibe' } } }],
       },
@@ -97,7 +94,7 @@ export const VIBE_EXIT_MODE_SWITCH = new JourneyGraph({
       'Open a build',
       'Click the speech-bubble icon in the left rail to reopen your last build. This is the real thing — an agent session, not a demo.',
       {
-        present: { highlight: 'RailChats' },
+        present: { dock: { kind: 'root', viewMode: 'vibe' }, highlight: 'RailChats' },
         act: { kind: 'click', target: 'RailChats' },
         waitFor: [{ element: { present: 'VibeDisplay' } }],
       },
@@ -106,7 +103,7 @@ export const VIBE_EXIT_MODE_SWITCH = new JourneyGraph({
       'look_at_it',
       'This is what you have',
       'Chat on the left, the live display on the right, and its own row of tabs above it. Everything the agent shows you appears in the ringed half.',
-      { present: { highlight: 'VibeDisplay' } },
+      { present: { dock: { kind: 'stay' }, highlight: 'VibeDisplay' } },
     ),
 
     // ── out ──

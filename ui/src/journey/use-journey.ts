@@ -1,7 +1,7 @@
 import { dataContext, getMemoryJourney, isHubOnly, Journey, JourneyGraph, JourneyJournal, QueryRequest, type JourneyStep } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { useActiveJourneyId } from './use-active-journey-id';
+import { useActiveJourneyId, useActiveJourneyStep } from './use-active-journey-id';
 
 /**
  * React bindings for the Journey model — and ONLY the bindings.
@@ -140,11 +140,13 @@ export function useJourneySteps(journey: Journey | null): { graph: JourneyGraph;
 }
 
 /**
- * The journey currently SHOWN (`?journeyId=`) plus the caller's progress.
+ * The journey currently SHOWN (`?journeyId=`) plus where in it you are.
  *
- * Everything is derived — the URL says which journey, the journal entity says
- * where you are, the graph says what the steps are. No in-memory state, so a
- * reload lands exactly where you were.
+ * Everything is derived from the URL: it names the journey AND the step, and the
+ * graph says what that step is. The journal is a RECORD (it keeps the resume
+ * badge honest) and is deliberately not consulted for position — when it was,
+ * the same step could render two ways depending on the path taken to it, because
+ * the screen was composed onto wherever the user already happened to be.
  */
 export function useShownJourney(): UseJourneyResult {
   const shownId = useActiveJourneyId();
@@ -171,12 +173,19 @@ export function useShownJourney(): UseJourneyResult {
 
   const { graph, loading: stepsLoading } = useJourneySteps(journey);
 
+  // `?journeyStep=` is 1-based (it is shown to people); the graph is 0-indexed.
+  // Out of range — a hand-edited URL, or a graph that shrank under a saved link
+  // — reads as "no step", which the tray renders as its Start state rather than
+  // crashing on an undefined step.
+  const stepNumber = useActiveJourneyStep();
+  const cursorIndex = stepNumber !== null && stepNumber <= graph.length ? stepNumber - 1 : -1;
+
   return {
     journey,
     journal,
     graph,
-    currentStep: journal?.currentStep(graph) ?? null,
-    cursorIndex: journal?.indexIn(graph) ?? -1,
+    currentStep: cursorIndex >= 0 ? (graph.steps[cursorIndex] ?? null) : null,
+    cursorIndex,
     loading: journeysLoading || journalsLoading || stepsLoading,
     refresh: () => {
       forceRender();

@@ -17,7 +17,18 @@ import type { JourneyWaitFor } from './journey-wait';
 /** Where a step points the user — a standard dock pointer descriptor.
  *  `root` = the app home `/` (not a dock URL) — the typical journey start. */
 export interface JourneyPresentDock {
-  kind?: 'asset_editor' | 'home' | 'wiki' | 'asset_list' | 'root';
+  /**
+   * `stay` = this step is about the surface the PREVIOUS step's act produced —
+   * a build the journey just opened, whose id cannot be authored. It keeps the
+   * current dock and only stamps the step number on it.
+   *
+   * The one path-dependent kind, and deliberately spelled out: steps used to be
+   * path-dependent by DEFAULT (an absent dock meant "wherever they are"), which
+   * is why the same step could render two ways. Saying it makes it reviewable —
+   * a `stay` that is not preceded by a step that navigates is an authoring bug
+   * you can see in the document.
+   */
+  kind?: 'asset_editor' | 'home' | 'wiki' | 'asset_list' | 'root' | 'stay';
   vfs?: string;
   name?: string;
   /**
@@ -100,13 +111,31 @@ export interface JourneyStep {
   node_id: string;
   name: string;
   status_line: string;
-  /** What must be true before the step completes — see `journey-wait.ts`. */
-  waitFor: JourneyWaitFor;
+  /**
+   * A GATE, not a driver: what must be true before Next can land on the next
+   * step. Optional — most steps have nothing to wait for.
+   *
+   * It never advances anything on its own. The user presses Next; if a gate is
+   * outstanding the press waits for it and then completes. Conditions used to
+   * DRIVE navigation, which meant two things moved the journey (the user, and
+   * the app satisfying a condition) — every flake came from that collision.
+   * See `journey-wait.ts`.
+   */
+  waitFor?: JourneyWaitFor;
   /** Sub-step grouping: consecutive steps sharing a `group` render under one
    *  expandable header in the tray/viewer. Pure presentation — the journal's
    *  cursor/entries machinery is flat and unchanged. */
   group?: string;
-  present: { dock?: JourneyPresentDock; highlight?: string };
+  /**
+   * The step's destination — REQUIRED, and complete.
+   *
+   * Loading a step is a plain navigation to this dock; nothing is merged onto
+   * where the user already was. A partial `present` used to be composed onto the
+   * live location, so a step's appearance depended on the path taken to reach
+   * it. A step that talks about the previous screen repeats its dock: saying it
+   * twice is what makes both steps addressable on their own.
+   */
+  present: { dock: JourneyPresentDock; highlight?: string };
   act?: JourneyActSpec;
 }
 
@@ -129,6 +158,7 @@ export const GUIDED_PRESENT_KINDS: ReadonlySet<string> = new Set([
   'home',
   'asset_list',
   'root',
+  'stay',
 ]);
 
 /** Legal `act.kind` values. */

@@ -114,12 +114,15 @@ export class JourneyGraph {
       else if (seen.has(step.node_id)) out.push(`${where}: duplicate node_id`);
       seen.add(step.node_id);
 
+      // The dock is REQUIRED and complete: loading a step is a plain navigation
+      // to it, with nothing merged onto wherever the user already was.
       const dockKind = step.present?.dock?.kind;
-      // The dock is OPTIONAL — a highlight-only step presents in place.
-      if (dockKind !== undefined && !GUIDED_PRESENT_KINDS.has(dockKind)) {
+      if (!step.present?.dock) out.push(`${where}: present.dock is required`);
+      else if (dockKind !== undefined && !GUIDED_PRESENT_KINDS.has(dockKind)) {
         out.push(`${where}: unknown present.dock.kind "${dockKind}"`);
       }
-      if (!step.waitFor?.length) out.push(`${where}: waitFor is required`);
+      // `waitFor` is OPTIONAL and is a GATE, never a driver — most steps have
+      // nothing to wait for.
       step.waitFor?.forEach((condition) => out.push(...waitConditionProblems(condition, where)));
       if (step.act) {
         if (!GUIDED_ACT_KINDS.has(step.act.kind)) {

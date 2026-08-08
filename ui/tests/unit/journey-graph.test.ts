@@ -110,8 +110,13 @@ describe('JourneyGraph.problems — the code-built journey has no server to catc
     expect(graph.problems()).toEqual([]);
   });
 
-  it('accepts a step with no dock at all (highlight-only presents in place)', () => {
+  it('accepts a step with no waitFor — a gate is optional', () => {
     expect(new JourneyGraph({ steps: [step('a')] }).problems()).toEqual([]);
+  });
+
+  it('catches a step with no dock — a step must name where it goes', () => {
+    const graph = new JourneyGraph({ steps: [journeyStep('a', { present: {} as never })] });
+    expect(graph.problems().join('\n')).toContain('present.dock is required');
   });
 
   it('catches an unknown dock kind, a missing await tag, and a targetless act', () => {
@@ -129,7 +134,6 @@ describe('JourneyGraph.problems — the code-built journey has no server to catc
     });
     const problems = graph.problems().join('\n');
     expect(problems).toContain('present.dock.kind "nowhere"');
-    expect(problems).toContain('waitFor is required');
     expect(problems).toContain('act.kind "teleport"');
     expect(problems).toContain('act.target is required');
   });
