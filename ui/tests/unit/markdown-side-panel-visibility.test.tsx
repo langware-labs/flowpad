@@ -15,7 +15,6 @@ const sideWindows = vi.hoisted(() => ({
   open: vi.fn(),
   close: vi.fn(),
   closeAll: vi.fn(),
-  retain: vi.fn(),
   select: vi.fn(),
 }));
 
@@ -85,20 +84,53 @@ describe('markdown side-panel visibility', () => {
     expect(screen.getByTestId('md-side-window-expand')).toBeTruthy();
 
     // Dropping to Standard with a shared Advanced URL keeps its allowed tab
-    // visible and removes only the unavailable one from URL state.
+    // visible and simply IGNORES the unavailable one — rendering filters it,
+    // and the URL is left alone so returning to Advanced restores it.
     sideWindows.windows = ['revisions', 'runs'];
     sideWindows.active = 'runs';
     view.advanced = false;
     rerender(<Subject />);
     expect(screen.getByText('revisions')).toBeTruthy();
     expect(screen.queryByText('runs')).toBeNull();
-    // Pruned in ONE URL write: the retained set keeps the Standard-allowed tab
-    // and drops the unavailable one — never a close() per id, never closeAll().
-    const retained = sideWindows.retain.mock.calls.at(-1)?.[0] as Set<string>;
-    expect(retained.has('revisions')).toBe(true);
-    expect(retained.has('runs')).toBe(false);
     expect(sideWindows.close).not.toHaveBeenCalled();
     expect(sideWindows.closeAll).not.toHaveBeenCalled();
+  });
+
+  it('never writes the URL for a window it cannot render', () => {
+    // The regression: the tab set GROWS as async data lands (a Duplicates tab
+    // exists only once `duplicate_count` loads). A surface that pruned the URL
+    // against its current registry read "not declared yet" as "not allowed",
+    // deleted a live window, and — because every dock write is a history push —
+    // navigated the user off the entry Back had just restored.
+    const lateTab: ExtraSideTab = {
+      id: 'asset-duplicates:markdown-1',
+      label: 'Duplicates 1',
+      icon: Layers,
+      panel: <div>duplicate paths</div>,
+      availableInNonAdvanced: true,
+    };
+    sideWindows.windows = [lateTab.id];
+    sideWindows.active = lateTab.id;
+
+    // Render 1: entity still loading, so the surface declares NO extra tabs.
+    const { rerender } = render(
+      <EditorWithSidePanel target={null} extraTabs={[]}>
+        <div>editor</div>
+      </EditorWithSidePanel>,
+    );
+    expect(screen.queryByText('duplicate paths')).toBeNull();
+    expect(sideWindows.close).not.toHaveBeenCalled();
+    expect(sideWindows.closeAll).not.toHaveBeenCalled();
+    expect(sideWindows.open).not.toHaveBeenCalled();
+
+    // Render 2: the entity arrives and the tab is declared — the URL still
+    // carries the window, so it opens rather than having been thrown away.
+    rerender(
+      <EditorWithSidePanel target={null} extraTabs={[lateTab]}>
+        <div>editor</div>
+      </EditorWithSidePanel>,
+    );
+    expect(screen.getByText('duplicate paths')).toBeTruthy();
   });
 
   it('omits the non-Advanced rail when the surface has no Context or Revisions', () => {
@@ -129,9 +161,6 @@ describe('markdown side-panel visibility', () => {
     );
 
     expect(screen.getByText('duplicate paths')).toBeTruthy();
-    // The opted-in tab stays in the retained set, so nothing is pruned.
-    const retained = sideWindows.retain.mock.calls.at(-1)?.[0] as Set<string>;
-    expect(retained.has(collisionTab.id)).toBe(true);
     expect(sideWindows.close).not.toHaveBeenCalled();
     expect(sideWindows.closeAll).not.toHaveBeenCalled();
   });
