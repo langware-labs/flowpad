@@ -23,13 +23,14 @@ from flow_sdk.assets.git_origin import PortableGitOrigin as PortableGitOrigin
 from flow_sdk.builtin.fs_origin import FSOrigin
 from flow_sdk.builtin.fs_origin import is_safe_rel_path as is_safe_rel_path  # canonical home; re-exported
 from flow_sdk.fs_store.identifier import mint_uuid
-from flow_sdk.utils.git import _run_git, find_project_root, git_current_branch, git_remote_url
+from flow_sdk.utils.git import find_project_root, git_current_branch, git_remote_url
+from flow_sdk.utils.git_folder import GitFolder
 from flow_sdk.utils.git_identity import canonical_git_origin_repo_key, git_origin_clone_url, parse_git_origin_url
 
 
 def _head_commit(repo_path: str) -> Optional[str]:
     try:
-        r = _run_git(["git", "rev-parse", "HEAD"], repo_path, timeout=5)
+        r = GitFolder(repo_path).git_sync("rev-parse", "HEAD", timeout=5)
         return (r.stdout.strip() or None) if r.returncode == 0 else None
     except Exception:
         return None

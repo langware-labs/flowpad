@@ -157,7 +157,7 @@ def gitignore_status(project: "Project") -> dict[str, Any]:
     directory reports ``ignored=True``: there is no git history for a value to
     leak into, which is the same call :func:`ensure_gitignored` already makes.
     """
-    from flow_sdk.utils.git import _run_git  # noqa: PLC0415
+    from flow_sdk.utils.git_folder import GitFolder  # noqa: PLC0415
 
     d = _project_dir(project)
     if d is None:
@@ -165,17 +165,19 @@ def gitignore_status(project: "Project") -> dict[str, Any]:
 
     cwd = str(d)
     try:
-        inside = _run_git(["git", "rev-parse", "--is-inside-work-tree"], cwd, timeout=10)
+        folder = GitFolder(cwd)
+        inside = folder.git_sync("rev-parse", "--is-inside-work-tree", timeout=10)
         if inside.returncode != 0 or inside.stdout.strip() != "true":
             return _status(GITIGNORE_NOT_A_REPO)
         # check-ignore: 0 = ignored, 1 = not ignored, anything else = failure.
-        probe = _run_git(["git", "check-ignore", "-q", "--", ENV_LOCAL_FILENAME], cwd, timeout=10)
+        probe = folder.git_sync("check-ignore", "-q", "--", ENV_LOCAL_FILENAME, timeout=10)
         # Ignore rules do NOT apply to files git already tracks, so a tracked
         # .env.local keeps getting committed however the ignore file reads.
         # This is the case a gitignore-only check reports as safe when it isn't.
-        tracked = _run_git(
-            ["git", "ls-files", "--error-unmatch", "--", ENV_LOCAL_FILENAME], cwd, timeout=10
-        ).returncode == 0
+        tracked = (
+            folder.git_sync("ls-files", "--error-unmatch", "--", ENV_LOCAL_FILENAME, timeout=10).returncode
+            == 0
+        )
     except Exception as e:  # noqa: BLE001
         logger.warning("[env-local] gitignore probe failed for %s: %s", cwd, e)
         return _status(GITIGNORE_GIT_FAILURE)

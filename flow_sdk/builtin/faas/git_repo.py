@@ -10,8 +10,6 @@ import asyncio
 import logging
 import os
 import re
-import shlex
-import subprocess
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
@@ -202,35 +200,38 @@ class GitRepo:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _quote(self, arg: str) -> str:
-        """Quote one argument for the compute node's shell.
+    @property
+    def _folder(self):
+        """This working directory as a :class:`GitFolder` over the compute node.
 
-        cmd.exe has no single-quote semantics — POSIX quoting reaches git as
-        literal quote characters and splits paths on spaces — so Windows nodes
-        get MSVCRT-style double quoting instead.
+        Built per call: it holds no state beyond the path and the executor, and
+        the node's provider (hence its shell) can change between calls.
         """
-        if self._windows_shell:
-            return subprocess.list2cmdline([arg])
-        return shlex.quote(arg)
+        from flow_sdk.builtin.faas.command_executor import ComputeNodeCommandExecutor  # noqa: PLC0415
+        from flow_sdk.utils.git_folder import GitFolder  # noqa: PLC0415
+
+        # Built directly rather than via ``compute_node.command_executor`` so this
+        # works with any object exposing ``run_command`` — the node does not have
+        # to be a full ComputeNode.
+        return GitFolder(self.work_dir, executor=ComputeNodeCommandExecutor(self._compute_node))
 
     async def _run_git_io(self, *args: str) -> tuple[str, str, int]:
-        """Run a git sub-command inside self.work_dir via the compute node.
+        """Run a git sub-command in ``self.work_dir`` and return (stdout, stderr, rc).
 
-        Every argument is quoted here for the node's shell — call sites pass
-        raw values (paths, branch names, commit messages), never pre-quoted.
+        Quoting, the shell dialect and env now belong to
+        ``ComputeNodeCommandExecutor`` — call sites still pass raw values.
 
-        Returns (stdout_stripped, stderr_stripped, returncode). Git writes most
-        progress/error text (push rejections, rebase failures) to stderr, so the
-        push flow needs it for user-facing messages. Conflict *detection* still
-        keys off stdout-based ``git ls-files --unmerged`` so it stays reliable
-        regardless of where git happened to write.
+        Git writes most progress and error text (push rejections, rebase
+        failures) to stderr, so the push flow needs it for user-facing messages.
+        Conflict *detection* still keys off stdout-based ``git ls-files
+        --unmerged`` so it stays reliable regardless of where git wrote.
+
+        Never raises: a failed git call is an expected outcome here, and every
+        caller reads the return code.
         """
         try:
-            cmd = await self._compute_node.run_command(
-                " ".join(["git", "-C", self._quote(self.work_dir), *(self._quote(a) for a in args)]),
-                background=False,
-            )
-            return (cmd.all_stdout or "").rstrip("\n"), (cmd.all_stderr or "").rstrip("\n"), cmd.exit_code or 0
+            result = await self._folder.git(*args)
+            return result.stdout.rstrip("\n"), result.stderr.rstrip("\n"), result.returncode
         except Exception:
             logger.debug("git command failed: git %s", " ".join(args), exc_info=True)
             return "", "", 1
