@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronUp, Circle, CircleDot, FileCheck2, GitBranch, KeyRound, Link2, Play, RotateCcw, Terminal, Type, Wrench, X, MousePointerClick } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Circle, CircleDot, Play, RotateCcw, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Confetti from 'react-confetti';
@@ -15,29 +15,6 @@ import { useBusyRun, type UseJourneyResult } from './use-journey';
 import type { JourneyManagerView } from './useJourneyManager';
 
 /** Per-act-kind button face; unknown kinds fall back to `fill`. */
-const ACT_FACES: Record<string, { Icon: typeof Type; label: React.ReactNode }> = {
-  setup_capability: { Icon: Wrench, label: <Trans>Set up</Trans> },
-  oauth_connect: { Icon: Link2, label: <Trans>Connect</Trans> },
-  device_login: { Icon: KeyRound, label: <Trans>Log in</Trans> },
-  click: { Icon: MousePointerClick, label: <Trans>Show me</Trans> },
-  fill: { Icon: Type, label: <Trans>Fill text</Trans> },
-  git_check: { Icon: GitBranch, label: <Trans>Check</Trans> },
-  open_terminal: { Icon: Terminal, label: <Trans>Open terminal</Trans> },
-  run: { Icon: Terminal, label: <Trans>Run it</Trans> },
-  fs_check: { Icon: FileCheck2, label: <Trans>Verify</Trans> },
-};
-
-/** One lit act button per step — label/icon follow the act kind. */
-function ActButtonContent({ kind }: { kind: string }) {
-  const { Icon, label } = ACT_FACES[kind] ?? ACT_FACES.fill;
-  return (
-    <>
-      <Icon className="h-3 w-3" />
-      {label}
-    </>
-  );
-}
-
 const NO_DONE_IDS: ReadonlySet<string> = new Set<string>();
 
 const INDIGO = '#5b5bf0';
@@ -379,41 +356,39 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
         )}
         {journal && !complete && currentStep && (
           <>
-            {/* The step's own act comes FIRST and replaces Continue while it is
-                pending: one lit button at a time, so the tray always shows a
-                single obvious next move ("Fill text" → then "Next"). */}
-            {view?.actPending ? (
-              <Button
-                type="button"
-                size="sm"
-                disabled={busy}
-                onClick={view.doAct}
-                className="h-7 gap-1.5 px-3 text-xs text-white hover:brightness-110 animate-pulse"
-                style={{ backgroundColor: INDIGO }}
-                data-testid="journey-tray-act"
-              >
-                <ActButtonContent kind={currentStep.act?.kind ?? 'fill'} />
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                size="sm"
-                disabled={busy}
-                onClick={() => run(() => journey.advance(currentStep.node_id, 'done'))}
-                className={cn(
-                  'h-7 px-3 text-xs text-white hover:brightness-110',
-                  // Dim until the step is genuinely waiting on the user: a step
-                  // whose conditions the app can satisfy on its own shouldn't
-                  // invite a click that skips past them.
-                  !view?.armed && 'opacity-60',
-                  view?.armed && 'animate-pulse',
-                )}
-                style={{ backgroundColor: INDIGO }}
-                data-testid="journey-tray-continue"
-              >
-                <Trans>Next</Trans>
-              </Button>
-            )}
+            {/* ONE button. Next does whatever this step needs: if the step can
+                press its own control, Next presses it and the step's condition
+                decides when to move on; otherwise Next just moves on. A second
+                lit button ("Show me", then Next) made a two-press dance out of a
+                walkthrough whose whole promise is next, next, next. Pressing Next
+                again after an act that did not land is the escape hatch. */}
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                const advance = () => run(() => journey.advance(currentStep.node_id, 'done'));
+                if (!view?.actPending) return advance();
+                view.doAct();
+                // An armed step's condition is ALREADY true, so acting changes
+                // nothing for the runtime to observe and no advance would ever
+                // fire — the user would have to press Next twice for that step
+                // alone. Acting and moving on is one press, like every other.
+                if (view.armed) advance();
+              }}
+              className={cn(
+                'h-7 px-3 text-xs text-white hover:brightness-110',
+                // Dim until the step is genuinely waiting on the user: a step
+                // whose conditions the app can satisfy on its own shouldn't
+                // invite a click that skips past them.
+                !view?.armed && !view?.actPending && 'opacity-60',
+                (view?.armed || view?.actPending) && 'animate-pulse',
+              )}
+              style={{ backgroundColor: INDIGO }}
+              data-testid="journey-tray-continue"
+            >
+              <Trans>Next</Trans>
+            </Button>
             <Button
               type="button"
               size="sm"

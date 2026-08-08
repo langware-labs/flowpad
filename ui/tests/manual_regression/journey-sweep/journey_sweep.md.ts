@@ -75,14 +75,12 @@ async function expectStep(n: number): Promise<void> {
 }
 
 /**
- * Press whatever the step offers. A step that can demonstrate itself shows its
- * act ("Show me") INSTEAD of Next — one lit button at a time — so a walk that
- * only ever pressed Next would stall the moment a step gained an act.
+ * Next. There is exactly one button, and it does whatever the step needs — it
+ * presses the step's own control when there is one, then moves on. The sweep
+ * drives it the only way a user can, so a second button appearing anywhere in
+ * this walk would break these tests.
  */
-async function advance(): Promise<void> {
-  const act = page.getByTestId('journey-tray-act');
-  await ((await act.count()) ? act : page.getByTestId('journey-tray-continue')).click();
-}
+const advance = () => page.getByTestId('journey-tray-continue').click();
 const next = advance;
 const workspace = () => page.locator('[data-tag="VibeDisplay"]');
 
@@ -96,32 +94,32 @@ test.describe('the journey demonstrates — the app really moves', () => {
    * Starts in `standard` deliberately — a journey that presents itself in Vibe
    * has already satisfied its own first step, and the entrance cannot be shown.
    */
-  test('entrance and exit, driven by the tray alone', async () => {
+  test('entrance and exit, in six presses of one button', async () => {
     await launch('/?viewMode=standard');
     await expect(page.locator('html')).toHaveAttribute('data-view', 'standard');
     await expect(workspace()).toHaveCount(0);
 
     // ── in ──
     await expectStep(1);
-    await advance(); // "Show me" → presses the wand
+    await advance(); // presses the wand
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
 
     await expectStep(2);
-    await advance(); // "Show me" → opens a real build from the rail
+    await advance(); // opens a real build from the rail
     await expect(workspace()).toBeVisible();
 
     await expectStep(3);
-    await advance(); // commentary — Next
+    await advance(); // commentary — nothing to press
 
     // ── out ──
     await expectStep(4);
-    await advance(); // "Show me" → the exit under review
+    await advance(); // the exit under review
     await expect(workspace()).toHaveCount(0);
     await expect(page.locator('html')).toHaveAttribute('data-view', 'standard');
 
     // ── back ──
     await expectStep(5);
-    await advance(); // "Show me" → the way home
+    await advance(); // the way home
     await expect(workspace()).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
 

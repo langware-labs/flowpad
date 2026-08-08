@@ -68,10 +68,17 @@ export const VIBE_EXIT_MODE_SWITCH = new JourneyGraph({
   start: { kind: 'root', viewMode: 'standard' },
   steps: [
     // ── in ──
-    // Click-only, and honestly so: at the app root the view mode is a stored
-    // PREFERENCE, not a URL option (the root deliberately does not carry
-    // `?viewMode=`), so there is no state here to wait on. A preparatory step,
-    // not a claim about a consequence.
+    // Waits for the app to BE in vibe, not for the wand to be pressed.
+    //
+    // This step used to end on the click, because the root could not carry
+    // `?viewMode=` — it was a preference, so there was no state to wait on. The
+    // navigation collapse made the root an ordinary location, so the mode is now
+    // a real URL option and can be waited on properly.
+    //
+    // It matters beyond tidiness: ending on the click advanced the instant the
+    // button fired, while the mode was still switching, and the NEXT step's act
+    // then pressed into a half-rendered rail and silently did nothing. That is
+    // the narrating-ahead failure this vocabulary exists to prevent.
     step(
       'enter_vibe',
       'Start in Vibe',
@@ -79,7 +86,7 @@ export const VIBE_EXIT_MODE_SWITCH = new JourneyGraph({
       {
         present: { highlight: 'ViewModeVibe' },
         act: { kind: 'click', target: 'ViewModeVibe' },
-        waitFor: [{ click: 'ViewModeVibe' }],
+        waitFor: [{ location: { options: { viewMode: 'vibe' } } }],
       },
     ),
     // The workspace is ON SCREEN when its display pane is — which is what this
