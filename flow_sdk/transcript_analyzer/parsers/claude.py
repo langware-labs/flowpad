@@ -38,6 +38,7 @@ from ..entries import (
     UserMessageEntry,
     WebFetchEntry,
     WorkerUnavailableEntry,
+    classify_limit_reason,
 )
 from ..entry import TranscriptEntry
 
@@ -72,14 +73,6 @@ _META_TYPES = frozenset({
 })
 
 _ATTACHMENT_TYPE_PLAN_MODE_EXIT = "plan_mode_exit"
-_QUOTA_EXHAUSTED_MARKERS = (
-    "weekly limit",
-    "usage limit",
-    "credit limit",
-    "credits limit",
-    "out of credits",
-    "credits exhausted",
-)
 
 
 def _is_flowpad_prompt_envelope(text: str) -> bool:
@@ -137,11 +130,9 @@ def parse_worker_unavailable_event(
     message = extract_text(message_obj.get("content") or [])
     if not message and isinstance(message_data, str):
         message = message_data
-    reason = (
-        "quota_exhausted"
-        if any(marker in message.casefold() for marker in _QUOTA_EXHAUSTED_MARKERS)
-        else "rate_limited"
-    )
+    # The provider already said this is a limit, so an unclassified message is
+    # a plain rate limit rather than "not a limit at all".
+    reason = classify_limit_reason(message) or "rate_limited"
     return WorkerUnavailableEntry(
         reason=reason,
         worker_type="claude_code",

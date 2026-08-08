@@ -1,14 +1,16 @@
 import { useLingui } from '@lingui/react/macro';
 import { FavoritesTreeMenu } from '@src/components/favorites/FavoritesTreeMenu';
 import { useFavoritesScope } from '@src/components/favorites/use-favorites-scope';
-import { LeftSlider } from '@src/components/ui/left-slider';
+import { AnchoredMenu } from '@src/components/ui/anchored-menu';
 import { useCloseOnNavigate } from '@src/hooks/use-close-on-navigate';
 import { useFavorites } from '@src/hooks/use-favorites';
 import { useEffect, type PointerEventHandler } from 'react';
 
 /**
- * BookmarksSlider — the rail flyout: a fast, hover-driven bookmarks MENU.
- * LeftSlider provides the rail-anchored chrome, FavoritesTreeMenu the rows.
+ * BookmarksSlider — a fast, hover-driven bookmarks MENU. AnchoredMenu provides the
+ * anchored chrome, FavoritesTreeMenu the rows. Its host decides which edge it
+ * grows from (`side`); today that is the navigation bar's star, expanding
+ * leftward from the top right.
  *
  * Dismissal is fully owned by hover (`hoverProps`, shared with the rail button
  * that opens it) plus Escape / outside pointer-down / close-on-navigate / window
@@ -25,12 +27,16 @@ export function BookmarksSlider({
   onOpenChange,
   hoverProps,
   anchorTop,
+  anchorRight,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Viewport y of the rail button, so the menu aligns to what opened it. */
+  /** Viewport y the menu's top edge aligns to, so it reads as belonging to the
+   *  control that opened it. */
   anchorTop?: number;
-  /** The SAME hover intent as the rail button's, so travelling from the button
+  /** Distance from the viewport's right edge — see AnchoredMenu. */
+  anchorRight?: number;
+  /** The SAME hover intent as the trigger's, so travelling from the button
    *  into the panel cancels the pending close instead of dismissing. Required,
    *  not optional: this component turns the idle auto-close OFF, so hover IS
    *  the close. Omitting it wouldn't degrade gracefully — the panel would
@@ -62,19 +68,22 @@ export function BookmarksSlider({
   }, [open, onOpenChange]);
 
   return (
-    <LeftSlider
+    <AnchoredMenu
       open={open}
       onOpenChange={onOpenChange}
       title={t`Bookmarks`}
-      // LeftSlider documents headerRight as the canonical scope-filter home;
+      // AnchoredMenu documents headerRight as the canonical scope-filter home;
       // the menu body is rows only.
       headerRight={scopeBar}
       anchorTop={anchorTop}
+      anchorRight={anchorRight}
       idleMs={null}
       onPointerEnter={hoverProps.onPointerEnter}
       onPointerLeave={hoverProps.onPointerLeave}
     >
-      <FavoritesTreeMenu key={scopeKey} filter={filter} />
-    </LeftSlider>
+      {/* The panel grows leftward, so the tree does too: glyphs on the trailing
+          side, previews opening into the screen rather than off it. */}
+      <FavoritesTreeMenu key={scopeKey} filter={filter} mirrored />
+    </AnchoredMenu>
   );
 }

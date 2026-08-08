@@ -2,7 +2,7 @@ import { ContextEntitiesEnum, dataContext, gitOriginFromUrl, Project, QueryReque
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { isHubOnly } from '@src/navigation/hub-runtime';
-import { useDesktops } from '@src/hooks/use-desktops';
+import { useSandboxes } from '@src/hooks/use-sandboxes';
 import { useCallback } from 'react';
 
 export function canonicalPath(path: string): string {
@@ -129,7 +129,7 @@ export function useCloneGitProjectAndOpen(landing?: ProjectLanding) {
  */
 export function useGitCloneDialogSubmit(computeNodeId: string | null | undefined, landing?: ProjectLanding) {
   const cloneAndOpen = useCloneGitProjectAndOpen(landing);
-  const { launch } = useDesktops();
+  const { launch } = useSandboxes();
 
   return useCallback(
     async (

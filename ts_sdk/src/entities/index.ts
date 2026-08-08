@@ -15,7 +15,6 @@ export * from './compute_node';
 export * from './graph-workflow-node';
 export * from './graph-workflow';
 export * from './graph-workflow-run';
-export * from './fs_item';
 export * from './job';
 export * from './job_execution';
 export * from './jobs_enum';

@@ -33,7 +33,6 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
 import { AnnotationGutter } from './AnnotationGutter';
 import { ColumnHeaderBar } from './ColumnHeaderBar';
 import { PaneBar } from './PaneBar';
@@ -170,7 +169,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // back under the startup gate.
   const { data: subscribedProcess } = useEntity<AgenticProcess>(suppliedProcess?.typeId ?? null);
   const process = subscribedProcess ?? suppliedProcess;
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const { resolvedTheme } = useTheme();
   // Skin layer: the view mode's SURFACE decides which pane shows (the footer
   // ViewToggle is the selector). The xterm stays mounted underneath the chat
@@ -196,8 +195,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // resolves — a headless process needs no wait (its transport decides), and the
   // xterm keeps mounting and attaching underneath, so this costs no open latency.
   const surfacePending = surface === null && !isHeadless && !embedded && !!process;
-  const [searchParams] = useSearchParams();
-  const targetTimestamp = searchParams.get('t') ?? undefined;
+  const targetTimestamp = currentDock?.transcriptTimestamp ?? undefined;
 
   const canUseDOM = typeof window !== 'undefined' && typeof document !== 'undefined';
 

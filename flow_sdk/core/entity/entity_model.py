@@ -2239,6 +2239,7 @@ class Entity(DBEntity):
                     create_ref,
                     entity_type=self.get_type(),
                     name=(getattr(self, "name", None) or getattr(self, "title", None) or ""),
+                    entity_id=str(self.id) if getattr(self, "id", None) else None,
                 )
                 await persist_prepared_entity()
 
@@ -2325,6 +2326,9 @@ class Entity(DBEntity):
                 asset_ref,
                 entity_type=type_name,
                 name=(getattr(self, "name", None) or getattr(self, "title", None) or ""),
+                # An occupied path whose identity capsule already names THIS
+                # entity is its own carrier, not a competing bundle — adopt it.
+                entity_id=str(self.id) if getattr(self, "id", None) else None,
             )
             return info, asset_ref
 

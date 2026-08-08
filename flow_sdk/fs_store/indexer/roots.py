@@ -153,7 +153,7 @@ async def load_project_mounts() -> tuple[tuple[str, str], ...]:
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import (  # noqa: PLC0415
         canonical_posix_path,
-        is_valid_project_cwd,
+        is_valid_project_mount,
     )
 
     try:
@@ -165,7 +165,10 @@ async def load_project_mounts() -> tuple[tuple[str, str], ...]:
         mount = proj.fs_storage_mount_path or getattr(proj, "cwd", None)
         if not mount or not proj.id:
             continue
-        if not is_valid_project_cwd(mount, include_temp=True):
+        # Ownership gate, NOT the worker-cwd/delete gate: a shipped system
+        # project is undeletable but perfectly ownable, and excluding it here
+        # hands its files to the enclosing checkout instead.
+        if not is_valid_project_mount(mount, include_temp=True):
             continue
         try:
             mounts.append((canonical_posix_path(str(mount)).rstrip("/"), str(proj.id)))

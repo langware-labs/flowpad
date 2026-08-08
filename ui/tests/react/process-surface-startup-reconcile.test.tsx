@@ -67,18 +67,24 @@ describe('process surface reconciliation during panel startup', () => {
   afterEach(cleanup);
 
   it('retains a mode change made during startup and switches once ready', async () => {
-    const view = render(<Surface canSwitch={false} marker="advanced-starting" />);
+    // Reconciliation is one-directional since bf9b51706 ("let a surface watch a
+    // turn it didn't start"): only a TERMINAL mode forces a transport, because
+    // chat and vibe render the same transport-independent stream. So the change
+    // that must survive startup is standard→advanced on a headless worker.
+    state.mode = 'standard';
+    state.pty = false;
+    const view = render(<Surface canSwitch={false} marker="standard-starting" />);
     await act(async () => {});
 
-    state.mode = 'standard';
-    view.rerender(<Surface canSwitch={false} marker="standard-starting" />);
+    state.mode = 'advanced';
+    view.rerender(<Surface canSwitch={false} marker="advanced-starting" />);
     await act(async () => {});
     expect(switchMode).not.toHaveBeenCalled();
 
-    view.rerender(<Surface canSwitch marker="standard-ready" />);
+    view.rerender(<Surface canSwitch marker="advanced-ready" />);
     await act(async () => {});
     expect(switchMode).toHaveBeenCalledTimes(1);
-    expect(switchMode).toHaveBeenCalledWith('cli', undefined);
+    expect(switchMode).toHaveBeenCalledWith('interactive', undefined);
   });
 
   it('keeps first sight non-mutating when no mode transition occurred', async () => {
@@ -90,12 +96,18 @@ describe('process surface reconciliation during panel startup', () => {
   });
 
   it('drains the latest mode selected while a prior switch is in flight', async () => {
-    let finishCli: (() => void) | undefined;
+    // The drain is what keeps `lastReconciledMode` honest: a mode chosen while a
+    // switch is in flight is skipped at the time (the re-entry guard) and must
+    // be recorded when the switch completes. Observed here by the NEXT
+    // transition: if the standard chosen mid-flight were lost, the entry would
+    // still read 'advanced' and the final advanced would look like no change
+    // at all — no second switch.
+    let finishPty: (() => void) | undefined;
     switchMode
       .mockImplementationOnce((mode: string) => {
         state.pty = mode === 'interactive';
         return new Promise<void>((resolve) => {
-          finishCli = resolve;
+          finishPty = resolve;
         });
       })
       .mockImplementationOnce((mode: string) => {
@@ -103,24 +115,36 @@ describe('process surface reconciliation during panel startup', () => {
         return Promise.resolve();
       });
 
-    const view = render(<Surface canSwitch marker="advanced-first" />);
-    await act(async () => {});
-
     state.mode = 'standard';
-    view.rerender(<Surface canSwitch marker="standard-switching" />);
+    state.pty = false;
+    const view = render(<Surface canSwitch marker="standard-first" />);
     await act(async () => {});
-    expect(switchMode).toHaveBeenCalledTimes(1);
+    expect(switchMode).not.toHaveBeenCalled(); // first sight never mutates
 
     state.mode = 'advanced';
-    view.rerender(<Surface canSwitch marker="advanced-pending" />);
+    view.rerender(<Surface canSwitch marker="advanced-switching" />);
+    await act(async () => {});
+    expect(switchMode).toHaveBeenCalledTimes(1);
+    expect(switchMode).toHaveBeenCalledWith('interactive', undefined);
+
+    // Chosen while the switch is in flight — the re-entry guard skips it now.
+    state.mode = 'standard';
+    view.rerender(<Surface canSwitch marker="standard-pending" />);
     await act(async () => {});
     expect(switchMode).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      finishCli?.();
+      finishPty?.();
       await Promise.resolve();
     });
+    expect(switchMode).toHaveBeenCalledTimes(1); // standard needs no transport
 
+    // The worker has since gone headless on its own; selecting a terminal mode
+    // is a real transition again ONLY if the drain recorded 'standard'.
+    state.pty = false;
+    state.mode = 'advanced';
+    view.rerender(<Surface canSwitch marker="advanced-again" />);
+    await act(async () => {});
     expect(switchMode).toHaveBeenCalledTimes(2);
     expect(switchMode).toHaveBeenLastCalledWith('interactive', undefined);
   });

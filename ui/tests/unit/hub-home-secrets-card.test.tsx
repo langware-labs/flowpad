@@ -14,7 +14,15 @@ const h = vi.hoisted(() => ({
   openPage: vi.fn(),
   openDock: vi.fn(),
   projects: [] as Array<{ id: string; displayName: string }>,
+  refetchProjects: vi.fn(),
+  deleteEntity: vi.fn(() => Promise.resolve()),
 }));
+
+vi.mock('@sdk', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, dataManager: { ...(actual.dataManager as object), delete: h.deleteEntity } };
+});
+vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({
@@ -31,32 +39,35 @@ vi.mock('@sdk/react/hooks', async (importOriginal) => ({
   useAuth: () => ({ currentUser: { id: 'u1', name: 'Ada' } }),
 }));
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: null }) }));
-vi.mock('@src/hooks/use-projects', () => ({ useProjects: () => ({ projects: h.projects, isLoading: false }) }));
-vi.mock('@src/hooks/use-desktops', () => ({
-  useDesktops: () => ({
-    desktops: [{ id: 'node-1', name: 'Desk One' }],
+vi.mock('@src/hooks/use-projects', () => ({
+  useProjects: () => ({ projects: h.projects, isLoading: false, refetch: h.refetchProjects }),
+}));
+vi.mock('@src/hooks/use-sandboxes', () => ({
+  useSandboxes: () => ({
+    sandboxes: [{ id: 'node-1', name: 'Sandbox One' }],
     isLoading: false,
     refetch: vi.fn(),
+    createSandbox: vi.fn(),
     launch: vi.fn(),
-    launching: false,
+    creating: false,
     steps: [],
     launchUrl: null,
-    openDesktop: vi.fn(),
-    renameDesktop: vi.fn(),
-    deleteDesktop: vi.fn(),
+    openSandbox: vi.fn(),
+    renameSandbox: vi.fn(),
+    deleteSandbox: vi.fn(),
     deletingId: null,
     details: {},
   }),
-  nextDesktopName: () => 'Desktop 2',
+  nextSandboxName: () => 'Sandbox 2',
 }));
-vi.mock('@src/pages/hub-home/NewDesktopDialog', () => ({ NewDesktopDialog: () => null }));
+vi.mock('@src/pages/hub-home/NewSandboxDialog', () => ({ NewSandboxDialog: () => null }));
 
 import { PageId, ViewType } from '@sdk';
 
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { HubHome } from '@src/pages/hub-home/HubHome';
 
-describe('HubHome desktop secrets button', () => {
+describe('HubHome sandbox secrets button', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     h.projects.length = 0;
@@ -64,7 +75,7 @@ describe('HubHome desktop secrets button', () => {
   afterEach(() => cleanup());
 
   it('opens Credentials on the hub page, never a page-less dock', async () => {
-    // The New Desktop button is wrapped in a Tooltip (it explains why creating
+    // The New Sandbox button is wrapped in a Tooltip (it explains why creating
     // is disabled), and radix Tooltip throws outside a provider. The real app
     // gets one from the page shell; this test renders HubHome alone.
     render(
@@ -73,7 +84,7 @@ describe('HubHome desktop secrets button', () => {
       </TooltipProvider>,
     );
 
-    await userEvent.click(screen.getByTestId('desktop-secrets'));
+    await userEvent.click(screen.getByTestId('sandbox-secrets'));
 
     expect(h.openDock).not.toHaveBeenCalled();
     expect(h.openPage).toHaveBeenCalledWith(PageId.HUB, ViewType.CREDENTIALS, 'environment');
@@ -91,5 +102,45 @@ describe('HubHome desktop secrets button', () => {
 
     expect(h.openDock).toHaveBeenCalledOnce();
     expect(h.openDock.mock.calls[0][0].toUrl()).toBe('/dock/hub/project/12345678-0000-4000-8000-000000000000');
+  });
+
+  it('asks before deleting a project, and never on the way to opening one', async () => {
+    h.projects.push({ id: '12345678-0000-4000-8000-000000000000', displayName: 'Project One' });
+    render(
+      <TooltipProvider>
+        <HubHome />
+      </TooltipProvider>,
+    );
+
+    await userEvent.click(screen.getByTestId('hub-project-delete'));
+
+    // Nothing is destroyed on the click itself — the confirm is the gate.
+    expect(h.deleteEntity).not.toHaveBeenCalled();
+    expect(screen.getByText(/will be deleted for everyone/).textContent).toContain('Project One');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    // The hub has no `delete-with-children` action (that is a flow_sdk route),
+    // so this must be the generic entity DELETE.
+    expect(h.deleteEntity).toHaveBeenCalledOnce();
+    const typeId = h.deleteEntity.mock.calls[0][0] as { type: string; id: string };
+    expect(typeId.type).toBe('project');
+    expect(typeId.id).toBe('12345678-0000-4000-8000-000000000000');
+    // Deleting is not a navigation — the card's open path must not have fired.
+    expect(h.openDock).not.toHaveBeenCalled();
+  });
+
+  it('backs out of the confirm without deleting', async () => {
+    h.projects.push({ id: '12345678-0000-4000-8000-000000000000', displayName: 'Project One' });
+    render(
+      <TooltipProvider>
+        <HubHome />
+      </TooltipProvider>,
+    );
+
+    await userEvent.click(screen.getByTestId('hub-project-delete'));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(h.deleteEntity).not.toHaveBeenCalled();
   });
 });

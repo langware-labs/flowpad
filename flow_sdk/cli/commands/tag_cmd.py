@@ -127,7 +127,8 @@ def tag_get(
 
     data = _post_graph_json(
         url,
-        {"name": name.strip(), "mode": mode, "root": root or os.getcwd()},
+        # Absolutize client-side: the scan runs server-side against the SERVER's cwd.
+        {"name": name.strip(), "mode": mode, "root": os.path.abspath(os.path.expanduser(root or "."))},
         timeout=30,
         on_error=_on_error,
     )

@@ -199,6 +199,13 @@ When the user issues a decree mid-run — a config change, a policy like a timeo
 
 `flagged` is a terminal state for a test within this cycle. It is a quarantine lane: **non-blocking** for cycle completion, but always **visible, evidence-attached, and owned**. It is never a silent skip and never counts as a pass.
 
+> **PASS MEANS PASS (non-negotiable).** A flagged test is a **RED, unfixed test**. It permits the cycle
+> to advance; it does NOT make its phase a pass. A phase with even one flagged test is reported
+> **`RED — N failing (N flagged)`** — in the summary table, the HTML report, `cycle-state.md`, and every
+> sentence said to the user. The phrase "PASS with N flagged" is banned; the word for "we may move on"
+> is **RESOLVED**. Writing PASS over a red test converts a real defect into a green number someone
+> will trust — the same class of violation as raising a timeout to go green.
+
 > **`flagged` applies only to phases 1–10 (pytest/vitest).** The Playwright phases — **Phase 11 (`.md.ts` green gate)** and **Phase 12 (`.md`→`.md.ts` authoring)** — admit **no `flagged` pass-through.** There, a file is green only on a machine-read `npx playwright test` exit 0; the sole permitted non-green is a real in-code `test.skip(...)` for one of the three documented environment reasons (clipboard / live-Claude actively responding / wrong-platform). Anything else is a hard **BLOCKED** phase — a loud, unmasked failure — not a quarantined flag. This is deliberate: a tested regression once escaped because Phase 11 was advisory and Phase 12 allowed a flag.
 
 ### When to flag (and only then)

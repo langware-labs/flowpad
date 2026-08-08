@@ -1,6 +1,7 @@
 import {
   AgenticProcess,
   ComputeNode,
+  CredentialsSubview,
   dataContext,
   DockPointerData,
   type IDockPointer,
@@ -16,8 +17,9 @@ import {
 import { NavigateFunction } from 'react-router';
 import { EVENTS_VIEW_TYPES } from '@src/types/ViewType';
 import type { ViewMode } from '@src/contexts/view-mode-context';
-import { CAPABILITY_PARAM, DockPointer, HIGHLIGHT_PARAM, JOURNEY_PARAM } from './DockPointer';
+import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
+import { getHistoryPosition } from './history-position-store';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
@@ -41,6 +43,17 @@ function toStringRecord(obj?: Record<string, unknown>): Record<string, string> {
 }
 
 interface PendingDockNavigation {
+  /**
+   * Where we are GOING. `navigate()` is async — React Router runs loaders before
+   * the URL changes — so for that whole window `window.location` still reports
+   * the PREVIOUS location. Anything that composes a URL from the live location
+   * during that window and commits it supersedes the navigation in flight.
+   *
+   * Holding the destination as a POINTER is what makes that unrepresentable:
+   * `here` returns this, so a write composes onto the destination instead of
+   * rebuilding the location we already left.
+   */
+  target: DockPointer;
   targetUrl: string;
   sourceUrl: string;
 }
@@ -69,7 +82,7 @@ export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
 // URL options that are STICKY across navigation: openDock carries each from the
 // live URL onto any target that doesn't set it. A param here means "topmost
 // until explicitly closed" — clearing it must bypass openDock (see closeJourney).
-export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM];
+export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM, JOURNEY_STEP_PARAM];
 
 /**
  * NavigationActions - Navigation actions implementation
@@ -89,6 +102,31 @@ export class NavigationActions {
 
   private static getCurrentBrowserUrl(): string {
     return `${window.location.pathname}${window.location.search}`;
+  }
+
+  /**
+   * WHERE THE APP IS, OR IS ABOUT TO BE — the pointer every URL write composes
+   * onto.
+   *
+   * A navigation in flight wins over the browser's location, because the browser
+   * has not moved yet (see {@link PendingDockNavigation.target}). Composing onto
+   * the live location during that window is what once let a journey's
+   * `?highlight=` write revert the navigation it had just asked for.
+   *
+   * Never null: the app root is an ordinary pointer now.
+   */
+  get here(): DockPointer {
+    return pendingDockNavigation?.target ?? NavigationActions.currentBrowserDock();
+  }
+
+  /** The live browser URL as a pointer. Falls back to the root for a URL we
+   *  cannot parse — the app is somewhere, and the root is the safe somewhere. */
+  private static currentBrowserDock(): DockPointer {
+    try {
+      return DockPointer.fromUrl(NavigationActions.getCurrentBrowserUrl());
+    } catch {
+      return DockPointer.root();
+    }
   }
 
   /** The `?viewMode` on the LIVE browser URL, or null. Used for view-mode
@@ -115,8 +153,9 @@ export class NavigationActions {
     }
   }
 
-  private markPendingNavigation(targetUrl: string): void {
+  private markPendingNavigation(target: DockPointer, targetUrl: string): void {
     const pending = {
+      target,
       targetUrl,
       sourceUrl: NavigationActions.getCurrentBrowserUrl(),
     };
@@ -133,8 +172,8 @@ export class NavigationActions {
     return d ? `${d.viewType}:${d.pointer ?? ''}` : null;
   }
 
-  private commitBrowserNavigation(fullUrl: string, routerUrl: string): void {
-    this.markPendingNavigation(fullUrl);
+  private commitBrowserNavigation(target: DockPointer, fullUrl: string, routerUrl: string): void {
+    this.markPendingNavigation(target, fullUrl);
 
     const from = NavigationActions.getCurrentBrowserUrl();
     const willNavigate = from !== fullUrl;
@@ -154,6 +193,32 @@ export class NavigationActions {
     }
   }
 
+  /**
+   * Commit a pointer from OUTSIDE the react-router context.
+   *
+   * The normal path goes through `navigate()` because React Router owns history
+   * and, critically, loader execution. A few callers are mounted above the
+   * router (the ui_command listener) and have no `navigate` to call, so they
+   * push and fire a synthetic popstate for the data router to pick up.
+   *
+   * That idiom lives HERE rather than being re-spelled per caller — it was
+   * already duplicated, with string equality where pointer equality belongs, so
+   * a param reordering counted as a different URL and re-pushed.
+   */
+  static commitDetached(pointer: IDockPointer): void {
+    const target = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
+    const url = target.toUrl(window.location.pathname);
+    let here: DockPointer | null = null;
+    try {
+      here = DockPointer.fromUrl(NavigationActions.getCurrentBrowserUrl());
+    } catch {
+      here = null;
+    }
+    if (here?.equals(target)) return;
+    window.history.pushState(null, '', url);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+
   static resetPendingNavigationForTests(): void {
     pendingDockNavigation = null;
   }
@@ -169,67 +234,82 @@ export class NavigationActions {
   }
 
   /**
-   * THE primitive for editing query params on the LIVE URL without any other
-   * navigation: read the current URL, apply the mutator, no-op when nothing
-   * changed, commit. Every "tweak a param in place" flow goes through here —
-   * hand-rolling the split/mutate/clear/commit ritual per caller is how the
-   * `path || '/'` guard and the pending-nav clear drift apart.
+   * Commit a pointer AS-IS — no sticky carry-forward, no scope seeding.
+   *
+   * The escape hatch for writes that must be able to REMOVE an option
+   * (`closeJourney`, `endJourneySteps`) or that are pure param edits on the
+   * current surface (`setOption`), where `openDock`'s carry-forward would put
+   * back what we are trying to drop. Composition happens on the pointer, so there is
+   * no URL string to get stale.
    */
-  private updateLiveUrlParams(mutate: (params: URLSearchParams) => void): void {
-    const current = NavigationActions.getCurrentBrowserUrl();
-    const [path, query] = current.split('?');
-    const params = new URLSearchParams(query ?? '');
-    mutate(params);
-    const rest = params.toString();
-    const url = rest ? `${path || '/'}?${rest}` : path || '/';
-    if (current === url) return;
+  private commitPointer(dock: DockPointer): void {
     NavigationActions.clearCommittedPendingNavigation();
-    this.commitBrowserNavigation(url, url);
+    const url = dock.toUrl(window.location.pathname);
+    if (NavigationActions.getCurrentBrowserUrl() === url) return;
+    this.commitBrowserNavigation(dock, url, url);
   }
 
   /**
-   * Set `?highlight=` on the LIVE URL without any other navigation — the
-   * transparent form of highlighting: wherever the user is (or is arriving,
-   * mid-route-change), only the param changes. Rebuilding from `currentDock`
-   * here would race an in-flight navigation and yank the user backwards.
+   * Leave the journey's step sequence, keeping the journey shown.
+   *
+   * Lives here beside `showJourney`/`closeJourney` because clearing a STICKY
+   * param must bypass `openDock`'s carry-forward — a navigation-layer rule that
+   * callers should not have to know, and that a second copy of would drift.
    */
-  applyHighlightInPlace(wikiword: string): void {
-    this.updateLiveUrlParams((params) => params.set(HIGHLIGHT_PARAM, wikiword));
+  endJourneySteps(): void {
+    this.setOption(JOURNEY_STEP_PARAM, null);
   }
 
   /**
-   * Navigate to the app home root `/`, optionally with `?highlight=`, CARRYING
-   * the sticky URL options (journeyId) from the live URL — the home root is not
-   * a dock URL, so openDock's carry-forward can't do it. This is also the
-   * "start dock" surface a journey can name (`start: {kind: "root"}`).
+   * Set (or clear, with `null`) one URL option on the current surface.
+   *
+   * The typed form of "tweak a param in place" — composed on {@link here}, so a
+   * write during an in-flight navigation lands on the destination rather than
+   * rebuilding the location we already left. Call sites used `useSearchParams`'s
+   * setter, which reads React-state search params and therefore has exactly that
+   * staleness.
+   */
+  setOption(key: string, value: string | null): void {
+    this.commitPointer(this.here.withOption(key, value));
+  }
+
+  /**
+   * Navigate to the app home root `/`, optionally with `?highlight=`.
+   *
+   * An ordinary `openDock` now: the root is a pointer, so sticky options
+   * (journeyId) ride along through the one carry-forward in `openDock` rather
+   * than a hand-copied loop here. Also the surface a journey names as
+   * `start: {kind: "root"}`.
    */
   openHomeRoot(highlightWord?: string): void {
-    NavigationActions.clearCommittedPendingNavigation();
-    const params = new URLSearchParams();
-    if (highlightWord) params.set(HIGHLIGHT_PARAM, highlightWord);
-    for (const key of STICKY_OPTION_PARAMS) {
-      const live = NavigationActions.currentUrlOption(key);
-      if (live) params.set(key, live);
-    }
-    const rest = params.toString();
-    const url = rest ? `/?${rest}` : '/';
-    if (NavigationActions.getCurrentBrowserUrl() === url) return;
-    this.commitBrowserNavigation(url, url);
+    const root = DockPointer.root();
+    this.openDock(highlightWord ? root.withHighlight(highlightWord) : root);
   }
 
   /**
-   * A URL option read from the LIVE URL, or null. Parses the raw URL rather
-   * than `currentDock` so it also sees params carried on the home root (which
-   * has no DockPointer). The reader behind sticky-param carry-forward.
+   * "Take me home" — the destination, wherever it is asked from.
+   *
+   * The two surfaces differ: the hub keeps every navigation under `page=hub`
+   * (a desk factory would revert the page and land on the desk home), while the
+   * desk home is the app root, which is NOT a dock URL and so needs
+   * `openHomeRoot` to carry the sticky options forward. Stated once here so the
+   * nav bar — and the next entry point (spotlight, a shortcut, a journey) —
+   * can't each re-derive the branch, and so the pending `TODO(nav)` about
+   * committing through the router has exactly one place left to land.
    */
-  private static currentUrlOption(key: string): string | null {
-    const query = NavigationActions.getCurrentBrowserUrl().split('?')[1];
-    return query ? new URLSearchParams(query).get(key) : null;
+  goHome(): void {
+    // Two surfaces, one navigation. The hub keeps every navigation under
+    // `page=hub` (a desk factory would revert the page and land on the desk
+    // home); the desk home is the app root. Both are pointers, so the branch is
+    // a choice of destination rather than a choice of mechanism.
+    this.openDock(
+      this.here.page === PageId.HUB ? DockPointer.forHome().withPage(PageId.HUB) : DockPointer.root(),
+    );
   }
 
-  /** The journey shown by the live URL, or null. */
-  private static currentJourneyId(): string | null {
-    return NavigationActions.currentUrlOption(JOURNEY_PARAM);
+  /** The journey shown where we are (or are going), or null. */
+  private currentJourneyId(): string | null {
+    return this.here.journeyId;
   }
 
   /**
@@ -239,14 +319,10 @@ export class NavigationActions {
    * stays topmost until {@link closeJourney}. URL-carried ⇒ reload-safe.
    */
   showJourney(journeyId: string): void {
-    if (this.currentDock) {
-      this.openDock(this.currentDock.withJourney(journeyId));
-      return;
-    }
-    NavigationActions.clearCommittedPendingNavigation();
-    const url = `/?${JOURNEY_PARAM}=${encodeURIComponent(journeyId)}`;
-    if (NavigationActions.getCurrentBrowserUrl() === url) return;
-    this.commitBrowserNavigation(url, url);
+    // One path for every surface. The old home-root branch hand-built
+    // `/?journeyId=…`, which DROPPED every other param on the way — `highlight`
+    // included. Composing on the pointer cannot lose the rest of the location.
+    this.openDock(this.here.withJourney(journeyId));
   }
 
   /**
@@ -255,17 +331,10 @@ export class NavigationActions {
    * whose carry-forward would immediately put the param back.
    */
   closeJourney(): void {
-    if (!NavigationActions.currentJourneyId()) return;
-    const dock = this.currentDock;
-    if (!dock?.journeyId) {
-      // Home root (or any non-dock URL) carrying the param: drop just that key.
-      this.updateLiveUrlParams((params) => params.delete(JOURNEY_PARAM));
-      return;
-    }
-    NavigationActions.clearCommittedPendingNavigation();
-    const url = dock.withJourney(null).toUrl();
-    if (NavigationActions.getCurrentBrowserUrl() === url) return;
-    this.commitBrowserNavigation(url, url);
+    if (!this.currentJourneyId()) return;
+    // `commitPointer`, not `openDock`: the sticky carry-forward would put the
+    // param straight back. This is the one thing that clears it.
+    this.commitPointer(this.here.withJourney(null));
   }
 
   // ========== Core Navigation ==========
@@ -300,11 +369,10 @@ export class NavigationActions {
         toplog.log('navigation', 'openDock(null) no-op (already not on a dock URL)', { currentUrl });
         return; // already not on a dock URL
       }
-      // Root-level dock URLs strip to '' — and navigate('') is a react-router
-      // relative no-op, so close-dock silently did nothing outside the
-      // /agent|/flow prefixed namespaces. Normalize to the app root.
-      const baseUrl = stripDockPortion(currentPath) || '/';
-      this.navigateToBaseUrl(baseUrl);
+      // Closing the dock IS going to the root, and the root is an ordinary
+      // pointer — `buildDockUrl` already returns the base path (or `/`) for it,
+      // which is exactly what the hand-rolled strip-and-normalize did.
+      this.commitPointer(DockPointer.root());
       return;
     }
 
@@ -315,12 +383,15 @@ export class NavigationActions {
         : base;
 
     // STICKY URL options: each listed param rides onto any target that doesn't
-    // set it, read from the LIVE URL (the home root `/` is not a dock URL yet
-    // can carry them). `journeyId` is the first — a shown journey is TOPMOST
-    // until `closeJourney()` (which bypasses openDock so the param can clear).
-    // New sticky params are one table entry, not another bespoke block.
+    // set it, read from WHERE WE ARE (or are going) — one carry-forward for
+    // every surface now that the home root is an ordinary pointer, where it used
+    // to need a hand-copied duplicate in `openHomeRoot`. `journeyId` is the
+    // first: a shown journey is TOPMOST until `closeJourney()` (which commits
+    // directly so the param can actually clear). New sticky params are one table
+    // entry, not another bespoke block.
+    const here = this.here;
     for (const key of STICKY_OPTION_PARAMS) {
-      const live = NavigationActions.currentUrlOption(key);
+      const live = here.options?.[key];
       if (live && !dock.options?.[key]) {
         dock = dock.withOption(key, live);
       }
@@ -352,7 +423,12 @@ export class NavigationActions {
     // preference on load, this inheritance matters only for navigations issued
     // BEFORE that adopt effect commits (e.g. a redirect right after a hard load
     // on a ?viewMode URL) — not for general mode stickiness.
-    if (dock.viewMode === null) {
+    //
+    // The ROOT is excluded. `/` could not carry a view mode before it was a
+    // pointer, so stamping one now would both change the canonical home URL
+    // (`/?viewMode=…`) and let the home out-rank the persisted preference —
+    // which is what actually decides the mode there.
+    if (dock.viewMode === null && !dock.isRoot) {
       const liveViewMode = NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null;
       if (liveViewMode) dock = dock.withViewMode(liveViewMode);
     }
@@ -395,30 +471,9 @@ export class NavigationActions {
     const basePath = stripDockPortion(currentPath);
     const url = basePath && fullUrl.startsWith(basePath) ? fullUrl.substring(basePath.length) : fullUrl;
 
-    this.commitBrowserNavigation(fullUrl, url);
+    this.commitBrowserNavigation(targetDock, fullUrl, url);
   }
 
-  private navigateToBaseUrl(baseUrl: string): void {
-    const currentUrl = NavigationActions.getCurrentBrowserUrl();
-    if (currentUrl === baseUrl || pendingDockNavigation?.targetUrl === baseUrl) {
-      toplog.log('navigation', 'navigateToBaseUrl no-op (already there/pending)', {
-        currentUrl,
-        baseUrl,
-        pending: pendingDockNavigation?.targetUrl ?? null,
-      });
-      return;
-    }
-
-    toplog.log('navigation', 'navigateToBaseUrl (close dock)', {
-      from: currentUrl,
-      to: baseUrl,
-      historyLen: window.history.length,
-    });
-    this.markPendingNavigation(baseUrl);
-    if (NavigationActions.getCurrentBrowserUrl() !== baseUrl) {
-      void this.navigate(baseUrl);
-    }
-  }
 
   /**
    * Build the absolute deep-link URL for a dock pointer without navigating.
@@ -863,6 +918,16 @@ export class NavigationActions {
     this.openDock(pointer);
   }
 
+  /**
+   * Open the Credentials screen (Environment / Connections / API Keys)
+   * @param tab - Which tab is active; defaults to Connections
+   * @param projectId - Project whose environment is shown
+   */
+  openCredentials(tab?: CredentialsSubview, projectId?: string): void {
+    const pointer = DockPointer.forCredentials(tab, projectId);
+    this.openDock(pointer);
+  }
+
   // ========== Entity Navigation ==========
 
   openEntity(entity: unknown): void {
@@ -882,40 +947,35 @@ export class NavigationActions {
 
   // ========== History Navigation ==========
 
+  /**
+   * Step back one entry — but only if there IS one. Unguarded, `navigate(-1)`
+   * on a freshly deep-linked page walks out of the app entirely (to whatever
+   * the tab showed before, or a blank page in the Electron shell).
+   *
+   * This is the HISTORY affordance and nothing else. A view that wants "leave
+   * this thing" should name its destination — `openDock(DockPointer.forX())` —
+   * rather than depend on where the user happened to come from.
+   */
   goBack(): void {
-    toplog.log('navigation', 'NavigationActions.goBack → navigate(-1)', {
+    const { canGoBack, idx } = getHistoryPosition();
+    toplog.log('navigation', 'NavigationActions.goBack', {
+      canGoBack,
+      idx,
       currentUrl: NavigationActions.getCurrentBrowserUrl(),
       currentDock: NavigationActions.dockLabel(this.currentDock),
-      historyLen: window.history.length,
     });
+    if (!canGoBack) return;
     void this.navigate(-1);
   }
 
   goForward(): void {
-    toplog.log('navigation', 'NavigationActions.goForward → navigate(1)', {
+    const { canGoForward, idx } = getHistoryPosition();
+    toplog.log('navigation', 'NavigationActions.goForward', {
+      canGoForward,
+      idx,
       currentUrl: NavigationActions.getCurrentBrowserUrl(),
-      historyLen: window.history.length,
     });
+    if (!canGoForward) return;
     void this.navigate(1);
-  }
-
-  // ========== Sharing ==========
-
-  getShareableUrl(): string {
-    const baseUrl = window.location.origin;
-    const currentPath = window.location.pathname + window.location.search;
-    return `${baseUrl}${currentPath}`;
-  }
-
-  async copyShareableUrl(): Promise<boolean> {
-    const url = this.getShareableUrl();
-    try {
-      await navigator.clipboard.writeText(url);
-      console.log('[Navigation] Copied shareable URL:', url);
-      return true;
-    } catch (error) {
-      console.error('[Navigation] Failed to copy URL:', error);
-      return false;
-    }
   }
 }

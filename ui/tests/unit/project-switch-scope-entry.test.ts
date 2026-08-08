@@ -37,7 +37,7 @@ vi.mock('@src/routes/loaders/load-project', () => ({
   loadProjectRoute: vi.fn(() => Promise.resolve(undefined)),
 }));
 
-import { loadDockPointer } from '@src/routes/loaders/load-dock-pointer';
+import { adoptScopeProject, loadDockPointer } from '@src/routes/loaders/load-dock-pointer';
 
 const PROJECT_P = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const MARKDOWN_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
@@ -171,25 +171,39 @@ describe('loadDockPointer — a project-pinned browse dock adopts its scope proj
   });
 });
 
-describe('loadDockPointer — a project-pinned HOME dock adopts its scope project (C)', () => {
+describe('the home dock canonicalizes, and the root loader adopts (C)', () => {
+  // The stay-home switch landing — `?scope-mode=project&scope-activeProjectId=…`
+  // on the home — still writes project context URL-first, incl. on hard refresh.
+  // What changed is WHERE: the root is one location with one address (`/`), so
+  // `/dock/home` redirects there and `loadHomePage` is the home's single writer.
+  // Both halves are pinned, or the redirect could quietly drop the adoption.
   beforeEach(() => {
     loadProjectMock.mockClear();
   });
 
-  it('home dock with a project scope loads that project into context (stay-home switch)', async () => {
-    // The "open project on home stays home" landing: /dock/home?scope-mode=
-    // project&scope-activeProjectId=… — the HOME loader is the single writer
-    // of project context (URL-first), incl. on hard refresh.
+  it('a home dock redirects to the root, carrying its scope', async () => {
     const dock = DockPointer.forHome().withScopeFilter(projectScope(PROJECT_P));
 
-    await loadDockPointer(dock, { requestPath: '/dock/home' });
+    const redirected = await loadDockPointer(dock, { requestPath: '/dock/home' }).then(
+      () => null,
+      (thrown: Response) => thrown,
+    );
+
+    expect(redirected?.status).toBe(302);
+    const location = redirected?.headers.get('location') ?? '';
+    expect(location.startsWith('/?')).toBe(true);
+    expect(location).toContain(PROJECT_P);
+  });
+
+  it('adoptScopeProject loads the scoped project — the root loader’s half', async () => {
+    await adoptScopeProject(DockPointer.forHome().withScopeFilter(projectScope(PROJECT_P)));
 
     expect(loadProjectMock).toHaveBeenCalledTimes(1);
     expect((loadProjectMock.mock.calls[0][0] as TypeId).id).toBe(PROJECT_P);
   });
 
   it('a scope-less home dock adopts nothing', async () => {
-    await loadDockPointer(DockPointer.forHome(), { requestPath: '/dock/home' });
+    await adoptScopeProject(DockPointer.forHome());
 
     expect(loadProjectMock).not.toHaveBeenCalled();
   });

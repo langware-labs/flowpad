@@ -137,7 +137,15 @@ describe('assistance agent flow navigate — ui_command(navigate_entity) reaches
         resolve();
       });
     });
-    await proc.executeInstruction('now open it in flowpad', { sync: false });
+    // "navigate to it", not the bare "open it": the assistance skill routes
+    // "open it" to its `navigate` action, but that phrasing ALSO reads as
+    // `flow show` (set display focus, explicitly "no navigation"), and on the
+    // pinned SM tier the model took that branch — three `flow show` attempts,
+    // no navigate. This test asserts the navigate PLUMBING, not the model's
+    // verb choice (see the cli_config note above), so it names the action and
+    // still lets the skill decide HOW. Model verb-routing belongs in a skill
+    // eval, not here.
+    await proc.executeInstruction('now navigate flowpad to it', { sync: false });
     await turn2Done;
 
     // The navigate frame may land a tick after the worker's terminal edge.

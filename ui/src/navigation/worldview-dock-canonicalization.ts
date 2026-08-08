@@ -1,32 +1,6 @@
-import { WorldViewProjection, isWorldViewProjection } from '@sdk';
-
-function canonicalSearch(search: string, focus?: string, allowSignal = true): string {
-  const params = new URLSearchParams(search);
-  const legacyColor = params.get('color');
-  if (legacyColor && !params.has('signal')) params.set('signal', legacyColor);
-  params.delete('color');
-  if (!allowSignal) params.delete('signal');
-  if (focus) params.set('focus', focus);
-
-  const hidden = params.get('hide');
-  if (hidden) {
-    const normalized = [
-      ...new Set(
-        hidden
-          .split(',')
-          .map((value) => value.trim())
-          .filter(Boolean),
-      ),
-    ]
-      .sort()
-      .join(',');
-    if (normalized) params.set('hide', normalized);
-    else params.delete('hide');
-  }
-
-  const query = params.toString();
-  return query ? `?${query}` : '';
-}
+import { DockPointer } from './DockPointer';
+import { tryParseDock } from './try-parse-dock';
+import { normalizeWorldViewDockPointer, ViewType } from '@sdk';
 
 /**
  * Collapse the retired Atlas and entity-rooted WorldView URL families into the
@@ -34,37 +8,27 @@ function canonicalSearch(search: string, focus?: string, allowSignal = true): st
  * redirect, so mounted views only ever observe canonical URL state.
  */
 export function canonicalWorldViewDockPath(pathname: string, search: string): string | null {
-  const atlasMatch = pathname.match(/^(.*\/(?:dock|dev|win))\/hub\/atlas(?:\/([^/]+))?\/?$/);
-  if (atlasMatch) {
-    const projection =
-      atlasMatch[2] === WorldViewProjection.ORGANIZATION ? WorldViewProjection.ORGANIZATION : WorldViewProjection.WORLD;
-    return `${atlasMatch[1]}/hub/worldview/${projection}${canonicalSearch(search, undefined, false)}`;
-  }
+  // `normalizeWorldViewDockPointer` (ts_sdk) already collapses all three retired
+  // WorldView families — the Hub `atlas` alias, a bare/duplicated projection,
+  // and the entity-rooted `/worldview/<type>/<uuid>` form whose identity becomes
+  // shareable `focus` state. Persisted Tab rows go through it (`tab.ts`); this
+  // is the URL half, which used to re-implement the same three rules as regexes
+  // and template strings. One table, two callers.
+  const dock = tryParseDock(`${pathname}${search}`);
+  if (dock?.viewType !== ViewType.ATLAS && dock?.viewType !== ViewType.WORLDVIEW) return null;
 
-  const hubMatch = pathname.match(/^(.*\/(?:dock|dev|win))\/hub\/worldview(?:\/([^/]+))?\/?$/);
-  if (hubMatch) {
-    const projection = hubMatch[2] || WorldViewProjection.WORLD;
-    if (!isWorldViewProjection(projection)) return null;
-    const target = `${hubMatch[1]}/hub/worldview/${projection}${canonicalSearch(search, undefined, false)}`;
-    return target === `${pathname}${search}` ? null : target;
-  }
-
-  const localMatch = pathname.match(/^(.*\/(?:dock|dev|win))\/worldview(?:\/(.*?))?\/?$/);
-  if (!localMatch) return null;
-  const rest = (localMatch[2] ?? '').split('/').filter(Boolean);
-
-  let projection = WorldViewProjection.DEPLOYMENT;
-  let focus: string | undefined;
-  if (rest.length === 1 && isWorldViewProjection(rest[0])) {
-    projection = rest[0];
-  } else if (rest.length === 2) {
-    // Legacy `/worldview/<entity-type>/<uuid>` links become a deployment
-    // projection with their entity identity carried as shareable focus state.
-    focus = `${decodeURIComponent(rest[0])}-${decodeURIComponent(rest[1])}`;
-  } else if (rest.length > 0) {
-    return null;
-  }
-
-  const target = `${localMatch[1]}/worldview/${projection}${canonicalSearch(search, focus)}`;
+  const normalized = normalizeWorldViewDockPointer({
+    viewType: dock.viewType,
+    pointer: dock.pointer,
+    options: dock.options,
+    page: dock.page,
+  });
+  const target = new DockPointer(
+    normalized.viewType,
+    normalized.pointer,
+    normalized.options,
+    dock.layout,
+    normalized.page,
+  ).toUrl(pathname);
   return target === `${pathname}${search}` ? null : target;
 }

@@ -1,5 +1,5 @@
 import { CollapsedSidebar } from '@src/components/collapsed-sidebar';
-import { EnvironmentBanner } from '@src/components/environment-banner/EnvironmentBanner';
+import { TopNavBar } from '@src/components/top-nav-bar/TopNavBar';
 import { Footer } from '@src/components/footer';
 import { SidebarProvider } from '@src/components/ui/sidebar';
 import { useIsVibe } from '@src/components/view-mode';
@@ -44,14 +44,14 @@ export default function FlowPage() {
   // process-display/new-chat dispatch.
   return (
     /* `flex-col` on the provider's own root (it appends className to a flex div)
-       rather than a wrapper of our own: that makes the environment banner the
-       app's REAL top — full window width, above the rail as well as the content.
-       It used to be rendered inside each home page, which put it below the
-       rail's top edge and made it vanish on every non-home route. On a cloud
-       sandbox or an agent's box, "which runtime am I on" must not depend on
-       where you navigated. One mount, one place. */
+       rather than a wrapper of our own: that makes the navigation bar the app's
+       REAL top — full window width, above the rail as well as the content. Its
+       predecessor was rendered inside each home page, which put it below the
+       rail's top edge and made it vanish on every non-home route. Neither the
+       runtime signal nor the back button may depend on where you navigated.
+       One mount, one place. */
     <SidebarProvider defaultOpen={false} className="h-full !min-h-0 flex-col overflow-hidden bg-background">
-      <EnvironmentBanner />
+      <TopNavBar />
       <div data-testid="flow-page" className="flex min-h-0 w-full flex-1 overflow-hidden">
         {/* Collapsed Icon Sidebar (~50px wide) */}
         <CollapsedSidebar />

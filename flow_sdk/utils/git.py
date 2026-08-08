@@ -12,17 +12,10 @@ from .file_system import ROOT_FOLDER
 
 logger = logging.getLogger(__name__)
 
-# Env var name the inline git credential helper reads the token from. The helper
-# script (below) references only this NAME; the token value lives solely in the
-# child process env — never in argv (ps-visible) nor in the clone URL on disk.
-_GIT_TOKEN_ENV = "FLOWPAD_GIT_TOKEN"
-# `!f() { … }; f` is executed by git via /bin/sh, so `$FLOWPAD_GIT_TOKEN` resolves
-# from the child env. GitHub accepts any username with a token (use x-access-token).
-_GIT_TOKEN_CREDENTIAL_HELPER = (
-    f'!f() {{ echo username=x-access-token; echo "password=${_GIT_TOKEN_ENV}"; }}; f'
-)
-
-
+# The credential-helper script and its env-var name are DEFINED ONCE, in
+# git_folder. Re-declaring them here is how a security-critical path drifts: the
+# copy immediately lost ``GIT_TERMINAL_PROMPT=0`` on the no-token branch, which
+# turns a bad URL into a hang instead of a fast failure.
 def _git_token_auth(token: Optional[str]) -> Tuple[list[str], Optional[dict]]:
     """Auth for one git invocation: `(extra argv, child env)`.
 
@@ -31,11 +24,16 @@ def _git_token_auth(token: Optional[str]) -> Tuple[list[str], Optional[dict]]:
     GIT_TERMINAL_PROMPT=0 so a bad/absent token fails fast instead of hanging.
     `([], None)` when there's no token — a plain public clone.
     """
+    from flow_sdk.utils.git_folder import CREDENTIAL_HELPER, GIT_TOKEN_ENV  # noqa: PLC0415
+
+    # GIT_TERMINAL_PROMPT=0 on BOTH branches: without a token a private or
+    # mistyped URL must fail fast, not block on a credential prompt until the
+    # command timeout.
     if not token:
-        return [], None
+        return [], {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     return (
-        ["-c", f"credential.helper={_GIT_TOKEN_CREDENTIAL_HELPER}"],
-        {**os.environ, _GIT_TOKEN_ENV: token, "GIT_TERMINAL_PROMPT": "0"},
+        ["-c", f"credential.helper={CREDENTIAL_HELPER}"],
+        {**os.environ, GIT_TOKEN_ENV: token, "GIT_TERMINAL_PROMPT": "0"},
     )
 
 
@@ -65,14 +63,54 @@ def git_commit_hash():
     global commit_hash
     if commit_hash is not None:
         return commit_hash
-    result = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True, cwd=git_root_folder()
-    )
-    commit_hash = result.stdout.strip()
+    commit_hash = _sync(git_root_folder(), "rev-parse", "--short", "HEAD")
     return commit_hash
 
 
 # ── Per-repo git operations ───────────────────────────────────────────────────
+
+def _run_git(args: list[str], cwd: str, timeout: int = 10) -> subprocess.CompletedProcess:
+    """One blocking git invocation.
+
+    These helpers are cheap LOCAL probes (does this path sit in a repo? what is
+    its origin?) called from synchronous code — the indexer, entity
+    constructors, route handlers. They are not "git operations on a repository"
+    and deliberately do not go through ``GitFolder``/``CommandExecutor``, which
+    is async and reached only via a ComputeNode.
+    """
+    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+
+
+def _sync(repo_path: str, *args: str, timeout: int = 10) -> str:
+    """Trimmed stdout of a local git probe, or "" on any failure."""
+    try:
+        result = _run_git(["git", *args], repo_path, timeout=timeout)
+    except Exception:  # noqa: BLE001 - these helpers answer "" rather than raising
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+async def _git(args: list[str], cwd: str, timeout: int = 60) -> subprocess.CompletedProcess:
+    """One git invocation, off the event loop. The async sibling of ``_run_git``."""
+    return await asyncio.to_thread(_run_git, args, cwd, timeout)
+
+
+async def _checked_out_branch(repo_path: str) -> Optional[str]:
+    """The branch a checkout is on, or ``None`` when detached.
+
+    Shared by ``git_pull`` and ``git_sync_mirror``: both must refuse to act on a
+    detached HEAD, and that rule should not live in two places.
+    """
+    return await asyncio.to_thread(git_current_branch, repo_path) or None
+
+
+def _git_err(result: subprocess.CompletedProcess, verb: str) -> str:
+    """One phrasing for a failed invocation. `stderr or stdout` in one place, so
+    the fallback order cannot drift between call sites."""
+    err = (result.stderr or result.stdout or "").strip()
+    logger.warning("[git] %s FAILED: %s", verb, err)
+    return f"Git {verb} failed: {err}"
+
 
 def find_project_root(file_path: str) -> Optional[str]:
     """Walk up from file_path to find the nearest .git directory."""
@@ -84,28 +122,14 @@ def find_project_root(file_path: str) -> Optional[str]:
 
 
 def git_remote_url(repo_path: str) -> str:
-    """Return the origin remote URL for the given repo, or empty string."""
-    try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            cwd=repo_path, capture_output=True, text=True, timeout=5,
-        )
-        return result.stdout.strip() if result.returncode == 0 else ""
-    except Exception:
-        return ""
+    """The origin URL of a checkout, or "" when there is none."""
+    return _sync(repo_path, "config", "--get", "remote.origin.url")
 
 
 def git_current_branch(repo_path: str) -> str:
-    """Return the current branch name for the given repo, or empty string."""
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=repo_path, capture_output=True, text=True, timeout=5,
-        )
-        branch = result.stdout.strip() if result.returncode == 0 else ""
-        return branch if branch and branch != "HEAD" else ""
-    except Exception:
-        return ""
+    """The checked-out branch, or "" when detached or not a repo."""
+    branch = _sync(repo_path, "rev-parse", "--abbrev-ref", "HEAD")
+    return "" if branch == "HEAD" else branch
 
 
 def git_repo_full_name(repo_path: str) -> str:
@@ -140,11 +164,7 @@ def derive_repo_leaf_from_url(clone_url: str) -> str:
 def _url_matches(path: str, clone_url: str) -> bool:
     """Return True if the git repo at path has an origin URL matching clone_url."""
     try:
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            cwd=path, capture_output=True, text=True, timeout=5,
-        )
-        return result.returncode == 0 and result.stdout.strip() == clone_url.strip()
+        return git_remote_url(path) == clone_url.strip()
     except Exception:
         return False
 
@@ -187,30 +207,6 @@ def find_local_repo_for_url(clone_url: str) -> Optional[str]:
             continue
 
     return None
-
-
-async def _git(args: list[str], cwd: str, timeout: int = 60) -> subprocess.CompletedProcess:
-    """One git invocation, off the event loop. The async sibling of ``_run_git``."""
-    return await asyncio.to_thread(_run_git, args, cwd, timeout)
-
-
-async def _checked_out_branch(repo_path: str) -> Optional[str]:
-    """The branch a checkout is on, or ``None`` when detached.
-
-    Shared by ``git_pull`` and ``git_sync_mirror``: both must refuse to act on a
-    detached HEAD, and that rule should not live in two places.
-    """
-    r = await _git(["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_path)
-    branch = r.stdout.strip() if r.returncode == 0 else ""
-    return None if branch in ("", "HEAD") else branch
-
-
-def _git_err(result: subprocess.CompletedProcess, verb: str) -> str:
-    """One phrasing for a failed invocation. `stderr or stdout` in one place, so
-    the fallback order cannot drift between call sites."""
-    err = (result.stderr or result.stdout or "").strip()
-    logger.warning("[git] %s FAILED: %s", verb, err)
-    return f"Git {verb} failed: {err}"
 
 
 async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, bool, str]:
@@ -383,8 +379,8 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
     a successful no-op, not a failure.
     """
     try:
-        def _run(args, cwd):
-            return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=30)
+        async def _run(*args):
+            return await asyncio.to_thread(_run_git, ["git", *args], repo_path, 30)
 
         present, missing = [], []
         for path in paths:
@@ -394,11 +390,11 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
         missing_warning = f"not found, so not committed: {', '.join(missing)}" if missing else None
 
         # One invocation for every path — same semantics, one process.
-        await asyncio.to_thread(_run, ["git", "add", "--", *present], repo_path)
+        await _run("add", "--", *present)
 
         # Scoped to OUR paths, so somebody else's staged work doesn't read as ours.
-        staged = await asyncio.to_thread(_run, ["git", "diff", "--cached", "--quiet", "--", *present], repo_path)
-        branch_result = await asyncio.to_thread(_run, ["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_path)
+        staged = await _run("diff", "--cached", "--quiet", "--", *present)
+        branch_result = await _run("rev-parse", "--abbrev-ref", "HEAD")
         current_branch = (branch_result.stdout.strip() if branch_result.returncode == 0 else "") or "HEAD"
 
         if staged.returncode == 0:
@@ -410,29 +406,27 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
                 warning=missing_warning,
             )
 
-        commit = await asyncio.to_thread(_run, ["git", "commit", "-m", commit_message, "--", *present], repo_path)
+        commit = await _run("commit", "-m", commit_message, "--", *present)
         if commit.returncode != 0:
             err = (commit.stderr or commit.stdout or "").strip()
             logger.warning("[git] commit failed: %s", err)
             return GitPushResult(ok=False, message=err or "git commit failed", branch=current_branch)
 
-        head = await asyncio.to_thread(_run, ["git", "rev-parse", "HEAD"], repo_path)
+        head = await _run("rev-parse", "HEAD")
         sha = head.stdout.strip() if head.returncode == 0 else None
 
         # Rebase only when the upstream actually moved. An unconditional pull
         # aborts on an unrelated dirty tree, and swallowing that failure turns
         # into a confusing non-fast-forward push rejection one step later.
         pull_warning: Optional[str] = None
-        behind = await asyncio.to_thread(_run, ["git", "rev-list", "--count", "HEAD..@{u}"], repo_path)
+        behind = await _run("rev-list", "--count", "HEAD..@{u}")
         if behind.returncode == 0 and (behind.stdout.strip() or "0") != "0":
-            pull_result = await asyncio.to_thread(
-                _run, ["git", "pull", "--rebase", "origin", current_branch], repo_path
-            )
+            pull_result = await _run("pull", "--rebase", "origin", current_branch)
             if pull_result.returncode != 0:
                 pull_warning = (pull_result.stderr or pull_result.stdout or "").strip()
                 logger.warning("[git] pull --rebase before push failed: %s", pull_warning)
 
-        result = await asyncio.to_thread(_run, ["git", "push", "origin", current_branch], repo_path)
+        result = await _run("push", "origin", current_branch)
         if result.returncode != 0:
             err = (result.stderr or result.stdout or "").strip()
             logger.warning("[git] push failed: %s", err)
@@ -460,10 +454,6 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
 _LOG_SEP = "\x1f"
 
 
-def _run_git(args: list[str], cwd: str, timeout: int = 10) -> subprocess.CompletedProcess:
-    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
-
-
 def git_asset_introduction(path: str) -> datetime | None:
     """Return the earliest commit that introduced a local file/folder asset.
 
@@ -478,15 +468,15 @@ def git_asset_introduction(path: str) -> datetime | None:
             return None
         target = Path(path).resolve()
         rel_path = target.relative_to(Path(root).resolve()).as_posix()
-        args = ["git", "log"]
+        args = ["log"]
         if not target.is_dir():
             args.append("--follow")
         args.extend(["--format=%aI", "--diff-filter=A", "--", rel_path])
-        result = _run_git(args, root)
-        if result.returncode != 0:
+        out = _sync(root, *args)
+        if not out:
             return None
         dates: list[datetime] = []
-        for line in result.stdout.splitlines():
+        for line in out.splitlines():
             try:
                 parsed = datetime.fromisoformat(line.strip().replace("Z", "+00:00"))
             except ValueError:
@@ -497,7 +487,7 @@ def git_asset_introduction(path: str) -> datetime | None:
                 else parsed.astimezone(timezone.utc)
             )
         return min(dates) if dates else None
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except (OSError, ValueError):
         return None
 
 

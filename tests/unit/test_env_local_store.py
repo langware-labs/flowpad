@@ -193,10 +193,12 @@ def test_gitignore_status_reports_git_failure_without_raising(tmp_path, monkeypa
 
     import flow_sdk.utils.git as git_utils
 
+    original = git_utils._run_git
+
     def _boom(args, cwd, timeout=10):
         if "check-ignore" in args:
             raise OSError("git exploded")
-        return subprocess.run(["git", *args[1:]], cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        return original(args, cwd, timeout)
 
     monkeypatch.setattr(git_utils, "_run_git", _boom)
 

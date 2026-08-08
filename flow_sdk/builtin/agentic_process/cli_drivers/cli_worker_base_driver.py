@@ -907,8 +907,23 @@ def restart_payload_from_cli_options(options: AgentOptions) -> dict[str, Any]:
 
 
 def worker_capability_kind(worker_type: str) -> str:
-    """The capability kind whose discovered value provides this worker's CLI."""
-    return f"harness.{worker_type}.cli"
+    """The capability kind whose discovered value provides this worker's CLI.
+
+    Looked up FIRST, interpolated only as a fallback, because the worker type and
+    the kind segment are not always the same token. Claude registers
+    ``worker_type="claude_code"`` against kind ``harness.claude.cli``
+    (registry.py), so plain interpolation produced ``harness.claude_code.cli`` --
+    a kind nothing registers -- and every lookup keyed by the capability's
+    worker_type came back "not installed" for a CLI that was installed and
+    working. Codex and copilot escaped it only because their two names coincide.
+
+    The fallback still carries the driver names (``claude``/``codex``/``copilot``),
+    which are not in the map and for which interpolation is correct.
+    """
+    from flow_sdk.core.capabilities.mcp import harness_kind_for_worker_type
+
+    return harness_kind_for_worker_type(worker_type) or f"harness.{worker_type}.cli"
+
 
 
 def worker_bin_folder(worker_type: str) -> str | None:
@@ -956,7 +971,8 @@ def prepend_path_dir(folder: str, path: str | None) -> str:
 def resolve_worker_probe_context(worker_type: str) -> tuple[str, dict[str, str]] | None:
     """(abs executable path, probe env) for a short vendor-CLI probe, or
     ``None`` ⇔ not installed. The executable name IS the worker type
-    (claude/codex/copilot).
+    (claude/codex/copilot) -- callers must pass the DRIVER name, which
+    ``run_worker_auth_probe`` guarantees.
 
     Resolution is disk-verified against the DISCOVERED bin folder (same shape
     as ``CliCapabilityRunner.test``): a stale discovered folder — CLI
@@ -981,7 +997,20 @@ async def run_worker_auth_probe(worker_type: str) -> WorkerAuthResult:
     NOT_INSTALLED — the install gate also applies to copilot, whose probe is
     a pure heuristic that must not claim logged-in for an uninstalled CLI),
     then runs the vendor probe off-loop.
+
+    Canonicalizes the worker type FIRST, and that is the whole fix for a bug that
+    made Claude device login report "claude_code CLI is not installed" for a working
+    CLI. Every other caller arrives via ``get_driver(...).auth_probe()`` and so passes
+    the driver name (``claude``); device login alone keys off the CAPABILITY's
+    worker_type (``claude_code``) and reached here un-normalized, where both the
+    binary lookup and the vendor dispatch then missed. ``get_driver``'s alias table is
+    the one canonicalizer in the tree — use it rather than teaching this layer, or the
+    import-free ``auth_probe``, a fourth set of aliases.
     """
+    try:
+        worker_type = get_driver(worker_type).name
+    except ValueError:
+        pass  # unregistered worker: fall through and report NOT_INSTALLED as before
     ctx = resolve_worker_probe_context(worker_type)
     path, env = ctx if ctx is not None else (None, {})  # env unread on the NOT_INSTALLED path
     return await asyncio.to_thread(probe_worker_auth, worker_type, path, env, Path.home())

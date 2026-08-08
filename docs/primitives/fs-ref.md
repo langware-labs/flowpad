@@ -20,7 +20,7 @@ id: 44fde5fb-1fb6-4518-920e-cf686807280b
 
 7. Named child refs are declared as computed properties on the Record/FsRecord class — never constructed inline in business logic. Example: `skill_md_ref = asset_ref.child("SKILL.md")`. `child(name)` returns a new FSRef with the same typeId and `entity_sub_path + "/" + name`.
 
-8. `FSItem` is the generic file browsing interface and hooks in the UI. FSRef does not use FSItems — it works directly with the compute node fs API.
+8. `FSEntry` is the generic file-browsing value returned by the fs API and the UI hooks (a transient directory-listing entry — never persisted, no entity row). FSRef does not use FSEntries — it works directly with the compute node fs API.
 
 ## VFSPath
 

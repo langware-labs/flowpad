@@ -1,24 +1,32 @@
-import { capabilityManager, dataContext, dataManager, Journey, Project, QueryFilter, QueryRequest, Shell, targetOf, TypeId, ViewType } from '@sdk';
+import { dataContext, Shell, targetOf, TypeId, ViewType } from '@sdk';
 import { useOnTag, useProject } from '@sdk/react/hooks';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { projectScope } from '@src/lib/scope-filter';
-import { dockTarget } from '@src/tags/dock-target';
-import type { JourneyPresentDock, JourneyStep, UseJourneyResult } from './use-journey';
+import type { JourneyPresentDock } from '@sdk';
+import type { UseJourneyResult } from './use-journey';
 import { ACT_FAILED_TAG, actTarget, runAct } from './act';
+import { useWaitGate } from './use-wait-gate';
 
-/** What the tray needs from the manager to render the step's own buttons. */
+/** What the tray needs from the manager. Two movers, and nothing else. */
 export interface JourneyManagerView {
-  /** The current step's act has not run yet — offer its button ("Fill text"). */
-  actPending: boolean;
-  /** Run it (and announce it on the bus, which arms the await). */
-  doAct: () => void;
-  /** A `manual` await is satisfied: light Next, wait for the click. */
-  armed: boolean;
+  /** Open step 1 — what Start and Restart do once the run is recorded. */
+  start: () => void;
+  /** Load step N+1 — running this step's act first, and waiting for its gate. */
+  next: () => void;
+  /** Load step N−1. The mirror of next: no act, no gate. */
+  back: () => void;
+  /** Move on without doing the step: no act, and the gate does not apply. The
+   *  escape hatch for a gate that will never open. */
+  skip: () => void;
+  /** There is a previous step to go back to. */
+  canGoBack: boolean;
+  /** Next has been pressed and is waiting on this step's gate. */
+  waiting: boolean;
 }
 
 function joinVfs(assetRef: string, vfs: string): string {
@@ -32,170 +40,129 @@ function joinVfs(assetRef: string, vfs: string): string {
  * alive as the manager walks the user between surfaces.
  */
 function pointerForDock(
-  dock: JourneyPresentDock | undefined,
+  dock: JourneyPresentDock,
   assetRef: string,
   computeNodeTypeId: TypeId | null,
   projectId: string | null,
+  here: DockPointer,
 ): DockPointer | null {
-  switch (dock?.kind) {
-    case 'asset_editor':
-      return AssetDocPointer.forVfs(
-        AssetEditor.HTML,
-        joinVfs(assetRef, dock.vfs ?? ''),
-        computeNodeTypeId ?? undefined,
-      ).toDockPointer();
-    case 'home':
-      return projectId ? DockPointer.forAssetProjectHome({ scope: projectScope(projectId) }) : null;
-    case 'wiki':
-      return DockPointer.forWiki(dock.name ?? '');
-    case 'asset_list':
-      return DockPointer.forAssetList(dock.name ?? '');
-    default:
-      return null;
-  }
+  const surface = ((): DockPointer | null => {
+    switch (dock.kind) {
+      case 'stay':
+        // The surface the previous step's act produced — a build whose id the
+        // author cannot know. Keeps the dock; only the step number changes.
+        //
+        // `here` rather than the RENDERED dock: the act navigates and the gate
+        // opens on the result of that navigation, so the rendered value can
+        // still be the pre-act one. Composing on it sent the step backwards.
+        return here;
+      case 'asset_editor':
+        return AssetDocPointer.forVfs(
+          AssetEditor.HTML,
+          joinVfs(assetRef, dock.vfs ?? ''),
+          computeNodeTypeId ?? undefined,
+        ).toDockPointer();
+      case 'home':
+        return projectId ? DockPointer.forAssetProjectHome({ scope: projectScope(projectId) }) : null;
+      case 'wiki':
+        return DockPointer.forWiki(dock.name ?? '');
+      case 'asset_list':
+        return DockPointer.forAssetList(dock.name ?? '');
+      case 'root':
+        return DockPointer.root();
+      default:
+        return null;
+    }
+  })();
+  // The authored mode, when the step names one. `stay` usually does not — it
+  // keeps whatever the surface it stayed on already had.
+  if (!surface || !dock.viewMode) return surface;
+  return surface.withViewMode(dock.viewMode as ViewMode);
 }
 
 /**
- * Drives the SHOWN journey (`?journeyId=`) over the unified EventBus: presents
- * the current step on a standard dock pointer + wiki-word highlight, holds
- * exactly ONE live bus subscription (the current step's await — cursor moves
- * re-key the hook, so the old await unhooks before the new one arms), and
- * advances through the backend (the single writer).
+ * Moves the SHOWN journey (`?journeyId=` + `?journeyStep=`).
  *
- * Event ≠ proof: an awaited event with a `confirm` predicate only wakes the
- * check — the store query decides. Confirm-gated steps also check once on step
- * mount, so a reload (or work done before the step armed) auto-satisfies.
+ * Two movers and nothing else: Next runs the step's act and lands on the next
+ * step once its gate opens; Back loads the previous one. Loading a step is a
+ * plain navigation to the dock the step names, so there is no "present" effect
+ * racing the navigation it just asked for.
+ *
+ * The journal is written as a RECORD (the resume badge reads it) and is never
+ * consulted for position — the URL is the position.
  *
  * Runs only while a journey is shown — clearing the param stops all of it.
  */
 export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
-  const { journey, journal, currentStep, start, refresh } = state;
+  const { journey, graph, currentStep, stepNumber, refresh } = state;
   const { navigation, currentDock } = useDockNavigation();
   const { project } = useProject();
 
   const journeyId = journey?.id ?? null;
+  // What the URL addresses the journey BY. `identifier` is `@uname` for a
+  // code-defined journey and the plain id for a server one — writing `id` for a
+  // memory journey put a UUID on the URL that the registry could not resolve,
+  // and the tray vanished on the first step.
+  const journeyAddress = journey?.identifier ?? null;
   const projectId = project?.id ?? null;
   const computeNodeTypeId = dataContext.computeNodeTypeId ?? null;
   const assetRef = journey?.asset_ref ?? '';
-  const cursor = journal?.cursor ?? null;
-  const stepAwait = currentStep?.await;
 
-  // ── advance (guarded so a flapping signal can't double-fire a step) ──
-  const advancedRef = useRef<string | null>(null);
-  // TRANSPARENCY: when a step advances because of the user's OWN UI action
-  // (an `app.ui.*` event — they clicked something and are already navigating),
-  // the NEXT step must not override their destination with its dock. Consumed
-  // once by the present effect: highlight-in-place only for that present.
-  const suppressNextDockRef = useRef(false);
-  const doAdvance = useCallback(
+  // ── loading a step IS a navigation ──
+  // The step names its whole destination and the number rides along, so the URL
+  // is the position. Nothing is merged onto where the user already was, and no
+  // effect "presents" a step behind the navigation's back — the two used to race,
+  // and the loser was whichever wrote last.
+  const goToStep = useCallback(
+    (n: number) => {
+      const step = graph.steps[n - 1];
+      if (!step) return;
+      const pointer = pointerForDock(step.present.dock, assetRef, computeNodeTypeId, projectId, navigation.here);
+      if (!pointer) return;
+      navigation.openDock(pointer.withJourney(journeyAddress).withJourneyStep(n));
+    },
+    [graph, assetRef, computeNodeTypeId, projectId, navigation, journeyAddress],
+  );
+
+  // ── the journal, as a RECORD ──
+  // Written so the badge can offer "resume" and so a server journey's engine
+  // sees its step release. Deliberately fire-and-forget: navigation must not
+  // wait on an HTTP round trip, and nothing reads this back for position.
+  const record = useCallback(
     (nodeId: string, event: 'done' | 'skipped' = 'done') => {
-      if (!journey || advancedRef.current === nodeId) return;
-      advancedRef.current = nodeId;
-      // Other tabs refresh off the flow.step.done boundary event; the CALLING
-      // tab refreshes on the response it already has. The event alone is not
-      // enough here: when the journey's parked run has died, the backend
-      // advance still lands (and re-parks a fresh run) but emits nothing.
+      if (!journey) return;
       journey
         .advance(nodeId, event)
         .then(() => refresh())
-        .catch((e: unknown) => {
-          console.error('[Journey] advance failed', e);
-          advancedRef.current = null; // let the signal retry
-        });
+        .catch((e: unknown) => console.error('[Journey] advance failed', e));
     },
     [journey, refresh],
   );
 
   // ── journal invalidation: the flow.step.done boundary event ──
-  // The engine emits `flow.step.done` (target = this journey's flow entity)
-  // whenever a parked guided step releases — in ANY tab. Event ≠ proof: the
-  // handler only wakes the journal refetch; the store stays the truth. This
-  // replaces the old post-advance `.then(refresh)` chain and closes the
-  // journal-WS-watch gap (updates only reached watch-holding tabs).
-  // useOnTag rides the handler on a ref, so refresh's unstable identity
-  // cannot churn the subscription (it resubscribes only on target change).
+  // The engine emits it whenever a parked guided step releases, in ANY tab.
+  // Event ≠ proof: the handler only wakes the journal refetch; the store stays
+  // the truth.
   useOnTag('graph_workflow.step.done', () => {
     if (journeyId) void refresh();
   }, { target: journeyId ? targetOf('graph_workflow', journeyId) : 'graph_workflow:none' });
 
-  // ── present the current step (once per cursor PER RUN) ──
-  // The key includes the JOURNAL id: a restart mints a fresh journal whose
-  // cursor is the same entry node — without the journal in the key, the entry
-  // step would count as "already presented" and Restart would leave the user
-  // wherever they were instead of re-opening the journey's START dock.
-  const presentedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!journeyId || !currentStep) return;
-    const key = `${journeyId}:${journal?.id ?? 'nojournal'}:${currentStep.node_id}`;
-    if (presentedRef.current === key) return;
-    presentedRef.current = key;
-
-    const present = currentStep.present ?? {};
-    // A FRESH run begins at the journey's START dock (graph.json `start`): the
-    // entry step inherits it as its surface when it doesn't name its own.
-    const fresh = (journal?.entries?.length ?? 0) === 0;
-    let dock = present.dock ?? (fresh ? (start ?? undefined) : undefined);
-
-    // Consume the transparency flag: this step was reached by the user's own
-    // click — they are already navigating; don't override their destination.
-    // The highlight still applies, in place.
-    if (suppressNextDockRef.current) {
-      suppressNextDockRef.current = false;
-      dock = undefined;
-    }
-
-    if (dock?.kind === 'root') {
-      // The app home `/` is not a dock URL — navigate there directly, carrying
-      // the sticky journey param (openHomeRoot does both).
-      navigation.openHomeRoot(present.highlight);
-      return;
-    }
-    // A journey runs in VIBE and never drops out of it: every surface it opens
-    // carries the mode, and `useDockViewModeOverrideSync` adopts it as the
-    // preference — so the skin survives the steps that navigate nowhere.
-    const pointer = pointerForDock(dock, assetRef, computeNodeTypeId, projectId)?.withViewMode(ViewMode.Vibe);
-    if (pointer) {
-      navigation.openDock(present.highlight ? pointer.withHighlight(present.highlight) : pointer);
-    } else if (present.highlight) {
-      // Highlight-only step: light the tag IN PLACE — a pure param update on
-      // the live URL. Rebuilding from `currentDock` would race an in-flight
-      // navigation (the user's own click) and yank them backwards.
-      navigation.applyHighlightInPlace(present.highlight);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [journeyId, journal?.id, currentStep?.node_id, assetRef, computeNodeTypeId, projectId]);
-
-  // ── await: the step's bus target filter ──
-  // Route awaits may be authored as a journey-relative `vfs` (or `home: true`)
-  // instead of a literal target; resolve them through the SAME dockTarget
-  // helper the route emitter stamps, so identities can never drift apart.
-  const filterTarget = useMemo(() => {
-    if (!stepAwait) return undefined;
-    if (stepAwait.target) return stepAwait.target;
-    if (stepAwait.home) return 'dock:home';
-    if (stepAwait.vfs) {
-      const p = pointerForDock({ kind: 'asset_editor', vfs: stepAwait.vfs }, assetRef, computeNodeTypeId, null);
-      return p ? dockTarget(p) : undefined;
-    }
-    return undefined;
-  }, [stepAwait, assetRef, computeNodeTypeId]);
-
   // ── the step's own act ("Fill text") + the manual arm state ──
   // Both are per-step: a cursor move clears them so the next step starts with
   // its own button offered and Next dark again.
-  const [actRan, setActRan] = useState(false);
-  const [armed, setArmed] = useState(false);
+  // A ref, not state: nothing RENDERS from this — it only stops Next running the
+  // same act twice — so a re-render per act would be for no one.
+  const actRan = useRef(false);
   // Acts that watch for something (a command's output) must not outlive the
   // step that started them — this aborts on every cursor move and on unmount.
   const actAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
-    setActRan(false);
-    setArmed(false);
+    actRan.current = false;
     return () => {
       actAbortRef.current?.abort();
       actAbortRef.current = null;
     };
-  }, [journeyId, cursor]);
+  }, [journeyId, stepNumber]);
 
   const act = currentStep?.act;
   // The terminal the user is looking at — `run` acts type into THIS shell.
@@ -211,10 +178,7 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   // try-it steps must run THERE — a tour that says "the repo you're in IS
   // syncmd" was otherwise writing files into whatever project happened to be
   // active (and running `syncmd` outside a git repo, where it cannot work).
-  const journeyRoot = useMemo(
-    () => /^(.*)\/agentic-assets\/journey\/[^/]+\/?$/.exec(assetRef)?.[1] ?? null,
-    [assetRef],
-  );
+  const journeyRoot = journey?.projectRoot ?? null;
 
   const openTerminal = useCallback(async () => {
     // openNewShell already navigates to the new shell when we don't opt out.
@@ -227,7 +191,7 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
 
   const doAct = useCallback(() => {
     if (!act) return;
-    setActRan(true);
+    actRan.current = true;
     actAbortRef.current?.abort();
     const controller = new AbortController();
     actAbortRef.current = controller;
@@ -239,96 +203,65 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   // until the repo actually satisfies it ("not yet — try the command").
   useOnTag(
     ACT_FAILED_TAG,
-    () => setActRan(false),
+    () => {
+      actRan.current = false;
+    },
     act ? { target: actTarget(act.kind, act.target) } : undefined,
   );
 
-  // ── await: confirm predicate (the proof) ──
-  const busyRef = useRef(false);
-  const tryComplete = useCallback(async (event?: { ctx?: { actor?: string; origin?: string }; data?: Record<string, unknown> }) => {
-    if (!currentStep || busyRef.current || advancedRef.current === currentStep.node_id) return;
-    // matchEvent: the row that JUST changed must itself satisfy the match —
-    // "you just did X", immune to ambient churn on other rows of the type.
-    const matchEvent = currentStep.await?.matchEvent;
-    if (matchEvent) {
-      const entity = event?.data?.entity;
-      if (!entity || !new QueryFilter({ match: matchEvent }).validate(entity)) return;
-    }
-    busyRef.current = true;
-    try {
-      const confirm = currentStep.await?.confirm;
-      if (confirm) {
-        const filter = confirm.match ? new QueryFilter({ match: confirm.match }) : null;
-        let rows: unknown[];
-        if (confirm.type === 'capability') {
-          // Capability rows are SYSTEM entities — the generic /graph query
-          // excludes them, so confirm resolves through the capability
-          // manager's own loader (include_system) and matches client-side.
-          await capabilityManager.load(true);
-          rows = capabilityManager.getAll();
-          if (filter) rows = rows.filter((r) => filter.validate(r));
-        } else {
-          const scope = projectId && confirm.scope !== 'all' ? [new TypeId(Project.type, projectId)] : [];
-          const request = new QueryRequest({
-            type: confirm.type ?? '',
-            scope,
-            name: `journeyConfirm:${journeyId}:${currentStep.node_id}`,
-            // `local` confirms match client-side (QueryFilter.validate) — for
-            // serialization-derived fields the server query can't see.
-            query: confirm.local ? null : filter,
-          });
-          rows = await dataManager.query(request, true);
-          if (confirm.local && filter) rows = rows.filter((r) => filter.validate(r));
-        }
-        if (rows.length < (confirm.min ?? 1)) return;
-      }
-      // `manual`: the signal ARMS the step — the user clicks Next to move on,
-      // so they can see what just happened (e.g. the text an act filled in).
-      if (currentStep.await?.manual) setArmed(true);
-      else {
-        // A user-interaction advance means the user is already navigating
-        // somewhere of their own choosing — the next step stays transparent.
-        // Read the envelope's ATTRIBUTION (ctx.actor, stamped by the emitter),
-        // not a tag-prefix guess: any user-caused event qualifies, whatever
-        // its tag is named. Origin must be `app` — only THIS tab's own DOM
-        // can have started a navigation worth protecting; a relayed origin
-        // (sandbox slide button, hub, local_server) never did, so its next step
-        // must still present.
-        suppressNextDockRef.current =
-          (event?.ctx?.actor ?? '').startsWith('user:') && event?.ctx?.origin === 'app';
-        doAdvance(currentStep.node_id);
-      }
-    } catch (e) {
-      console.error('[Journey] confirm query failed', e);
-    } finally {
-      busyRef.current = false;
-    }
-  }, [currentStep, journeyId, projectId, doAdvance]);
+  // ── the gate ──
+  // Conditions only decide whether a PRESSED Next may land. They move nothing.
+  const gate = useWaitGate(currentStep?.waitFor, `${journeyId ?? ''}:${stepNumber ?? ''}`, {
+    dock: currentDock,
+    projectId,
+    label: `journeyGate:${journeyId}:${currentStep?.node_id}`,
+  });
 
-  // ── await: ONE live subscription — the current step's ──
-  useOnTag(
-    stepAwait?.tag || 'journey.idle',
-    (event) => void tryComplete(event),
-    filterTarget !== undefined ? { target: filterTarget } : undefined,
+  // ── next: execute, then land ──
+  // One press per step. It runs the step's act (the thing that moves the app),
+  // then goes to the next step as soon as the gate opens — immediately when the
+  // step has no gate. Pressing is the commitment; the gate only decides WHEN the
+  // press completes, never whether the journey moves on its own.
+  const [waiting, setWaiting] = useState(false);
+  useEffect(() => setWaiting(false), [stepNumber]);
+
+  const land = useCallback(
+    (event: 'done' | 'skipped' = 'done') => {
+      if (!currentStep || stepNumber === null) return;
+      setWaiting(false);
+      record(currentStep.node_id, event);
+      if (stepNumber < graph.length) {
+        goToStep(stepNumber + 1);
+        return;
+      }
+      // Past the last step there is no position to be at, so the number comes
+      // off the URL — which is exactly what "completed" means here. The journey
+      // id stays, so the tray remains to show the finale.
+      navigation.endJourneySteps();
+    },
+    [currentStep, stepNumber, graph.length, record, goToStep, navigation],
   );
 
-  // Confirm-gated steps auto-satisfy if already true (reload / pre-done work) —
-  // unless the await is `fresh` or `matchEvent` (about a NEW occurrence), where
-  // pre-existing state must not count and only the event may wake the check.
-  useEffect(() => {
-    if (currentStep?.await?.confirm && !currentStep.await.fresh && !currentStep.await.matchEvent) {
-      void tryComplete();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [journeyId, currentStep?.node_id]);
+  // The press does the step's work and records the intent to move on. Landing
+  // itself has ONE caller — the effect below — so there is a single place that
+  // decides what "move on" means, whether the gate was already open or opened a
+  // second later.
+  const next = useCallback(() => {
+    if (!currentStep) return;
+    if (act && !actRan.current) doAct();
+    setWaiting(true);
+  }, [currentStep, act, doAct]);
 
-  // Reset the per-step advance guard whenever the cursor moves.
   useEffect(() => {
-    if (cursor && advancedRef.current && advancedRef.current !== cursor) advancedRef.current = null;
-  }, [cursor]);
+    if (waiting && gate.satisfied) land();
+  }, [waiting, gate.satisfied, land]);
 
-  return { actPending: !!act && !actRan, doAct, armed };
+  const back = useCallback(() => {
+    if (stepNumber !== null && stepNumber > 1) goToStep(stepNumber - 1);
+  }, [stepNumber, goToStep]);
+
+  const skip = useCallback(() => land('skipped'), [land]);
+  const start = useCallback(() => goToStep(1), [goToStep]);
+
+  return { start, next, back, skip, canGoBack: (stepNumber ?? 1) > 1, waiting: waiting && !gate.satisfied };
 }
-
-export type { JourneyStep };
-export { Journey };

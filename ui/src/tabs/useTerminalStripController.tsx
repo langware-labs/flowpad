@@ -31,7 +31,6 @@ import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useHarnessCapabilities } from '@src/contexts/HarnessCapabilitiesContext';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { useEnsureProject } from '@src/components/project-selector';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { type TabStripContextMenuItem } from '@src/components/tabs/TabStrip';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
@@ -44,11 +43,11 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
-import { ProjectsCounterChip, type ProjectWorkerType } from '@src/components/terminal/ProjectsCounterChip';
-import { StripNavButtons } from '@src/components/tabs/StripNavButtons';
+import { ProjectsCounterChip } from '@src/components/terminal/ProjectsCounterChip';
 import { AskInstallOneOfDialog } from '@src/components/terminal/openers/AskInstallOneOfDialog';
 import { TerminalOpenerToolbar } from '@src/components/terminal/openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor } from '@src/components/terminal/openers/tab_opener_types';
+import type { WorkerType } from '@src/components/workers/worker-types';
 
 const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
   <span className={`relative inline-flex items-center justify-center ${className ?? ''}`}>
@@ -62,10 +61,6 @@ function harnessWarning(capability: UseCapabilityResult): string | null {
   if (!capability.checked || capability.available) return null;
   return capability.result?.message ?? 'This harness is not available on this machine.';
 }
-
-/** WorkerType → the controller's per-vendor kind token (pending-label key). */
-const kindForWorker = (worker: ProjectWorkerType): 'claude' | 'codex' | 'copilot' =>
-  worker === 'claude_code' ? 'claude' : worker;
 
 export interface TerminalStripControllerOptions {
   /** Whether to expose the "Add Tab" opener toolbar as `trailing`. */
@@ -96,8 +91,6 @@ export interface TerminalStripController {
   isClaudeCreationPending: boolean;
   isTerminalCreationPending: boolean;
   handleStartClaude: () => Promise<void> | void;
-  /** Generic vendor launch — the `WorkerToolbar.onLaunch` contract. */
-  startWorker: (worker: ProjectWorkerType) => Promise<void> | void;
   handleStartTerminal: () => Promise<void> | void;
   handleOpenHistory: () => void;
 }
@@ -135,13 +128,8 @@ export function useTerminalStripController({
   }, []);
 
   // "Start <vendor>" — create the AgenticProcess then navigate to its terminal.
-  // `launch` overrides the project the process is pinned to (projects-chip path).
   const startAgenticTab = useCallback(
-    async (
-      kind: 'claude' | 'codex' | 'copilot',
-      workerType?: 'claude_code' | 'codex' | 'copilot',
-      launch?: { projectId: string; cwd?: string | null },
-    ) => {
+    async (kind: 'claude' | 'codex' | 'copilot', workerType?: WorkerType) => {
       if (tabCreationLockRef.current) return;
       tabCreationLockRef.current = true;
       setPendingTabCreation(kind);
@@ -164,13 +152,11 @@ export function useTerminalStripController({
         } catch {
           // Capability API unavailable (older backend) — don't block tab creation.
         }
-        const launchProjectId = launch?.projectId ?? spawnProjectId;
         // openNewChat creates AND navigates — it owns the chat-mode propagation,
         // so a second openShellProcess here would re-navigate the same dock
         // without `?viewMode` and strip the mode back off the URL.
         await openNewChat(navigation, {
-          ...(launchProjectId ? { projectId: launchProjectId } : {}),
-          ...(launch?.cwd ? { cwd: launch.cwd } : {}),
+          ...(spawnProjectId ? { projectId: spawnProjectId } : {}),
           ...(workerType ? { workerType } : {}),
         });
       } catch {
@@ -191,29 +177,6 @@ export function useTerminalStripController({
   const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
   const handleStartCodex = useCallback(() => startAgenticTab('codex', 'codex'), [startAgenticTab]);
   const handleStartCopilot = useCallback(() => startAgenticTab('copilot', 'copilot'), [startAgenticTab]);
-  const startWorker = useCallback(
-    (worker: ProjectWorkerType) => startAgenticTab(kindForWorker(worker), worker),
-    [startAgenticTab],
-  );
-
-  const ensureProject = useEnsureProject();
-  const handleLaunchProjectPath = useCallback(
-    async (cwd: string, workerType: ProjectWorkerType) => {
-      try {
-        const project = await ensureProject(cwd, { select: false });
-        await startAgenticTab(kindForWorker(workerType), workerType, {
-          projectId: project.id,
-          cwd: project.fs_storage_mount_path,
-        });
-      } catch (error) {
-        notify.error({
-          title: t`Failed to open project`,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-    },
-    [ensureProject, startAgenticTab],
-  );
 
   const startTerminalTab = useCallback(
     async (computeNode?: ComputeNode) => {
@@ -428,20 +391,16 @@ export function useTerminalStripController({
     [modLabel, handleStartClaude, handleStartTerminal, isAdvanced, handleOpenContext, ContextIcon],
   );
 
-  // Leading region: the Back/Refresh nav buttons (browser-style, at the very
-  // left of the bar — they used to sit on the left rail), then the project chip
-  // (the strip's project dropdown), then the anchor divider that separates this
-  // fixed cluster from the tab row.
+  // Leading region: the project chip (the strip's project dropdown), then the
+  // anchor divider that separates this fixed cluster from the tab row.
+  //
+  // History controls do NOT belong here. They live in the top navigation bar,
+  // which is the app's one browser-style chrome — two sets of Back buttons on
+  // one screen is worse than none.
   const leading = useMemo(
     () => (
       <>
-        <StripNavButtons />
-        <ProjectsCounterChip
-          currentProjectId={tabsProjectId}
-          currentProjectName={currentProjectName}
-          onLaunchProjectPath={handleLaunchProjectPath}
-          onOpenHistory={() => setHistoryModalOpen(true)}
-        />
+        <ProjectsCounterChip currentProjectId={tabsProjectId} currentProjectName={currentProjectName} />
         {/* Anchor divider: a full-height hairline that visually makes the
             leading cluster the container the tab strip hangs off of, rather
             than just another item in the row. `self-stretch` spans the band. */}
@@ -452,7 +411,7 @@ export function useTerminalStripController({
         />
       </>
     ),
-    [tabsProjectId, currentProjectName, handleLaunchProjectPath],
+    [tabsProjectId, currentProjectName],
   );
 
   const modals = (
@@ -509,7 +468,6 @@ export function useTerminalStripController({
     isClaudeCreationPending,
     isTerminalCreationPending,
     handleStartClaude,
-    startWorker,
     handleStartTerminal,
     handleOpenHistory: () => setHistoryModalOpen(true),
   };

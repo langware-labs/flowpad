@@ -96,6 +96,8 @@ include = ["flow_sdk*"]
     "system_projects/**/*",
     "system_projects/**/.claude/**/*",
     "server/static/**/*",
+    # Type icons addressed by path from TypeInfo.icon — see server/icons/README.
+    "server/icons/**/*",
     # Separately-signed standalone flow-rs binaries (macOS universal2 +
     # Windows x64), vendored by scripts/deploy_to_github.sh. NOT the crate
     # source or target/ — only the signed binaries under rust/bin/.

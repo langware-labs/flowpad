@@ -65,6 +65,9 @@ export async function startWizardProcess<T = unknown>(
       processType: ProcessKind.Wizard,
       outputFormat: 'stream-json',
       loadFlowpadAssistant: true,
+      // A wizard may pin its model tier; the backend resolves `sm`/`md`/`lg` per
+      // worker into the concrete `--model` flag. Undefined leaves the default.
+      model: request.wizardData?.model,
       contextData: {
         wizard: {
           name: request.wizardName,

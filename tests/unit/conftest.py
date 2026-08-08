@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shlex
+import subprocess
 import sys
 import time
 import uuid
@@ -24,6 +25,59 @@ from flow_sdk.fs_store.record_paths import (
 )
 
 CLAUDE_SID = "11111111-1111-4111-8111-111111111111"
+
+
+# ---------------------------------------------------------------------------
+# Shared git fixtures
+# ---------------------------------------------------------------------------
+#
+# ~20 test files grew their own copy of these two helpers. New git tests use
+# these; the existing copies are left alone rather than churned. They are here
+# because the setup carries two non-obvious requirements a copy gets wrong:
+#
+#   * ``tests/conftest.py`` sandboxes HOME, so ``~/.gitconfig`` is invisible:
+#     ``user.name``/``user.email`` MUST be set per repo or every commit fails.
+#   * ``init.defaultBranch`` is likewise unset, so ``-b main`` MUST be explicit
+#     or a machine defaulting to ``master`` silently breaks the fixture.
+
+
+def git_cmd(path: Path, *args: str) -> str:
+    """Run git in ``path`` and return trimmed stdout; raises on failure."""
+    result = subprocess.run(["git", *args], cwd=path, capture_output=True, text=True, check=True)
+    return result.stdout.strip()
+
+
+@pytest.fixture
+def git_remote(tmp_path: Path):
+    """A bare repo plus a factory for checkouts wired to it.
+
+    ``make_checkout()`` returns a working clone whose ``origin`` is the bare
+    repo. Pass ``github_url=...`` to additionally install an ``insteadOf``
+    rewrite, so code that insists on a canonical GitHub remote (the publish
+    path) can be exercised without touching the network.
+    """
+    remote = tmp_path / "remote.git"
+    remote.mkdir()
+    git_cmd(remote, "init", "--bare", "-q", "-b", "main")
+
+    def make_checkout(name: str = "repo", *, github_url: str | None = None, seed: bool = True) -> Path:
+        repo = tmp_path / name
+        repo.mkdir()
+        git_cmd(repo, "init", "-q", "-b", "main")
+        git_cmd(repo, "config", "user.name", "Test User")
+        git_cmd(repo, "config", "user.email", "test@example.com")
+        origin = github_url or remote.as_uri()
+        if github_url:
+            git_cmd(repo, "config", f"url.{remote.as_uri()}.insteadOf", github_url)
+        git_cmd(repo, "remote", "add", "origin", origin)
+        if seed:
+            (repo / "README.md").write_text("seed\n", encoding="utf-8")
+            git_cmd(repo, "add", ".")
+            git_cmd(repo, "commit", "-q", "-m", "initial")
+            git_cmd(repo, "push", "-q", "-u", "origin", "main")
+        return repo
+
+    return SimpleNamespace(path=remote, uri=remote.as_uri(), make_checkout=make_checkout)
 
 
 # ---------------------------------------------------------------------------

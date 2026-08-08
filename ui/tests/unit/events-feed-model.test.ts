@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import type { FlowEvent } from '@sdk/tags/EventBus';
 import type { TriggerLogEntry } from '@src/hooks/useTriggerLog';
 import { buildFeed, eventInScope, fireStatus } from '@src/components/events/feed-model';
+import { DockPointer } from '@src/navigation/DockPointer';
 
 function ev(id: string, tag: string, at: string, extra: Partial<FlowEvent> = {}): FlowEvent {
   return {
@@ -138,5 +139,19 @@ describe('eventInScope', () => {
       ctx: { origin: 'local_server', scope: ['project:p-2'] },
     });
     expect(eventInScope(theirs, { mode: 'all' }, 'p-1')).toBe(true);
+  });
+});
+
+describe('DockPointer.forEvents target option', () => {
+  it('round-trips a subject filter through the dock URL', () => {
+    const p = DockPointer.forEvents(undefined, { target: 'data_source:abc-123' });
+    expect(p.options?.target).toBe('data_source:abc-123');
+    // Same tab as an unfiltered Events dock — narrowing a feed is not a new
+    // subject, so it must not mint a second tab.
+    expect(p.tabHash).toBe(DockPointer.forEvents().tabHash);
+  });
+
+  it('omits the option when no target is given', () => {
+    expect(DockPointer.forEvents().options?.target).toBeUndefined();
   });
 });

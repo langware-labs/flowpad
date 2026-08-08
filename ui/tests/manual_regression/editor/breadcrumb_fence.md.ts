@@ -17,7 +17,7 @@ const TAG = 'breadcrumb.test.qa_fence_probe.rules';
 const NOTE = 'FAILING? read this tag rules before editing';
 
 /** A test file carrying a real `tag` capsule — byte-for-byte what
- *  `.claude/skills/tagit/scripts/insert_breadcrumb.py` writes. The capsule sits
+ *  the `tagit` skill's `insert_breadcrumb.py` writes. The capsule sits
  *  at column 0 above the def; its own line is what `scan_code_capsules`
  *  reports, and therefore what the fence's `line` must say. */
 const CAPSULE_LINE = 1;

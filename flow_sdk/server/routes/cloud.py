@@ -165,41 +165,31 @@ async def logout_callback():
 async def status():
     """Logged-in flag, current user, cloud URL, and orthogonal hub statuses."""
     try:
-        from flow_sdk.cli.app_config import get_user
-        from flow_sdk.cli.auth.hub_login import is_logged_in
         from flow_sdk.cloud_client import ApiConfig
-        from flow_sdk.cloud_client.auth_state import current_login_status
+        from flow_sdk.cloud_client.auth_state import login_block
         from flow_sdk.cloud_client.auth_status import HubLoginStatus
         from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
-        logged_in = is_logged_in()
-        user_info = get_user() if logged_in else None
         cloud_config = ApiConfig.from_env()
         cloud_url = cloud_config.api_base_url
 
-        login_status = current_login_status()
-        # Heal in-memory mirror if disk and memory disagree (e.g. fresh boot
-        # before any transition has been emitted).
-        if logged_in and login_status != HubLoginStatus.LOGGED_IN:
-            login_status = HubLoginStatus.LOGGED_IN
-        elif not logged_in and login_status == HubLoginStatus.LOGGED_IN:
-            login_status = HubLoginStatus.LOGGED_OUT
+        # Shared with the graph bootstrap, which now carries the same block so the
+        # UI knows who it is at first paint instead of one round trip later. Two
+        # copies of "who am I" is what let those two surfaces disagree.
+        login = login_block()
+        logged_in = login["status"] == HubLoginStatus.LOGGED_IN.value
 
         connection_payload = hub_ws_manager.connection_payload()
 
         return ApiSuccessResponse(data={
             # New nested shape — canonical, drives the UI.
-            "login": {
-                "status": login_status.value,
-                "user": user_info,
-                "reason": None,
-            },
+            "login": login,
             "connection": connection_payload,
             "cloud_url": cloud_url,
             "cloud_app_url": cloud_config.app_base_url,
             # Deprecated aliases — kept for one release while UI migrates.
             "logged_in": logged_in,
-            "user": user_info,
+            "user": login["user"],
             **hub_ws_manager.status_payload(),
         })
     except Exception as e:

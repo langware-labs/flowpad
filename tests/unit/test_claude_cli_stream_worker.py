@@ -216,7 +216,7 @@ async def test_each_stream_line_parsed_once(tmp_path: Path, monkeypatch: pytest.
     dict is reused for conversion, session-id capture, and the durability gate.
 
     Invariant: the number of in-process ``json.loads`` calls during the turn
-    equals the number of ``_stream_event`` calls (one parse per line). Any
+    equals the number of ``stream_event`` calls (one parse per line). Any
     second parse of a line (the old ``convert_line`` + ``_extract_session_id``
     re-parses) would push ``json.loads`` above the per-line count.
     """
@@ -224,7 +224,7 @@ async def test_each_stream_line_parsed_once(tmp_path: Path, monkeypatch: pytest.
 
     counts = {"loads": 0, "stream_event": 0}
     real_loads = json.loads
-    real_stream_event = sw._stream_event
+    real_stream_event = sw.stream_event
 
     def counting_loads(*args, **kwargs):
         counts["loads"] += 1
@@ -235,7 +235,7 @@ async def test_each_stream_line_parsed_once(tmp_path: Path, monkeypatch: pytest.
         return real_stream_event(decoded)
 
     monkeypatch.setattr(json, "loads", counting_loads)
-    monkeypatch.setattr(sw, "_stream_event", counting_stream_event)
+    monkeypatch.setattr(sw, "stream_event", counting_stream_event)
 
     worker = ClaudeCLIStreamWorker()
     patch_build_spawn(

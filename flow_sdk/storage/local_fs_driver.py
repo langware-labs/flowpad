@@ -10,11 +10,11 @@ from typing import Any, AsyncIterator, BinaryIO, List
 import anyio
 from starlette.concurrency import run_in_threadpool
 
-# FSItem import is optional - it may not be defined yet in models
+# FSEntry import is optional - it may not be defined yet in models
 try:
-    from flow_sdk.models import FSItem
+    from flow_sdk.models import FSEntry
 except ImportError:
-    FSItem = None  # Will be used for type hints only
+    FSEntry = None  # Will be used for type hints only
 
 from flow_sdk.storage.storage_driver import StorageDriver, StorageError, StoragePermissionError, StreamUploader, VFSPath
 
@@ -249,7 +249,7 @@ class LocalStorageDriver(StorageDriver):
         except Exception as e:
             raise StorageError(f"Failed to stream file: {e}")
 
-    async def list_dir(self, vfs_path: str | None = None) -> List[FSItem]:
+    async def list_dir(self, vfs_path: str | None = None) -> List[FSEntry]:
         """List the contents of a directory on the storage device."""
         if vfs_path is None:
             vfs_path = "/"
@@ -298,7 +298,7 @@ class LocalStorageDriver(StorageDriver):
                         except OSError:
                             # Some pseudo-fs entries (e.g. /dev/fd/*) can fail while probing.
                             is_directory = False
-                        item = FSItem(
+                        item = FSEntry(
                             vfs_abs_path=item_vfs_path,
                             is_dir=is_directory,
                             size=None if is_directory else stat.st_size,

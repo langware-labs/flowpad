@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Link2, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
@@ -75,7 +75,7 @@ export function EditorWithSidePanel({
   target,
   extraTabs,
 }: EditorWithSidePanelProps) {
-  const { windows, active, open, close, closeAll, retain, select } = useSideWindows();
+  const { windows, active, open, close, closeAll, select } = useSideWindows();
   const advanced = useIsAdvanced();
 
   // Registry of openable windows (Backlinks + caller extras), in display order.
@@ -99,17 +99,16 @@ export function EditorWithSidePanel({
     );
   }, [advanced, extraTabs]);
 
-  // Standard mode removes only windows that are unavailable there. Tabs that
-  // explicitly opt into Standard (for example collision details) remain
-  // URL-owned and shareable. `retain` prunes the whole set in ONE navigation —
-  // the written set is a filter of the set just read, so there is no stale-list
-  // race to avoid by closing ids one at a time.
-  const availableIds = useMemo(() => new Set(registry.map((tab) => tab.id)), [registry]);
-  useEffect(() => {
-    if (advanced) return;
-    retain(availableIds);
-  }, [advanced, retain, availableIds]);
-
+  // A window this mode cannot show is IGNORED, never deleted from the URL.
+  // Rendering already filters by `registry` (see `openTabs` below), so an
+  // Advanced-only id in a Standard URL shows nothing — the leak this used to
+  // "prune" was already impossible. Writing the URL to tidy it up was actively
+  // harmful: the tab set grows as async data lands (a Duplicates tab only
+  // exists once `duplicate_count` loads), so the pruner read "not declared
+  // yet" as "not allowed here" and dropped a legitimate window — via a
+  // history PUSH, which navigated the user off the entry Back had just
+  // correctly restored. A view ignores state it cannot use; deleting it
+  // requires an authority a mid-load render does not have.
   const panels = useMemo<Record<string, ReactNode>>(() => {
     const map: Record<string, ReactNode> = {
       backlinks: <BacklinksTab target={target} />,

@@ -5,7 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import { useContext } from '@src/hooks/useContext';
 import { useFavorites } from '@src/hooks/use-favorites';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
-import { getAllTabsSnapshot } from '@src/tabs/all-tabs-store';
+import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
 import { useLingui } from '@lingui/react/macro';
 import { FolderPlus, PackagePlus, Plus, Star } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -54,35 +54,20 @@ export function FavoritesAddRow({ parentId }: { parentId: string }) {
     );
   };
 
-  // "Bookmark what's open" works for ANY open view. An entity-backed dock
-  // (editor, task, project, session) bookmarks that entity, so it navigates back
-  // relocation-proof via its typeid. Anything else (a web app, a shell, a lens)
-  // bookmarks the DOCK itself — the whole pointer, restored by openDock. Only a
-  // full-bleed surface like Home has no tab identity, so nothing to bookmark.
+  // "Bookmark what's open" — the entity-vs-dock rule lives in
+  // `favoriteTargetForDock` so this row and the navigation bar's star can't
+  // disagree about what a given screen bookmarks AS. Resolved at click time, not
+  // subscribed, so a tab change doesn't re-render the whole menu.
+  const currentTarget = () =>
+    favoriteTargetForDock(
+      currentDock,
+      activeEntityTypeId && activeEntity ? { typeId: activeEntityTypeId, entity: activeEntity } : null,
+      t`Bookmarked view`,
+    );
   const hasCurrent = !!(activeEntityTypeId && activeEntity) || (!activeEntity && !!currentDock);
   const addCurrent = () => {
-    if (activeEntityTypeId && activeEntity) {
-      void addFavorite(
-        { entityType: activeEntityTypeId.type, entityId: activeEntityTypeId.id, title: activeEntity.displayName },
-        parentId,
-      );
-      return;
-    }
-    if (!activeEntity && currentDock) {
-      const dockPointer = currentDock.toJSON();
-      // Snapshot, not the useAllTabs hook: the title is only needed at click
-      // time, and subscribing would re-render this row on every tab change.
-      const tab = getAllTabsSnapshot().find((t) => t.getKey() === currentDock.tabHash);
-      void addFavorite(
-        {
-          entityType: 'dock',
-          entityId: currentDock.tabHash ?? dockPointer,
-          title: tab?.name || t`Bookmarked view`,
-          nav: { pointer: dockPointer },
-        },
-        parentId,
-      );
-    }
+    const ref = currentTarget();
+    if (ref) void addFavorite(ref, parentId);
   };
 
   return (
@@ -90,7 +75,7 @@ export function FavoritesAddRow({ parentId }: { parentId: string }) {
       {/* A green "+" marks the row as a create toolbar. Not a button — no
           hover, default cursor. `text-green-500` is the app's cross-theme green
           (reads on both light and dark). */}
-      <Plus className="mr-1 h-4 w-4 shrink-0 cursor-default select-none text-green-500" aria-hidden />
+      <Plus className="me-1 h-4 w-4 shrink-0 cursor-default select-none text-green-500" aria-hidden />
 
       {folderName !== null ? (
         <input

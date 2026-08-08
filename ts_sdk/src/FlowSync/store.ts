@@ -10,6 +10,7 @@ import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 import { isHubOnly } from '../utils/hub-runtime';
 import { isElectronShell } from '../utils/runtime';
 import { isAbsoluteMachinePath } from '../utils/vfs-path';
+import { parseWikiPointer } from '../utils/wiki-word';
 import { UserRole } from '../services/membershipService';
 import {
   ConnectionManager,
@@ -823,11 +824,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       const base = lastSegment(pointer.split('/vfs/').pop() ?? '');
       if (base) return base;
     }
-    // 3. wiki — the keyword (last path segment).
-    if (dock?.viewType === 'wiki' || pointer.startsWith('wiki/')) {
-      const kw = lastSegment(pointer.replace(/^wiki\//, ''));
-      if (kw) return kw;
-    }
+    // 3. wiki — the word the route actually resolves. NOT the last segment:
+    //    `wiki/@local/Docs/Child` resolves `Docs`, so naming the tab `Child`
+    //    made the tab strip and the address bar disagree about the open page.
+    const wiki = parseWikiPointer(pointer) ?? (dock?.viewType === 'wiki' ? parseWikiPointer(`wiki/${pointer}`) : null);
+    if (wiki?.word) return wiki.word;
     // 4. lens transcript — the ClaudeSession entity (id = sessionId), fetched
     //    into cache by the tab mint via `dock.targetTypeId`.
     if (dock?.viewType === 'lens') {

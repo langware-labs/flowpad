@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
 import { HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
+import { useCurrentDock } from '@src/navigation/useDockNavigation';
+import { useJourneyHighlight } from '@src/journey/journey-highlight';
 
 export { HIGHLIGHT_PARAM };
 
@@ -12,16 +13,18 @@ export const HIGHLIGHT_LINGER_MS = 5000;
 export type HighlightPhase = 'idle' | 'enter' | 'linger';
 
 /**
- * The wiki word the current URL asks to highlight, or null when none is set.
+ * The wiki word to highlight right now, or null.
  *
- * Reads the `highlight` search param directly (not via `currentDock`) so it
- * works on the home root `/` — which is NOT a dock URL, so `currentDock` is
- * null there. On dock surfaces the same param is also reachable via
- * `currentDock.highlight`. See docs/wikitip.md.
+ * A running journey answers first: its step already names the tag, and the step
+ * is addressed by the URL, so writing `?highlight=` as well was a second copy of
+ * the same fact — one that got composed onto stale locations and outlived the
+ * step that set it. The param remains for standalone wiki-tips, which are a
+ * shareable link with no journey behind them. See docs/wikitip.md.
  */
 export function useHighlight(): string | null {
-  const [searchParams] = useSearchParams();
-  return searchParams.get(HIGHLIGHT_PARAM);
+  const journeyWord = useJourneyHighlight();
+  const param = useCurrentDock()?.highlight ?? null;
+  return journeyWord ?? param;
 }
 
 /**

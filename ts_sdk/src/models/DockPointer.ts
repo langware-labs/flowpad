@@ -20,6 +20,9 @@ export interface IDockPointer {
   readonly targetTypeId?: TypeId | null;
   /** The vfs path an asset-editor dock addresses (`…/vfs/<path>`), or null. */
   readonly vfsPath?: VFSPath | null;
+  /** True when this dock IS the app root (`/`). One predicate, owned by the UI
+   *  class (`isRootAddress`), so nothing re-derives a weaker version of it. */
+  readonly isRoot?: boolean;
 }
 
 export class DockPointerData implements IDockPointer {

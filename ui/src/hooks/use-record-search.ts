@@ -6,6 +6,10 @@ import { applyScopeToParams, scopeFilterKey, type ScopeFilter } from '@src/lib/s
 const SEARCH_PATH = '/graph/compute_node/@local/fs-records/search';
 const DEFAULT_SEARCH_LIMIT = 20;
 
+/** Shortest query this hook will actually send. Exported so a caller can gate
+ *  its own UI on the same threshold instead of guessing at it. */
+export const MIN_SEARCH_QUERY_LENGTH = 2;
+
 const ANNOTATION_LABEL_DISPLAY: Record<string, string> = {
   prompt: 'user prompt',
 };
@@ -117,7 +121,7 @@ export function useRecordSearch(
     // to fire searches that came back unscoped, which silently rendered
     // global results in scope-only UIs.
     const hasFilter = !!(filters.record_type || filters.status || filters.time_preset);
-    if (!hasFilter && (!query.trim() || query.trim().length < 2)) {
+    if (!hasFilter && query.trim().length < MIN_SEARCH_QUERY_LENGTH) {
       setResults([]);
       setIsLoading(false);
       return;

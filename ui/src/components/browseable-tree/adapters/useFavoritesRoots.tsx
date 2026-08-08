@@ -140,6 +140,8 @@ export function useFavoritesRoots(opts?: {
         // `onOpen` exists, since most favorites navigate via the pure pointer
         // arm, which calls no adapter code.
         onOpen: () => void b.markOpened(),
+        // Resting on the row clears its badge without counting as an open.
+        onHoverSeen: () => void b.markSeen(),
         // Session-like types can't be expressed as a pure pointer — fall back
         // to the imperative dispatcher (protocol's documented activate arm).
         activate:

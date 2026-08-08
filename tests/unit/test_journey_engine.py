@@ -28,7 +28,7 @@ def _step(node_id, name=""):
         "node_data": {
             "status_line": f"Waiting at {node_id}",
             "present": {"dock": {"kind": "asset_editor", "vfs": f"{node_id}.html"}},
-            "await": {"tag": "app.route.loaded", "vfs": "next.html"},
+            "waitFor": [{"event": {"tag": "app.route.loaded"}}],
         },
     }
 
@@ -52,12 +52,22 @@ def test_guided_step_validates():
         "version": 1, "nodes": [_step("s1"),
                                 {"id": "bad", "node_type": "guided_step",
                                  "node_data": {"present": {"dock": {"kind": "nope"}},
-                                               "await": {"kind": "legacy-no-tag"}}}],
+                                               "waitFor": [{"teleport": "X"}]}},
+                                {"id": "nodock", "node_type": "guided_step",
+                                 "node_data": {"present": {}}},
+                                {"id": "nogate", "node_type": "guided_step",
+                                 "node_data": {"present": {"dock": {"kind": "root"}}}}],
         "edges": [],
     }))
     problems = "\n".join(doc.validate_graph())
     assert "present.dock.kind" in problems
-    assert "await.tag" in problems
+    assert "unknown waitFor condition 'teleport'" in problems
+    # A step must name its whole destination: loading it is a plain navigation,
+    # with nothing merged onto wherever the user happened to be.
+    assert "guided_step needs node_data.present.dock" in problems
+    # But `waitFor` is a GATE and is optional — a step with nothing to wait for
+    # is the normal case, not an error.
+    assert "nogate" not in problems
 
 
 @async_context

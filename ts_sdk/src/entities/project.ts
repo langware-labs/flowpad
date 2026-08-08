@@ -112,6 +112,10 @@ export interface ProjectSecretOriginSummary {
   /** Which local store the wizard caches a provided value into. The backend has
    *  always emitted this; the type omitted it. */
   sod_store?: SodStore | string;
+  /** What the secret is for, in the declarer's words. Lives on the declaration
+   *  rather than the EnvVar row because a declaration may have no value yet, and
+   *  an EnvVar cannot exist without one. */
+  description?: string;
 }
 
 /** One row of the value-free resolve-status the Secrets card / wizard reads. */
@@ -122,6 +126,7 @@ export interface SecretResolveStatus {
   kind: string;
   scope: string;
   sod_store: SodStore | string;
+  description?: string;
   status: 'available' | 'missing';
   /** Which store on THIS machine can satisfy the declaration, if any. */
   found_in?: 'env-local' | 'sodot' | 'provider' | null;
@@ -589,7 +594,14 @@ export class Project extends APIEntity<Project> {
   async addSecretPointer(
     name: string,
     envVar: string,
-    options: { locator: SecretOriginLocator; scope?: SecretPointerScope; sodStore?: SodStore },
+    options: {
+      locator: SecretOriginLocator;
+      scope?: SecretPointerScope;
+      sodStore?: SodStore;
+      /** Omit to leave an existing description untouched — re-declaring from a
+       *  surface that carries none must not wipe one someone already wrote. */
+      description?: string;
+    },
   ): Promise<void> {
     const actionInfo = new ActionInfo('add-secret-pointer', Project.type, this.typeId.id, 'POST');
     // The backend builds the value-free locator from the generic ``locator`` dict
@@ -601,6 +613,7 @@ export class Project extends APIEntity<Project> {
       kind: options.locator.kind,
       locator: options.locator,
       ...(options.sodStore ? { sod_store: options.sodStore } : {}),
+      ...(options.description !== undefined ? { description: options.description } : {}),
     };
     this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
   }
@@ -751,6 +764,13 @@ export class Project extends APIEntity<Project> {
     agent: SubAgent | null;
     compute_node: ComputeNode | null;
   }> {
+    // Hub mode: there is no desktop to wire to — no @local workspace, no
+    // @local compute node — and the hub backend doesn't serve the action at
+    // all (`project/<id>/setup-for-desktop` → 400 "Post not supported for this
+    // path"), which used to make every create-project flow throw after the
+    // project was already saved. Same shape as `activateById`/`getComputeNode`:
+    // a desk-only step is a no-op on the hub, not an error.
+    if (isHubOnly()) return { workspace: null, agent: null, compute_node: null };
     const actionInfo = new ActionInfo('setup-for-desktop', Project.type, this.typeId.id, 'POST');
     const response = await dataManager.callAction<
       void,

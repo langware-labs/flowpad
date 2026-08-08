@@ -181,8 +181,17 @@ class CloudManager extends EventEmitter {
     this._cloudAppUrl = seed?.cloud_app_url ?? hubAppUrlFromApiUrl(this._cloudUrl);
 
     if (seed?.login) {
-      this._applyLoginStatus(seed.login.status, seed.login.user, seed.login.reason, false);
+      // Adopt the identity at FIRST PAINT, not one round trip later. This branch
+      // used to call `_applyLoginStatus` directly, which records a status and
+      // leaves `dataContext.cloudUser` null — and the UI renders
+      // `cloudUser ?? localUser`, so a cloud sandbox painted the template's own
+      // "E2B Local" account until an async /cloud/status corrected it. On a cold
+      // resume that call loses the race against a still-waking backend.
+      await this._applyLoginBlock(seed.login, false);
     } else if (seed?.cloud_login_available) {
+      // No identity to adopt: an older server that only answers "could you log
+      // in from here". Status only, user null — the shape that caused the bug
+      // above, kept solely so a new client still works against an old server.
       this._applyLoginStatus('logged_in', null, null, false);
     }
     if (seed?.connection) {
@@ -231,6 +240,32 @@ class CloudManager extends EventEmitter {
     // otherwise never run a check, so the footer cloud-disconnected warning (with
     // its sign-in action) wouldn't surface. This IS the "login check first" on open.
     await this._refreshFromStatus();
+  }
+
+  /**
+   * Adopt a `{status, user, reason}` login block — the shape both the graph
+   * bootstrap seed and `GET /cloud/status` carry, from the same server builder.
+   *
+   * One handler for both, because the alternative is what caused the bug this
+   * exists to fix: two places deciding "who am I" drift, and the one that drifted
+   * only applied a STATUS while leaving `dataContext.cloudUser` empty — so the UI
+   * fell back to the box's own local account.
+   *
+   * `_setLoggedIn` is the load-bearing call: `_applyLoginStatus` sets the login
+   * slot and nothing else, so a `logged_in` block WITH a user must not go through
+   * it alone.
+   */
+  private async _applyLoginBlock(
+    login: { status: HubLoginStatus; user: Record<string, unknown> | null; reason: string | null },
+    emit = true,
+  ): Promise<void> {
+    if (login.status === 'logged_in' && login.user) {
+      await this._setLoggedIn(login.user);
+    } else if (login.status === 'logged_out') {
+      await this._setLoggedOut();
+    } else {
+      this._applyLoginStatus(login.status, login.user, login.reason, emit);
+    }
   }
 
   /** Hub-mode login URL. Carries the current SPA location as ``target_path``
@@ -595,13 +630,7 @@ class CloudManager extends EventEmitter {
       }
 
       if (data?.login) {
-        if (data.login.status === 'logged_in' && data.login.user) {
-          await this._setLoggedIn(data.login.user);
-        } else if (data.login.status === 'logged_out') {
-          await this._setLoggedOut();
-        } else {
-          this._applyLoginStatus(data.login.status, data.login.user, data.login.reason);
-        }
+        await this._applyLoginBlock(data.login);
       } else if (data?.logged_in && data.user) {
         await this._setLoggedIn(data.user);
       } else if (data?.logged_in === false) {

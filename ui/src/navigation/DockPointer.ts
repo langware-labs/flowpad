@@ -1,6 +1,7 @@
 import {
   AgenticProcess,
   ClaudeSession,
+  CredentialsSubview,
   GraphWorkflow,
   Layout,
   PageId,
@@ -18,14 +19,16 @@ import {
 } from '@sdk';
 import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
-import { buildDockUrl, parseDockUrl, parseQueryParams } from './url-builder';
+import { buildDockUrl, isRootAddress, parseDockUrl, parseQueryParams, rootDockAddress } from './url-builder';
 import { isValidView } from './validators';
 import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType, LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import {
   assetEditorValue,
   assetWikiValue,
   normalizeAssetVfsPath,
+  parseAssetWikiRef,
   serializeAssetDocPointer,
+  type AssetWikiRef,
 } from './asset-doc-pointer-grammar';
 import {
   ALL_SCOPE_FILTER,
@@ -41,6 +44,7 @@ import { dockOptionsToSideWindows, withSideWindowsOptions, type SideWindowsState
 import type { ViewMode } from '@src/contexts/view-mode-context';
 import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/types/WorldViewColorMode';
 import { DEFAULT_GRAPH_PRESENTATION, type GraphPresentation } from '@src/types/GraphPresentation';
+import { credentialsPointer } from '@src/components/credentials-view/credentials-pointer';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -89,6 +93,10 @@ export type ProcessRunScope = Partial<Record<(typeof PROCESS_RUN_SCOPE_KEYS)[num
 export type ProcessRunsPointerOptions = ProcessRunScope & { run?: string | null };
 
 export const HIGHLIGHT_PARAM = 'highlight';
+/** A transcript entry to scroll to and select. */
+export const TRANSCRIPT_ENTRY_PARAM = 'transcript_entry_id';
+/** A timestamp to seek a transcript to. */
+export const TRANSCRIPT_TIME_PARAM = 't';
 export const VIEW_MODE_PARAM = 'viewMode';
 
 /**
@@ -113,6 +121,17 @@ export const LANG_PARAM = 'lang';
  * and `navigation.showJourney()` / `closeJourney()`.
  */
 export const JOURNEY_PARAM = 'journeyId';
+/**
+ * Which step of that journey, 1-based. THE journey's position — there is no
+ * cursor anywhere else.
+ *
+ * Position used to live in the journal (a `node_id` on a server row), while the
+ * screen was composed by merging a partial step onto wherever the user already
+ * was. Nothing in that was addressable, so nothing was reproducible: the same
+ * step rendered differently depending on how you got there. A number in the URL
+ * is reloadable, shareable, and the same every time.
+ */
+export const JOURNEY_STEP_PARAM = 'journeyStep';
 
 /**
  * URL query-param key naming the capability the user was reaching for when they
@@ -357,6 +376,16 @@ export class DockPointer implements IDockPointer {
    * writer that matches the `dockPointer.highlight = <wikiword>` mental model.
    * Pairs with the `highlight` getter.
    */
+  /** The transcript entry this dock selects, or null. */
+  get transcriptEntryId(): string | null {
+    return this.options?.[TRANSCRIPT_ENTRY_PARAM] ?? null;
+  }
+
+  /** The transcript timestamp this dock seeks to, or null. */
+  get transcriptTimestamp(): string | null {
+    return this.options?.[TRANSCRIPT_TIME_PARAM] ?? null;
+  }
+
   withHighlight(wikiword: string): DockPointer {
     return new DockPointer(
       this.viewType,
@@ -415,6 +444,21 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Which step of the journey this dock is showing (1-based), or null when no
+   * journey is running. See {@link JOURNEY_STEP_PARAM}.
+   *
+   * Returns null for anything that is not a positive integer, so a hand-edited
+   * `?journeyStep=abc` reads as "no position" rather than throwing or landing
+   * the tray on NaN.
+   */
+  get journeyStep(): number | null {
+    const raw = this.options?.[JOURNEY_STEP_PARAM];
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 1 ? n : null;
+  }
+
+  /**
    * The capability kind this dock was opened FOR, or null. Set when a launch
    * surface routes to the Capabilities view because the thing the user asked
    * for looks unavailable; the view re-probes it on arrival. See
@@ -441,6 +485,11 @@ export class DockPointer implements IDockPointer {
     return this.withOption(JOURNEY_PARAM, journeyId);
   }
 
+  /** Clone this dock showing step `n` (1-based) of the running journey. */
+  withJourneyStep(n: number | null): DockPointer {
+    return this.withOption(JOURNEY_STEP_PARAM, n === null ? null : String(n));
+  }
+
   /**
    * Parse dock pointer from URL segments
    * Returns null if invalid (URL validation)
@@ -463,7 +512,13 @@ export class DockPointer implements IDockPointer {
     if (pointer === undefined && searchParams === undefined) {
       try {
         const url = new URL(viewTypeOrUrl, 'http://flowpad.local');
-        const parsedUrl = parseDockUrl(url.pathname);
+        // A PATH with no layout keyword is the app root (`/`, or a base path
+        // like `/agent/a/flow/f`). Gated on the leading slash so the historical
+        // single-argument form — `fromUrl('editor')` — still reaches the
+        // viewType parser below instead of silently resolving to the home.
+        const parsedUrl = viewTypeOrUrl.startsWith('/')
+          ? (parseDockUrl(url.pathname) ?? rootDockAddress(url.pathname))
+          : parseDockUrl(url.pathname);
         if (parsedUrl?.viewType) {
           return DockPointer.fromUrl(
             parsedUrl.viewType,
@@ -521,12 +576,17 @@ export class DockPointer implements IDockPointer {
    */
   static forEvents(
     ruleId?: string,
-    opts?: { creating?: string; system?: boolean },
+    opts?: { creating?: string; system?: boolean; target?: string },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const options: Record<string, string> = {};
     if (ruleId) options.trigger = ruleId;
     if (opts?.creating) options.creating = opts.creating;
+    // `target` narrows the feed to one subject, in the colon form a FlowEvent
+    // already uses (`data_source:<id>`, `graph_workflow:<id>`, …) — so "show me
+    // what this thing produced" is a link from anywhere that holds an entity,
+    // not a search the user has to retype.
+    if (opts?.target) options.target = opts.target;
     // `system` rides the URL rather than component state because BOTH panes
     // need it: the ScopeFilter shape is `{mode, user, projects}` and cannot
     // carry `system`, so system-scoped rules have always ridden a separate
@@ -1188,6 +1248,32 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * THE app root — the desk home, spelled `/`.
+   *
+   * An ordinary location: the desk `HOME` view with no pointer. It used to be
+   * the ABSENCE of a pointer (`currentDock === null`), which left every caller
+   * that had to work "dock or home" holding a raw URL string. Compose on it like
+   * any other pointer: `DockPointer.root().withJourney(id)`.
+   *
+   * Not a tab — HOME is `chrome: 'fullbleed'`, so `tabHash` is null.
+   */
+  static root(): DockPointer {
+    return new DockPointer(ViewType.HOME);
+  }
+
+  /** True when this pointer IS the app root (see `isRootAddress`). */
+  get isRoot(): boolean {
+    return isRootAddress(this.viewType, this.pointer, this.layout, this.page);
+  }
+
+  /** This pointer carrying the query options of `url`. The root has no path of
+   *  its own to parse, so its options have to be lifted across explicitly. */
+  withOptionsFromUrl(url: string): DockPointer {
+    const query = new URL(url, 'http://flowpad.local').searchParams;
+    return new DockPointer(this.viewType, this.pointer, parseQueryParams(query), this.layout, this.page);
+  }
+
+  /**
    * Create dock pointer for HOME/LiveStatus view with optional tab and item
    * URL structure: /dock/home/<tab>?item=<item>&scope=<scope>&project=<project>
    *
@@ -1721,6 +1807,22 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for the Credentials screen.
+   *
+   * The pointer grammar (`<subview>[/<projectId>]`) is not restated here —
+   * `credentialsPointer` owns it, so a change there reaches every caller.
+   * @param tab - Which tab is active; omitted lands on the caller's leading tab
+   * @param projectId - Project whose environment is shown (Environment tab)
+   */
+  static forCredentials(
+    tab: CredentialsSubview = CredentialsSubview.CONNECTIONS,
+    projectId?: string,
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    return new DockPointer(ViewType.CREDENTIALS, credentialsPointer(tab, projectId), {}, layout);
+  }
+
+  /**
    * Check equality with another dock pointer
    */
   equals(other: DockPointer): boolean {
@@ -2009,6 +2111,36 @@ export class DockPointer implements IDockPointer {
    */
   get vfsPath(): VFSPath | null {
     return this.resourceVfsPath;
+  }
+
+  /**
+   * The wiki space + word this route addresses, for a `wiki/…` dock.
+   *
+   * The THIRD addressing form, alongside `targetTypeId` and `resourceVfsPath`,
+   * and the only one that names its subject rather than identifying it: a wiki
+   * route stays at the word so it survives a rename, which is exactly why the
+   * other two return null here. Anything that wants to say where a wiki route
+   * points reads this — the word is a usable label with no lookup at all, and
+   * the space is the Wiki entity's own id.
+   *
+   * Covers the project-rebased form (`/dock/project/<id>/wiki/…`) through the
+   * same `assetSubPointer` un-rebase the other two getters use.
+   */
+  get wikiRef(): AssetWikiRef | null {
+    return parseAssetWikiRef(this.viewType === ViewType.ASSETS ? this.pointer : this.assetSubPointer);
+  }
+
+  /**
+   * True when this dock addresses the PROJECT ITSELF, not something inside it.
+   *
+   * `viewType === PROJECT` is NOT that question: `/dock/project/<id>/editor/…`
+   * and `/dock/project/<id>/wiki/…` are project-REBASED asset routes that
+   * address an asset and merely render in the project shell. Anything treating
+   * the bare viewType as "the project page" mislabels every one of them — the
+   * address bar called them all "Home".
+   */
+  get isProjectShell(): boolean {
+    return this.viewType === ViewType.PROJECT && this.assetSubPointer === null;
   }
 
   /** DEPRECATED: use fromJSON instead. Reconstruct the navigable DockPointer from a

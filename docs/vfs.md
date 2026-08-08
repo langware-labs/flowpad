@@ -135,7 +135,7 @@ canonical local route before tab setup.
 
 | Action            | Method | Description                          |
 | ----------------- | ------ | ------------------------------------ |
-| `browse`          | GET    | List directory contents → `FSItem[]` |
+| `browse`          | GET    | List directory contents → `FSEntry[]` |
 | `download`        | GET    | Stream file content                  |
 | `download_zip`    | GET    | Download directory as ZIP archive    |
 | `upload`          | POST   | Upload files (multipart form)        |

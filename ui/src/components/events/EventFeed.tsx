@@ -8,7 +8,7 @@
  * the fallbacks always won and the panes ignored the theme entirely.
  */
 import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Pause, Play, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pause, Play, Trash2, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
@@ -22,6 +22,9 @@ interface Props {
   totalEvents: number;
   paused: boolean;
   ruleFilterName: string | null;
+  /** Feed narrowed to one subject, in FlowEvent colon form. */
+  targetFilter: string | null;
+  onClearTarget: () => void;
   onTogglePause: () => void;
   onClear: () => void;
 }
@@ -149,6 +152,8 @@ export function EventFeed({
   totalEvents,
   paused,
   ruleFilterName,
+  targetFilter,
+  onClearTarget,
   onTogglePause,
   onClear,
 }: Props) {
@@ -178,6 +183,19 @@ export function EventFeed({
         {ruleFilterName && (
           <Badge variant="outline" className="h-6 gap-1 px-2 text-[10px]">
             <Trans>rule: {ruleFilterName}</Trans>
+          </Badge>
+        )}
+        {targetFilter && (
+          <Badge variant="outline" className="h-6 gap-1 px-2 font-mono text-[10px]">
+            {targetFilter}
+            <button
+              type="button"
+              onClick={onClearTarget}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Clear subject filter"
+            >
+              <X className="size-3" />
+            </button>
           </Badge>
         )}
         <div className="ml-auto flex items-center gap-1">

@@ -1,6 +1,8 @@
 import { ContextEntitiesEnum, dataContext, initSdk, isHubOnly, TypeId } from '@sdk';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { TimeIt } from '@src/utils/timeit';
+import { adoptScopeProject } from './load-dock-pointer';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { runLoadRedirects } from './load-redirects';
 // Side-effect import: features register their load-redirect resolvers here.
 import '@src/journey/journey-load-redirect';
@@ -45,6 +47,15 @@ export async function loadHomePage(args: LoaderArgs) {
 
   await ensureComputeNodeLoaded();
   t.time('ensureComputeNode');
+
+  // `/?scope-…` means what `/dock/home?scope-…` meant: the root is an ordinary
+  // location now, so a scoped home has to adopt its project like any other
+  // scoped dock. This is the ONE step the home loader borrows from the dock
+  // loader — the rest (tab setup, canonicalizers, page redirects) stays out
+  // deliberately, because `/` is every cold start and this is the boot path.
+  const url = new URL(args.request.url);
+  await adoptScopeProject(DockPointer.root().withOptionsFromUrl(`${url.pathname}${url.search}`));
+  t.time('adoptScope');
 
   // Feature load-redirects (journey auto-launch et al) — done here, at load
   // time, so the destination is real URL state (reload/back safe) rather than

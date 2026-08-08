@@ -18,12 +18,18 @@ export const LEAF_TOOLTIP_MS = 250;
  * FavoritesTreeMenu — the favorites as a MENU: rows that expand on hover, for
  * fast bookmark navigation. The slider's body.
  *
- * Hover drives the menu; it never opens anything. Clicking a leaf is the only
- * thing that navigates, and so the only thing that marks a bookmark read
- * (`onOpen` → `markOpened`) — a pointer sweeping down the menu must not clear
- * every unread badge.
+ * Hover drives the menu; it never navigates. Clicking a leaf is still the only
+ * thing that opens, but resting on one marks it seen (`onHoverSeen` →
+ * `markSeen`) — the dwell is what stops a sweep from clearing every badge.
  */
-export function FavoritesTreeMenu({ filter }: { filter?: (b: Bookmark) => boolean }) {
+export function FavoritesTreeMenu({
+  filter,
+  mirrored,
+}: {
+  filter?: (b: Bookmark) => boolean;
+  /** The host panel grows LEFTWARD — flip the tree's direction cues with it. */
+  mirrored?: boolean;
+}) {
   const { navigation, currentDock } = useDockNavigation();
   const roots = useFavoritesTreeRoots({ filter });
 
@@ -37,6 +43,9 @@ export function FavoritesTreeMenu({ filter }: { filter?: (b: Bookmark) => boolea
         activePointer={currentDock ?? null}
         onNavigate={(p) => navigation.openDock(p)}
         hoverExpandMs={HOVER_EXPAND_MS}
+        // Same dwell as the preview: seeing the tooltip IS having seen the row.
+        hoverSeenMs={LEAF_TOOLTIP_MS}
+        mirrored={mirrored}
         // Build-as-you-browse: the last row of every level adds into THAT level.
         levelFooter={(parentId) => <FavoritesAddRow parentId={parentId} />}
         // No persistKey on purpose: hover-expansion is exploratory and cheap to

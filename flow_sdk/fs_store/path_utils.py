@@ -200,6 +200,35 @@ def is_valid_project_cwd(
     return True
 
 
+def is_valid_project_mount(
+    path: Path | str | None,
+    *,
+    include_temp: bool = False,
+) -> bool:
+    """Canonical policy gate for a project mount used in OWNERSHIP lookups.
+
+    Deliberately distinct from ``is_valid_project_cwd``. That one answers "may
+    a worker run here / may this become a discovered cwd", and it fails closed
+    through ``is_protected_path`` — whose job is "must never be recursively
+    deleted". The two questions only *look* alike, and conflating them is a
+    real bug: an SDK-shipped system project is protected from deletion (it
+    lives inside the installed package), so the delete gate rejects it, so it
+    vanished from ``load_project_mounts`` and every file under
+    ``flow_sdk/system_projects/<name>/`` was attributed to the nearest
+    *deletable* ancestor project instead — typically the checkout containing
+    the install.
+
+    Undeletable does not mean unowned. A system project mount is a precise,
+    legitimate owner, so it is admitted here while remaining fully protected
+    from every destructive caller.
+    """
+    from flow_sdk.config import is_system_project_path  # noqa: PLC0415
+
+    if path is not None and is_system_project_path(path):
+        return True
+    return is_valid_project_cwd(path, include_temp=include_temp)
+
+
 def ancestors_of(p: Path | str) -> list[str]:
     """Ancestor directories of ``p`` in canonical posix form, deepest first,
     excluding the filesystem root.
