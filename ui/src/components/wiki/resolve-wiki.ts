@@ -1,4 +1,4 @@
-import { dataContext, dataManager, TypeId, Wiki, type WikiResolveResult } from '@sdk';
+import { dataContext, dataManager, PageId, TypeId, Wiki, type WikiResolveResult } from '@sdk';
 import { DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
 
 export interface ResolveWikiWordOptions {
@@ -8,6 +8,17 @@ export interface ResolveWikiWordOptions {
 }
 
 export type WikiAuthority = 'local' | 'hub';
+
+/**
+ * Which graph a wiki word resolves against, from the page it was opened on.
+ *
+ * Shared so the RESOLVER and every READER agree: the resolve store is keyed by
+ * authority, so a reader that assumes 'local' on a hub page silently misses the
+ * result the loader just wrote and shows an unresolved word forever.
+ */
+export function wikiAuthorityForPage(page: PageId | undefined): WikiAuthority {
+  return page === PageId.HUB ? 'hub' : 'local';
+}
 
 /**
  * Resolve one Wiki word through the typed graph actions.

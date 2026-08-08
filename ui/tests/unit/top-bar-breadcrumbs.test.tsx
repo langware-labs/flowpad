@@ -18,9 +18,14 @@ const ctx = vi.hoisted(() => ({
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => ctx }));
 vi.mock('@src/tabs/all-tabs-store', () => ({ getAllTabsSnapshot: () => [] }));
 
-import { Tab, TypeId } from '@sdk';
+import { dataManager, Tab, TypeId } from '@sdk';
+import { canonicalWikiWord } from '@src/navigation/asset-doc-pointer-grammar';
 import * as ancestors from '@src/navigation/entity-ancestors';
 import { useEntityBreadcrumbs } from '@src/components/top-nav-bar/use-entity-breadcrumbs';
+import {
+  resetWikiResolveResultsForTests,
+  setWikiResolveResult,
+} from '@src/routes/loaders/wiki-resolve-store';
 
 const DOC = new TypeId('markdown', '11111111-1111-4111-8111-111111111111');
 const PROJECT_ID = '44444444-4444-4444-8444-444444444444';
@@ -193,5 +198,144 @@ describe('useEntityBreadcrumbs', () => {
 
     // Phase 0's crumbs stand on their own — the rejection must not blank the bar.
     await waitFor(() => expect(result.current.crumbs.map((c) => c.kind)).toEqual(['project', 'current']));
+  });
+});
+
+/**
+ * A wiki route is the one asset form addressed by WORD rather than by typeid or
+ * path — deliberately, so it survives a rename. That means `targetTypeId` and
+ * `vfsPath` are both empty, and the bar used to fall through to the generic
+ * view crumb: "Assets" with a grid glyph, on a page that plainly knows it is a
+ * wiki page. It reads `Project / <Wiki> / <word>` instead.
+ */
+describe('useEntityBreadcrumbs — wiki routes', () => {
+  const WIKI_ID = '66666666-6666-4666-8666-666666666666';
+  const PAGE = new TypeId('markdown', '77777777-7777-4777-8777-777777777777');
+
+  /** An assets dock whose pointer is `wiki/<space>/<word>`, with the `wikiRef`
+   *  getter the real DockPointer exposes. */
+  function wikiDock(space: string, name: string) {
+    return {
+      pointer: `wiki/${space}/${name}`,
+      tabHash: 'tab-1',
+      targetTypeId: null,
+      viewType: 'assets',
+      options: {},
+      wikiRef: { space, name, word: canonicalWikiWord(name) },
+    } as never;
+  }
+
+  beforeEach(() => {
+    resetWikiResolveResultsForTests();
+    // A wiki dock carries no typeid and no vfs path, so this is what the real
+    // resolver answers.
+    vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue({
+      targetTypeId: null,
+      target: null,
+      projectId: null,
+    } as never);
+  });
+  afterEach(() => resetWikiResolveResultsForTests());
+
+  it('names the page from the word on the first frame, with no fetch', () => {
+    vi.spyOn(dataManager, 'getByTypeId').mockReturnValue(deferred<any>().promise as never);
+
+    const { result } = renderHook(() => useEntityBreadcrumbs(wikiDock(WIKI_ID, 'Duplicate assets')));
+
+    // Not "Assets" — the word is right there in the URL.
+    expect(result.current.crumbs.at(-1)?.label).toBe('Duplicate assets');
+    expect(result.current.targetTitle).toBe('Duplicate assets');
+  });
+
+  it('labels the page with the word that RESOLVED, not the raw URL segment', async () => {
+    vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue({
+      displayName: 'Engineering',
+      typeId: new TypeId('wiki', WIKI_ID),
+    } as never);
+
+    // The backend canonicalizes `Docs/Nested Child Page` to `Docs` and serves
+    // that page; echoing the URL segment would name a page nobody opened.
+    const { result } = renderHook(() => useEntityBreadcrumbs(wikiDock(WIKI_ID, 'Docs/Nested Child Page')));
+
+    await waitFor(() => expect(result.current.crumbs.at(-1)?.label).toBe('Docs'));
+    expect(result.current.targetTitle).toBe('Docs');
+  });
+
+  it('puts the Wiki between the project and the page', async () => {
+    vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue({
+      displayName: 'Engineering',
+      typeId: new TypeId('wiki', WIKI_ID),
+    } as never);
+
+    const { result } = renderHook(() => useEntityBreadcrumbs(wikiDock(WIKI_ID, 'Duplicate assets')));
+
+    await waitFor(() => expect(result.current.crumbs.map((c) => c.kind)).toEqual(['project', 'ancestor', 'current']));
+    expect(result.current.crumbs.map((c) => c.label)).toEqual(['Acme', 'Engineering', 'Duplicate assets']);
+  });
+
+  it('adopts the resolved page as the target once the route resolves the word', async () => {
+    vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue(null as never);
+    setWikiResolveResult(WIKI_ID, 'Duplicate assets', { kind: 'resolved', target_typeid: PAGE, source: 'entry' });
+
+    const { result } = renderHook(() => useEntityBreadcrumbs(wikiDock(WIKI_ID, 'Duplicate assets')));
+
+    // The target is what the actions cluster bookmarks and shares, so a wiki
+    // page has to surface one — but the address still says the word.
+    await waitFor(() => expect(result.current.targetTypeId?.toString()).toBe(PAGE.toString()));
+    expect(result.current.crumbs.at(-1)?.label).toBe('Duplicate assets');
+  });
+
+  it('resolves the @local alias through the active project, not as an id', async () => {
+    const byTypeId = vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue(null as never);
+    const getDefaultWiki = vi.fn().mockResolvedValue({
+      displayName: 'Project Wiki',
+      typeId: new TypeId('wiki', WIKI_ID),
+    });
+    ctx.project = { displayName: 'Acme', id: 'p1', getDefaultWiki };
+
+    const { result } = renderHook(() => useEntityBreadcrumbs(wikiDock('@local', 'Runtime environments')));
+
+    await waitFor(() => expect(result.current.crumbs.map((c) => c.label)).toEqual([
+      'Acme',
+      'Project Wiki',
+      'Runtime environments',
+    ]));
+    // `@local` is an alias, never a wiki id — looking it up as one would 404.
+    expect(byTypeId).not.toHaveBeenCalled();
+    expect(getDefaultWiki).toHaveBeenCalled();
+  });
+});
+
+/**
+ * A project-REBASED asset route (`/dock/project/<id>/<assetSubPointer>`) wears
+ * `viewType: 'project'` while addressing an asset. Treating the bare viewType as
+ * "the project page" labelled every one of them "Home".
+ */
+describe('useEntityBreadcrumbs — project-rebased routes are not the project page', () => {
+  function projectDock(pointer: string, isProjectShell: boolean, targetTypeId: TypeId | null) {
+    return { pointer, tabHash: 'tab-1', targetTypeId, viewType: 'project', options: {}, isProjectShell } as never;
+  }
+
+  it('names the asset, not "Home", on a rebased editor route', async () => {
+    vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue({
+      targetTypeId: DOC,
+      target: { displayName: 'Design notes', parent_type_id: null },
+      projectId: 'p1',
+    } as never);
+
+    const { result } = renderHook(() =>
+      useEntityBreadcrumbs(projectDock(`${PROJECT_ID}/editor/markdown/typeid/${DOC.toString()}`, false, DOC)),
+    );
+
+    await waitFor(() => expect(result.current.crumbs.at(-1)?.label).toBe('Design notes'));
+  });
+
+  it('still says "Home" on the bare project route', () => {
+    vi.spyOn(Tab, 'resolveDockTarget').mockReturnValue(deferred<any>().promise);
+
+    const { result } = renderHook(() => useEntityBreadcrumbs(projectDock(PROJECT_ID, true, null)));
+
+    // The project IS the leading crumb; repeating it would read "Acme › Acme".
+    expect(result.current.crumbs.at(-1)?.label).toBe('Home');
   });
 });

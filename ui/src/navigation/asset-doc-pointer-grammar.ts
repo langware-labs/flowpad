@@ -1,4 +1,4 @@
-import { TypeId, VFSPath } from '@sdk';
+import { canonicalWikiWord, splitWikiValue, TypeId, VFSPath, type AssetWikiRef } from '@sdk';
 import {
   AssetEditor,
   AssetMode,
@@ -81,9 +81,33 @@ export function assetWikiValue(name: string, space: string = DEFAULT_WIKI_SPACE)
   return `${space}/${name}`;
 }
 
+/**
+ * Read `space`, `name` and the canonical `word` off a `wiki/…` asset pointer,
+ * or null for any other mode. The inverse of `assetWikiValue`.
+ *
+ * A wiki route is the one asset form addressed by NAME rather than by typeid or
+ * path — deliberate (it survives a rename), but it also means callers that want
+ * to say what the route points at get nothing from `targetTypeId` or `vfsPath`.
+ * This is what they parse instead. The splitting rules live in the SDK
+ * (`splitWikiValue`) because the SDK's own tab naming needs the same answer.
+ */
+export function parseAssetWikiRef(assetsPointer: string | null | undefined): AssetWikiRef | null {
+  if (!assetsPointer) return null;
+  let parsed: ParsedAssetDocPointer;
+  try {
+    parsed = parseAssetDocPointer(assetsPointer);
+  } catch {
+    return null;
+  }
+  if (parsed.mode !== AssetMode.WIKI) return null;
+  return splitWikiValue(parsed.value);
+}
+
 export function serializeAssetDocPointer(pointer: ParsedAssetDocPointer): string {
   if (pointer.mode === AssetMode.WIKI) {
     return `${AssetMode.WIKI}/${pointer.value}`;
   }
   return `${AssetMode.EDITOR}/${pointer.editor}/${pointer.method}/${pointer.value}`;
 }
+
+export { canonicalWikiWord, type AssetWikiRef };
