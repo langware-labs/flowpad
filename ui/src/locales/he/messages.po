@@ -1244,8 +1244,8 @@ msgid "All Projects"
 msgstr "כל הפרויקטים"
 
 #: src/components/terminal/ProjectsCounterChip.tsx
-msgid "All projects are already open"
-msgstr "כל הפרויקטים כבר פתוחים"
+#~ msgid "All projects are already open"
+#~ msgstr "כל הפרויקטים כבר פתוחים"
 
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "All services running"
@@ -1874,6 +1874,7 @@ msgstr "זמין בענן"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
+#: src/journey/JourneyTray.tsx
 msgid "Back"
 msgstr "חזור"
 
@@ -1890,8 +1891,8 @@ msgid "Back to inbox"
 msgstr "חזור לתיבת הדואר הנכנס"
 
 #: src/components/terminal/ProjectsCounterChip.tsx
-msgid "Back to open projects"
-msgstr "חזור לפרויקטים פתוחים"
+#~ msgid "Back to open projects"
+#~ msgstr "חזור לפרויקטים פתוחים"
 
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
 #~ msgid "Back to projects"
@@ -2182,7 +2183,6 @@ msgstr "לא ניתן לעדכן — מוצגים הנתונים מהסנכרו�
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
-#: src/components/assets/editor/run/useRunOnFile.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
@@ -2281,8 +2281,8 @@ msgid "Cannot reach localhost from remote sandbox. Use ngrok or a public URL to 
 msgstr "לא ניתן להגיע ל-localhost מארגז חול מרחוק. השתמש ב-ngrok או בכתובת URL ציבורית כדי להחשיף את ה-backend שלך."
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "Cannot run"
-msgstr "לא ניתן להפעיל"
+#~ msgid "Cannot run"
+#~ msgstr "לא ניתן להפעיל"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Cannot run rebuild"
@@ -2370,8 +2370,8 @@ msgid "Chats"
 msgstr "שיחות"
 
 #: src/journey/JourneyTray.tsx
-msgid "Check"
-msgstr "בדיקה"
+#~ msgid "Check"
+#~ msgstr "בדיקה"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -2808,6 +2808,7 @@ msgstr "סגירת מגירת הפרטים"
 
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
+#: src/components/top-nav-bar/AddressSearchField.tsx
 msgid "Close search"
 msgstr "סגירת החיפוש"
 
@@ -3116,7 +3117,6 @@ msgstr "אישור"
 
 #: src/components/connections-manager.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
-#: src/journey/JourneyTray.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
 msgstr "התחבר"
@@ -3266,7 +3266,6 @@ msgstr "אסימוני Context"
 
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/survey/SurveyView.tsx
-#: src/journey/JourneyTray.tsx
 msgid "Continue"
 msgstr "המשך"
 
@@ -3424,9 +3423,9 @@ msgstr "העתק קישור"
 #~ msgid "Copy Log"
 #~ msgstr "העתק יומן"
 
-#: src/components/assets/AssetsPage.tsx
-#: src/components/assets/AssetsPage.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/top-nav-bar/CrumbDetailsPopover.tsx
+#: src/components/top-nav-bar/CrumbDetailsPopover.tsx
 msgid "Copy path"
 msgstr "העתק נתיב"
 
@@ -5180,12 +5179,12 @@ msgid "Enable browser automation via Chrome (--chrome)"
 msgstr "הפוך אוטומציה של דפדפן דרך Chrome (--chrome) לזמינה"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "Enable for project"
-msgstr "הפעל עבור פרויקט"
+#~ msgid "Enable for project"
+#~ msgstr "הפעל עבור פרויקט"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "Enable for user"
-msgstr "הפעל עבור משתמש"
+#~ msgid "Enable for user"
+#~ msgstr "הפעל עבור משתמש"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/project-home/BindSecretDialog.tsx
@@ -5308,7 +5307,6 @@ msgid "Enter trigger name"
 msgstr "הכנס שם טריגר"
 
 #: src/components/credentials-view/ProvideValueInline.tsx
-#: src/components/project-home/SecretsCard.tsx
 msgid "Enter value"
 msgstr "הזינו ערך"
 
@@ -5782,8 +5780,8 @@ msgid "Failed to discard draft"
 msgstr "נכשל להשליך טיוטה"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "Failed to enable MCP"
-msgstr "נכשל בהפעלת MCP"
+#~ msgid "Failed to enable MCP"
+#~ msgstr "נכשל בהפעלת MCP"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/project-home/BindSecretDialog.tsx
@@ -5922,7 +5920,6 @@ msgstr "נכשל בפתיחת תיקיית הרישומים"
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
-#: src/tabs/useTerminalStripController.tsx
 msgid "Failed to open project"
 msgstr "נכשל בפתיחת הפרויקט"
 
@@ -6007,8 +6004,8 @@ msgid "Failed to start GitHub connection"
 msgstr "כישלון בהתחלת חיבור GitHub"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "Failed to start run"
-msgstr "נכשל בהתחלת ההרצה"
+#~ msgid "Failed to start run"
+#~ msgstr "נכשל בהתחלת ההרצה"
 
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Failed to start services"
@@ -6164,8 +6161,8 @@ msgid "Files on disk not yet in the DB"
 msgstr "קבצים בדיסק שעדיין לא בDB"
 
 #: src/journey/JourneyTray.tsx
-msgid "Fill text"
-msgstr "הזנת טקסט"
+#~ msgid "Fill text"
+#~ msgstr "הזנת טקסט"
 
 #: src/components/git/BranchPicker.tsx
 msgid "Filter branches…"
@@ -6319,8 +6316,8 @@ msgstr "תיקון אלה משפר את הכישוריות לכל הרצה עת�
 #~ msgstr "היסטוריית זרימה"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "Flow MCP not enabled"
-msgstr "Flow MCP לא מופעל"
+#~ msgid "Flow MCP not enabled"
+#~ msgstr "Flow MCP לא מופעל"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Flow or compute node not available"
@@ -8447,8 +8444,8 @@ msgid "locked after first message"
 msgstr "נעול לאחר ההודעה הראשונה"
 
 #: src/journey/JourneyTray.tsx
-msgid "Log in"
-msgstr "התחברות"
+#~ msgid "Log in"
+#~ msgstr "התחברות"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Log mode"
@@ -9670,6 +9667,7 @@ msgstr "לא נמצאו התאמות במאגר הבעיות הידועות של
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/spotlight/Spotlight.tsx
+#: src/components/top-nav-bar/AddressSearchField.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "No matches."
 msgstr "אין התאמות."
@@ -10492,10 +10490,9 @@ msgstr "פתח"
 msgid "Open .env.local at this line"
 msgstr ""
 
-#. placeholder {0}: workerLabel(worker)
 #: src/components/terminal/ProjectsCounterChip.tsx
-msgid "Open {0} on…"
-msgstr "פתח {0} ב…"
+#~ msgid "Open {0} on…"
+#~ msgstr "פתח {0} ב…"
 
 #: src/components/graph-view/ui/EntityIcon.tsx
 #~ msgid "Open {gitLabel}"
@@ -10644,8 +10641,6 @@ msgstr "פתיחת התיקייה: {projectPath}"
 msgid "Open from git"
 msgstr "פתיחת פרויקט מ-Git"
 
-#: src/components/terminal/ProjectsCounterChip.tsx
-#: src/components/terminal/ProjectsCounterChip.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Open from history"
 msgstr "פתח מהיסטוריה"
@@ -10701,6 +10696,10 @@ msgstr "פתח בדפדפן חיצוני"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Open in external terminal"
 msgstr "פתח בטרמינל חיצוני"
+
+#: src/components/top-nav-bar/CrumbDetailsPopover.tsx
+msgid "Open in Files"
+msgstr ""
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/webapp-viewer.tsx
@@ -10856,7 +10855,6 @@ msgstr "פתח הפעלה"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-#: src/journey/JourneyTray.tsx
 msgid "Open terminal"
 msgstr "פתח טרמינל"
 
@@ -11705,6 +11703,10 @@ msgstr "תיקיית פרויקט"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Project folder…"
 msgstr "תיקיית פרויקט…"
+
+#: src/components/top-nav-bar/TopNavBar.tsx
+msgid "Project home"
+msgstr ""
 
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 msgid "Project is fixed after the first message — start a new session to change it."
@@ -12786,6 +12788,7 @@ msgstr "חשוף"
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
+#: src/components/top-nav-bar/CrumbDetailsPopover.tsx
 msgid "Reveal in Finder"
 msgstr "הצג ב-Finder"
 
@@ -12994,8 +12997,8 @@ msgid "Run from your terminal:"
 msgstr "הפעל מהטרמינל שלך:"
 
 #: src/journey/JourneyTray.tsx
-msgid "Run it"
-msgstr "הרצה"
+#~ msgid "Run it"
+#~ msgstr "הרצה"
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Run now"
@@ -13113,7 +13116,6 @@ msgstr ""
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
-#: src/components/project-home/SecretsCard.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -13323,15 +13325,17 @@ msgstr "גלול כדי לנווט"
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/spotlight/Spotlight.tsx
+#: src/components/top-nav-bar/AddressField.tsx
+#: src/components/top-nav-bar/AddressField.tsx
+#: src/components/top-nav-bar/AddressSearchField.tsx
 #: src/pages/search-view/SearchView.tsx
 msgid "Search"
 msgstr "חיפוש"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-msgid "Search (⌘K)"
-msgstr "חיפוש (⌘K)"
+#~ msgid "Search (⌘K)"
+#~ msgstr "חיפוש (⌘K)"
 
-#: src/components/assets/editor/markdown/PlainMarkdownAssetEditor.tsx
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Search agents and skills…"
 msgstr "חפש סוכנים ומיומנויות…"
@@ -13483,12 +13487,14 @@ msgstr "חיפוש..."
 #: src/components/assets/AssetListView.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/spotlight/Spotlight.tsx
+#: src/components/top-nav-bar/AddressSearchField.tsx
 msgid "Search…"
 msgstr "חיפוש…"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/spotlight/Spotlight.tsx
+#: src/components/top-nav-bar/AddressSearchField.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Searching…"
@@ -13549,8 +13555,8 @@ msgstr "בחר הקשר."
 
 #: src/components/top-nav-bar/AddressField.tsx
 #: src/components/top-nav-bar/AddressField.tsx
-msgid "Select a different project"
-msgstr ""
+#~ msgid "Select a different project"
+#~ msgstr ""
 
 #: src/components/docs-viewer/DocsViewer.tsx
 msgid "Select a document"
@@ -13927,7 +13933,6 @@ msgstr "הגדר פרויקט"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/project-home/SecretsCard.tsx
-#: src/journey/JourneyTray.tsx
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
 msgstr "הגדר"
@@ -15223,8 +15228,8 @@ msgstr "בדוק טריגר"
 #~ msgstr "בדוק את כללי ההפעלה שלך עם דוגמאות שיחות ונתוני hook לאימות שהם מופעלים כראוי."
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. Enable it to continue."
-msgstr "שרת <0>flow-sdk-mcp</0> נדרש כדי להריץ עם עקיבות התקדמות. הפעל אותו כדי להמשיך."
+#~ msgid "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. Enable it to continue."
+#~ msgstr "שרת <0>flow-sdk-mcp</0> נדרש כדי להריץ עם עקיבות התקדמות. הפעל אותו כדי להמשיך."
 
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 #~ msgid "The <0>flow-sdk-mcp</0> server is required to run workflows with progress tracing. Enable it to continue."
@@ -15493,8 +15498,8 @@ msgid "This entry was removed since the last stamp — it exists only in the bas
 msgstr "ערך זה הוסר מאז הלהט האחרון — הוא קיים רק בקו הבסיס."
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "This file has no backing entity yet."
-msgstr "לקובץ זה אין ישות תומכת עדיין."
+#~ msgid "This file has no backing entity yet."
+#~ msgstr "לקובץ זה אין ישות תומכת עדיין."
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "This file isn't text"
@@ -16421,7 +16426,6 @@ msgid "Verified"
 msgstr "מאומת"
 
 #: src/components/data-sources/DataSourceCard.tsx
-#: src/journey/JourneyTray.tsx
 msgid "Verify"
 msgstr "אימות"
 
@@ -16593,9 +16597,9 @@ msgstr "בהמתנה לסנכרון זהות המשתתף השני…"
 msgid "Waiting for you to approve…"
 msgstr "ממתינים לאישורך…"
 
-#: src/components/harness-login/HarnessLoginModal.tsx
-#~ msgid "Waiting…"
-#~ msgstr ""
+#: src/journey/JourneyTray.tsx
+msgid "Waiting…"
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Walked the filesystem without writing. Counts and sizes reflect what is on disk right now; compare against the per-type rows to see drift."

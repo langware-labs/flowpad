@@ -1,15 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
-import { useLingui } from '@lingui/react/macro';
 import { MarkdownEditor, type WikiLinkTarget } from './MarkdownEditor';
-import { AssetManagerPopover, RUNNABLE_ASSETS } from '@src/components/asset-manager/AssetManagerPopover';
-import { RunButton } from '@src/components/assets/editor/run/RunButton';
-import { useRunOnFile } from '@src/components/assets/editor/run/useRunOnFile';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { ProcessRunsPanel } from '@src/components/process-runs/ProcessRunsPanel';
 import type { ProcessEntry } from '@src/components/process-runs/process-run-store';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { entityReloadKey } from '@src/utils/entity-reload-key';
+import { toMs } from '@src/utils/process-recency';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
@@ -41,10 +38,9 @@ interface PlainMarkdownAssetEditorProps {
  * Resolves the backing entity by `asset_ref` so Chat + Backlinks tabs key
  * on the real TypeId (`"plan-<uuid>"`, …) instead of a path-based pseudo.
  *
- * Adds a Run button that opens an asset picker (skills + agents). On pick,
- * spawns an `AgenticProcess` with the asset attached and the file path
- * referenced in the prompt; the live run streams into a "Runs" side tab
- * (same panel used by the workflow editor).
+ * Runs launched on this file elsewhere — e.g. translation workers from the
+ * Translations side tab — show up in a "Runs" side tab (same panel used by
+ * the workflow editor).
  */
 export function PlainMarkdownAssetEditor({
   fsRef,
@@ -53,7 +49,6 @@ export function PlainMarkdownAssetEditor({
   fragment,
   wikiLinkTarget,
 }: PlainMarkdownAssetEditorProps) {
-  const { t } = useLingui();
   const { entity: pathEntity } = useEntityByPath<APIEntity<APIEntity<any>>>(
     resolvedEntity ? null : assetType,
     resolvedEntity ? null : fsRef,
@@ -109,76 +104,42 @@ export function PlainMarkdownAssetEditor({
     navigation.openDock(DockPointer.forAssetList(assetType));
   }, [deletable, navigation, assetType]);
 
-  const { open: openSideWindow } = useSideWindows();
-
-  // Run is an advanced-only affordance; only fetch its run history when shown.
+  // Run history is an advanced-only affordance, and its panel isn't mounted
+  // until the Runs tab is opened — don't hold a process query + watch
+  // subscription for a tab that may never be shown.
   const isAdvanced = useIsAdvanced();
-
-  const { runWithAsset, isStarting, processEntry, mcpModal } = useRunOnFile({
-    targetVfsPath: chatTarget,
-    filePath: assetRef ?? fsRef.path,
-    onOpenSideWindow: openSideWindow,
-  });
+  const { windows: sideWindows } = useSideWindows();
 
   const { processes: pastRunProcesses } = useProcessesForTarget(chatTarget ?? '', {
-    enabled: !!chatTarget && isAdvanced,
+    enabled: !!chatTarget && isAdvanced && sideWindows.includes('runs'),
     processType: ProcessKind.Execution,
   });
 
   const runHistory = useMemo<ProcessEntry[]>(() => {
-    const toMs = (d: unknown): number => {
-      if (d instanceof Date) return d.getTime();
-      if (typeof d === 'string') return new Date(d).getTime() || 0;
-      return 0;
-    };
     const sorted = [...pastRunProcesses].sort((a, b) => toMs(b.created_date) - toMs(a.created_date));
-    const liveId = processEntry?.process.id;
-    return sorted.map((p) => (liveId && p.id === liveId ? processEntry : { process: p }));
-  }, [pastRunProcesses, processEntry]);
-
-  const isRunning = !!processEntry;
-
-  const toolbar = isAdvanced ? (
-    <AssetManagerPopover
-      trigger={
-        <RunButton
-          iconOnly
-          isRunning={isRunning}
-          isStarting={isStarting}
-          disabled={!chatTarget}
-          title={!chatTarget ? 'No backing entity yet' : undefined}
-        />
-      }
-      filter={RUNNABLE_ASSETS}
-      searchPlaceholder={t`Search agents and skills…`}
-      onPick={(d) => void runWithAsset(d)}
-    />
-  ) : undefined;
+    return sorted.map((p) => ({ process: p }));
+  }, [pastRunProcesses]);
 
   const runsTab: ExtraSideTab = {
     id: 'runs',
     label: runHistory.length > 0 ? `Runs ${runHistory.length}` : 'Runs',
     icon: History,
     description: 'Runs on this file',
-    panel: <ProcessRunsPanel entries={runHistory} currentEntry={processEntry} />,
+    panel: <ProcessRunsPanel entries={runHistory} />,
   };
 
   return (
-    <>
-      <AssetCollisionProvider entity={entity}>
-        <MarkdownEditor
-          fsRef={editorRef}
-          chatTarget={chatTarget}
-          toolbar={toolbar}
-          extraSideTabs={[translationsTab, runsTab]}
-          onDelete={deletable?.delete ? onDelete : undefined}
-          deleteLabel={deletable?.name ?? undefined}
-          reloadKey={reloadKey}
-          fragment={fragment}
-          wikiLinkTarget={wikiLinkTarget}
-        />
-      </AssetCollisionProvider>
-      {mcpModal}
-    </>
+    <AssetCollisionProvider entity={entity}>
+      <MarkdownEditor
+        fsRef={editorRef}
+        chatTarget={chatTarget}
+        extraSideTabs={[translationsTab, runsTab]}
+        onDelete={deletable?.delete ? onDelete : undefined}
+        deleteLabel={deletable?.name ?? undefined}
+        reloadKey={reloadKey}
+        fragment={fragment}
+        wikiLinkTarget={wikiLinkTarget}
+      />
+    </AssetCollisionProvider>
   );
 }

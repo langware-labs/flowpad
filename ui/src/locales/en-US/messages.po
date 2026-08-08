@@ -1244,8 +1244,8 @@ msgid "All Projects"
 msgstr "All Projects"
 
 #: src/components/terminal/ProjectsCounterChip.tsx
-msgid "All projects are already open"
-msgstr "All projects are already open"
+#~ msgid "All projects are already open"
+#~ msgstr "All projects are already open"
 
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "All services running"
@@ -1874,6 +1874,7 @@ msgstr "Available on cloud"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
+#: src/journey/JourneyTray.tsx
 msgid "Back"
 msgstr "Back"
 
@@ -1890,8 +1891,8 @@ msgid "Back to inbox"
 msgstr "Back to inbox"
 
 #: src/components/terminal/ProjectsCounterChip.tsx
-msgid "Back to open projects"
-msgstr "Back to open projects"
+#~ msgid "Back to open projects"
+#~ msgstr "Back to open projects"
 
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
 #~ msgid "Back to projects"
@@ -2182,7 +2183,6 @@ msgstr "Can't update — showing last synced"
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
-#: src/components/assets/editor/run/useRunOnFile.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
@@ -2281,8 +2281,8 @@ msgid "Cannot reach localhost from remote sandbox. Use ngrok or a public URL to 
 msgstr "Cannot reach localhost from remote sandbox. Use ngrok or a public URL to expose your backend."
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "Cannot run"
-msgstr "Cannot run"
+#~ msgid "Cannot run"
+#~ msgstr "Cannot run"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Cannot run rebuild"
@@ -2370,8 +2370,8 @@ msgid "Chats"
 msgstr "Chats"
 
 #: src/journey/JourneyTray.tsx
-msgid "Check"
-msgstr "Check"
+#~ msgid "Check"
+#~ msgstr "Check"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -2808,6 +2808,7 @@ msgstr "Close details"
 
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
+#: src/components/top-nav-bar/AddressSearchField.tsx
 msgid "Close search"
 msgstr "Close search"
 
@@ -3116,7 +3117,6 @@ msgstr "Confirm"
 
 #: src/components/connections-manager.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
-#: src/journey/JourneyTray.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
 msgstr "Connect"
@@ -3266,7 +3266,6 @@ msgstr "context tokens"
 
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/survey/SurveyView.tsx
-#: src/journey/JourneyTray.tsx
 msgid "Continue"
 msgstr "Continue"
 
@@ -3424,9 +3423,9 @@ msgstr "Copy link"
 #~ msgid "Copy Log"
 #~ msgstr "Copy Log"
 
-#: src/components/assets/AssetsPage.tsx
-#: src/components/assets/AssetsPage.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/top-nav-bar/CrumbDetailsPopover.tsx
+#: src/components/top-nav-bar/CrumbDetailsPopover.tsx
 msgid "Copy path"
 msgstr "Copy path"
 
@@ -5180,12 +5179,12 @@ msgid "Enable browser automation via Chrome (--chrome)"
 msgstr "Enable browser automation via Chrome (--chrome)"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "Enable for project"
-msgstr "Enable for project"
+#~ msgid "Enable for project"
+#~ msgstr "Enable for project"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "Enable for user"
-msgstr "Enable for user"
+#~ msgid "Enable for user"
+#~ msgstr "Enable for user"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/project-home/BindSecretDialog.tsx
@@ -5308,7 +5307,6 @@ msgid "Enter trigger name"
 msgstr "Enter trigger name"
 
 #: src/components/credentials-view/ProvideValueInline.tsx
-#: src/components/project-home/SecretsCard.tsx
 msgid "Enter value"
 msgstr "Enter value"
 
@@ -5782,8 +5780,8 @@ msgid "Failed to discard draft"
 msgstr "Failed to discard draft"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "Failed to enable MCP"
-msgstr "Failed to enable MCP"
+#~ msgid "Failed to enable MCP"
+#~ msgstr "Failed to enable MCP"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/project-home/BindSecretDialog.tsx
@@ -5922,7 +5920,6 @@ msgstr "Failed to open logs folder"
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
-#: src/tabs/useTerminalStripController.tsx
 msgid "Failed to open project"
 msgstr "Failed to open project"
 
@@ -6007,8 +6004,8 @@ msgid "Failed to start GitHub connection"
 msgstr "Failed to start GitHub connection"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "Failed to start run"
-msgstr "Failed to start run"
+#~ msgid "Failed to start run"
+#~ msgstr "Failed to start run"
 
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Failed to start services"
@@ -6164,8 +6161,8 @@ msgid "Files on disk not yet in the DB"
 msgstr "Files on disk not yet in the DB"
 
 #: src/journey/JourneyTray.tsx
-msgid "Fill text"
-msgstr "Fill text"
+#~ msgid "Fill text"
+#~ msgstr "Fill text"
 
 #: src/components/git/BranchPicker.tsx
 msgid "Filter branches…"
@@ -6319,8 +6316,8 @@ msgstr "Fixing these tightens the skill for every future run."
 #~ msgstr "Flow History"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "Flow MCP not enabled"
-msgstr "Flow MCP not enabled"
+#~ msgid "Flow MCP not enabled"
+#~ msgstr "Flow MCP not enabled"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Flow or compute node not available"
@@ -8447,8 +8444,8 @@ msgid "locked after first message"
 msgstr "locked after first message"
 
 #: src/journey/JourneyTray.tsx
-msgid "Log in"
-msgstr "Log in"
+#~ msgid "Log in"
+#~ msgstr "Log in"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Log mode"
@@ -9670,6 +9667,7 @@ msgstr "No matches found in the Flowpad known-issues database."
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/spotlight/Spotlight.tsx
+#: src/components/top-nav-bar/AddressSearchField.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "No matches."
 msgstr "No matches."
@@ -10492,10 +10490,9 @@ msgstr "Open"
 msgid "Open .env.local at this line"
 msgstr "Open .env.local at this line"
 
-#. placeholder {0}: workerLabel(worker)
 #: src/components/terminal/ProjectsCounterChip.tsx
-msgid "Open {0} on…"
-msgstr "Open {0} on…"
+#~ msgid "Open {0} on…"
+#~ msgstr "Open {0} on…"
 
 #: src/components/graph-view/ui/EntityIcon.tsx
 #~ msgid "Open {gitLabel}"
@@ -10644,8 +10641,6 @@ msgstr "Open folder: {projectPath}"
 msgid "Open from git"
 msgstr "Open from git"
 
-#: src/components/terminal/ProjectsCounterChip.tsx
-#: src/components/terminal/ProjectsCounterChip.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Open from history"
 msgstr "Open from history"
@@ -10701,6 +10696,10 @@ msgstr "Open in external browser"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Open in external terminal"
 msgstr "Open in external terminal"
+
+#: src/components/top-nav-bar/CrumbDetailsPopover.tsx
+msgid "Open in Files"
+msgstr "Open in Files"
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/webapp-viewer.tsx
@@ -10856,7 +10855,6 @@ msgstr "Open Session"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-#: src/journey/JourneyTray.tsx
 msgid "Open terminal"
 msgstr "Open terminal"
 
@@ -11705,6 +11703,10 @@ msgstr "Project folder"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Project folder…"
 msgstr "Project folder…"
+
+#: src/components/top-nav-bar/TopNavBar.tsx
+msgid "Project home"
+msgstr "Project home"
 
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 msgid "Project is fixed after the first message — start a new session to change it."
@@ -12786,6 +12788,7 @@ msgstr "Reveal"
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
+#: src/components/top-nav-bar/CrumbDetailsPopover.tsx
 msgid "Reveal in Finder"
 msgstr "Reveal in Finder"
 
@@ -12994,8 +12997,8 @@ msgid "Run from your terminal:"
 msgstr "Run from your terminal:"
 
 #: src/journey/JourneyTray.tsx
-msgid "Run it"
-msgstr "Run it"
+#~ msgid "Run it"
+#~ msgstr "Run it"
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Run now"
@@ -13113,7 +13116,6 @@ msgstr "Sandboxes"
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
-#: src/components/project-home/SecretsCard.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -13323,15 +13325,17 @@ msgstr "scroll to navigate"
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/spotlight/Spotlight.tsx
+#: src/components/top-nav-bar/AddressField.tsx
+#: src/components/top-nav-bar/AddressField.tsx
+#: src/components/top-nav-bar/AddressSearchField.tsx
 #: src/pages/search-view/SearchView.tsx
 msgid "Search"
 msgstr "Search"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-msgid "Search (⌘K)"
-msgstr "Search (⌘K)"
+#~ msgid "Search (⌘K)"
+#~ msgstr "Search (⌘K)"
 
-#: src/components/assets/editor/markdown/PlainMarkdownAssetEditor.tsx
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Search agents and skills…"
 msgstr "Search agents and skills…"
@@ -13483,12 +13487,14 @@ msgstr "Search..."
 #: src/components/assets/AssetListView.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/spotlight/Spotlight.tsx
+#: src/components/top-nav-bar/AddressSearchField.tsx
 msgid "Search…"
 msgstr "Search…"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/spotlight/Spotlight.tsx
+#: src/components/top-nav-bar/AddressSearchField.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Searching…"
@@ -13549,8 +13555,8 @@ msgstr "Select a context."
 
 #: src/components/top-nav-bar/AddressField.tsx
 #: src/components/top-nav-bar/AddressField.tsx
-msgid "Select a different project"
-msgstr "Select a different project"
+#~ msgid "Select a different project"
+#~ msgstr "Select a different project"
 
 #: src/components/docs-viewer/DocsViewer.tsx
 msgid "Select a document"
@@ -13927,7 +13933,6 @@ msgstr "Set project"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 #: src/components/project-home/SecretsCard.tsx
-#: src/journey/JourneyTray.tsx
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
 msgstr "Set up"
@@ -15223,8 +15228,8 @@ msgstr "Test trigger"
 #~ msgstr "Test your activation rules with sample conversations and hook data to verify they trigger correctly."
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. Enable it to continue."
-msgstr "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. Enable it to continue."
+#~ msgid "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. Enable it to continue."
+#~ msgstr "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. Enable it to continue."
 
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 #~ msgid "The <0>flow-sdk-mcp</0> server is required to run workflows with progress tracing. Enable it to continue."
@@ -15493,8 +15498,8 @@ msgid "This entry was removed since the last stamp — it exists only in the bas
 msgstr "This entry was removed since the last stamp — it exists only in the baseline."
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-msgid "This file has no backing entity yet."
-msgstr "This file has no backing entity yet."
+#~ msgid "This file has no backing entity yet."
+#~ msgstr "This file has no backing entity yet."
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "This file isn't text"
@@ -16421,7 +16426,6 @@ msgid "Verified"
 msgstr "Verified"
 
 #: src/components/data-sources/DataSourceCard.tsx
-#: src/journey/JourneyTray.tsx
 msgid "Verify"
 msgstr "Verify"
 
@@ -16593,9 +16597,9 @@ msgstr "Waiting for the other participant's identity to sync…"
 msgid "Waiting for you to approve…"
 msgstr "Waiting for you to approve…"
 
-#: src/components/harness-login/HarnessLoginModal.tsx
-#~ msgid "Waiting…"
-#~ msgstr "Waiting…"
+#: src/journey/JourneyTray.tsx
+msgid "Waiting…"
+msgstr "Waiting…"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Walked the filesystem without writing. Counts and sizes reflect what is on disk right now; compare against the per-type rows to see drift."

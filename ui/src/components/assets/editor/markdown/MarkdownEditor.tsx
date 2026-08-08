@@ -80,8 +80,6 @@ interface MarkdownEditorProps {
    * Keys Editor + Backlinks tabs. Null disables editor persistence on this file.
    */
   chatTarget: string | null;
-  /** Optional asset-specific toolbar actions rendered in the header */
-  toolbar?: React.ReactNode;
   /**
    * Frontmatter-aware header slot. Rendered in the header (live state only) with
    * the editor's own `fields`/`setField`, so a control can read+write a
@@ -158,7 +156,6 @@ interface MarkdownEditorProps {
 export function MarkdownEditor({
   fsRef,
   chatTarget,
-  toolbar,
   headerExtras,
   extraSideTabs,
   showLearningMode,
@@ -177,7 +174,6 @@ export function MarkdownEditor({
       fsRef={fsRef}
       sourcePath={fsRef.path}
       chatTarget={chatTarget}
-      toolbar={toolbar}
       headerExtras={headerExtras}
       extraSideTabs={extraSideTabs}
       showLearningMode={showLearningMode}
@@ -236,7 +232,6 @@ function MarkdownEditorContent({
   fsRef,
   sourcePath,
   chatTarget,
-  toolbar,
   headerExtras,
   extraSideTabs,
   showLearningMode,
@@ -253,7 +248,6 @@ function MarkdownEditorContent({
   fsRef: FSRef;
   sourcePath: string;
   chatTarget: string | null;
-  toolbar?: React.ReactNode;
   headerExtras?: MarkdownEditorProps['headerExtras'];
   extraSideTabs?: ExtraSideTab[];
   showLearningMode?: boolean;
@@ -503,7 +497,6 @@ function MarkdownEditorContent({
       onOpenExternal={handleOpenExternal}
       onDownload={handleDownload}
       onDelete={handleDelete}
-      actions={toolbar}
       showLearningMode={showLearningMode}
     />
   );
@@ -722,7 +715,6 @@ function MarkdownEditorContent({
         modeActions={viewMode === 'view' ? <CopyContentButton body={body} /> : null}
         editorToolbarHostRef={setEditorToolbarTarget}
         nameExtras={headerExtras?.({ fields, setField })}
-        actions={toolbar}
         showLearningMode={showLearningMode}
       />
 
