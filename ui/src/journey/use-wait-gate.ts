@@ -33,7 +33,7 @@ import { useTaggedDomChanges } from '@src/tags/use-tagged-dom-changes';
  *  - `element`         → the shared tagged-DOM observer
  *  - `location`        → the dock pointer this hook is handed
  *  - `entity`          → the store, re-queried when a row of that type changes
- *  - `manual`          → never satisfied here; the press itself is the answer
+ *  - `manual`          → always open; the press itself is what satisfies it
  *
  * Conditions are an unordered SET: all must hold. The old ordered stage cursor
  * is gone — it was the mechanism behind the cascade, and ordering never carried
@@ -90,19 +90,21 @@ export function useWaitGate(
   }, [stepKey]);
 
   const evaluate = useCallback(
-    async (fromEntityBus = false) => {
+    async (askStore = false) => {
       if (!conditions?.length) return;
       const pending = plans.flatMap((p) => p.entities).filter((spec) => !entities.current.has(spec));
-      // The entity queries are the only expensive part, so they are gated. The
-      // free half (element/location) runs on EVERY pulse — it used to be skipped
-      // whenever a query was in flight, silently dropping an element that
-      // appeared during that window.
-      if (pending.length && (fromEntityBus || !inFlight.current.size)) {
+      // The store is asked ONLY when something could have changed its answer: a
+      // row of that type changed, or this is the step's first look. A DOM or
+      // route pulse cannot change it, and the query is issued uncached — so
+      // asking on those turned tag churn (a streaming chat, a build mounting)
+      // into a forced round trip per animation frame. The free half
+      // (element/location) still runs on every pulse, below.
+      if (pending.length && askStore) {
         await Promise.all(
           pending.map(async (spec) => {
             const shared =
               inFlight.current.get(spec) ??
-              entityMatchHolds(spec, ctxRef.current, fromEntityBus).finally(() => inFlight.current.delete(spec));
+              entityMatchHolds(spec, ctxRef.current, true).finally(() => inFlight.current.delete(spec));
             inFlight.current.set(spec, shared);
             try {
               if (await shared) entities.current.add(spec);
@@ -128,6 +130,8 @@ export function useWaitGate(
           tag,
           () => {
             if (occurrence) fired.current.add(i);
+            // A non-occurrence sub is an entity row changing — the only thing
+            // that can change a store answer.
             void evaluate(!occurrence);
           },
           target ? { target } : undefined,
@@ -145,12 +149,15 @@ export function useWaitGate(
     plans.some((p) => p.watchesDom),
   );
 
-  // A gate is read the moment the step loads, and again whenever the app moves:
-  // "already true on arrival" is the normal case for a gate (unlike the old
-  // driver, where it meant a step could complete itself unseen).
+  // The step's first look asks the store — "already true on arrival" is the
+  // normal case for a gate (unlike the old driver, where it meant a step could
+  // complete itself unseen). Later dock changes only re-read the free half.
+  const asked = useRef<JourneyWaitFor | undefined>(undefined);
   useEffect(() => {
-    void evaluate();
-  }, [evaluate, ctx.dock]);
+    const first = asked.current !== conditions;
+    asked.current = conditions;
+    void evaluate(first);
+  }, [evaluate, conditions, ctx.dock]);
 
   return conditions?.length ? { satisfied } : OPEN;
 }

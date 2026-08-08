@@ -125,9 +125,14 @@ export function waitConditionHolds(
   if ('element' in condition) return matchesElement(condition.element, document);
   if ('location' in condition) return matchesLocation(dock, condition.location);
   if ('entity' in condition) return satisfied.has(condition.entity);
-  // `manual` is never satisfied here — only the tray's Continue advances it, so
-  // an `any: [{manual}, {…}]` reads as "Continue, or the thing happens".
-  if ('manual' in condition) return false;
+  // `manual` means "the user's press is what satisfies this" — and pressing Next
+  // IS that press, so as a GATE it is always open. It used to mean "only
+  // Continue advances it", back when conditions could advance a step by
+  // themselves and `manual` was how an author opted out; with the user as the
+  // only mover that is now the default, and a step whose sole gate is `manual`
+  // would otherwise be one Next could never leave. One is authored today
+  // (`getting-started` step3).
+  if ('manual' in condition) return true;
   // click / input / event: satisfied only by having fired while armed.
   return fired;
 }

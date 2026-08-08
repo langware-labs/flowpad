@@ -25,7 +25,9 @@ describe('journey wait runtime', () => {
     expect(waitConditionHolds(gone, null, false, new Set())).toBe(true);
   });
 
-  it('never satisfies `manual` on its own — only the tray advances it', () => {
-    expect(waitConditionHolds({ manual: true }, null, true, new Set())).toBe(false);
+  it('`manual` is an open gate — the press is what satisfies it', () => {
+    // A step whose only gate is `manual` has nothing to wait for; if this were
+    // false, Next could never leave it.
+    expect(waitConditionHolds({ manual: true }, null, false, new Set())).toBe(true);
   });
 });

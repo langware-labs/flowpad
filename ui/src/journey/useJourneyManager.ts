@@ -3,7 +3,7 @@ import { useOnTag, useProject } from '@sdk/react/hooks';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { DockPointer, JOURNEY_STEP_PARAM } from '@src/navigation/DockPointer';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { projectScope } from '@src/lib/scope-filter';
@@ -44,73 +44,57 @@ function pointerForDock(
   assetRef: string,
   computeNodeTypeId: TypeId | null,
   projectId: string | null,
-  currentDock: DockPointer | null,
+  here: DockPointer,
 ): DockPointer | null {
-  return withMode(dockSurface(dock, assetRef, computeNodeTypeId, projectId, currentDock), dock);
-}
-
-/** Apply the step's authored view mode, when it names one. `stay` normally does
- *  not — it keeps whatever the surface it stayed on already had. */
-function withMode(pointer: DockPointer | null, dock: JourneyPresentDock): DockPointer | null {
-  if (!pointer || !dock.viewMode) return pointer;
-  return pointer.withViewMode(dock.viewMode as ViewMode);
-}
-
-function dockSurface(
-  dock: JourneyPresentDock,
-  assetRef: string,
-  computeNodeTypeId: TypeId | null,
-  projectId: string | null,
-  currentDock: DockPointer | null,
-): DockPointer | null {
-  switch (dock.kind) {
-    case 'stay':
-      // The surface the previous step's act produced — a build whose id the
-      // author cannot know. Keeps the dock and only stamps the new step number.
-      //
-      // `here` rather than the React-state dock: the act navigates, and the gate
-      // opens on the RESULT of that navigation, so by the time this resolves the
-      // rendered dock can still be the pre-act one. Composing on the stale value
-      // sent the step back where it came from. `here` is the pending-aware
-      // pointer built for exactly this.
-      return currentDock;
-    case 'asset_editor':
-      return AssetDocPointer.forVfs(
-        AssetEditor.HTML,
-        joinVfs(assetRef, dock.vfs ?? ''),
-        computeNodeTypeId ?? undefined,
-      ).toDockPointer();
-    case 'home':
-      return projectId ? DockPointer.forAssetProjectHome({ scope: projectScope(projectId) }) : null;
-    case 'wiki':
-      return DockPointer.forWiki(dock.name ?? '');
-    case 'asset_list':
-      return DockPointer.forAssetList(dock.name ?? '');
-    case 'root':
-      // Used to be an early return calling `openHomeRoot`, which skipped the
-      // `.withViewMode(Vibe)` and highlight composition every other kind gets —
-      // so a `start: {kind:'root'}` step landed on the home OUT of vibe.
-      return DockPointer.root();
-    default:
-      return null;
-  }
+  const surface = ((): DockPointer | null => {
+    switch (dock.kind) {
+      case 'stay':
+        // The surface the previous step's act produced — a build whose id the
+        // author cannot know. Keeps the dock; only the step number changes.
+        //
+        // `here` rather than the RENDERED dock: the act navigates and the gate
+        // opens on the result of that navigation, so the rendered value can
+        // still be the pre-act one. Composing on it sent the step backwards.
+        return here;
+      case 'asset_editor':
+        return AssetDocPointer.forVfs(
+          AssetEditor.HTML,
+          joinVfs(assetRef, dock.vfs ?? ''),
+          computeNodeTypeId ?? undefined,
+        ).toDockPointer();
+      case 'home':
+        return projectId ? DockPointer.forAssetProjectHome({ scope: projectScope(projectId) }) : null;
+      case 'wiki':
+        return DockPointer.forWiki(dock.name ?? '');
+      case 'asset_list':
+        return DockPointer.forAssetList(dock.name ?? '');
+      case 'root':
+        return DockPointer.root();
+      default:
+        return null;
+    }
+  })();
+  // The authored mode, when the step names one. `stay` usually does not — it
+  // keeps whatever the surface it stayed on already had.
+  if (!surface || !dock.viewMode) return surface;
+  return surface.withViewMode(dock.viewMode as ViewMode);
 }
 
 /**
- * Drives the SHOWN journey (`?journeyId=`) over the unified EventBus: presents
- * the current step on a standard dock pointer + wiki-word highlight, holds
- * exactly ONE live bus subscription (the current step's await — cursor moves
- * re-key the hook, so the old await unhooks before the new one arms), and
- * advances through the backend (the single writer).
+ * Moves the SHOWN journey (`?journeyId=` + `?journeyStep=`).
  *
- * Event ≠ proof: an awaited event with a `confirm` predicate only wakes the
- * check — the store query decides. Confirm-gated steps also check once on step
- * mount, so a reload (or work done before the step armed) auto-satisfies.
+ * Two movers and nothing else: Next runs the step's act and lands on the next
+ * step once its gate opens; Back loads the previous one. Loading a step is a
+ * plain navigation to the dock the step names, so there is no "present" effect
+ * racing the navigation it just asked for.
+ *
+ * The journal is written as a RECORD (the resume badge reads it) and is never
+ * consulted for position — the URL is the position.
  *
  * Runs only while a journey is shown — clearing the param stops all of it.
  */
 export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
-  const { journey, graph, currentStep, cursorIndex, refresh } = state;
+  const { journey, graph, currentStep, stepNumber, refresh } = state;
   const { navigation, currentDock } = useDockNavigation();
   const { project } = useProject();
 
@@ -123,7 +107,6 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   const projectId = project?.id ?? null;
   const computeNodeTypeId = dataContext.computeNodeTypeId ?? null;
   const assetRef = journey?.asset_ref ?? '';
-  const stepNumber = cursorIndex >= 0 ? cursorIndex + 1 : null;
 
   // ── loading a step IS a navigation ──
   // The step names its whole destination and the number rides along, so the URL
@@ -167,12 +150,14 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   // ── the step's own act ("Fill text") + the manual arm state ──
   // Both are per-step: a cursor move clears them so the next step starts with
   // its own button offered and Next dark again.
-  const [actRan, setActRan] = useState(false);
+  // A ref, not state: nothing RENDERS from this — it only stops Next running the
+  // same act twice — so a re-render per act would be for no one.
+  const actRan = useRef(false);
   // Acts that watch for something (a command's output) must not outlive the
   // step that started them — this aborts on every cursor move and on unmount.
   const actAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
-    setActRan(false);
+    actRan.current = false;
     return () => {
       actAbortRef.current?.abort();
       actAbortRef.current = null;
@@ -206,7 +191,7 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
 
   const doAct = useCallback(() => {
     if (!act) return;
-    setActRan(true);
+    actRan.current = true;
     actAbortRef.current?.abort();
     const controller = new AbortController();
     actAbortRef.current = controller;
@@ -218,7 +203,9 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   // until the repo actually satisfies it ("not yet — try the command").
   useOnTag(
     ACT_FAILED_TAG,
-    () => setActRan(false),
+    () => {
+      actRan.current = false;
+    },
     act ? { target: actTarget(act.kind, act.target) } : undefined,
   );
 
@@ -250,25 +237,21 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
       // Past the last step there is no position to be at, so the number comes
       // off the URL — which is exactly what "completed" means here. The journey
       // id stays, so the tray remains to show the finale.
-      //
-      // `setOption`, not `openDock`: the step number is a STICKY param, and
-      // openDock's carry-forward would put straight back the value we are
-      // clearing. Same reason `closeJourney` bypasses it.
-      navigation.setOption(JOURNEY_STEP_PARAM, null);
+      navigation.endJourneySteps();
     },
     [currentStep, stepNumber, graph.length, record, goToStep, navigation],
   );
 
+  // The press does the step's work and records the intent to move on. Landing
+  // itself has ONE caller — the effect below — so there is a single place that
+  // decides what "move on" means, whether the gate was already open or opened a
+  // second later.
   const next = useCallback(() => {
     if (!currentStep) return;
-    if (act && !actRan) doAct();
-    if (gate.satisfied) land();
-    else setWaiting(true);
-  }, [currentStep, act, actRan, doAct, gate.satisfied, land]);
+    if (act && !actRan.current) doAct();
+    setWaiting(true);
+  }, [currentStep, act, doAct]);
 
-  // The pressed-but-gated case: the press already happened, so the moment the
-  // gate opens it completes. Still user-driven — without the press nothing here
-  // ever fires.
   useEffect(() => {
     if (waiting && gate.satisfied) land();
   }, [waiting, gate.satisfied, land]);
@@ -280,5 +263,5 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   const skip = useCallback(() => land('skipped'), [land]);
   const start = useCallback(() => goToStep(1), [goToStep]);
 
-  return { start, next, back, skip, canGoBack: (stepNumber ?? 1) > 1, waiting };
+  return { start, next, back, skip, canGoBack: (stepNumber ?? 1) > 1, waiting: waiting && !gate.satisfied };
 }

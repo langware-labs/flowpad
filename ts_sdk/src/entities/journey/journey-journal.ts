@@ -66,25 +66,10 @@ export class JourneyJournal extends APIEntity<JourneyJournal> implements IJourne
     return this.status === 'complete';
   }
 
-  /**
-   * Nothing recorded yet — the run has not left its entry step.
-   *
-   * The manager uses this to decide whether to open the journey's START dock:
-   * a fresh run begins there, a resumed one must not be yanked back to it.
-   */
-  get isFresh(): boolean {
-    return (this.entries?.length ?? 0) === 0;
-  }
-
   /** Where the cursor sits in `graph`, or -1 when it names no known step
    *  (a journal from an older revision of the graph). */
   indexIn(graph: JourneyGraph): number {
     return graph.indexOf(this.cursor);
-  }
-
-  /** The step the cursor names, or null. */
-  currentStep(graph: JourneyGraph) {
-    return graph.stepAt(this.cursor);
   }
 
   /** Node ids with a recorded outcome — done OR skipped. Both are "behind you",

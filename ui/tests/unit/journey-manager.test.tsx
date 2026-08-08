@@ -34,6 +34,7 @@ function makeState(at: number, waitFor?: JourneyStep['waitFor']): UseJourneyResu
     journal: new JourneyJournal({ journey_id: JOURNEY_ID, status: 'launched' }),
     graph: new JourneyGraph({ steps }),
     currentStep: steps[at - 1],
+    stepNumber: at,
     cursorIndex: at - 1,
     loading: false,
     refresh: () => {},
