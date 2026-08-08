@@ -37,8 +37,15 @@ vi.mock('react-router', async (importOriginal) => ({
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock }, currentDock: { tabHash: 'h1' } }),
 }));
+/** The active project, when there is one — drives the project button's presence. */
+const activeProject = vi.hoisted(() => ({ current: null as { id: string } | null }));
 vi.mock('@src/hooks/useContext', () => ({
-  useContext: () => ({ runtimeKind: runtimeKind.current, project: null, activeEntity: null, activeEntityTypeId: null }),
+  useContext: () => ({
+    runtimeKind: runtimeKind.current,
+    project: activeProject.current,
+    activeEntity: null,
+    activeEntityTypeId: null,
+  }),
 }));
 vi.mock('@src/components/top-nav-bar/use-entity-breadcrumbs', () => ({
   useEntityBreadcrumbs: () => ({
@@ -65,6 +72,9 @@ import { RuntimeKind } from '@sdk';
 import { TopNavBar } from '@src/components/top-nav-bar/TopNavBar';
 import { RUNTIME_CLASS } from '@src/components/top-nav-bar/runtime-appearance';
 import { TooltipProvider } from '@src/components/ui/tooltip';
+import { DockPointer } from '@src/navigation/DockPointer';
+
+const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 /** The app mounts the bar inside App.tsx's global TooltipProvider; mirror that
  *  here so the tooltips have the context they expect. */
@@ -86,6 +96,7 @@ const crumb = (key: string, kind: string, pointer: unknown = null) => ({
 
 beforeEach(() => {
   runtimeKind.current = RuntimeKind.SANDBOX;
+  activeProject.current = null;
   nav.canGoBack = true;
   nav.canGoForward = false;
   crumbs.current = [crumb('Acme', 'project'), crumb('Design notes', 'current')];
@@ -128,6 +139,31 @@ describe('the navigation bar', () => {
     renderBar();
 
     expect(screen.getByTestId('top-nav-home')).toBeTruthy();
+  });
+
+  // Inherited from the rail's project item when that icon moved up here
+  // (8d4d03dc4). Same two rules it always had: URL-first, and no button at all
+  // without a project — it addresses one by id, so a projectless click would
+  // land on "not found". Was tests/react/assets-sidebar-scope-open.test.tsx.
+  it('opens the project by URL alone from the project button', async () => {
+    activeProject.current = { id: PROJECT_ID };
+    const user = userEvent.setup();
+    renderBar();
+
+    await user.click(screen.getByTestId('top-nav-project'));
+
+    expect(openDock).toHaveBeenCalledTimes(1);
+    expect(openDock).toHaveBeenCalledWith(DockPointer.forProject(PROJECT_ID));
+    // URL-first: the loader is the single writer of context, never the click.
+    expect(setContext).not.toHaveBeenCalled();
+  });
+
+  it('has no project button — and opens nothing — when no project is active', () => {
+    activeProject.current = null;
+    renderBar();
+
+    expect(screen.queryByTestId('top-nav-project')).toBeNull();
+    expect(openDock).not.toHaveBeenCalled();
   });
 
   it('reloads softly, and hard only on a modifier click', async () => {

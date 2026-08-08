@@ -27,11 +27,41 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot.event_to_flowdata impo
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
     copilot_transcript_path_for_process,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.transcript_durability_gate import (
+    TranscriptDurabilityGate,
+    stream_event,
+)
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 
 logger = logging.getLogger(__name__)
 
 CANCEL_GRACE_SECONDS = 5.0
+
+# stdout event types that prove the turn is CONTINUING past a held terminal
+# candidate (a new message, a new turn, or a tool round-trip).
+_CONTINUATION_EVENTS = frozenset(
+    {"user.message", "assistant.turn_start", "assistant.message_start"}
+)
+
+
+class _TranscriptDurabilityGate(TranscriptDurabilityGate):
+    """The shared ordering gate, told what Copilot's two vendor facts are.
+
+    Copilot CLI 1.0.78 prints an ``assistant.message`` event on stdout BEFORE
+    appending the matching row to the session events file it is read back
+    from (``~/.copilot/session-state/<id>/events.jsonl``, resolved by
+    ``CopilotDriver.transcript_descriptor``) — measured at 0.78 s of drift,
+    with the file still ending at ``assistant.turn_start`` when the CHAT frame
+    lands. Passive trailers (``assistant.reasoning``, ``assistant.turn_end``,
+    ``session.usage_checkpoint``, ``assistant.idle``) are not continuations —
+    they may legitimately follow the real answer, so they join the hold.
+    """
+
+    def is_terminal_candidate(self, event: dict, frames: list[FlowData]) -> bool:
+        return event.get("type") == "assistant.message"
+
+    def is_continuation(self, event_type: str) -> bool:
+        return event_type in _CONTINUATION_EVENTS or event_type.startswith("tool.")
 
 
 class CopilotCLIStreamWorker(AgenticWorker):
@@ -140,6 +170,8 @@ class CopilotCLIStreamWorker(AgenticWorker):
             logger.warning("CopilotCLIStreamWorker: stdin write failed: %s", exc)
 
         stderr_task = asyncio.create_task(self._drain_stderr(self._proc))
+        durability_gate = _TranscriptDurabilityGate()
+        cancelled = False
 
         try:
             assert self._proc.stdout is not None
@@ -150,15 +182,22 @@ class CopilotCLIStreamWorker(AgenticWorker):
                     except OSError:
                         pass
                 decoded = raw_line.decode("utf-8", errors="replace")
-                sid = _maybe_extract_session_id(decoded)
-                if sid:
-                    self._session_id = sid
-                if _is_terminal_json(decoded):
-                    self._saw_terminal = True
-                for fd in self._converter.convert_line(decoded):
+                # Parse the line ONCE — session id, terminal detection, the
+                # converter, and the durability gate all read the same event.
+                event = stream_event(decoded)
+                frames: list[FlowData] = []
+                if event is not None:
+                    sid = _maybe_extract_session_id(event)
+                    if sid:
+                        self._session_id = sid
+                    if _is_terminal_json(event):
+                        self._saw_terminal = True
+                    frames = self._converter.convert_event(event)
+                for fd in durability_gate.feed(event, frames):
                     yield fd
         except asyncio.CancelledError:
             self._interrupted = True
+            cancelled = True
             await self._terminate_process()
             raise
         finally:
@@ -173,6 +212,13 @@ class CopilotCLIStreamWorker(AgenticWorker):
                 await stderr_task
             except asyncio.CancelledError:
                 pass
+
+            # The process has settled, so its session events.jsonl cannot trail
+            # stdout any further. Release the held answer + result/end in their
+            # original order. A cancelled consumer receives no late data.
+            if not cancelled:
+                for fd in durability_gate.drain():
+                    yield fd
 
             if not self._saw_terminal:
                 synthetic = self._terminal_synthetic_event()
@@ -301,13 +347,7 @@ class CopilotCLIStreamWorker(AgenticWorker):
             pass
 
 
-def _maybe_extract_session_id(raw_line: str) -> str | None:
-    try:
-        event = json.loads(raw_line)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(event, dict):
-        return None
+def _maybe_extract_session_id(event: dict) -> str | None:
     sid = event.get("sessionId")
     if isinstance(sid, str) and sid:
         return sid
@@ -322,11 +362,5 @@ def _maybe_extract_session_id(raw_line: str) -> str | None:
     return None
 
 
-def _is_terminal_json(raw_line: str) -> bool:
-    try:
-        event = json.loads(raw_line)
-    except json.JSONDecodeError:
-        return False
-    if not isinstance(event, dict):
-        return False
+def _is_terminal_json(event: dict) -> bool:
     return event.get("type") in {"result", "flowpad.interrupted", "flowpad.error"}

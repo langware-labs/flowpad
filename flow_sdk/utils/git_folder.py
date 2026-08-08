@@ -101,6 +101,14 @@ class CheckoutReceipt:
     path: Path
 
 
+@dataclass(frozen=True)
+class CaptureReceipt:
+    """An inert zip of a subtree, and the commit it was taken from."""
+
+    head_commit: str
+    archive: bytes
+
+
 class GitError(RuntimeError):
     """A typed, deliberately output-free git failure."""
 
@@ -555,6 +563,64 @@ class GitFolder:
         await self._ensure(sparse_paths=[scoped], depth=depth, blobless=blobless, single_branch=True)
         head = await self._sync(branch=target)
         return CheckoutReceipt(head_commit=head, path=await self._safe_path(scoped))
+
+    async def capture(self, rel_path: str, *, branch: str | None = None) -> CaptureReceipt:
+        """Fetch a subtree and hand back **inert bytes** — the whole operation.
+
+        This is what a consumer of a published asset actually wants: not a
+        checkout, which is a live tree on a disk it then has to walk, but the
+        content, in a form that cannot execute anything.
+
+        It matters *where* the seam is. Everything dangerous — the clone, the
+        checkout, git itself running against a repository we do not control —
+        happens on this folder's executor. What crosses back is a zip built by
+        ``git archive`` from the object database. So the caller can put this
+        folder on a sandbox node and get the bytes on the host, without the host
+        ever running repo content or walking a hostile tree.
+
+        The archive is read back through the executor too, so a remote node
+        works without a second transport: one file, not N round trips.
+        """
+        checked_out = await self.checkout(rel_path, branch=branch)
+        # A sibling of the checkout, never inside it: the archive must not be a
+        # candidate for the next capture of the same folder.
+        dest = f"{self.root}.capture.zip"
+        try:
+            await self.archive(rel_path, dest, treeish=checked_out.head_commit)
+            return CaptureReceipt(head_commit=checked_out.head_commit, archive=await self.executor.read_bytes(dest))
+        finally:
+            await self.executor.remove(dest)
+
+    async def archive(self, rel_path: str, dest: str, *, treeish: str = "HEAD") -> str:
+        """Write a zip of ``rel_path`` at ``treeish`` to ``dest``; returns ``dest``.
+
+        Uses ``git archive``, and that choice is the security property, not a
+        convenience. ``git archive`` emits **tracked content only**, straight
+        from the object database:
+
+        * ``.git/`` cannot appear — it is not tracked, so ``config`` and
+          ``hooks/`` cannot ride out of the checkout and execute wherever the
+          archive is unpacked.
+        * a symlink is emitted as a symlink *entry*, never as a copy of what it
+          points at, so a link to ``/etc/passwd`` exports a dangling link rather
+          than the file's contents. (The unpacking side refuses those entries
+          outright — see the hub's ``zip_transfer``.)
+        * untracked and ignored working-tree junk is absent, so what ships is
+          exactly what was published.
+
+        Walking the working tree instead — ``rglob`` plus ``is_file()`` — gets
+        every one of those wrong, and the symlink case silently exfiltrates.
+        """
+        scoped = _repo_relative(rel_path)
+        # ``<treeish>:<dir>`` roots the archive AT that directory, so entries come
+        # out relative to the asset. Passing the path as a pathspec instead would
+        # keep its full repo-relative prefix on every member, and the unpacked
+        # tree would nest the asset inside a copy of its own path.
+        source = f"{treeish}:{scoped}" if scoped else treeish
+        result = await self.git("archive", "--format=zip", "-o", dest, source)
+        if not result.ok:
+            raise GitError(self._failure_code(result), "Could not archive the path")
+        return dest
 
     async def _is_own_pending_commit(self, remote_head: str, marker: str | None) -> bool:
         """True when the one unpushed commit is ours, identified by ``marker``.

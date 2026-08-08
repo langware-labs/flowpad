@@ -38,6 +38,7 @@ import {
   type TabRow,
 } from '@sdk';
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
+import { TooltipProvider } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { applyAllTabs } from '@src/tabs/all-tabs-store';
 import { resetTabLifecycleForTests } from '@src/tabs/tab-lifecycle';
@@ -91,9 +92,13 @@ function TerminalWorkspace() {
   const TabbedTerminal = TabbedTerminalComponent;
   return (
     <QueryClientProvider client={testQueryClient}>
-      <div style={{ height: 320 }}>
-        <TabbedTerminal className="h-full" />
-      </div>
+      {/* Same reason as the query client: App.tsx wraps the whole app in one
+          TooltipProvider, and radix's Tooltip throws without it. */}
+      <TooltipProvider>
+        <div style={{ height: 320 }}>
+          <TabbedTerminal className="h-full" />
+        </div>
+      </TooltipProvider>
     </QueryClientProvider>
   );
 }

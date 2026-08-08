@@ -55,6 +55,19 @@ async def _workers_discovered():
     await ensure_discovered()
 
 
+def _worker_unavailable(tf):
+    """The PROVIDER refused the turn (quota / rate limit), or None.
+
+    Normalized by the vendor parser from the CLI's own error event — never
+    inferred from a missing answer, so a real mount or parsing regression
+    still fails red.
+    """
+    for e in tf.entries:
+        if getattr(e, "kind", None) == EntryKind.WORKER_UNAVAILABLE:
+            return e
+    return None
+
+
 def _worker_read_sentinel(tf, sentinel_path: str, token: str) -> bool:
     """The worker provably reached the sentinel: either a FILE_READ entry on
     its exact path (deterministic — the read went through the --add-dir
@@ -113,7 +126,10 @@ async def test_worker_mounts_context_folder(
         transcript = await await_transcript(
             ap,
             worker_id,
-            lambda tf: _worker_read_sentinel(tf, sentinel_path, token),
+            lambda tf: (
+                _worker_read_sentinel(tf, sentinel_path, token)
+                or _worker_unavailable(tf) is not None
+            ),
             deadline_s=90,
         )
     except (ApiErrorTimeoutError, TimeoutError):
@@ -123,6 +139,12 @@ async def test_worker_mounts_context_folder(
 
     if transcript is None:
         pytest.skip(f"{worker_id} produced no transcript within 90s — infra/LLM latency")
+    unavailable = _worker_unavailable(transcript)
+    if unavailable is not None:
+        pytest.skip(
+            f"{worker_id} CLI is provider-unavailable ({unavailable.reason}) — "
+            f"external infra, not a mount regression: {unavailable.message[:300]}"
+        )
     assert _worker_read_sentinel(transcript, sentinel_path, token), (
         f"{worker_id}: worker never read the sentinel through the context-folder mount"
     )

@@ -2,7 +2,26 @@
 
 When invoked with `run qa cycle` / `full qa` / `qa cycle`:
 
-Runs all test suites in sequence across 12 phases. **You never advance to the next phase unless the current phase achieves a clear pass** (see Phase Rules for the per-phase definition). All failures in a phase must be debugged and fixed — or, in phases 1–10, `flagged` — before moving on; in phases 11–12 an unresolved failure is a BLOCKED phase, not a flag.
+Runs all test suites in sequence across 12 phases. **You never advance to the next phase unless the current phase is RESOLVED** (see Phase Rules for the per-phase definition). All failures in a phase must be debugged and fixed — or, in phases 1–10, `flagged` — before moving on; in phases 11–12 an unresolved failure is a BLOCKED phase, not a flag.
+
+> ## PASS MEANS PASS (non-negotiable)
+>
+> **A phase is `PASS` if and only if every test in it actually passed — zero failures, zero flagged.**
+> There is no such thing as "PASS with N flagged". A phase that still has a red test is reported as
+> **`RED — N failing (N flagged)`**, never as a pass, in the summary, in the report, in cycle-state,
+> and in every sentence spoken to the user.
+>
+> `flagged` decides only ONE thing: whether the cycle may *advance* past the phase. It never upgrades
+> a red test to green. The word for "we may move on" is **RESOLVED**, not "pass":
+>
+> | verdict | meaning |
+> |---|---|
+> | `PASS` | every test passed. Nothing red. The only verdict that may use this word. |
+> | `RED — N failing (N flagged)` | worked to an evidenced, owned `flagged` state; cycle may advance; **the tests are still broken** |
+> | `BLOCKED — N red: <files>` | phases 11–12 only; cycle may NOT advance |
+>
+> Reporting a red phase as PASS is a process violation on the same level as raising a timeout: it
+> converts a real, unfixed defect into a green number someone will trust.
 
 **Step 0.0 — INSTANCE-LEVEL OWNERSHIP (non-negotiable). You own what you launch — and ONLY what you launch.** The scope of your authority is the test instances the cycle starts via `scripts/instance_ctl.sh launch <name>` (and any backend/frontend/DB the cycle itself spawned). Within that scope you have full freedom, no confirmation needed:
 - **Restart, clear/wipe/re-index the DB, kill, and relaunch instances YOU launched** — freely, as the phases require.
@@ -18,10 +37,10 @@ Mid-cycle you still don't pause for questions about work *inside your own instan
 **Step 0 — verify and re-arm the watchdog loop.** Before every phase work session (including immediately after a session interruption, idle gap, /login recovery, or context reset), verify the cycle watchdog is still armed. Start it via the Skill tool if it is not running:
 
 ```
-Skill(skill="loop", args='30m "Do not stop until every phase reaches a clear pass (phases 1–10: passed or flagged; phases 11–12: every .md.ts exits 0, else the phase is BLOCKED). flagged means a test exposes a significant gap needing senior-dev review; BLOCKED means a Playwright phase has a real, unmasked red .md.ts and the cycle cannot advance past it."')
+Skill(skill="loop", args='30m "Do not stop until every phase is RESOLVED (phases 1-10: every test passed, or each residual failure flagged; phases 11-12: every .md.ts exits 0, else the phase is BLOCKED). PASS MEANS PASS: only a phase with zero failures may be called PASS - a phase carrying flagged tests is reported RED - N failing (N flagged). flagged means a test exposes a significant gap needing senior-dev review; BLOCKED means a Playwright phase has a real, unmasked red .md.ts and the cycle cannot advance past it."')
 ```
 
-The loop keeps the cycle driving forward unattended; it naturally ends when the QA Cycle Summary is printed (every phase reached a clear pass — or a Playwright phase is reported BLOCKED, which is itself the loud terminal outcome). The loop never overrides the circuit breaker (see SKILL.md, Run Integrity): on repeated same-class anomalies, a loop tick performs the meta-RCA instead of more forward grinding. **An unwatched cycle silently stops being a cycle,** so verify and re-arm at every session resume — the watchdog's presence tells you unattended progress is still happening.
+The loop keeps the cycle driving forward unattended; it naturally ends when the QA Cycle Summary is printed (every phase RESOLVED — or a Playwright phase reported BLOCKED, which is itself the loud terminal outcome). The loop never overrides the circuit breaker (see SKILL.md, Run Integrity): on repeated same-class anomalies, a loop tick performs the meta-RCA instead of more forward grinding. **An unwatched cycle silently stops being a cycle,** so verify and re-arm at every session resume — the watchdog's presence tells you unattended progress is still happening.
 
 **Step 0.4 — run timing-sensitive work on your own instance; clean up the instances you launch.** Timing-sensitive phases (3, 7, 10) need an uncontended backend. The way to get one is to **launch a dedicated instance for the cycle** (`scripts/instance_ctl.sh launch <name>`) and run against it — NOT to "reclaim the machine" by killing things you didn't start.
 
@@ -47,8 +66,13 @@ Never raise a timeout to mask host-load slowness, and never kill a process you d
 
 ## Phase Rules
 
-- **Clear pass** depends on the phase:
-  - **Phases 1–10 (pytest/vitest)** = all tests exit with 0 failures, OR every residual failure has been worked to a `flagged` terminal state per SKILL.md, "Autonomous Run Policy". Flagged is a tracked, evidence-backed state — never a silent skip.
+- **PASS** has ONE meaning in every phase: **the runner exited 0 with zero failures.** Nothing else may
+  be written or spoken as PASS. See "PASS MEANS PASS" at the top of this file.
+- **RESOLVED** (may the cycle advance?) depends on the phase:
+  - **Phases 1–10 (pytest/vitest)** = all tests exit with 0 failures (**→ PASS**), OR every residual
+    failure has been worked to a `flagged` terminal state per SKILL.md, "Autonomous Run Policy"
+    (**→ `RED — N failing (N flagged)`; the phase is NOT a pass**). Flagged is a tracked,
+    evidence-backed state — never a silent skip, and never a green number.
   - **Phases 11–12 (Playwright `.md.ts`)** = every `.md.ts` exits 0 under the manager's full-sweep re-run (machine-read), the only non-green being a documented env `test.skip(...)`. **`flagged` is not available here** — any residual red is a **BLOCKED** phase (the loud terminal state), not a quarantined flag.
   - No skipped failures allowed unless the user pre-approved skipping a specific test in the invocation. **Before reporting a phase complete, record an individual disposition for every failure** (fixed with evidence; flagged-with-reason in 1–10; BLOCKED-with-red-file in 11–12; or test-issue diagnosed) — a cluster-level classification ("N failures are all <class>") is never a verdict. Grouping by signature orders the work; it never substitutes for examining each member, because deterministic bugs hide behind plausible cluster narratives.
 - **On failure**: debug the failing test(s) one by one using the Debug Mode flow (see `modes/debug.md`). Do NOT re-run the full suite after every individual fix — fix all failures first, then re-run the phase once as a final verification.
@@ -156,7 +180,7 @@ cd ui && npm run test:vitest:headless
   hub/instances needed.
 - Backend must be running (you own it — restart if needed). The suite self-skips if the
   backend is unreachable; a skip here is NOT a pass — bring the backend up and re-run
-  (zero infra-skips in a clear pass).
+  (zero infra-skips in a PASS).
 - To ADD coverage (e.g. a regression that needs the full app + a real backend but no
   browser), author a `*.test.tsx` here using the `setupLiveBackend`/`bootApp` harness —
   the recipe + tier rules are in `ui/tests/headless/CLAUDE.md` ("Authoring a new headless test").
@@ -172,10 +196,10 @@ cd ui && npm run test:vitest:headless
    ```bash
    FLOWPAD_HUB_URL=${FLOWPAD_HUB_URL:-http://localhost:8093} python -m pytest tests/hub_tests -v
    ```
-4. **Auto-skips count as failures.** `tests/hub_tests/conftest.py` silently skips when the hub is unreachable or credentials are invalid. A skipped-for-infra test is NOT a pass — remediate (restart hub, re-seed users via `setup_test_users.sh`) and re-run. Zero hub-infra skips allowed in a clear pass.
+4. **Auto-skips count as failures.** `tests/hub_tests/conftest.py` silently skips when the hub is unreachable or credentials are invalid. A skipped-for-infra test is NOT a pass — remediate (restart hub, re-seed users via `setup_test_users.sh`) and re-run. Zero hub-infra skips allowed in a PASS.
 5. **On failure**: existing Debug Mode flow (see `modes/debug.md`); unresolvable → `flagged`.
 6. **Cleanup (always, even when flagging)**: `scripts/instance_ctl.sh kill <name>` for every instance THIS phase launched. Do not kill instances you didn't launch; leave the hub running for Phase 10.
-- **Gate**: all tests pass (or flagged) → proceed to Phase 10.
+- **Gate**: RESOLVED (all tests pass, or each residual failure flagged) → proceed to Phase 10. Report `PASS` only with zero failures; otherwise `RED — N failing (N flagged)`.
 
 ## Phase 10 — vitest hub tests (hub + dev-1/dev-2 required)
 
@@ -212,7 +236,7 @@ cd ui && npm run test:vitest:headless
    scripts/instance_ctl.sh kill dev-2   # only if Phase 10 launched it
    ```
    Instances that were already running before the phase started belong to the user's setup — leave them up, and leave the hub running.
-- **Gate**: all tests pass (or flagged) → proceed to Phase 11.
+- **Gate**: RESOLVED (all tests pass, or each residual failure flagged) → proceed to Phase 11. Report `PASS` only with zero failures; otherwise `RED — N failing (N flagged)`.
 
 ## Phase 11 — Playwright `.md.ts` green gate (HARD GATE)
 
@@ -338,8 +362,8 @@ Phase 5  (vitest api):        PASS — N tests
 Phase 6  (vitest react):      PASS — N tests
 Phase 7  (vitest long):       PASS — N tests
 Phase 8  (vitest headless):   PASS — N tests
-Phase 9  (pytest hub):        PASS — N tests (N flagged)
-Phase 10 (vitest hub):        PASS — N tests (N flagged)
+Phase 9  (pytest hub):        PASS — N tests          (or RED — N failing (N flagged))
+Phase 10 (vitest hub):        PASS — N tests          (or RED — N failing (N flagged))
 Phase 11 (playwright md.ts):  PASS — N green / N env-skip   (or BLOCKED — N red: <files>)
 Phase 12 (author md.ts):      PASS — N authored / N env-skip (or BLOCKED — N red: <files>)
 
@@ -350,6 +374,6 @@ Flagged (phases 1–10): N (see _results/<timestamp>/flagged.md — senior dev r
 Blocked (phases 11–12): N (see red .md.ts list above — these are real, unmasked failures)
 ```
 
-A cycle is **complete** for phases 1–10 when every test is passed or flagged. **Phases 11–12 admit no `flagged`**: they pass only when every `.md.ts` exits 0 (modulo documented env-skips); any residual red is a **BLOCKED** phase — a loud, unmasked failure, listed individually with its red file(s). Flagged items (phases 1–10) are listed individually below the table with their one-line reason.
+A cycle is **RESOLVED** for phases 1–10 when every test is passed or flagged — but **only a phase with ZERO failures is written `PASS`**; a phase still carrying red tests is written `RED — N failing (N flagged)`. "Complete" never means "green". **Phases 11–12 admit no `flagged`**: they pass only when every `.md.ts` exits 0 (modulo documented env-skips); any residual red is a **BLOCKED** phase — a loud, unmasked failure, listed individually with its red file(s). Flagged items (phases 1–10) are listed individually below the table with their one-line reason.
 
 **Upon completion, open the HTML report in the default browser** (`open <report-path>` on macOS, `xdg-open <path>` on Linux) so the results are immediately visible — then print the summary and the report path.
