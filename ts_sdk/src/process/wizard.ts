@@ -20,6 +20,11 @@ export interface WizardData {
    *  report nothing back to the caller. Values are placeholders describing the
    *  field (e.g. `{ readyForDone: '<true|false>' }`), not real results. */
   resultShape?: Record<string, unknown>;
+  /** Model for the run: a `WorkerModelTier` (`sm`/`md`/`lg`) or a concrete name.
+   *  Omitted means the worker's default. A narrow, mechanical wizard should ask
+   *  for `sm` — it is markedly cheaper and faster, and the tier resolves per
+   *  worker so it still means "the small model" on codex/copilot. */
+  model?: string;
 }
 
 export interface WizardLaunchRequest {

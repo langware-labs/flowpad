@@ -164,12 +164,6 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
   // Survey state (shared with chat-panel)
   const { activeSurveyData, onSurveyComplete } = useSurveyStore();
 
-  // Same live retry path as vibe-workspace: prompt the active process.
-  const onWebappErrorRetry = useCallback(
-    (retryMessage: string) => void dataContext.agenticProcess?.prompt(retryMessage),
-    [],
-  );
-
   const handleExplorerFileSelect = useCallback(
     (path: string) => {
       // Extension dispatch (md → assets document viewer, else code editor)
@@ -301,7 +295,7 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
       case ViewType.EDITOR:
         return <CodeEditor activePath={editorActivePath} />;
       case ViewType.WEB_APP:
-        return <WebappViewer onWebappErrorRetry={onWebappErrorRetry} />;
+        return <WebappViewer />;
       case ViewType.DIFF:
         if (currentDock?.pointer?.startsWith('asset-compare/')) {
           return <AssetCompareView pointer={currentDock.pointer} />;
