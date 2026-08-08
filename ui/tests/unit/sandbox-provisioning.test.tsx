@@ -10,9 +10,13 @@
  *    sandbox's front door with the project merely somewhere in the list.
  *  - a name clash has to be caught BEFORE a repo is transferred.
  *
- * `opsCall` is the seam: every command is `ops/<name>` on the node, so
- * capturing `dataManager.callAction` captures the whole conversation with the
- * hub in order.
+ * `ComputeNode.ops` is the seam: every command is `ops/<name>` on the node, so
+ * capturing that one method captures the whole conversation with the hub, in
+ * order. It used to be a private `opsCall` inside this hook; the hook now drives
+ * the SDK entity instead, which is the point — one transport, and the same
+ * methods any other caller would use. Mocking `@sdk`'s `dataManager` no longer
+ * reaches it: the entity imports its own, so the mock would silently capture
+ * nothing (it did — this file went to zero recorded calls when the hook moved).
  */
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -70,7 +74,20 @@ vi.mock('@sdk/react/hooks', () => ({
 
 vi.mock('@src/notifications', () => ({ notify: { warning: vi.fn(), error: vi.fn() } }));
 
+import { ComputeNode } from '@sdk';
 import { useSandboxes } from '@src/hooks/use-sandboxes';
+
+// The one choke point every `ops/<name>` command goes through, so a single spy
+// records the conversation in order. `ops` is private to TypeScript only; at
+// runtime it is an ordinary prototype method, and it is deliberately the ONLY
+// place a client builds an ops url.
+vi.spyOn(ComputeNode.prototype as unknown as { ops: unknown } as never, 'ops' as never).mockImplementation(
+  (async (op: string, body?: Record<string, unknown>) => {
+    h.calls.push({ action: 'ops', op, body });
+    const answer = h.responses.get(op);
+    return answer ? await answer() : { status: 'ok' };
+  }) as never,
+);
 
 const ORIGIN = { provider: 'github', owner: 'langware-labs', name: 'flowpad-hub', branch: 'main', rel_path: '.' };
 const PROJECT_ID = 'a4acdbfb-3ad0-45ac-a8d1-812485a376ce';

@@ -182,6 +182,43 @@ describe('CloudManager hub identity', () => {
     expect(sdk.cloudManager.connectionSlot).toEqual({ status: 'verified', error: null });
   });
 
+  it('adopts the cloud identity from the bootstrap seed alone', async () => {
+    // The sandbox identity race. A cloud sandbox is signed in by the hub over
+    // loopback, but the box's own bootstrap carried no cloud user — so the UI
+    // painted `currentUser = cloudUser ?? localUser`, i.e. the template's local
+    // user ("E2B Local"), and only corrected itself once an async /cloud/status
+    // landed. On a cold resume that call loses the race against the still-waking
+    // backend, and the wrong account is what the user sees.
+    //
+    // This file stubs /cloud/status to null (see beforeEach), and THAT STUB IS
+    // THE RACE: it reproduces "the status call never lands". So everything
+    // asserted below has to come from the bootstrap seed by itself.
+    const { sdk } = await createIdentityRealm('http://localhost:6001/api/v1');
+    sdk.setSupportedPagesForHubMode(['desk']);
+
+    await sdk.cloudManager.bootstrap({
+      user: LOCAL_USER,
+      desktop_info: {
+        cloud_url: 'https://cloud.flowpad.test',
+        login: {
+          status: 'logged_in',
+          user: { id: 'b0b00000-0000-4000-8000-000000000001', type: 'user', email: 'bob@local.test', name: 'Bob' },
+          reason: null,
+        },
+        connection: { status: 'connecting', error: null },
+      },
+    });
+
+    expect(sdk.cloudManager.loginStatus).toBe('logged_in');
+    expect(sdk.dataContext.cloudUser?.email).toBe('bob@local.test');
+    // The whole point: `currentUser` is `cloudUser ?? localUser`, so an unset
+    // cloudUser is what made the box render its own local account. (localUser is
+    // seeded by the SDK bootstrap in main.ts, not by cloudManager.bootstrap, so
+    // this test does not exercise the `??` fallback itself — the sibling test
+    // above covers the logged-out side.)
+    expect(sdk.dataContext.currentUser?.email).toBe('bob@local.test');
+  });
+
   it('bypasses desktop secret provisioning before hub navigation login', async () => {
     const { sdk } = await createIdentityRealm(`${HUB_ORIGIN}/api/v1`);
     sdk.setSupportedPagesForHubMode(['hub']);

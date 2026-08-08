@@ -74,8 +74,10 @@ describe('nextSandboxName', () => {
 
 /** `isSandbox` — which ComputeNodes are ours. */
 describe('isSandbox', () => {
+  // A real entity, not a shaped literal: the rule lives on `ComputeNode` now, so
+  // a plain object would answer `undefined` and prove nothing about production.
   const node = (over: Record<string, unknown> = {}) =>
-    ({ node_provider_type: 'e2b', node_config: { flavor: 'workspace' }, ...over }) as never;
+    new ComputeNode({ node_provider_type: 'e2b', node_config: { flavor: 'workspace' }, ...over } as never);
 
   it('accepts an E2B node with the workspace flavor', () => {
     expect(isSandbox(node())).toBe(true);

@@ -7,8 +7,10 @@ import {
   ExecutionEnvironmentStatus,
   type GitOrigin,
   gitOriginFromUrl,
+  type NodeStatus,
   QueryRequest,
   TypeId,
+  WORKSPACE_FLAVOR,
 } from '@sdk';
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
 import {
@@ -43,8 +45,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
  *  box; `get-host` is a hub-internal detail the UI no longer touches.
  *  Wire contract — pinned hub-side by `unit/test_open_service_route_contract.py`. */
 export const WORKSPACE_SERVICE = 'workspace';
-/** The flavor that marks a ComputeNode as a sandbox (vs. an agent/exec-env node). */
-const WORKSPACE_FLAVOR = 'workspace';
+// `WORKSPACE_FLAVOR` is imported from the SDK: this hook WRITES the marker at
+// create time and `ComputeNode.isSandbox` READS it, so a local copy would let the
+// writer and the reader drift apart silently.
 
 // Step/StepStatus are the shared checklist model (`@src/hooks/use-step-flow`),
 // re-exported here so existing importers of this module keep working. This
@@ -115,25 +118,14 @@ function plannedSteps(setup?: SandboxSetup): Step[] {
   return ids.map((id) => ({ id, label: STEP_LABELS[id], status: 'idle' }));
 }
 
-/** Only the fields we read from ops/workspace-ready. */
-interface WorkspaceReadyResult {
-  healthy: boolean;
-  logged_in: boolean;
-  login_detail: string;
-}
-
 /**
- * Live per-sandbox info from `ops/status` (one cheap get_info). `started_at` is
- * the current run's start (resets on resume); `end_at` is when the sandbox
- * auto-pauses/expires. Fields beyond `status` are E2B-only.
+ * Live per-sandbox info from `ops/status`.
+ *
+ * An alias, not a second definition: the shape is normalized server-side and
+ * declared once in the SDK as `NodeStatus`. It used to be re-typed here, which
+ * is how it drifted into being one provider's field set unioned with another's.
  */
-export interface SandboxDetails {
-  status: ExecutionEnvironmentStatus;
-  started_at?: string | null;
-  end_at?: string | null;
-  cpu_count?: number;
-  memory_mb?: number;
-}
+export type SandboxDetails = NodeStatus;
 
 /**
  * The OSS↔hub wire-field divergence lives ONLY in these two helpers. The hub's
@@ -149,14 +141,6 @@ function readProvider(node: ComputeNode): string | undefined {
 
 function hubEntityJson(node: ComputeNode, patch: Record<string, unknown> = {}): Record<string, unknown> {
   return { ...node.toJSON(), node_provider: readProvider(node) ?? ComputeProviderType.E2B, ...patch };
-}
-
-/** Invoke one of the ComputeNode `ops/<op>` actions (setup, status, shutdown, …). */
-function opsCall<T = unknown>(nodeId: string, op: string, body?: Record<string, unknown>): Promise<T> {
-  const info = new ActionInfo('ops', ComputeNode.type, nodeId, 'POST');
-  info.subpath = [op];
-  if (body) info.bodyParameters = body;
-  return dataManager.callAction<Record<string, unknown> | undefined, T>(info);
 }
 
 /**
@@ -180,10 +164,15 @@ export function workspaceServiceUrl(nodeId: string): string {
  * flavor. Named `isSandbox`, not `isDesktop`: `dataContext.isDesktop` already
  * means "running in Electron", and the two answered different questions under
  * one name.
+ *
+ * The rule itself lives on the entity (`ComputeNode.isSandbox`) rather than here:
+ * it used to read the provider AND a magic string out of the untyped
+ * `node_config` blob inline, which meant every surface wanting the question had
+ * to know that blob's shape. This wrapper stays because callers and tests import
+ * it by name.
  */
 export function isSandbox(node: ComputeNode): boolean {
-  const flavor = (node.node_config as { flavor?: string } | undefined)?.flavor;
-  return readProvider(node) === ComputeProviderType.E2B && flavor === WORKSPACE_FLAVOR;
+  return node.isSandbox;
 }
 
 /**
@@ -281,27 +270,24 @@ type PatchStep = (id: StepId, next: Partial<Step>) => void;
  * to non-null-assert.
  */
 async function provisionSandboxProject(
-  nodeId: string,
+  node: ComputeNode,
   setup: SandboxSetup,
   run: RunStep,
   patch: PatchStep,
 ): Promise<CloneResult> {
   const cloned = setup.gitOrigin
-    ? await cloneSandboxProject(nodeId, setup, run)
+    ? await cloneSandboxProject(node, setup, run)
     : await run('init', async () => {
         // No repository behind this project — the box mounts it empty, which
         // is still what gives the directory its identity.
-        const result = await opsCall<CloneResult>(nodeId, 'init-empty-project', {
-          name: setup.name,
-          project_id: setup.projectId ?? '',
-        });
+        const result = (await node.initEmptyProject(setup.name, setup.projectId ?? '')) as CloneResult;
         if (!result?.project?.id) throw new Error('Setup did not return a project');
         return result;
       });
 
   const projectId = cloned.project!.id!;
   if (setup.gitOrigin) {
-    await run('index', () => opsCall(nodeId, 'index-project', { path: cloned.path, project_id: projectId }));
+    await run('index', () => node.indexProject(cloned.path, projectId));
   }
 
   if (hasContextWork(setup)) {
@@ -311,29 +297,27 @@ async function provisionSandboxProject(
       if (setup.install) {
         // The box answers with the reconcile result itself, which is what names
         // the project (and journey) the install wants opened.
-        const reconciled = await opsCall<CloneResult['install_result']>(nodeId, 'reconcile-manifest', {
-          project_id: projectId,
-        });
+        const reconciled = (await node.reconcileManifest(projectId)) as CloneResult['install_result'];
         if (reconciled) cloned.install_result = reconciled;
         patch('context', { detail: 'from the install manifest' });
         return reconciled;
       }
       // What the caller asked for, else what the repo itself declares.
       const contextProjects = setup.contextProjects ?? manifestContextProjects(cloned);
-      const attached = await attachContextProjects(nodeId, projectId, contextProjects);
+      const attached = await attachContextProjects(node, projectId, contextProjects);
       patch('context', { detail: attached.length ? attached.join(', ') : 'none declared' });
       return attached;
     });
   }
 
-  await run('default', () => opsCall(nodeId, 'set-default-project', { project_id: projectId }));
+  await run('default', () => node.setDefaultProject(projectId));
   return cloned;
 }
 
 /** Ask the box whether the name is free, then have the hub clone into it. */
-async function cloneSandboxProject(nodeId: string, setup: SandboxSetup, run: RunStep): Promise<CloneResult> {
+async function cloneSandboxProject(node: ComputeNode, setup: SandboxSetup, run: RunStep): Promise<CloneResult> {
   await run('validate', async () => {
-    const check = await opsCall<NameCheck>(nodeId, 'validate-project-name', { name: setup.name });
+    const check = (await node.validateProjectName(setup.name)) as NameCheck;
     if (check && check.available === false) {
       throw new Error(`"${setup.name}" already exists — try "${check.suggested}".`);
     }
@@ -341,12 +325,12 @@ async function cloneSandboxProject(nodeId: string, setup: SandboxSetup, run: Run
   });
 
   return run('clone', async () => {
-    const result = await opsCall<CloneResult>(nodeId, 'clone-project', {
+    const result = (await node.cloneProject({
       git_origin: setup.gitOrigin,
       name: setup.name,
       project_id: setup.projectId ?? '',
       ...(setup.install ? { install: setup.install } : {}),
-    });
+    })) as CloneResult;
     if (!result?.project?.id) throw new Error('Clone did not return a project');
     return result;
   });
@@ -360,26 +344,19 @@ async function cloneSandboxProject(nodeId: string, setup: SandboxSetup, run: Run
  * context entries. One failure doesn't cost the others.
  */
 async function attachContextProjects(
-  nodeId: string,
+  node: ComputeNode,
   projectId: string,
   contextProjects: ContextProject[],
 ): Promise<string[]> {
   const attached: string[] = [];
   for (const ctx of contextProjects) {
-    const ctxClone = await opsCall<CloneResult>(nodeId, 'clone-project', {
+    const ctxClone = (await node.cloneProject({
       git_origin: ctx.gitOrigin,
       name: ctx.name,
-    });
+    })) as CloneResult;
     if (!ctxClone?.path) continue;
-    await opsCall(nodeId, 'index-project', {
-      path: ctxClone.path,
-      project_id: ctxClone.project?.id ?? '',
-    });
-    await opsCall(nodeId, 'attach-context-project', {
-      project_id: projectId,
-      context_path: ctxClone.path,
-      scope: ctx.scope,
-    });
+    await node.indexProject(ctxClone.path, ctxClone.project?.id ?? '');
+    await node.attachContextProject(projectId, ctxClone.path, ctx.scope);
     attached.push(ctx.name);
   }
   return attached;
@@ -407,9 +384,9 @@ export function useSandboxes() {
   const detailsRef = useRef(details);
   detailsRef.current = details;
 
-  const probeDetails = useCallback(async (nodeId: string): Promise<SandboxDetails> => {
+  const probeDetails = useCallback(async (node: ComputeNode): Promise<SandboxDetails> => {
     try {
-      const res = await opsCall<SandboxDetails>(nodeId, 'status');
+      const res = await node.status();
       return res ?? { status: ExecutionEnvironmentStatus.ERROR };
     } catch {
       return { status: ExecutionEnvironmentStatus.ERROR };
@@ -426,7 +403,7 @@ export function useSandboxes() {
     });
     const fresh = sandboxes.filter((d) => !(d.id in detailsRef.current));
     if (!fresh.length) return;
-    void Promise.all(fresh.map(async (d) => [d.id, await probeDetails(d.id)] as const)).then((entries) =>
+    void Promise.all(fresh.map(async (d) => [d.id, await probeDetails(d)] as const)).then((entries) =>
       setDetails((prev) => ({ ...prev, ...Object.fromEntries(entries) })),
     );
   }, [sandboxes, probeDetails]);
@@ -486,13 +463,13 @@ export function useSandboxes() {
           });
           await dataManager.save(draft.typeId, scope, hubEntityJson(draft) as never);
           // A bare workspace needs no LM-proxy key, and minting one costs round-trips.
-          const providerId = await opsCall<string>(draft.id, 'setup', { skip_lm_proxy: true });
+          const providerId = await draft.setup({ skip_lm_proxy: true });
           if (!providerId) throw new Error('setup returned no provider id (provider was dropped)');
           return draft;
         });
 
         await run('health', async () => {
-          const result = await opsCall<WorkspaceReadyResult>(node.id, 'workspace-ready');
+          const result = await node.workspaceReady();
           if (!result?.healthy) throw new Error('FlowPad did not come up in the sandbox');
           patch('health', {
             detail: result.logged_in ? `signed in as ${result.login_detail}` : 'opened without cloud sign-in',
@@ -514,7 +491,7 @@ export function useSandboxes() {
         // The HUB clones (its token is the only one that reaches a private repo)
         // and copies the tree in; the box places, indexes and links it. Runs after
         // the box is up so copy_folder has a target.
-        if (sandboxProject) await provisionSandboxProject(node.id, sandboxProject, run, patch);
+        if (sandboxProject) await provisionSandboxProject(node, sandboxProject, run, patch);
 
         await run('open', async () => {
           // Nothing to resolve any more: the link is derived from the node id, and
@@ -583,7 +560,7 @@ export function useSandboxes() {
         // Shutdown BEFORE delete: it kills the sandbox and revokes the auto-login
         // key (needs the user session). DELETE alone would orphan a live sandbox.
         try {
-          await opsCall(node.id, 'shutdown');
+          await node.shutdown();
         } catch {
           // A node that never finished setup has no sandbox to shut down; delete anyway.
         }

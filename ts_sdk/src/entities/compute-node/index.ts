@@ -8,12 +8,12 @@
  */
 
 // Export ComputeNode entity class and utilities
-export { ComputeNode, vfsToOsPath } from './compute-node';
+export { ComputeNode, vfsToOsPath, WORKSPACE_FLAVOR } from './compute-node';
 export type { FindSessionResult, IComputeNode, WorkerKind } from './compute-node';
 
 // Export compute node types (enums and interfaces)
 export { ComputeProviderType, ExecutionEnvironmentStatus, OSType, RuntimeType } from './compute-node-types';
-export type { RuntimeEnvironment } from './compute-node-types';
+export type { NodeStatus, RuntimeEnvironment, WorkspaceReady } from './compute-node-types';
 
 // Export machine status types for monitoring compute nodes
 export { ComputeNodeSize, ComputeNodeSizeLabels, MachineStatusUtils, ServiceStatusEnum } from './machine-status';
