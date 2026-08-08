@@ -62,9 +62,22 @@ export function WikiLabel({ wikiword, label, fragment, space }: WikiLabelProps) 
       </HoverCardTrigger>
       <HoverCardContent className="w-72" align="start">
         <div className="flex flex-col gap-2">
-          <div className="text-sm font-semibold">[[{wikiword}]]</div>
+          {/* `[[Name]]` is the AUTHORING syntax for a wikilink, not a title —
+              showing it here made the tip look like unrendered markup. The kind
+              is a chip; the page keeps its own plain title. */}
+          <div className="flex items-center gap-2">
+            <span
+              data-testid="wiki-tip-kind"
+              className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary"
+            >
+              Wiki
+            </span>
+            <span data-testid="wiki-tip-title" className="truncate text-sm font-semibold" title={wikiword}>
+              {wikiword}
+            </span>
+          </div>
           <div className="text-xs text-muted-foreground">
-            Wiki page. Open it inline, or peek at it without leaving this view.
+            Open the page here, or peek at it without leaving this view.
           </div>
           <div className="flex gap-2 pt-1">
             <Button size="sm" variant="secondary" onClick={previewWiki}>
