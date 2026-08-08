@@ -19,14 +19,16 @@ import {
 } from '@sdk';
 import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
-import { buildDockUrl, parseDockUrl, parseQueryParams } from './url-builder';
+import { buildDockUrl, isRootAddress, parseDockUrl, parseQueryParams, rootDockAddress } from './url-builder';
 import { isValidView } from './validators';
 import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType, LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import {
   assetEditorValue,
   assetWikiValue,
   normalizeAssetVfsPath,
+  parseAssetWikiRef,
   serializeAssetDocPointer,
+  type AssetWikiRef,
 } from './asset-doc-pointer-grammar';
 import {
   ALL_SCOPE_FILTER,
@@ -465,7 +467,13 @@ export class DockPointer implements IDockPointer {
     if (pointer === undefined && searchParams === undefined) {
       try {
         const url = new URL(viewTypeOrUrl, 'http://flowpad.local');
-        const parsedUrl = parseDockUrl(url.pathname);
+        // A PATH with no layout keyword is the app root (`/`, or a base path
+        // like `/agent/a/flow/f`). Gated on the leading slash so the historical
+        // single-argument form — `fromUrl('editor')` — still reaches the
+        // viewType parser below instead of silently resolving to the home.
+        const parsedUrl = viewTypeOrUrl.startsWith('/')
+          ? (parseDockUrl(url.pathname) ?? rootDockAddress(url.pathname))
+          : parseDockUrl(url.pathname);
         if (parsedUrl?.viewType) {
           return DockPointer.fromUrl(
             parsedUrl.viewType,
@@ -1192,6 +1200,25 @@ export class DockPointer implements IDockPointer {
     if (options?.startCommand) queryOptions.startCommand = options.startCommand;
     if (options?.skipPermissions) queryOptions.skipPermissions = 'true';
     return new DockPointer(ViewType.SHELL, sessionId, queryOptions, layout);
+  }
+
+  /**
+   * THE app root — the desk home, spelled `/`.
+   *
+   * An ordinary location: the desk `HOME` view with no pointer. It used to be
+   * the ABSENCE of a pointer (`currentDock === null`), which left every caller
+   * that had to work "dock or home" holding a raw URL string. Compose on it like
+   * any other pointer: `DockPointer.root().withJourney(id)`.
+   *
+   * Not a tab — HOME is `chrome: 'fullbleed'`, so `tabHash` is null.
+   */
+  static root(): DockPointer {
+    return new DockPointer(ViewType.HOME);
+  }
+
+  /** True when this pointer IS the app root (see `isRootAddress`). */
+  get isRoot(): boolean {
+    return isRootAddress(this.viewType, this.pointer, this.layout, this.page);
   }
 
   /**
@@ -2032,6 +2059,36 @@ export class DockPointer implements IDockPointer {
    */
   get vfsPath(): VFSPath | null {
     return this.resourceVfsPath;
+  }
+
+  /**
+   * The wiki space + word this route addresses, for a `wiki/…` dock.
+   *
+   * The THIRD addressing form, alongside `targetTypeId` and `resourceVfsPath`,
+   * and the only one that names its subject rather than identifying it: a wiki
+   * route stays at the word so it survives a rename, which is exactly why the
+   * other two return null here. Anything that wants to say where a wiki route
+   * points reads this — the word is a usable label with no lookup at all, and
+   * the space is the Wiki entity's own id.
+   *
+   * Covers the project-rebased form (`/dock/project/<id>/wiki/…`) through the
+   * same `assetSubPointer` un-rebase the other two getters use.
+   */
+  get wikiRef(): AssetWikiRef | null {
+    return parseAssetWikiRef(this.viewType === ViewType.ASSETS ? this.pointer : this.assetSubPointer);
+  }
+
+  /**
+   * True when this dock addresses the PROJECT ITSELF, not something inside it.
+   *
+   * `viewType === PROJECT` is NOT that question: `/dock/project/<id>/editor/…`
+   * and `/dock/project/<id>/wiki/…` are project-REBASED asset routes that
+   * address an asset and merely render in the project shell. Anything treating
+   * the bare viewType as "the project page" mislabels every one of them — the
+   * address bar called them all "Home".
+   */
+  get isProjectShell(): boolean {
+    return this.viewType === ViewType.PROJECT && this.assetSubPointer === null;
   }
 
   /** DEPRECATED: use fromJSON instead. Reconstruct the navigable DockPointer from a

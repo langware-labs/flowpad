@@ -16,6 +16,7 @@ import { DockPointer } from '@src/navigation';
 import { ViewType } from '@src/types/ViewType';
 import { clearDockLoadError } from './dock-load-error-store';
 import { DockLoadError, handleDockLoadError } from './dock-load-error';
+import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
 import { loadAssetRoute } from './load-asset';
 import { loadConversationRoute } from './load-conversation';
 import { loadLensRoute } from './load-lens';
@@ -249,7 +250,7 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         await adoptScopeProject(dock);
         await loadAssetRoute(dock.pointer, {
           allowLocalWikiAlias: dock.page !== PageId.HUB,
-          wikiAuthority: dock.page === PageId.HUB ? 'hub' : 'local',
+          wikiAuthority: wikiAuthorityForPage(dock.page),
         });
         break;
       case ViewType.TASKS:

@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, type LucideIcon } from 'lucide-react';
-import { APIEntity, Project, Tab, TypeId } from '@sdk';
+import { APIEntity, dataManager, Project, Tab, TypeId, Wiki, WikiEntry } from '@sdk';
+import { DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
+import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
+import { useWikiResolveResult } from '@src/routes/loaders/wiki-resolve-store';
 import { buildDockPointer } from '@src/components/conversation/EntityChip';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { resolveAncestorChain, type AncestorNode } from '@src/navigation/entity-ancestors';
 import { getAllTabsSnapshot } from '@src/tabs/all-tabs-store';
-import { ViewType } from '@src/types/ViewType';
 import { useContext } from '@src/hooks/useContext';
 
 /**
@@ -34,6 +36,10 @@ import { useContext } from '@src/hooks/useContext';
  *
  * So the bar paints `Project / Something` on the first frame and sharpens; it
  * never blanks and never waits.
+ *
+ * A WIKI route is the exception to "the middle is the containment chain": it
+ * reads `Project / <Wiki> / <word>`, where the middle is the NAMESPACE the word
+ * resolved through rather than a parent. See `DockPointer.wikiRef`.
  */
 
 export interface Crumb {
@@ -116,24 +122,74 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
   // Phase 0 — straight off the URL, no awaits, available on the first frame.
   const urlTargetTypeId = useMemo(() => dock?.targetTypeId ?? null, [dockKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A wiki route names its subject instead of identifying it (see
+  // `DockPointer.wikiRef`), so nothing here fetches what the route already did:
+  // the word is the label, the space is the Wiki's id, and the loader has
+  // parked the resolved target in the wiki-resolve store.
+  const wikiRef = useMemo(() => dock?.wikiRef ?? null, [dockKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Authority from the PAGE, through the shared helper the loader uses — the
+  // store is keyed by it, so assuming 'local' would miss every hub resolve.
+  const wikiResolve = useWikiResolveResult(
+    wikiRef?.space ?? '',
+    wikiRef?.name ?? '',
+    wikiAuthorityForPage(dock?.page),
+  );
+  const wikiPageTypeId = wikiResolve?.kind === 'resolved' ? wikiResolve.target_typeid : null;
+  const [wikiCrumb, setWikiCrumb] = useState<{ typeId: TypeId; label: string } | null>(null);
+
   const [resolved, setResolved] = useState<{ typeId: TypeId | null; entity: APIEntity<any> | null }>({
     typeId: null,
     entity: null,
   });
   const [ancestors, setAncestors] = useState<AncestorNode[]>([]);
 
+  // The Wiki the page lives in, as its own crumb. `@local` is an alias for the
+  // active project's default wiki rather than an id, so it takes the same
+  // resolution the wiki route itself uses.
+  useEffect(() => {
+    let live = true;
+    setWikiCrumb(null);
+    const space = wikiRef?.space;
+    if (!space) return;
+
+    void (async () => {
+      const wiki =
+        space === DEFAULT_WIKI_SPACE
+          ? await project?.getDefaultWiki().catch(() => null)
+          : await dataManager.getByTypeId<Wiki>(new TypeId(Wiki.type, space)).catch(() => null);
+      if (!live || !wiki) return;
+      setWikiCrumb({ typeId: wiki.typeId, label: entityLabel(wiki as APIEntity<any>, wiki.typeId) });
+    })();
+
+    return () => {
+      live = false;
+    };
+  }, [wikiRef?.space, project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Keyed on the string, not the DockPointer: identity of the CONTENT is what
   // should re-run this, and it survives a pointer instance being re-minted.
+  // `wikiPageTypeId` joins the key because a wiki route's target arrives from
+  // the resolve store AFTER the dock does — without it the effect would never
+  // re-run to pick the page up.
   useEffect(() => {
     let live = true;
     setAncestors([]);
     setResolved({ typeId: null, entity: null });
 
     if (!dock) return;
+    // `resolveDockTarget` structurally cannot answer for a wiki route — it reads
+    // `targetTypeId` and `vfsPath`, both null by construction there — so calling
+    // it would burn a pass and re-run this whole effect when the store lands.
+    if (wikiRef && !wikiPageTypeId) return;
 
     void (async () => {
       try {
-        const { targetTypeId, target } = await Tab.resolveDockTarget(dock);
+        const { targetTypeId, target } = wikiPageTypeId
+          ? {
+              targetTypeId: wikiPageTypeId,
+              target: await dataManager.getByTypeId<APIEntity<any>>(wikiPageTypeId).catch(() => null),
+            }
+          : await Tab.resolveDockTarget(dock);
         if (!live) return;
         setResolved({ typeId: targetTypeId ?? null, entity: (target as APIEntity<any>) ?? null });
 
@@ -151,11 +207,17 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     return () => {
       live = false;
     };
-  }, [dockKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dockKey, wikiPageTypeId?.toString()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const targetTypeId = resolved.typeId ?? urlTargetTypeId;
 
   const targetTitle = useMemo(() => {
+    // The wiki word, ahead of the resolved page's own name: it is right on the
+    // first frame — before the route has resolved, and still when it resolves
+    // to nothing. The CANONICAL form, not the raw URL segment: the backend
+    // resolves `Docs/Child` as `Docs`, and echoing the segment would name a
+    // page that was never opened.
+    if (wikiRef) return wikiRef.word;
     if (resolved.entity) return entityLabel(resolved.entity, targetTypeId);
     // Before Phase 1 lands, the context's active entity is often already the
     // thing this dock points at — an exact label with no fetch.
@@ -165,7 +227,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     if (targetTypeId) return labelForType(targetTypeId.type);
     return viewLabel(dock);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolved.entity, targetTypeId, activeEntity, activeEntityTypeId, dockKey]);
+  }, [resolved.entity, targetTypeId, activeEntity, activeEntityTypeId, wikiRef, dockKey]);
 
   const crumbs = useMemo<Crumb[]>(() => {
     const out: Crumb[] = [];
@@ -184,6 +246,22 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         Icon: iconForType(Project.type),
         pointer: null,
         kind: 'project',
+      });
+    }
+
+    // The Wiki the page is IN. Not an ancestor in the `parent_type_id` sense —
+    // a wiki page is a plain markdown asset whose containment is its folder —
+    // but it IS the namespace the route resolved the word through, so it is the
+    // honest middle segment of a wiki address. Not navigable: no editor claims
+    // the `wiki` type, so there is no dock that opens a Wiki itself, and a dead
+    // link reads worse than plain text.
+    if (wikiCrumb) {
+      out.push({
+        key: wikiCrumb.typeId.toString(),
+        label: wikiCrumb.label,
+        Icon: iconForType(wikiCrumb.typeId.type),
+        pointer: null,
+        kind: 'ancestor',
       });
     }
 
@@ -209,7 +287,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     // entity, while a bare `/dock/project` has no target at all and would
     // otherwise fall back to the view's type label ("Project").
     const isProjectHome =
-      dock?.viewType === ViewType.PROJECT ||
+      !!dock?.isProjectShell ||
       (!!project && targetTypeId?.type === Project.type && targetTypeId.id === project.id);
 
     // Same precedence the asset editor's header used before it was removed: the
@@ -233,7 +311,14 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
         : {
             key: 'view',
             label: isProjectHome ? PROJECT_HOME_CRUMB_LABEL : targetTitle,
-            Icon: isProjectHome ? iconForType(Project.type) : VIEW_CRUMB_ICON,
+            // A wiki word that hasn't resolved yet (or resolves to nothing) is
+            // still a wiki word, not an unidentified view — the registry has a
+            // glyph for exactly that. `iconForType`, so it moves with TypeInfo.
+            Icon: isProjectHome
+              ? iconForType(Project.type)
+              : wikiRef
+                ? iconForType(WikiEntry.type)
+                : VIEW_CRUMB_ICON,
             pointer: null,
             kind: 'current',
             path,
@@ -242,7 +327,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     );
 
     return out;
-  }, [project, ancestors, targetTypeId, targetTitle, dock?.viewType, dockKey, resolved.entity]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [project, ancestors, wikiCrumb, wikiRef, targetTypeId, targetTitle, dock?.isProjectShell, dockKey, resolved.entity]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { crumbs, targetTypeId, targetTitle };
 }
