@@ -5,9 +5,10 @@ list_dir. It is a plain value object: never persisted, no graph row. Files that
 need a saved entity use the ``File``/``Folder`` entities instead.
 """
 
+from pathlib import PurePosixPath
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class FSEntry(BaseModel):
@@ -36,6 +37,21 @@ class FSEntry(BaseModel):
     )
 
     model_config = ConfigDict(use_enum_values=True)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def name(self) -> str:
+        """The entry's leaf name, derived from ``vfs_abs_path``.
+
+        Mirrors the TS ``FSEntry`` client wrapper so both sides agree without the
+        server having to send it. Empty path -> ""; a bare "." -> "Root".
+        """
+        filename = PurePosixPath(self.vfs_abs_path).name
+        if not filename:
+            return ""
+        if filename == ".":
+            return "Root"
+        return filename
 
 
 __all__ = ["FSEntry"]
