@@ -40,6 +40,9 @@ _GIT_ERROR_TO_PUBLISH: dict[GitErrorCode, AssetPublishCode] = {
     GitErrorCode.AUTH_FAILED: AssetPublishCode.GITHUB_NOT_CONNECTED,
     GitErrorCode.UPSTREAM_UNAVAILABLE: AssetPublishCode.ORIGIN_INVALID,
     GitErrorCode.ORIGIN_OUT_OF_DATE: AssetPublishCode.BRANCH_DIVERGED,
+    GitErrorCode.DETACHED_HEAD: AssetPublishCode.ORIGIN_INVALID,
+    GitErrorCode.BRANCH_AHEAD: AssetPublishCode.BRANCH_AHEAD,
+    GitErrorCode.BRANCH_DIVERGED: AssetPublishCode.BRANCH_DIVERGED,
     GitErrorCode.PUSH_REJECTED: AssetPublishCode.PUSH_REJECTED,
     GitErrorCode.PATH_ESCAPES_REPO: AssetPublishCode.ORIGIN_INVALID,
     GitErrorCode.COMMAND_FAILED: AssetPublishCode.ORIGIN_INVALID,
@@ -86,42 +89,6 @@ def _asset_rel(folder: GitFolder, asset_root: Path) -> str:
     return rel
 
 
-async def _is_recognized_retry(folder: GitFolder, remote_head: str, asset_typeid: TypeId) -> bool:
-    """True when the single unpushed commit is our own previous publish attempt.
-
-    Without this, a publish whose push failed after committing would be stuck
-    forever behind the "local branch has unpublished commits" guard.
-    """
-    count = await folder.required("rev-list", "--count", f"{remote_head}..HEAD")
-    if count != "1":
-        return False
-    body = await folder.required("show", "-s", "--format=%B", "HEAD")
-    return any(line.strip() == f"FlowPad-Asset: {asset_typeid}" for line in body.splitlines())
-
-
-async def _push(folder: GitFolder, refspecs: list[str], head_commit: str) -> None:
-    """Publish commits, keeping the failure specific enough to act on.
-
-    A push that is *refused* or whose upstream is unreachable is
-    ``PUSH_REJECTED`` — the commit exists locally and did not reach GitHub, and
-    ``head_commit`` is what lets the retry path recognise its own work. But a
-    credential failure must NOT be flattened into that: it maps through the
-    table to ``GITHUB_NOT_CONNECTED``, so a user whose token expired mid-publish
-    is told to reconnect rather than to resolve a conflict that does not exist.
-    """
-    try:
-        await folder.push(refspec=refspecs)
-    except GitError as exc:
-        if exc.code in (GitErrorCode.PUSH_REJECTED, GitErrorCode.UPSTREAM_UNAVAILABLE):
-            raise AssetPublishError(
-                AssetPublishCode.PUSH_REJECTED,
-                "GitHub rejected the asset commit",
-                data={"head_commit": head_commit, **exc.data},
-            ) from exc
-        exc.data.setdefault("head_commit", head_commit)
-        raise
-
-
 async def publish_asset(
     *,
     asset_root: Path,
@@ -131,74 +98,44 @@ async def publish_asset(
     folder: GitFolder | None = None,
     cloud_branch: str = CLOUD_BRANCH,
 ) -> AssetGitReceipt:
-    """Commit the asset path, push it, and advance the cloud branch."""
+    """Publish one asset. Everything here is an ASSET rule; the git choreography
+    lives in :meth:`GitFolder.publish`."""
     secret = token.get_secret_value()
     folder = folder or await resolve_asset_folder(asset_root, token=secret)
 
     try:
         async with folder.lock():
             asset_rel = _asset_rel(folder, asset_root)
-
-            branch = await folder.current_branch()
-            if not branch:
-                raise AssetPublishError(AssetPublishCode.ORIGIN_INVALID, "Cannot publish from a detached HEAD")
             remote_url = await folder.get_remote_url()
             if not remote_url:
                 raise AssetPublishError(AssetPublishCode.ORIGIN_INVALID, "Checkout has no origin remote")
+            # Asset policy, not a git rule: only a canonical GitHub origin may
+            # publish. Checked before any network call so a bad origin fails fast.
             owner, name = validate_github_remote(remote_url)
 
-            local_head = await folder.head()
-            remote_head = await folder.remote_head(branch)
-            relation = await folder.relation(local_head, remote_head)
-            retrying = relation == "ahead" and await _is_recognized_retry(folder, remote_head, asset_typeid)
-            if relation == "ahead" and not retrying:
-                raise AssetPublishError(AssetPublishCode.BRANCH_AHEAD, "Local branch has unpublished commits")
-            if relation in {"behind", "diverged"}:
-                raise AssetPublishError(AssetPublishCode.BRANCH_DIVERGED, "Local branch is not aligned with GitHub")
-            if retrying and await folder.status_paths(asset_rel):
-                raise AssetPublishError(
-                    AssetPublishCode.BRANCH_AHEAD,
-                    "The pending asset commit no longer matches the working tree",
-                )
-
-            committed_head = (
-                None
-                if retrying
-                else await folder.commit(
-                    [asset_rel],
-                    f"Publish FlowPad asset {asset_typeid}",
-                    author=author,
-                    trailers=[
-                        f"FlowPad-Asset: {asset_typeid}",
-                        f"FlowPad-User: {author.typeid or author.email}",
-                    ],
-                    scoped_index=True,
-                )
+            receipt = await folder.publish(
+                asset_rel,
+                message=f"Publish FlowPad asset {asset_typeid}",
+                author=author,
+                trailers=[
+                    f"FlowPad-Asset: {asset_typeid}",
+                    f"FlowPad-User: {author.typeid or author.email}",
+                ],
+                also_advance=cloud_branch,
+                retry_marker=f"FlowPad-Asset: {asset_typeid}",
             )
-            changed = retrying or committed_head is not None
-            final_head = committed_head or local_head
-
-            # One invocation for both refs: one connection, one credential
-            # handshake, and no window where the user's branch advanced but
-            # flow-cloud did not. The cloud branch is pushed even when nothing
-            # changed — the asset commit may already exist while flow-cloud has
-            # never been created.
-            refspecs = [f"HEAD:refs/heads/{cloud_branch}"]
-            if changed:
-                refspecs.insert(0, f"HEAD:refs/heads/{branch}")
-            await _push(folder, refspecs, final_head)
 
             return AssetGitReceipt(
-                changed=changed,
+                changed=receipt.changed,
                 repo_root=folder.root,
                 branch=cloud_branch,
-                head_commit=final_head,
+                head_commit=receipt.head_commit,
                 origin=PortableGitOrigin(
                     provider="github",
                     owner=owner,
                     name=name,
                     branch=cloud_branch,
-                    head_commit=final_head,
+                    head_commit=receipt.head_commit,
                     rel_path=asset_rel,
                 ),
             )

@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import re
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, AsyncIterator, Iterable, Mapping, Sequence
 from urllib.parse import urlparse
@@ -75,9 +76,29 @@ class GitErrorCode(StrEnum):
     AUTH_FAILED = "auth_failed"
     UPSTREAM_UNAVAILABLE = "upstream_unavailable"
     ORIGIN_OUT_OF_DATE = "origin_out_of_date"
+    DETACHED_HEAD = "detached_head"
+    BRANCH_AHEAD = "branch_ahead"
+    BRANCH_DIVERGED = "branch_diverged"
     PUSH_REJECTED = "push_rejected"
     PATH_ESCAPES_REPO = "path_escapes_repo"
     COMMAND_FAILED = "command_failed"
+
+
+@dataclass(frozen=True)
+class PublishReceipt:
+    """What one publish did. ``changed`` is False for an idempotent re-publish."""
+
+    changed: bool
+    head_commit: str
+    branch: str
+
+
+@dataclass(frozen=True)
+class CheckoutReceipt:
+    """Where a checked-out subtree landed, and what commit it came from."""
+
+    head_commit: str
+    path: Path
 
 
 class GitError(RuntimeError):
@@ -188,50 +209,6 @@ class GitFolder:
                 raise GitError(GitErrorCode.NOT_A_REPO, "Path is not inside a git checkout")
             current = current.parent
 
-    @classmethod
-    def from_origin(
-        cls,
-        origin,
-        root: str | Path,
-        *,
-        executor: CommandExecutor,
-        token: str | None = None,
-    ) -> "GitFolder":
-        """Build from either GitOrigin flavour — the strict ``PortableGitOrigin``
-        or the looser ``builtin`` one. Only ``clone_url()`` and ``branch`` are
-        required, so neither is baked in as a dependency."""
-        return cls(
-            root,
-            executor=executor,
-            remote_url=origin.clone_url(),
-            branch=getattr(origin, "branch", None) or None,
-            token=token,
-        )
-
-    @classmethod
-    async def clone(
-        cls,
-        remote_url: str,
-        target: str | Path,
-        *,
-        branch: str | None = None,
-        token: str | None = None,
-        executor: CommandExecutor,
-        sparse_paths: Sequence[str] | None = None,
-        depth: int | None = None,
-        blobless: bool = False,
-        single_branch: bool = False,
-    ) -> "GitFolder":
-        folder = cls(target, executor=executor, remote_url=remote_url, branch=branch, token=token)
-        await folder.ensure(
-            sparse_paths=sparse_paths, depth=depth, blobless=blobless, single_branch=single_branch
-        )
-        return folder
-
-    # ------------------------------------------------------------------
-    # Command plumbing
-    # ------------------------------------------------------------------
-
     def _auth(self, use_token: bool) -> tuple[list[str], dict[str, str]]:
         """``(extra argv, env overlay)``. ``GIT_TERMINAL_PROMPT=0`` always, so a
         missing or bad credential fails fast instead of hanging on a prompt."""
@@ -256,7 +233,7 @@ class GitFolder:
             timeout=timeout,
         )
 
-    async def required(
+    async def _required(
         self,
         *args: str,
         code: GitErrorCode = GitErrorCode.COMMAND_FAILED,
@@ -270,7 +247,7 @@ class GitFolder:
             raise GitError(code, "Git operation failed")
         return result.stdout.strip()
 
-    async def resolved_root(self) -> str:
+    async def _resolve_root(self) -> str:
         """The fully-resolved root, computed once."""
         if self._resolved_root is None:
             self._resolved_root = await self.executor.resolve(str(self.root))
@@ -281,7 +258,7 @@ class GitFolder:
         """Serialize work on this checkout. Keyed on (event loop, resolved root):
         the loop because tests run several, the root because that is what two
         callers actually contend over."""
-        key = (asyncio.get_running_loop(), await self.resolved_root())
+        key = (asyncio.get_running_loop(), await self._resolve_root())
         existing = _REPO_LOCKS.get(key)
         if existing is None:
             existing = asyncio.Lock()
@@ -293,13 +270,10 @@ class GitFolder:
     # Inspection
     # ------------------------------------------------------------------
 
-    async def is_repo(self) -> bool:
-        return (await self.git("rev-parse", "--is-inside-work-tree")).ok
+    async def _head(self) -> str:
+        return await self._required("rev-parse", "HEAD", code=GitErrorCode.NOT_A_REPO)
 
-    async def head(self) -> str:
-        return await self.required("rev-parse", "HEAD", code=GitErrorCode.NOT_A_REPO)
-
-    async def current_branch(self) -> str | None:
+    async def _current_branch(self) -> str | None:
         """``None`` when detached — callers must refuse to act on a detached HEAD."""
         result = await self.git("rev-parse", "--abbrev-ref", "HEAD")
         name = result.stdout.strip() if result.ok else ""
@@ -309,26 +283,15 @@ class GitFolder:
         result = await self.git("config", "--get", f"remote.{name}.url")
         return result.stdout.strip() or None if result.ok else None
 
-    async def remote_head(self, branch: str | None = None) -> str:
+    async def _remote_head(self, branch: str | None = None) -> str:
         target = validate_branch_name(branch or self.branch or "")
-        await self.fetch(target)
+        await self._fetch(target)
         result = await self.git("rev-parse", "--verify", f"refs/remotes/origin/{target}")
         if not result.ok:
             raise GitError(GitErrorCode.BRANCH_NOT_FOUND, "Remote branch not found")
         return result.stdout.strip()
 
-    async def remote_branch_exists(self, branch: str | None = None) -> bool:
-        target = validate_branch_name(branch or self.branch or "")
-        if not self.remote_url:
-            raise GitError(GitErrorCode.REMOTE_INVALID, "No remote configured")
-        result = await self.git(
-            "ls-remote", "--heads", self.remote_url, f"refs/heads/{target}", auth=True
-        )
-        if not result.ok:
-            raise GitError(self._failure_code(result), "Could not reach the remote")
-        return bool(result.stdout.strip())
-
-    async def relation(self, local: str, remote: str) -> str:
+    async def _relation(self, local: str, remote: str) -> str:
         """``aligned`` | ``ahead`` | ``behind`` | ``diverged``."""
         if local == remote:
             return "aligned"
@@ -336,9 +299,9 @@ class GitFolder:
             return "ahead"
         return "behind" if (await self.git("merge-base", "--is-ancestor", local, remote)).ok else "diverged"
 
-    async def status_paths(self, *paths: str) -> list[str]:
+    async def _status_paths(self, *paths: str) -> list[str]:
         scope = ["--", *paths] if paths else []
-        out = await self.required("status", "--porcelain", *scope)
+        out = await self._required("status", "--porcelain", *scope)
         return [line for line in out.splitlines() if line.strip()]
 
     @staticmethod
@@ -373,7 +336,7 @@ class GitFolder:
     # Lifecycle
     # ------------------------------------------------------------------
 
-    async def ensure(
+    async def _ensure(
         self,
         *,
         sparse_paths: Sequence[str] | None = None,
@@ -416,9 +379,9 @@ class GitFolder:
         if not result.ok:
             raise GitError(self._failure_code(result), "Could not clone the repository")
         if sparse_paths is not None:
-            await self.set_sparse_paths(sparse_paths)
+            await self._set_sparse_paths(sparse_paths)
 
-    async def fetch(self, branch: str | None = None, *, prune: bool = True) -> None:
+    async def _fetch(self, branch: str | None = None, *, prune: bool = True) -> None:
         args = ["fetch", "--no-tags"]
         if prune:
             args.append("--prune")
@@ -429,14 +392,14 @@ class GitFolder:
         if not result.ok:
             raise GitError(self._failure_code(result), "Could not fetch from the remote")
 
-    async def sync(self, *, expected_head: str | None = None, branch: str | None = None) -> str:
+    async def _sync(self, *, expected_head: str | None = None, branch: str | None = None) -> str:
         """Fetch and hard-align the working tree to the remote branch; returns the head.
 
         ``expected_head`` is optimistic concurrency: when given, the remote must
         still be at that commit or the caller's view is stale.
         """
         target = validate_branch_name(branch or self.branch or "")
-        remote_head = await self.remote_head(target)
+        remote_head = await self._remote_head(target)
         if expected_head and remote_head.lower() != expected_head.lower():
             raise GitError(
                 GitErrorCode.ORIGIN_OUT_OF_DATE,
@@ -453,7 +416,7 @@ class GitFolder:
     # Sparse checkout
     # ------------------------------------------------------------------
 
-    async def set_sparse_paths(self, paths: Iterable[str]) -> None:
+    async def _set_sparse_paths(self, paths: Iterable[str]) -> None:
         """Restrict the working tree to ``paths`` (cone mode).
 
         Each path is validated as repo-relative first: a sparse path is a caller
@@ -466,17 +429,7 @@ class GitFolder:
         if not (await self.git("sparse-checkout", "set", *cleaned)).ok:
             raise GitError(GitErrorCode.COMMAND_FAILED, "Could not set the sparse paths")
 
-    async def sparse_paths(self) -> list[str]:
-        result = await self.git("sparse-checkout", "list")
-        if not result.ok:
-            return []
-        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
-
-    # ------------------------------------------------------------------
-    # Safety
-    # ------------------------------------------------------------------
-
-    async def safe_path(self, rel: str) -> Path:
+    async def _safe_path(self, rel: str) -> Path:
         """Resolve a repo-relative path, refusing anything that leaves the repo.
 
         Rejects ``..`` and ``.git`` segments lexically, then re-checks after
@@ -489,7 +442,7 @@ class GitFolder:
         check below holds either way.
         """
         relative = _repo_relative(rel)
-        root = Path(await self.resolved_root())
+        root = Path(await self._resolve_root())
         candidate = root.joinpath(*PurePosixPath(relative).parts) if relative else root
         resolved = Path(await self.executor.resolve(str(candidate)))
         if resolved != root and root not in resolved.parents:
@@ -504,98 +457,150 @@ class GitFolder:
                 raise GitError(GitErrorCode.PATH_ESCAPES_REPO, "Nested repositories are not allowed")
         return candidate
 
-    async def tree_is_confined(self, rel_path: str) -> bool:
-        """True when every changed or untracked path lives under ``rel_path``.
-
-        The belt to ``safe_path``'s braces: it catches a mutation that landed
-        outside the subtree even if the path checks let it through.
-        """
-        scope = _repo_relative(rel_path)
-        changed = await self.required("diff", "--name-only", "HEAD", "--")
-        untracked = await self.required("ls-files", "--others", "--exclude-standard")
-        for line in [*changed.splitlines(), *untracked.splitlines()]:
-            candidate = line.strip()
-            if candidate and candidate != scope and not candidate.startswith(f"{scope}/"):
-                return False
-        return True
-
-    async def normalize_keep_markers(self, scope: str | None = None) -> None:
-        """Write a marker into every otherwise-empty directory, remove it once a
-        real sibling appears. Git cannot represent an empty directory."""
-        base = self.root / _repo_relative(scope) if scope else self.root
-        await self._normalize_keep_markers_at(base)
-
-    async def _normalize_keep_markers_at(self, directory: Path) -> None:
-        if not await self.executor.is_dir(str(directory)):
-            return
-        names = await self.executor.list_dir(str(directory))
-        for name in names:
-            if name != ".git":
-                await self._normalize_keep_markers_at(directory / name)
-        visible = [n for n in names if n not in (KEEP_FILE, ".git")]
-        marker = directory / KEEP_FILE
-        if visible:
-            if await self.executor.exists(str(marker)):
-                await self.executor.remove(str(marker))
-        elif directory != self.root and not await self.executor.exists(str(marker)):
-            await self.executor.write_bytes(str(marker), b"")
-
     # ------------------------------------------------------------------
-    # Write
+    # Application operations
     # ------------------------------------------------------------------
 
-    async def create_branch(self, name: str, *, start_point: str | None = None, push: bool = False) -> str:
-        """Create ``name`` (at ``start_point``, default current HEAD) and optionally publish it."""
-        branch = validate_branch_name(name)
-        args = ["checkout", "-B", branch]
-        if start_point:
-            args.append(start_point)
-        if not (await self.git(*args)).ok:
-            raise GitError(GitErrorCode.COMMAND_FAILED, "Could not create the branch")
-        self.branch = branch
-        if push:
-            await self.push(refspec=f"HEAD:refs/heads/{branch}", set_upstream=True)
-        return await self.head()
-
-    async def commit(
+    async def publish(
         self,
-        paths: Sequence[str],
+        rel_path: str,
+        *,
+        message: str,
+        author: "GitAuthor",
+        trailers: Sequence[str] = (),
+        also_advance: str | None = None,
+        retry_marker: str | None = None,
+    ) -> PublishReceipt:
+        """Commit one path and publish it. The whole operation, not a step of one.
+
+        This exists because every caller was re-deriving the same eight-call
+        sequence — align, probe, commit, push — and each one is a chance to get
+        the order wrong. What a caller actually means is "publish this path".
+
+        Three behaviours are deliberate and easy to lose:
+
+        * **The commit is path-scoped through a temporary index**, so publishing
+          inside a checkout where the user has unrelated staged work does not
+          sweep it in.
+        * **``retry_marker`` recovers a half-finished publish.** If a previous
+          run committed and then failed to push, the branch is one commit ahead
+          and would be refused forever. When the single unpushed commit carries
+          this trailer it is recognised as ours and re-pushed rather than
+          re-committed.
+        * **``also_advance`` is pushed in the SAME invocation** as the working
+          branch — one connection, one credential handshake, and no window where
+          one ref moved and the other did not. It is pushed even when nothing
+          changed, because the branch may not exist yet.
+
+        Raises :class:`GitError`; callers map the code onto their own contract.
+        """
+        scoped = _repo_relative(rel_path)
+        branch = await self._current_branch()
+        if not branch:
+            raise GitError(GitErrorCode.DETACHED_HEAD, "Cannot publish from a detached HEAD")
+        if not await self.get_remote_url():
+            raise GitError(GitErrorCode.REMOTE_INVALID, "Checkout has no origin remote")
+
+        local_head = await self._head()
+        remote_head = await self._remote_head(branch)
+        relation = await self._relation(local_head, remote_head)
+
+        retrying = relation == "ahead" and await self._is_own_pending_commit(remote_head, retry_marker)
+        if relation == "ahead" and not retrying:
+            raise GitError(GitErrorCode.BRANCH_AHEAD, "Local branch has unpublished commits")
+        if relation in {"behind", "diverged"}:
+            raise GitError(GitErrorCode.BRANCH_DIVERGED, "Local branch is not aligned with its remote")
+        if retrying and await self._status_paths(scoped):
+            raise GitError(GitErrorCode.BRANCH_AHEAD, "The pending commit no longer matches the working tree")
+
+        committed = None if retrying else await self._commit(scoped, message, author=author, trailers=trailers)
+        changed = retrying or committed is not None
+        head = committed or local_head
+
+        refspecs = [f"HEAD:refs/heads/{validate_branch_name(also_advance)}"] if also_advance else []
+        if changed:
+            refspecs.insert(0, f"HEAD:refs/heads/{branch}")
+        if refspecs:
+            await self._push(refspecs, head)
+
+        return PublishReceipt(changed=changed, head_commit=head, branch=branch)
+
+    async def checkout(
+        self,
+        rel_path: str,
+        *,
+        branch: str | None = None,
+        depth: int | None = 1,
+        blobless: bool = True,
+    ) -> CheckoutReceipt:
+        """Make one subtree of ``branch`` present on disk, and say where it is.
+
+        The read counterpart of :meth:`publish`, and it exists for the same
+        reason: callers were re-deriving clone-then-align-then-resolve, and the
+        order is load-bearing — resolving the path before the branch is aligned
+        hands back a subtree from whatever the previous run left behind.
+
+        The checkout is **sparse to ``rel_path``**: a shared asset is a subtree
+        of a repository that may be far larger, and cloning the rest is
+        bandwidth spent on bytes nobody asked for.
+
+        It is a **cache, not state**. An existing clone of the same repository is
+        reused; one pointing at a *different* repository is refused rather than
+        silently re-pointed, which is how one repo's contents end up served as
+        another's.
+        """
+        target = validate_branch_name(branch or self.branch or "")
+        scoped = _repo_relative(rel_path)
+        await self.executor.make_dirs(str(self.root))
+        await self._ensure(sparse_paths=[scoped], depth=depth, blobless=blobless, single_branch=True)
+        head = await self._sync(branch=target)
+        return CheckoutReceipt(head_commit=head, path=await self._safe_path(scoped))
+
+    async def _is_own_pending_commit(self, remote_head: str, marker: str | None) -> bool:
+        """True when the one unpushed commit is ours, identified by ``marker``.
+
+        Without this a publish whose push failed after committing is stuck behind
+        the "unpublished commits" guard forever.
+        """
+        if not marker:
+            return False
+        if await self._required("rev-list", "--count", f"{remote_head}..HEAD") != "1":
+            return False
+        body = await self._required("show", "-s", "--format=%B", "HEAD")
+        return any(line.strip() == marker for line in body.splitlines())
+
+    async def _commit(
+        self,
+        path: str,
         message: str,
         *,
-        author: "GitAuthor | None" = None,
+        author: "GitAuthor",
         trailers: Sequence[str] = (),
-        scoped_index: bool = False,
     ) -> str | None:
-        """Stage ``paths`` and commit. Returns the new HEAD, or ``None`` if nothing changed.
+        """Stage ``path`` and commit it. Returns the new HEAD, or ``None`` if nothing changed.
 
-        ``scoped_index=True`` commits through a temporary ``GIT_INDEX_FILE`` and
-        then realigns only these paths in the real index. That is what lets the
-        publish path commit an asset inside a checkout where the user has
-        unrelated staged work — without it, publishing silently commits their
-        staging area.
+        The commit goes through a **temporary** ``GIT_INDEX_FILE``, and only
+        this path is then realigned in the real index. That is what lets publish
+        commit an asset inside a checkout where the user has unrelated staged
+        work — without it, publishing silently commits their staging area.
         """
-        scoped = [_repo_relative(p) for p in paths] or ["."]
-        env: dict[str, str] = {}
-        if author is not None:
-            env |= {
-                "GIT_AUTHOR_NAME": author.name,
-                "GIT_AUTHOR_EMAIL": author.email,
-                "GIT_COMMITTER_NAME": author.name,
-                "GIT_COMMITTER_EMAIL": author.email,
-            }
-
-        index_path: Path | None = None
-        if scoped_index:
-            index_path = self.root / f".git/flowpad-index-{id(self)}"
-            await self.executor.remove(str(index_path))
-            env["GIT_INDEX_FILE"] = str(index_path)
+        scoped = path or "."
+        index_path = self.root / f".git/flowpad-index-{id(self)}"
+        await self.executor.remove(str(index_path))
+        env = {
+            "GIT_AUTHOR_NAME": author.name,
+            "GIT_AUTHOR_EMAIL": author.email,
+            "GIT_COMMITTER_NAME": author.name,
+            "GIT_COMMITTER_EMAIL": author.email,
+            "GIT_INDEX_FILE": str(index_path),
+        }
 
         try:
-            if scoped_index and not (await self.git("read-tree", "HEAD", env=env)).ok:
+            if not (await self.git("read-tree", "HEAD", env=env)).ok:
                 raise GitError(GitErrorCode.COMMAND_FAILED, "Could not prepare the commit index")
-            if not (await self.git("add", "-A", "--", *scoped, env=env)).ok:
-                raise GitError(GitErrorCode.COMMAND_FAILED, "Could not stage the paths")
-            diff = await self.git("diff", "--cached", "--quiet", "--", *scoped, env=env)
+            if not (await self.git("add", "-A", "--", scoped, env=env)).ok:
+                raise GitError(GitErrorCode.COMMAND_FAILED, "Could not stage the path")
+            diff = await self.git("diff", "--cached", "--quiet", "--", scoped, env=env)
             if diff.returncode == 0:
                 return None
             if diff.returncode != 1:
@@ -606,144 +611,37 @@ class GitFolder:
                 await self.git("-c", "commit.gpgSign=false", "commit", "--no-gpg-sign", "-m", body, env=env)
             ).ok:
                 raise GitError(GitErrorCode.COMMAND_FAILED, "Could not commit")
-            if scoped_index and not (await self.git("reset", "-q", "HEAD", "--", *scoped)).ok:
+            if not (await self.git("reset", "-q", "HEAD", "--", scoped)).ok:
                 raise GitError(GitErrorCode.COMMAND_FAILED, "Could not finalize the commit")
-            return await self.head()
+            return await self._head()
         finally:
-            if index_path is not None:
-                await self.executor.remove(str(index_path))
+            await self.executor.remove(str(index_path))
 
-    async def push(
-        self,
-        *,
-        refspec: str | Sequence[str] | None = None,
-        set_upstream: bool = False,
-        rebase_retry: bool = False,
-    ) -> None:
-        """Push one or more refspecs in a single invocation.
+    async def _push(self, refspecs: Sequence[str], head: str) -> None:
+        """Push every refspec in ONE invocation, keeping the failure actionable.
 
-        Several refspecs travel together so they cost one connection and one
-        credential handshake — and so a caller advancing two refs cannot end up
-        with one moved and the other not.
+        They travel together so they cost one connection and one credential
+        handshake — and so a caller advancing two refs cannot end up with one
+        moved and the other not.
+
+        A refused push and an unreachable remote are the same fact to a caller —
+        *the commit exists locally and did not reach the remote* — so both become
+        ``PUSH_REJECTED``. A credential failure is NOT flattened into that: it
+        keeps its own code, so a user whose token expired mid-publish is told to
+        reconnect rather than to resolve a conflict that does not exist. Either
+        way the head travels along, so a retry can recognise its own work.
         """
-        target = validate_branch_name(self.branch or "") if self.branch else None
-        if refspec is None:
-            specs = [f"HEAD:refs/heads/{target}" if target else "HEAD"]
-        else:
-            specs = [refspec] if isinstance(refspec, str) else list(refspec)
-        args = ["push"]
-        if set_upstream:
-            args.append("--set-upstream")
-        args.extend(["origin", *specs])
-
-        result = await self.git(*args, auth=True)
+        result = await self.git("push", "origin", *refspecs, auth=True)
         if result.ok:
             return
-        if not rebase_retry or not target:
-            raise GitError(self._failure_code(result), "Could not push to the remote")
-
-        # Someone else advanced the branch between our fetch and our push. Rebase
-        # onto them and try once; a second failure is a real conflict.
-        await self.fetch(target)
-        if not (await self.git("rebase", f"origin/{target}")).ok:
-            await self.git("rebase", "--abort")
-            raise GitError(GitErrorCode.PUSH_REJECTED, "Could not rebase onto the remote branch")
-        retry = await self.git(*args, auth=True)
-        if not retry.ok:
-            raise GitError(self._failure_code(retry), "Could not push to the remote")
-
-    async def restore(self, head: str | None) -> None:
-        """Best-effort return to a known commit after a failed mutation."""
-        await self.git("rebase", "--abort")
-        if head:
-            await self.git("reset", "--hard", head)
-        await self.git("clean", "-fdx")
-
-    async def pull(self, branch: str | None = None) -> str:
-        """Pull, PRESERVING local changes — the opposite of :meth:`sync_mirror`.
-
-        For a working tree the user edits. Refuses a detached HEAD rather than
-        guessing which branch was meant.
-        """
-        target = branch or await self.current_branch()
-        if not target:
-            raise GitError(GitErrorCode.BRANCH_INVALID, "Cannot pull onto a detached HEAD")
-        result = await self.git("pull", "origin", validate_branch_name(target), auth=True)
-        if not result.ok:
-            raise GitError(self._failure_code(result), "Could not pull from the remote")
-        return result.stdout.strip()
-
-    async def sync_mirror(self, branch: str | None = None) -> bool:
-        """Force the tree to match its remote, DISCARDING local changes.
-
-        For a checkout the app manages and the user never edits. Returns whether
-        the working tree is now different from what it was — which is the
-        question a caller actually asks ("must I re-index?"), and is not the same
-        as "did HEAD move": when the remote is unchanged but the tree was dirty,
-        the reset rewrites those files and reporting "nothing changed" would tell
-        the caller to skip an index the reset just invalidated.
-        """
-        target = branch or await self.current_branch()
-        if not target:
-            raise GitError(GitErrorCode.BRANCH_INVALID, "Cannot mirror a detached HEAD")
-        target = validate_branch_name(target)
-
-        was_dirty = bool(await self.status_paths())
-        before = await self.head()
-        await self.fetch(target, prune=False)
-        remote = await self.required("rev-parse", f"origin/{target}")
-
-        if not (await self.git("reset", "--hard", f"origin/{target}")).ok:
-            raise GitError(GitErrorCode.COMMAND_FAILED, "Could not reset onto the remote branch")
-        # Indexing also CREATES files (capsules, sidecars); `reset --hard` leaves
-        # untracked ones behind, so a mirror has to clean them or it is only half
-        # a mirror.
-        await self.git("clean", "-fd")
-        return before != remote or was_dirty
-
-    async def add_commit_push(
-        self,
-        paths: Sequence[str],
-        message: str,
-        *,
-        author: "GitAuthor | None" = None,
-    ) -> tuple[str | None, bool]:
-        """Stage ``paths``, commit, and push. Returns ``(head or None, pushed)``.
-
-        ``head is None`` means the paths were already clean — not a failure.
-        Rebases once onto the remote if someone else moved the branch first.
-        """
-        head = await self.commit(paths, message, author=author)
-        if head is None:
-            return None, False
-        await self.push(rebase_retry=True)
-        return head, True
-
-    @classmethod
-    async def remote_access(
-        cls,
-        remote_url: str,
-        *,
-        executor: CommandExecutor,
-        token: str | None = None,
-    ) -> tuple[bool, str | None]:
-        """``(reachable, default_branch)`` without fetching a single object.
-
-        ``ls-remote --symref HEAD`` is the provider-agnostic probe: it answers
-        anonymously for public repos and with ``token`` for private ones, over
-        the same credential path a clone would use — so "the check passed" and
-        "the clone will work" cannot disagree.
-        """
-        probe = cls(Path("."), executor=executor, remote_url=remote_url, token=token)
-        result = await probe.git("ls-remote", "--symref", _assert_no_credentials(remote_url), "HEAD", auth=True)
-        if not result.ok:
-            return False, None
-        for line in result.stdout.splitlines():
-            if line.startswith("ref:"):
-                parts = line.split()
-                if len(parts) >= 2 and parts[1].startswith("refs/heads/"):
-                    return True, parts[1].removeprefix("refs/heads/")
-        return True, None
+        code = self._failure_code(result)
+        if code in (GitErrorCode.PUSH_REJECTED, GitErrorCode.UPSTREAM_UNAVAILABLE):
+            raise GitError(
+                GitErrorCode.PUSH_REJECTED,
+                "The commit did not reach the remote",
+                data={"head_commit": head},
+            )
+        raise GitError(code, "Could not push to the remote", data={"head_commit": head})
 
 
 def _normalize_remote(value: str) -> str:
