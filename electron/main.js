@@ -373,6 +373,23 @@ function applyMenu() {
   if (mainWindow) mainWindow.setMenuBarVisibility(menuVisible);
 }
 
+// Electron ships Chromium's renderer without Chromium's chrome, so there is no
+// default right-click menu: the spellchecker underlines misspellings but its
+// suggestions have nowhere to appear. This installs the standard one.
+//
+// Pinned to ^3 deliberately — v4+ is ESM-only and this file is CommonJS.
+//
+// shouldShowMenu is the important option. Electron fires this event even when
+// the renderer calls preventDefault() on the DOM contextmenu, so without a gate
+// the native menu would open on top of the app's own Radix context menus
+// (BrowseableGrid, TabStrip, FavoriteStar, SimpleFileManager, terminal strip).
+// Limiting it to text contexts leaves those menus alone and still covers the
+// case this exists for.
+require('electron-context-menu')({
+  shouldShowMenu: (_event, params) => params.isEditable || !!params.selectionText || !!params.misspelledWord,
+  showSearchWithGoogle: false, // sends the selection to an external search
+});
+
 ipcMain.on('set-menu-visible', (_event, visible) => {
   const next = !!visible;
   if (next === menuVisible) return;
