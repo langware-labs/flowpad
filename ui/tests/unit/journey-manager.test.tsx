@@ -88,13 +88,17 @@ describe('useJourneyManager — a step advances when its conditions hold', () =>
     await waitFor(() => expect(advance).toHaveBeenCalledTimes(1));
   });
 
-  it('a state condition already true on arrival advances at once (reload-safety)', async () => {
+  it('a state condition already true on arrival ARMS — it does not spend the step', async () => {
+    // The app being already where the step points is not evidence that anything
+    // happened, so the step must not complete itself: it would render and vanish
+    // in one commit, and the user would watch the counter jump past a step they
+    // never read. It arms instead — the tray lights Next and waits for them.
     vi.spyOn(dataManager, 'query').mockResolvedValue([{ id: 'a1' } as never]);
     const state = makeState(makeStep([{ entity: { type: 'agent', min: 1 } }]));
-    renderHook(() => useJourneyManager(state));
+    const { result } = renderHook(() => useJourneyManager(state));
 
-    await waitFor(() => expect(advance).toHaveBeenCalledTimes(1));
-    expect(advance).toHaveBeenCalledWith('s1', 'done');
+    await waitFor(() => expect(result.current.armed).toBe(true));
+    expect(advance).not.toHaveBeenCalled();
   });
 
   it('an occurrence THEN a state condition — the shape that stops a step narrating ahead', async () => {
