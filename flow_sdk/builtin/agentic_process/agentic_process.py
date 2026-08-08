@@ -6438,6 +6438,26 @@ class AgenticProcess(Entity):
             return ApiSuccessResponse(data={"url": host, "port": int(port)})
         return RedirectResponse(url=host)
 
+    @action.post(action_name="probe-webapp")
+    async def probe_webapp_action(self, port: int):
+        """Diagnose the dev server behind ``port`` and report what is wrong.
+
+        The counterpart to get-host: get-host redirects the display's iframe at
+        the app without ever checking it is there, so a dead port renders as a
+        blank pane. This answers the question the browser cannot -- the guest is
+        cross-origin, so the frontend can observe only "the fetch threw" and
+        never *why*. Always returns a result; a probe that failed says so in
+        ``probe_error`` rather than failing the request.
+        """
+        from flow_sdk.builtin.agentic_process.webapp_probe import probe_webapp
+
+        try:
+            host = await self._resolve_dev_host(port)
+        except ValueError as e:
+            return ApiFailResponse(message=f"probe-webapp: {e}")
+
+        return ApiSuccessResponse(data=await probe_webapp(host, int(port)))
+
     async def set_session_id(self, session_id: str) -> None:
         """Bind this process to an existing Claude session before start_pty()."""
         self.session_id = session_id
