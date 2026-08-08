@@ -60,6 +60,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     terminate_asyncio_process_tree,
     wait_for_asyncio_process_or_kill_tree,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.transcript_durability_gate import (
+    TranscriptDurabilityGate,
+    stream_event,
+)
 from flow_sdk.builtin.agentic_process.turn_abort import (
     TURN_TERMINATED_ATTR,
     abort_status_frame,
@@ -77,8 +81,8 @@ logger = logging.getLogger(__name__)
 CANCEL_GRACE_SECONDS = 5.0
 
 
-class _TranscriptDurabilityGate:
-    """Hold terminal Claude frames until the subprocess has settled.
+class _TranscriptDurabilityGate(TranscriptDurabilityGate):
+    """The shared ordering gate, told what Claude's two vendor facts are.
 
     Claude Code 2.1.207 writes an ``assistant`` stream-json event to stdout
     before appending the matching assistant row to its session JSONL. Exposing
@@ -98,32 +102,16 @@ class _TranscriptDurabilityGate:
     its own text-only assistant event — shape-identical to the final answer.
     A candidate is therefore held only until the stream proves the turn is
     continuing: a following ``assistant`` or ``user`` (tool_result) event
-    means the held block was narration and the whole held run is released
-    live, in order. Passive events (``rate_limit_event``-style statuses) join
-    the hold — they may legitimately trail the real final answer. Once the
-    ``result`` event arrives the hold is locked: the complete remaining
-    suffix is retained through EOF so delayed status/result frames cannot
-    move ahead of the answer, and is released only after the worker's
-    existing subprocess-settlement path completes. No new clock, sleep,
-    timeout, or polling budget is involved.
+    means the held block was narration. Passive events
+    (``rate_limit_event``-style statuses) are not continuations — they may
+    legitimately trail the real final answer, so they join the hold.
     """
 
-    def __init__(self) -> None:
-        self._pending_terminal: list[FlowData] = []
-        self._result_seen = False
-
-    def feed(self, event: dict | None, frames: list[FlowData]) -> list[FlowData]:
-        event_type = str(event.get("type") or "") if event else ""
-        if self._result_seen:
-            self._pending_terminal.extend(frames)
-            return []
-        if event_type == "result":
-            self._result_seen = True
-            self._pending_terminal.extend(frames)
-            return []
-
-        message = event.get("message") if event and isinstance(event.get("message"), dict) else {}
-        stop_reason = message.get("stop_reason")
+    def is_terminal_candidate(self, event: dict, frames: list[FlowData]) -> bool:
+        if event.get("type") != "assistant":
+            return False
+        raw_message = event.get("message")
+        message = raw_message if isinstance(raw_message, dict) else {}
         content = message.get("content")
         has_tool_use = isinstance(content, list) and any(
             isinstance(block, dict) and block.get("type") == "tool_use"
@@ -133,44 +121,14 @@ class _TranscriptDurabilityGate:
             frame.attributes.get("element-type") == FlowElementType.CHAT
             for frame in frames
         )
-        terminal_assistant = (
-            event_type == "assistant"
-            and has_chat
+        return (
+            has_chat
             and not has_tool_use
-            and stop_reason not in {"tool_use", "pause_turn"}
+            and message.get("stop_reason") not in {"tool_use", "pause_turn"}
         )
 
-        if self._pending_terminal:
-            if event_type in {"assistant", "user"}:
-                # The turn is provably continuing — the held candidate was
-                # per-block narration, not the final answer. Release the held
-                # run live, in order.
-                released = self._pending_terminal
-                self._pending_terminal = []
-                if terminal_assistant:
-                    self._pending_terminal = list(frames)
-                    return released
-                return [*released, *frames]
-            self._pending_terminal.extend(frames)
-            return []
-
-        if terminal_assistant:
-            self._pending_terminal.extend(frames)
-            return []
-        return frames
-
-    def drain(self) -> list[FlowData]:
-        pending, self._pending_terminal = self._pending_terminal, []
-        self._result_seen = False
-        return pending
-
-
-def _stream_event(decoded: str) -> dict | None:
-    try:
-        event = json.loads(decoded)
-    except (json.JSONDecodeError, TypeError):
-        return None
-    return event if isinstance(event, dict) else None
+    def is_continuation(self, event_type: str) -> bool:
+        return event_type in {"assistant", "user"}
 
 
 class ClaudeCLIStreamWorker(AgenticWorker):
@@ -261,7 +219,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                 # session-id capture, and the durability gate — a line can be
                 # up to 4 MB, so a re-parse per concern is not free.
                 decoded = line.decode("utf-8", errors="replace")
-                event = _stream_event(decoded)
+                event = stream_event(decoded)
                 frames = convert_event(event) if event is not None else []
                 for fd in frames:
                     # Capture session_id from the first ``system:init`` event.

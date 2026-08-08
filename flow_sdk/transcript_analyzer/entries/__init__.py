@@ -22,7 +22,11 @@ from .unknown import UnknownEntry
 from .usage import CodexUsageEntry, UsageEntry
 from .user_message import UserMessageEntry
 from .web_fetch import WebFetchEntry
-from .worker_unavailable import WorkerUnavailableEntry, WorkerUnavailableReason
+from .worker_unavailable import (
+    WorkerUnavailableEntry,
+    WorkerUnavailableReason,
+    classify_limit_reason,
+)
 
 __all__ = [
     "ArtifactEntry",
@@ -51,4 +55,5 @@ __all__ = [
     "WebFetchEntry",
     "WorkerUnavailableEntry",
     "WorkerUnavailableReason",
+    "classify_limit_reason",
 ]

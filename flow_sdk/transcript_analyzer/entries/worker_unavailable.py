@@ -15,6 +15,28 @@ from ..entry import EntryKind, TranscriptEntry
 
 WorkerUnavailableReason = Literal["quota_exhausted", "rate_limited"]
 
+# The vendor-blind vocabulary every parser classifies a provider limit with.
+# One owner, so ``reason`` means the same thing whichever CLI reported it.
+_QUOTA_EXHAUSTED_MARKERS = (
+    "weekly limit",
+    "usage limit",
+    "credit limit",
+    "credits limit",
+    "out of credits",
+    "credits exhausted",
+)
+_RATE_LIMIT_MARKERS = ("rate limit", "too many requests", "429")
+
+
+def classify_limit_reason(message: str) -> WorkerUnavailableReason | None:
+    """The limit ``reason`` a provider message states, or None if it states none."""
+    folded = message.casefold()
+    if any(marker in folded for marker in _QUOTA_EXHAUSTED_MARKERS):
+        return "quota_exhausted"
+    if any(marker in folded for marker in _RATE_LIMIT_MARKERS):
+        return "rate_limited"
+    return None
+
 
 class WorkerUnavailableEntry(TranscriptEntry):
     """Normalized provider failure that another configured worker can recover."""

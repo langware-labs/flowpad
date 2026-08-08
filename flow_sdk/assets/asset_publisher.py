@@ -113,16 +113,20 @@ async def publish_asset(
             # publish. Checked before any network call so a bad origin fails fast.
             owner, name = validate_github_remote(remote_url)
 
+            # One literal: the trailer that identifies this asset's commit is
+            # the same string the retry path recognises its own pending commit
+            # by. Two copies drifting apart would silently strand the retry.
+            asset_trailer = f"FlowPad-Asset: {asset_typeid}"
             receipt = await folder.publish(
                 asset_rel,
                 message=f"Publish FlowPad asset {asset_typeid}",
                 author=author,
                 trailers=[
-                    f"FlowPad-Asset: {asset_typeid}",
+                    asset_trailer,
                     f"FlowPad-User: {author.typeid or author.email}",
                 ],
                 also_advance=cloud_branch,
-                retry_marker=f"FlowPad-Asset: {asset_typeid}",
+                retry_marker=asset_trailer,
             )
 
             return AssetGitReceipt(

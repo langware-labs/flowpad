@@ -34,6 +34,7 @@ import {
   type TabRow,
 } from '@sdk';
 import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
+import { TooltipProvider } from '@src/components/ui/tooltip';
 import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { loadAgentApp } from '@src/routes/loaders/main-loader';
@@ -343,9 +344,13 @@ describe('new agentic-process loader handoff', () => {
 
     render(
       <QueryClientProvider client={queryClient}>
-        <HarnessCapabilitiesProvider>
-          <RouterProvider router={router} />
-        </HarnessCapabilitiesProvider>
+        {/* App.tsx wraps the whole app in one TooltipProvider; radix's Tooltip
+            throws without it, and the terminal subtree renders several. */}
+        <TooltipProvider>
+          <HarnessCapabilitiesProvider>
+            <RouterProvider router={router} />
+          </HarnessCapabilitiesProvider>
+        </TooltipProvider>
       </QueryClientProvider>,
     );
 

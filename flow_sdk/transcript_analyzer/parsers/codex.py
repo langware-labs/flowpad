@@ -49,6 +49,8 @@ from ..entries import (
     UnknownEntry,
     UsageEntry,
     UserMessageEntry,
+    WorkerUnavailableEntry,
+    classify_limit_reason,
 )
 from ..entry import TranscriptEntry
 from ._apply_patch import (
@@ -112,6 +114,55 @@ class CodexLineType(StrEnum):
     TOKEN_COUNT = "token_count"
     TASK_STARTED = "task_started"
     TASK_COMPLETE = "task_complete"
+    # ``codex exec --json`` reports a provider-side failure as a bare ``error``
+    # line followed by ``turn.failed``. Both were falling through to
+    # ``UnknownEntry`` (warning-only), so an exhausted account looked
+    # indistinguishable from a turn that simply produced no answer.
+    ERROR = "error"
+    TURN_FAILED = "turn.failed"
+
+
+def _codex_failure_message(payload: object) -> str:
+    """The human-readable message off a codex ``error`` / ``turn.failed`` line."""
+    if isinstance(payload, str):
+        return payload
+    if not isinstance(payload, dict):
+        return ""
+    message = payload.get("message")
+    if isinstance(message, str) and message:
+        return message
+    error = payload.get("error")
+    if isinstance(error, dict):
+        nested = error.get("message")
+        if isinstance(nested, str):
+            return nested
+    if isinstance(error, str):
+        return error
+    return ""
+
+
+def _codex_worker_unavailable(
+    message: str,
+    base: dict[str, Any],
+) -> WorkerUnavailableEntry | None:
+    """Normalize a provider quota/rate-limit failure, else None.
+
+    Only a message the PROVIDER classified as a limit becomes a
+    ``WorkerUnavailableEntry``; every other failure stays a plain system row so
+    a genuine crash is never mistaken for an account problem.
+    """
+    reason = classify_limit_reason(message)
+    if reason is None:
+        return None
+    return WorkerUnavailableEntry(
+        reason=reason,
+        worker_type="codex",
+        provider_error="rate_limit",
+        status_code=None,
+        message=message,
+        recoverable_with_alternative=True,
+        **base,
+    )
 
 
 class CodexResponseItemType(StrEnum):
@@ -917,6 +968,20 @@ class _CodexParserBase:
         # which produces a typed AssistantMessage / UserMessage entry.
         if etype in ("agent_message", "user_message"):
             return []
+        # A provider limit reported on ANY event_msg's ``error`` payload becomes
+        # the vendor-blind WORKER_UNAVAILABLE row. Codex attaches it to
+        # ``task_complete`` when the account runs out mid-turn — the turn then
+        # "completes" with ``last_agent_message: null``, which read as an
+        # ordinary empty answer. Only ``error`` is inspected (never a payload's
+        # own ``message``) so a user turn that merely talks about rate limits
+        # can't be misclassified.
+        error_payload = payload.get("error")
+        if error_payload is not None:
+            limit = _codex_worker_unavailable(
+                _codex_failure_message(error_payload), base
+            )
+            if limit is not None:
+                return [limit]
         if etype == "token_count":
             return self._emit_usage(payload, base)
         if etype in {
@@ -934,6 +999,11 @@ class _CodexParserBase:
                 )
             ]
         if etype == "error":
+            unavailable = _codex_worker_unavailable(
+                _codex_failure_message(payload), base
+            )
+            if unavailable is not None:
+                return [unavailable]
             return [
                 SystemEntry(
                     subtype="event_msg.error",
@@ -1030,6 +1100,18 @@ class CodexStreamParser(_CodexParserBase):
             return [MetaEntry(meta_kind=CodexLineType.ITEM_STARTED.value, payload=item, **base)]
         if rtype is CodexLineType.ITEM_COMPLETED:
             return self._parse_item_completed(raw, base)
+        if rtype in {CodexLineType.ERROR, CodexLineType.TURN_FAILED}:
+            if rtype is CodexLineType.TURN_FAILED:
+                message = (
+                    _codex_failure_message(raw.get("error"))
+                    or _codex_failure_message(raw)
+                )
+            else:
+                message = _codex_failure_message(raw)
+            unavailable = _codex_worker_unavailable(message, base)
+            if unavailable is not None:
+                return [unavailable]
+            return [SystemEntry(subtype=rtype.value, payload=raw, **base)]
         return [UnknownEntry(raw_data=raw, **base)]
 
 
@@ -1102,6 +1184,10 @@ class CodexParser:
             CodexLineType.TURN_COMPLETED,
             CodexLineType.ITEM_STARTED,
             CodexLineType.ITEM_COMPLETED,
+            # A bare top-level ``error`` / ``turn.failed`` is exec-stream-only;
+            # a rollout carries its failures inside ``event_msg``.
+            CodexLineType.ERROR,
+            CodexLineType.TURN_FAILED,
         }:
             return CodexStreamParser(session_id=self.session_id)
         if rtype in {
