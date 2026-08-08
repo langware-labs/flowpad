@@ -20,10 +20,22 @@ export interface JourneyPresentDock {
   kind?: 'asset_editor' | 'home' | 'wiki' | 'asset_list' | 'root';
   vfs?: string;
   name?: string;
+  /**
+   * The view mode to present in. Defaults to `vibe` — a journey runs in the
+   * simplest skin and does not drop out of it.
+   *
+   * Authorable because that default is a policy, not a fact, and it was applied
+   * to every step unconditionally: a journey whose SUBJECT is the vibe boundary
+   * had its opening state written for it, so "Start in Vibe" was already true
+   * before the user did anything and the entrance could never be demonstrated.
+   * A journey about leaving vibe has to be able to start outside it.
+   */
+  viewMode?: 'vibe' | 'standard' | 'advanced' | 'dev';
 }
 
 /** What a guided step can do FOR the user. Twin of `GUIDED_ACT_KINDS`. */
 export type JourneyActKind =
+  | 'click'
   | 'fill'
   | 'open_terminal'
   | 'run'
@@ -42,6 +54,12 @@ export type JourneyActKind =
  */
 export interface JourneyActSpec {
   /**
+   * `click` presses the `data-tag` surface the step already highlights — the
+   * third of the tag's three powers (highlight, observe, act). Without it a
+   * step could point at a control and wait for it, but never demonstrate it:
+   * pressing Next narrated "this is your workspace" over a screen where nothing
+   * had been opened. The step's `waitFor` still gates on the real consequence,
+   * so the act moves the app and the condition proves it arrived.
    * `fill` types text into a `data-tag` surface. The setup kinds drive the
    * capability system through its existing verbs: `setup_capability` fires the
    * install agentic process, `oauth_connect` opens the provider's OAuth flow,
@@ -115,6 +133,7 @@ export const GUIDED_PRESENT_KINDS: ReadonlySet<string> = new Set([
 
 /** Legal `act.kind` values. */
 export const GUIDED_ACT_KINDS: ReadonlySet<string> = new Set<JourneyActKind>([
+  'click',
   'fill',
   'open_terminal',
   'run',
