@@ -189,8 +189,12 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
 
   if (!journey || typeof document === 'undefined') return null;
 
-  const complete = journal?.status === 'complete';
-  const stepsLeft = journal?.steps_left ?? graph.length;
+  // The URL is the position; the journal is a record. A step named by the URL is
+  // shown even when an earlier run finished — otherwise re-opening
+  // `?journeyStep=2` on a completed journey rendered the finale instead of the
+  // step you asked for. "Completed" is the state of having no step to be on.
+  const complete = !currentStep && journal?.status === 'complete';
+  const stepsLeft = cursorIndex >= 0 ? graph.length - cursorIndex : (journal?.steps_left ?? graph.length);
 
   // Portal to document.body (the FloatingChatWindow pattern): the left rail is
   // also z-50, and inside the app tree the rail comes later in the DOM — a tie
@@ -340,12 +344,12 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
       </ul>
 
       <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
-        {!journal && (
+        {!currentStep && !complete && (
           <Button
             type="button"
             size="sm"
             disabled={busy}
-            onClick={() => run(() => journey.launch())}
+            onClick={() => run(() => journey.launch(), () => view?.start())}
             className="h-7 gap-1.5 px-3 text-xs text-white hover:brightness-110"
             style={{ backgroundColor: INDIGO }}
             data-testid="journey-tray-start"
@@ -354,47 +358,43 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
             <Trans>Start</Trans>
           </Button>
         )}
-        {journal && !complete && currentStep && (
+        {!complete && currentStep && (
           <>
-            {/* ONE button. Next does whatever this step needs: if the step can
-                press its own control, Next presses it and the step's condition
-                decides when to move on; otherwise Next just moves on. A second
-                lit button ("Show me", then Next) made a two-press dance out of a
-                walkthrough whose whole promise is next, next, next. Pressing Next
-                again after an act that did not land is the escape hatch. */}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy || !view?.canGoBack}
+              onClick={() => view?.back()}
+              className="h-7 px-3 text-xs"
+              data-testid="journey-tray-back"
+            >
+              <Trans>Back</Trans>
+            </Button>
+            {/* ONE mover. Next runs whatever this step does and loads the next
+                one; if the step has a gate, the press waits for it and then
+                lands. Nothing else advances a journey — conditions used to, and
+                a walkthrough with two drivers is exactly what felt flaky. */}
             <Button
               type="button"
               size="sm"
               disabled={busy}
-              onClick={() => {
-                const advance = () => run(() => journey.advance(currentStep.node_id, 'done'));
-                if (!view?.actPending) return advance();
-                view.doAct();
-                // An armed step's condition is ALREADY true, so acting changes
-                // nothing for the runtime to observe and no advance would ever
-                // fire — the user would have to press Next twice for that step
-                // alone. Acting and moving on is one press, like every other.
-                if (view.armed) advance();
-              }}
+              onClick={() => view?.next()}
               className={cn(
                 'h-7 px-3 text-xs text-white hover:brightness-110',
-                // Dim until the step is genuinely waiting on the user: a step
-                // whose conditions the app can satisfy on its own shouldn't
-                // invite a click that skips past them.
-                !view?.armed && !view?.actPending && 'opacity-60',
-                (view?.armed || view?.actPending) && 'animate-pulse',
+                view?.waiting && 'opacity-60',
               )}
               style={{ backgroundColor: INDIGO }}
               data-testid="journey-tray-continue"
             >
-              <Trans>Next</Trans>
+              {view?.waiting ? <Trans>Waiting…</Trans> : <Trans>Next</Trans>}
             </Button>
             <Button
               type="button"
               size="sm"
               variant="outline"
               disabled={busy}
-              onClick={() => run(() => journey.advance(currentStep.node_id, 'skipped'))}
+              onClick={() => view?.skip()}
               className="h-7 px-3 text-xs"
               data-testid="journey-tray-skip"
             >
@@ -410,7 +410,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
             variant="ghost"
             disabled={busy}
             title={t`Restart this journey`}
-            onClick={() => run(() => journey.restart())}
+            onClick={() => run(() => journey.restart(), () => view?.start())}
             className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
             data-testid="journey-tray-restart"
           >

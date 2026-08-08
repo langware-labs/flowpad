@@ -17,6 +17,9 @@
       "node_data": {
         "status_line": "Click your highlighted project name in the footer to open its page.",
         "present": {
+          "dock": {
+            "kind": "root"
+          },
           "highlight": "ProjectPage"
         },
         "waitFor": [
@@ -34,6 +37,9 @@
         "group": "Create your vibe agent",
         "status_line": "Click the highlighted Sub agent tile and name it \"shopping-master\".",
         "present": {
+          "dock": {
+            "kind": "root"
+          },
           "highlight": "Sub agents"
         },
         "waitFor": [
@@ -51,6 +57,9 @@
         "group": "Create your vibe agent",
         "status_line": "Click \"Fill text\" to write the instructions, then Next.",
         "present": {
+          "dock": {
+            "kind": "root"
+          },
           "highlight": "AgentInstructions"
         },
         "act": {
@@ -78,6 +87,9 @@
       "node_data": {
         "status_line": "Click the highlighted Use agent button — it loads your agent into a live vibe workspace.",
         "present": {
+          "dock": {
+            "kind": "root"
+          },
           "highlight": "UseAgent"
         },
         "group": "Use your vibe agent",
@@ -95,7 +107,11 @@
       "node_data": {
         "group": "Use your vibe agent",
         "status_line": "Ask your shopping master to search for a smartphone.",
-        "present": {},
+        "present": {
+          "dock": {
+            "kind": "root"
+          }
+        },
         "waitFor": [
           {
             "entity": {

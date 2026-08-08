@@ -17,7 +17,7 @@ import {
 import { NavigateFunction } from 'react-router';
 import { EVENTS_VIEW_TYPES } from '@src/types/ViewType';
 import type { ViewMode } from '@src/contexts/view-mode-context';
-import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM } from './DockPointer';
+import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
 import { FileOptions, TabOptions } from './types';
@@ -82,7 +82,7 @@ export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
 // URL options that are STICKY across navigation: openDock carries each from the
 // live URL onto any target that doesn't set it. A param here means "topmost
 // until explicitly closed" — clearing it must bypass openDock (see closeJourney).
-export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM];
+export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM, JOURNEY_STEP_PARAM];
 
 /**
  * NavigationActions - Navigation actions implementation

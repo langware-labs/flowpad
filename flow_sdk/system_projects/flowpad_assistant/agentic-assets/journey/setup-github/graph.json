@@ -23,7 +23,11 @@
       "node_data": {
         "group": "GitHub account",
         "status_line": "Click Connect and approve FlowPad in the browser window that opens.",
-        "present": {},
+        "present": {
+          "dock": {
+            "kind": "root"
+          }
+        },
         "act": {
           "kind": "oauth_connect",
           "target": "GitHubConnect",
@@ -49,7 +53,11 @@
       "node_data": {
         "group": "GitHub CLI",
         "status_line": "Click Set up — an agent installs gh; watch its progress below.",
-        "present": {},
+        "present": {
+          "dock": {
+            "kind": "root"
+          }
+        },
         "act": {
           "kind": "setup_capability",
           "target": "GhInstall",
@@ -89,7 +97,11 @@
       "node_data": {
         "group": "GitHub CLI",
         "status_line": "Click Log in, copy the one-time code, and approve it at github.com/login/device.",
-        "present": {},
+        "present": {
+          "dock": {
+            "kind": "root"
+          }
+        },
         "act": {
           "kind": "device_login",
           "target": "GhLogin",
