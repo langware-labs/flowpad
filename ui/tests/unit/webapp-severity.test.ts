@@ -164,6 +164,21 @@ const CASES: Case[] = [
     code: 'starting',
   },
   {
+    // Regression: `health` is a LEVEL, not an edge. The failure counter is
+    // incremented on transitions, so once liveness settles on `down` it stops
+    // at 1 — gating on it here left a dead app stuck in `starting` forever,
+    // which is the exact blank-pane bug this feature exists to fix.
+    name: 'dead app is fatal even though the failure counter stalled at one',
+    signals: signals({
+      health: 'down',
+      everLoaded: true,
+      consecutiveFailures: 1,
+      probe: probe({ reachable: false, nav_error: 'connection_refused' }),
+    }),
+    severity: 'fatal',
+    code: 'not_running',
+  },
+  {
     name: 'app that was working and truly died is fatal at once',
     signals: signals({
       health: 'down',
@@ -207,6 +222,38 @@ describe('classifyWebappSeverity', () => {
       }),
     );
     expect(booting.severity).toBe('unknown');
+  });
+
+  it('handles the real Level A payload, which omits the Level B fields entirely', () => {
+    // Regression: every other case here builds a probe through a factory that
+    // fills in `console_errors`/`page_errors`/`failed_requests`. The backend
+    // does NOT send them — only a browser can see those — so the classifier was
+    // calling `.map()` on undefined and crashing the whole display. Construct
+    // the wire shape literally, exactly as `blank_result()` returns it.
+    const wirePayload = {
+      port: 4321,
+      url: 'http://localhost:4321',
+      reachable: true,
+      is_http: true,
+      http_status: 200,
+      content_length: 180,
+      blank: false,
+      nav_error: null,
+      probe_error: null,
+    } as unknown as WebappProbe;
+
+    const verdict = classifyWebappSeverity(signals({ probe: wirePayload }));
+    expect(verdict.severity).toBe('ok');
+
+    const dead = classifyWebappSeverity(
+      signals({
+        health: 'down',
+        consecutiveFailures: FAILURE_THRESHOLD,
+        probe: { ...wirePayload, reachable: false, is_http: false, http_status: null, nav_error: 'connection_refused' },
+      }),
+    );
+    expect(dead).toMatchObject({ severity: 'fatal', code: 'not_running' });
+    expect(dead.detail).toContain('nav: connection_refused');
   });
 
   it('carries technical detail for the repair agent without surfacing it as the headline', () => {
