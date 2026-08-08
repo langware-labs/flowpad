@@ -230,6 +230,17 @@ function loadSubgraphRoute(dock: DockPointer): void {
 }
 
 export async function loadDockPointer(dock: DockPointer, context: DockLoaderContext): Promise<string> {
+  // `/dock/home` is the dock spelling of the app root, and the root's canonical
+  // URL is `/`. Without this redirect both spellings stay live: the address bar
+  // reads `/dock/home` while the pointer parsed from it serializes to `/`, so
+  // the URL silently changes under the user on their next navigation. Redirect
+  // rather than render, so one location keeps exactly one address — which is the
+  // point of making the root a pointer at all.
+  if (dock.isRoot) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(dock.toUrl(context.requestPath));
+  }
+
   const label = `loadDockPointer:${dock.viewType ?? 'unknown'}`;
   try {
     switch (dock.viewType) {

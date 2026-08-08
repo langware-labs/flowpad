@@ -34,6 +34,11 @@ test.beforeAll(async ({ browser }) => {
     if (m.type() !== 'error') return;
     if (/round.?trip|DockPointer|toUrl|fromUrl|navigat/i.test(m.text())) errors.push(m.text());
   });
+  // Warm the session once. The first navigation against a dev server pays for
+  // transforming the whole module graph, and that cost belongs in setup, not
+  // inside the first assertion that happens to run.
+  await page.goto('/');
+  await page.locator('[data-tag]').first().waitFor();
 });
 test.beforeEach(() => {
   errors = [];
