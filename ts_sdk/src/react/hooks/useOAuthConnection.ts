@@ -17,7 +17,7 @@ import {
 } from '@sdk';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import config from '../../config';
+import { iconAssetUrl, isIconPath } from '../../utils/icon-asset';
 import { entityEnvQueryKey, entityEnvQueryKeyRoot, useEntityEnv } from './useEntityEnv';
 
 interface UseOAuthConnectionOptions {
@@ -67,33 +67,16 @@ interface UseOAuthConnectionReturn {
 /**
  * A provider's icon, as something the browser can actually load.
  *
- * `TypeInfo.icon` arrives in two unrelated shapes: a lucide export name from the
- * local registry ("Github", "Sparkles"), and — from a hub plugin manifest — a
- * path RELATIVE TO THE PLUGIN FOLDER ("public/github-icon.svg"). The second was
- * handed straight to `<img src>`, so it resolved against the FRONTEND origin
- * (`/dock/hub/credentials/public/github-icon.svg`), 404'd into the SPA's index
- * page, and every provider fell back to a grey monogram. The hub serves those
- * assets at `/plugins/<provider>/<manifest path>`.
- *
- * Absolutised here rather than at the call site because the API base is the
- * SDK's to know — no app-level component may build a backend URL (CLAUDE.md).
- * Lucide names and already-absolute URLs are passed through untouched.
- *
- * Built from the ORIGIN of `SERVER_URL`, not `SERVER_URL` itself: that value
- * carries the `/api/v1` prefix, and these are static files mounted at the root.
+ * The one provider-specific bit on top of `iconAssetUrl`: a hub plugin manifest
+ * states its icon RELATIVE TO THE PLUGIN FOLDER ("public/github-icon.svg"), and
+ * the hub serves those at `/plugins/<provider>/<manifest path>`.
  */
 export function providerIconUrl(providerName: string, icon?: string | null): string | undefined {
   if (!icon) return undefined;
-  if (/^(https?:)?\/\//.test(icon) || icon.startsWith('data:')) return icon;
-  // A bare word is a lucide export name, not a path — `lucideByName` resolves it.
-  if (!icon.includes('/')) return icon;
-  let origin: string;
-  try {
-    origin = new URL(config.SERVER_URL).origin;
-  } catch {
-    return undefined;
-  }
-  return `${origin}/plugins/${providerName}/${icon.replace(/^\//, '')}`;
+  // A bare word is a lucide export name, not a file — passed through for
+  // `lucideByName` downstream.
+  if (!isIconPath(icon)) return icon;
+  return iconAssetUrl(icon, `plugins/${providerName}`);
 }
 
 /** Stable empty table — also a fresh `{values: []}` per render would break the
