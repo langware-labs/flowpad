@@ -76,7 +76,7 @@ const ASSET_IMPROVEMENT_WIKI = 'Asset improvement';
  * reason nothing lined up before.
  */
 const ASSET_GRID_ROW =
-  'grid grid-cols-[minmax(0,1fr)_1.25rem_5.5rem_1.5rem_1.5rem_1.5rem] items-center gap-2 px-3 py-1.5';
+  'grid grid-cols-[minmax(0,1fr)_1.25rem_4.5rem_1.5rem_1.5rem_1.5rem] items-center gap-2 px-3 py-1.5';
 
 /** Holds a grid track open where an optional cell isn't rendered. */
 function GridCellSpacer() {
@@ -727,7 +727,7 @@ export function AssetManagerPopover({
     return (
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent
-          className="flex max-h-[min(85vh,40rem)] w-96 max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0"
+          className="flex max-h-[min(85vh,40rem)] w-[30rem] max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0"
           data-testid="asset-manager-popover"
         >
           <DialogTitle className="sr-only">
@@ -747,7 +747,7 @@ export function AssetManagerPopover({
         side={side}
         sideOffset={4}
         collisionPadding={8}
-        className="flex max-h-[min(calc(100vh-6rem),var(--radix-popover-content-available-height))] w-96 flex-col p-0"
+        className="flex max-h-[min(calc(100vh-6rem),var(--radix-popover-content-available-height))] w-[30rem] max-w-[calc(100vw-2rem)] flex-col p-0"
         data-testid="asset-manager-popover"
       >
         {body}
