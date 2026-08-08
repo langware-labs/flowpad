@@ -127,7 +127,9 @@ def tag_get(
 
     data = _post_graph_json(
         url,
-        {"name": name.strip(), "mode": mode, "root": root or os.getcwd()},
+        # The scan runs server-side, so a relative --root would resolve against
+        # the SERVER's cwd and silently report 0 code sites. Absolutize here.
+        {"name": name.strip(), "mode": mode, "root": os.path.abspath(os.path.expanduser(root)) if root else os.getcwd()},
         timeout=30,
         on_error=_on_error,
     )
