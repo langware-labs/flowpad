@@ -271,3 +271,59 @@ def test_origin_classification_is_narrow_by_design() -> None:
     assert classify("/repo/ui/node_modules/pkg/doc.md") == occurrence_module.ORIGIN_DEPENDENCY
     # A real user folder that merely *contains* the substring is not vendored.
     assert classify("/repo/docs/my-vendored-notes/doc.md") == occurrence_module.ORIGIN_LOCAL
+
+
+def test_stored_path_under_a_walk_denylisted_dir_is_not_retained(tmp_path: Path) -> None:
+    """A vendored copy the walker can NEVER reach must not be re-admitted.
+
+    ``.venv`` is in the indexer's ``_WALK_IGNORED``, so discovery never yields
+    these paths — the live candidate list below contains only the real file,
+    exactly as an instrumented index run showed (the live-candidate branch fired
+    zero times for any ``site-packages`` path). Retention, however, admits any
+    stored path that still exists and still resolves to the same id, so one
+    historical bad index keeps itself alive on every subsequent run and no
+    tightening of the ignore rules can ever evict it.
+    """
+    real = tmp_path / "repo" / "docs" / "doc.md"
+    vendored = (
+        tmp_path
+        / "repo"
+        / ".venv"
+        / "lib"
+        / "python3.12"
+        / "site-packages"
+        / "pkg"
+        / "docs"
+        / "doc.md"
+    )
+    for path in (real, vendored):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("shipped doc\n", encoding="utf-8")
+
+    # The reader resolves a stored path to the same identity — the observed
+    # behaviour of the real indexer reader, which is why retention fires.
+    def identity(candidate):
+        path = candidate[2] if isinstance(candidate, tuple) else candidate
+        return ("markdown", "shipped", path)
+
+    decision = resolve_asset_collisions(
+        [("markdown", "shipped", str(real))],
+        {("markdown", "shipped"): [AssetOccurrence(str(vendored), OLD)]},
+        identity,
+        lambda _path: None,
+        NOW,
+    )[0]
+
+    assert [item.path for item in decision.occurrences] == [str(real.resolve())]
+    assert decision.duplicate_paths == ()
+
+
+def test_denylisted_ancestor_detection_is_ancestor_only(tmp_path: Path) -> None:
+    """Only ANCESTOR directories disqualify a path — never the file's own name."""
+    from flow_sdk.fs_store.indexer.gitignore import is_under_denylisted_dir
+
+    assert is_under_denylisted_dir("/repo/.venv/lib/site-packages/pkg/doc.md") is True
+    assert is_under_denylisted_dir("/repo/ui/node_modules/pkg/doc.md") is True
+    assert is_under_denylisted_dir("/repo/docs/guide.md") is False
+    # A FILE named like a denylisted dir is still a file the user wrote.
+    assert is_under_denylisted_dir("/repo/docs/.venv") is False
