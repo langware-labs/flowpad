@@ -127,13 +127,9 @@ def get_default_desktop_email() -> str:
 def get_name() -> Optional[str]:
     """Get user full name from git config user.name."""
     try:
-        result = subprocess.run(
-            ["git", "config", "user.name"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        name = result.stdout.strip()
+        from flow_sdk.utils.git_folder import GitFolder  # noqa: PLC0415
+
+        name = GitFolder(".").git_sync("config", "user.name", timeout=2).stdout.strip()
         if name:
             return name
     except Exception:
@@ -156,13 +152,9 @@ def get_email() -> Optional[str]:
     """
     # Try git config first
     try:
-        result = subprocess.run(
-            ["git", "config", "user.email"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        email = normalize_email(result.stdout)
+        from flow_sdk.utils.git_folder import GitFolder  # noqa: PLC0415
+
+        email = normalize_email(GitFolder(".").git_sync("config", "user.email", timeout=2).stdout)
         if email:
             return email
     except Exception:

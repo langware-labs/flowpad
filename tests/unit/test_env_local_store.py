@@ -191,14 +191,16 @@ def test_gitignore_status_reports_git_failure_without_raising(tmp_path, monkeypa
     conservative 'not ignored'."""
     _init_repo(tmp_path)
 
-    import flow_sdk.utils.git as git_utils
+    from flow_sdk.utils.git_folder import GitFolder
 
-    def _boom(args, cwd, timeout=10):
+    original = GitFolder.git_sync
+
+    def _boom(self, *args, **kwargs):
         if "check-ignore" in args:
             raise OSError("git exploded")
-        return subprocess.run(["git", *args[1:]], cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        return original(self, *args, **kwargs)
 
-    monkeypatch.setattr(git_utils, "_run_git", _boom)
+    monkeypatch.setattr(GitFolder, "git_sync", _boom)
 
     status = gitignore_status(_project(tmp_path))
 

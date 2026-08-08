@@ -6,13 +6,13 @@ from pathlib import Path
 
 from pydantic import SecretStr
 
+from flow_sdk.assets.asset_publisher import publish_asset, resolve_asset_folder
 from flow_sdk.assets.git_publish import (
     AssetPublishCode,
     AssetPublishError,
     AssetPublishResult,
     GitAuthor,
 )
-from flow_sdk.assets.git_worktree import AssetGitWorktree
 from flow_sdk.assets.projection import PORTABLE_ASSET_CONTRACT_VERSION, project_asset_tree
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.type_id import TypeId
@@ -77,22 +77,25 @@ async def publish_git_asset_impl(entity, actor: TypeId) -> AssetPublishResult:
     if not real_asset.is_relative_to(real_mount):
         raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset is outside its owning Project")
 
-    worktree = AssetGitWorktree.resolve(real_asset)
-    if not real_asset.is_relative_to(worktree.repo_root):
-        raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset is outside its Git checkout")
-
     github_token = await get_github_token(actor)
     if not github_token:
         raise AssetPublishError(AssetPublishCode.GITHUB_NOT_CONNECTED, "Connect GitHub before publishing an asset")
+
+    # Resolved WITH the token so the folder handed to publish_asset is already
+    # authenticated — the alternative was reaching into its private state.
+    folder = await resolve_asset_folder(real_asset, token=github_token)
+    if not real_asset.is_relative_to(folder.root):
+        raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset is outside its Git checkout")
     credentials = load_credentials()
     if not credentials or not credentials.api_key:
         raise AssetPublishError(AssetPublishCode.HUB_PUBLISH_FAILED, "Cloud login required")
 
-    receipt = await worktree.publish(
+    receipt = await publish_asset(
         asset_root=real_asset,
         asset_typeid=entity.typeid,
         token=SecretStr(github_token),
         author=await _actor_author(actor),
+        folder=folder,
     )
     projection = project_asset_tree(
         entity_type=entity.get_type(),

@@ -106,7 +106,6 @@ def _detach_git_history(repo_root: Path) -> None:
     idempotent by design, since setup may be retried.
     """
     import shutil  # noqa: PLC0415
-    import subprocess  # noqa: PLC0415
 
     root = Path(repo_root).resolve()
     git_dir = root / ".git"
@@ -120,7 +119,9 @@ def _detach_git_history(repo_root: Path) -> None:
     # A fresh empty repo so the customer's first commit is theirs. No commit is
     # made — that needs a configured identity, and failing setup on a missing
     # ``user.email`` would be absurd.
-    subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True, timeout=30, check=False)
+    from flow_sdk.utils.git_folder import GitFolder  # noqa: PLC0415
+
+    GitFolder(root).git_sync("init", "-q", timeout=30)
 
 
 class ProjectInitializeOptions(ComputeSourceControlInitializeOptions):

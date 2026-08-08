@@ -24,7 +24,8 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _yaml_load,
     merge_frontmatter,
 )
-from flow_sdk.utils.git import _run_git, find_project_root, git_commit_file
+from flow_sdk.utils.git import find_project_root, git_commit_file
+from flow_sdk.utils.git_folder import GitFolder
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ async def _scope_changed_excluding_version(
     folder, or a real body/field change to the main file, is a genuine change.
     """
     status = await asyncio.to_thread(
-        _run_git, ["git", "status", "--porcelain", "--", pathspec], repo_root
+        GitFolder(repo_root).git_sync, "status", "--porcelain", "--", pathspec
     )
     changed = [_porcelain_path(ln) for ln in (status.stdout or "").splitlines() if ln.strip()]
     if not changed:
@@ -80,7 +81,7 @@ async def _scope_changed_excluding_version(
         return True  # a non-main file in the asset folder changed → real change
     # Only the main file changed — genuine iff it differs from HEAD ignoring `version`.
     head = await asyncio.to_thread(
-        _run_git, ["git", "show", f"HEAD:./{main_rel}"], repo_root
+        GitFolder(repo_root).git_sync, "show", f"HEAD:./{main_rel}"
     )
     head_text = head.stdout if head.returncode == 0 else ""
     try:
@@ -150,7 +151,7 @@ async def _bump_version_and_commit(real_path: str, content: str) -> dict | None:
     write_text_if_changed(Path(main_abs), merge_frontmatter(main_text, {"version": new_version}))
     await git_commit_file(repo_root, pathspec, f"Flowpad: {name} v{new_version}")
     head = await asyncio.to_thread(
-        _run_git, ["git", "log", "-1", "--format=%H", "--", pathspec], repo_root
+        GitFolder(repo_root).git_sync, "log", "-1", "--format=%H", "--", pathspec
     )
     return {"hash": (head.stdout or "").strip(), "version": new_version}
 

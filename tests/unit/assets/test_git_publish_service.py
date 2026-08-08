@@ -30,8 +30,8 @@ async def test_project_must_already_be_published_before_git_mutation(tmp_path, m
         asset_ref=str(tmp_path / "agent" / "q" / "agent.md"),
     )
     monkeypatch.setattr("flow_sdk.assets._publish_service.owning_project", AsyncMock(return_value=project))
-    resolve = Mock()
-    monkeypatch.setattr("flow_sdk.assets._publish_service.AssetGitWorktree.resolve", resolve)
+    resolve = AsyncMock()
+    monkeypatch.setattr("flow_sdk.assets._publish_service.resolve_asset_folder", resolve)
 
     with pytest.raises(AssetPublishError) as raised:
         await publish_git_asset(agent, TypeId(type="user", id=mint_uuid()))
@@ -84,7 +84,7 @@ async def test_publish_sends_project_id_only_and_updates_only_asset_cache(tmp_pa
             main_ref="agent.md",
         ),
     )
-    worktree = SimpleNamespace(repo_root=tmp_path, publish=AsyncMock(return_value=receipt))
+    folder = SimpleNamespace(root=tmp_path)
     project_before = project.model_dump(mode="json")
     posted: dict = {}
 
@@ -103,7 +103,8 @@ async def test_publish_sends_project_id_only_and_updates_only_asset_cache(tmp_pa
             return {"asset": {"id": agent.id, "type": "agent"}}
 
     monkeypatch.setattr("flow_sdk.assets._publish_service.owning_project", AsyncMock(return_value=project))
-    monkeypatch.setattr("flow_sdk.assets._publish_service.AssetGitWorktree.resolve", lambda _: worktree)
+    monkeypatch.setattr("flow_sdk.assets._publish_service.resolve_asset_folder", AsyncMock(return_value=folder))
+    monkeypatch.setattr("flow_sdk.assets._publish_service.publish_asset", AsyncMock(return_value=receipt))
     monkeypatch.setattr("flow_sdk.assets._publish_service.project_asset_tree", lambda **_: projection)
     monkeypatch.setattr(
         "flow_sdk.assets._publish_service._actor_author",
