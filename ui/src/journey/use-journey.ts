@@ -55,6 +55,9 @@ export interface UseJourneyResult {
   /** The journey's steps — never null; an unloaded journey is an empty graph. */
   graph: JourneyGraph;
   currentStep: JourneyStep | null;
+  /** Which step, 1-based, exactly as the URL spells it — or null when the URL
+   *  names no position. THE cursor; `cursorIndex` is just this minus one. */
+  stepNumber: number | null;
   cursorIndex: number;
   loading: boolean;
   /**
@@ -185,6 +188,7 @@ export function useShownJourney(): UseJourneyResult {
     journal,
     graph,
     currentStep: cursorIndex >= 0 ? (graph.steps[cursorIndex] ?? null) : null,
+    stepNumber: cursorIndex >= 0 ? stepNumber : null,
     cursorIndex,
     loading: journeysLoading || journalsLoading || stepsLoading,
     refresh: () => {

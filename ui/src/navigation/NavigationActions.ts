@@ -237,9 +237,9 @@ export class NavigationActions {
    * Commit a pointer AS-IS — no sticky carry-forward, no scope seeding.
    *
    * The escape hatch for writes that must be able to REMOVE an option
-   * (`closeJourney`) or that are pure param edits on the current surface
-   * (`applyHighlightInPlace`), where `openDock`'s carry-forward would put back
-   * what we are trying to drop. Composition happens on the pointer, so there is
+   * (`closeJourney`, `endJourneySteps`) or that are pure param edits on the
+   * current surface (`setOption`), where `openDock`'s carry-forward would put
+   * back what we are trying to drop. Composition happens on the pointer, so there is
    * no URL string to get stale.
    */
   private commitPointer(dock: DockPointer): void {
@@ -250,17 +250,14 @@ export class NavigationActions {
   }
 
   /**
-   * Set `?highlight=` without any other navigation — the transparent form of
-   * highlighting: wherever the user is (or is ARRIVING, mid-route-change), only
-   * the param changes.
+   * Leave the journey's step sequence, keeping the journey shown.
    *
-   * Composes onto {@link here}, so a navigation in flight keeps its destination.
-   * This used to rebuild the URL from `window.location`, which during a
-   * navigation is still the location we left — and committing that reverted the
-   * navigation. Pinned by `navigation-pending-compose.test.ts`.
+   * Lives here beside `showJourney`/`closeJourney` because clearing a STICKY
+   * param must bypass `openDock`'s carry-forward — a navigation-layer rule that
+   * callers should not have to know, and that a second copy of would drift.
    */
-  applyHighlightInPlace(wikiword: string): void {
-    this.commitPointer(this.here.withHighlight(wikiword));
+  endJourneySteps(): void {
+    this.setOption(JOURNEY_STEP_PARAM, null);
   }
 
   /**

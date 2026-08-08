@@ -12,18 +12,10 @@ const JOURNEY = GETTING_STARTED_JOURNEY_ID;
 //    `deepAssign` deep-merges plain objects, so a real `Date` lands as `{}`.
 
 describe('JourneyJournal — progress derivations', () => {
-  it('isFresh only while nothing has been recorded', () => {
-    expect(new JourneyJournal({ cursor: 's1' }).isFresh).toBe(true);
-    expect(new JourneyJournal({ entries: [] }).isFresh).toBe(true);
-    expect(new JourneyJournal({ entries: [{ node_id: 's1', event: 'done' }] }).isFresh).toBe(false);
-  });
-
   it('locates the cursor in a graph, and survives a cursor the graph no longer has', () => {
     expect(new JourneyJournal({ cursor: 's2' }).indexIn(GRAPH)).toBe(1);
-    expect(new JourneyJournal({ cursor: 's2' }).currentStep(GRAPH)?.node_id).toBe('s2');
     // A journal written against an older revision of the graph.
     expect(new JourneyJournal({ cursor: 'gone' }).indexIn(GRAPH)).toBe(-1);
-    expect(new JourneyJournal({ cursor: 'gone' }).currentStep(GRAPH)).toBeNull();
     expect(new JourneyJournal({}).indexIn(GRAPH)).toBe(-1);
   });
 

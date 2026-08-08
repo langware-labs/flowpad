@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ViewType } from '@sdk';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer, HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
 import { NavigationActions } from '@src/navigation/NavigationActions';
 import { ViewMode } from '@src/contexts/view-mode-context';
 
@@ -57,7 +57,7 @@ describe('composing a URL while a navigation is in flight', () => {
 
   it('a highlight write does not revert the navigation', () => {
     const { navigate, navigation } = pendingNavigation();
-    navigation.applyHighlightInPlace('ViewModeVibe');
+    navigation.setOption(HIGHLIGHT_PARAM, 'ViewModeVibe');
 
     const url = lastUrl(navigate);
     expect(url).toContain('highlight=ViewModeVibe');
@@ -77,7 +77,7 @@ describe('composing a URL while a navigation is in flight', () => {
 
   it('keeps the dock it was navigating to, not the one it left', () => {
     const { navigate, navigation } = pendingNavigation();
-    navigation.applyHighlightInPlace('X');
+    navigation.setOption(HIGHLIGHT_PARAM, 'X');
     expect(lastUrl(navigate)).toContain(SHELL);
   });
 
@@ -87,7 +87,7 @@ describe('composing a URL while a navigation is in flight', () => {
     window.history.pushState({}, '', here.toUrl());
 
     const navigation = new NavigationActions(navigate, here);
-    navigation.applyHighlightInPlace('ViewModeVibe');
+    navigation.setOption(HIGHLIGHT_PARAM, 'ViewModeVibe');
 
     const url = lastUrl(navigate);
     expect(url).toContain('highlight=ViewModeVibe');

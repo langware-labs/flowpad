@@ -194,7 +194,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
   // `?journeyStep=2` on a completed journey rendered the finale instead of the
   // step you asked for. "Completed" is the state of having no step to be on.
   const complete = !currentStep && journal?.status === 'complete';
-  const stepsLeft = cursorIndex >= 0 ? graph.length - cursorIndex : (journal?.steps_left ?? graph.length);
+  const stepsLeft = graph.length - Math.max(cursorIndex, 0);
 
   // Portal to document.body (the FloatingChatWindow pattern): the left rail is
   // also z-50, and inside the app tree the rail comes later in the DOM — a tie
