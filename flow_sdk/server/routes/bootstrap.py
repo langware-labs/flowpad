@@ -1788,10 +1788,16 @@ async def get_desktop_info() -> LmInfo:
     app_paths = build_app_paths()
 
     cloud_config = ApiConfig.from_env()
+    # Who this instance is signed in as, from the same builder `/cloud/status`
+    # uses. Both of its inputs are file reads (and keychain-safe by design), so it
+    # adds nothing measurable to the cold-start path it now sits on.
+    from flow_sdk.cloud_client.auth_state import login_block
+
     return LmInfo(
         llm_providers=llm_providers,
         installed_agents=installed_agents,
         cloud_login_available=cloud_login_available,
+        login=login_block(),
         cloud_url=cloud_config.api_base_url,
         cloud_app_url=cloud_config.app_base_url,
         paths=app_paths,

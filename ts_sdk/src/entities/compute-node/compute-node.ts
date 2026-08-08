@@ -25,12 +25,18 @@ import {
 } from '../../flow_processing';
 import { IEntity } from '../../IEntity';
 import { ActionInfo } from '../../models';
-import { ComputeProviderType, RuntimeEnvironment } from './compute-node-types';
+import { ComputeProviderType, type NodeStatus, RuntimeEnvironment, type WorkspaceReady } from './compute-node-types';
 import type { MachineStatus, ProcessInfo } from './machine-status';
 import { ServiceControlError, type ServiceRuntimeDescriptor } from './service-control';
 import { Shell } from '../shell';
 import { PtyConnection } from '../../services/shell/ptyConnection';
 import { GitWorkdir } from '../git-workdir';
+
+/**
+ * The `node_config` marker the sandbox UI writes at create time to mean "this box
+ * is a workspace someone opens", as opposed to an agent's deployment box.
+ */
+export const WORKSPACE_FLAVOR = 'workspace';
 
 /** Callback for when a new machine session is detected */
 export type MachineSessionCallback = (sessionId: string, session: Shell) => void;
@@ -471,21 +477,140 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * await computeNode.setup(); // Initialize provider
    * ```
    */
-  async setup(): Promise<string> {
-    const action = new ActionInfo('ops', ComputeNode.type, this.id, 'POST');
-    action.subpath = 'setup';
-
-    const response = await dataManager.callAction(action);
-    const data = (response as Record<string, unknown>).data || response;
+  async setup(body?: Record<string, unknown>): Promise<string> {
+    const data = await this.ops<string>('setup', body);
 
     if (!data) {
       throw new Error('Failed to setup compute node: No response data');
     }
 
     // Update local provider_id from response
-    this.node_provider_id = data as string;
+    this.node_provider_id = data;
 
-    return data as string;
+    return data;
+  }
+
+  /**
+   * Call one `ops/<op>` command on this node.
+   *
+   * THE single place a client builds an ops URL. Callers used to hand-roll
+   * `new ActionInfo('ops', ...)` wherever they needed one — `use-sandboxes.ts`
+   * carried its own copy and called it for eleven different commands, which is
+   * why `executeCommand` below had no callers outside tests despite doing the
+   * same thing. One spelling, so a change to the action name or the envelope
+   * lands in one place.
+   *
+   * `op` mirrors the hub's command names verbatim (`compute_node_tools.py` and
+   * the `ops` dispatch table), so the pair greps as a pair.
+   */
+  private async ops<T>(op: string, body?: Record<string, unknown>): Promise<T> {
+    const action = new ActionInfo('ops', ComputeNode.type, this.id, 'POST');
+    action.subpath = [op];
+    if (body) action.bodyParameters = body;
+    return dataManager.callAction<Record<string, unknown> | undefined, T>(action);
+  }
+
+  /**
+   * Whether this node is a cloud SANDBOX — a box a person opens and works in,
+   * as opposed to an agent's deployment box or the local machine.
+   *
+   * On the entity, not in a screen. `use-sandboxes.ts` used to answer it inline
+   * by reading BOTH the provider AND a magic string out of the untyped
+   * `node_config` blob, so every surface that wanted the question had to know
+   * that blob's shape. The rule is one thing; it belongs in one place.
+   *
+   * The predicate is deliberately unchanged — this moves where the question is
+   * answered, not which boxes answer yes. Worth knowing before touching it: the
+   * hub stopped reading `flavor` for TEMPLATE selection ("one family, one axis,
+   * no client-derived input" — `setup_node`), which reads like the marker is
+   * dead. It is not: the sandbox UI writes it at create time and nothing clears
+   * it, so it remains the only thing separating the two kinds of E2B box.
+   *
+   * The provider field is read tolerantly because the hub spells it
+   * `node_provider` and this entity types it `node_provider_type`.
+   */
+  get isSandbox(): boolean {
+    const provider = (this as unknown as { node_provider?: string }).node_provider ?? this.node_provider_type;
+    const flavor = (this.node_config as { flavor?: string } | undefined)?.flavor;
+    return provider === ComputeProviderType.E2B && flavor === WORKSPACE_FLAVOR;
+  }
+
+  // ── lifecycle ────────────────────────────────────────────────────────
+
+  /** Start a provisioned node. */
+  async startup(): Promise<void> {
+    await this.ops<void>('startup');
+  }
+
+  /** Stop it for good — the provider machine goes away. */
+  async shutdown(): Promise<void> {
+    await this.ops<void>('shutdown');
+  }
+
+  /** Put it to sleep. Cheap to wake; the shared link wakes it on its own. */
+  async pause(): Promise<void> {
+    await this.ops<void>('pause');
+  }
+
+  /** Wake it. */
+  async resume(): Promise<void> {
+    await this.ops<void>('resume');
+  }
+
+  /**
+   * What the backing machine is doing.
+   *
+   * Normalized server-side into one shape across providers, so this type is no
+   * longer the union of one provider's fields with another's.
+   */
+  async status(): Promise<NodeStatus> {
+    return this.ops<NodeStatus>('status');
+  }
+
+  /**
+   * Bring the Flowpad app inside the box up, and sign it in.
+   *
+   * Returns whether it is healthy and who it ended up signed in as — the hub
+   * reads that identity back from the box rather than reporting what it asked
+   * for.
+   */
+  async workspaceReady(): Promise<WorkspaceReady> {
+    return this.ops<WorkspaceReady>('workspace-ready');
+  }
+
+  // ── computeNodeTools: setting a box's projects up ────────────────────
+  //
+  // One method per hub command, same names. These are the composable half:
+  // a box usually needs more than one project (the engagement, plus help desks
+  // and context projects), so the caller sequences them rather than asking for
+  // one do-everything call.
+
+  async validateProjectName(name: string): Promise<{ available: boolean; suggested?: string }> {
+    return this.ops('validate-project-name', { name });
+  }
+
+  async cloneProject(body: Record<string, unknown>): Promise<{ project?: { id: string }; path?: string }> {
+    return this.ops('clone-project', body);
+  }
+
+  async initEmptyProject(name: string, projectId: string): Promise<{ project?: { id: string }; path?: string }> {
+    return this.ops('init-empty-project', { name, project_id: projectId });
+  }
+
+  async indexProject(path: string, projectId: string): Promise<unknown> {
+    return this.ops('index-project', { path, project_id: projectId });
+  }
+
+  async reconcileManifest(projectId: string): Promise<unknown> {
+    return this.ops('reconcile-manifest', { project_id: projectId });
+  }
+
+  async attachContextProject(projectId: string, contextPath: string, scope = 'shared'): Promise<unknown> {
+    return this.ops('attach-context-project', { project_id: projectId, context_path: contextPath, scope });
+  }
+
+  async setDefaultProject(projectId: string): Promise<unknown> {
+    return this.ops('set-default-project', { project_id: projectId });
   }
 
   /**
