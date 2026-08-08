@@ -193,6 +193,32 @@ export class NavigationActions {
     }
   }
 
+  /**
+   * Commit a pointer from OUTSIDE the react-router context.
+   *
+   * The normal path goes through `navigate()` because React Router owns history
+   * and, critically, loader execution. A few callers are mounted above the
+   * router (the ui_command listener) and have no `navigate` to call, so they
+   * push and fire a synthetic popstate for the data router to pick up.
+   *
+   * That idiom lives HERE rather than being re-spelled per caller — it was
+   * already duplicated, with string equality where pointer equality belongs, so
+   * a param reordering counted as a different URL and re-pushed.
+   */
+  static commitDetached(pointer: IDockPointer): void {
+    const target = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
+    const url = target.toUrl(window.location.pathname);
+    let here: DockPointer | null = null;
+    try {
+      here = DockPointer.fromUrl(NavigationActions.getCurrentBrowserUrl());
+    } catch {
+      here = null;
+    }
+    if (here?.equals(target)) return;
+    window.history.pushState(null, '', url);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+
   static resetPendingNavigationForTests(): void {
     pendingDockNavigation = null;
   }

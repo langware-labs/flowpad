@@ -1,4 +1,6 @@
-import { RETIRED_DOCK_VIEWS, type ViewType } from '@sdk';
+import { normalizeRetiredDockPointer, RETIRED_DOCK_VIEWS } from '@sdk';
+import { DockPointer } from './DockPointer';
+import { tryParseDock } from './try-parse-dock';
 
 /**
  * The retired view types in URL form. A ViewType's enum value IS its URL
@@ -6,10 +8,6 @@ import { RETIRED_DOCK_VIEWS, type ViewType } from '@sdk';
  * mapping is not restated here. `RETIRED_DOCK_VIEWS` (ts_sdk) is the one place
  * a retirement is declared; this file is only its URL half.
  */
-const RETIRED_SEGMENTS = Object.keys(RETIRED_DOCK_VIEWS);
-
-const RETIRED_PATH = new RegExp(`^(.*/(?:dock|dev|win))(/hub)?/(${RETIRED_SEGMENTS.join('|')})(?:/.*)?/?$`);
-
 /**
  * Collapse the retired credential view types into the one Credentials
  * grammar: `/dock[/hub]/credentials/<subview>`.
@@ -26,12 +24,15 @@ const RETIRED_PATH = new RegExp(`^(.*/(?:dock|dev|win))(/hub)?/(${RETIRED_SEGMEN
  * string is, since it may hold unrelated dock options.
  */
 export function canonicalCredentialsDockPath(pathname: string, search: string): string | null {
-  const match = pathname.match(RETIRED_PATH);
-  if (!match) return null;
-
-  const [, prefix, hub = '', retired] = match;
-  const target = RETIRED_DOCK_VIEWS[retired as ViewType];
-  if (!target) return null;
-
-  return `${prefix}${hub}/${target.viewType}/${target.pointer}${search}`;
+  const dock = tryParseDock(`${pathname}${search}`);
+  const target = dock?.viewType ? RETIRED_DOCK_VIEWS[dock.viewType] : undefined;
+  if (!dock || !target) return null;
+  // `normalizeRetiredDockPointer` is the ONE declaration of where a retired
+  // view resolves to; saved Tab rows already go through it (`tab.ts`). This is
+  // the URL half, now reading the same table through the same function instead
+  // of re-implementing the mapping as a regex + template.
+  const normalized = normalizeRetiredDockPointer({ viewType: dock.viewType, pointer: dock.pointer });
+  return new DockPointer(normalized.viewType, normalized.pointer, dock.options, dock.layout, dock.page).toUrl(
+    pathname,
+  );
 }

@@ -1,6 +1,6 @@
 import { editorForPath, ConnectionManager, DockPointerData, dataManager, PageId, TypeId, ViewType, type IDockPointer, type UiCommandMessage } from '@sdk';
 import { useEffect } from 'react';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { NavigationActions } from '@src/navigation/NavigationActions';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import {
   dockPointerForClickTarget,
@@ -31,14 +31,10 @@ export function useUiCommandListener(): void {
   useEffect(() => {
     const cm = ConnectionManager.getInstance();
 
-    // Rewrite the URL to a dock pointer — react-router's createBrowserRouter
-    // listens for popstate. Shared by every ui_command handler.
-    const navigateTo = (pointer: IDockPointer) => {
-      const fullUrl = new DockPointer(pointer).toUrl(window.location.pathname);
-      if (fullUrl === window.location.pathname + window.location.search) return;
-      window.history.pushState(null, '', fullUrl);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    };
+    // Rewrite the URL to a dock pointer. This listener is mounted above the
+    // router, so it commits through the detached entry point rather than
+    // keeping its own copy of the push-and-popstate idiom.
+    const navigateTo = (pointer: IDockPointer) => NavigationActions.commitDetached(pointer);
 
     const handleNavigateEntity = async (msg: UiCommandMessage) => {
       if (!msg.type || !msg.id) {

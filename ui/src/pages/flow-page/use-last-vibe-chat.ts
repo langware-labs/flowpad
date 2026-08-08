@@ -3,7 +3,6 @@ import { useProject } from '@sdk/react/hooks';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router';
 import { lastVibeChatQuery, pickLastVibeChat } from './vibe-process-resolver';
 
 export { lastVibeChatQuery, pickLastVibeChat } from './vibe-process-resolver';
@@ -38,7 +37,6 @@ export { lastVibeChatQuery, pickLastVibeChat } from './vibe-process-resolver';
 export function useLastVibeChat(): () => void {
   const { project } = useProject();
   const { navigation } = useDockNavigation();
-  const navigate = useNavigate();
   const projectId = project?.id ?? null;
   // The resolve is async; without this a double-click fires two queries and two
   // navigations (same guard as useResumeInTerminal / VibeRecentSessions).
@@ -48,7 +46,7 @@ export function useLastVibeChat(): () => void {
     if (busyRef.current) return;
     // No project → nothing to scope to; the hero is the only sensible landing.
     if (!projectId) {
-      void navigate('/');
+      navigation.goHome();
       return;
     }
     busyRef.current = true;
@@ -59,16 +57,16 @@ export function useLastVibeChat(): () => void {
         if (!last) {
           // Nothing ever opened here — the vibe home hero, which already offers
           // the composer and VibeRecentSessions.
-          void navigate('/');
+          navigation.goHome();
           return;
         }
         navigation.openDockPointer(last.terminalDockPointer, { viewMode: ViewMode.Vibe });
       } catch (error) {
         console.error('[Vibe] failed to resolve the last chat', error);
-        void navigate('/');
+        navigation.goHome();
       } finally {
         busyRef.current = false;
       }
     })();
-  }, [projectId, navigate, navigation]);
+  }, [projectId, navigation]);
 }

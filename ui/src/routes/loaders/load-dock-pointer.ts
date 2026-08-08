@@ -40,7 +40,7 @@ export interface DockLoaderContext {
  * derivation: they run after this and their entity's project wins.
  * Best-effort — a missing project must not fail a browse landing.
  */
-async function adoptScopeProject(dock: DockPointer): Promise<void> {
+export async function adoptScopeProject(dock: DockPointer): Promise<void> {
   const projectId = dock.scopeProjectId;
   if (!projectId || dataContext.project?.id === projectId) return;
   await loadProject(new TypeId(Project.type, projectId)).catch(() => {});

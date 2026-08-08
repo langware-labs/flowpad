@@ -29,6 +29,7 @@ import { notify } from '@src/notifications';
 import { Building2, FolderGit2, Globe, Loader2, KeyRound, Monitor, Trash2, UserPlus } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { consumeInboundParams } from '@src/navigation/inbound-link';
 import { useEffect, useRef, useState } from 'react';
 
 // Live sandbox status styling, keyed off the backend `ExecutionEnvironmentStatus`
@@ -252,13 +253,9 @@ export function HubHome() {
     prevPendingInvites.current = pendingInviteCount;
   }, [pendingInviteCount, refetch]);
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const gitUrl = params.get('setup_git');
+    // Read-and-scrub in one call, so a refresh cannot re-open the dialog.
+    const { setup_git: gitUrl } = consumeInboundParams(['setup_git']);
     if (!gitUrl) return;
-    // Clean the URL so a refresh doesn't re-open.
-    const url = new URL(window.location.href);
-    url.searchParams.delete('setup_git');
-    window.history.replaceState(null, '', url.toString());
     setNewSandbox({ gitUrl });
   }, []);
 
