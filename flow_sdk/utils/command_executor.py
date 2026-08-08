@@ -18,9 +18,15 @@ local and a remote executor would otherwise diverge silently:
   a shell string. Quoting belongs to the implementation, which is the only thing
   that knows whether the far end is POSIX or ``cmd.exe``.
 
-``ComputeNodeCommandExecutor`` deliberately lives in ``builtin/faas/`` rather than
-here: ``utils`` is the leaf layer that ``builtin`` imports, and putting a
-ComputeNode dependency in it would invert that.
+**There is exactly one way to obtain an executor: ``ComputeNode.get_command_executor()``.**
+Nothing else constructs one. That is what keeps "where does this command run"
+answerable from the call site instead of defaulting silently to this machine —
+and it is what lets git execution be moved inside a sandbox later without
+hunting for callers that quietly assumed local.
+
+``_LocalCommandExecutor`` below is private and exists for TESTS and for the
+local compute node's own use. Production code reaches it only through a
+ComputeNode.
 """
 
 from __future__ import annotations
@@ -84,8 +90,11 @@ class CommandExecutor(Protocol):
     async def resolve(self, path: str) -> str: ...
 
 
-class LocalCommandExecutor:
+class _LocalCommandExecutor:
     """Runs on this machine's filesystem, off the event loop.
+
+    PRIVATE. Obtain an executor via ``ComputeNode.get_command_executor()``; this
+    class is for tests and for the local compute node.
 
     Never ``shell=True``: the argv goes to ``execve`` untouched, so a path or a
     branch name containing shell metacharacters is data, not syntax.
@@ -99,13 +108,11 @@ class LocalCommandExecutor:
         env: Mapping[str, str] | None = None,
         timeout: int | None = None,
     ) -> CommandResult:
-        """The blocking form, for callers that are not in an event loop.
+        """The blocking body of :meth:`run`; ``run`` is this, moved off the loop.
 
-        Exists so a synchronous helper does not need its own ``subprocess``
-        call — there is one place a local command is built and one place its
-        failures are classified. ``run`` is this, moved off the loop. Not part
-        of the :class:`CommandExecutor` protocol: a remote target has no
-        blocking form.
+        Not part of the :class:`CommandExecutor` protocol — a remote target has
+        no blocking form, which is why sync callers use the local probes in
+        ``utils/git.py`` rather than reaching for an executor.
         """
         child_env = {**os.environ, **env} if env else None
         try:

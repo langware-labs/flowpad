@@ -210,9 +210,9 @@ class GitRepo:
         from flow_sdk.builtin.faas.command_executor import ComputeNodeCommandExecutor  # noqa: PLC0415
         from flow_sdk.utils.git_folder import GitFolder  # noqa: PLC0415
 
-        # Built directly rather than via ``compute_node.command_executor`` so this
-        # works with any object exposing ``run_command`` — the node does not have
-        # to be a full ComputeNode.
+        # Constructed directly rather than via ``get_command_executor()`` so this
+        # also works with any object exposing ``run_command`` — GitRepo is handed
+        # test doubles, not always a full ComputeNode.
         return GitFolder(self.work_dir, executor=ComputeNodeCommandExecutor(self._compute_node))
 
     async def _run_git_io(self, *args: str) -> tuple[str, str, int]:

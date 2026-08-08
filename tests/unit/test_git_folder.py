@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.assets.git_publish import GitAuthor
+from flow_sdk.utils.command_executor import _LocalCommandExecutor
 from flow_sdk.utils.git_folder import (
     GitError,
     GitErrorCode,
@@ -37,6 +38,18 @@ from tests.unit.conftest import git_cmd
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 AUTHOR = GitAuthor(name="Test User", email="test@example.com", typeid="user-1")
+
+# Nothing in this file tests executor SELECTION, so threading it through every
+# construction is noise. One executor, two factories.
+EXECUTOR = _LocalCommandExecutor()
+
+
+def git_folder(root, **kwargs) -> GitFolder:
+    return GitFolder(root, executor=EXECUTOR, **kwargs)
+
+
+async def clone_folder(url, dest, **kwargs) -> GitFolder:
+    return await GitFolder.clone(url, dest, executor=EXECUTOR, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +96,7 @@ async def test_constructor_refuses_a_remote_with_embedded_credentials(tmp_path: 
     """The one remote rule GitFolder itself enforces — a secret in a URL ends up
     on disk in .git/config and in every error message git prints."""
     with pytest.raises(GitError) as excinfo:
-        GitFolder(tmp_path, remote_url="https://user:token@example.com/x.git")
+        git_folder(tmp_path, remote_url="https://user:token@example.com/x.git")
     assert excinfo.value.code is GitErrorCode.REMOTE_INVALID
 
 
@@ -98,7 +111,7 @@ async def test_discover_finds_the_enclosing_checkout(git_remote):
     nested.mkdir(parents=True)
     (nested / "f.txt").write_text("x", encoding="utf-8")
 
-    folder = await GitFolder.discover(nested / "f.txt")
+    folder = await GitFolder.discover(executor=EXECUTOR, path=nested / "f.txt")
 
     assert folder.root.resolve() == repo.resolve()
 
@@ -107,13 +120,13 @@ async def test_discover_outside_a_checkout_raises(tmp_path: Path):
     loose = tmp_path / "loose"
     loose.mkdir()
     with pytest.raises(GitError) as excinfo:
-        await GitFolder.discover(loose)
+        await GitFolder.discover(executor=EXECUTOR, path=loose)
     assert excinfo.value.code is GitErrorCode.NOT_A_REPO
 
 
 async def test_inspection_reads_head_branch_and_remote(git_remote):
     repo = git_remote.make_checkout()
-    folder = GitFolder(repo, branch="main", remote_url=git_remote.uri)
+    folder = git_folder(repo, branch="main", remote_url=git_remote.uri)
 
     assert await folder.is_repo() is True
     assert await folder.head() == git_cmd(repo, "rev-parse", "HEAD")
@@ -124,12 +137,12 @@ async def test_inspection_reads_head_branch_and_remote(git_remote):
 async def test_current_branch_is_none_when_detached(git_remote):
     repo = git_remote.make_checkout()
     git_cmd(repo, "checkout", "-q", "--detach", "HEAD")
-    assert await GitFolder(repo).current_branch() is None
+    assert await git_folder(repo).current_branch() is None
 
 
 async def test_relation_classifies_divergence(git_remote):
     repo = git_remote.make_checkout()
-    folder = GitFolder(repo, branch="main", remote_url=git_remote.uri)
+    folder = git_folder(repo, branch="main", remote_url=git_remote.uri)
     base = await folder.head()
 
     (repo / "local.txt").write_text("local\n", encoding="utf-8")
@@ -144,7 +157,7 @@ async def test_relation_classifies_divergence(git_remote):
 
 async def test_remote_branch_exists(git_remote):
     repo = git_remote.make_checkout()
-    folder = GitFolder(repo, branch="main", remote_url=git_remote.uri)
+    folder = git_folder(repo, branch="main", remote_url=git_remote.uri)
 
     assert await folder.remote_branch_exists("main") is True
     assert await folder.remote_branch_exists("flow-cloud") is False
@@ -163,7 +176,7 @@ async def test_clone_creates_a_working_checkout(git_remote, tmp_path: Path):
     git_cmd(source, "commit", "-q", "-m", "docs")
     git_cmd(source, "push", "-q", "origin", "main")
 
-    folder = await GitFolder.clone(git_remote.uri, tmp_path / "clone", branch="main")
+    folder = await clone_folder(git_remote.uri, tmp_path / "clone", branch="main")
 
     assert (folder.root / "docs" / "a.md").read_text() == "a\n"
 
@@ -178,8 +191,7 @@ async def test_sparse_clone_narrows_the_working_tree(git_remote, tmp_path: Path)
     git_cmd(source, "commit", "-q", "-m", "two trees")
     git_cmd(source, "push", "-q", "origin", "main")
 
-    folder = await GitFolder.clone(
-        git_remote.uri, tmp_path / "sparse", branch="main", sparse_paths=["wanted"], single_branch=True
+    folder = await clone_folder(git_remote.uri, tmp_path / "sparse", branch="main", sparse_paths=["wanted"], single_branch=True
     )
 
     assert (folder.root / "wanted" / "f.md").exists()
@@ -189,7 +201,7 @@ async def test_sparse_clone_narrows_the_working_tree(git_remote, tmp_path: Path)
 
 async def test_sparse_paths_cannot_escape_the_repo(git_remote, tmp_path: Path):
     git_remote.make_checkout()  # seed main on the bare remote
-    folder = await GitFolder.clone(git_remote.uri, tmp_path / "c", branch="main")
+    folder = await clone_folder(git_remote.uri, tmp_path / "c", branch="main")
     with pytest.raises(GitError) as excinfo:
         await folder.set_sparse_paths(["../elsewhere"])
     assert excinfo.value.code is GitErrorCode.PATH_ESCAPES_REPO
@@ -201,7 +213,7 @@ async def test_clone_into_a_non_empty_directory_is_refused(git_remote, tmp_path:
     (target / "existing.txt").write_text("x", encoding="utf-8")
 
     with pytest.raises(GitError) as excinfo:
-        await GitFolder.clone(git_remote.uri, target, branch="main")
+        await clone_folder(git_remote.uri, target, branch="main")
     assert excinfo.value.code is GitErrorCode.NOT_A_REPO
 
 
@@ -213,7 +225,7 @@ async def test_ensure_refuses_a_checkout_pointing_at_another_repo(git_remote, tm
     git_cmd(other, "init", "--bare", "-q", "-b", "main")
 
     with pytest.raises(GitError) as excinfo:
-        await GitFolder(repo, remote_url=other.as_uri(), branch="main").ensure()
+        await git_folder(repo, remote_url=other.as_uri(), branch="main").ensure()
     assert excinfo.value.code is GitErrorCode.REMOTE_MISMATCH
 
 
@@ -222,13 +234,13 @@ async def test_clone_of_a_missing_branch_reports_branch_not_found(git_remote, tm
     BRANCH_NOT_PROVISIONED case entity_git must report cleanly."""
     git_remote.make_checkout()
     with pytest.raises(GitError) as excinfo:
-        await GitFolder.clone(git_remote.uri, tmp_path / "c", branch="flow-cloud")
+        await clone_folder(git_remote.uri, tmp_path / "c", branch="flow-cloud")
     assert excinfo.value.code is GitErrorCode.BRANCH_NOT_FOUND
 
 
 async def test_sync_aligns_to_the_remote_and_returns_the_head(git_remote, tmp_path: Path):
     source = git_remote.make_checkout("source")
-    consumer = await GitFolder.clone(git_remote.uri, tmp_path / "consumer", branch="main")
+    consumer = await clone_folder(git_remote.uri, tmp_path / "consumer", branch="main")
 
     (source / "new.txt").write_text("new\n", encoding="utf-8")
     git_cmd(source, "add", ".")
@@ -245,7 +257,7 @@ async def test_sync_aligns_to_the_remote_and_returns_the_head(git_remote, tmp_pa
 async def test_sync_with_a_stale_expected_head_is_refused(git_remote, tmp_path: Path):
     """Optimistic concurrency: the caller's view of the remote is out of date."""
     source = git_remote.make_checkout("source")
-    consumer = await GitFolder.clone(git_remote.uri, tmp_path / "consumer", branch="main")
+    consumer = await clone_folder(git_remote.uri, tmp_path / "consumer", branch="main")
     stale = await consumer.head()
 
     (source / "new.txt").write_text("new\n", encoding="utf-8")
@@ -266,7 +278,7 @@ async def test_sync_with_a_stale_expected_head_is_refused(git_remote, tmp_path: 
 
 @pytest.mark.parametrize("rel", ["../escape", "a/../../escape", ".git/config", "a/.git/config", "..\\escape"])
 async def test_safe_path_refuses_escapes(git_remote, rel):
-    folder = GitFolder(git_remote.make_checkout())
+    folder = git_folder(git_remote.make_checkout())
     with pytest.raises(GitError) as excinfo:
         await folder.safe_path(rel)
     assert excinfo.value.code is GitErrorCode.PATH_ESCAPES_REPO
@@ -274,7 +286,7 @@ async def test_safe_path_refuses_escapes(git_remote, rel):
 
 async def test_safe_path_accepts_a_normal_subpath(git_remote):
     repo = git_remote.make_checkout()
-    resolved = await GitFolder(repo).safe_path("docs/notes.md")
+    resolved = await git_folder(repo).safe_path("docs/notes.md")
     assert resolved == repo / "docs" / "notes.md"
 
 
@@ -286,7 +298,7 @@ async def test_safe_path_refuses_a_symlinked_component(git_remote, tmp_path: Pat
     (repo / "link").symlink_to(outside, target_is_directory=True)
 
     with pytest.raises(GitError) as excinfo:
-        await GitFolder(repo).safe_path("link/secret.txt")
+        await git_folder(repo).safe_path("link/secret.txt")
     assert excinfo.value.code is GitErrorCode.PATH_ESCAPES_REPO
 
 
@@ -297,13 +309,13 @@ async def test_safe_path_refuses_a_nested_repository(git_remote):
     git_cmd(nested, "init", "-q", "-b", "main")
 
     with pytest.raises(GitError) as excinfo:
-        await GitFolder(repo).safe_path("vendored/f.txt")
+        await git_folder(repo).safe_path("vendored/f.txt")
     assert excinfo.value.code is GitErrorCode.PATH_ESCAPES_REPO
 
 
 async def test_tree_is_confined(git_remote):
     repo = git_remote.make_checkout()
-    folder = GitFolder(repo)
+    folder = git_folder(repo)
     (repo / "asset").mkdir()
     (repo / "asset" / "a.md").write_text("a\n", encoding="utf-8")
 
@@ -315,7 +327,7 @@ async def test_tree_is_confined(git_remote):
 
 async def test_normalize_keep_markers_round_trip(git_remote):
     repo = git_remote.make_checkout()
-    folder = GitFolder(repo)
+    folder = git_folder(repo)
     empty = repo / "empty"
     empty.mkdir()
 
@@ -334,7 +346,7 @@ async def test_normalize_keep_markers_round_trip(git_remote):
 
 async def test_commit_and_push_advances_the_remote(git_remote, tmp_path: Path):
     repo = git_remote.make_checkout()
-    folder = GitFolder(repo, branch="main", remote_url=git_remote.uri)
+    folder = git_folder(repo, branch="main", remote_url=git_remote.uri)
     (repo / "f.txt").write_text("content\n", encoding="utf-8")
 
     head = await folder.commit(["f.txt"], "add f", author=AUTHOR)
@@ -346,12 +358,12 @@ async def test_commit_and_push_advances_the_remote(git_remote, tmp_path: Path):
 
 async def test_commit_with_nothing_staged_returns_none(git_remote):
     repo = git_remote.make_checkout()
-    assert await GitFolder(repo).commit(["README.md"], "no-op", author=AUTHOR) is None
+    assert await git_folder(repo).commit(["README.md"], "no-op", author=AUTHOR) is None
 
 
 async def test_commit_writes_trailers(git_remote):
     repo = git_remote.make_checkout()
-    folder = GitFolder(repo)
+    folder = git_folder(repo)
     (repo / "f.txt").write_text("x\n", encoding="utf-8")
 
     await folder.commit(["f.txt"], "subject", author=AUTHOR, trailers=["FlowPad-User: user-1"])
@@ -366,7 +378,7 @@ async def test_scoped_index_commit_preserves_unrelated_staged_work(git_remote):
     already-staged ``other.txt`` into the asset commit.
     """
     repo = git_remote.make_checkout()
-    folder = GitFolder(repo, branch="main", remote_url=git_remote.uri)
+    folder = git_folder(repo, branch="main", remote_url=git_remote.uri)
 
     (repo / "other.txt").write_text("staged unrelated\n", encoding="utf-8")
     git_cmd(repo, "add", "other.txt")
@@ -382,7 +394,7 @@ async def test_scoped_index_commit_preserves_unrelated_staged_work(git_remote):
 
 async def test_create_branch_from_a_start_point_and_push(git_remote):
     repo = git_remote.make_checkout()
-    folder = GitFolder(repo, branch="main", remote_url=git_remote.uri)
+    folder = git_folder(repo, branch="main", remote_url=git_remote.uri)
     main_head = await folder.head()
 
     await folder.create_branch("flow-cloud", start_point="main", push=True)
@@ -395,7 +407,7 @@ async def test_push_rejection_surfaces_a_typed_error(git_remote, tmp_path: Path)
     """No network needed — point the push URL at a repo that does not exist."""
     repo = git_remote.make_checkout()
     git_cmd(repo, "remote", "set-url", "--push", "origin", (tmp_path / "gone.git").as_uri())
-    folder = GitFolder(repo, branch="main", remote_url=git_remote.uri)
+    folder = git_folder(repo, branch="main", remote_url=git_remote.uri)
     (repo / "f.txt").write_text("x\n", encoding="utf-8")
     await folder.commit(["f.txt"], "c", author=AUTHOR)
 
@@ -406,7 +418,7 @@ async def test_push_rejection_surfaces_a_typed_error(git_remote, tmp_path: Path)
 
 async def test_restore_returns_the_tree_to_a_known_head(git_remote):
     repo = git_remote.make_checkout()
-    folder = GitFolder(repo)
+    folder = git_folder(repo)
     before = await folder.head()
 
     (repo / "f.txt").write_text("x\n", encoding="utf-8")
@@ -427,7 +439,7 @@ async def test_restore_returns_the_tree_to_a_known_head(git_remote):
 
 async def test_failures_never_carry_git_output(git_remote, tmp_path: Path):
     """git stderr can contain the token, so it must not reach a caller."""
-    folder = GitFolder(tmp_path / "missing", remote_url=git_remote.uri, branch="nope", token="s3cret-token")
+    folder = git_folder(tmp_path / "missing", remote_url=git_remote.uri, branch="nope", token="s3cret-token")
 
     with pytest.raises(GitError) as excinfo:
         await folder.ensure()
@@ -439,7 +451,7 @@ async def test_failures_never_carry_git_output(git_remote, tmp_path: Path):
 async def test_token_never_appears_in_the_command_line(git_remote, tmp_path: Path):
     """It travels in the child env, referenced by name from a credential helper."""
     seen: list[list[str]] = []
-    folder = GitFolder(git_remote.make_checkout(), branch="main", remote_url=git_remote.uri, token="s3cret-token")
+    folder = git_folder(git_remote.make_checkout(), branch="main", remote_url=git_remote.uri, token="s3cret-token")
     original_run = folder.executor.run
 
     async def spy(argv, **kwargs):
@@ -455,7 +467,7 @@ async def test_token_never_appears_in_the_command_line(git_remote, tmp_path: Pat
 
 
 async def test_lock_serializes_work_on_one_checkout(git_remote):
-    folder = GitFolder(git_remote.make_checkout())
+    folder = git_folder(git_remote.make_checkout())
     order: list[str] = []
 
     async def worker(name: str) -> None:

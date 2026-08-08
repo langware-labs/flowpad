@@ -53,9 +53,18 @@ def as_publish_error(error: GitError) -> AssetPublishError:
 
 
 async def resolve_asset_folder(asset_root: Path, *, token: str | None = None) -> GitFolder:
-    """The checkout containing ``asset_root``."""
+    """The checkout containing ``asset_root``.
+
+    The executor comes from the local ComputeNode — the only way to obtain one.
+    Publishing reads and commits the user's own working copy, so the node is
+    ``@local`` by definition; making that explicit is what stops "where does git
+    run" from being answered by a silent default.
+    """
+    from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+
+    node = await ComputeNode.get_local()
     try:
-        return await GitFolder.discover(asset_root, token=token)
+        return await GitFolder.discover(asset_root, executor=node.get_command_executor(), token=token)
     except GitError as exc:
         raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset is not inside a Git checkout") from exc
 

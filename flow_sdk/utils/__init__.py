@@ -1,5 +1,5 @@
 # Import all utilities to maintain backward compatibility
-from .command_executor import CommandExecutor, CommandResult, LocalCommandExecutor
+from .command_executor import CommandExecutor, CommandResult
 from .concurrency import AsyncEventEmitter, filter_none_from_list, read_files_in_parallel, recommended_concurrency_limit
 from .environment import get_bool_env_var, get_float_env_var, get_int_env_var, get_str_list_env_var
 from .file_system import (
@@ -25,7 +25,6 @@ __all__ = [
     # Command execution
     "CommandExecutor",
     "CommandResult",
-    "LocalCommandExecutor",
     # Concurrency
     "AsyncEventEmitter",
     "filter_none_from_list",
