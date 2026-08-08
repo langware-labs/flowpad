@@ -410,7 +410,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
                 style={{ backgroundColor: INDIGO }}
                 data-testid="journey-tray-continue"
               >
-                {view?.armed ? <Trans>Next</Trans> : <Trans>Continue</Trans>}
+                <Trans>Next</Trans>
               </Button>
             )}
             <Button
