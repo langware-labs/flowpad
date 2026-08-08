@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronUp, Circle, CircleDot, FileCheck2, GitBranch, KeyRound, Link2, Play, RotateCcw, Terminal, Type, Wrench, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Circle, CircleDot, FileCheck2, GitBranch, KeyRound, Link2, Play, RotateCcw, Terminal, Type, Wrench, X, MousePointerClick } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Confetti from 'react-confetti';
@@ -19,6 +19,7 @@ const ACT_FACES: Record<string, { Icon: typeof Type; label: React.ReactNode }> =
   setup_capability: { Icon: Wrench, label: <Trans>Set up</Trans> },
   oauth_connect: { Icon: Link2, label: <Trans>Connect</Trans> },
   device_login: { Icon: KeyRound, label: <Trans>Log in</Trans> },
+  click: { Icon: MousePointerClick, label: <Trans>Show me</Trans> },
   fill: { Icon: Type, label: <Trans>Fill text</Trans> },
   git_check: { Icon: GitBranch, label: <Trans>Check</Trans> },
   open_terminal: { Icon: Terminal, label: <Trans>Open terminal</Trans> },

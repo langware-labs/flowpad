@@ -74,27 +74,96 @@ async function expectStep(n: number): Promise<void> {
   await expect(stepsLeft(), `counter on step ${n}`).toHaveText(`${STEPS.length - (n - 1)} steps left`);
 }
 
-const next = () => page.locator('[data-testid="journey-tray-continue"]').click();
+/**
+ * Press whatever the step offers. A step that can demonstrate itself shows its
+ * act ("Show me") INSTEAD of Next — one lit button at a time — so a walk that
+ * only ever pressed Next would stall the moment a step gained an act.
+ */
+async function advance(): Promise<void> {
+  const act = page.getByTestId('journey-tray-act');
+  await ((await act.count()) ? act : page.getByTestId('journey-tray-continue')).click();
+}
+const next = advance;
 const workspace = () => page.locator('[data-tag="VibeDisplay"]');
 
+test.describe('the journey demonstrates — the app really moves', () => {
+  /**
+   * The whole point, and the thing a step-only check misses: driven by the
+   * journey's OWN buttons, the app must actually enter Vibe, actually open a
+   * build, actually lose it, and actually get it back. Walking with Next used to
+   * narrate all of that over a screen where nothing had happened.
+   *
+   * Starts in `standard` deliberately — a journey that presents itself in Vibe
+   * has already satisfied its own first step, and the entrance cannot be shown.
+   */
+  test('entrance and exit, driven by the tray alone', async () => {
+    await launch('/?viewMode=standard');
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'standard');
+    await expect(workspace()).toHaveCount(0);
+
+    // ── in ──
+    await expectStep(1);
+    await advance(); // "Show me" → presses the wand
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
+
+    await expectStep(2);
+    await advance(); // "Show me" → opens a real build from the rail
+    await expect(workspace()).toBeVisible();
+
+    await expectStep(3);
+    await advance(); // commentary — Next
+
+    // ── out ──
+    await expectStep(4);
+    await advance(); // "Show me" → the exit under review
+    await expect(workspace()).toHaveCount(0);
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'standard');
+
+    // ── back ──
+    await expectStep(5);
+    await advance(); // "Show me" → the way home
+    await expect(workspace()).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
+
+    await expectStep(6);
+    await advance();
+    await expect(isComplete()).toBeVisible();
+  });
+});
+
 test.describe('the walk shows every step', () => {
-  for (const startOpen of [false, true]) {
-    test(`Next walks all ${STEPS.length} steps · workspace ${startOpen ? 'OPEN' : 'closed'} at start`, async () => {
-      await launch(startOpen ? '/?viewMode=vibe' : '/');
-      if (startOpen) {
-        await page.locator('[data-tag="RailChats"]').click();
-        await expect(workspace()).toBeVisible();
-      }
-      // Every step, in order, one Next each. This is the regression: steps whose
-      // condition was already true used to complete themselves, and which ones
-      // depended entirely on whether the workspace happened to be open.
-      for (let n = 1; n <= STEPS.length; n++) {
-        await expectStep(n);
-        await next();
-      }
-      await expect(isComplete()).toBeVisible();
-    });
-  }
+  test(`Next walks all ${STEPS.length} steps`, async () => {
+    await launch();
+    // Every step, in order, one press each. This is the regression: steps whose
+    // condition was already true used to complete themselves, so the counter
+    // jumped past text nobody read.
+    for (let n = 1; n <= STEPS.length; n++) {
+      await expectStep(n);
+      await advance();
+    }
+    await expect(isComplete()).toBeVisible();
+  });
+
+  test('the journey normalizes its start, whatever the app was doing', async () => {
+    // Walk in already inside a workspace, in Vibe — the state that used to make
+    // the journey skip the two steps that ask you to open one.
+    await page.goto('/?viewMode=vibe');
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'vibe');
+    await page.locator('[data-tag="RailChats"]').click();
+    await expect(workspace()).toBeVisible();
+
+    // Starting the journey presents its own opening state rather than inheriting
+    // one, so step 1 has something left to demonstrate.
+    await launch();
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'standard');
+    await expect(workspace()).toHaveCount(0);
+
+    for (let n = 1; n <= STEPS.length; n++) {
+      await expectStep(n);
+      await advance();
+    }
+    await expect(isComplete()).toBeVisible();
+  });
 });
 
 test.describe('the journey follows the app, and the app really moves', () => {

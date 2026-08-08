@@ -58,8 +58,8 @@ GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list", "root"}
 # What a guided step can do FOR the user, offered as a button on the step.
 # `run` types a command into the step's terminal; `fs_check` proves a file
 # landed. The frontend owns each kind's semantics — this is the vocabulary.
-GUIDED_ACT_KINDS = {"fill", "open_terminal", "run", "fs_check", "setup_capability",
-                    "oauth_connect", "device_login", "git_check"}
+GUIDED_ACT_KINDS = {"click", "fill", "open_terminal", "run", "fs_check",
+                    "setup_capability", "oauth_connect", "device_login", "git_check"}
 # What a step waits for: `node_data.waitFor`, an ORDERED list of conditions,
 # each satisfied before the next is checked. The author says what must be true;
 # HOW each kind is observed (a bus subscription, a DOM observer, the router) is

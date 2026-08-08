@@ -149,10 +149,14 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
       dock = undefined;
     }
 
-    // A journey runs in VIBE and never drops out of it: every surface it opens
-    // carries the mode, and `useDockViewModeOverrideSync` adopts it as the
-    // preference — so the skin survives the steps that navigate nowhere.
-    const pointer = pointerForDock(dock, assetRef, computeNodeTypeId, projectId)?.withViewMode(ViewMode.Vibe);
+    // A journey runs in VIBE unless the author says otherwise: every surface it
+    // opens carries the mode, and `useDockViewModeOverrideSync` adopts it as the
+    // preference — so the skin survives the steps that navigate nowhere. The
+    // override exists because a journey ABOUT the vibe boundary must be able to
+    // start outside it, or its first step is satisfied before it is shown.
+    const pointer = pointerForDock(dock, assetRef, computeNodeTypeId, projectId)?.withViewMode(
+      (dock.viewMode as ViewMode | undefined) ?? ViewMode.Vibe,
+    );
     if (pointer) {
       navigation.openDock(present.highlight ? pointer.withHighlight(present.highlight) : pointer);
     } else if (present.highlight) {

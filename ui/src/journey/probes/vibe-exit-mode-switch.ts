@@ -53,12 +53,19 @@ function exitStep(
 ): JourneyStep {
   return step(node_id, name, status_line, {
     present: { highlight: tag },
+    // The step can press its own control. A demonstration has to MOVE the app —
+    // walking with Next used to narrate "this is your workspace" over a screen
+    // where nothing had been opened. The act does it; `becomes` still proves it
+    // actually happened, so the act can never claim a consequence it didn't get.
+    act: { kind: 'click', target: tag },
     waitFor: [becomes],
   });
 }
 
 export const VIBE_EXIT_MODE_SWITCH = new JourneyGraph({
-  start: { kind: 'root' },
+  // Starts OUTSIDE vibe on purpose: the first step demonstrates the entrance,
+  // and it cannot demonstrate a state the journey already put the app in.
+  start: { kind: 'root', viewMode: 'standard' },
   steps: [
     // ── in ──
     // Click-only, and honestly so: at the app root the view mode is a stored
@@ -69,7 +76,11 @@ export const VIBE_EXIT_MODE_SWITCH = new JourneyGraph({
       'enter_vibe',
       'Start in Vibe',
       'Click the wand in the footer. Vibe is the workspace a non-technical user is meant to live in.',
-      { present: { highlight: 'ViewModeVibe' }, waitFor: [{ click: 'ViewModeVibe' }] },
+      {
+        present: { highlight: 'ViewModeVibe' },
+        act: { kind: 'click', target: 'ViewModeVibe' },
+        waitFor: [{ click: 'ViewModeVibe' }],
+      },
     ),
     // The workspace is ON SCREEN when its display pane is — which is what this
     // step actually means, and is true whether the user got here by the rail,
@@ -80,6 +91,7 @@ export const VIBE_EXIT_MODE_SWITCH = new JourneyGraph({
       'Click the speech-bubble icon in the left rail to reopen your last build. This is the real thing — an agent session, not a demo.',
       {
         present: { highlight: 'RailChats' },
+        act: { kind: 'click', target: 'RailChats' },
         waitFor: [{ element: { present: 'VibeDisplay' } }],
       },
     ),
