@@ -22,6 +22,8 @@ export { getMemoryJourney, MemoryJourney, registerMemoryJourney } from './memory
 
 // What a step waits for — one vocabulary for every kind of "not yet".
 export { GUIDED_WAIT_KINDS, matchesElement, matchesLocation, waitConditionProblems } from './journey-wait';
+export { entityMatchHolds, waitConditionHolds, waitPlan } from './journey-wait-runtime';
+export type { JourneyWaitPlan, JourneyWaitScope, JourneyWaitSubscription } from './journey-wait-runtime';
 export type {
   JourneyElementMatch,
   JourneyEntityMatch,
