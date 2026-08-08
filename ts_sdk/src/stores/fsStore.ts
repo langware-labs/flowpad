@@ -1,7 +1,7 @@
 import { enableMapSet } from 'immer';
 import { immer } from 'zustand/middleware/immer';
 import { createStore } from 'zustand/vanilla';
-import type { FileUpload, FSItem, TypeId } from '../index';
+import type { FileUpload, FSEntry, TypeId } from '../index';
 import { fsManager } from '../services/fsService';
 import { dataContext } from '../FlowSync/context';
 
@@ -24,7 +24,7 @@ export interface ContentCache {
 }
 
 export interface BrowseCache {
-  items: FSItem[];
+  items: FSEntry[];
   path: string;
   totalSize: number;
   itemCount: number;

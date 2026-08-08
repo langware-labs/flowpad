@@ -1,5 +1,5 @@
 import { dataManager } from '../APIEntity';
-import { FSItem } from '../entities/fs_item';
+import { FSEntry } from '../fs/FSEntry';
 import { ActionInfo, TypeId } from '../models';
 import { DownloadOptions, UploadOptions } from '../models/FSOptions';
 import { FileUpload } from './FileUpload';
@@ -33,7 +33,7 @@ export function looksBinaryText(s: string): boolean {
  * BrowseResult - Result of a directory listing operation
  */
 export interface BrowseResult {
-  items: FSItem[];
+  items: FSEntry[];
   path: string;
   totalSize: number;
   itemCount: number;
@@ -104,7 +104,7 @@ export class FSManager {
       rawItems = [];
     }
 
-    const fsItems = rawItems.map((item) => new FSItem(item as any));
+    const fsItems = rawItems.map((item) => new FSEntry(item as any));
     const totalSize = fsItems.reduce((sum, item) => sum + (item.size || 0), 0);
 
     return {
@@ -134,7 +134,7 @@ export class FSManager {
 
       // Check if file exists in parent directory
       const parentBrowse = await this.listDirectory(typeid, parentPath);
-      // FSItem.name returns full relative path, extract just the name for comparison
+      // FSEntry.name returns full relative path, extract just the name for comparison
       return parentBrowse.items.some((item) => {
         const itemName = item.name.split('/').pop() || item.name;
         return itemName === filename;
@@ -242,15 +242,15 @@ export class FSManager {
       const actionInfo = this.createFSAction(typeid, 'upload', destinationPath, 'POST');
       actionInfo.bodyParameters = formData;
 
-      const uploadedItems = await dataManager.callAction<FormData, FSItem[]>(actionInfo);
-      const fsItems = uploadedItems.map((item) => new FSItem(item));
+      const uploadedItems = await dataManager.callAction<FormData, FSEntry[]>(actionInfo);
+      const fsItems = uploadedItems.map((item) => new FSEntry(item));
       return this.createFileUploads(fsItems, options);
     } catch (error: any) {
       if (!this.shouldFallbackToWriteUpload(error)) {
         throw error;
       }
 
-      const uploadedViaWrite: FSItem[] = [];
+      const uploadedViaWrite: FSEntry[] = [];
       for (const file of files) {
         // Only fall back to text write for text files — binary files (images, etc.)
         // cannot be round-tripped through a UTF-8 text encoder without corruption.
@@ -274,31 +274,16 @@ export class FSManager {
     }
   }
 
-  private createFileUploads(fsItems: FSItem[], options?: UploadOptions): FileUpload[] {
-    return fsItems.map((fsItem) => {
-      const fileUpload = new FileUpload(fsItem);
-
-      // For sync uploads (common in tests/small files), mark immediately complete.
-      const initialProgress = fsItem.upload_progress;
-      if (initialProgress === undefined || initialProgress === 0 || initialProgress >= 100) {
-        fileUpload._updateProgress(100);
-        options?.onProgress?.(100, fsItem.name);
-        return fileUpload;
-      }
-
-      // Keep streaming progress behavior for async upload implementations.
-      const unsubscribe = this.watchUploadProgress(fsItem.typeId, (progress) => {
-        fileUpload._updateProgress(progress);
-        options?.onProgress?.(progress, fsItem.name);
-      });
-
-      fileUpload._setUnsubscribe(unsubscribe);
-      setTimeout(() => {
-        if (!fileUpload.completed) {
-          fileUpload._setError(new Error(`Upload timeout for ${fsItem.name}`));
-        }
-      }, 60000);
-
+  private createFileUploads(fsEntries: FSEntry[], options?: UploadOptions): FileUpload[] {
+    // The upload POST blocks until the bytes are stored, so a returned entry is
+    // already durable. FSEntry is a value with no graph row to subscribe to, and
+    // no UI renders a live percentage, so progress is a single 100% on
+    // completion. (Live streaming progress, if ever needed, belongs on a
+    // File-entity channel — see the FSItem removal notes.)
+    return fsEntries.map((fsEntry) => {
+      const fileUpload = new FileUpload(fsEntry);
+      fileUpload._updateProgress(100);
+      options?.onProgress?.(100, fsEntry.name);
       return fileUpload;
     });
   }
@@ -399,10 +384,10 @@ export class FSManager {
    * @param typeid - Entity TypeId
    * @param path - Current path of the file/directory
    * @param newName - New name for the file/directory (just the name, not full path)
-   * @returns FSItem of the renamed file
+   * @returns FSEntry of the renamed file
    * @throws Error if the rename fails
    */
-  async rename(typeid: TypeId, path: string, newName: string): Promise<FSItem> {
+  async rename(typeid: TypeId, path: string, newName: string): Promise<FSEntry> {
     // Validate newName doesn't contain path separators
     if (newName.includes('/')) {
       throw new Error('New name cannot contain path separators. Use move() for moving to different directories.');
@@ -410,8 +395,8 @@ export class FSManager {
 
     const actionInfo = this.createFSAction(typeid, 'rename', path, 'POST');
     actionInfo.queryParameters = { new_name: newName };
-    const item = await dataManager.callAction<undefined, FSItem>(actionInfo);
-    return new FSItem(item);
+    const item = await dataManager.callAction<undefined, FSEntry>(actionInfo);
+    return new FSEntry(item);
   }
 
   /**
@@ -419,10 +404,10 @@ export class FSManager {
    * @param typeid - Entity TypeId
    * @param sourcePath - Path to the source file/directory
    * @param destPath - Destination path (including filename)
-   * @returns FSItem of the copied file
+   * @returns FSEntry of the copied file
    * @throws Error if the copy fails
    */
-  async copy(typeid: TypeId, sourcePath: string, destPath: string): Promise<FSItem> {
+  async copy(typeid: TypeId, sourcePath: string, destPath: string): Promise<FSEntry> {
     // Validate destination path includes a filename
     if (destPath.endsWith('/')) {
       throw new Error('Destination path must include a filename');
@@ -430,8 +415,8 @@ export class FSManager {
 
     const actionInfo = this.createFSAction(typeid, 'copy', sourcePath, 'POST');
     actionInfo.queryParameters = { dest_path: destPath };
-    const item = await dataManager.callAction<undefined, FSItem>(actionInfo);
-    return new FSItem(item);
+    const item = await dataManager.callAction<undefined, FSEntry>(actionInfo);
+    return new FSEntry(item);
   }
 
   /**
@@ -439,27 +424,27 @@ export class FSManager {
    * @param typeid - Entity TypeId
    * @param sourcePath - Path to the source file/directory
    * @param destPath - Destination path (including filename)
-   * @returns FSItem of the moved file
+   * @returns FSEntry of the moved file
    * @throws Error if the move fails
    */
-  async move(typeid: TypeId, sourcePath: string, destPath: string): Promise<FSItem> {
+  async move(typeid: TypeId, sourcePath: string, destPath: string): Promise<FSEntry> {
     const actionInfo = this.createFSAction(typeid, 'move', sourcePath, 'POST');
     actionInfo.queryParameters = { dest_path: destPath };
-    const item = await dataManager.callAction<undefined, FSItem>(actionInfo);
-    return new FSItem(item);
+    const item = await dataManager.callAction<undefined, FSEntry>(actionInfo);
+    return new FSEntry(item);
   }
 
   /**
    * Create a new folder
    * @param typeid - Entity TypeId
    * @param path - Path for the new folder
-   * @returns FSItem of the created folder
+   * @returns FSEntry of the created folder
    * @throws Error if the folder creation fails or folder already exists
    */
-  async mkdir(typeid: TypeId, path: string): Promise<FSItem> {
+  async mkdir(typeid: TypeId, path: string): Promise<FSEntry> {
     const actionInfo = this.createFSAction(typeid, 'mkdir', path, 'POST');
-    const item = await dataManager.callAction<undefined, FSItem>(actionInfo);
-    return new FSItem(item);
+    const item = await dataManager.callAction<undefined, FSEntry>(actionInfo);
+    return new FSEntry(item);
   }
 
   /**
@@ -467,14 +452,14 @@ export class FSManager {
    * @param typeid - Entity TypeId
    * @param path - File path to write to
    * @param content - String content to write
-   * @returns FSItem of the created/updated file
+   * @returns FSEntry of the created/updated file
    * @throws Error if the write fails
    */
-  async writeFile(typeid: TypeId, path: string, content: string): Promise<FSItem> {
+  async writeFile(typeid: TypeId, path: string, content: string): Promise<FSEntry> {
     const actionInfo = this.createFSAction(typeid, 'write', path, 'POST');
     actionInfo.bodyParameters = { content };
-    const item = await dataManager.callAction<{ content: string }, FSItem>(actionInfo);
-    return new FSItem(item);
+    const item = await dataManager.callAction<{ content: string }, FSEntry>(actionInfo);
+    return new FSEntry(item);
   }
 
   /**
@@ -491,26 +476,12 @@ export class FSManager {
   }
 
   /**
-   * Watch upload progress for a file
-   * @param fsItemTypeid - TypeId of the FSItem being uploaded
-   * @param callback - Callback invoked with progress percentage (0-100)
-   * @returns Unsubscribe function
-   */
-  watchUploadProgress(fsItemTypeid: TypeId, callback: (progress: number) => void): () => void {
-    return dataManager.subscribe<FSItem>(fsItemTypeid, (fsItem) => {
-      if (fsItem && fsItem.upload_progress !== undefined) {
-        callback(fsItem.upload_progress);
-      }
-    });
-  }
-
-  /**
    * Get file info (metadata) without downloading content
    * @param typeid - Entity TypeId
    * @param path - File path
-   * @returns FSItem or null if not found
+   * @returns FSEntry or null if not found
    */
-  async getInfo(typeid: TypeId, path: string): Promise<FSItem | null> {
+  async getInfo(typeid: TypeId, path: string): Promise<FSEntry | null> {
     try {
       const browseResult = await this.listDirectory(typeid, path);
 
@@ -540,14 +511,14 @@ export class FSManager {
    * @param symlinkPath - Path where symlink will be created
    * @param targetPath - Path to target (VFS path or absolute)
    * @param relative - Create relative symlink (default: true)
-   * @returns FSItem of created symlink
+   * @returns FSEntry of created symlink
    */
   async createSymlink(
     typeid: TypeId,
     symlinkPath: string,
     targetPath: string,
     relative: boolean = true,
-  ): Promise<FSItem> {
+  ): Promise<FSEntry> {
     if (symlinkPath.endsWith('/')) {
       throw new Error('Symlink path must include a filename');
     }
@@ -558,8 +529,8 @@ export class FSManager {
       relative: relative.toString(),
     };
 
-    const item = await dataManager.callAction<undefined, FSItem>(actionInfo);
-    return new FSItem(item);
+    const item = await dataManager.callAction<undefined, FSEntry>(actionInfo);
+    return new FSEntry(item);
   }
 
   /**
@@ -579,9 +550,9 @@ export class FSManager {
    * @param typeid - Entity TypeId
    * @param externalPath - Absolute path to the external folder/file to import
    * @param linkName - Optional name for the symlink (defaults to basename of external path)
-   * @returns FSItem of the created symlink
+   * @returns FSEntry of the created symlink
    */
-  async importItem(typeid: TypeId, externalPath: string, linkName?: string): Promise<FSItem> {
+  async importItem(typeid: TypeId, externalPath: string, linkName?: string): Promise<FSEntry> {
     // Use empty path since symlink will be created at root
     const actionInfo = this.createFSAction(typeid, 'import_item', '', 'POST');
     actionInfo.queryParameters = {
@@ -589,8 +560,8 @@ export class FSManager {
       ...(linkName && { link_name: linkName }),
     };
 
-    const item = await dataManager.callAction<undefined, FSItem>(actionInfo);
-    return new FSItem(item);
+    const item = await dataManager.callAction<undefined, FSEntry>(actionInfo);
+    return new FSEntry(item);
   }
 }
 

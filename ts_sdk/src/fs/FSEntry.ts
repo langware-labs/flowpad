@@ -1,19 +1,25 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { dataManager } from '../APIEntity';
 import { ActionInfo, TypeId } from '../models';
 import { DownloadOptions } from '../models/FSOptions';
 import { fsManager, BrowseResult, SymlinkResolveResult } from '../services/fsService';
 import { VFSPath } from '../utils/vfs-path';
 
-@registerEntity
-export class FSItem extends APIEntity<FSItem> {
-  static type: string = 'fs_item';
-  encoding?: string;
+/**
+ * FSEntry — one entry in a directory listing (file, directory, or symlink).
+ *
+ * A transient VALUE object, NOT an entity: it is never saved, never registered,
+ * has no graph row. It is the return shape of every fs browse/list call. Files
+ * that need a persisted, addressable row use the `File`/`Folder` entities.
+ *
+ * (Replaced the old `FSItem` entity. Kept the same field/getter/method surface
+ * — delegating to `fsManager` — so consumers only change the type name.)
+ */
+export class FSEntry {
   is_dir?: boolean;
   size?: number;
   last_modified?: number;
   display_name?: string;
   vfs_abs_path: string;
-  upload_progress?: number;
   symlink_target?: string;
   /** Resolved absolute path on THIS machine, set by the server only when the
    *  bytes are on local disk. Transient (API responses only). Mirrors a message
@@ -21,7 +27,7 @@ export class FSItem extends APIEntity<FSItem> {
    *  root, so never derive this client-side. */
   local_path?: string;
   // Computed once at construction so it survives Immer's produce() in stores
-  // that hold FSItem instances — Immer strips class getters but preserves
+  // that hold FSEntry instances — Immer strips class getters but preserves
   // enumerable instance fields. Consumers (sort comparators, find-by-name)
   // can rely on .name being defined after the item passes through any cache.
   name: string;
@@ -29,17 +35,14 @@ export class FSItem extends APIEntity<FSItem> {
   /** Cached VFSPath instance for efficient path operations */
   private _vfsPath?: VFSPath;
 
-  constructor(entity: Partial<FSItem> = {}) {
-    super(entity);
-    this.encoding = entity.encoding;
-    this.is_dir = entity.is_dir;
-    this.size = entity.size;
-    this.last_modified = entity.last_modified;
-    this.display_name = entity.display_name;
-    this.vfs_abs_path = entity.vfs_abs_path || '';
-    this.upload_progress = entity.upload_progress;
-    this.symlink_target = entity.symlink_target;
-    this.local_path = entity.local_path;
+  constructor(entry: Partial<FSEntry> = {}) {
+    this.is_dir = entry.is_dir;
+    this.size = entry.size;
+    this.last_modified = entry.last_modified;
+    this.display_name = entry.display_name;
+    this.vfs_abs_path = entry.vfs_abs_path || '';
+    this.symlink_target = entry.symlink_target;
+    this.local_path = entry.local_path;
     this.name = this._computeName();
   }
 
@@ -59,20 +62,6 @@ export class FSItem extends APIEntity<FSItem> {
       this._vfsPath = VFSPath.parse(this.vfs_abs_path);
     }
     return this._vfsPath;
-  }
-
-  /**
-   * @deprecated Use vfsPath.type instead
-   */
-  get vfs_entity_type(): string | undefined {
-    return this.vfsPath.type || undefined;
-  }
-
-  /**
-   * @deprecated Use vfsPath.id instead
-   */
-  get vfs_entity_id(): string | undefined {
-    return this.vfsPath.id || undefined;
   }
 
   /**
@@ -112,16 +101,15 @@ export class FSItem extends APIEntity<FSItem> {
     try {
       const actionInfo = new ActionInfo(
         `fs/download/${this.vfs_file_name}`,
-        this.vfs_entity_type,
-        this.vfs_entity_id,
+        this.vfsPath.type || undefined,
+        this.vfsPath.id || undefined,
         'GET',
         true,
       );
-      await dataManager.getByTypeId(new TypeId(this.vfs_entity_type!, this.vfs_entity_id));
       const response: string = await dataManager.callAction<undefined, string>(actionInfo);
       return response;
     } catch (e) {
-      console.error('Failed to fetch fs item content: ', e);
+      console.error('Failed to fetch fs entry content: ', e);
     }
   }
 
@@ -141,8 +129,6 @@ export class FSItem extends APIEntity<FSItem> {
    */
   async deleteFile(): Promise<void> {
     await fsManager.delete(this.parentTypeId, this.relativePath);
-    // Also delete the entity from the store
-    await this.delete();
   }
 
   /**

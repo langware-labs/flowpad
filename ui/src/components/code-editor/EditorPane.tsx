@@ -4,7 +4,7 @@ import {
   copyToClipboard,
   downloadFile,
   EditorLanguage,
-  /* FSItem, */ fsStore,
+  /* FSEntry, */ fsStore,
   isImagePath,
   VFSPath,
 } from '@sdk';
@@ -387,15 +387,15 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   // const handleExecuteFlow = useCallback(() => {
   //   if (!file || !effectiveTypeId || !effectiveFilePath) return;
   //
-  //   // Create FSItem for the current file
+  //   // Create FSEntry for the current file
   //   // Use effectiveTypeId and effectiveFilePath for cross-context file support
-  //   const fsItem = new FSItem({
+  //   const fsItem = new FSEntry({
   //     is_dir: false,
   //     vfs_abs_path: `${effectiveTypeId.toString()}${effectiveFilePath}`,
   //     size: 0,
   //   });
   //
-  //   // Navigate to execute-flow page with the FSItem
+  //   // Navigate to execute-flow page with the FSEntry
   //   navigation.openExecuteFlow({ file: fsItem });
   // }, [file, effectiveTypeId, effectiveFilePath, navigation]);
 

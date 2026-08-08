@@ -1,5 +1,5 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { FSItem, fsManager, fsStore, TypeId } from '@sdk';
+import { FSEntry, fsManager, fsStore, TypeId } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { ScrollArea } from '@src/components/ui/scroll-area';
@@ -234,7 +234,7 @@ function formatFsErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function fsItemToFileItem(fsItem: FSItem, currentPath: string): FileItem {
+function fsItemToFileItem(fsItem: FSEntry, currentPath: string): FileItem {
   const name = fsItem.relativePath?.split('/').pop() || fsItem.name || '';
   // Use relativePath for the full path, fallback to constructed path if relativePath is not available
   const itemPath = fsItem.relativePath || (currentPath === '/' ? `/${name}` : `${currentPath}/${name}`);

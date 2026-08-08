@@ -1,4 +1,4 @@
-import { dataContext, detectLanguage, downloadFile, EditorLanguage, FSItem, fsManager, isImagePath, Shell, TypeId, VFSPath } from '@sdk';
+import { dataContext, detectLanguage, downloadFile, EditorLanguage, FSEntry, fsManager, isImagePath, Shell, TypeId, VFSPath } from '@sdk';
 import { TabbedTerminal } from '@src/components/terminal';
 import { Button } from '@src/components/ui/button';
 import { InputDialog } from '@src/components/ui/input-dialog';
@@ -65,7 +65,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   // Dialog state for file/folder creation
   const [showFileInput, setShowFileInput] = useState(false);
   const [showFolderInput, setShowFolderInput] = useState(false);
-  const pendingActionRef = useRef<{ item: FSItem; callback: (name: string) => Promise<void> } | null>(null);
+  const pendingActionRef = useRef<{ item: FSEntry; callback: (name: string) => Promise<void> } | null>(null);
 
   // Ref to trigger refresh of DirectoryTree
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
@@ -73,11 +73,11 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
     setTreeRefreshKey((prev) => prev + 1);
   }, []);
 
-  // Create root FSItem for the project directory (used by DirectoryTree)
+  // Create root FSEntry for the project directory (used by DirectoryTree)
   const rootFolders = useMemo(() => {
     if (!projectTypeId) return [];
     return [
-      new FSItem({
+      new FSEntry({
         is_dir: true,
         vfs_abs_path: `${projectTypeId.type}-${projectTypeId.id}/.`,
         size: 0,
@@ -94,7 +94,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
         actions: [
           // ItemHandler.runSkillAction((item, e) => {
           //   e.stopPropagation();
-          //   // Navigate to execute-flow page with the FSItem (full VFS context)
+          //   // Navigate to execute-flow page with the FSEntry (full VFS context)
           //   navigation.openExecuteFlow({ file: item });
           // }),
           ItemHandler.createFileAction((item, e) => {
@@ -166,7 +166,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       {
         name: 'hidden' as const,
         label: t`Hide hidden files`,
-        filterFn: (item: FSItem) => !item.name.startsWith('.'),
+        filterFn: (item: FSEntry) => !item.name.startsWith('.'),
       },
     ],
     [t],
@@ -297,7 +297,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
 
   // Handle file selection from DirectoryTree
   const handleFileSelect = useCallback(
-    (item: FSItem | null) => {
+    (item: FSEntry | null) => {
       if (!item || item.is_dir) {
         // Null or folder - DirectoryTree handles expand/collapse
         return;

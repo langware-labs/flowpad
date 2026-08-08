@@ -48,7 +48,6 @@ const HUB_PAGE_TYPES = new Set([
   'page',
   'flow',
   'task',
-  'fs_item',
   'agent',
   'knowledge_base',
   'workspace',
