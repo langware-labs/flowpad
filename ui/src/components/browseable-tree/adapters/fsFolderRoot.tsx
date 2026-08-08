@@ -1,4 +1,4 @@
-import { FSItem, TypeId, VFSPath, fsStore } from '@sdk';
+import { FSEntry, TypeId, VFSPath, fsStore } from '@sdk';
 import { File, Folder } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { DockPointer, normalizeRel } from '@src/navigation/DockPointer';
@@ -243,10 +243,10 @@ async function listChildrenAt(ctx: FsNodeCtx, dirRel: string, opts?: { refresh?:
   const result = await fsStore.getState().listDirectory(ctx.typeId, path);
   const dirs: Browseable[] = [];
   const files: Browseable[] = [];
-  for (const item of result.items as FSItem[]) {
+  for (const item of result.items as FSEntry[]) {
     // Items read back from the fsStore cache have been through Immer, which
     // strips class GETTERS (`relativePath`) — only enumerable instance fields
-    // survive (see the FSItem.name comment). Parse the surviving raw
+    // survive (see the FSEntry.name comment). Parse the surviving raw
     // `vfs_abs_path` field instead, or the whole listing reads as empty on a
     // cache hit (fresh fetches worked; re-reads showed "Empty").
     const childRel = normalizeRel(VFSPath.parse(item.vfs_abs_path).entitySubPath);

@@ -1,4 +1,4 @@
-import { FSItem, Project, QueryRequest } from '@sdk';
+import { FSEntry, Project, QueryRequest } from '@sdk';
 import { useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { DirectoryTree } from './DirectoryTree';
@@ -27,7 +27,7 @@ export interface ProjectsDirectoryTreeProps extends Omit<DirectoryTreeProps, 'ro
  */
 export function ProjectsDirectoryTree(props: ProjectsDirectoryTreeProps) {
   const { t } = useLingui();
-  const [rootFolders, setRootFolders] = useState<FSItem[]>([]);
+  const [rootFolders, setRootFolders] = useState<FSEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,9 +48,9 @@ export function ProjectsDirectoryTree(props: ProjectsDirectoryTreeProps) {
         }),
       );
 
-      const roots: FSItem[] = projects.map(
+      const roots: FSEntry[] = projects.map(
         (project) =>
-          new FSItem({
+          new FSEntry({
             vfs_abs_path: `${project.typeId.type}-${project.typeId.id}/.`,
             is_dir: true,
             size: 0,

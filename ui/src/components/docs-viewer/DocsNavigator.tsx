@@ -1,4 +1,4 @@
-import { ActionInfo, AgenticProcess, FSItem, TypeId } from '@sdk';
+import { ActionInfo, AgenticProcess, FSEntry, TypeId } from '@sdk';
 import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
 import type { NavigatorDescriptor } from '@src/components/navigator-panel/types';
 import { flatEntityRoots } from '@src/components/browseable-tree/adapters/flatEntityRoot';
@@ -37,7 +37,7 @@ export function DocsNavigator() {
     isLoading,
     error,
     refetch,
-  } = useAction<Required<Pick<FSItem, 'vfs_abs_path' | 'display_name' | 'is_dir'>>[]>(browseDocsActionInfo, {
+  } = useAction<Required<Pick<FSEntry, 'vfs_abs_path' | 'display_name' | 'is_dir'>>[]>(browseDocsActionInfo, {
     retry: false,
   });
 

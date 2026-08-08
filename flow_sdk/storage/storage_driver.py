@@ -8,11 +8,11 @@ from typing import Any, AsyncIterator, BinaryIO, List
 from flow_sdk.api.fs.fs_api import VFSPath
 from flow_sdk.api.type_id import TypeId
 
-# FSItem import is optional - it may not be defined yet in models
+# FSEntry import is optional - it may not be defined yet in models
 try:
-    from flow_sdk.models import FSItem
+    from flow_sdk.models import FSEntry
 except ImportError:
-    FSItem = None  # Will be used for type hints only
+    FSEntry = None  # Will be used for type hints only
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class AuthenticationError(StorageError):
 
 class StreamUploader:
     def __init__(self, io_stream: BinaryIO) -> None:
-        self.fs_item: FSItem | None = None
+        self.fs_entry: FSEntry | None = None
         self.io_stream: BinaryIO = io_stream
         self.chunk_size = 1024 * 1024  # 1MB
         self.file_size = io_stream.seek(0, 2)  # Get file size
@@ -242,7 +242,7 @@ class StorageDriver(ABC):
         return decoded
 
     @abstractmethod
-    async def list_dir(self, vfs_path: str | None = None) -> List[FSItem]:
+    async def list_dir(self, vfs_path: str | None = None) -> List[FSEntry]:
         """List the contents of a directory on the storage device.
 
         Args:

@@ -18,7 +18,7 @@ from starlette.datastructures import UploadFile
 from starlette.responses import StreamingResponse
 
 from flow_sdk.api.fs.fs_api import EntityFSReqInfo, VFSPath
-from flow_sdk.models import FSItem
+from flow_sdk.models import FSEntry
 from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.responses import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.storage import LocalStorageDriver, StoragePermissionError, get_entity_storage
@@ -116,7 +116,7 @@ async def _get_storage_for_entity(request_info: RequestInfo) -> LocalStorageDriv
     return get_entity_storage(target_entity, entity=entity)
 
 
-async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[List[FSItem]]:
+async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[List[FSEntry]]:
     """List directory contents.
 
     Args:
@@ -124,7 +124,7 @@ async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         fs_info: Filesystem request info with action and path
 
     Returns:
-        ApiResponse with list of FSItem objects
+        ApiResponse with list of FSEntry objects
 
     Raises:
         FileNotFoundError: If directory doesn't exist
@@ -398,7 +398,7 @@ async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Strea
         return ApiFailResponse(message=f"Failed to download file: {str(e)}")
 
 
-async def upload(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[List[FSItem]]:
+async def upload(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[List[FSEntry]]:
     """Upload files.
 
     Args:
@@ -406,7 +406,7 @@ async def upload(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         fs_info: Filesystem request info with destination path
 
     Returns:
-        ApiResponse with list of uploaded FSItem objects
+        ApiResponse with list of uploaded FSEntry objects
     """
     if not request_info.is_post:
         return ApiFailResponse(message="Upload action requires POST method")
@@ -451,8 +451,8 @@ async def upload(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
                 # Upload file
                 await storage.upload(BytesIO(content), dest_path)
 
-                # Create FSItem for response
-                fs_item = FSItem(
+                # Create FSEntry for response
+                fs_item = FSEntry(
                     vfs_abs_path=dest_path,
                     is_dir=False,
                     size=len(content),
@@ -511,7 +511,7 @@ async def delete(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         return ApiFailResponse(message=f"Failed to delete: {str(e)}")
 
 
-async def mkdir(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSItem]:
+async def mkdir(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSEntry]:
     """Create directory.
 
     Args:
@@ -519,7 +519,7 @@ async def mkdir(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         fs_info: Filesystem request info with directory path
 
     Returns:
-        ApiResponse with FSItem for new directory
+        ApiResponse with FSEntry for new directory
     """
     if not request_info.is_post:
         return ApiFailResponse(message="Mkdir action requires POST method")
@@ -536,8 +536,8 @@ async def mkdir(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         # Create directory
         await storage.create_folder(fs_info.vpath.abs_vfspath)
 
-        # Return FSItem
-        fs_item = FSItem(
+        # Return FSEntry
+        fs_item = FSEntry(
             vfs_abs_path=fs_info.vpath.abs_vfspath,
             is_dir=True,
             display_name=fs_info.vpath.filename,
@@ -552,7 +552,7 @@ async def mkdir(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         return ApiFailResponse(message=f"Failed to create directory: {str(e)}")
 
 
-async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSItem]:
+async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSEntry]:
     """Write content to file.
 
     Args:
@@ -560,7 +560,7 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         fs_info: Filesystem request info with file path
 
     Returns:
-        ApiResponse with FSItem for written file
+        ApiResponse with FSEntry for written file
     """
     if not request_info.is_post:
         return ApiFailResponse(message="Write action requires POST method")
@@ -597,8 +597,8 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
 
         await autoversion_commit_local(storage, fs_info.vpath.abs_vfspath, content if isinstance(content, str) else "")
 
-        # Return FSItem
-        fs_item = FSItem(
+        # Return FSEntry
+        fs_item = FSEntry(
             vfs_abs_path=fs_info.vpath.abs_vfspath,
             is_dir=False,
             size=len(content_bytes),
@@ -614,7 +614,7 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         return ApiFailResponse(message=f"Failed to write file: {str(e)}")
 
 
-async def rename(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSItem]:
+async def rename(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSEntry]:
     """Rename file or folder.
 
     Query parameter:
@@ -625,7 +625,7 @@ async def rename(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         fs_info: Filesystem request info with path
 
     Returns:
-        ApiResponse with FSItem for renamed item
+        ApiResponse with FSEntry for renamed item
     """
     if not request_info.is_post:
         return ApiFailResponse(message="Rename action requires POST method")
@@ -654,8 +654,8 @@ async def rename(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         # Rename (move to same directory)
         await storage.move(fs_info.vpath.abs_vfspath, dest_vpath.abs_vfspath)
 
-        # Return FSItem
-        fs_item = FSItem(
+        # Return FSEntry
+        fs_item = FSEntry(
             vfs_abs_path=dest_vpath.abs_vfspath,
             is_dir=False,
             display_name=new_name,
@@ -670,7 +670,7 @@ async def rename(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         return ApiFailResponse(message=f"Failed to rename: {str(e)}")
 
 
-async def copy(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSItem]:
+async def copy(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSEntry]:
     """Copy file or folder.
 
     Query parameter:
@@ -681,7 +681,7 @@ async def copy(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespon
         fs_info: Filesystem request info with source path
 
     Returns:
-        ApiResponse with FSItem for copied item
+        ApiResponse with FSEntry for copied item
     """
     if not request_info.is_post:
         return ApiFailResponse(message="Copy action requires POST method")
@@ -705,8 +705,8 @@ async def copy(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespon
         # Copy
         await storage.copy(fs_info.vpath.abs_vfspath, dest_vpath.abs_vfspath)
 
-        # Return FSItem
-        fs_item = FSItem(
+        # Return FSEntry
+        fs_item = FSEntry(
             vfs_abs_path=dest_vpath.abs_vfspath,
             is_dir=False,
             display_name=dest_vpath.filename,
@@ -721,7 +721,7 @@ async def copy(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespon
         return ApiFailResponse(message=f"Failed to copy: {str(e)}")
 
 
-async def move(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSItem]:
+async def move(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSEntry]:
     """Move file or folder.
 
     Query parameter:
@@ -732,7 +732,7 @@ async def move(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespon
         fs_info: Filesystem request info with source path
 
     Returns:
-        ApiResponse with FSItem for moved item
+        ApiResponse with FSEntry for moved item
     """
     if not request_info.is_post:
         return ApiFailResponse(message="Move action requires POST method")
@@ -756,8 +756,8 @@ async def move(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespon
         # Move
         await storage.move(fs_info.vpath.abs_vfspath, dest_vpath.abs_vfspath)
 
-        # Return FSItem
-        fs_item = FSItem(
+        # Return FSEntry
+        fs_item = FSEntry(
             vfs_abs_path=dest_vpath.abs_vfspath,
             is_dir=False,
             display_name=dest_vpath.filename,

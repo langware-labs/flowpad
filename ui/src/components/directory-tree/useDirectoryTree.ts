@@ -1,4 +1,4 @@
-import { fsManager, fsStore, type FSItem, type FSStoreState, TypeId } from '@sdk';
+import { fsManager, fsStore, type FSEntry, type FSStoreState, TypeId } from '@sdk';
 import { useFSStore } from '@sdk/react/hooks';
 
 import { useCallback, useState } from 'react';
@@ -11,9 +11,9 @@ function getErrorStatus(error: unknown): number | null {
 }
 
 /**
- * Get browse cache key for an FSItem
+ * Get browse cache key for an FSEntry
  */
-function getBrowseCacheKey(item: FSItem): string | null {
+function getBrowseCacheKey(item: FSEntry): string | null {
   try {
     const typeid = item.parentTypeId;
     if (!typeid) return null;
@@ -28,12 +28,12 @@ function getBrowseCacheKey(item: FSItem): string | null {
 
 /**
  * Custom hook for managing directory tree state and operations
- * Simplified to work with FSItem roots directly - no RootEntity complexity
+ * Simplified to work with FSEntry roots directly - no RootEntity complexity
  */
-export function useDirectoryTree(rootFolders: FSItem[]) {
+export function useDirectoryTree(rootFolders: FSEntry[]) {
   const [state, setState] = useState<DirectoryTreeState>({
     expandedPaths: new Set<string>(),
-    folderContents: new Map<string, FSItem[]>(), // Kept for backwards compatibility but not actively used
+    folderContents: new Map<string, FSEntry[]>(), // Kept for backwards compatibility but not actively used
     selectedPath: null,
     renamingPath: null,
     renameValue: '',
@@ -44,14 +44,14 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
   const browseCache = useFSStore((s) => s.browseCache);
 
   /**
-   * Extract TypeId from FSItem
+   * Extract TypeId from FSEntry
    * Uses the built-in parentTypeId property which correctly parses the vfs_abs_path
    */
-  const getTypeIdFromItem = useCallback((item: FSItem): TypeId | null => {
+  const getTypeIdFromItem = useCallback((item: FSEntry): TypeId | null => {
     try {
       return item.parentTypeId;
     } catch (error) {
-      console.error('[useDirectoryTree] Failed to get parentTypeId from FSItem:', error, item);
+      console.error('[useDirectoryTree] Failed to get parentTypeId from FSEntry:', error, item);
       return null;
     }
   }, []);
@@ -62,10 +62,10 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
    * Invalidation should only happen on explicit mutations or refresh.
    */
   const loadFolderContents = useCallback(
-    async (folder: FSItem): Promise<FSItem[]> => {
+    async (folder: FSEntry): Promise<FSEntry[]> => {
       const typeid = getTypeIdFromItem(folder);
       if (!typeid) {
-        console.error('[useDirectoryTree] Invalid FSItem - cannot extract TypeId:', folder);
+        console.error('[useDirectoryTree] Invalid FSEntry - cannot extract TypeId:', folder);
         return [];
       }
 
@@ -85,7 +85,7 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
         const items = [...result.items];
 
         // Sort: folders first, then files, alphabetically. ``a.name`` is a
-        // class getter on FSItem that Immer's ``produce()`` strips when the
+        // class getter on FSEntry that Immer's ``produce()`` strips when the
         // item is cached in the store — fall back to ``display_name`` (always
         // present on the wire payload) so the comparator survives the trip
         // through the cache.
@@ -136,7 +136,7 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
    * Toggle folder expansion
    */
   const toggleExpanded = useCallback(
-    async (folder: FSItem) => {
+    async (folder: FSEntry) => {
       const pathKey = folder.vfs_abs_path;
 
       // Check if we need to load BEFORE setState to avoid React 18 batching issues
@@ -182,7 +182,7 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
     async (targetPath: string) => {
       // Find which root folder contains this path
       // Support both full vfs_abs_path and relative paths
-      let matchingRoot: FSItem | null = null;
+      let matchingRoot: FSEntry | null = null;
       let relativePart = '';
 
       for (const root of rootFolders) {
@@ -239,7 +239,7 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
         ? matchingRoot.vfs_abs_path.slice(0, -1) // Remove trailing "." to get "compute_node-@local/"
         : matchingRoot.vfs_abs_path;
       let currentPath = basePath;
-      let currentFolder: FSItem = matchingRoot;
+      let currentFolder: FSEntry = matchingRoot;
 
       // Load root contents first
       let contents = await loadFolderContents(currentFolder);
@@ -258,7 +258,7 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
       // Traverse and load each parent folder along the path
       // We process all segments and check if each is a folder
       // Track the last found item to use its actual vfs_abs_path for selection
-      let lastFoundItem: FSItem | null = null;
+      let lastFoundItem: FSEntry | null = null;
 
       for (let i = 0; i < segments.length; i++) {
         const segment = segments[i];
@@ -316,7 +316,7 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
    * Expand all parent folders to make a path visible
    */
   const expandToPath = useCallback(
-    async (targetItem: FSItem) => {
+    async (targetItem: FSEntry) => {
       // For now, just expand the target if it's a folder
       // More complex path expansion can be added later if needed
       if (targetItem.is_dir) {
@@ -341,7 +341,7 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
   /**
    * Start renaming an item
    */
-  const startRename = useCallback((item: FSItem) => {
+  const startRename = useCallback((item: FSEntry) => {
     setState((prev) => ({
       ...prev,
       renamingPath: item.vfs_abs_path,
@@ -364,7 +364,7 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
    * Perform rename operation
    */
   const performRename = useCallback(
-    async (item: FSItem, newName: string): Promise<boolean> => {
+    async (item: FSEntry, newName: string): Promise<boolean> => {
       if (!newName.trim()) return false;
 
       const typeid = getTypeIdFromItem(item);
@@ -399,7 +399,7 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
    * Create a new file
    */
   const createFile = useCallback(
-    async (parentFolder: FSItem, fileName: string = 'new-file.md'): Promise<boolean> => {
+    async (parentFolder: FSEntry, fileName: string = 'new-file.md'): Promise<boolean> => {
       const typeid = getTypeIdFromItem(parentFolder);
       if (!typeid) return false;
 
@@ -431,7 +431,7 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
    * Create a new folder
    */
   const createFolder = useCallback(
-    async (parentFolder: FSItem, folderName: string = 'new-folder'): Promise<boolean> => {
+    async (parentFolder: FSEntry, folderName: string = 'new-folder'): Promise<boolean> => {
       const typeid = getTypeIdFromItem(parentFolder);
       if (!typeid) return false;
 
@@ -477,7 +477,7 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
    * Delete an item
    */
   const deleteItem = useCallback(
-    async (item: FSItem): Promise<boolean> => {
+    async (item: FSEntry): Promise<boolean> => {
       const typeid = getTypeIdFromItem(item);
       if (!typeid) return false;
 
@@ -507,14 +507,14 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
    * Refresh a folder's contents (invalidates cache and fetches fresh data)
    */
   const refresh = useCallback(
-    async (folder?: FSItem) => {
+    async (folder?: FSEntry) => {
       if (!folder) {
         // Clear all browse cache so every folder fetches fresh data
         fsStore.setState((s: FSStoreState) => {
           s.browseCache.clear();
         });
         // Recursively reload all expanded folders
-        const reloadExpanded = async (items: FSItem[]) => {
+        const reloadExpanded = async (items: FSEntry[]) => {
           for (const item of items) {
             if (item.is_dir && state.expandedPaths.has(item.vfs_abs_path)) {
               const children = await loadFolderContents(item);
@@ -538,7 +538,7 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
    * Handle tree actions
    */
   const handleAction = useCallback(
-    async (action: TreeAction, item: FSItem, data?: unknown): Promise<boolean> => {
+    async (action: TreeAction, item: FSEntry, data?: unknown): Promise<boolean> => {
       // Type guard for data parameter
       const actionData = (data || {}) as { newName?: string; destPath?: string };
 
@@ -581,11 +581,11 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
     handleAction,
 
     // Helpers
-    isExpanded: (item: FSItem) => state.expandedPaths.has(item.vfs_abs_path),
-    isSelected: (item: FSItem) => state.selectedPath === item.vfs_abs_path,
-    isRenaming: (item: FSItem) => state.renamingPath === item.vfs_abs_path,
-    isLoading: (item: FSItem) => state.loadingPaths.has(item.vfs_abs_path),
-    getContents: (item: FSItem) => {
+    isExpanded: (item: FSEntry) => state.expandedPaths.has(item.vfs_abs_path),
+    isSelected: (item: FSEntry) => state.selectedPath === item.vfs_abs_path,
+    isRenaming: (item: FSEntry) => state.renamingPath === item.vfs_abs_path,
+    isLoading: (item: FSEntry) => state.loadingPaths.has(item.vfs_abs_path),
+    getContents: (item: FSEntry) => {
       // Read from shared browseCache
       const cacheKey = getBrowseCacheKey(item);
       if (!cacheKey) return [];
