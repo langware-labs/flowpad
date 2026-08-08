@@ -19,8 +19,8 @@ vi.mock('@sdk/react/hooks', async (orig) => ({
 
 const JOURNEY_ID = '5eaa7e57-1111-4222-8333-444455556666';
 
-function makeStep(awaitSpec: JourneyStep['await']): JourneyStep {
-  return { node_id: 's1', name: 'Step 1', status_line: '', present: {}, await: awaitSpec };
+function makeStep(waitFor: JourneyStep['waitFor']): JourneyStep {
+  return { node_id: 's1', name: 'Step 1', status_line: '', present: {}, waitFor };
 }
 
 function makeState(step: JourneyStep): UseJourneyResult {
@@ -37,7 +37,7 @@ function makeState(step: JourneyStep): UseJourneyResult {
   };
 }
 
-describe('useJourneyManager — awaits ride the unified bus', () => {
+describe('useJourneyManager — a step advances when its conditions hold', () => {
   let advance: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -48,8 +48,8 @@ describe('useJourneyManager — awaits ride the unified bus', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('event-only await: matching bus event advances the step exactly once', async () => {
-    const state = makeState(makeStep({ tag: 'app.page.signal', target: 'next' }));
+  it('an occurrence: the matching bus event advances the step exactly once', async () => {
+    const state = makeState(makeStep([{ event: { tag: 'app.page.signal', target: 'next' } }]));
     renderHook(() => useJourneyManager(state));
 
     EventBus.emit('app.page.signal', 'next', {}, { origin: 'sandbox' });
@@ -59,8 +59,8 @@ describe('useJourneyManager — awaits ride the unified bus', () => {
     expect(advance).toHaveBeenCalledWith('s1', 'done');
   });
 
-  it('event-only await: wrong target never advances (event-only steps do not auto-satisfy)', async () => {
-    const state = makeState(makeStep({ tag: 'app.page.signal', target: 'next' }));
+  it('an occurrence never satisfies itself: a wrong target does not advance', async () => {
+    const state = makeState(makeStep([{ event: { tag: 'app.page.signal', target: 'next' } }]));
     renderHook(() => useJourneyManager(state));
 
     EventBus.emit('app.page.signal', 'finish', {}, { origin: 'sandbox' });
@@ -68,40 +68,49 @@ describe('useJourneyManager — awaits ride the unified bus', () => {
     expect(advance).not.toHaveBeenCalled();
   });
 
-  it('confirm-gated await: event wakes the check, the store query decides', async () => {
+  it('a state condition: the store decides, and a row changing is what re-asks it', async () => {
     const query = vi.spyOn(dataManager, 'query').mockResolvedValue([]);
-    const state = makeState(
-      makeStep({
-        tag: 'app.entity.created',
-        target: 'agent:*',
-        confirm: { type: 'agent', match: { kind: 'vibe' }, min: 1 },
-      }),
-    );
+    const state = makeState(makeStep([{ entity: { type: 'agent', match: { kind: 'vibe' }, min: 1 } }]));
     renderHook(() => useJourneyManager(state));
 
-    // Mount auto-check ran against an empty store — no advance.
+    // Asked once on arrival, against an empty store — no advance.
     await waitFor(() => expect(query).toHaveBeenCalled());
     expect(advance).not.toHaveBeenCalled();
 
-    // Event arrives but the store still says no — event ≠ proof.
+    // A row of that type changed, but the store still says no.
     EventBus.emit('app.entity.created', 'agent:123', {});
     await new Promise((r) => setTimeout(r, 10));
     expect(advance).not.toHaveBeenCalled();
 
-    // Store now satisfies the predicate; the next wake-up advances.
+    // Now it says yes. The author never named a tag for any of this.
     query.mockResolvedValue([{ id: 'a1' } as never]);
     EventBus.emit('app.entity.created', 'agent:123', {});
     await waitFor(() => expect(advance).toHaveBeenCalledTimes(1));
   });
 
-  it('confirm-gated await auto-satisfies on mount when already true (reload-safety)', async () => {
+  it('a state condition already true on arrival advances at once (reload-safety)', async () => {
     vi.spyOn(dataManager, 'query').mockResolvedValue([{ id: 'a1' } as never]);
-    const state = makeState(
-      makeStep({ tag: 'app.entity.created', target: 'agent:*', confirm: { type: 'agent', min: 1 } }),
-    );
+    const state = makeState(makeStep([{ entity: { type: 'agent', min: 1 } }]));
     renderHook(() => useJourneyManager(state));
 
     await waitFor(() => expect(advance).toHaveBeenCalledTimes(1));
     expect(advance).toHaveBeenCalledWith('s1', 'done');
+  });
+
+  it('an occurrence THEN a state condition — the shape that stops a step narrating ahead', async () => {
+    const query = vi.spyOn(dataManager, 'query').mockResolvedValue([{ id: 'a1' } as never]);
+    const state = makeState(
+      makeStep([{ event: { tag: 'app.page.signal', target: 'go' } }, { entity: { type: 'agent', min: 1 } }]),
+    );
+    renderHook(() => useJourneyManager(state));
+
+    // The state is ALREADY true, but the occurrence has not happened — so the
+    // step must not advance. This is what `fresh` used to mean, without a flag.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(advance).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+
+    EventBus.emit('app.page.signal', 'go', {}, { origin: 'sandbox' });
+    await waitFor(() => expect(advance).toHaveBeenCalledTimes(1));
   });
 });

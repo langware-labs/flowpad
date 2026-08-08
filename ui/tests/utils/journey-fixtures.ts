@@ -14,7 +14,7 @@ export function journeyStep(node_id: string, over: Partial<JourneyStep> = {}): J
     name: node_id,
     status_line: '',
     present: {},
-    await: { tag: 'app.route.loaded' },
+    waitFor: [{ manual: true }],
     ...over,
   };
 }

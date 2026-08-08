@@ -5,7 +5,11 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { JourneyGraph, QueryFilter } from '@sdk';
+import { JourneyGraph, QueryFilter, type JourneyStep } from '@sdk';
+
+/** The capability match a step's single `entity` condition carries. */
+const entityMatch = (step: JourneyStep): Record<string, unknown> =>
+  (step.waitFor[0] as { entity: { match: Record<string, unknown> } }).entity.match;
 
 const GRAPH_PATH = path.resolve(
   __dirname,
@@ -22,8 +26,10 @@ describe('setup-github journey graph', () => {
     expect(steps[1].act?.capability).toBe('source_control.git.github.gh');
     expect(steps[2].act?.capability).toBe('source_control.git.github.gh');
     for (const step of steps) {
-      expect(step.await?.tag).toBe('app.entity.updated');
-      expect(step.await?.confirm?.type).toBe('capability');
+      // One condition: the capability row reaching its wanted state. No tag —
+      // the runtime knows a capability change is what re-asks the store.
+      expect(step.waitFor).toHaveLength(1);
+      expect(step.waitFor[0]).toHaveProperty('entity.type', 'capability');
     }
   });
 
@@ -35,7 +41,7 @@ describe('setup-github journey graph', () => {
 
   it('s2 confirm means INSTALLED: a discovered value, regardless of auth state', () => {
     const { steps } = JourneyGraph.parse(graphText);
-    const filter = new QueryFilter({ match: steps[1].await!.confirm!.match! });
+    const filter = new QueryFilter({ match: entityMatch(steps[1]) });
     const row = (value: unknown) => ({ kind: 'source_control.git.github.gh', value });
     expect(filter.validate(row({ path: '/usr/bin' }))).toBe(true);
     // explicitly checked-while-missing (state not_available, no value) must NOT pass
@@ -46,10 +52,10 @@ describe('setup-github journey graph', () => {
 
   it('s1/s3 confirms match only the available state of their kind', () => {
     const { steps } = JourneyGraph.parse(graphText);
-    const s1 = new QueryFilter({ match: steps[0].await!.confirm!.match! });
+    const s1 = new QueryFilter({ match: entityMatch(steps[0]) });
     expect(s1.validate({ kind: 'source_control.git.github', state: 'available' })).toBe(true);
     expect(s1.validate({ kind: 'source_control.git.github', state: 'none' })).toBe(false);
-    const s3 = new QueryFilter({ match: steps[2].await!.confirm!.match! });
+    const s3 = new QueryFilter({ match: entityMatch(steps[2]) });
     expect(s3.validate({ kind: 'source_control.git.github.gh', state: 'available' })).toBe(true);
     expect(s3.validate({ kind: 'source_control.git.github.gh', state: 'not_available' })).toBe(false);
   });

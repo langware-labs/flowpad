@@ -2,6 +2,11 @@ import { useShownJourney } from './use-journey';
 import { useJourneyManager } from './useJourneyManager';
 import { JourneyTray } from './JourneyTray';
 
+// Probe journeys are design-review content — they narrate our own open questions
+// ("keep it, or drop it from Vibe entirely"), which is not something to render at
+// a user. Dev-only, and dynamically imported so they leave the production bundle.
+if (import.meta.env.DEV) void import('./probes');
+
 /**
  * Mount point for the User Journey feature — one instance, near the top of the
  * app (App.tsx). Everything it renders is derived from `?journeyId=` in the URL,

@@ -7,11 +7,12 @@
  *
  * Python twin: `flow_sdk/graph_workflow_manager/graph_workflow_doc.py`. The two
  * sides agree on `node_type === "guided_step"` and on the vocabulary constants
- * below; the backend validates them and passes `status_line`/`present`/`await`
+ * below; the backend validates them and passes `status_line`/`present`/`waitFor`
  * through as opaque data. The FIELD-LEVEL meaning of `present.highlight`, every
- * act variant, and `await.confirm` lives here and only here — the engine
- * requires the tag, the frontend owns the semantics.
+ * act variant, and every wait condition lives here and only here.
  */
+
+import type { JourneyWaitFor } from './journey-wait';
 
 /** Where a step points the user — a standard dock pointer descriptor.
  *  `root` = the app home `/` (not a dock URL) — the typical journey start. */
@@ -19,47 +20,6 @@ export interface JourneyPresentDock {
   kind?: 'asset_editor' | 'home' | 'wiki' | 'asset_list' | 'root';
   vfs?: string;
   name?: string;
-}
-
-/** The proof side of an await: a store query that must hold (event ≠ proof). */
-export interface JourneyConfirmSpec {
-  type?: string;
-  match?: Record<string, unknown>;
-  min?: number;
-  scope?: 'project' | 'all';
-  /** Apply `match` CLIENT-side over the fetched rows (QueryFilter.validate)
-   *  instead of in the server query — for serialization-derived fields the DB
-   *  can't match (e.g. agentic_process.is_turn_busy). */
-  local?: boolean;
-}
-
-/**
- * What satisfies a step — a unified-bus subscription (docs/tags.md):
- * `tag` names the event, `target` filters it (or `vfs`/`home` resolve a
- * route target via dockTarget), and `confirm` optionally proves it against
- * the store before the step advances.
- */
-export interface JourneyAwaitSpec {
-  tag?: string;
-  target?: string;
-  vfs?: string;
-  home?: boolean;
-  confirm?: JourneyConfirmSpec;
-  /** Match against the EVENT'S OWN entity (`event.data.entity`, QueryFilter
-   *  semantics): the row that just changed must itself satisfy this — the
-   *  precise form of "you just did X", immune to ambient churn on other rows
-   *  of the same type. Steps using it never auto-satisfy on mount (there is no
-   *  event to match); the tray's Continue stays the escape hatch. */
-  matchEvent?: Record<string, unknown>;
-  /** The await is about a NEW occurrence: skip the on-mount confirm auto-check
-   *  (which would satisfy against PRE-EXISTING state — e.g. "create an agent"
-   *  must not auto-pass because old agents exist). The event must arrive; the
-   *  confirm still gates it. Reload mid-step falls back to the tray's Continue. */
-  fresh?: boolean;
-  /** Don't advance on the signal — ARM the tray's Next and let the user click
-   *  it. For steps where the user should see what happened before moving on
-   *  (an `act` that filled a field for them). */
-  manual?: boolean;
 }
 
 /** What a guided step can do FOR the user. Twin of `GUIDED_ACT_KINDS`. */
@@ -122,13 +82,14 @@ export interface JourneyStep {
   node_id: string;
   name: string;
   status_line: string;
+  /** What must be true before the step completes — see `journey-wait.ts`. */
+  waitFor: JourneyWaitFor;
   /** Sub-step grouping: consecutive steps sharing a `group` render under one
    *  expandable header in the tray/viewer. Pure presentation — the journal's
    *  cursor/entries machinery is flat and unchanged. */
   group?: string;
   present: { dock?: JourneyPresentDock; highlight?: string };
   act?: JourneyActSpec;
-  await: JourneyAwaitSpec;
 }
 
 /** A render section: ungrouped steps stand alone; grouped ones share a header. */

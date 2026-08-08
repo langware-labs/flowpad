@@ -52,7 +52,7 @@ describe('JourneyGraph.parse', () => {
               group: 'G',
               present: { dock: { kind: 'wiki', name: 'W' }, highlight: 'Tag' },
               act: { kind: 'fill', target: 'Tag', text: 'hi' },
-              await: { tag: 'app.ui.input.clicked', target: 'Tag' },
+              waitFor: [{ input: 'Tag' }],
             },
           },
           { id: 'a', node_type: 'agent' },
@@ -67,7 +67,7 @@ describe('JourneyGraph.parse', () => {
     expect(s.group).toBe('G');
     expect(s.present.highlight).toBe('Tag');
     expect(s.act?.kind).toBe('fill');
-    expect(s.await.target).toBe('Tag');
+    expect(s.waitFor).toEqual([{ input: 'Tag' }]);
   });
 
   it('falls back to the node id for a nameless step and tolerates absent node_data', () => {
@@ -76,7 +76,7 @@ describe('JourneyGraph.parse', () => {
     );
     expect(graph.steps[0].name).toBe('bare');
     expect(graph.steps[0].present).toEqual({});
-    expect(graph.steps[0].await).toEqual({});
+    expect(graph.steps[0].waitFor).toEqual([]);
     expect(graph.start).toBeNull();
   });
 });
@@ -123,13 +123,13 @@ describe('JourneyGraph.problems — the code-built journey has no server to catc
           status_line: '',
           present: { dock: { kind: 'nowhere' as never } },
           act: { kind: 'teleport' as never, target: '' },
-          await: {},
+          waitFor: [],
         },
       ],
     });
     const problems = graph.problems().join('\n');
     expect(problems).toContain('present.dock.kind "nowhere"');
-    expect(problems).toContain('await.tag is required');
+    expect(problems).toContain('waitFor is required');
     expect(problems).toContain('act.kind "teleport"');
     expect(problems).toContain('act.target is required');
   });

@@ -124,9 +124,9 @@ describe('the memory-journey registry', () => {
     try {
       registerMemoryJourney({
         name: 'bad-probe',
-        graph: new JourneyGraph({ steps: [{ ...step('s1'), await: {} }] }),
+        graph: new JourneyGraph({ steps: [{ ...step('s1'), waitFor: [] }] }),
       });
-      expect(errors).toHaveBeenCalledWith(expect.stringContaining('await.tag is required'));
+      expect(errors).toHaveBeenCalledWith(expect.stringContaining('waitFor is required'));
     } finally {
       errors.mockRestore();
     }

@@ -401,15 +401,16 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
                 onClick={() => run(() => journey.advance(currentStep.node_id, 'done'))}
                 className={cn(
                   'h-7 px-3 text-xs text-white hover:brightness-110',
-                  // A `manual` await keeps Next dark until its signal lands, then
-                  // lights it — the step's completion is visible, not guessed.
-                  currentStep.await?.manual && !view?.armed && 'opacity-60',
-                  currentStep.await?.manual && view?.armed && 'animate-pulse',
+                  // Dim until the step is genuinely waiting on the user: a step
+                  // whose conditions the app can satisfy on its own shouldn't
+                  // invite a click that skips past them.
+                  !view?.armed && 'opacity-60',
+                  view?.armed && 'animate-pulse',
                 )}
                 style={{ backgroundColor: INDIGO }}
                 data-testid="journey-tray-continue"
               >
-                {currentStep.await?.manual ? <Trans>Next</Trans> : <Trans>Continue</Trans>}
+                {view?.armed ? <Trans>Next</Trans> : <Trans>Continue</Trans>}
               </Button>
             )}
             <Button

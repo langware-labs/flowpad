@@ -1,24 +1,24 @@
-import { capabilityManager, dataContext, dataManager, Project, QueryFilter, QueryRequest, Shell, targetOf, TypeId, ViewType } from '@sdk';
+import { dataContext, Shell, targetOf, TypeId, ViewType } from '@sdk';
 import { useOnTag, useProject } from '@sdk/react/hooks';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { projectScope } from '@src/lib/scope-filter';
-import { dockTarget } from '@src/tags/dock-target';
 import type { JourneyPresentDock } from '@sdk';
 import type { UseJourneyResult } from './use-journey';
 import { ACT_FAILED_TAG, actTarget, runAct } from './act';
+import { useWaitFor } from './use-wait-for';
 
 /** What the tray needs from the manager to render the step's own buttons. */
 export interface JourneyManagerView {
   /** The current step's act has not run yet — offer its button ("Fill text"). */
   actPending: boolean;
-  /** Run it (and announce it on the bus, which arms the await). */
+  /** Run it (and announce it on the bus, where a condition can see it). */
   doAct: () => void;
-  /** A `manual` await is satisfied: light Next, wait for the click. */
+  /** The step is waiting on the user: light Next rather than dimming it. */
   armed: boolean;
 }
 
@@ -51,6 +51,11 @@ function pointerForDock(
       return DockPointer.forWiki(dock.name ?? '');
     case 'asset_list':
       return DockPointer.forAssetList(dock.name ?? '');
+    case 'root':
+      // Used to be an early return calling `openHomeRoot`, which skipped the
+      // `.withViewMode(Vibe)` and highlight composition every other kind gets —
+      // so a `start: {kind:'root'}` step landed on the home OUT of vibe.
+      return DockPointer.root();
     default:
       return null;
   }
@@ -79,7 +84,6 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   const computeNodeTypeId = dataContext.computeNodeTypeId ?? null;
   const assetRef = journey?.asset_ref ?? '';
   const cursor = journal?.cursor ?? null;
-  const stepAwait = currentStep?.await;
 
   // ── advance (guarded so a flapping signal can't double-fire a step) ──
   const advancedRef = useRef<string | null>(null);
@@ -145,12 +149,6 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
       dock = undefined;
     }
 
-    if (dock?.kind === 'root') {
-      // The app home `/` is not a dock URL — navigate there directly, carrying
-      // the sticky journey param (openHomeRoot does both).
-      navigation.openHomeRoot(present.highlight);
-      return;
-    }
     // A journey runs in VIBE and never drops out of it: every surface it opens
     // carries the mode, and `useDockViewModeOverrideSync` adopts it as the
     // preference — so the skin survives the steps that navigate nowhere.
@@ -166,32 +164,15 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [journeyId, journal?.id, currentStep?.node_id, assetRef, computeNodeTypeId, projectId]);
 
-  // ── await: the step's bus target filter ──
-  // Route awaits may be authored as a journey-relative `vfs` (or `home: true`)
-  // instead of a literal target; resolve them through the SAME dockTarget
-  // helper the route emitter stamps, so identities can never drift apart.
-  const filterTarget = useMemo(() => {
-    if (!stepAwait) return undefined;
-    if (stepAwait.target) return stepAwait.target;
-    if (stepAwait.home) return 'dock:home';
-    if (stepAwait.vfs) {
-      const p = pointerForDock({ kind: 'asset_editor', vfs: stepAwait.vfs }, assetRef, computeNodeTypeId, null);
-      return p ? dockTarget(p) : undefined;
-    }
-    return undefined;
-  }, [stepAwait, assetRef, computeNodeTypeId]);
-
   // ── the step's own act ("Fill text") + the manual arm state ──
   // Both are per-step: a cursor move clears them so the next step starts with
   // its own button offered and Next dark again.
   const [actRan, setActRan] = useState(false);
-  const [armed, setArmed] = useState(false);
   // Acts that watch for something (a command's output) must not outlive the
   // step that started them — this aborts on every cursor move and on unmount.
   const actAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
     setActRan(false);
-    setArmed(false);
     return () => {
       actAbortRef.current?.abort();
       actAbortRef.current = null;
@@ -241,90 +222,29 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
     act ? { target: actTarget(act.kind, act.target) } : undefined,
   );
 
-  // ── await: confirm predicate (the proof) ──
-  const busyRef = useRef(false);
-  const tryComplete = useCallback(async (event?: { ctx?: { actor?: string; origin?: string }; data?: Record<string, unknown> }) => {
-    if (!currentStep || busyRef.current || advancedRef.current === currentStep.node_id) return;
-    // matchEvent: the row that JUST changed must itself satisfy the match —
-    // "you just did X", immune to ambient churn on other rows of the type.
-    const matchEvent = currentStep.await?.matchEvent;
-    if (matchEvent) {
-      const entity = event?.data?.entity;
-      if (!entity || !new QueryFilter({ match: matchEvent }).validate(entity)) return;
-    }
-    busyRef.current = true;
-    try {
-      const confirm = currentStep.await?.confirm;
-      if (confirm) {
-        const filter = confirm.match ? new QueryFilter({ match: confirm.match }) : null;
-        let rows: unknown[];
-        if (confirm.type === 'capability') {
-          // Capability rows are SYSTEM entities — the generic /graph query
-          // excludes them, so confirm resolves through the capability
-          // manager's own loader (include_system) and matches client-side.
-          await capabilityManager.load(true);
-          rows = capabilityManager.getAll();
-          if (filter) rows = rows.filter((r) => filter.validate(r));
-        } else {
-          const scope = projectId && confirm.scope !== 'all' ? [new TypeId(Project.type, projectId)] : [];
-          const request = new QueryRequest({
-            type: confirm.type ?? '',
-            scope,
-            name: `journeyConfirm:${journeyId}:${currentStep.node_id}`,
-            // `local` confirms match client-side (QueryFilter.validate) — for
-            // serialization-derived fields the server query can't see.
-            query: confirm.local ? null : filter,
-          });
-          rows = await dataManager.query(request, true);
-          if (confirm.local && filter) rows = rows.filter((r) => filter.validate(r));
-        }
-        if (rows.length < (confirm.min ?? 1)) return;
-      }
-      // `manual`: the signal ARMS the step — the user clicks Next to move on,
-      // so they can see what just happened (e.g. the text an act filled in).
-      if (currentStep.await?.manual) setArmed(true);
-      else {
-        // A user-interaction advance means the user is already navigating
-        // somewhere of their own choosing — the next step stays transparent.
-        // Read the envelope's ATTRIBUTION (ctx.actor, stamped by the emitter),
-        // not a tag-prefix guess: any user-caused event qualifies, whatever
-        // its tag is named. Origin must be `app` — only THIS tab's own DOM
-        // can have started a navigation worth protecting; a relayed origin
-        // (sandbox slide button, hub, local_server) never did, so its next step
-        // must still present.
-        suppressNextDockRef.current =
-          (event?.ctx?.actor ?? '').startsWith('user:') && event?.ctx?.origin === 'app';
-        doAdvance(currentStep.node_id);
-      }
-    } catch (e) {
-      console.error('[Journey] confirm query failed', e);
-    } finally {
-      busyRef.current = false;
-    }
-  }, [currentStep, journeyId, projectId, doAdvance]);
-
-  // ── await: ONE live subscription — the current step's ──
-  useOnTag(
-    stepAwait?.tag || 'journey.idle',
-    (event) => void tryComplete(event),
-    filterTarget !== undefined ? { target: filterTarget } : undefined,
+  // ── what the step waits for ──
+  // One list of conditions, in order. The manager does not know how any of them
+  // is observed — that is `useWaitFor`'s business.
+  const wait = useWaitFor(
+    currentStep?.waitFor,
+    `${journeyId ?? ''}:${cursor ?? ''}`,
+    { dock: currentDock, projectId, label: `journeyWait:${journeyId}:${currentStep?.node_id}` },
+    ({ userCaused }) => {
+      if (!currentStep) return;
+      // A step the user reached by their own click means they are already
+      // navigating somewhere of their own choosing — the next step highlights in
+      // place rather than overriding their destination. Read from the envelope's
+      // attribution, never guessed from a tag name.
+      suppressNextDockRef.current = userCaused;
+      doAdvance(currentStep.node_id);
+    },
   );
-
-  // Confirm-gated steps auto-satisfy if already true (reload / pre-done work) —
-  // unless the await is `fresh` or `matchEvent` (about a NEW occurrence), where
-  // pre-existing state must not count and only the event may wake the check.
-  useEffect(() => {
-    if (currentStep?.await?.confirm && !currentStep.await.fresh && !currentStep.await.matchEvent) {
-      void tryComplete();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [journeyId, currentStep?.node_id]);
 
   // Reset the per-step advance guard whenever the cursor moves.
   useEffect(() => {
     if (cursor && advancedRef.current && advancedRef.current !== cursor) advancedRef.current = null;
   }, [cursor]);
 
-  return { actPending: !!act && !actRan, doAct, armed };
+  return { actPending: !!act && !actRan, doAct, armed: wait.awaitingManual };
 }
 

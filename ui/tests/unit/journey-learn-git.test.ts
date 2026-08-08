@@ -46,8 +46,9 @@ describe('learn-git journey graph', () => {
       expect(step.act?.kind).toBe('git_check');
       expect(step.act?.dir).toBe('git-playground');
       // the await gates on THIS act's bus identity — unique per step
-      expect(step.await?.tag).toBe('app.journey.act.done');
-      expect(step.await?.target).toBe(`git_check:${step.act?.target}`);
+      expect(step.waitFor).toEqual([
+        { event: { tag: 'app.journey.act.done', target: `git_check:${step.act?.target}` } },
+      ]);
     }
     expect(gitSteps.find((s) => s.act?.expect === 'branch')?.act?.branch).toBe('practice');
   });
@@ -56,10 +57,12 @@ describe('learn-git journey graph', () => {
     const raw = JSON.parse(graphText) as { auto_launch?: boolean };
     expect(raw.auto_launch).toBe(false);
     const { steps } = JourneyGraph.parse(graphText);
-    expect(steps[0].await).toEqual({ tag: 'app.page.signal', target: 'next' });
+    expect(steps[0].waitFor).toEqual([{ event: { tag: 'app.page.signal', target: 'next' } }]);
     // the shell ROUTE, not agentic_process creation: a plain Terminal mints a
     // shell (no process), and every opener ends on a `dock:shell/…` navigation
-    expect(steps[1].await).toEqual({ tag: 'app.route.loaded', target: 'dock:shell/*' });
+    // Was a glob over a bus identity string (`dock:shell/*`); now it says what
+    // it means — the app is on a terminal.
+    expect(steps[1].waitFor).toEqual([{ location: { viewType: 'shell' } }]);
   });
 });
 

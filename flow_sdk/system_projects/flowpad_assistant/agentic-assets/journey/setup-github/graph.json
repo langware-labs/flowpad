@@ -6,7 +6,10 @@
   "enabled": true,
   "auto_launch": false,
   "gate": {
-    "requires_capabilities": ["source_control.git.github", "source_control.git.github.gh"]
+    "requires_capabilities": [
+      "source_control.git.github",
+      "source_control.git.github.gh"
+    ]
   },
   "config": {
     "deadline_s": 2592000,
@@ -26,17 +29,17 @@
           "target": "GitHubConnect",
           "provider": "github"
         },
-        "await": {
-          "tag": "app.entity.updated",
-          "target": "capability:*",
-          "confirm": {
-            "type": "capability",
-            "match": {
-              "kind": "source_control.git.github",
-              "state": "available"
+        "waitFor": [
+          {
+            "entity": {
+              "type": "capability",
+              "match": {
+                "kind": "source_control.git.github",
+                "state": "available"
+              }
             }
           }
-        }
+        ]
       }
     },
     {
@@ -52,20 +55,31 @@
           "target": "GhInstall",
           "capability": "source_control.git.github.gh"
         },
-        "await": {
-          "tag": "app.entity.updated",
-          "target": "capability:*",
-          "confirm": {
-            "type": "capability",
-            "match": {
-              "op": "$AND",
-              "operands": [
-                { "op": "$EQ", "operands": ["kind", "source_control.git.github.gh"] },
-                { "op": "$IS_NOT_NULL", "operands": ["value"] }
-              ]
+        "waitFor": [
+          {
+            "entity": {
+              "type": "capability",
+              "match": {
+                "op": "$AND",
+                "operands": [
+                  {
+                    "op": "$EQ",
+                    "operands": [
+                      "kind",
+                      "source_control.git.github.gh"
+                    ]
+                  },
+                  {
+                    "op": "$IS_NOT_NULL",
+                    "operands": [
+                      "value"
+                    ]
+                  }
+                ]
+              }
             }
           }
-        }
+        ]
       }
     },
     {
@@ -81,30 +95,40 @@
           "target": "GhLogin",
           "capability": "source_control.git.github.gh"
         },
-        "await": {
-          "tag": "app.entity.updated",
-          "target": "capability:*",
-          "confirm": {
-            "type": "capability",
-            "match": {
-              "kind": "source_control.git.github.gh",
-              "state": "available"
+        "waitFor": [
+          {
+            "entity": {
+              "type": "capability",
+              "match": {
+                "kind": "source_control.git.github.gh",
+                "state": "available"
+              }
             }
           }
-        }
+        ]
       }
     }
   ],
   "edges": [
     {
       "id": "e1",
-      "from": { "node": "s1-connect", "event": "done" },
-      "to": { "node": "s2-install-gh" }
+      "from": {
+        "node": "s1-connect",
+        "event": "done"
+      },
+      "to": {
+        "node": "s2-install-gh"
+      }
     },
     {
       "id": "e2",
-      "from": { "node": "s2-install-gh", "event": "done" },
-      "to": { "node": "s3-login-gh" }
+      "from": {
+        "node": "s2-install-gh",
+        "event": "done"
+      },
+      "to": {
+        "node": "s3-login-gh"
+      }
     }
   ],
   "start": {

@@ -17,10 +17,9 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   }),
 }));
 
-// `manual` awaits on purpose: these steps must not self-advance while the tray
+// Continue-only on purpose: these steps must not self-advance while the tray
 // is under test.
-const step = (node_id: string, group?: string) =>
-  journeyStep(node_id, { group, await: { tag: 'manual' } });
+const step = (node_id: string, group?: string) => journeyStep(node_id, { group });
 
 describe('JourneyGraph.sections — consecutive-group sections', () => {
   it('folds consecutive grouped steps and keeps ungrouped ones standalone', () => {

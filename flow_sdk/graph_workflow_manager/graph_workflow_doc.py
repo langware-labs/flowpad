@@ -60,11 +60,21 @@ GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list", "root"}
 # landed. The frontend owns each kind's semantics — this is the vocabulary.
 GUIDED_ACT_KINDS = {"fill", "open_terminal", "run", "fs_check", "setup_capability",
                     "oauth_connect", "device_login", "git_check"}
-# The await side is a unified-bus subscription (docs/tags.md): `tag` names
-# the awaited event (`app.page.signal`, `app.route.loaded`, `app.entity.created`,
-# or `manual` for Continue-only), `target`/`vfs`/`home` filter it, and an
-# optional `confirm` store-query proves it (event ≠ proof). The engine only
-# requires the tag — the frontend JourneyManager owns the semantics.
+# What a step waits for: `node_data.waitFor`, an ORDERED list of conditions,
+# each satisfied before the next is checked. The author says what must be true;
+# HOW each kind is observed (a bus subscription, a DOM observer, the router) is
+# the frontend runtime's business and appears nowhere in the document.
+#
+# Conditions are of two natures, and the distinction is load-bearing: an
+# OCCURRENCE (`click`, `event`) proves someone acted; a STATE
+# (`element`, `location`, `entity`) proves the app actually got somewhere. A
+# step claiming a consequence should end on a state condition — ending on an
+# occurrence only proves a click. `manual` is Continue-only. `any`/`all` group.
+#
+# The engine only requires that the list is non-empty and its kinds are known —
+# the frontend JourneyManager owns the semantics.
+GUIDED_WAIT_KINDS = {"click", "event", "element", "location",
+                     "entity", "manual", "any", "all"}
 
 # Retired spellings → the pointed message users get instead of a pydantic enum error.
 _RETIRED_NODE_TYPES = {
@@ -158,6 +168,31 @@ class GraphWorkflowEdgeDef(BaseModel):
     @property
     def to_node(self) -> str:
         return self.to.get("node", "")
+
+
+def _wait_condition_problems(node_id: str, conditions: list) -> list[str]:
+    """Unknown or malformed wait conditions, recursing through `any`/`all`."""
+    problems: list[str] = []
+    for condition in conditions:
+        if not isinstance(condition, dict) or len(condition) != 1:
+            problems.append(
+                f"node {node_id}: each waitFor condition is one object with one key, "
+                f"in {sorted(GUIDED_WAIT_KINDS)}"
+            )
+            continue
+        kind = next(iter(condition))
+        if kind not in GUIDED_WAIT_KINDS:
+            problems.append(
+                f"node {node_id}: unknown waitFor condition {kind!r}; "
+                f"must be in {sorted(GUIDED_WAIT_KINDS)}"
+            )
+        elif kind in ("any", "all"):
+            branches = condition[kind]
+            if not isinstance(branches, list) or not branches:
+                problems.append(f"node {node_id}: waitFor {kind!r} needs at least one condition")
+            else:
+                problems.extend(_wait_condition_problems(node_id, branches))
+    return problems
 
 
 class GraphWorkflowDoc(BaseModel):
@@ -268,13 +303,14 @@ class GraphWorkflowDoc(BaseModel):
                         f"node {n.id}: guided_step present.dock.kind must be "
                         f"in {sorted(GUIDED_PRESENT_KINDS)}"
                     )
-                await_spec = nd.get("await") or {}
-                tag = await_spec.get("tag")
-                if not isinstance(tag, str) or not tag:
+                wait_for = nd.get("waitFor")
+                if not isinstance(wait_for, list) or not wait_for:
                     problems.append(
-                        f"node {n.id}: guided_step needs node_data.await.tag "
-                        "(a non-empty bus tag string, e.g. 'app.page.signal', or 'manual')"
+                        f"node {n.id}: guided_step needs a non-empty node_data.waitFor "
+                        f"(a list of conditions, e.g. [{{'click': 'ProjectPage'}}])"
                     )
+                else:
+                    problems.extend(_wait_condition_problems(n.id, wait_for))
                 # `act` — what the journey OFFERS to do for the user (a step
                 # button, not an automatic side effect). It aims at a tag word
                 # like `present.highlight` does, so a missing target is dead.
