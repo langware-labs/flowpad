@@ -26,6 +26,9 @@ The properties this file exists to hold:
 from __future__ import annotations
 
 import asyncio
+import stat
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -397,6 +400,83 @@ async def test_checkout_refuses_a_path_that_escapes(git_remote, tmp_path: Path, 
     with pytest.raises(GitError) as excinfo:
         await folder.checkout(rel)
     assert excinfo.value.code is GitErrorCode.PATH_ESCAPES_REPO
+
+
+# ---------------------------------------------------------------------------
+# capture() / archive() — the inert artifact
+# ---------------------------------------------------------------------------
+
+
+def zip_entries(payload: bytes) -> dict[str, bytes]:
+    with zipfile.ZipFile(BytesIO(payload)) as archive:
+        return {i.filename: archive.read(i) for i in archive.infolist() if not i.is_dir()}
+
+
+def symlink_entries(payload: bytes) -> list[str]:
+    with zipfile.ZipFile(BytesIO(payload)) as archive:
+        return [i.filename for i in archive.infolist() if stat.S_ISLNK(i.external_attr >> 16)]
+
+
+async def test_capture_returns_the_subtree_flattened(git_remote, tmp_path: Path):
+    """Rooted AT the asset: a consumer unpacks content, not a copy of its path."""
+    await _publish_subtree(git_remote)
+    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")
+
+    receipt = await folder.capture("docs")
+
+    assert zip_entries(receipt.archive) == {"f.md": b"docs\n"}
+
+
+async def test_capture_leaves_no_archive_behind(git_remote, tmp_path: Path):
+    await _publish_subtree(git_remote)
+    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")
+
+    await folder.capture("docs")
+
+    assert not Path(f"{folder.root}.capture.zip").exists()
+
+
+async def test_capture_never_exports_a_symlink_target(git_remote, tmp_path: Path):
+    """THE exfiltration regression. Walking the tree with rglob + is_file()
+    follows a symlinked FILE and copies its target's bytes; ``git archive``
+    emits a link entry holding the path instead."""
+    secret = tmp_path / "secret.txt"
+    secret.write_text("SUPER-SECRET", encoding="utf-8")
+    repo = git_remote.make_checkout("publisher")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "note.md").write_text("real\n", encoding="utf-8")
+    (repo / "docs" / "leak.md").symlink_to(secret)
+    git_cmd(repo, "add", ".")
+    git_cmd(repo, "commit", "-q", "-m", "with a link")
+    git_cmd(repo, "push", "-q", "origin", "HEAD:refs/heads/flow-cloud")
+
+    receipt = await (git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")).capture("docs")
+
+    assert b"SUPER-SECRET" not in receipt.archive, "SECURITY: the link target's content was exported"
+    assert symlink_entries(receipt.archive) == ["leak.md"], "the link must survive as a link, not a copy"
+
+
+async def test_capture_carries_no_git_directory_and_no_untracked_junk(git_remote, tmp_path: Path):
+    repo = git_remote.make_checkout("publisher")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "note.md").write_text("tracked\n", encoding="utf-8")
+    git_cmd(repo, "add", ".")
+    git_cmd(repo, "commit", "-q", "-m", "tracked only")
+    git_cmd(repo, "push", "-q", "origin", "HEAD:refs/heads/flow-cloud")
+    (repo / "docs" / "junk.md").write_text("untracked\n", encoding="utf-8")
+
+    receipt = await (git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")).capture("docs")
+    names = zip_entries(receipt.archive)
+
+    assert set(names) == {"note.md"}
+    assert not any(".git" in name.split("/") for name in names), "SECURITY: .git rode out in the archive"
+
+
+async def test_capture_reports_the_commit_it_came_from(git_remote, tmp_path: Path):
+    head = await _publish_subtree(git_remote)
+    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")
+
+    assert (await folder.capture("docs")).head_commit == head
 
 
 # ---------------------------------------------------------------------------
