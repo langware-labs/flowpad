@@ -579,6 +579,27 @@ if _assets_path and _assets_path.exists():
     app.mount("/assets", StaticFiles(directory=str(_assets_path)), name="assets")
 
 
+# ── Type icons (/icons/<file>) ───────────────────────────────────────────────
+# ``TypeInfo.icon`` may name a lucide glyph OR a file this backend serves; the
+# frontend absolutises the second against THIS origin (ts_sdk ``iconAssetUrl``).
+# Backend origin, not the frontend's, because the file is declared by the type
+# registry — a plugin's bespoke glyph is something only this server knows about
+# and only this server can hand out.
+#
+# Its own directory rather than ``server/static/`` (see that directory's
+# README): a dev backend has no built ``static/`` at all, and packaging wipes it
+# wholesale, so a checked-in icon would not survive either.
+def _get_type_icons_path() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "server" / "icons"
+    return Path(__file__).parent / "icons"
+
+
+_type_icons_path = _get_type_icons_path()
+if _type_icons_path.exists():
+    app.mount("/icons", StaticFiles(directory=str(_type_icons_path)), name="type-icons")
+
+
 # ── Root-level public files ──────────────────────────────────────────────────
 # Files in ``ui/public/`` end up at the root of the built ``dist/`` (and thus
 # at the root of ``flow_sdk/server/static/``). These are referenced from places

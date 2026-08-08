@@ -34,6 +34,11 @@ class TypeMetadata:
     """Declarative per-type metadata. Subclass to add type-specific extras."""
 
     type: str
+    # Either a lucide export name in PascalCase ("BrainCog") or a path to a file
+    # this backend serves ("icons/agent.svg"). The frontend discriminates on the
+    # slash — a lucide name can never contain one — so both reach every surface
+    # through the same ``iconForType`` lookup. Free string by design: the set of
+    # valid lucide names lives in the frontend's bundle, not here.
     icon: str | None = None
     # UX-friendly, human-readable label for this type — used wherever the type
     # is shown to the user as a word (e.g. the auto-bookmark folder title). Plural
