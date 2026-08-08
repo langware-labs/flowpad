@@ -568,7 +568,16 @@ export function EntityExecutionPanel({
 
       // Lazy-create on first send.
       if (!proc) {
-        if (selectedProcessId && !mustCreateNew) return;
+        if (selectedProcessId && !mustCreateNew) {
+          // The URL selects a process that hasn't bound yet. Creating a second
+          // process would orphan the selected one, but a silent return loses
+          // the send with no feedback — tell the user to retry once bound.
+          notify.error({
+            title: t`Message not sent`,
+            message: t`The session is still connecting — try again in a moment.`,
+          });
+          return;
+        }
         if (createInFlightRef.current) return;
         createInFlightRef.current = true;
         try {
