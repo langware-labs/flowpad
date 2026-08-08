@@ -235,7 +235,7 @@ See [VFS Specification](./vfs.md) for path format details.
 
 | Sub-action | Method | Description |
 |------------|--------|-------------|
-| `browse` | GET | List directory → `FSItem[]` |
+| `browse` | GET | List directory → `FSEntry[]` |
 | `download` | GET | Stream file content |
 | `download_zip` | GET | Download directory as ZIP |
 | `upload` | POST | Upload files (multipart) |
