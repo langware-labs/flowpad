@@ -14,6 +14,38 @@ suite. There is no `.md.ts` companion.
 
 ---
 
+## Last run — 2026-08-08 (third): GREEN, whole flow driven in a browser
+
+Re-run from scratch on a NEW box (`scratch-run`, provider `iioykk7r42aqym024rx7r`),
+and this time **every** step after the staging happened in a real browser — Playwright
+over CDP against the user's own Chrome, one continuous session, cookies cleared first
+so the first click is genuinely a recipient's first click.
+
+| step | result |
+|---|---|
+| alice creates + first open | **pass** — box signed in as `alice@local.test`, `logged_in_user` written |
+| share to bob at `admin` | **pass** — auto-accepts; bob reads the node immediately |
+| `ops/pause` → `ops/status` | **pass** — `PAUSED` |
+| link with NO session | **pass** — `302 → login.html?target_path=<the link>` in **0.9s** |
+| login as bob → back to the link | **pass** — the form's own `target_path` round trip, no manual re-navigation |
+| the wait is covered | **pass** — `Waking your sandbox / This takes a few seconds.` on screen at **28ms** |
+| paused box wakes | **pass** — landed on `https://9007-<id>.e2b.dev`, **9.6s** from the login click |
+| box signed in as bob | **pass** — `/api/v1/cloud/status` reports `bob@local.test` ("Bob"); the user menu shows `bob@local.test` and it is the **only** email on screen |
+| the wrong identity is never painted | **pass** — 60 samples at 150ms from navigation commit; `E2B Local` / `e2b.local` appears in **none** |
+| second open is fast | **pass** — three warm opens at **2.12s / 2.27s / 1.97s**, and `grep -c "is pointed at\|restarting app against hub"` = **0** |
+
+Two notes on what the browser showed that curl cannot:
+
+* **Anonymous and machine-user are different first clicks, and both work.** With cookies
+  cleared the link 302s to login (this run). A Chrome that has already visited the hub
+  holds a machine-user session and gets the named deny page instead (previous run). The
+  redirect branch only exists for the first case, so testing one is not testing the other.
+* **The cold open is where the page earns itself.** After the restart fix a warm open is
+  ~2s; this cold one — resume plus first app boot — took 9.6s with the page up the whole
+  time. That is the case worth covering, and it is now the only slow one left.
+
+---
+
 ## Last run — 2026-08-08 (second): GREEN, after the compute-node refactor
 
 Re-run from scratch against a NEW E2B box, with the hub running the refactored
