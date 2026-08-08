@@ -333,15 +333,15 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
             self.verified_node_provider_id, command, session_id, background, env
         )
 
-    @property
-    def command_executor(self):
-        """This node as a ``CommandExecutor`` — argv in, exit codes and IO out.
+    def get_command_executor(self):
+        """This node as a :class:`CommandExecutor` — argv in, exit codes and IO out.
 
-        Lets a caller (``GitFolder``) be written once against a substrate rather
-        than once per substrate. Built fresh per access; it holds no state beyond
-        this node. Imported locally because the executor module imports this one.
+        **The only way to obtain an executor.** Nothing else constructs one, so
+        "where does this command run" is always answerable from the call site
+        rather than defaulting silently to the server's own disk. Built fresh per
+        call; it holds no state beyond this node.
         """
-        from flow_sdk.builtin.faas.command_executor import ComputeNodeCommandExecutor
+        from flow_sdk.builtin.faas.command_executor import ComputeNodeCommandExecutor  # noqa: PLC0415
 
         return ComputeNodeCommandExecutor(self)
 

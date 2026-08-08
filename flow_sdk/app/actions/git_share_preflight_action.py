@@ -27,8 +27,7 @@ import logging
 from flow_sdk.actions.action_registry import action
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
-from flow_sdk.utils.git import find_project_root, git_remote_url
-from flow_sdk.utils.git_folder import GitFolder
+from flow_sdk.utils.git import _run_git, find_project_root, git_remote_url
 
 logger = logging.getLogger(__name__)
 
@@ -155,14 +154,14 @@ def _repo_share_status(repo_root: str, origin) -> str | None:
         return "detached-head"  # the share pins a branch; there isn't one
     try:
         # Uncommitted / untracked changes would silently not travel.
-        porcelain = GitFolder(repo_root).git_sync("status", "--porcelain", timeout=10)
+        porcelain = _run_git(["git", "status", "--porcelain"], repo_root, timeout=10)
         if porcelain.returncode != 0:
             return "status-failure"
         if porcelain.stdout.strip():
             return "dirty"
         # Commits ahead of the upstream are unclonable by the receiver. No
         # upstream configured ⇒ rev-list exits non-zero ⇒ treat as unpushed.
-        ahead = GitFolder(repo_root).git_sync("rev-list", "--count", "@{u}..HEAD", timeout=10)
+        ahead = _run_git(["git", "rev-list", "--count", "@{u}..HEAD"], repo_root, timeout=10)
         if ahead.returncode != 0 or (ahead.stdout.strip() or "0") != "0":
             return "unpushed"
         return None

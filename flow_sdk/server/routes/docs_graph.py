@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import subprocess
 import time
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -163,11 +164,13 @@ async def docs_graph_diff(root: str = Query(...), rel: str = Query(...)) -> dict
                     return {"diff": "", "skipped": "binary_or_large", "rel_path": rel}
                 old_text = old_bytes.decode("utf-8", "replace")
             else:
-                from flow_sdk.utils.git_folder import GitFolder  # noqa: PLC0415
-
-                proc = GitFolder(root_path).git_sync("show", f"HEAD:./{rel}", timeout=10)
-                if proc.ok:
-                    old_text = proc.stdout
+                proc = subprocess.run(
+                    ["git", "-C", str(root_path), "show", f"HEAD:./{rel}"],
+                    capture_output=True,
+                    timeout=10,
+                )
+                if proc.returncode == 0:
+                    old_text = proc.stdout.decode("utf-8", "replace")
         new_text = ""
         if target.is_file():
             new_bytes = target.read_bytes()

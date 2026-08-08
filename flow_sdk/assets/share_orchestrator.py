@@ -338,10 +338,10 @@ async def _other_dirty_files(repo_root: str, rel_paths: list[str]) -> int:
     pathspec-scoped commit, and walking them is the expensive half of a status
     on a large tree. Off the event loop like every other git call here.
     """
-    from flow_sdk.utils.git_folder import GitFolder  # noqa: PLC0415
+    from flow_sdk.utils.git import _run_git  # noqa: PLC0415
 
     try:
-        out = await asyncio.to_thread(GitFolder(repo_root).git_sync, "status", "--porcelain", "-uno")
+        out = await asyncio.to_thread(_run_git, ["git", "status", "--porcelain", "-uno"], repo_root)
     except Exception:  # noqa: BLE001 — a status we cannot read is not a reason to refuse
         return 0
     ours = set(rel_paths)

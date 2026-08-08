@@ -38,7 +38,7 @@ from urllib.parse import urlparse
 from weakref import WeakValueDictionary
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.utils.command_executor import CommandExecutor, CommandResult, LocalCommandExecutor
+from flow_sdk.utils.command_executor import CommandExecutor, CommandResult
 
 if TYPE_CHECKING:
     from flow_sdk.assets.git_publish import GitAuthor
@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 # The env var the inline credential helper reads. The helper script references
 # only this NAME; the value lives solely in the child env.
 GIT_TOKEN_ENV = "FLOWPAD_GIT_TOKEN"
-_CREDENTIAL_HELPER = f'!f() {{ echo username=x-access-token; echo "password=${GIT_TOKEN_ENV}"; }}; f'
+CREDENTIAL_HELPER = f'!f() {{ echo username=x-access-token; echo "password=${GIT_TOKEN_ENV}"; }}; f'
 
 #: Empty directories cannot be represented in git; this marker stands in for one.
 KEEP_FILE = ".flowpad-vfs-keep"
@@ -146,13 +146,13 @@ class GitFolder:
         self,
         root: str | Path,
         *,
-        executor: CommandExecutor | None = None,
+        executor: CommandExecutor,
         remote_url: str | None = None,
         branch: str | None = None,
         token: str | None = None,
     ) -> None:
         self.root = Path(root)
-        self.executor: CommandExecutor = executor or LocalCommandExecutor()
+        self.executor: CommandExecutor = executor
         self.remote_url = _assert_no_credentials(remote_url) if remote_url else None
         self.branch = validate_branch_name(branch) if branch else None
         self._token = token
@@ -170,14 +170,13 @@ class GitFolder:
 
     @classmethod
     async def discover(
-        cls, path: str | Path, *, executor: CommandExecutor | None = None, **kwargs
+        cls, path: str | Path, *, executor: CommandExecutor, **kwargs
     ) -> "GitFolder":
         """The checkout containing ``path``.
 
         The async, executor-based counterpart of ``utils.git.find_project_root``
         — that one stays for the sync call sites, which cannot await.
         """
-        executor = executor or LocalCommandExecutor()
         probe = Path(path)
         if not await executor.exists(str(probe)):
             probe = probe.parent
@@ -195,7 +194,7 @@ class GitFolder:
         origin,
         root: str | Path,
         *,
-        executor: CommandExecutor | None = None,
+        executor: CommandExecutor,
         token: str | None = None,
     ) -> "GitFolder":
         """Build from either GitOrigin flavour — the strict ``PortableGitOrigin``
@@ -217,7 +216,7 @@ class GitFolder:
         *,
         branch: str | None = None,
         token: str | None = None,
-        executor: CommandExecutor | None = None,
+        executor: CommandExecutor,
         sparse_paths: Sequence[str] | None = None,
         depth: int | None = None,
         blobless: bool = False,
@@ -238,7 +237,7 @@ class GitFolder:
         missing or bad credential fails fast instead of hanging on a prompt."""
         env = {"GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"}
         if use_token and self._token:
-            return ["-c", f"credential.helper={_CREDENTIAL_HELPER}"], {**env, GIT_TOKEN_ENV: self._token}
+            return ["-c", f"credential.helper={CREDENTIAL_HELPER}"], {**env, GIT_TOKEN_ENV: self._token}
         return [], env
 
     async def git(
@@ -255,22 +254,6 @@ class GitFolder:
             cwd=str(cwd or self.root),
             env={**auth_env, **(env or {})},
             timeout=timeout,
-        )
-
-    def git_sync(self, *args: str, auth: bool = False, timeout: int | None = None) -> CommandResult:
-        """Blocking git, for callers outside an event loop.
-
-        Local only — a remote executor has no blocking form. It exists so the
-        synchronous helpers in ``utils.git`` do not need a second subprocess
-        implementation: argv construction, token injection and env are still
-        built here, once.
-        """
-        runner = getattr(self.executor, "run_sync", None)
-        if runner is None:
-            raise GitError(GitErrorCode.COMMAND_FAILED, "This executor has no synchronous form")
-        auth_args, auth_env = self._auth(auth)
-        return runner(
-            ["git", *auth_args, *args], cwd=str(self.root), env=auth_env, timeout=timeout
         )
 
     async def required(
@@ -741,8 +724,8 @@ class GitFolder:
         cls,
         remote_url: str,
         *,
+        executor: CommandExecutor,
         token: str | None = None,
-        executor: CommandExecutor | None = None,
     ) -> tuple[bool, str | None]:
         """``(reachable, default_branch)`` without fetching a single object.
 

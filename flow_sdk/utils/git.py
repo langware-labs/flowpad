@@ -1,5 +1,8 @@
+import asyncio
 import logging
+import os
 import re
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,6 +11,31 @@ from typing import Optional, Tuple
 from .file_system import ROOT_FOLDER
 
 logger = logging.getLogger(__name__)
+
+# The credential-helper script and its env-var name are DEFINED ONCE, in
+# git_folder. Re-declaring them here is how a security-critical path drifts: the
+# copy immediately lost ``GIT_TERMINAL_PROMPT=0`` on the no-token branch, which
+# turns a bad URL into a hang instead of a fast failure.
+def _git_token_auth(token: Optional[str]) -> Tuple[list[str], Optional[dict]]:
+    """Auth for one git invocation: `(extra argv, child env)`.
+
+    The argv installs an inline `credential.helper` that names the env var; the
+    env carries the token itself (never argv, never the on-disk URL) plus
+    GIT_TERMINAL_PROMPT=0 so a bad/absent token fails fast instead of hanging.
+    `([], None)` when there's no token — a plain public clone.
+    """
+    from flow_sdk.utils.git_folder import CREDENTIAL_HELPER, GIT_TOKEN_ENV  # noqa: PLC0415
+
+    # GIT_TERMINAL_PROMPT=0 on BOTH branches: without a token a private or
+    # mistyped URL must fail fast, not block on a credential prompt until the
+    # command timeout.
+    if not token:
+        return [], {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    return (
+        ["-c", f"credential.helper={CREDENTIAL_HELPER}"],
+        {**os.environ, GIT_TOKEN_ENV: token, "GIT_TERMINAL_PROMPT": "0"},
+    )
+
 
 @dataclass
 class GitPushResult:
@@ -41,21 +69,47 @@ def git_commit_hash():
 
 # ── Per-repo git operations ───────────────────────────────────────────────────
 
-def _sync(repo_path: str, *args: str, timeout: int = 10) -> str:
-    """One blocking git call, through GitFolder. Returns trimmed stdout, "" on failure.
+def _run_git(args: list[str], cwd: str, timeout: int = 10) -> subprocess.CompletedProcess:
+    """One blocking git invocation.
 
-    The synchronous helpers below are path-math conveniences used from
-    non-async call sites (the indexer, entity constructors). They route through
-    ``GitFolder.git_sync`` so argv construction, token handling and env live in
-    exactly one place, even though the callers cannot await.
+    These helpers are cheap LOCAL probes (does this path sit in a repo? what is
+    its origin?) called from synchronous code — the indexer, entity
+    constructors, route handlers. They are not "git operations on a repository"
+    and deliberately do not go through ``GitFolder``/``CommandExecutor``, which
+    is async and reached only via a ComputeNode.
     """
-    from flow_sdk.utils.git_folder import GitFolder  # noqa: PLC0415 - avoids an import cycle
+    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
 
+
+def _sync(repo_path: str, *args: str, timeout: int = 10) -> str:
+    """Trimmed stdout of a local git probe, or "" on any failure."""
     try:
-        result = GitFolder(repo_path).git_sync(*args, timeout=timeout)
+        result = _run_git(["git", *args], repo_path, timeout=timeout)
     except Exception:  # noqa: BLE001 - these helpers answer "" rather than raising
         return ""
-    return result.stdout.strip() if result.ok else ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+async def _git(args: list[str], cwd: str, timeout: int = 60) -> subprocess.CompletedProcess:
+    """One git invocation, off the event loop. The async sibling of ``_run_git``."""
+    return await asyncio.to_thread(_run_git, args, cwd, timeout)
+
+
+async def _checked_out_branch(repo_path: str) -> Optional[str]:
+    """The branch a checkout is on, or ``None`` when detached.
+
+    Shared by ``git_pull`` and ``git_sync_mirror``: both must refuse to act on a
+    detached HEAD, and that rule should not live in two places.
+    """
+    return await asyncio.to_thread(git_current_branch, repo_path) or None
+
+
+def _git_err(result: subprocess.CompletedProcess, verb: str) -> str:
+    """One phrasing for a failed invocation. `stderr or stdout` in one place, so
+    the fallback order cannot drift between call sites."""
+    err = (result.stderr or result.stdout or "").strip()
+    logger.warning("[git] %s FAILED: %s", verb, err)
+    return f"Git {verb} failed: {err}"
 
 
 def find_project_root(file_path: str) -> Optional[str]:
@@ -158,37 +212,81 @@ def find_local_repo_for_url(clone_url: str) -> Optional[str]:
 async def git_sync_mirror(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, bool, str]:
     """Force a checkout to match its remote, discarding local changes.
 
-    Thin wrapper over :meth:`GitFolder.sync_mirror` — the mechanics live there.
-    Kept as a function because callers want the ``(ok, changed, message)`` shape
-    rather than an exception: a mirror sync failing is routine, not exceptional.
+    For a MIRROR — a checkout the app manages and the user never edits — as
+    opposed to ``git_pull``, which is for a working tree whose local changes
+    must be preserved. Use it only where local modifications are known to be
+    machine-made and disposable; it throws away uncommitted work.
 
-    ``changed`` means **the working tree is not what it was** (do I need to
-    re-index?), NOT merely "did HEAD move".
+    Returns ``(ok, changed, message)``. ``changed`` means **the working tree is
+    not what it was**, which is the question a caller actually asks (do I need
+    to re-index?) — NOT merely "did HEAD move". Those differ in exactly the case
+    this function exists for: when the remote has not moved but the tree is
+    dirty with index stamps, the reset rewrites those files, and reporting
+    "nothing changed" there would tell the caller to skip an index that the
+    reset just invalidated.
+
+    It is reported explicitly rather than encoded into ``message``: recovering
+    it by substring-matching English prose breaks the moment the wording or the
+    locale changes.
     """
-    from flow_sdk.utils.git_folder import GitError, GitFolder  # noqa: PLC0415 - avoids an import cycle
-
     try:
-        changed = await GitFolder(repo_path).sync_mirror(branch)
-        return True, changed, "Updated." if changed else "Already up to date."
-    except GitError as e:
-        logger.warning("[git] mirror sync failed: %s", e.code)
-        return False, False, f"Git mirror sync failed: {e.code}"
-    except Exception as e:  # noqa: BLE001 - a mirror sync must never raise at a call site
+        branch = branch or await _checked_out_branch(repo_path)
+        if not branch:
+            return False, False, "Skipped sync (detached HEAD)."
+
+        # Dirty BEFORE the reset: the reset is about to revert these, so they
+        # count as a change even when no new commit arrives.
+        status = await _git(["git", "status", "--porcelain"], repo_path)
+        was_dirty = bool(status.stdout.strip()) if status.returncode == 0 else False
+
+        before = await _git(["git", "rev-parse", "HEAD"], repo_path)
+        fetch = await _git(["git", "fetch", "origin", branch], repo_path)
+        if fetch.returncode != 0:
+            return False, False, _git_err(fetch, f"fetch origin {branch}")
+
+        # Compare against the ref we just fetched rather than re-reading HEAD
+        # after the reset — same answer, one subprocess fewer.
+        remote = await _git(["git", "rev-parse", f"origin/{branch}"], repo_path)
+        moved = before.stdout.strip() != remote.stdout.strip()
+
+        reset = await _git(["git", "reset", "--hard", f"origin/{branch}"], repo_path)
+        if reset.returncode != 0:
+            return False, False, _git_err(reset, f"reset --hard origin/{branch}")
+
+        # Indexing also CREATES files (folder capsules, sidecars); `reset --hard`
+        # leaves untracked ones behind, so a mirror has to clean them too or it
+        # is only half a mirror.
+        await _git(["git", "clean", "-fd"], repo_path)
+
+        changed = moved or was_dirty
+        logger.info("[git] mirror synced to origin/%s (moved=%s dirty=%s)", branch, moved, was_dirty)
+        return True, changed, "Updated." if moved else ("Restored." if was_dirty else "Already up to date.")
+    except Exception as e:
         logger.warning("[git] mirror sync error: %s", e)
         return False, False, f"Git mirror sync error: {e}"
 
 
 async def git_pull(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, str]:
-    """Pull latest from origin, preserving local changes. Returns (success, message)."""
-    from flow_sdk.utils.git_folder import GitError, GitFolder  # noqa: PLC0415
+    """Pull latest from origin for the given branch, or the current branch if not specified.
 
+    For a WORKING TREE whose local changes must be preserved — the opposite of
+    ``git_sync_mirror``, which discards them.
+
+    Returns (success, message).
+    """
     try:
-        out = await GitFolder(repo_path).pull(branch)
-        return True, out or "Already up to date."
-    except GitError as e:
-        logger.warning("[git] pull failed: %s", e.code)
-        return False, f"Git pull failed: {e.code}"
-    except Exception as e:  # noqa: BLE001
+        branch = branch or await _checked_out_branch(repo_path)
+        if not branch:
+            logger.warning("[git] Detached HEAD at %s — skipping pull", repo_path)
+            return False, "Skipped git pull (detached HEAD). Files may not be up to date."
+
+        result = await _git(["git", "pull", "origin", branch], repo_path)
+        if result.returncode == 0:
+            out = (result.stdout or "").strip()
+            logger.info("[git] pull origin %s succeeded: %s", branch, out)
+            return True, out or "Already up to date."
+        return False, _git_err(result, f"pull origin {branch}")
+    except Exception as e:
         logger.warning("[git] pull error: %s", e)
         return False, f"Git pull error: {e}"
 
@@ -196,22 +294,33 @@ async def git_pull(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, 
 async def git_clone(
     clone_url: str, target_dir: str, branch: Optional[str] = None, token: Optional[str] = None
 ) -> Tuple[bool, str]:
-    """Clone ``clone_url`` into ``target_dir``. Returns (success, message).
+    """Clone clone_url into target_dir, optionally checking out branch.
 
-    The token reaches git through an inline credential helper reading a child-env
-    variable — never argv, never the on-disk URL. That is enforced once, in
-    :class:`GitFolder`.
+    When ``token`` is given (a GitHub access token), the clone authenticates via
+    an inline credential helper that reads the token from the child env — so
+    private repos work and the token never touches argv or the on-disk URL.
+
+    Returns (success, message).
     """
-    from flow_sdk.utils.git_folder import GitError, GitFolder  # noqa: PLC0415
-
     try:
-        await GitFolder.clone(clone_url, target_dir, branch=branch, token=token)
-        logger.info("[git] clone %s into %s succeeded", clone_url, target_dir)
-        return True, "Cloned successfully."
-    except GitError as e:
-        logger.warning("[git] clone %s FAILED: %s", clone_url, e.code)
-        return False, f"Git clone failed: {e.code}"
-    except Exception as e:  # noqa: BLE001
+        auth_args, env = _git_token_auth(token)
+        cmd = ["git", *auth_args, "clone", clone_url, target_dir]
+        if branch:
+            cmd += ["--branch", branch]
+
+        def _run(args):
+            return subprocess.run(args, capture_output=True, text=True, timeout=120, env=env)
+
+        result = await asyncio.to_thread(_run, cmd)
+        if result.returncode == 0:
+            out = (result.stdout or result.stderr or "").strip()
+            logger.info("[git] clone %s into %s succeeded", clone_url, target_dir)
+            return True, out or "Cloned successfully."
+        else:
+            err = (result.stderr or result.stdout or "").strip()
+            logger.warning("[git] clone %s FAILED: %s", clone_url, err)
+            return False, f"Git clone failed: {err}"
+    except Exception as e:
         logger.warning("[git] clone error: %s", e)
         return False, f"Git clone error: {e}"
 
@@ -219,15 +328,32 @@ async def git_clone(
 async def git_remote_access(clone_url: str, token: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     """Can we read ``clone_url``, and what is its default branch?
 
-    Delegates to :meth:`GitFolder.remote_access`. Kept as a function returning
-    ``(accessible, default_branch)`` because "not reachable" is an answer here,
-    not an error.
-    """
-    from flow_sdk.utils.git_folder import GitFolder  # noqa: PLC0415
+    ``git ls-remote --symref <url> HEAD`` is the cheap, provider-agnostic
+    reachability probe: it answers for public repos anonymously and for private
+    ones with ``token``, without fetching a single object. Same credential path
+    as ``git_clone``, so "the check passed" and "the clone will work" cannot
+    disagree.
 
+    Returns (accessible, default_branch or None).
+    """
     try:
-        return await GitFolder.remote_access(clone_url, token=token)
-    except Exception as e:  # noqa: BLE001
+        auth_args, env = _git_token_auth(token)
+        env = {**(env or os.environ), "GIT_TERMINAL_PROMPT": "0"}
+        cmd = ["git", *auth_args, "ls-remote", "--symref", clone_url, "HEAD"]
+
+        def _run():
+            return subprocess.run(cmd, capture_output=True, text=True, timeout=20, env=env)
+
+        result = await asyncio.to_thread(_run)
+        if result.returncode != 0:
+            logger.info("[git] ls-remote %s denied: %s", clone_url, (result.stderr or "").strip()[:200])
+            return False, None
+        # "ref: refs/heads/main\tHEAD" — the symref line names the default branch.
+        for line in (result.stdout or "").splitlines():
+            if line.startswith("ref:") and "refs/heads/" in line:
+                return True, line.split("refs/heads/", 1)[1].split()[0].strip()
+        return True, None
+    except Exception as e:
         logger.warning("[git] ls-remote error for %s: %s", clone_url, e)
         return False, None
 
@@ -253,12 +379,8 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
     a successful no-op, not a failure.
     """
     try:
-        from flow_sdk.utils.git_folder import GitFolder  # noqa: PLC0415
-
-        folder = GitFolder(repo_path)
-
         async def _run(*args):
-            return await folder.git(*args, timeout=30)
+            return await asyncio.to_thread(_run_git, ["git", *args], repo_path, 30)
 
         present, missing = [], []
         for path in paths:
@@ -370,18 +492,27 @@ def git_asset_introduction(path: str) -> datetime | None:
 
 
 async def git_commit_file(repo_path: str, rel_file: str, message: str) -> bool:
-    """Stage and commit a single pathspec — a file OR a folder (no push).
+    """Stage and commit a single pathspec — a file OR a folder (no push). Returns
+    True if a commit was made.
 
-    Pathspec-scoped via :meth:`GitFolder.commit`, so concurrent edits outside the
-    pathspec are never swept in. Returns False when there was nothing to commit.
-    Best-effort; never raises — an auto-commit must not break a save.
+    Pathspec-scoped: ``git add -- <pathspec>`` then ``git commit -- <pathspec>`` so
+    concurrent edits outside the pathspec are never swept in. A folder pathspec
+    (a folder-backed asset, e.g. a skill) commits every change under it. No-ops
+    (returns False) when the pathspec has no staged delta. Best-effort; never raises.
     """
-    from flow_sdk.utils.git_folder import GitFolder  # noqa: PLC0415
-
     try:
         if not Path(repo_path, rel_file).exists():
             return False
-        return await GitFolder(repo_path).commit([rel_file], message) is not None
+        await asyncio.to_thread(_run_git, ["git", "add", "--", rel_file], repo_path)
+        staged = await asyncio.to_thread(
+            _run_git, ["git", "diff", "--cached", "--quiet", "--", rel_file], repo_path
+        )
+        if staged.returncode == 0:
+            return False  # nothing staged for this file
+        result = await asyncio.to_thread(
+            _run_git, ["git", "commit", "-m", message, "--", rel_file], repo_path
+        )
+        return result.returncode == 0
     except Exception as e:  # noqa: BLE001 — auto-commit must never break a save
         logger.warning("[git] commit_file error (non-fatal): %s", e)
         return False

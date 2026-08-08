@@ -31,7 +31,7 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.faas.command_executor import ComputeNodeCommandExecutor
-from flow_sdk.utils.command_executor import CommandResult, LocalCommandExecutor
+from flow_sdk.utils.command_executor import CommandResult, _LocalCommandExecutor
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -42,14 +42,14 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
 
 
 async def test_run_captures_stdout_and_exit_code():
-    result = await LocalCommandExecutor().run([sys.executable, "-c", "print('hi')"])
+    result = await _LocalCommandExecutor().run([sys.executable, "-c", "print('hi')"])
     assert result.returncode == 0
     assert result.ok is True
     assert result.stdout.strip() == "hi"
 
 
 async def test_run_captures_stderr_and_failure():
-    result = await LocalCommandExecutor().run(
+    result = await _LocalCommandExecutor().run(
         [sys.executable, "-c", "import sys; sys.stderr.write('boom'); sys.exit(3)"]
     )
     assert result.returncode == 3
@@ -63,14 +63,14 @@ async def test_argv_is_not_shell_interpreted(tmp_path: Path):
     sentinel = tmp_path / "PWNED"
     hostile = f"; touch {sentinel}"
 
-    result = await LocalCommandExecutor().run([sys.executable, "-c", "import sys; print(sys.argv[1])", hostile])
+    result = await _LocalCommandExecutor().run([sys.executable, "-c", "import sys; print(sys.argv[1])", hostile])
 
     assert result.stdout.strip() == hostile, "argument was mangled by a shell"
     assert not sentinel.exists(), "SECURITY: argv was shell-interpreted"
 
 
 async def test_run_honours_cwd(tmp_path: Path):
-    result = await LocalCommandExecutor().run(
+    result = await _LocalCommandExecutor().run(
         [sys.executable, "-c", "import os; print(os.getcwd())"], cwd=str(tmp_path)
     )
     assert Path(result.stdout.strip()).resolve() == tmp_path.resolve()
@@ -79,26 +79,26 @@ async def test_run_honours_cwd(tmp_path: Path):
 async def test_env_is_an_additive_overlay():
     """The variable is set AND the ambient environment survives."""
     script = "import os; print(os.environ.get('FLOWPAD_TEST_VAR', '')); print(bool(os.environ.get('PATH')))"
-    result = await LocalCommandExecutor().run([sys.executable, "-c", script], env={"FLOWPAD_TEST_VAR": "overlay"})
+    result = await _LocalCommandExecutor().run([sys.executable, "-c", script], env={"FLOWPAD_TEST_VAR": "overlay"})
     value, has_path = result.stdout.strip().splitlines()
     assert value == "overlay"
     assert has_path == "True", "ambient environment was replaced instead of extended"
 
 
 async def test_missing_binary_returns_a_result_not_an_exception():
-    result = await LocalCommandExecutor().run(["flowpad-definitely-not-a-real-binary"])
+    result = await _LocalCommandExecutor().run(["flowpad-definitely-not-a-real-binary"])
     assert result.returncode == 127
     assert result.ok is False
 
 
 async def test_timeout_returns_a_result_not_an_exception():
-    result = await LocalCommandExecutor().run([sys.executable, "-c", "import time; time.sleep(10)"], timeout=1)
+    result = await _LocalCommandExecutor().run([sys.executable, "-c", "import time; time.sleep(10)"], timeout=1)
     assert result.returncode == 124
     assert result.ok is False
 
 
 async def test_file_primitives_round_trip(tmp_path: Path):
-    executor = LocalCommandExecutor()
+    executor = _LocalCommandExecutor()
     target = tmp_path / "nested" / "deep" / "file.bin"
 
     assert await executor.exists(str(target)) is False
@@ -114,7 +114,7 @@ async def test_file_primitives_round_trip(tmp_path: Path):
 
 
 async def test_remove_deletes_a_directory_tree(tmp_path: Path):
-    executor = LocalCommandExecutor()
+    executor = _LocalCommandExecutor()
     tree = tmp_path / "tree"
     await executor.write_bytes(str(tree / "a" / "b.txt"), b"x")
 
@@ -124,18 +124,18 @@ async def test_remove_deletes_a_directory_tree(tmp_path: Path):
 
 
 async def test_list_dir_of_a_missing_path_is_empty_not_an_error(tmp_path: Path):
-    assert await LocalCommandExecutor().list_dir(str(tmp_path / "nope")) == []
+    assert await _LocalCommandExecutor().list_dir(str(tmp_path / "nope")) == []
 
 
 async def test_resolve_works_on_a_path_that_does_not_exist_yet(tmp_path: Path):
     """A caller resolves first and decides after; strict resolution would make
     containment checks impossible for a path about to be created."""
-    resolved = await LocalCommandExecutor().resolve(str(tmp_path / "a" / ".." / "b"))
+    resolved = await _LocalCommandExecutor().resolve(str(tmp_path / "a" / ".." / "b"))
     assert resolved == str((tmp_path / "b").resolve())
 
 
 async def test_make_dirs_is_idempotent(tmp_path: Path):
-    executor = LocalCommandExecutor()
+    executor = _LocalCommandExecutor()
     await executor.make_dirs(str(tmp_path / "d"))
     await executor.make_dirs(str(tmp_path / "d"))
     assert await executor.is_dir(str(tmp_path / "d")) is True
@@ -232,7 +232,7 @@ async def test_both_executors_satisfy_the_protocol():
     from flow_sdk.utils.command_executor import CommandExecutor
 
     node, _ = _stub_node()
-    assert isinstance(LocalCommandExecutor(), CommandExecutor)
+    assert isinstance(_LocalCommandExecutor(), CommandExecutor)
     assert isinstance(ComputeNodeCommandExecutor(node), CommandExecutor)
 
 
