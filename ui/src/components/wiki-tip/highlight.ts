@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
 import { HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
+import { useCurrentDock } from '@src/navigation/useDockNavigation';
 
 export { HIGHLIGHT_PARAM };
 
@@ -15,13 +15,12 @@ export type HighlightPhase = 'idle' | 'enter' | 'linger';
  * The wiki word the current URL asks to highlight, or null when none is set.
  *
  * Reads the `highlight` search param directly (not via `currentDock`) so it
- * works on the home root `/` — which is NOT a dock URL, so `currentDock` is
- * null there. On dock surfaces the same param is also reachable via
- * `currentDock.highlight`. See docs/wikitip.md.
+ * works on the home root `/` too — the root is an ordinary `DockPointer`, so
+ * this is `currentDock.highlight` everywhere rather than a second reader of the
+ * same param. See docs/wikitip.md.
  */
 export function useHighlight(): string | null {
-  const [searchParams] = useSearchParams();
-  return searchParams.get(HIGHLIGHT_PARAM);
+  return useCurrentDock()?.highlight ?? null;
 }
 
 /**

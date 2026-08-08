@@ -20,6 +20,7 @@ import LaunchLanding from '@src/pages/entry/LaunchLanding';
 import InstallLanding from '@src/pages/entry/InstallLanding';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
+import { devToDockPath } from '@src/navigation/url-builder';
 import {
   createBrowserRouter,
   createRoutesFromElements,
@@ -41,8 +42,7 @@ import { bindHistoryPosition } from '@src/navigation/history-position-store';
  */
 function DevToDockRedirect() {
   const location = useLocation();
-  const rest = location.pathname.replace(/^\/dev\/?/, '');
-  const target = `/dock/${rest}${location.search}${location.hash}`;
+  const target = `${devToDockPath(location.pathname)}${location.search}${location.hash}`;
   return <Navigate to={target} replace />;
 }
 

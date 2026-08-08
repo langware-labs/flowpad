@@ -5,7 +5,7 @@ import { useLocation, useNavigate, useParams } from 'react-router';
 import { ViewType } from '@src/types/ViewType';
 import { DockPointer } from './DockPointer';
 import { NavigationActions } from './NavigationActions';
-import { detectLayout } from './url-builder';
+import { detectLayout, ROOT_PATH } from './url-builder';
 
 export interface UseDockNavigationReturn {
   /** Navigation actions instance */
@@ -58,15 +58,23 @@ export function useCurrentDock(): DockPointer | null {
   const params = useParams<{ viewType?: string }>();
 
   return useMemo(() => {
+    const url = `${location.pathname}${location.search}`;
     if (params.viewType) {
       try {
-        return DockPointer.fromUrl(`${location.pathname}${location.search}`);
+        return DockPointer.fromUrl(url);
       } catch (error) {
         console.warn('[useDockNavigation] Invalid URL, returning default dock:', error);
         // Return default dock pointer for invalid URLs
         return new DockPointer();
       }
     }
+    // The app root is an ordinary location, not the absence of one — so `/` and
+    // its options (`?journeyId=`, `?highlight=`, `?scope-…`) are readable
+    // through the pointer like anywhere else. This is what lets the param hooks
+    // stop reaching for `useSearchParams` behind the pointer's back.
+    if (location.pathname === ROOT_PATH) return DockPointer.root().withOptionsFromUrl(url);
+    // Another top-level route (discover, an invite landing): genuinely not a
+    // dock, and not the home either. Still null.
     return null;
   }, [location.pathname, location.search, params.viewType]);
 }
@@ -97,7 +105,11 @@ export function useDockNavigation(): UseDockNavigationReturn {
     return actions;
   }, [navigate, currentDock]);
 
-  const isDockUrl = currentDock !== null;
+  // "Is a dock open" — the ROOT is a location but not a dock, so it keeps
+  // answering false here exactly as the old null did. Every consumer
+  // (content-panel's body view type, NavigatorSlot, useActiveViewer) means
+  // "something other than the home is showing".
+  const isDockUrl = currentDock !== null && !currentDock.isRoot;
 
   // URL-derived, read-only (Part 3 §7): the focus-window layout is a property
   // of the URL, never of component state.

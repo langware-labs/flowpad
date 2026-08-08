@@ -38,6 +38,9 @@ export function isRootAddress(
   return viewType === ViewType.HOME && !pointer && layout === Layout.DOCK && page === PageId.DESK;
 }
 
+/** The app root's path. The one place the literal lives. */
+export const ROOT_PATH = '/';
+
 /** The parse of a layout-less path: the root, under whatever base path it carries. */
 export function rootDockAddress(fullPath: string): ParsedDockUrl {
   return {
@@ -193,6 +196,19 @@ export function stripDockPortion(currentPath: string): string {
 
   // No layout keyword found, return path without trailing slash
   return currentPath.replace(/\/$/, '');
+}
+
+/**
+ * Rewrite a `/dev/…` URL into its `/dock/…` twin.
+ *
+ * `dev` and `dock` are interchangeable layout keywords to every parser here, so
+ * people arrive on `/dev/…` from copy/paste, stale links and hand-typed URLs —
+ * and without this the root catch-all swallows them into NotFound. Lives beside
+ * the keyword table it depends on rather than in the router, where it was a
+ * regex that would silently stop matching if a keyword were ever renamed.
+ */
+export function devToDockPath(pathname: string): string {
+  return `/${DOCK_KEYWORD}/${pathname.replace(new RegExp(`^/${DEV_KEYWORD}/?`), '')}`;
 }
 
 /**

@@ -1,3 +1,4 @@
+import { inboundParams } from '@src/navigation/inbound-link';
 import { ActionInfo, BodyStatus, dataManager, FlowMessage, navigator as sdkNavigator, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Bot, Code, Sparkles, Terminal } from 'lucide-react';
@@ -43,7 +44,7 @@ const MessageLanding: React.FC = () => {
   // is handled server-side via the dedicated /wrong_account route.
   const [wrongAccount, setWrongAccount] = useState(false);
 
-  const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const urlParams = useMemo(() => inboundParams(), []);
   const hasApiKey = urlParams.has('flowpad-api-key');
 
   const msgLoginAttemptKey = messageId ? `login-attempt-msg-${messageId}` : null;

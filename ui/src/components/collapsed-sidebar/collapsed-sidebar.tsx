@@ -146,12 +146,11 @@ export function CollapsedSidebar() {
       }
       if (viewType === null) {
         if (import.meta.env.DEV) (window as Record<string, unknown>).__homeNavT0 = performance.now();
-        // Guard on the LIVE browser URL: navigation.openDock commits via raw
-        // pushState, which React Router's location can lag — currentView reads
-        // stale-falsy on a real dock URL and would swallow this navigation.
-        // TODO(nav): fix at the root — commit through the router in
-        // NavigationActions so ALL consumers stop seeing stale locations.
-        if (window.location.pathname !== '/') void navigate('/');
+        // The home is an ordinary destination now, so this goes through the one
+        // navigation path like every other rail click. It used to read the live
+        // browser URL directly and call `navigate('/')`, guarding against a
+        // lagging `currentView` — `openDock` dedupes on the pointer itself.
+        navigation.goHome();
       } else {
         if (import.meta.env.DEV && viewType === ViewType.SHELL) {
           (window as Record<string, unknown>).__shellNavT0 = performance.now();
@@ -169,7 +168,7 @@ export function CollapsedSidebar() {
         navigation.openTab(viewType);
       }
     },
-    [navigate, navigation, hubMode],
+    [navigation, hubMode],
   );
 
   /** THE active-state resolver — used by top AND overflow entries alike, so an

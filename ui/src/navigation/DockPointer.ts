@@ -1221,6 +1221,13 @@ export class DockPointer implements IDockPointer {
     return isRootAddress(this.viewType, this.pointer, this.layout, this.page);
   }
 
+  /** This pointer carrying the query options of `url`. The root has no path of
+   *  its own to parse, so its options have to be lifted across explicitly. */
+  withOptionsFromUrl(url: string): DockPointer {
+    const query = new URL(url, 'http://flowpad.local').searchParams;
+    return new DockPointer(this.viewType, this.pointer, parseQueryParams(query), this.layout, this.page);
+  }
+
   /**
    * Create dock pointer for HOME/LiveStatus view with optional tab and item
    * URL structure: /dock/home/<tab>?item=<item>&scope=<scope>&project=<project>

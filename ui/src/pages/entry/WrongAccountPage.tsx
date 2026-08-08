@@ -1,3 +1,4 @@
+import { inboundParams } from '@src/navigation/inbound-link';
 import React from 'react';
 import WrongAccountPanel from './WrongAccountPanel';
 
@@ -13,7 +14,7 @@ import WrongAccountPanel from './WrongAccountPanel';
  * open-redirect guard is needed here.
  */
 const WrongAccountPage: React.FC = () => {
-  const callbackUrl = new URLSearchParams(window.location.search).get('callback') ?? undefined;
+  const callbackUrl = inboundParams().get('callback') ?? undefined;
   return <WrongAccountPanel callbackUrl={callbackUrl} />;
 };
 

@@ -1,5 +1,6 @@
 import { isCompleteGitOrigin, type GitOrigin } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { consumeInboundParams, inboundParams } from '@src/navigation/inbound-link';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useIncomingProjectStore } from '@src/store/use-incoming-project-store';
 import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
@@ -22,13 +23,26 @@ import { IncomingTaskDialog } from './IncomingTaskDialog';
  * pull/clone flow; `conversation_id` → open that conversation; `task_id` alone
  * → the tasks dock.
  */
+/** The whole inbound payload — read together, scrubbed together, so no key can
+ *  be left behind to replay on the next refresh. */
+const DEEP_LINK_PARAMS = [
+  'action',
+  'fm',
+  'conversation_id',
+  'task_id',
+  'setup_git',
+  'title',
+  'sender_name',
+  'git_origin',
+] as const;
+
 export function IncomingDeepLink() {
   const { navigation } = useDockNavigation();
   const { pendingTask, setPendingTask } = useIncomingTaskStore();
   const { pendingProject, setPendingProject } = useIncomingProjectStore();
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
+    const params = inboundParams();
     if (params.get('action') !== 'open') return;
     const fmId = params.get('fm') || '';
     const convId = params.get('conversation_id') || '';
@@ -47,12 +61,8 @@ export function IncomingDeepLink() {
       }
     }
 
-    // Clean URL so refreshing doesn't re-trigger.
-    const url = new URL(window.location.href);
-    for (const key of ['action', 'fm', 'conversation_id', 'task_id', 'setup_git', 'title', 'sender_name', 'git_origin']) {
-      url.searchParams.delete(key);
-    }
-    window.history.replaceState(null, '', url.toString());
+    // Scrub the whole payload so refreshing cannot re-trigger the action.
+    consumeInboundParams(DEEP_LINK_PARAMS);
 
     // Git setup: "X shared a project with you" — clone the repo into a fresh,
     // indexed Project on THIS box. Checked before the task branch because a
