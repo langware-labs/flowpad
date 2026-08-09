@@ -15,10 +15,11 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { hubAvailable } from './_hub';
+import { commitAndPush, makeGitWorktree } from './_git';
 import { pollUntil } from './_matrix';
 import { trackForCleanup } from '../_cleanup';
 import {
@@ -43,10 +44,29 @@ const post = (apiUrl: string, p: string, body?: unknown) =>
 
 const get = (apiUrl: string, p: string) => fetch(`${apiUrl}/api/v1${p}`).then((r) => r.json());
 
-function freshProjectDir(): string {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'flowpad-secret-share-'));
+/** A plain temp dir — all a mirror needs to be given a working dir. */
+function freshTempDir(): string {
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'flowpad-secret-share-')));
   tempRoots.push(root);
-  return realpathSync(root);
+  return root;
+}
+
+/**
+ * The SENDER's project dir: a real git worktree with an origin.
+ *
+ * Sharing a Project routes through `assert_project_publishable` since f3dd383d1
+ * — publishing a Project and linking it to the cloud are one gate now — so a
+ * plain directory is refused with `not-in-repo` before any secret travels. The
+ * git backing is PRECONDITION ONLY: this test's subject is the secret pointer
+ * (a value-free reference travels, the value does not, ids converge), and every
+ * one of those assertions is unchanged.
+ */
+function freshProjectDir(): string {
+  const { root, worktree } = makeGitWorktree('flowpad-secret-share-');
+  tempRoots.push(root);
+  writeFileSync(path.join(worktree, 'README.md'), '# secret share fixture\n');
+  commitAndPush(worktree, 'fixture');
+  return worktree;
 }
 
 beforeAll(async () => {
@@ -97,6 +117,12 @@ describe('project secret share — two instances via the hub', () => {
     // the freshly-added `shared_context_entities`) plus recipients. Posting only
     // `{recipients}` would reconstruct an entity with an empty context bucket and
     // the reference would never travel.
+    // Commit what `save()` + `add-secret-pointer` wrote into the worktree. The
+    // publish gate refuses a dirty repo ("commit them so they travel") — this is
+    // the same precondition a real user satisfies before sharing, not a change
+    // to what this test asserts.
+    commitAndPush(dir, 'project state');
+
     const fresh = await get(alice.apiUrl, `/graph/project/${project.id}`);
     const shared = await post(alice.apiUrl, `/graph/project/${project.id}/share`, {
       ...(fresh.data ?? {}),
@@ -128,7 +154,9 @@ describe('project secret share — two instances via the hub', () => {
     // Bob's mirror has no working dir until the project is opened; a shared
     // secret's value lands in the project's `.env.local`, so give Bob a local dir
     // (what project-open assigns) before providing.
-    const bobDir = freshProjectDir();
+    // Plain dir on purpose: Bob never publishes, and `provide-secret` writes the
+    // `.gitignore` line whether or not the dir is a repo.
+    const bobDir = freshTempDir();
     await fetch(`${bob.apiUrl}/api/v1/graph/project/${project.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
