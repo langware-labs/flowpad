@@ -26,7 +26,7 @@ import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { MembershipInvitations } from '@src/components/inbox-view/MembershipInvitations';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { notify } from '@src/notifications';
-import { Building2, FolderGit2, Globe, Loader2, KeyRound, Monitor, Trash2, UserPlus } from 'lucide-react';
+import { Building2, FolderGit2, Globe, KeyRound, Loader2, LogOut, Monitor, Trash2, UserPlus } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { consumeInboundParams } from '@src/navigation/inbound-link';
@@ -51,6 +51,27 @@ function statusCardClass(status?: ExecutionEnvironmentStatus): string {
 function fmtDur(ms: number): string {
   const m = Math.max(0, Math.floor(ms / 60000));
   return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+/**
+ * Is this box running the viewer's own cloud session?
+ *
+ * Reads the node's cached `logged_in_user` rather than probing the box: the hub
+ * refreshes it whenever it brings the workspace up, so this costs nothing and
+ * cannot wake a paused machine just to render a card. The trade is staleness —
+ * a box signed out by some other route still advertises the old user until the
+ * hub next talks to it, so the button can appear for a session that has already
+ * ended. Signing out twice is harmless, which is why the cheap read wins.
+ *
+ * Exported for the unit test: the comparison rule (normalize, require both
+ * sides, never match on empty) is the whole behaviour worth pinning.
+ */
+export function isSignedInAsMe(node: { logged_in_user?: string | null }, myEmail?: string | null): boolean {
+  const boxUser = (node.logged_in_user ?? '').trim().toLowerCase();
+  const me = (myEmail ?? '').trim().toLowerCase();
+  // Both must be present: two unknowns are not a match, and treating them as one
+  // would offer the button on every box of a signed-out viewer.
+  return !!boxUser && !!me && boxUser === me;
 }
 
 function fmtSize(cpu?: number, memMb?: number): string | null {
@@ -84,14 +105,24 @@ function SandboxStatus({
   // render even while the probe is outstanding — and even if it never lands. A
   // box whose status is unreachable is exactly when "who is this signed in as"
   // is worth reading.
-  const login = <LoginLine loggedInUser={loggedInUser} autoLogin={autoLogin} />;
+  // Its OWN row, not appended to the status line. Sharing a row meant competing
+  // for width with "Running · 12m used · pauses in 3h · 2 vCPU · 2 GiB" inside a
+  // `truncate`, and the sign-in — the half you cannot get anywhere else on this
+  // page — was the part that disappeared.
+  const login = (
+    <span className="flex min-w-0 items-center gap-1.5 pl-7 text-[11px] text-muted-foreground">
+      <LoginLine loggedInUser={loggedInUser} autoLogin={autoLogin} />
+    </span>
+  );
   if (!info) {
     return (
-      <span className="flex items-center gap-1.5 pl-7 text-[11px] text-muted-foreground/50">
-        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-muted-foreground/40" />
-        {t`Checking…`}
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex items-center gap-1.5 pl-7 text-[11px] text-muted-foreground/50">
+          <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-muted-foreground/40" />
+          {t`Checking…`}
+        </span>
         {login}
-      </span>
+      </div>
     );
   }
   const status = info.status;
@@ -110,12 +141,14 @@ function SandboxStatus({
   const size = fmtSize(info.cpu_count, info.memory_mb);
   if (size) parts.push(size);
   return (
-    <span className="flex min-w-0 items-center gap-1.5 pl-7 text-[11px] text-muted-foreground" title={status}>
-      <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_STYLE[status]?.dot ?? 'bg-muted-foreground/40'}`} />
-      <span className="shrink-0">{labels[status] ?? status}</span>
-      {parts.length > 0 && <span className="truncate text-muted-foreground/70">· {parts.join(' · ')}</span>}
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span className="flex min-w-0 items-center gap-1.5 pl-7 text-[11px] text-muted-foreground" title={status}>
+        <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_STYLE[status]?.dot ?? 'bg-muted-foreground/40'}`} />
+        <span className="shrink-0">{labels[status] ?? status}</span>
+        {parts.length > 0 && <span className="truncate text-muted-foreground/70">· {parts.join(' · ')}</span>}
+      </span>
       {login}
-    </span>
+    </div>
   );
 }
 
@@ -126,13 +159,15 @@ function LoginLine({ loggedInUser, autoLogin }: { loggedInUser?: string | null; 
     <>
       {/* `null` covers both "signed out" and "never looked" — indistinguishable
           from here, and the honest rendering of both is the same. */}
+      {/* No leading separator any more: this renders on its own row, where a
+          dangling "·" reads as a missing first item rather than a join. */}
       {loggedInUser ? (
         <span className="truncate text-muted-foreground/70" data-testid="sandbox-user">
-          · {t`signed in as ${loggedInUser}`}
+          {t`signed in as ${loggedInUser}`}
         </span>
       ) : (
         <span className="shrink-0 text-muted-foreground/50" data-testid="sandbox-user-none">
-          · {t`signed out`}
+          {t`signed out`}
         </span>
       )}
       {autoLogin === false && (
@@ -183,6 +218,8 @@ export function HubHome() {
     renameSandbox,
     deleteSandbox,
     deletingId,
+    logoutSandbox,
+    loggingOutId,
     details,
     refetch,
   } = useSandboxes();
@@ -486,6 +523,36 @@ export function HubHome() {
                   >
                     <UserPlus className="h-4 w-4" />
                   </button>
+                  {/* Sign THIS box out — shown only when the box is running the
+                      session of the person looking at the page.
+
+                      The condition is the point. A box holds one cloud session,
+                      so "log out" is only ever meaningful about that one user;
+                      offering it while the box is signed in as someone else
+                      would read as a way to evict them, which this is not (it
+                      would also 403 — `ops` is owner-only). Comparison is on the
+                      normalized email because `logged_in_user` is whatever the
+                      box's provider record carried.
+
+                      This does NOT sign the viewer out of the hub page: the
+                      credentials being cleared live on the box's disk. */}
+                  {isSignedInAsMe(d, currentUser?.email) && (
+                    <button
+                      type="button"
+                      onClick={() => void logoutSandbox(d)}
+                      disabled={loggingOutId === d.id || !sandboxesEnabled}
+                      aria-label={t`Sign this sandbox out`}
+                      title={t`Sign out of this sandbox (you stay signed in here)`}
+                      data-testid="sandbox-logout"
+                      className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                    >
+                      {loggingOutId === d.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <LogOut className="h-4 w-4" />
+                      )}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={openSandboxSecrets}
@@ -562,7 +629,9 @@ export function HubHome() {
           shared with lose it too — so it asks first, unlike the sandbox rows. */}
       <ConfirmDialog
         open={!!confirmDeleteProject}
-        onOpenChange={(o) => { if (!o) setConfirmDeleteProject(null); }}
+        onOpenChange={(o) => {
+          if (!o) setConfirmDeleteProject(null);
+        }}
         title={t`Delete project?`}
         description={t`"${confirmDeleteProject?.displayName ?? ''}" will be deleted for everyone it is shared with. This cannot be undone.`}
         confirmLabel={t`Delete`}

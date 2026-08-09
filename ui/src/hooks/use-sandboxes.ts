@@ -18,6 +18,7 @@ import {
   type InstallNavigationResult,
   installProjectLandingUrl,
 } from '@src/lib/content-install';
+import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -56,16 +57,7 @@ export const WORKSPACE_SERVICE = 'workspace';
 // (see paintTab) — something the generic runner has no concept of.
 import type { Step as GenericStep } from './use-step-flow';
 
-export type StepId =
-  | 'launch'
-  | 'health'
-  | 'validate'
-  | 'clone'
-  | 'init'
-  | 'index'
-  | 'context'
-  | 'default'
-  | 'open';
+export type StepId = 'launch' | 'health' | 'validate' | 'clone' | 'init' | 'index' | 'context' | 'default' | 'open';
 export type Step = GenericStep<StepId>;
 
 /** Every row from `validate` to `default` is one `computeNodeTools` command, so
@@ -216,7 +208,6 @@ export interface SandboxSetup {
    *  the tree is copied in, then reconciled on the box. Git-backed only. */
   install?: ContentInstallSpec;
 }
-
 
 /** A repo that becomes its own project on the box AND a context folder of the
  *  main one — how a help desk's skills and assets come into scope. */
@@ -443,7 +434,7 @@ export function useSandboxes() {
       setCreating(true);
       setSteps(plannedSteps(sandboxProject));
 
-      const run = async <T,>(id: StepId, fn: () => Promise<T>): Promise<T> => {
+      const run = async <T>(id: StepId, fn: () => Promise<T>): Promise<T> => {
         patch(id, { status: 'loading', detail: undefined });
         try {
           const result = await fn();
@@ -493,11 +484,16 @@ export function useSandboxes() {
         // the box is up so copy_folder has a target.
         if (sandboxProject) await provisionSandboxProject(node, sandboxProject, run, patch);
 
-        await run('open', async () => {
+        await run('open', () => {
           // Nothing to resolve any more: the link is derived from the node id, and
           // the hub works out host, port, readiness and gate at click time. The row
           // stays so the checklist still ends on a completed line.
-          return workspaceServiceUrl(node.id);
+          //
+          // `Promise.resolve` rather than `async`: `run` wants a thunk returning a
+          // promise, and an `async` body with nothing to await trips
+          // `require-await` — which blocks the commit hook on any change to this
+          // file. Same value, same timing, no lie about being asynchronous.
+          return Promise.resolve(workspaceServiceUrl(node.id));
         });
 
         // The just-created sandbox is up — seed its status so the list effect
@@ -552,6 +548,32 @@ export function useSandboxes() {
 
   // ---- delete / terminate ----
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Sign a box out of the cloud. Separate state from `deletingId` so the two
+  // spinners cannot be mistaken for each other on the same card.
+  const [loggingOutId, setLoggingOutId] = useState<string | null>(null);
+
+  const logoutSandbox = useCallback(
+    async (node: ComputeNode) => {
+      setLoggingOutId(node.id);
+      try {
+        await node.logoutUser();
+        // Refetch, not an optimistic clear: `logged_in_user` is the hub's cached
+        // view of what the BOX reports, so the list is the only honest source
+        // for whether the sign-out actually took.
+        await refetch();
+      } catch (err) {
+        notify.error({
+          id: 'sandbox-logout',
+          title: 'Could not sign the sandbox out',
+          message: errorMessage(err, 'The sandbox did not confirm the sign-out.'),
+        });
+      } finally {
+        setLoggingOutId(null);
+      }
+    },
+    [refetch],
+  );
 
   const deleteSandbox = useCallback(
     async (node: ComputeNode) => {
@@ -618,6 +640,8 @@ export function useSandboxes() {
     renameSandbox,
     deleteSandbox,
     deletingId,
+    logoutSandbox,
+    loggingOutId,
     details,
   };
 }
