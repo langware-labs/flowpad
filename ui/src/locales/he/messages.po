@@ -4581,6 +4581,7 @@ msgstr "גרסת שולחן עבודה"
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
+#: src/components/webapp-display/WebDebugComponent.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "Details"
 msgstr "פרטים"
@@ -6297,6 +6298,11 @@ msgstr "התאימו את תצוגת Atlas"
 msgid "Fix All"
 msgstr "תקן הכל"
 
+#: src/components/webapp-display/WebappErrorBanner.tsx
+#: src/components/webapp-display/WebDebugComponent.tsx
+msgid "Fix it"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Fix It"
@@ -6305,6 +6311,10 @@ msgstr "תקן זאת"
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Fixing these tightens the skill for every future run."
 msgstr "תיקון אלה משפר את הכישוריות לכל הרצה עתידית."
+
+#: src/components/webapp-display/WebDebugComponent.tsx
+msgid "Fixing…"
+msgstr ""
 
 #: src/components/project-list/ProjectList.tsx
 #~ msgid "flow"
@@ -6970,6 +6980,10 @@ msgstr ""
 #: src/components/graph-view/ui/FilterChips.tsx
 msgid "Hide all types"
 msgstr "הסתר את כל הסוגים"
+
+#: src/components/webapp-display/WebDebugComponent.tsx
+msgid "Hide details"
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Hide empty"
@@ -8306,8 +8320,8 @@ msgid "Loading rules…"
 msgstr ""
 
 #: src/components/persistent-iframe.tsx
-msgid "Loading server..."
-msgstr "טוען שרת..."
+#~ msgid "Loading server..."
+#~ msgstr "טוען שרת..."
 
 #: src/components/collaboration/SharedSessionView.tsx
 msgid "Loading session…"
@@ -8705,6 +8719,7 @@ msgstr "הודעה (אופציונלי)"
 msgid "Message not queued"
 msgstr "ההודעה לא נוספה לתור"
 
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Message not sent"
@@ -11128,6 +11143,10 @@ msgstr "תיקייה הורה לשחזור לתוכה…"
 msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull changes</1> clears the latch."
 msgstr ""
 
+#: src/components/webapp-display/messages.tsx
+msgid "Part of your app didn't load."
+msgstr ""
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Participants"
 msgstr "משתתפים"
@@ -12771,8 +12790,8 @@ msgid "Retry"
 msgstr "נסה שוב"
 
 #: src/components/persistent-iframe.tsx
-msgid "Retry Connection"
-msgstr "נסה שוב חיבור"
+#~ msgid "Retry Connection"
+#~ msgstr "נסה שוב חיבור"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 msgid "Retry download"
@@ -14350,6 +14369,14 @@ msgstr "התחברו עם {account}"
 msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
 msgstr "יש להתחבר דרך {account} שלך כדי לאפשר ל{name} לכתוב ולהריץ קוד בשבילך. חלון דפדפן נפתח להזדהות — FlowPad אף פעם לא רואה את הסיסמה שלך."
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Sign out of this sandbox (you stay signed in here)"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Sign this sandbox out"
+msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "Sign-in"
 msgstr ""
@@ -14522,6 +14549,10 @@ msgstr "לחלק מהפריסות יש שגיאות"
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Some services stopped"
 #~ msgstr "חלק מהשירותים עצורים"
+
+#: src/components/webapp-display/messages.tsx
+msgid "Something is using this port, but it isn't your app."
+msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Something went wrong"
@@ -14764,6 +14795,11 @@ msgstr "מתחיל סריקה…"
 #: src/pages/flow-page/use-start-vibe-session.ts
 msgid "Starting the session without the attached files."
 msgstr "הסשן מתחיל ללא הקבצים המצורפים."
+
+#: src/components/webapp-display/messages.tsx
+#: src/components/webapp-display/WebappDisplay.tsx
+msgid "Starting your app…"
+msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Starting..."
@@ -15368,6 +15404,10 @@ msgstr "לפרויקט הנבחר אין תיקייה במחשב זה"
 msgid "The session has new activity since the last analysis — run a fresh one (previous runs are kept)"
 msgstr "לסשן יש פעילות חדשה מאז הניתוח האחרון — הרץ ניתוח חדש (הניתוחים הקודמים נשמרים)"
 
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+msgid "The session is still connecting — try again in a moment."
+msgstr ""
+
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "The session transcript could not be read."
 msgstr "לא ניתן לקרוא את תמליל ההפעלה."
@@ -15395,12 +15435,12 @@ msgstr "הערך מאוחסן במחזיק המפתחות של מערכת ההפ
 #: src/components/webapp-viewer.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
-msgid "The web app is not working, please try to fix it."
-msgstr "האפליקציה לא עובדת, בבקשה נסה להתקן את זה."
+#~ msgid "The web app is not working, please try to fix it."
+#~ msgstr "האפליקציה לא עובדת, בבקשה נסה להתקן את זה."
 
 #: src/components/persistent-iframe.tsx
-msgid "The webapp server is not running. Start the services to view the app."
-msgstr "שרת אפליקציית האינטרנט אינו פועל. התחל את השירותים כדי להציג את האפליקציה."
+#~ msgid "The webapp server is not running. Start the services to view the app."
+#~ msgstr "שרת אפליקציית האינטרנט אינו פועל. התחל את השירותים כדי להציג את האפליקציה."
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "The wizard reported an error."
@@ -15526,8 +15566,8 @@ msgid "This live session was declined."
 msgstr "הסשן החי נדחה."
 
 #: src/components/persistent-iframe.tsx
-msgid "This may take up to 20 seconds"
-msgstr "זה עשוי להימשך עד 20 שניות"
+#~ msgid "This may take up to 20 seconds"
+#~ msgstr "זה עשוי להימשך עד 20 שניות"
 
 #: src/pages/hub-home/HubHome.tsx
 #~ msgid "This opens a new FlowPad desktop and sets up the template project (clone + index) so it's ready to use."
@@ -15926,6 +15966,7 @@ msgstr "טריגרים"
 #~ msgstr "נסו זרימה לדוגמה כדי לראות את FlowPad בפעולה"
 
 #: src/components/cost-dashboard/CostDashboard.tsx
+#: src/components/webapp-display/WebDebugComponent.tsx
 #: src/pages/keychain-approval.tsx
 msgid "Try again"
 msgstr "נסה שוב"
@@ -15984,8 +16025,8 @@ msgstr "הקלד את ההודעה הראשונה שלך..."
 #~ msgstr "מחרוזת TypeId"
 
 #: src/components/persistent-iframe.tsx
-msgid "Unable to connect to webapp"
-msgstr "לא היה ניתן להתחבר לאפליקציית האינטרנט"
+#~ msgid "Unable to connect to webapp"
+#~ msgstr "לא היה ניתן להתחבר לאפליקציית האינטרנט"
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Unable to fetch branches. Please check your repository permissions."
@@ -16635,8 +16676,8 @@ msgstr "מצב אפליקציית הרשת"
 #~ msgstr "חיפוש ברשת"
 
 #: src/components/persistent-iframe.tsx
-msgid "Webapp Not Available"
-msgstr "אפליקציית אינטרנט לא זמינה"
+#~ msgid "Webapp Not Available"
+#~ msgstr "אפליקציית אינטרנט לא זמינה"
 
 #: src/components/webapp-viewer.tsx
 #~ msgid "Webapp not found in artifacts"
@@ -16989,6 +17030,38 @@ msgstr "מפתח ה-API שלך לאימות בקשות API ל-FlowPad"
 #: src/components/api-keys-view/api-keys-view.tsx
 msgid "Your API Keys"
 msgstr "מפתחות ה-API שלך"
+
+#: src/components/webapp-display/messages.tsx
+msgid "Your app is running, but parts of it may not work."
+msgstr ""
+
+#: src/components/webapp-display/messages.tsx
+msgid "Your app is running, but this page wasn't found."
+msgstr ""
+
+#: src/components/webapp-display/messages.tsx
+msgid "Your app isn't running right now."
+msgstr ""
+
+#: src/components/webapp-display/messages.tsx
+msgid "Your app keeps redirecting to itself."
+msgstr ""
+
+#: src/components/webapp-display/messages.tsx
+msgid "Your app loaded but is showing nothing."
+msgstr ""
+
+#: src/components/webapp-display/messages.tsx
+msgid "Your app opened but crashed while starting."
+msgstr ""
+
+#: src/components/webapp-display/messages.tsx
+msgid "Your app started but hit an error while loading."
+msgstr ""
+
+#: src/components/webapp-display/messages.tsx
+msgid "Your app started but stopped responding."
+msgstr ""
 
 #: src/components/graph-view/webglSupport.tsx
 msgid "Your browser could not create a WebGL context, so the graph cannot render. This usually means graphics acceleration is disabled or the GPU process crashed."
