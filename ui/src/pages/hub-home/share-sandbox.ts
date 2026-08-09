@@ -1,4 +1,4 @@
-import { ActionInfo, ComputeNode, dataManager, PageId } from '@sdk';
+import { ComputeNode, PageId } from '@sdk';
 import { workspaceServiceUrl } from '@src/hooks/use-sandboxes';
 import { errorMessage, errorStatus } from '@src/lib/error-message';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -44,13 +44,10 @@ export function sandboxShareLandingPath(): string {
   return DockPointer.forHome().withPage(PageId.HUB).toUrl();
 }
 
-/** Invoke the owner-only `auto-login` action on a node. */
-function autoLoginCall(nodeId: string, value: boolean): Promise<{ auto_login: boolean } | undefined> {
-  const info = new ActionInfo('auto-login', ComputeNode.type, nodeId, 'POST');
-  info.hubReflect = true; // the node is hub-owned
-  info.bodyParameters = { auto_login: value };
-  return dataManager.callAction<Record<string, unknown>, { auto_login: boolean } | undefined>(info);
-}
+// `setAutoLogin` used to live here. It moved to `use-sandboxes`, next to the
+// launch, because that is what it governs: whether bringing the workspace up
+// signs a person into it. Sharing a box and choosing whose session it runs are
+// different questions, and only one of them belongs to this module.
 
 export interface ShareOutcome {
   granted: string[];
@@ -137,18 +134,6 @@ export async function shareSandboxByEmail(
     }
   }
   return outcome;
-}
-
-/**
- * Set whether a box belongs to one person.
- *
- * Its own action, not a PUT on the entity: `update` is granted at editor and
- * above, so on the ordinary write path a shared admin could flip this. The hub
- * keeps `auto_login` in `_immutable_update` to close that path.
- */
-export async function setAutoLogin(node: ComputeNode, value: boolean): Promise<boolean> {
-  const res = await autoLoginCall(node.id, value);
-  return res?.auto_login ?? value;
 }
 
 /**

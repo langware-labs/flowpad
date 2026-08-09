@@ -19,9 +19,10 @@ import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
 import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
-import { useSandboxes, nextSandboxName, type SandboxDetails } from '@src/hooks/use-sandboxes';
+import { useSandboxes, isLaunched, nextSandboxName, type SandboxDetails } from '@src/hooks/use-sandboxes';
 import { StepList } from '@src/components/ui/step-list';
 import { NewSandboxDialog } from './NewSandboxDialog';
+import { LaunchSandboxDialog } from './LaunchSandboxDialog';
 import { ShareSandboxDialog } from './ShareSandboxDialog';
 import { MembershipInvitations } from '@src/components/inbox-view/MembershipInvitations';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
@@ -92,11 +93,17 @@ function fmtSize(cpu?: number, memMb?: number): string | null {
 function SandboxStatus({
   info,
   now,
+  launched = true,
+  launching = false,
   loggedInUser,
   autoLogin,
 }: {
   info?: SandboxDetails;
   now: number;
+  /** Has this box ever been booted? An unlaunched one has no status to probe. */
+  launched?: boolean;
+  /** Is it booting right now? */
+  launching?: boolean;
   loggedInUser?: string | null;
   autoLogin?: boolean;
 }) {
@@ -114,6 +121,21 @@ function SandboxStatus({
       <LoginLine loggedInUser={loggedInUser} autoLogin={autoLogin} />
     </span>
   );
+  // Never launched: there is no machine to have a status. Saying "Checking…"
+  // here would be a probe that is never coming, and "Unreachable" would blame a
+  // box that was never built.
+  if (!launched) {
+    return (
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex items-center gap-1.5 pl-7 text-[11px] text-muted-foreground/50">
+          <span
+            className={`h-2 w-2 shrink-0 rounded-full bg-muted-foreground/40 ${launching ? 'animate-pulse' : ''}`}
+          />
+          <span data-testid="sandbox-not-launched">{launching ? t`Starting…` : t`Not started`}</span>
+        </span>
+      </div>
+    );
+  }
   if (!info) {
     return (
       <div className="flex min-w-0 flex-col gap-0.5">
@@ -212,6 +234,8 @@ export function HubHome() {
   const {
     sandboxes,
     createSandbox,
+    launchSandbox,
+    launchingId,
     creating,
     steps,
     openSandbox,
@@ -279,6 +303,11 @@ export function HubHome() {
   // The sandbox whose share dialog is open, or null. Holds the node itself so
   // the dialog can read `auto_login` without a second fetch.
   const [sharing, setSharing] = useState<ComputeNode | null>(null);
+  // The never-launched sandbox whose launch dialog is open, or null. Launching
+  // asks first because it is the click that starts costing money, and because
+  // auto-login can only be chosen before the box signs anyone in. Opening an
+  // already-launched box stays one click — it asks nothing and starts nothing.
+  const [launching, setLaunching] = useState<ComputeNode | null>(null);
   // Drives the "accepting adds it below" hint, and lets the sandbox list
   // refresh once an invitation is accepted (the granted node appears in it).
   const [pendingInviteCount, setPendingInviteCount] = useState(0);
@@ -502,17 +531,35 @@ export function HubHome() {
                       indistinguishable from the share/secrets/delete icons
                       beside it. Those stay as hover icons — they are the rarer,
                       more destructive actions. */}
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => openSandbox(d)}
-                    disabled={!sandboxesEnabled}
-                    aria-label={t`Open sandbox`}
-                    data-testid="sandbox-open"
-                    className="h-7 shrink-0 px-2.5 text-xs"
-                  >
-                    <Trans>Open</Trans>
-                  </Button>
+                  {/* Two different acts behind one slot. A box that was never
+                      launched has no VM to open — the hub answers "this machine
+                      has not been set up yet" — so offering "Open" would be a
+                      button that 409s. Launch asks first; Open does not. */}
+                  {isLaunched(d) ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => openSandbox(d)}
+                      disabled={!sandboxesEnabled}
+                      aria-label={t`Open sandbox`}
+                      data-testid="sandbox-open"
+                      className="h-7 shrink-0 px-2.5 text-xs"
+                    >
+                      <Trans>Open</Trans>
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      onClick={() => setLaunching(d)}
+                      disabled={!sandboxesEnabled || launchingId === d.id}
+                      aria-label={t`Launch sandbox`}
+                      data-testid="sandbox-launch"
+                      className="h-7 shrink-0 px-2.5 text-xs"
+                    >
+                      {launchingId === d.id && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
+                      <Trans>Launch</Trans>
+                    </Button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setSharing(d)}
@@ -581,6 +628,8 @@ export function HubHome() {
                 <SandboxStatus
                   info={details[d.id]}
                   now={now}
+                  launched={isLaunched(d)}
+                  launching={launchingId === d.id}
                   loggedInUser={d.logged_in_user}
                   autoLogin={d.auto_login}
                 />
@@ -607,6 +656,20 @@ export function HubHome() {
         currentProject={currentProject}
         projects={projects}
         onCreate={createSandbox}
+        onLaunch={launchSandbox}
+        onOpen={openSandbox}
+        steps={steps}
+      />
+
+      {/* First boot of a box created earlier — the click that starts costing
+          money, and the last moment auto-login can be chosen. */}
+      <LaunchSandboxDialog
+        open={!!launching}
+        onOpenChange={(o) => {
+          if (!o) setLaunching(null);
+        }}
+        sandbox={launching}
+        onLaunch={launchSandbox}
         onOpen={openSandbox}
         steps={steps}
       />
