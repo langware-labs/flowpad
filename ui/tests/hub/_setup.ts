@@ -1,4 +1,5 @@
-import { installCleanup } from '../_cleanup';
+import { afterAll } from 'vitest';
+import { installCleanup, purgeRunScopedAt } from '../_cleanup';
 import {
   HUB_INST_1,
   HUB_INST_2,
@@ -46,3 +47,19 @@ if (
 // the hub. Scope is LOCAL-backend entities (the realm that created them); the
 // remote hub copy is out of scope.
 installCleanup({ sweepTypes: ['skill', 'conversation', 'workflow', 'whiteboard'] });
+
+/**
+ * Sweep THIS file's entities off the RECEIVER too.
+ *
+ * `installCleanup` above sweeps the CURRENT realm only (the sender), so anything
+ * a share materialised on the other instance survived teardown and leaked into
+ * the next file. Same RUN_ID scoping as the sender sweep, so a neighbour file's
+ * entities are never touched; `task`/`markdown` are the extra types only a
+ * receiver ends up holding.
+ */
+afterAll(async () => {
+  const receiver = resolveLaunchedInstance(
+    selectedInstance === HUB_INST_1 ? HUB_INST_2 : HUB_INST_1,
+  );
+  if (receiver) await purgeRunScopedAt(receiver.apiUrl, ['task', 'markdown']);
+});
