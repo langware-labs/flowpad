@@ -1813,8 +1813,8 @@ msgstr "Authorization failed or was denied. Click Retry to try again."
 #~ msgstr "Auto login user — this desktop belongs to one person."
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
-msgid "Auto login user — this sandbox belongs to one person."
-msgstr "Auto login user — this sandbox belongs to one person."
+#~ msgid "Auto login user — this sandbox belongs to one person."
+#~ msgstr "Auto login user — this sandbox belongs to one person."
 
 #: src/components/tasks-viewer/TasksViewer.tsx
 #~ msgid "Auto-archive after..."
@@ -2241,6 +2241,7 @@ msgstr "Can't update — showing last synced"
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -3481,8 +3482,8 @@ msgid "Could not change sign-in method"
 msgstr "Could not change sign-in method"
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
-msgid "Could not change this setting"
-msgstr "Could not change this setting"
+#~ msgid "Could not change this setting"
+#~ msgstr "Could not change this setting"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Could not check sign-in"
@@ -4851,6 +4852,8 @@ msgstr "done"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/wizard/WizardHost.tsx
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Done"
 msgstr "Done"
@@ -7878,19 +7881,23 @@ msgstr "Latest on GitHub"
 msgid "Latest on PyPI"
 msgstr "Latest on PyPI"
 
+#: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Launch"
 msgstr "Launch"
 
-#: src/pages/hub-home/HubHome.tsx
-#~ msgid "Launch {0}?"
-#~ msgstr "Launch {0}?"
+#. placeholder {0}: sandbox?.name || t`sandbox`
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
+msgid "Launch {0}?"
+msgstr "Launch {0}?"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Launch a session first"
 msgstr "Launch a session first"
 
 #: src/pages/entry/LaunchLanding.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Launch sandbox"
 msgstr "Launch sandbox"
 
@@ -10260,6 +10267,10 @@ msgstr "Not set"
 msgid "Not signed in — please re-authenticate"
 msgstr "Not signed in — please re-authenticate"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Not started"
+msgstr "Not started"
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Not started — your first prompt will request access to {hostName}'s machine."
 msgstr "Not started — your first prompt will request access to {hostName}'s machine."
@@ -10841,6 +10852,8 @@ msgstr "Open project view — {projectPath}"
 #~ msgstr "Open report"
 
 #: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Open sandbox"
 msgstr "Open sandbox"
 
@@ -13091,6 +13104,10 @@ msgstr "Runs as an AgenticProcess — see per-row status + transcript."
 msgid "Sample prompts"
 msgstr "Sample prompts"
 
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
+msgid "sandbox"
+msgstr "sandbox"
+
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -14369,6 +14386,11 @@ msgstr "Sign in with {account}"
 msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
 msgstr "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
 
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Sign me in automatically — this sandbox belongs to one person."
+msgstr "Sign me in automatically — this sandbox belongs to one person."
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sign out of this sandbox (you stay signed in here)"
 msgstr "Sign out of this sandbox (you stay signed in here)"
@@ -14808,6 +14830,7 @@ msgstr "Starting your app…"
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Starting…"
 msgstr "Starting…"
 
@@ -15650,6 +15673,10 @@ msgstr "This session is running remotely by {guestName} on your machine."
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "This source's remote identity — one source per account."
 msgstr "This source's remote identity — one source per account."
+
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
+msgid "This starts the machine and sets up whatever it was created with."
+msgstr "This starts the machine and sets up whatever it was created with."
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "This trace is not linked to a worker session."
@@ -16936,6 +16963,10 @@ msgstr "Worktree"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Would you like to launch a sandbox for this repository?"
 msgstr "Would you like to launch a sandbox for this repository?"
+
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Written down, not started. Launching boots it and sets the project up."
+msgstr "Written down, not started. Launching boots it and sets the project up."
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "XKCD-J3F2"

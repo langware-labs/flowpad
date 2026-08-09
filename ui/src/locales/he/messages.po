@@ -1813,8 +1813,8 @@ msgstr "ההרשאה נכשלה או נדחתה. לחץ על Retry כדי לנס
 #~ msgstr ""
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
-msgid "Auto login user — this sandbox belongs to one person."
-msgstr ""
+#~ msgid "Auto login user — this sandbox belongs to one person."
+#~ msgstr ""
 
 #: src/components/tasks-viewer/TasksViewer.tsx
 #~ msgid "Auto-archive after..."
@@ -2241,6 +2241,7 @@ msgstr "לא ניתן לעדכן — מוצגים הנתונים מהסנכרו�
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -3481,8 +3482,8 @@ msgid "Could not change sign-in method"
 msgstr "לא ניתן היה לשנות את שיטת ההתחברות"
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
-msgid "Could not change this setting"
-msgstr ""
+#~ msgid "Could not change this setting"
+#~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Could not check sign-in"
@@ -4851,6 +4852,8 @@ msgstr "הושלם"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/wizard/WizardHost.tsx
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Done"
 msgstr "בוצע"
@@ -7878,19 +7881,23 @@ msgstr "האחרון ב-GitHub"
 msgid "Latest on PyPI"
 msgstr "האחרון ב-PyPI"
 
+#: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Launch"
 msgstr "הפעלה"
 
-#: src/pages/hub-home/HubHome.tsx
-#~ msgid "Launch {0}?"
-#~ msgstr ""
+#. placeholder {0}: sandbox?.name || t`sandbox`
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
+msgid "Launch {0}?"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Launch a session first"
 msgstr "הפעל סדרה תחילה"
 
 #: src/pages/entry/LaunchLanding.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Launch sandbox"
 msgstr "הפעלת ארגז חול"
 
@@ -10260,6 +10267,10 @@ msgstr ""
 msgid "Not signed in — please re-authenticate"
 msgstr "אין התחברות פעילה — יש להתחבר מחדש"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Not started"
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Not started — your first prompt will request access to {hostName}'s machine."
 msgstr "טרם התחיל — גישה למכונה של {hostName} תתבקש עם ההנחיה הראשונה שלך."
@@ -10841,6 +10852,8 @@ msgstr "פתיחת תצוגת הפרויקט — {projectPath}"
 #~ msgstr "פתח דוח"
 
 #: src/pages/hub-home/HubHome.tsx
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Open sandbox"
 msgstr ""
 
@@ -13091,6 +13104,10 @@ msgstr "פועל כ-AgenticProcess — ראה סטטוס לכל שורה + טר�
 msgid "Sample prompts"
 msgstr "שאילתות לדוגמה"
 
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
+msgid "sandbox"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -14369,6 +14386,11 @@ msgstr "התחברו עם {account}"
 msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
 msgstr "יש להתחבר דרך {account} שלך כדי לאפשר ל{name} לכתוב ולהריץ קוד בשבילך. חלון דפדפן נפתח להזדהות — FlowPad אף פעם לא רואה את הסיסמה שלך."
 
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Sign me in automatically — this sandbox belongs to one person."
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sign out of this sandbox (you stay signed in here)"
 msgstr ""
@@ -14808,6 +14830,7 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Starting…"
 msgstr "מתחיל…"
 
@@ -15649,6 +15672,10 @@ msgstr "ההפעלה מתבצעת כרגע מרחוק על ידי {guestName} ב
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "This source's remote identity — one source per account."
+msgstr ""
+
+#: src/pages/hub-home/LaunchSandboxDialog.tsx
+msgid "This starts the machine and sets up whatever it was created with."
 msgstr ""
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
@@ -16936,6 +16963,10 @@ msgstr "Worktree"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Would you like to launch a sandbox for this repository?"
 msgstr "האם להפעיל ארגז חול עבור המאגר הזה?"
+
+#: src/pages/hub-home/NewSandboxDialog.tsx
+msgid "Written down, not started. Launching boots it and sets the project up."
+msgstr ""
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "XKCD-J3F2"
