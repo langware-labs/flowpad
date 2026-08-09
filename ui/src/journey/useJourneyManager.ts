@@ -225,9 +225,15 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   const [waiting, setWaiting] = useState(false);
   useEffect(() => setWaiting(false), [stepNumber]);
 
+  // The step this manager has already moved on from. Landing is idempotent per
+  // step: `land` runs from an effect, and an effect whose deps churn would
+  // otherwise re-enter it — each re-entry recording again and re-rendering,
+  // which is what produced the render loop that froze the tab.
+  const landed = useRef<number | null>(null);
   const land = useCallback(
     (event: 'done' | 'skipped' = 'done') => {
-      if (!currentStep || stepNumber === null) return;
+      if (!currentStep || stepNumber === null || landed.current === stepNumber) return;
+      landed.current = stepNumber;
       setWaiting(false);
       record(currentStep.node_id, event);
       if (stepNumber < graph.length) {
