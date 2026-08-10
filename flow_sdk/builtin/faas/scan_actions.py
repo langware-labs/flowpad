@@ -72,9 +72,6 @@ def _start_failure_response(reason, worker_type: str, fallback: ApiFailResponse)
     otherwise stamp on — the FLOWPAD-1971 symptom). Anything transient keeps the
     caller's original response.
     """
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-        worker_capability_kind,
-    )
     from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
 
     exc = reason if isinstance(reason, BaseException) else RuntimeError(str(reason))
@@ -84,11 +81,6 @@ def _start_failure_response(reason, worker_type: str, fallback: ApiFailResponse)
     return ApiFailResponse(
         message=f"{worker_type} is not available on this machine.",
         status_code=400,
-        data={
-            "code": str(verdict.code),
-            "worker_type": worker_type,
-            "capability_kind": worker_capability_kind(worker_type),
-        },
     )
 
 
@@ -301,12 +293,8 @@ class ScanActionsMixin:
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
-        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-            worker_capability_kind,
-        )
         from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions
         from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions
-        from flow_sdk.builtin.agentic_process.launch_health import LaunchErrorCode
         from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
 
         try:
@@ -413,16 +401,9 @@ class ScanActionsMixin:
                     f"ComputeNode {self.id} createProcess refused: "
                     f"{worker_type.value} is not installed"
                 )
-                # ``code`` is what the UI branches on and ``capability_kind`` is
-                # what it deep-links to; both are stable wire strings.
                 return ApiFailResponse(
                     message=f"{worker_type.value} is not installed on this machine.",
                     status_code=400,
-                    data={
-                        "code": str(LaunchErrorCode.NOT_INSTALLED),
-                        "worker_type": worker_type.value,
-                        "capability_kind": worker_capability_kind(worker_type.value),
-                    },
                 )
 
             model = context_data.pop("model", None) or None
