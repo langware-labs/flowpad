@@ -200,7 +200,6 @@ async def test_scan_create_process_missing_harness_is_400_not_500(visible):
     assert resp.data["code"] == LaunchErrorCode.NOT_INSTALLED.value
     assert resp.data["capability_kind"] == "harness.codex.cli"
     assert resp.data["worker_type"] == "codex"
-    assert resp.data["health"] == "config_error"
     # The human half must name the provider, not restate the status line.
     assert "not installed" in (resp.message or "")
 

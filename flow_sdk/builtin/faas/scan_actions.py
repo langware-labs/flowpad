@@ -61,55 +61,6 @@ def _resolve_session_record(session_id: str, hint: str | None = None):
 # launch pre-flight — a "needs a human" verdict is a 4xx, not a 500
 # ─────────────────────────────────────────────────────────────────────────────
 
-#: Human copy per launch-error code. The machine-readable ``code`` in ``data``
-#: is what the UI branches on; this is only what the user reads.
-_CAPABILITY_MESSAGES = {
-    "not_installed": "{name} is not installed on this machine.",
-    "not_authenticated": "{name} is installed but not signed in.",
-    "no_api_key": "{name} has no API key configured.",
-}
-
-
-def _capability_fail(error, worker_type: str) -> ApiFailResponse:
-    """A ``LaunchError`` verdict → a structured 400.
-
-    ``LaunchHealth.CONFIG_ERROR`` means "needs a human" — a client error, not a
-    server fault. Left alone, such a verdict reaches HTTP as an
-    ``ApiFailResponse`` carrying no ``status_code``, which ``response.py``
-    defaults to 500 and ``graph.py`` stamps onto the response: the FLOWPAD-1971
-    symptom, where a missing CLI read as an internal server error.
-
-    ``data`` carries ``LaunchError.as_dict()`` verbatim (health / code / detail /
-    worker_type) plus the capability identity, so the UI can name the provider
-    and deep-link ``/dock/capabilities?capability=<kind>`` without guessing.
-    """
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-        worker_capability_kind,
-    )
-
-    kind = worker_capability_kind(worker_type)
-    name, homepage = worker_type, None
-    try:
-        from flow_sdk.core.capabilities.registry import get_capability_registry
-
-        spec = get_capability_registry().get(kind).spec
-        name, homepage = spec.name, spec.homepage_url
-    except Exception:  # noqa: BLE001 — an error builder must never become the error
-        logging.debug(f"createProcess: no capability spec for {kind!r}", exc_info=True)
-
-    template = _CAPABILITY_MESSAGES.get(str(error.code))
-    message = template.format(name=name) if template else f"{name} is not available: {error.detail}"
-    return ApiFailResponse(
-        message=message,
-        status_code=400,
-        data={
-            **error.as_dict(),
-            "capability_kind": kind,
-            "name": name,
-            "homepage_url": homepage,
-        },
-    )
-
 
 def _start_failure_response(reason, worker_type: str, fallback: ApiFailResponse) -> ApiFailResponse:
     """Classify a spawn failure that got past the pre-flight.
@@ -117,16 +68,28 @@ def _start_failure_response(reason, worker_type: str, fallback: ApiFailResponse)
     The pre-flight can still lose a race — a CLI deleted between the check and
     the spawn. ``LaunchError.classify`` already recognises ``WorkerSpawnError``
     and the "no … installation discovered" text, so a config verdict answers
-    4xx here instead of inheriting the 500 default. Anything transient keeps the
+    4xx here instead of inheriting the 500 default (which ``response.py`` would
+    otherwise stamp on — the FLOWPAD-1971 symptom). Anything transient keeps the
     caller's original response.
     """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+        worker_capability_kind,
+    )
     from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
 
     exc = reason if isinstance(reason, BaseException) else RuntimeError(str(reason))
     verdict = LaunchError.classify(exc, worker_type)
-    if verdict.health is LaunchHealth.CONFIG_ERROR:
-        return _capability_fail(verdict, worker_type)
-    return fallback
+    if verdict.health is not LaunchHealth.CONFIG_ERROR:
+        return fallback
+    return ApiFailResponse(
+        message=f"{worker_type} is not available on this machine.",
+        status_code=400,
+        data={
+            "code": str(verdict.code),
+            "worker_type": worker_type,
+            "capability_kind": worker_capability_kind(worker_type),
+        },
+    )
 
 
 class ScanActionsMixin:
@@ -338,9 +301,12 @@ class ScanActionsMixin:
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+            worker_capability_kind,
+        )
         from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions
         from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions
-        from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchErrorCode
+        from flow_sdk.builtin.agentic_process.launch_health import LaunchErrorCode
         from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
 
         try:
@@ -447,11 +413,16 @@ class ScanActionsMixin:
                     f"ComputeNode {self.id} createProcess refused: "
                     f"{worker_type.value} is not installed"
                 )
-                return _capability_fail(
-                    LaunchError.config(
-                        LaunchErrorCode.NOT_INSTALLED, "harness is not installed", worker_type.value
-                    ),
-                    worker_type.value,
+                # ``code`` is what the UI branches on and ``capability_kind`` is
+                # what it deep-links to; both are stable wire strings.
+                return ApiFailResponse(
+                    message=f"{worker_type.value} is not installed on this machine.",
+                    status_code=400,
+                    data={
+                        "code": str(LaunchErrorCode.NOT_INSTALLED),
+                        "worker_type": worker_type.value,
+                        "capability_kind": worker_capability_kind(worker_type.value),
+                    },
                 )
 
             model = context_data.pop("model", None) or None
