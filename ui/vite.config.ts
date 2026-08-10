@@ -14,7 +14,9 @@ export default defineConfig(({ mode }) => {
     envDir,
     base: '/',
     define: {
-      __API_URL__: JSON.stringify(env.VITE_API_URL || (isPackage ? '' : `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`)),
+      __API_URL__: JSON.stringify(
+        env.VITE_API_URL || (isPackage ? '' : `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`),
+      ),
       __AUTH_PROVIDER__: JSON.stringify(env.AUTH_PROVIDER || 'local'),
       __DEPLOY_ENV__: JSON.stringify(env.DEPLOY_ENV || 'local'),
       __IS_PACKAGE__: JSON.stringify(!!isPackage),
@@ -59,7 +61,7 @@ export default defineConfig(({ mode }) => {
             'props2.ref = React.useMemo(' +
               '() => forwardedRef ? composeRefs(forwardedRef, childrenRef) : childrenRef, ' +
               '[forwardedRef, childrenRef]' +
-            ');',
+              ');',
           );
           return patched === code ? null : { code: patched, map: null };
         },
@@ -87,21 +89,38 @@ export default defineConfig(({ mode }) => {
       // `/api/*` URLs from inside the sandbox. In Electron/wheel this is
       // same-origin with the backend (no proxy needed); in `npm run dev` the
       // backend is on a different port, so proxy it here.
-      // Hub-mode runs with an explicit VITE_API_URL and must exercise the real
-      // hub origin. Keep the proxy only for ordinary local desktop dev.
-      proxy: env.VITE_API_URL
-        ? undefined
-        : {
-            '/api/v1/connect/ws': {
-              target: `ws://localhost:${env.LOCAL_SERVER_PORT || '9007'}`,
-              ws: true,
-              changeOrigin: true,
-            },
-            '/api': {
-              target: `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`,
-              changeOrigin: true,
-            },
+      // The proxy is NOT optional in dev, and VITE_API_URL is the wrong switch
+      // for it. That variable steers the SPA's own XHRs, which are absolute and
+      // therefore never touch this server. It cannot steer a BROWSER
+      // NAVIGATION -- and the hub's login redirect is exactly that: an
+      // app-origin `<app_url>/api/v1/login` (authorizer._login_url_back_to).
+      //
+      // With the proxy off, that navigation landed on the SPA router, which
+      // re-rendered, found no session, and redirected to login again -- wrapping
+      // the previous url into `target_path` each pass. A redirect loop with an
+      // address growing one encoding layer at a time, not the "Page not found"
+      // the old comment predicted.
+      //
+      // So: always proxy, and let VITE_API_URL choose the TARGET. One knob
+      // ("which hub am I talking to?") instead of two that could disagree.
+      proxy: (() => {
+        const target = env.VITE_API_URL || `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`;
+        return {
+          // Derived from the same value so the two can never skew: http -> ws,
+          // https -> wss.
+          '/api/v1/connect/ws': {
+            target: target.replace(/^http/, 'ws'),
+            ws: true,
+            changeOrigin: true,
           },
+          // changeOrigin rewrites Host, which a remote hub behind a vhost
+          // requires and a localhost one does not mind.
+          '/api': {
+            target,
+            changeOrigin: true,
+          },
+        };
+      })(),
     },
     optimizeDeps: {
       exclude: ['playwright-core', 'playwright'],
@@ -131,10 +150,7 @@ export default defineConfig(({ mode }) => {
         // @xterm/headless 6.0.0 declares module:"lib/xterm.mjs" but ships
         // lib-headless/xterm-headless.mjs — Node resolves via main, Vite via
         // module and fails. Point straight at the shipped ESM build.
-        '@xterm/headless': path.resolve(
-          __dirname,
-          'node_modules/@xterm/headless/lib-headless/xterm-headless.mjs',
-        ),
+        '@xterm/headless': path.resolve(__dirname, 'node_modules/@xterm/headless/lib-headless/xterm-headless.mjs'),
       },
       dedupe: SHARED_DEDUPE,
     },

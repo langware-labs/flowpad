@@ -1,4 +1,4 @@
-import { ComputeNode } from '@sdk';
+import { cloudManager, ComputeNode } from '@sdk';
 import { workspaceServiceUrl } from '@src/hooks/use-sandboxes';
 import { errorMessage, errorStatus } from '@src/lib/error-message';
 
@@ -145,17 +145,45 @@ export async function shareSandboxByEmail(
 /**
  * The link to hand someone once they have access.
  *
- * Deliberately the SAME url the card's Open button uses — the open-service
- * route, which resolves the machine's state at click time: it authorizes the
- * caller, resumes a paused box, waits for the workspace to answer, and only then
- * redirects.
+ * The SAME destination the invitation email uses, and that is the whole point:
+ * ONE shared link, with one set of powers. It used to be `workspaceServiceUrl`
+ * — the hub's `open-service` route — on the reasoning that it is the same url
+ * the card's Open button follows. True, and it made the copied link strictly
+ * weaker than the emailed one, because `open-service` OPENS a box and cannot
+ * BUILD one: pointed at a sandbox that was created but never launched, it
+ * answers 409 "this machine has not been set up yet" and the recipient is out of
+ * moves. A sandbox is written down and launched by two separate clicks, so being
+ * shared before its first launch is ordinary, not exotic — and it is exactly the
+ * state a handover arrives in when the new owner is meant to start it.
  *
- * Safe to paste into a chat or an email because it is not a bearer token. The
- * hub requires an authenticated principal holding at least `admin` on the node
- * before it will even attach the cookie-gate secret, so a stranger who gets hold
- * of this gets a 403, not a session. That is exactly why it must never be the
- * raw gated host url, which carries that secret in its query string.
+ * `/open-sandbox` is the page that knows both verbs. It launches the box when
+ * the box needs launching and the recipient may launch it, and redirects
+ * through `open-service` otherwise — which is still what does the authorizing,
+ * the resuming and the waiting. This adds a step in front of that route; it
+ * takes nothing away from it.
+ *
+ * Absolute, unlike {@link sandboxShareLandingPath}: this one is pasted into a
+ * chat or an email, where a bare path resolves against the wrong origin or
+ * nothing at all. The invite keeps the path form because `callback_override` is
+ * validated hub-side by `is_safe_app_path`, which rejects an absolute url.
+ *
+ * ANCHORED TO THE HUB, NEVER TO THE BROWSER. `window.location.origin` is the
+ * obvious way to make it absolute and it is wrong: the desktop app runs on
+ * `localhost` while talking to a remote hub, so a link built that way reads
+ * `http://localhost:4093/open-sandbox?node=…` — a perfect link to the sender's
+ * own machine, handed to someone else. `cloudAppUrl` is the seam for exactly
+ * this: it IS `window.location.origin` in hub mode, where the browser is already
+ * on the hub, and the configured hub origin in desktop mode, where it is not.
+ * The `open-service` origin is the fallback because that is the hub the API
+ * actually talks to, and because it is the origin this link carried before it
+ * was absolute at all — so the two entry points cannot end up on different hubs.
+ *
+ * Safe to paste because it is not a bearer token: it names a node and carries no
+ * credential, and every door behind it authorizes the caller. A stranger gets a
+ * 403, not a session. That is exactly why it must never be the raw gated host
+ * url, which carries the cookie-gate secret in its query string.
  */
 export function sandboxShareLink(node: ComputeNode): string {
-  return workspaceServiceUrl(node.id);
+  const origin = cloudManager.cloudAppUrl || new URL(workspaceServiceUrl(node.id)).origin;
+  return new URL(sandboxShareLandingPath(node.id), origin).toString();
 }

@@ -408,3 +408,9 @@ for state in ('running','paused'):
 
 The provider id is what `ops/setup` returned. A `DELETE https://api.e2b.dev/sandboxes/<id>`
 with the same key ends it; `404` means it was already gone.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: d7ba071f-84a7-409c-9916-c95b98e87dd0
+flowpad:endcapsule identity -->
