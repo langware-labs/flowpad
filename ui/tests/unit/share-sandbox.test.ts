@@ -10,7 +10,7 @@
  * and the helpers under test all run for real.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ComputeNode, dataManager } from '@sdk';
+import { cloudManager, ComputeNode, dataManager } from '@sdk';
 import { workspaceServiceUrl } from '@src/hooks/use-sandboxes';
 import {
   SANDBOX_SHARE_ROLE,
@@ -212,18 +212,35 @@ describe('sandboxShareLink', () => {
   });
 
   it('points at the HUB, not at whatever machine the sender is sitting on', () => {
-    // The regression this exists for, seen in the wild: built from
-    // `window.location.origin`, the desktop app — which runs on localhost while
-    // talking to a remote hub — produced
-    // `http://localhost:4093/open-sandbox?node=…`. A flawless link to the
-    // sender's own laptop, handed to somebody else.
+    // The regression this exists for, shipped twice: run the app locally against
+    // a remote hub and the link came out
+    // `http://localhost:4093/open-sandbox?node=…` — a flawless link to the
+    // sender's own laptop, handed to somebody who cannot reach it.
     //
     // Asserted against the `open-service` origin rather than a literal: that is
     // the hub the API talks to, and the two entry points to one box must never
     // resolve to different hubs.
     const link = sandboxShareLink(node);
+    const hub = new URL(workspaceServiceUrl(NODE_ID)).origin;
 
-    expect(new URL(link).origin).toBe(new URL(workspaceServiceUrl(NODE_ID)).origin);
+    // Non-vacuous by construction: the browser origin under test (:3000) is not
+    // the hub origin (:9007), so the discarded implementation fails this line.
+    expect(window.location.origin).not.toBe(hub);
+    expect(new URL(link).origin).toBe(hub);
+  });
+
+  it('ignores cloudAppUrl, which is the browser origin in hub mode', () => {
+    // The SECOND wrong answer, and the subtler one: `cloudAppUrl` reads like
+    // "the hub's browser origin" but `cloud_login.ts` ASSIGNS it
+    // `window.location.origin` under `isHubOnly()` — which is true for any app
+    // pointed at a hub, the local dev harness included. So it reproduces the
+    // localhost link exactly, under a name that suggests it cannot.
+    const spy = vi.spyOn(cloudManager, 'cloudAppUrl', 'get').mockReturnValue('http://localhost:4093');
+    try {
+      expect(new URL(sandboxShareLink(node)).origin).toBe(new URL(workspaceServiceUrl(NODE_ID)).origin);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('carries no secret, no host and no port', () => {

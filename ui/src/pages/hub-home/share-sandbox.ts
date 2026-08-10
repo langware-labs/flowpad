@@ -1,4 +1,4 @@
-import { cloudManager, ComputeNode } from '@sdk';
+import { ComputeNode } from '@sdk';
 import { workspaceServiceUrl } from '@src/hooks/use-sandboxes';
 import { errorMessage, errorStatus } from '@src/lib/error-message';
 
@@ -167,16 +167,25 @@ export async function shareSandboxByEmail(
  * nothing at all. The invite keeps the path form because `callback_override` is
  * validated hub-side by `is_safe_app_path`, which rejects an absolute url.
  *
- * ANCHORED TO THE HUB, NEVER TO THE BROWSER. `window.location.origin` is the
- * obvious way to make it absolute and it is wrong: the desktop app runs on
- * `localhost` while talking to a remote hub, so a link built that way reads
- * `http://localhost:4093/open-sandbox?node=…` — a perfect link to the sender's
- * own machine, handed to someone else. `cloudAppUrl` is the seam for exactly
- * this: it IS `window.location.origin` in hub mode, where the browser is already
- * on the hub, and the configured hub origin in desktop mode, where it is not.
- * The `open-service` origin is the fallback because that is the hub the API
- * actually talks to, and because it is the origin this link carried before it
- * was absolute at all — so the two entry points cannot end up on different hubs.
+ * ANCHORED TO THE API ORIGIN — the hub — and to nothing else. Two plausible
+ * sources are both wrong, and both were shipped here before this comment existed:
+ *
+ * `window.location.origin` is where the SENDER's browser happens to be. Run the
+ * app locally against a remote hub and the link reads
+ * `http://localhost:4093/open-sandbox?node=…`: a flawless link to the sender's
+ * own laptop, handed to somebody who cannot reach it.
+ *
+ * `cloudManager.cloudAppUrl` looks like the fix and is the same bug wearing a
+ * better name. In hub mode — which is ANY app pointed at a hub, including that
+ * same local dev harness — it is ASSIGNED `window.location.origin`, on purpose:
+ * it answers "where is my browser's app origin", which is right for navigating
+ * yourself and wrong for a link you hand to someone else. See
+ * `cloud_login.ts`'s hub-mode branch, which says as much.
+ *
+ * The API origin is neither. It is where the hub actually is, in every mode, and
+ * it is the origin this link already carried before it was absolute at all —
+ * taken from `workspaceServiceUrl` rather than re-derived, so the two entry
+ * points to one box can never resolve to different hubs.
  *
  * Safe to paste because it is not a bearer token: it names a node and carries no
  * credential, and every door behind it authorizes the caller. A stranger gets a
@@ -184,6 +193,6 @@ export async function shareSandboxByEmail(
  * url, which carries the cookie-gate secret in its query string.
  */
 export function sandboxShareLink(node: ComputeNode): string {
-  const origin = cloudManager.cloudAppUrl || new URL(workspaceServiceUrl(node.id)).origin;
+  const { origin } = new URL(workspaceServiceUrl(node.id));
   return new URL(sandboxShareLandingPath(node.id), origin).toString();
 }
