@@ -35,21 +35,21 @@ def _make_request_info(body: dict):
 
 
 _PATCH_REQ_SCAN = "flow_sdk.builtin.faas.scan_actions.get_current_request_info"
-_PATCH_LAUNCHABLE = "flow_sdk.builtin.agentic_process.launch_health.ensure_launchable"
 
 
-@pytest.fixture(autouse=True)
-def _harness_available():
-    """Neutralise the harness pre-flight for every test in this file.
+class _InstalledHarness:
+    """Base for the ``AgenticProcess`` stand-ins below.
 
     ``_scan_create_process`` now refuses before persisting anything when the
-    chosen harness isn't installed. These tests replace ``AgenticProcess`` with a
-    fake that has no ``is_installed``, so the real pre-flight would classify that
-    AttributeError as a launch problem and every case here would answer 400. The
-    refusal has its own coverage below, which patches over this fixture.
+    chosen harness isn't installed, and it asks the class itself
+    (``AgenticProcess.is_installed``). Every fake that replaces AgenticProcess
+    must therefore answer that call, or the pre-flight would refuse first and
+    the case under test would never run.
     """
-    with patch(_PATCH_LAUNCHABLE, AsyncMock(return_value=None)) as mock:
-        yield mock
+
+    @staticmethod
+    async def is_installed(worker_type=None) -> bool:
+        return True
 
 
 # ─── createProcess fresh path ────────────────────────────────────────────────
@@ -72,7 +72,7 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
 
     captured: dict = {}
 
-    class FakeProc:
+    class FakeProc(_InstalledHarness):
         def __init__(self, **kwargs):
             captured.update(kwargs)
             self._data = kwargs
@@ -125,7 +125,7 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
 
     captured: dict = {}
 
-    class FakeProc:
+    class FakeProc(_InstalledHarness):
         def __init__(self, **kwargs):
             captured.update(kwargs)
             self._data = kwargs
@@ -157,11 +157,19 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
 # ─── createProcess harness pre-flight (FLOWPAD-1971) ─────────────────────────
 
 
-class _NeverBuilt:
+class _NeverBuilt(_InstalledHarness):
     """An AgenticProcess stand-in that fails the test if it is constructed."""
 
     def __init__(self, **kwargs):
         raise AssertionError(f"AgenticProcess must not be constructed: {kwargs}")
+
+
+class _MissingHarness(_NeverBuilt):
+    """...and whose CLI discovery never found, so the pre-flight must refuse."""
+
+    @staticmethod
+    async def is_installed(worker_type=None) -> bool:
+        return False
 
 
 @pytest.mark.asyncio
@@ -174,18 +182,16 @@ async def test_scan_create_process_missing_harness_is_400_not_500(visible):
     500 — after the row had already been saved and latched FAILED. Both modes are
     covered: headless used to be born fine and only break on its first prompt.
     """
-    from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchErrorCode
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchErrorCode
 
     node = _make_compute_node()
     info = _make_request_info({
         "context": {"workdir": "/tmp/proj", "worker_type": "codex"},
         "visible": visible,
     })
-    problem = LaunchError.config(LaunchErrorCode.NOT_INSTALLED, "harness is not installed", "codex")
 
     with patch(_PATCH_REQ_SCAN, return_value=info), \
-         patch(_PATCH_LAUNCHABLE, AsyncMock(return_value=problem)), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _NeverBuilt):
+         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _MissingHarness):
         resp = await node._scan_create_process()
 
     assert isinstance(resp, ApiFailResponse)
@@ -200,11 +206,13 @@ async def test_scan_create_process_missing_harness_is_400_not_500(visible):
 
 
 @pytest.mark.asyncio
-async def test_scan_create_process_preflight_runs_install_only():
+async def test_scan_create_process_preflight_never_probes_login():
     """The gate must not pay for an auth probe on the create path.
 
-    ``ensure_launchable``'s login half shells out to the vendor CLI, uncached,
-    per call. Creation asks for the install check alone.
+    ``is_installed`` is a lookup in the discovery dict. Its neighbour
+    ``is_logged_in`` shells out to the vendor CLI, uncached, per call — which is
+    why the pre-flight calls the former directly rather than going through
+    ``ensure_launchable``, which runs both.
     """
     node = _make_compute_node()
     info = _make_request_info({
@@ -212,7 +220,10 @@ async def test_scan_create_process_preflight_runs_install_only():
         "visible": False,
     })
 
-    class FakeProc:
+    class FakeProc(_InstalledHarness):
+        is_installed = AsyncMock(return_value=True)
+        is_logged_in = AsyncMock()
+
         def __init__(self, **kwargs):
             self.id = "preflight-1"
             self.type = "agentic_process"
@@ -225,14 +236,13 @@ async def test_scan_create_process_preflight_runs_install_only():
         def model_dump(self, mode=None):
             return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
 
-    launchable = AsyncMock(return_value=None)
     with patch(_PATCH_REQ_SCAN, return_value=info), \
-         patch(_PATCH_LAUNCHABLE, launchable), \
          patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
         resp = await node._scan_create_process()
 
     assert resp.status == "SUCCESS"
-    launchable.assert_awaited_once_with("codex", check_auth=False)
+    FakeProc.is_installed.assert_awaited_once_with("codex")
+    FakeProc.is_logged_in.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -264,7 +274,7 @@ async def test_scan_create_process_start_race_classifies_to_400():
         "visible": True,
     })
 
-    class FakeProc:
+    class FakeProc(_InstalledHarness):
         def __init__(self, **kwargs):
             self.id = "raced-1"
             self.type = "agentic_process"
@@ -297,7 +307,7 @@ async def test_scan_create_process_uses_capability_default_without_overriding_ex
     node = _make_compute_node()
     captured: list[dict] = []
 
-    class FakeProc:
+    class FakeProc(_InstalledHarness):
         def __init__(self, **kwargs):
             captured.append(kwargs)
             self._data = kwargs
@@ -352,7 +362,7 @@ async def test_scan_upsert_session_process_creates_fresh_when_no_existing():
 
     captured: dict = {}
 
-    class FakeProc:
+    class FakeProc(_InstalledHarness):
         # get_all returns [] (no existing), so fall through to construct branch
         @classmethod
         async def get_by_session_id(cls, session_id):
@@ -433,7 +443,7 @@ async def test_scan_upsert_session_process_returns_existing_on_resume():
         "created": False,
     }
 
-    class FakeProc:
+    class FakeProc(_InstalledHarness):
         constructed = False
 
         @classmethod

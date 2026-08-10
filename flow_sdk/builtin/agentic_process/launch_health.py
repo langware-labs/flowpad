@@ -145,26 +145,13 @@ class LaunchError(Exception):
         return cls.transient(LaunchErrorCode.UNKNOWN, f"{name}: {text}", worker_type)
 
 
-async def ensure_launchable(worker_type: Optional[str] = None, *,
-                           check_auth: bool = True) -> Optional[LaunchError]:
+async def ensure_launchable(worker_type: Optional[str] = None) -> Optional[LaunchError]:
     """Cheap pre-flight: can this harness run at all? ``None`` means yes.
 
     Turns the two most common launch failures into a verdict BEFORE a PTY is
     materialised — the same shape ``sync_source`` already uses when it checks
     ``capabilities_ready()`` before doing any work. Both probes read the
     discovery SSOT and are bounded by the probe's own 5s cap; neither raises.
-
-    The two checks cost very different amounts. ``is_installed`` is a lookup in
-    the discovery dict — the same SSOT ``worker_path_env`` reads at spawn, so an
-    install verdict here can never disagree with the spawn. ``is_logged_in``
-    actually runs the vendor CLI (``claude auth status`` / ``codex login
-    status``) in a subprocess, uncached, up to ``PROBE_TIMEOUT_SECONDS``.
-
-    ``check_auth=False`` runs only the install check. It exists for callers on a
-    user-facing request path — ``createProcess`` gates every new session on this
-    — where paying a subprocess probe per call would tax the happy path to catch
-    a rarer failure. Those callers accept that a logged-out harness still fails
-    at launch, where it is latched and reported as it is today.
     """
     from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
 
@@ -174,8 +161,6 @@ async def ensure_launchable(worker_type: Optional[str] = None, *,
             return LaunchError.config(
                 LaunchErrorCode.NOT_INSTALLED, "harness is not installed", name
             )
-        if not check_auth:
-            return None
         auth: Any = await AgenticProcess.is_logged_in(worker_type)
     except Exception as exc:  # noqa: BLE001 — a pre-check must never be the failure
         return LaunchError.classify(exc, name)
