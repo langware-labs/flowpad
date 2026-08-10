@@ -21,7 +21,8 @@ import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { openNewChat, reportChatStartFailure } from '@src/navigation/open-new-chat';
+import { openNewChat } from '@src/navigation/open-new-chat';
+import { ViewType } from '@src/types/ViewType';
 import { Info, KeyRound, Loader2, MessageSquarePlus } from 'lucide-react';
 import {
   Fragment,
@@ -311,12 +312,15 @@ export function QuickCreatePanel({
     // openNewChat creates AND navigates (carrying the chat mode) — no second nav.
     // The catch is load-bearing: this is invoked as `void handleStartSession(…)`,
     // so a rejected create used to become an unhandled rejection and the user got
-    // no feedback at all in any view mode.
+    // no feedback at all in any view mode. A failed create is overwhelmingly the
+    // chosen harness missing from this machine, and Capabilities re-probes on
+    // arrival — it corrects the stale row and offers the install.
     try {
       const process = await openNewChat(navigation, { workerType });
       if (!process) notify.error({ title: t`Failed to start session` });
     } catch (err) {
-      reportChatStartFailure(navigation, err);
+      console.error('[QuickCreatePanel] start session failed', err);
+      navigation.openTab(ViewType.CAPABILITIES);
     }
   };
 

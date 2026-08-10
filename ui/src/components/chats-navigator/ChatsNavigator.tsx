@@ -5,13 +5,14 @@ import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
 import type { NavigatorDescriptor } from '@src/components/navigator-panel/types';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { openNewChat, reportChatStartFailure } from '@src/navigation/open-new-chat';
+import { openNewChat } from '@src/navigation/open-new-chat';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useOpenTabTargetIds } from '@src/tabs/useTabs';
 import { useProject } from '@src/hooks/useProject';
 import { useContext } from '@src/hooks/useContext';
 import { notify } from '@src/notifications';
 import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
+import { ViewType } from '@src/types/ViewType';
 import type { WorkerHistoryEntry, WorkerType } from '@src/hooks/useWorkerHistory';
 import { pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
@@ -143,12 +144,12 @@ export function ChatsNavigator() {
       // Opens in the user's chat mode (their last pick), like every other
       // front-face open-chat action. This used to key on the View mode alone,
       // so a Standard user who had chosen `terminal` still got a chat pane.
-      // `err.message` used to be shown here, which for an axios rejection is
-      // "Request failed with status code 500" — the server's own explanation
-      // lives in the envelope. The shared reporter reads that instead.
+      // A failed create is overwhelmingly the chosen harness missing from this
+      // machine, which the toast here could only describe. Capabilities re-probes
+      // on arrival, so it both corrects the stale row and offers the install.
       void openNewChat(navigation, { workerType }).catch((err) => {
         console.error('[ChatsNavigator] new chat failed', err);
-        reportChatStartFailure(navigation, err);
+        navigation.openTab(ViewType.CAPABILITIES);
       });
     },
     [navigation],
