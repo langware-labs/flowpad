@@ -124,8 +124,9 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   private machineSessionCallback: MachineSessionCallback | null = null;
 
   /** Bound handler for WebSocket data ops (for cleanup) */
-  private boundDataOpHandler: ((toEntity: string, op: string, data: { active_pty_sessions?: string[] }) => void) | null =
-    null;
+  private boundDataOpHandler:
+    | ((toEntity: string, op: string, data: { active_pty_sessions?: string[] }) => void)
+    | null = null;
 
   constructor(entity: Partial<IComputeNode> = {}) {
     super(entity);
@@ -136,6 +137,14 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     this.node_config = entity.node_config;
     this.fs_storage_mount_path = entity.fs_storage_mount_path ?? undefined;
     this.home_dir = entity.home_dir ?? undefined;
+    // Declaring these as class fields is NOT enough to carry them. Under the
+    // app's `useDefineForClassFields: true`, a declared-but-unassigned field is
+    // DEFINED as `undefined` at construction — overwriting whatever `super`
+    // copied off the payload. So the server sent `logged_in_user`, the entity
+    // dropped it, and every card rendered "signed out". Every other field here
+    // is assigned for the same reason; these two were simply missed.
+    this.auto_login = entity.auto_login;
+    this.logged_in_user = entity.logged_in_user;
   }
 
   /**
@@ -215,7 +224,15 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     const action = new ActionInfo('createProcess', ComputeNode.type, this.id, 'POST');
     action.bodyParameters = {
       context: serializeAgenticContext(context),
-      ...(options?.result ? { result: { uname: options.result.uname, resultType: options.result.resultType, sourceSessionId: options.result.sourceSessionId } } : {}),
+      ...(options?.result
+        ? {
+            result: {
+              uname: options.result.uname,
+              resultType: options.result.resultType,
+              sourceSessionId: options.result.sourceSessionId,
+            },
+          }
+        : {}),
       ...(options?.visible !== undefined ? { visible: options.visible } : {}),
       ...(options?.pty_mode !== undefined ? { pty_mode: options.pty_mode } : {}),
       ...(options?.launchPrompt ? { launch_prompt: options.launchPrompt } : {}),
@@ -243,10 +260,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * @param workerType - Optional hint to skip the other indexer.
    * @returns Descriptor on hit, `null` on 404 (session not found in either history).
    */
-  async findSession(
-    sessionId: string,
-    workerType?: WorkerKind,
-  ): Promise<FindSessionResult | null> {
+  async findSession(sessionId: string, workerType?: WorkerKind): Promise<FindSessionResult | null> {
     const action = new ActionInfo('findSession', ComputeNode.type, this.id, 'GET');
     action.queryParameters = {
       session_id: sessionId,
@@ -614,6 +628,30 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
+   * Sign the box out of the cloud, clearing the credentials stored ON it.
+   *
+   * Deliberately NOT the same thing as turning `auto_login` off. That also
+   * revokes the node-bound API key, which is a change to how the box behaves
+   * from now on; this is just "end the session that is running in there", and
+   * leaves the setting alone. The consequence is worth knowing: with
+   * `auto_login` on, the next open signs the box straight back in — which is the
+   * correct behaviour for "log me out of it now", not a gap.
+   *
+   * Signing the box out never touches the caller's OWN hub session: the
+   * credentials live on the box's disk, and this asks the box to clear them.
+   */
+  async logoutUser(): Promise<unknown> {
+    return this.ops('logout-user');
+  }
+
+  /** Who the box is signed in as, asked of the box itself. The cached
+   *  `logged_in_user` field is the cheap answer; this is the authoritative one
+   *  and costs a round-trip to a machine that may be paused. */
+  async loginStatus(): Promise<{ logged_in: boolean; logged_in_user?: string | null }> {
+    return this.ops('login-status');
+  }
+
+  /**
    * Execute a shell command on this compute node.
    * @param input - ShellInputFlowData with command and session info
    * @returns Promise with ShellOutputFlowData result
@@ -780,11 +818,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     // Kill the process
     const killResult = await this.runShell(`kill ${process.pid}`);
     if (killResult.includes('No such process')) {
-      throw new ServiceControlError(
-        `Failed to kill process ${process.pid}: No such process`,
-        service.id || '',
-        'stop',
-      );
+      throw new ServiceControlError(`Failed to kill process ${process.pid}: No such process`, service.id || '', 'stop');
     }
 
     return process;
@@ -921,7 +955,6 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   git(workDir: string): GitWorkdir {
     return new GitWorkdir(workDir, this.id);
   }
-
 
   /** Which of a project's declared secrets this node may see: `{project_id: [ENV_VAR]}`.
    *  Value-free — the token IS the env var name. An ABSENT project key means

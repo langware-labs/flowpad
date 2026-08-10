@@ -44,10 +44,14 @@ vi.mock('@src/hooks/use-projects', () => ({
 }));
 vi.mock('@src/hooks/use-sandboxes', () => ({
   useSandboxes: () => ({
-    sandboxes: [{ id: 'node-1', name: 'Sandbox One' }],
+    // `node_provider_id` marks it as launched — the card branches on it to
+    // choose between Open and Launch.
+    sandboxes: [{ id: 'node-1', name: 'Sandbox One', node_provider_id: 'sbx-1' }],
     isLoading: false,
     refetch: vi.fn(),
     createSandbox: vi.fn(),
+    launchSandbox: vi.fn(),
+    launchingId: null,
     launch: vi.fn(),
     creating: false,
     steps: [],
@@ -58,9 +62,11 @@ vi.mock('@src/hooks/use-sandboxes', () => ({
     deletingId: null,
     details: {},
   }),
+  isLaunched: (node: { node_provider_id?: string }) => !!node.node_provider_id,
   nextSandboxName: () => 'Sandbox 2',
 }));
 vi.mock('@src/pages/hub-home/NewSandboxDialog', () => ({ NewSandboxDialog: () => null }));
+vi.mock('@src/pages/hub-home/LaunchSandboxDialog', () => ({ LaunchSandboxDialog: () => null }));
 
 import { PageId, ViewType } from '@sdk';
 

@@ -20,8 +20,6 @@ import {
   SANDBOX_SHARE_ROLE,
   SANDBOX_TRANSFER_ROLE_TO_KEEP,
   sandboxShareLink,
-  setAutoLogin,
-  shareFailureText,
   shareSandboxByEmail,
 } from './share-sandbox';
 
@@ -69,7 +67,6 @@ export function ShareSandboxDialog({
   const { t } = useLingui();
   const [selected, setSelected] = useState<Participant[]>([]);
   const [transfer, setTransfer] = useState(false);
-  const [autoLogin, setAutoLoginState] = useState<boolean>(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failures, setFailures] = useState<{ email: string; message: string }[]>([]);
@@ -98,27 +95,10 @@ export function ShareSandboxDialog({
     if (!open) return;
     setSelected([]);
     setTransfer(false);
-    setAutoLoginState(sandbox?.auto_login ?? true);
     setBusy(false);
     setError(null);
     setFailures([]);
   }, [open, sandbox]);
-
-  const handleAutoLogin = useCallback(
-    async (next: boolean) => {
-      if (!sandbox || !isOwner) return;
-      const previous = autoLogin;
-      setAutoLoginState(next); // optimistic; the control is a toggle, not a form
-      try {
-        const applied = await setAutoLogin(sandbox, next);
-        setAutoLoginState(applied);
-      } catch (err) {
-        setAutoLoginState(previous);
-        setError(shareFailureText(err, t`Could not change this setting`));
-      }
-    },
-    [sandbox, isOwner, autoLogin, t],
-  );
 
   const handleSubmit = useCallback(async () => {
     if (!sandbox) return;
@@ -184,20 +164,6 @@ export function ShareSandboxDialog({
         <div className="rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground">
           <Trans>Anyone you share with can open, use and delete this sandbox.</Trans>
         </div>
-
-        {isOwner && (
-          <label className="flex items-start gap-2 text-xs" data-testid="share-sandbox-auto-login">
-            <Checkbox
-              checked={autoLogin}
-              onCheckedChange={(v) => void handleAutoLogin(v === true)}
-              disabled={busy}
-              className="mt-0.5"
-            />
-            <span className="text-muted-foreground">
-              <Trans>Auto login user — this sandbox belongs to one person.</Trans>
-            </span>
-          </label>
-        )}
 
         {isOwner && (
           <label className="flex items-start gap-2 text-xs" data-testid="share-sandbox-transfer">
