@@ -458,7 +458,7 @@ async def _start_cloud_ws_listener() -> None:
 
 
 async def _shutdown_extras():
-    """Clean up n    server.json and stop cron scheduler."""
+    """Clean up server.json and stop cron scheduler."""
     from flow_sdk.config import clear_server_info
 
     # Close the process-shared outbound hub HTTP client (kept alive across calls

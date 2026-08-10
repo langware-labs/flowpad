@@ -340,7 +340,7 @@ class ScanActionsMixin:
         from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
         from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions
         from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions
-        from flow_sdk.builtin.agentic_process.launch_health import ensure_launchable
+        from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchErrorCode
         from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
 
         try:
@@ -430,21 +430,29 @@ class ScanActionsMixin:
             # failing deep in the spawn (which reached HTTP as a bare 500) and
             # leaving a FAILED row behind for every attempt.
             #
-            # Install-only: no subprocess auth probe enters the create path. The
-            # check reads the same discovery SSOT ``worker_path_env`` reads at
-            # spawn, so it can never turn away a launch that would have worked.
+            # ``is_installed`` rather than ``ensure_launchable``: the latter also
+            # runs the login probe, which shells out to the vendor CLI uncached,
+            # and no subprocess belongs on a per-create request path. This is a
+            # lookup in the discovery dict — the same SSOT ``worker_path_env``
+            # reads at spawn, so it can never turn away a launch that would have
+            # worked. A logged-out harness still fails at launch, where it is
+            # latched and reported as it is today.
             #
             # Deliberately gates headless creates too. A standard-mode session
             # with a missing CLI used to be born fine and only break on its first
             # prompt, where the failure rides a 200 stream and no status code can
             # reach the user.
-            launch_problem = await ensure_launchable(worker_type.value, check_auth=False)
-            if launch_problem is not None:
+            if not await AgenticProcess.is_installed(worker_type.value):
                 logging.info(
                     f"ComputeNode {self.id} createProcess refused: "
-                    f"{worker_type.value} → {launch_problem.code}"
+                    f"{worker_type.value} is not installed"
                 )
-                return _capability_fail(launch_problem, worker_type.value)
+                return _capability_fail(
+                    LaunchError.config(
+                        LaunchErrorCode.NOT_INSTALLED, "harness is not installed", worker_type.value
+                    ),
+                    worker_type.value,
+                )
 
             model = context_data.pop("model", None) or None
             permission_mode = context_data.pop("permission_mode", "bypassPermissions")
