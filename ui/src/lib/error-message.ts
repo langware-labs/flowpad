@@ -13,7 +13,7 @@
  */
 
 interface ErrorEnvelope {
-  response?: { data?: { detail?: string; message?: string; data?: unknown } };
+  response?: { data?: { detail?: string; message?: string } };
   detail?: string;
   message?: string;
 }
@@ -49,49 +49,4 @@ export function errorStatus(error: unknown): number {
       ? (error as { status?: number; response?: { status?: number } })
       : null;
   return e?.response?.status ?? e?.status ?? 0;
-}
-
-/** A launch refused because the machine can't run the chosen harness. */
-export interface CapabilityFailure {
-  /** Stable wire string from the backend `LaunchErrorCode` taxonomy. */
-  code: string;
-  /** e.g. `harness.codex.cli` — deep-links `/dock/capabilities?capability=…`. */
-  capabilityKind: string | null;
-  workerType: string | null;
-  /** Display name of the capability, e.g. "Codex CLI". */
-  name: string | null;
-}
-
-/**
- * The codes that mean "needs a human" — the backend's `LaunchHealth.CONFIG_ERROR`
- * verdicts. Retrying these unchanged cannot succeed; the user has to install or
- * sign in, which is why they get a redirect to Capabilities rather than a toast.
- */
-const CONFIG_ERROR_CODES = new Set(['not_installed', 'not_authenticated', 'no_api_key']);
-
-/**
- * Recognise a capability refusal in a failed call, or `null` for anything else.
- *
- * Note the double nesting the payload is read from: `apiClient` unwraps the
- * `{status, message, data}` envelope only on SUCCESS — the error path rethrows
- * the raw axios error, so the backend's `data` sits at `response.data.data`.
- *
- * Returning `null` for unrecognised failures is what keeps this additive: a
- * caller falls through to whatever it did before, and an older backend that
- * answers a bare 500 simply doesn't match.
- */
-export function capabilityErrorFrom(error: unknown): CapabilityFailure | null {
-  const e = typeof error === 'object' && error !== null ? (error as ErrorEnvelope) : null;
-  const payload = e?.response?.data?.data;
-  if (typeof payload !== 'object' || payload === null) return null;
-
-  const { code, capability_kind, worker_type, name } = payload as Record<string, unknown>;
-  if (typeof code !== 'string' || !CONFIG_ERROR_CODES.has(code)) return null;
-
-  return {
-    code,
-    capabilityKind: typeof capability_kind === 'string' ? capability_kind : null,
-    workerType: typeof worker_type === 'string' ? worker_type : null,
-    name: typeof name === 'string' ? name : null,
-  };
 }
