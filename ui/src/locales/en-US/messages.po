@@ -1641,8 +1641,12 @@ msgid "Ask the Flowpad Assistant anything."
 msgstr "Ask the Flowpad Assistant anything."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
-msgid "Ask whoever shared it for a new link."
-msgstr "Ask whoever shared it for a new link."
+#~ msgid "Ask whoever shared it for a new link."
+#~ msgstr "Ask whoever shared it for a new link."
+
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "Ask whoever shared it to start it, or to send a new link."
+msgstr "Ask whoever shared it to start it, or to send a new link."
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 #: src/pages/discover-page/discover-page.tsx
@@ -14832,6 +14836,10 @@ msgstr "Starting the session without the attached files."
 msgid "Starting your app…"
 msgstr "Starting your app…"
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "Starting your sandbox…"
+msgstr "Starting your sandbox…"
+
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Starting..."
 #~ msgstr "Starting..."
@@ -15590,6 +15598,10 @@ msgid "This folder-backed asset has no main file metadata."
 msgstr "This folder-backed asset has no main file metadata."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This is its first start, so it takes a few minutes."
+msgstr "This is its first start, so it takes a few minutes."
+
+#: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link does not point at a sandbox."
 msgstr "This link does not point at a sandbox."
 
@@ -15668,6 +15680,14 @@ msgstr "This removes the downloaded help desk folder and its indexed entries fro
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 msgstr "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
+
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This sandbox could not be started."
+msgstr "This sandbox could not be started."
+
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This sandbox has not been started yet, and only its owner can start it."
+msgstr "This sandbox has not been started yet, and only its owner can start it."
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx

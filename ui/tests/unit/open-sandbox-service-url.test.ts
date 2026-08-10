@@ -31,12 +31,18 @@ describe('open-service route contract', () => {
   });
 
   it('names a service and never a port', () => {
-    // The port is the hub's business. A port anywhere in this URL means the
-    // client is choosing an arbitrary destination inside the sandbox again.
-    const url = workspaceServiceUrl(NODE_ID);
+    // The port is the hub's business. A port in the ROUTE means the client is
+    // choosing an arbitrary destination inside the sandbox again.
+    //
+    // Route, not the whole URL. `fullActionUrl` is absolute, so the origin is in
+    // the string too — and the origin under test is `http://localhost:9007`,
+    // which made a bare `not.toContain('9007')` fail on the hub's own host and
+    // say nothing at all about what this guards.
+    const { pathname, search } = new URL(workspaceServiceUrl(NODE_ID), window.location.origin);
+    const route = `${pathname}${search}`;
 
-    expect(url).not.toContain('9007');
-    expect(url).not.toMatch(/[?&]port=/);
+    expect(route).not.toContain('9007');
+    expect(route).not.toMatch(/[?&]port=/);
   });
 });
 
