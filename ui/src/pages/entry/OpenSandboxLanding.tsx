@@ -1,6 +1,8 @@
 import { ComputeNode, TypeId } from '@sdk';
 import { Button } from '@src/components/ui/button';
-import { workspaceServiceUrl } from '@src/hooks/use-sandboxes';
+import { StepList } from '@src/components/ui/step-list';
+import { isLaunched, useSandboxes, workspaceServiceUrl } from '@src/hooks/use-sandboxes';
+import { errorMessage, errorStatus } from '@src/lib/error-message';
 import { ExternalLink } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
@@ -24,6 +26,25 @@ import { Trans, useLingui } from '@lingui/react/macro';
  * authorizes the caller anyway — a recipient without a role on the node gets a
  * 403 from the hub rather than a box.
  *
+ * IT ALSO LAUNCHES, when the box arriving here was never launched. A sandbox is
+ * written down by `createSandbox` and provisioned by `launchSandbox`, and the two
+ * are separate clicks — so a machine can be shared while it is still only a row.
+ * Redirecting one of those to `open-service` produces the hub's 409, "this
+ * machine has not been set up yet": a dead end at the end of an invitation, on
+ * the one screen where the recipient has no card and no Launch button to fall
+ * back to. The card on hub home has always branched on exactly this
+ * (`isLaunched(d) ? Open : Launch`); this page now does the same, and runs the
+ * launch itself rather than offering a second button — the click that got them
+ * here already said what they wanted.
+ *
+ * Only an OWNER can launch: `ops` is absent from `compute_node`'s policy block,
+ * so it resolves through `default_policy`'s `owner: ["*"]` and for nobody else.
+ * That is exactly the difference between the share dialog's two modes — a plain
+ * share grants `admin` (enough for `open-service`, not for `ops/setup`), while
+ * the transfer checkbox grants `owner`. So a transferred box launches here, and
+ * a merely-shared one says who has to launch it, rather than dying on a 403 the
+ * recipient cannot act on.
+ *
  * The redirect is a top-level `assign`, not `window.open`: this runs on load
  * rather than inside a click, and a popup blocker eats the latter.
  */
@@ -36,14 +57,24 @@ export default function OpenSandboxLanding() {
   // would otherwise call `workspaceServiceUrl` on an id nothing has validated
   // yet, on the first paint, before the effect has had a chance to reject it.
   const [target, setTarget] = useState<string | null>(null);
+  // Whether we are booting the machine rather than just opening it. Drives which
+  // of the two waits is described, since they are minutes apart in length.
+  const [launching, setLaunching] = useState(false);
   // StrictMode double-invokes effects; navigating twice would restart the box's
-  // resume from scratch.
+  // resume from scratch, and launching twice would orphan a VM.
   const started = useRef(false);
+
+  // The same hook the card uses, for the same reason: `launchSandbox` is where
+  // `ops/setup` → `workspace-ready` → the project setup live, and a second copy
+  // of that sequence here would be one to keep in step forever. `steps` is the
+  // identical checklist the launcher sees, which is the point — arriving by
+  // invitation should look like launching it yourself.
+  const { sandboxes, isLoading, launchSandbox, steps } = useSandboxes();
 
   useEffect(() => {
     if (started.current) return;
-    started.current = true;
     if (!nodeId) {
+      started.current = true;
       setError(t`This link is missing the sandbox it should open.`);
       return;
     }
@@ -53,12 +84,51 @@ export default function OpenSandboxLanding() {
       // sentence, rather than becoming a hub URL that 404s.
       url = workspaceServiceUrl(new TypeId(ComputeNode.type, nodeId).id);
     } catch {
+      started.current = true;
       setError(t`This link does not point at a sandbox.`);
       return;
     }
     setTarget(url);
-    window.location.assign(url);
-  }, [nodeId, t]);
+
+    // Wait for the list before deciding. `started` stays false so this effect
+    // runs again when it arrives — the decision below needs the NODE, and acting
+    // on a list that has not loaded would read every box as never-launched.
+    if (isLoading) return;
+    started.current = true;
+
+    const node = sandboxes.find((s) => s.id === nodeId);
+    // Not in the list, or already provisioned: go, exactly as before. A node we
+    // cannot see is not a node we should reason about — the hub authorizes this
+    // route and its answer is better than a guess made here.
+    if (!node || isLaunched(node)) {
+      window.location.assign(url);
+      return;
+    }
+
+    setLaunching(true);
+    void (async () => {
+      try {
+        // `autoLogin: true` matches the launch dialog's default. The recipient of
+        // a handover is the box's one person now, which is what the flag means.
+        //
+        // The return value is deliberately not branched on: `null` means the hook
+        // refused because a launch was already in flight, and the box is on its
+        // way up either way. Only a THROW means it is not coming.
+        await launchSandbox(node, { autoLogin: true });
+        window.location.assign(url);
+      } catch (e) {
+        setLaunching(false);
+        // 403 is the one failure with a person attached to it: they hold `admin`
+        // from a plain share, which opens a running box but cannot build one.
+        // Naming the fix beats echoing "Forbidden" at someone who did nothing wrong.
+        setError(
+          errorStatus(e) === 403
+            ? t`This sandbox has not been started yet, and only its owner can start it.`
+            : errorMessage(e, t`This sandbox could not be started.`),
+        );
+      }
+    })();
+  }, [nodeId, isLoading, sandboxes, launchSandbox, t]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
@@ -69,8 +139,22 @@ export default function OpenSandboxLanding() {
               {error}
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
-              <Trans>Ask whoever shared it for a new link.</Trans>
+              <Trans>Ask whoever shared it to start it, or to send a new link.</Trans>
             </p>
+          </>
+        ) : launching ? (
+          <>
+            <p className="text-sm font-medium" data-testid="open-sandbox-launching">
+              <Trans>Starting your sandbox…</Trans>
+            </p>
+            {/* The first boot is a different order of wait from an open: a VM is
+                being created, FlowPad started inside it, and whatever the box was
+                created with set up. The rows say which of those is happening, so
+                a long wait reads as progress rather than as a hang. */}
+            <p className="mb-5 mt-2 text-sm text-muted-foreground">
+              <Trans>This is its first start, so it takes a few minutes.</Trans>
+            </p>
+            <StepList steps={steps} testId="open-sandbox-launch-steps" testIdPrefix="open-sandbox" />
           </>
         ) : (
           <>

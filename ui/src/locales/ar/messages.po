@@ -1641,7 +1641,11 @@ msgid "Ask the Flowpad Assistant anything."
 msgstr ""
 
 #: src/pages/entry/OpenSandboxLanding.tsx
-msgid "Ask whoever shared it for a new link."
+#~ msgid "Ask whoever shared it for a new link."
+#~ msgstr ""
+
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "Ask whoever shared it to start it, or to send a new link."
 msgstr ""
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
@@ -14823,6 +14827,10 @@ msgstr ""
 msgid "Starting your app…"
 msgstr ""
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "Starting your sandbox…"
+msgstr ""
+
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Starting..."
 #~ msgstr ""
@@ -15581,6 +15589,10 @@ msgid "This folder-backed asset has no main file metadata."
 msgstr ""
 
 #: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This is its first start, so it takes a few minutes."
+msgstr ""
+
+#: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link does not point at a sandbox."
 msgstr ""
 
@@ -15658,6 +15670,14 @@ msgstr ""
 
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
+msgstr ""
+
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This sandbox could not be started."
+msgstr ""
+
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This sandbox has not been started yet, and only its owner can start it."
 msgstr ""
 
 #: src/components/inbox-view/InboxView.tsx
