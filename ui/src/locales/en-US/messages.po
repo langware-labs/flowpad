@@ -1640,6 +1640,10 @@ msgstr "Ask someone for help"
 msgid "Ask the Flowpad Assistant anything."
 msgstr "Ask the Flowpad Assistant anything."
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "Ask whoever shared it for a new link."
+msgstr "Ask whoever shared it for a new link."
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "asset"
@@ -10758,6 +10762,10 @@ msgstr "Open in terminal"
 msgid "Open in Worktree"
 msgstr "Open in Worktree"
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "Open it now"
+msgstr "Open it now"
+
 #: src/components/task-bar/TaskCard.tsx
 #~ msgid "Open JSON"
 #~ msgstr "Open JSON"
@@ -11561,6 +11569,7 @@ msgid "Preferences"
 msgstr "Preferences"
 
 #: src/pages/entry/LaunchLanding.tsx
+#: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Preparing your sandbox…"
 msgstr "Preparing your sandbox…"
 
@@ -15535,6 +15544,10 @@ msgstr "This asset can't be shared with Git. Turn Git sharing off to send a copy
 msgid "This asset has no file path."
 msgstr "This asset has no file path."
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This can take up to a minute if it was asleep."
+msgstr "This can take up to a minute if it was asleep."
+
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "This chat has no resumable session."
@@ -15576,9 +15589,17 @@ msgstr "This folder can't be shared yet"
 msgid "This folder-backed asset has no main file metadata."
 msgstr "This folder-backed asset has no main file metadata."
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This link does not point at a sandbox."
+msgstr "This link does not point at a sandbox."
+
 #: src/pages/entry/LaunchLanding.tsx
 msgid "This link doesn't name a repository we can launch."
 msgstr "This link doesn't name a repository we can launch."
+
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This link is missing the sandbox it should open."
+msgstr "This link is missing the sandbox it should open."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "This live session has ended."

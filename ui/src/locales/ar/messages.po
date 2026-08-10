@@ -1640,6 +1640,10 @@ msgstr ""
 msgid "Ask the Flowpad Assistant anything."
 msgstr ""
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "Ask whoever shared it for a new link."
+msgstr ""
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "asset"
@@ -10753,6 +10757,10 @@ msgstr ""
 msgid "Open in Worktree"
 msgstr ""
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "Open it now"
+msgstr ""
+
 #: src/components/task-bar/TaskCard.tsx
 #~ msgid "Open JSON"
 #~ msgstr ""
@@ -11556,6 +11564,7 @@ msgid "Preferences"
 msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
+#: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Preparing your sandbox…"
 msgstr ""
 
@@ -15526,6 +15535,10 @@ msgstr ""
 msgid "This asset has no file path."
 msgstr ""
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This can take up to a minute if it was asleep."
+msgstr ""
+
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "This chat has no resumable session."
@@ -15567,8 +15580,16 @@ msgstr ""
 msgid "This folder-backed asset has no main file metadata."
 msgstr ""
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This link does not point at a sandbox."
+msgstr ""
+
 #: src/pages/entry/LaunchLanding.tsx
 msgid "This link doesn't name a repository we can launch."
+msgstr ""
+
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This link is missing the sandbox it should open."
 msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx

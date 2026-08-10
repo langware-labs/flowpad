@@ -45,17 +45,28 @@ afterEach(() => {
 describe('the landing path', () => {
   it('satisfies the hub validator that would otherwise 400 the invite', () => {
     // `is_safe_app_path`: leading slash, not protocol-relative, no scheme.
-    const path = sandboxShareLandingPath();
+    // An absolute URL here is rejected at invite time with a 400, so this is
+    // the constraint that decides the shape of the whole value.
+    const path = sandboxShareLandingPath(NODE_ID);
 
     expect(path.startsWith('/')).toBe(true);
     expect(path.startsWith('//')).toBe(false);
     expect(path).not.toContain('://');
   });
 
-  it('is a real app route, not a literal that can rot', () => {
-    // Built from DockPointer, so renaming the hub home route breaks this test
-    // rather than shipping invitations that land on the SPA catch-all.
-    expect(sandboxShareLandingPath()).toContain('hub');
+  it('points at the open-sandbox page, carrying the node', () => {
+    // Not hub home: the recipient would have to find the card and press Open.
+    // Not open-service: that is a blank tab while the box resumes.
+    const path = sandboxShareLandingPath(NODE_ID);
+
+    expect(path.startsWith('/open-sandbox?')).toBe(true);
+    expect(path).toContain(NODE_ID);
+  });
+
+  it('escapes the node id rather than interpolating it raw', () => {
+    // The id reaches the hub as a stored redirect target; a value that can
+    // smuggle another query param into it must not be pasted in unescaped.
+    expect(sandboxShareLandingPath('a&b=c')).toBe('/open-sandbox?node=a%26b%3Dc');
   });
 });
 
@@ -98,7 +109,7 @@ describe('shareSandboxByEmail wire contract', () => {
     const body = lastBody();
     expect(body.recipient_email).toBe('bob@example.com');
     expect(body.invitation_targets).toEqual([{ typeid: `${ComputeNode.type}-${NODE_ID}`, role: SANDBOX_SHARE_ROLE }]);
-    expect(body.callback_override).toBe(sandboxShareLandingPath());
+    expect(body.callback_override).toBe(sandboxShareLandingPath(NODE_ID));
     // Not a transfer unless asked: these keys must be absent, not false/null.
     expect('transfer' in body).toBe(false);
     expect('role_to_keep' in body).toBe(false);
@@ -192,8 +203,11 @@ describe('sandboxShareLink', () => {
 
     expect(link).not.toContain('cookie-gate');
     expect(link).not.toContain('e2b.dev');
-    expect(link).not.toContain('9007');
     expect(link).not.toMatch(/[?&]port=/);
+    // The box's app port must not appear in the PATH. A bare `not.toContain`
+    // also matched the hub's own origin, which under test is localhost:9007 —
+    // so the assertion failed on a url that leaks nothing at all.
+    expect(new URL(link).pathname).not.toContain('9007');
   });
 
   it('takes no landing path, so a shared link cannot aim anywhere but the box', () => {
