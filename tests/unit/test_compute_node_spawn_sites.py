@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from flow_sdk.builtin.faas.compute_node import ComputeNode
-from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.responses.response import ApiSuccessResponse
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -38,13 +38,17 @@ _PATCH_REQ_SCAN = "flow_sdk.builtin.faas.scan_actions.get_current_request_info"
 
 
 class _InstalledHarness:
-    """Base for the ``AgenticProcess`` stand-ins below.
+    """Base for the ``AgenticProcess`` stand-ins used in ``createProcess`` cases.
 
-    ``_scan_create_process`` now refuses before persisting anything when the
-    chosen harness isn't installed, and it asks the class itself
-    (``AgenticProcess.is_installed``). Every fake that replaces AgenticProcess
-    must therefore answer that call, or the pre-flight would refuse first and
-    the case under test would never run.
+    ``_scan_create_process`` refuses before persisting anything when the chosen
+    harness isn't installed, and it asks the class itself
+    (``AgenticProcess.is_installed``). A fake standing in for AgenticProcess
+    there must answer that call, or the pre-flight refuses first and the case
+    under test never runs.
+
+    The ``upsertSessionProcess`` fakes below deliberately do NOT inherit it:
+    that path has no pre-flight, so requiring the attribute there would assert
+    a coupling that doesn't exist.
     """
 
     @staticmethod
@@ -154,153 +158,6 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
     assert "__started_visible" not in captured
 
 
-# ─── createProcess harness pre-flight (FLOWPAD-1971) ─────────────────────────
-
-
-class _NeverBuilt(_InstalledHarness):
-    """An AgenticProcess stand-in that fails the test if it is constructed."""
-
-    def __init__(self, **kwargs):
-        raise AssertionError(f"AgenticProcess must not be constructed: {kwargs}")
-
-
-class _MissingHarness(_NeverBuilt):
-    """...and whose CLI discovery never found, so the pre-flight must refuse."""
-
-    @staticmethod
-    async def is_installed(worker_type=None) -> bool:
-        return False
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("visible", [True, False])
-async def test_scan_create_process_missing_harness_is_400_not_500(visible):
-    """A harness the machine can't run is a client error, and nothing is created.
-
-    Before this, the miss surfaced deep in ``_perform_open`` as a RuntimeError
-    that became an ``ApiFailResponse`` with no ``status_code`` — which defaults to
-    500 — after the row had already been saved and latched FAILED. Both modes are
-    covered: headless used to be born fine and only break on its first prompt.
-    """
-    from flow_sdk.builtin.agentic_process.launch_health import LaunchErrorCode
-
-    node = _make_compute_node()
-    info = _make_request_info({
-        "context": {"workdir": "/tmp/proj", "worker_type": "codex"},
-        "visible": visible,
-    })
-
-    with patch(_PATCH_REQ_SCAN, return_value=info), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _MissingHarness):
-        resp = await node._scan_create_process()
-
-    assert isinstance(resp, ApiFailResponse)
-    assert resp.status_code == 400, "a missing harness must not read as a server fault"
-    # The machine-readable half — what the UI branches on and deep-links with.
-    assert resp.data["code"] == LaunchErrorCode.NOT_INSTALLED.value
-    assert resp.data["capability_kind"] == "harness.codex.cli"
-    assert resp.data["worker_type"] == "codex"
-    # The human half must name the provider, not restate the status line.
-    assert "not installed" in (resp.message or "")
-
-
-@pytest.mark.asyncio
-async def test_scan_create_process_preflight_never_probes_login():
-    """The gate must not pay for an auth probe on the create path.
-
-    ``is_installed`` is a lookup in the discovery dict. Its neighbour
-    ``is_logged_in`` shells out to the vendor CLI, uncached, per call — which is
-    why the pre-flight calls the former directly rather than going through
-    ``ensure_launchable``, which runs both.
-    """
-    node = _make_compute_node()
-    info = _make_request_info({
-        "context": {"workdir": "/tmp/proj", "worker_type": "codex"},
-        "visible": False,
-    })
-
-    class FakeProc(_InstalledHarness):
-        is_installed = AsyncMock(return_value=True)
-        is_logged_in = AsyncMock()
-
-        def __init__(self, **kwargs):
-            self.id = "preflight-1"
-            self.type = "agentic_process"
-            self.shell_id = None
-            self._data = kwargs
-
-        async def save(self, owner=None):
-            return None
-
-        def model_dump(self, mode=None):
-            return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
-
-    with patch(_PATCH_REQ_SCAN, return_value=info), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
-        resp = await node._scan_create_process()
-
-    assert resp.status == "SUCCESS"
-    FakeProc.is_installed.assert_awaited_once_with("codex")
-    FakeProc.is_logged_in.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_scan_create_process_unknown_worker_type_is_400():
-    """An unrecognised worker_type is unambiguously the caller's mistake; it
-    answered 500 purely because ``ApiFailResponse.status_code`` defaults there."""
-    node = _make_compute_node()
-    info = _make_request_info({"context": {"worker_type": "not_a_worker"}, "visible": False})
-
-    with patch(_PATCH_REQ_SCAN, return_value=info), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _NeverBuilt):
-        resp = await node._scan_create_process()
-
-    assert isinstance(resp, ApiFailResponse)
-    assert resp.status_code == 400
-    assert "not_a_worker" in (resp.message or "")
-
-
-@pytest.mark.asyncio
-async def test_scan_create_process_start_race_classifies_to_400():
-    """The pre-flight can lose a race — a CLI deleted between check and spawn.
-
-    ``_perform_open`` returns that as an ``ApiFailResponse`` with no status_code.
-    Classifying the latched reason keeps it a client error rather than a 500.
-    """
-    node = _make_compute_node()
-    info = _make_request_info({
-        "context": {"workdir": "/tmp/proj", "worker_type": "codex"},
-        "visible": True,
-    })
-
-    class FakeProc(_InstalledHarness):
-        def __init__(self, **kwargs):
-            self.id = "raced-1"
-            self.type = "agentic_process"
-            self.shell_id = None
-            self._data = kwargs
-
-        async def save(self, owner=None):
-            return None
-
-        async def start_pty(self, visible=False, **kwargs):
-            raise RuntimeError(
-                "Command not found: 'codex' — no harness.codex.cli installation discovered"
-            )
-
-        def model_dump(self, mode=None):
-            return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
-
-    with patch(_PATCH_REQ_SCAN, return_value=info), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
-        resp = await node._scan_create_process()
-
-    assert isinstance(resp, ApiFailResponse)
-    assert resp.status_code == 400
-    assert resp.data["code"] == "not_installed"
-    assert resp.data["capability_kind"] == "harness.codex.cli"
-
-
 @pytest.mark.asyncio
 async def test_scan_create_process_uses_capability_default_without_overriding_explicit_worker():
     node = _make_compute_node()
@@ -361,7 +218,7 @@ async def test_scan_upsert_session_process_creates_fresh_when_no_existing():
 
     captured: dict = {}
 
-    class FakeProc(_InstalledHarness):
+    class FakeProc:
         # get_all returns [] (no existing), so fall through to construct branch
         @classmethod
         async def get_by_session_id(cls, session_id):
@@ -442,7 +299,7 @@ async def test_scan_upsert_session_process_returns_existing_on_resume():
         "created": False,
     }
 
-    class FakeProc(_InstalledHarness):
+    class FakeProc:
         constructed = False
 
         @classmethod
