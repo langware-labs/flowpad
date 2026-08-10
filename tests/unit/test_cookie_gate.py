@@ -3,6 +3,7 @@ every-request check free."""
 
 from __future__ import annotations
 
+import os
 from unittest.mock import patch
 
 import pytest
@@ -125,17 +126,110 @@ def test_armed_marker_alone_does_not_gate(sod_env):
 
 
 @pytest.mark.parametrize("stored", [None, "s3cret"])
-def test_value_is_cached(sod_env, stored):
-    """Absence is cached too — it is the common case (every desktop install), and
-    an uncached miss would pay a decrypt-and-fail on every request. Guards the
+def test_value_is_cached_while_the_marker_holds_still(sod_env, stored):
+    """A steady-state gated instance decrypts ONCE, not once per request.
+
+    Absence is cached too — a marker present with nothing behind it would
+    otherwise pay a decrypt-and-fail on every request. Guards the
     ``.get() is not None`` trap inherited from privacy_mode.py:46.
     """
+    _arm_marker(sod_env)
+
     with patch.object(cookie_gate, "_read", return_value=stored) as read:
         assert cookie_gate.get_cookie_gate() == stored
         assert cookie_gate.get_cookie_gate() == stored
         assert cookie_gate.get_cookie_gate() == stored
 
     assert read.call_count == 1
+
+
+def test_a_secret_rotated_by_another_process_is_seen_without_a_restart(sod_env):
+    """The load-bearing half of the mtime key.
+
+    The hub arms and rotates the gate with `flow auth set-cookie-gate`, which is
+    a DIFFERENT process. Caching the answer outright meant this one kept serving
+    a value the file no longer held — enforcing the wrong secret, or nothing at
+    all, until it restarted. That window is exactly the one the gate exists to
+    close.
+    """
+    cookie_gate.set_cookie_gate("first")
+    assert cookie_gate.get_cookie_gate() == "first"
+
+    # What the other process does: rewrite the secret, re-touch the marker.
+    # utime rather than a bare touch — the two writes can land inside one
+    # filesystem timestamp tick, and then the test proves nothing.
+    marker = sod_env.cookie_gate_marker_path
+    sod_env.sod.write("cookie_gate", "second")
+    bumped = marker.stat().st_mtime + 5
+    os.utime(marker, (bumped, bumped))
+
+    assert cookie_gate.get_cookie_gate() == "second"
+
+
+# ---------------------------------------------------------------------------
+# Clearing
+# ---------------------------------------------------------------------------
+
+
+def test_clear_disarms_the_instance(sod_env):
+    cookie_gate.set_cookie_gate("s3cret")
+    assert cookie_gate.is_gated() is True
+
+    assert cookie_gate.clear_cookie_gate() is True
+
+    assert cookie_gate.is_gated() is False
+    assert not sod_env.cookie_gate_marker_path.exists()
+
+
+def test_clear_takes_effect_in_this_process_immediately(sod_env):
+    """No restart, and no ``reset_cache`` — a server that kept enforcing a gate
+    whose marker is gone would be locked shut with no way back in."""
+    cookie_gate.set_cookie_gate("s3cret")
+    assert cookie_gate.get_cookie_gate() == "s3cret"
+
+    cookie_gate.clear_cookie_gate()
+
+    assert cookie_gate.get_cookie_gate() is None
+
+
+def test_clear_on_an_unarmed_instance_reports_nothing_changed(sod_env):
+    """So a caller can say "already open" instead of implying it did something."""
+    assert cookie_gate.clear_cookie_gate() is False
+    assert cookie_gate.is_gated() is False
+
+
+def test_clear_removes_the_marker_before_the_secret(sod_env):
+    """The EXACT reverse of arming, and for the same reason.
+
+    Deleting the secret first leaves a window where the marker still says
+    "armed" while the comparison value is gone — and ``_read`` resolves a
+    missing secret to ``None``, i.e. it fails OPEN. Same end state, reached
+    through a moment that looks locked and is not.
+    """
+    seen = {}
+
+    with patch.object(cookie_gate, "get_instance_settings") as settings:
+        _fake_settings(settings, sod_env, armed=True)
+        settings.return_value.sod.delete.side_effect = lambda _name: seen.setdefault(
+            "marker_still_there", sod_env.cookie_gate_marker_path.exists()
+        )
+
+        assert cookie_gate.clear_cookie_gate() is True
+
+    assert seen["marker_still_there"] is False
+
+
+def test_clear_leaves_the_instance_open_even_if_the_secret_will_not_delete(sod_env):
+    """The marker is already gone by then, so the instance is open — which is the
+    whole point of the call. An orphaned secret is inert: nothing reads it
+    without a marker, and re-arming overwrites it."""
+    with patch.object(cookie_gate, "get_instance_settings") as settings:
+        _fake_settings(settings, sod_env, armed=True)
+        settings.return_value.sod.delete.side_effect = RuntimeError("store is unwritable")
+
+        assert cookie_gate.clear_cookie_gate() is True
+
+    assert not sod_env.cookie_gate_marker_path.exists()
 
 
 def test_set_populates_cache_without_a_reread(sod_env):
