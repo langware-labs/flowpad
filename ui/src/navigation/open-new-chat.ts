@@ -3,7 +3,6 @@ import { getViewMode, viewModePtyMode } from '@src/contexts/view-mode-context';
 import { capabilityErrorFrom, errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { ViewType } from '@src/types/ViewType';
-import { CAPABILITY_PARAM, DockPointer } from './DockPointer';
 import type { NavigationActions } from './NavigationActions';
 
 export interface OpenNewChatOptions {
@@ -74,10 +73,15 @@ export async function openNewChat(
  * which kind it asked for — used when an older backend answers without the
  * structured payload.
  *
- * Note the notification is deliberately still emitted alongside the navigation:
+ * The redirect goes through `navigation.openTab`, the same single entry point
+ * `TerminalOpenerToolbar` already routes its warned openers to. It owns the
+ * `capabilityKind` → `CAPABILITY_PARAM` pointer, so this stays out of the
+ * business of spelling a Capabilities URL.
+ *
+ * The notification is deliberately still emitted alongside the navigation:
  * alert-level toasts are suppressed outside Dev mode (`notifications/notify.ts`),
- * so in Advanced mode this lands in the footer alert log — where the CTA stays
- * clickable — while the redirect is what the user actually sees happen.
+ * so in Advanced mode this lands in the footer alert log naming the provider,
+ * while the redirect is what the user actually sees happen.
  */
 export function reportChatStartFailure(
   navigation: Pick<NavigationActions, 'openTab'>,
@@ -97,12 +101,6 @@ export function reportChatStartFailure(
     return;
   }
 
-  const href = kind
-    ? DockPointer.forTab(ViewType.CAPABILITIES, { [CAPABILITY_PARAM]: kind }).toUrl(
-        window.location.pathname,
-      )
-    : undefined;
-
   notify.error({
     id: 'chat-start-failed',
     title: 'Could not start chat',
@@ -110,7 +108,6 @@ export function reportChatStartFailure(
       error,
       `${capability?.name ?? 'This provider'} is not available on this machine.`,
     ),
-    ...(href ? { actions: [{ label: 'Open Capabilities', href }] } : {}),
   });
 
   navigation.openTab(ViewType.CAPABILITIES, kind ? { capabilityKind: kind } : undefined);
