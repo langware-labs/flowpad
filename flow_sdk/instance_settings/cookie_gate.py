@@ -36,6 +36,8 @@ anyway.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.instance_settings.base_settings import SecretsNotEnabledError
 
@@ -47,15 +49,22 @@ _SECRET_NAME = "cookie_gate"
 #
 # Keyed by instance_name so a process that switches FLOW_INSTANCE mid-run can't
 # read another instance's secret — the same per-instance discipline privacy_mode
-# keeps, but on a str rather than instance_dir. instance_dir is a @property that
-# builds a fresh Path per access, so its hash is never memoized and it measured
-# ~34% of this function's cost.
+# keeps, but on a str rather than instance_dir.
 #
-# Absence is cached too — ``None`` is a real, and by far the most common, value
-# (every desktop install). Membership is tested with ``in``, not ``is not None``:
-# a ``.get() is not None`` check would never cache the unset case and would pay a
-# decrypt-and-fail on every single request.
-_cache: dict[str, str | None] = {}
+# The value is ``(marker mtime_ns, secret)``, and the mtime is what makes the
+# entry falsifiable. This used to cache the answer outright, absence included,
+# on the reasoning that ``None`` is the common case and re-checking would cost a
+# decrypt per request. True as far as it went — but it also meant a gate armed by
+# ANOTHER process was invisible: the file changed and the server kept serving a
+# memoized ``None``, enforcing nothing until it restarted. That is not
+# theoretical now that the hub arms the gate with `flow auth set-cookie-gate`
+# rather than a call into this process. Comparing an mtime keeps the decrypt
+# rare (only when the marker actually moves) without letting the cache outlive
+# the truth.
+_cache: dict[str, tuple[int, str | None]] = {}
+
+# Memoized marker paths, per the ~34% measurement noted above.
+_marker_paths: dict[str, Path] = {}
 
 
 def _read() -> str | None:
@@ -79,12 +88,44 @@ def _read() -> str | None:
 
 
 def get_cookie_gate() -> str | None:
-    """The secret this instance is gated on, or ``None`` when it is not gated."""
-    key = get_instance_settings().instance_name
-    if key in _cache:
-        return _cache[key]
+    """The secret this instance is gated on, or ``None`` when it is not gated.
+
+    Re-checks the marker on EVERY call and re-reads only when its mtime moved.
+    The plain "cache the answer forever" version could not see a gate armed by
+    another process, which is what a `flow auth set-cookie-gate` from the hub
+    is: the file changed and this server kept serving a memoized ``None``,
+    enforcing nothing until it restarted. The window that opens is exactly the
+    one the gate exists to close, so the stat is worth it.
+
+    The cost is one ``stat`` per request, which is what the unarmed path already
+    paid inside ``_read``; what is new is paying it when armed too. Nothing else
+    changed: the sod is still opened only when the marker's mtime actually
+    moves, so a steady-state gated instance decrypts once, and an ungated one
+    (every desktop install) still never touches the keychain.
+    """
+    settings = get_instance_settings()
+    key = settings.instance_name
+    try:
+        # Memoized per instance: `cookie_gate_marker_path` derives from
+        # `instance_dir`, a @property that builds a fresh Path per access and
+        # measured ~34% of this function's cost. Statting a cached Path keeps
+        # the per-request work to the syscall itself.
+        marker = _marker_paths.get(key)
+        if marker is None:
+            marker = settings.cookie_gate_marker_path
+            _marker_paths[key] = marker
+        mtime = marker.stat().st_mtime_ns
+    except OSError:
+        # No marker (or unreadable) — unarmed, the common case. Drop any cached
+        # secret so a cleared gate stops being enforced without a restart.
+        _cache.pop(key, None)
+        return None
+
+    cached = _cache.get(key)
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
     value = _read() or None
-    _cache[key] = value
+    _cache[key] = (mtime, value)
     return value
 
 
@@ -112,7 +153,47 @@ def set_cookie_gate(value: str) -> None:
     # a lone 0644 file among 0600 siblings is the kind of exception that needs a
     # reason, and there isn't one.
     settings.cookie_gate_marker_path.touch(mode=0o600)
-    _cache[settings.instance_name] = value
+    # Stamp the cache with the marker we just wrote, so this process does not
+    # re-read the sod it already knows the contents of. Read the mtime back
+    # rather than assuming: it is the value every other reader will compare.
+    try:
+        _cache[settings.instance_name] = (settings.cookie_gate_marker_path.stat().st_mtime_ns, value)
+    except OSError:
+        _cache.pop(settings.instance_name, None)
+
+
+def clear_cookie_gate() -> bool:
+    """Disarm the gate. The single deleter, mirroring ``set_cookie_gate``.
+
+    Returns whether anything was armed to begin with, so a caller can report
+    "already open" instead of implying it changed something.
+
+    Order is the EXACT REVERSE of arming, and for the same reason. Arming writes
+    the secret first and the marker last, so the gate is never discoverable
+    before there is something to compare against. Disarming therefore removes
+    the MARKER first: from that instant ``_read`` short-circuits on the stat and
+    the instance is open, with the now-unreferenced secret cleaned up after.
+    Deleting the secret first would leave a window where the marker still says
+    "armed" while the comparison value is gone — and ``_read`` resolves an
+    unreadable store to ``None``, i.e. it fails OPEN. Same end state, but
+    reached through a moment that silently looks locked and is not.
+    """
+    settings = get_instance_settings()
+    was_armed = settings.cookie_gate_marker_path.exists()
+
+    settings.cookie_gate_marker_path.unlink(missing_ok=True)
+    try:
+        settings.sod.delete(_SECRET_NAME)
+    except Exception:
+        # The marker is gone, so the instance is already open — which is the
+        # whole point of the call. A secret left behind in the store is inert:
+        # nothing reads it without the marker, and re-arming overwrites it.
+        pass
+
+    # The running server memoizes per instance_name; without this it would keep
+    # enforcing a gate whose marker no longer exists until the process restarts.
+    _cache.pop(settings.instance_name, None)
+    return was_armed
 
 
 def is_gated() -> bool:
@@ -123,5 +204,12 @@ def is_gated() -> bool:
 
 def reset_cache() -> None:
     """Drop the memoized secret. For tests, and for any caller that rotates the
-    sod out of band."""
+    sod out of band.
+
+    Clears the marker paths too: they are keyed by instance NAME, so a caller
+    that repoints the same name at a different ``FLOW_HOME`` (which is what a
+    test fixture does) would otherwise keep statting the old directory and read
+    a gate that no longer applies.
+    """
     _cache.clear()
+    _marker_paths.clear()

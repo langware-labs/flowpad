@@ -520,6 +520,126 @@ def auth_logout():
         typer.echo("⚠ Not currently logged in")
 
 
+# --- what the hub configures on a box it launched -------------------------
+#
+# These three exist so the hub has a channel into a running box that does NOT
+# require the box's HTTP server to be up and answering. The loopback
+# `/auth/login_callback` curl needs a healthy app to accept anything, which is
+# exactly what cannot be relied on while a box is starting, restarting, or
+# refusing keyless callers. `run_command` always works.
+#
+# All three are hub-driven and idempotent. None is meant to be typed by a human,
+# which is why they say so in their help rather than pretending otherwise.
+
+
+@auth_app.command("set-cookie-gate")
+def auth_set_cookie_gate(
+    value: Annotated[str, typer.Argument(help="The gate secret, minted by the hub for this box")],
+):
+    """
+    Arm this instance's request gate. Hub-driven; not for interactive use.
+
+    Once armed the instance answers NOTHING without the secret — not the UI, not
+    the API, not a WebSocket, and not /health/status. That total coverage is the
+    point (see docs/cookie-gate.md); it is also why the supervisor in
+    server/launch.py has to present the secret on its own probes.
+
+    Example: flow auth set-cookie-gate <secret>
+    """
+    from flow_sdk.instance_settings.cookie_gate import set_cookie_gate
+
+    try:
+        set_cookie_gate(value)
+    except ValueError as e:
+        # Empty value: arming on "" would store a secret that reads as unset,
+        # leaving the instance open while looking locked.
+        typer.echo(f"✗ {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo("✓ Cookie gate armed")
+
+
+@auth_app.command("clear-cookie-gate")
+def auth_clear_cookie_gate():
+    """
+    Disarm this instance's request gate. Hub-driven; not for interactive use.
+
+    Example: flow auth clear-cookie-gate
+    """
+    from flow_sdk.instance_settings.cookie_gate import clear_cookie_gate
+
+    if clear_cookie_gate():
+        typer.echo("✓ Cookie gate cleared")
+    else:
+        # Distinguished from success on purpose: "already open" and "I just
+        # opened it" are different facts about the machine.
+        typer.echo("⚠ Cookie gate was not armed")
+
+
+@auth_app.command("hub-login")
+def auth_hub_login(
+    api_key: Annotated[str, typer.Argument(help="The node-bound key the hub minted for this box")],
+):
+    """
+    Sign this instance in with a hub-minted key. Hub-driven; not for interactive use.
+
+    Deliberately NOT `flow auth login`, which is the human path and does
+    something materially different: it stores the key and the user and stops
+    there. This mirrors what `/auth/login_callback` does, because the box's
+    logged-in state is built from more than a stored key —
+    ``_finalize_login`` also broadcasts the OAuth SUCCESS that unblocks a
+    watching UI, folds the hub-resolved organization id/role into the user, and
+    invalidates the bootstrap cache. A box signed in through the shorter path
+    looks logged in locally while reporting something different about itself.
+
+    Unlike the HTTP route this needs no in-band credential check before it acts.
+    That check exists there because the endpoint is reachable by anyone until
+    the gate arms; a command inside the box is already proof of access to the
+    box.
+
+    Example: flow auth hub-login fp_live_...
+    """
+    import asyncio
+
+    from flow_sdk.cli.auth.cloud_login import _finalize_login
+    from flow_sdk.cli.auth.hub_login import validate_api_key_async
+    from flow_sdk.cloud_client.api.auth import LoginData
+
+    async def _run() -> dict:
+        user_info = await validate_api_key_async(api_key)
+        await _finalize_login(LoginData(token=api_key, expires=None, refresh_token=None, user=user_info))
+        return user_info
+
+    try:
+        user_info = asyncio.run(_run())
+    except Exception as e:
+        typer.echo(f"✗ Login failed: {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"✓ Signed in as {user_info.get('email') or user_info.get('id') or 'unknown'}")
+
+
+@auth_app.command("set-runtime")
+def auth_set_runtime(
+    kind: Annotated[str, typer.Argument(help="What the hub launched this instance as: sandbox | agent")],
+):
+    """
+    Record what this instance was launched AS. Hub-driven; not for interactive use.
+
+    The box cannot work this out for itself: a sandbox a human opens and a box an
+    agent was deployed into are byte-for-byte identical from inside. The value
+    only exists because the hub says so.
+
+    Example: flow auth set-runtime sandbox
+    """
+    from flow_sdk.instance_settings.runtime import set_assigned_runtime
+
+    try:
+        assigned = set_assigned_runtime(kind)
+    except ValueError as e:
+        typer.echo(f"✗ {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"✓ Runtime set to {assigned.value if hasattr(assigned, 'value') else assigned}")
+
+
 @auth_app.command("test")
 def auth_test(delay: Annotated[int, typer.Option(help="Delay in seconds before allowing login")] = 5):
     """
