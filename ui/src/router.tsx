@@ -17,6 +17,7 @@ import InvitePage from '@src/pages/entry/InvitePage';
 import WrongAccountPage from '@src/pages/entry/WrongAccountPage';
 import MessageLanding from '@src/pages/entry/MessageLanding';
 import LaunchLanding from '@src/pages/entry/LaunchLanding';
+import OpenSandboxLanding from '@src/pages/entry/OpenSandboxLanding';
 import InstallLanding from '@src/pages/entry/InstallLanding';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
@@ -125,6 +126,9 @@ export const router = createBrowserRouter(
       <Route path="flow_message/:messageId" element={<MessageLanding />} />
       {/* One-click "try this repo": /launch?repo=<git url> asks before it
           launches anything (the link came from outside the app). */}
+      {/* Where a sandbox share invitation lands: says "preparing" and then
+          goes, instead of a blank tab or a hunt for the card. */}
+      <Route path="open-sandbox" element={<OpenSandboxLanding />} />
       <Route path="launch" element={<LaunchLanding />} />
       <Route path="install" element={<InstallLanding />} />
       {/* Root dock routes - use default agent from bootstrap */}

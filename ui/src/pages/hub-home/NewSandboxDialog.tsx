@@ -1,6 +1,7 @@
 import { gitOriginFromUrl, OAUTH_PROVIDERS, OAuthStatus, oauthService, type GitOrigin, type Project } from '@sdk';
 import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
+import { Checkbox } from '@src/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -61,17 +62,25 @@ interface NewSandboxDialogProps {
   /** Everything they could load instead, and everything they can add as an asset. */
   projects?: Project[];
   /**
-   * Provision the box. Resolves with the created node, or rejects.
+   * Write the box down. Resolves with the created node, or rejects.
    *
-   * Deliberately NOT fire-and-forget any more: the dialog stays open across the
-   * call so it can report what happened, which means it has to be able to await
-   * the outcome. It also must not open anything — that is the user's next click.
+   * Provisions NOTHING — no VM, no cost, nothing to open. Deliberately NOT
+   * fire-and-forget: the dialog stays open across the call so it can report what
+   * happened, which means it has to be able to await the outcome.
    */
   onCreate: (opts: { name: string; sandboxProject?: SandboxSetup }) => Promise<ComputeNode | null>;
-  /** Open a created box. Called from the dialog's own Launch click, so the tab
+  /**
+   * Boot the created box and set it up. Resolves when it is ready, or rejects.
+   *
+   * This is where the minute of work lives, and it is why the dialog has a
+   * fourth state: the progress has to be visible somewhere, and behind a closed
+   * dialog is not somewhere.
+   */
+  onLaunch: (node: ComputeNode, opts: { autoLogin: boolean }) => Promise<ComputeNode | null>;
+  /** Open a launched box. Called from the dialog's own Open click, so the tab
    *  is claimed inside a real user gesture. */
   onOpen: (node: ComputeNode) => void;
-  /** Live progress rows for the create in flight. */
+  /** Live progress rows for the launch in flight. */
   steps: Step[];
 }
 
@@ -80,18 +89,29 @@ interface NewSandboxDialogProps {
  * packages — help desks or skills repos that get cloned in, indexed, and
  * attached as context folders of that project.
  *
- * Three states, and the dialog stays open across all of them:
+ * Five states, and the dialog stays open across all of them:
  *
- *   idle     Cancel | Create
- *   creating the progress checklist, inline
- *   created  Done | Launch
+ *   idle      Cancel | Create
+ *   creating  one save, so this is a blink
+ *   created   auto-login tick, then Done | Launch — nothing is running yet
+ *   launching the progress checklist, inline
+ *   launched  Done | Open sandbox
+ *
+ * Create writes the box down and stops. Launch is what boots it, which is the
+ * whole point of the split: a box you make now and open on Thursday costs
+ * nothing in between. Done is available in both settled states and means the
+ * same thing each time — "not now" — never "undo".
+ *
+ * The auto-login tick sits by Launch and not in the share dialog because it
+ * governs what THIS open does: whether bringing the workspace up signs a person
+ * into it. Handing the box over is the share dialog's business and stayed there.
  *
  * It used to close on click and fire the launch at the page behind it, which
  * put the progress rows and any failure somewhere the user was no longer
  * looking — a create that failed simply appeared to do nothing. Staying open is
- * what makes the outcome visible, and it is also what removes the popup-blocker
- * workaround: the open now happens on the Launch click, so there is no
- * placeholder tab to claim up front and none to close on error.
+ * what makes the outcome visible. The open is still its own click (now "Open
+ * sandbox", after the pipeline, rather than "Launch" before it), so there is
+ * still no placeholder tab to claim up front and none to close on error.
  *
  * Both fields are the same control ({@link SourceField}): the picks as
  * removable pills, then a chip per way in — pick a project, browse GitHub,
@@ -117,6 +137,7 @@ export function NewSandboxDialog({
   currentProject,
   projects,
   onCreate,
+  onLaunch,
   onOpen,
   steps,
 }: NewSandboxDialogProps) {
@@ -127,11 +148,15 @@ export function NewSandboxDialog({
   const [githubConnected, setGithubConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [openPanel, setOpenPanel] = useState<OpenPanel | null>(null);
-  // idle -> creating -> created. The dialog stays mounted across all three, so a
-  // failure lands back on `idle` with the error visible rather than behind a
-  // dialog that already closed.
-  const [phase, setPhase] = useState<'idle' | 'creating' | 'created'>('idle');
+  // idle -> creating -> created -> launching -> launched. The dialog stays
+  // mounted across all five, so a failure lands back on the last settled state
+  // with the error visible rather than behind a dialog that already closed.
+  const [phase, setPhase] = useState<'idle' | 'creating' | 'created' | 'launching' | 'launched'>('idle');
   const [created, setCreated] = useState<ComputeNode | null>(null);
+  // The hub's own default. Unticking it before the first launch is the only way
+  // to get a box that never signs anyone in — after the launch the session
+  // already exists, and turning it off then is a sign-out, not a setting.
+  const [autoLogin, setAutoLogin] = useState(true);
   const [error, setError] = useState('');
 
   // Reset on OPEN only. `defaultName` changes whenever the sandbox list refetches
@@ -142,16 +167,13 @@ export function NewSandboxDialog({
     setName(defaultName);
     const fromUrl = initialGitUrl ? gitOriginFromUrl(initialGitUrl) : null;
     setLoadedProject(
-      fromUrl
-        ? { name: fromUrl.name, gitOrigin: fromUrl }
-        : currentProject
-          ? sourceFromProject(currentProject)
-          : null,
+      fromUrl ? { name: fromUrl.name, gitOrigin: fromUrl } : currentProject ? sourceFromProject(currentProject) : null,
     );
     setAssets([]);
     setConnecting(false);
     setOpenPanel(null);
     setError('');
+    setAutoLogin(true);
     // Reopening starts a NEW sandbox. Without this the dialog would come back up
     // on the `created` phase, showing Done/Launch for the box made last time.
     setPhase('idle');
@@ -244,10 +266,33 @@ export function NewSandboxDialog({
     }
   }, [phase, name, defaultName, loadedProject, assets, onCreate]);
 
-  const handleLaunch = useCallback(() => {
+  const handleLaunch = useCallback(async () => {
+    if (!created || phase !== 'created') return;
+    setPhase('launching');
+    setError('');
+    try {
+      const node = await onLaunch(created, { autoLogin });
+      if (!node) {
+        // The hook refused because a launch was already in flight. Nothing
+        // booted, so this is not an error to report — just offer Launch again.
+        setPhase('created');
+        return;
+      }
+      setPhase('launched');
+    } catch (e) {
+      // Back to `created`, not `idle`: the box is written down either way, and
+      // dropping to idle would offer to create a second one for the same picks.
+      setError(e instanceof Error ? e.message : String(e));
+      setPhase('created');
+    }
+  }, [created, phase, autoLogin, onLaunch]);
+
+  const handleOpen = useCallback(() => {
     if (!created) return;
     // Inside the click gesture, with the final URL — the whole reason the
-    // placeholder-tab workaround could be deleted.
+    // placeholder-tab workaround could be deleted. It could NOT be folded back
+    // into the Launch click: a minute of pipeline sits between the two, and a
+    // `window.open` that far from a gesture is what popup blockers eat.
     onOpen(created);
     onOpenChange(false);
   }, [created, onOpen, onOpenChange]);
@@ -263,13 +308,17 @@ export function NewSandboxDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle><Trans>New sandbox</Trans></DialogTitle>
+          <DialogTitle>
+            <Trans>New sandbox</Trans>
+          </DialogTitle>
           <DialogDescription>
             <Trans>Choose the project it loads, and any asset packages to bring with it.</Trans>
           </DialogDescription>
         </DialogHeader>
 
-        <label className="mb-1 block text-xs font-medium text-muted-foreground"><Trans>Name</Trans></label>
+        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+          <Trans>Name</Trans>
+        </label>
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -312,24 +361,57 @@ export function NewSandboxDialog({
 
         {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
 
+        {/* What a created box is, before anyone launches it. Said plainly: the
+            card on the page behind is the other half of this sentence. */}
+        {phase === 'created' && (
+          <p className="mt-2 text-xs text-muted-foreground" data-testid="sandbox-not-started">
+            <Trans>Written down, not started. Launching boots it and sets the project up.</Trans>
+          </p>
+        )}
+
         {/* Progress lives INSIDE the dialog now. It used to render on the page
             behind a dialog that had already closed, which is where failures went
             to be missed. */}
-        {phase !== 'idle' && (
+        {(phase === 'launching' || phase === 'launched') && (
           <div className="mt-3" data-testid="sandbox-create-steps">
             <StepList steps={steps} />
           </div>
         )}
 
+        {/* The one thing about the box you can only decide before it boots. */}
+        {phase === 'created' && (
+          <label className="mt-3 flex items-start gap-2 text-xs" data-testid="sandbox-auto-login">
+            <Checkbox checked={autoLogin} onCheckedChange={(v) => setAutoLogin(v === true)} className="mt-0.5" />
+            <span className="text-muted-foreground">
+              <Trans>Sign me in automatically — this sandbox belongs to one person.</Trans>
+            </span>
+          </label>
+        )}
+
         <DialogFooter className="mt-4">
-          {phase === 'created' ? (
+          {phase === 'launched' ? (
             <>
-              {/* Done, not Cancel: the box exists either way. Closing here keeps
-                  it — it is in the list on the page behind. */}
               <Button variant="ghost" onClick={() => onOpenChange(false)} data-testid="done-sandbox">
                 <Trans>Done</Trans>
               </Button>
-              <Button onClick={handleLaunch} data-testid="launch-sandbox">
+              <Button onClick={handleOpen} data-testid="open-sandbox">
+                <Trans>Open sandbox</Trans>
+              </Button>
+            </>
+          ) : phase === 'created' || phase === 'launching' ? (
+            <>
+              {/* Done, not Cancel: the box exists either way. Closing here keeps
+                  it — it is in the list on the page behind, ready to launch. */}
+              <Button
+                variant="ghost"
+                onClick={() => onOpenChange(false)}
+                disabled={phase === 'launching'}
+                data-testid="done-sandbox"
+              >
+                <Trans>Done</Trans>
+              </Button>
+              <Button onClick={() => void handleLaunch()} disabled={phase === 'launching'} data-testid="launch-sandbox">
+                {phase === 'launching' && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                 <Trans>Launch</Trans>
               </Button>
             </>
@@ -341,11 +423,7 @@ export function NewSandboxDialog({
               {/* A half-finished connection doesn't block a create either: the
                   source is already chosen, and GitHub only ever mattered for
                   reaching a private repo. */}
-              <Button
-                onClick={() => void handleCreate()}
-                disabled={phase === 'creating'}
-                data-testid="create-sandbox"
-              >
+              <Button onClick={() => void handleCreate()} disabled={phase === 'creating'} data-testid="create-sandbox">
                 {phase === 'creating' && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
                 <Trans>Create</Trans>
               </Button>
@@ -399,10 +477,7 @@ function SourceField({
   const [url, setUrl] = useState('');
   const togglePanel = (next: Panel) => onPanelChange(panel === next ? null : next);
 
-  const pickedIds = useMemo(
-    () => values.map((v) => v.projectId).filter((id): id is string => !!id),
-    [values],
-  );
+  const pickedIds = useMemo(() => values.map((v) => v.projectId).filter((id): id is string => !!id), [values]);
 
   const pick = (source: Source) => {
     onPanelChange(null);
@@ -437,7 +512,9 @@ function SourceField({
               )}
               <span className="truncate">{source.name}</span>
               {!source.gitOrigin && (
-                <span className="shrink-0 text-[10px] uppercase text-muted-foreground"><Trans>no repo</Trans></span>
+                <span className="shrink-0 text-[10px] uppercase text-muted-foreground">
+                  <Trans>no repo</Trans>
+                </span>
               )}
               <button
                 type="button"
@@ -505,10 +582,7 @@ function SourceField({
       {panel === 'github' && (
         <div className="mt-1.5 rounded-md border border-border p-2" data-testid={`${testId}-github`}>
           {githubConnected ? (
-            <RepoPicker
-              provider="github"
-              onSelect={(repo) => pick({ name: repo.name, gitOrigin: repo.git_origin })}
-            />
+            <RepoPicker provider="github" onSelect={(repo) => pick({ name: repo.name, gitOrigin: repo.git_origin })} />
           ) : (
             <div className="flex items-center justify-between gap-2 text-xs">
               <span className="text-muted-foreground">
@@ -523,7 +597,9 @@ function SourceField({
                 data-testid="connect-github"
               >
                 {connecting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Github className="h-3 w-3" />}
-                <span className="ml-1.5"><Trans>Connect</Trans></span>
+                <span className="ml-1.5">
+                  <Trans>Connect</Trans>
+                </span>
               </Button>
             </div>
           )}
@@ -539,7 +615,9 @@ function SourceField({
             className="h-8 font-mono text-xs"
             spellCheck={false}
             autoFocus
-            onKeyDown={(e) => { if (e.key === 'Enter') submitUrl(); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submitUrl();
+            }}
             data-testid={`${testId}-url-input`}
           />
           <Button size="sm" variant="outline" className="h-8 shrink-0 px-2 text-xs" onClick={submitUrl}>
