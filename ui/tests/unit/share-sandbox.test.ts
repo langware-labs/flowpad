@@ -11,6 +11,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ComputeNode, dataManager } from '@sdk';
+import { workspaceServiceUrl } from '@src/hooks/use-sandboxes';
 import {
   SANDBOX_SHARE_ROLE,
   sandboxShareLandingPath,
@@ -179,20 +180,50 @@ describe('shareFailureText', () => {
 /**
  * The shareable link.
  *
- * It is the SAME url the card's Open button uses, and that is the point: one
- * public entry point that resolves the machine's state at click time. It is safe
- * to paste into a chat because it is not a bearer token — the hub requires an
- * authenticated principal holding at least `admin` on the node before it will
- * attach the cookie-gate secret.
+ * It is the SAME destination the invitation email lands on, and that is the
+ * point: ONE shared link with one set of powers. It used to be the hub's
+ * `open-service` route, which OPENS a box and cannot BUILD one — so a link
+ * copied for a sandbox that had not been launched yet answered 409 "this machine
+ * has not been set up yet" while the emailed link to the same box worked. Two
+ * links to one machine with different abilities is the drift these assert away.
+ *
+ * Still safe to paste into a chat: it names a node and carries no credential,
+ * and `/open-sandbox` reaches the box only through `open-service`, which is what
+ * authorizes the caller and attaches the cookie-gate secret.
  */
 describe('sandboxShareLink', () => {
   const node = { id: NODE_ID } as never;
 
-  it('is the open-service route for the node', () => {
+  it('lands on the same page the invitation email does', () => {
+    const link = sandboxShareLink(node);
+    const url = new URL(link);
+
+    expect(`${url.pathname}${url.search}`).toBe(sandboxShareLandingPath(NODE_ID));
+  });
+
+  it('is absolute, because it is pasted rather than followed', () => {
+    // A bare path is what the INVITE sends (`is_safe_app_path` rejects an
+    // absolute url there). Pasted into a chat, that same path resolves against
+    // whatever origin the reader happens to be on, or nothing at all.
     const link = sandboxShareLink(node);
 
+    expect(new URL(link).origin).toBeTruthy();
     expect(link).toContain(NODE_ID);
-    expect(link.endsWith('/open-service/workspace')).toBe(true);
+  });
+
+  it('points at the HUB, not at whatever machine the sender is sitting on', () => {
+    // The regression this exists for, seen in the wild: built from
+    // `window.location.origin`, the desktop app — which runs on localhost while
+    // talking to a remote hub — produced
+    // `http://localhost:4093/open-sandbox?node=…`. A flawless link to the
+    // sender's own laptop, handed to somebody else.
+    //
+    // Asserted against the `open-service` origin rather than a literal: that is
+    // the hub the API talks to, and the two entry points to one box must never
+    // resolve to different hubs.
+    const link = sandboxShareLink(node);
+
+    expect(new URL(link).origin).toBe(new URL(workspaceServiceUrl(NODE_ID)).origin);
   });
 
   it('carries no secret, no host and no port', () => {
@@ -210,7 +241,14 @@ describe('sandboxShareLink', () => {
     expect(new URL(link).pathname).not.toContain('9007');
   });
 
-  it('takes no landing path, so a shared link cannot aim anywhere but the box', () => {
-    expect(sandboxShareLink(node)).not.toContain('?');
+  it('names a node and nothing else, so a shared link cannot aim anywhere but the box', () => {
+    // The `?` is now load-bearing (`?node=`), so "no query at all" is no longer
+    // the guard. What must never appear is a second, caller-chosen parameter —
+    // a `next`/redirect the sender picks would make this an open redirect
+    // wearing a sandbox link's clothes.
+    const params = new URL(sandboxShareLink(node)).searchParams;
+
+    expect([...params.keys()]).toEqual(['node']);
+    expect(params.get('node')).toBe(NODE_ID);
   });
 });

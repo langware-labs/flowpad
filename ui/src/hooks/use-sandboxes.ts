@@ -676,9 +676,18 @@ export function useSandboxes() {
       setLoggingOutId(node.id);
       try {
         await node.logoutUser();
-        // Refetch, not an optimistic clear: `logged_in_user` is the hub's cached
-        // view of what the BOX reports, so the list is the only honest source
-        // for whether the sign-out actually took.
+        // Clear the cached field HERE, on the entity, because a refetch cannot:
+        // the hub sets `logged_in_user` to null, and the API serializer drops
+        // every null field, so the refetched payload simply has no
+        // `logged_in_user` key — and the store's `deepAssign` only copies keys
+        // the payload carries. The old email therefore survived every refetch
+        // and the card kept showing the user as signed in until a page reload
+        // built a fresh entity. This is not an optimistic guess: `logout-user`
+        // raises unless the box confirmed the sign-out, so reaching this line
+        // means the hub already cleared its own copy.
+        node.logged_in_user = null;
+        // Still refetch: it is what re-renders the list (a new array ref) and it
+        // is the honest source for everything the sign-out may have changed.
         await refetch();
       } catch (err) {
         notify.error({
