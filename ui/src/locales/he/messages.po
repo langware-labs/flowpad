@@ -1640,6 +1640,10 @@ msgstr "לבקש עזרה ממישהו"
 msgid "Ask the Flowpad Assistant anything."
 msgstr "שאל את עוזר Flowpad כל דבר."
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "Ask whoever shared it for a new link."
+msgstr ""
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "asset"
@@ -10758,6 +10762,10 @@ msgstr "פתיחה בטרמינל"
 msgid "Open in Worktree"
 msgstr "פתח ב-Worktree"
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "Open it now"
+msgstr ""
+
 #: src/components/task-bar/TaskCard.tsx
 #~ msgid "Open JSON"
 #~ msgstr "פתח JSON"
@@ -11561,6 +11569,7 @@ msgid "Preferences"
 msgstr "העדפות"
 
 #: src/pages/entry/LaunchLanding.tsx
+#: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Preparing your sandbox…"
 msgstr "ארגז החול בהכנה…"
 
@@ -15535,6 +15544,10 @@ msgstr "לא ניתן להשתף את הנכס הזה עם Git. יש לכבות 
 msgid "This asset has no file path."
 msgstr "לנכס זה אין נתיב קובץ."
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This can take up to a minute if it was asleep."
+msgstr ""
+
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "This chat has no resumable session."
@@ -15576,9 +15589,17 @@ msgstr "עדיין לא ניתן לשתף את התיקייה"
 msgid "This folder-backed asset has no main file metadata."
 msgstr "לנכס תיקייה זה אין מטא-נתונים של קובץ ראשי"
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This link does not point at a sandbox."
+msgstr ""
+
 #: src/pages/entry/LaunchLanding.tsx
 msgid "This link doesn't name a repository we can launch."
 msgstr "הקישור הזה לא מציין מאגר שאפשר להפעיל."
+
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This link is missing the sandbox it should open."
+msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "This live session has ended."

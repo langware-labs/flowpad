@@ -1,7 +1,6 @@
-import { ComputeNode, PageId } from '@sdk';
+import { ComputeNode } from '@sdk';
 import { workspaceServiceUrl } from '@src/hooks/use-sandboxes';
 import { errorMessage, errorStatus } from '@src/lib/error-message';
-import { DockPointer } from '@src/navigation/DockPointer';
 
 /**
  * Sharing a cloud sandbox by email, and handing one over.
@@ -33,15 +32,22 @@ export const SANDBOX_SHARE_ROLE = 'admin';
 export const SANDBOX_TRANSFER_ROLE_TO_KEEP = 'reader';
 
 /**
- * Where the emailed invitation lands the recipient.
+ * Where the emailed invitation lands the recipient: the `/open-sandbox` page,
+ * which says "Preparing your sandbox…" and then redirects into the box.
  *
- * Built from the router's own pointer rather than a string literal so a route
- * rename cannot silently start sending people to the SPA's catch-all. The hub
- * validates it with `is_safe_app_path` (leading `/`, no `//`, no `://`), which
- * this satisfies by construction.
+ * Not hub home, and not `open-service` directly. Hub home makes the recipient
+ * hunt for a card and press Open — the one thing the invitation already knows
+ * they want. `open-service` is the right destination but the wrong first
+ * screen: the hub resumes the machine and waits for it to answer before it
+ * redirects, so the recipient stares at a blank tab for up to a minute with no
+ * way to tell working from broken.
+ *
+ * Must stay a PATH. `callback_override` is validated hub-side by
+ * `is_safe_app_path` (leading `/`, no `//`, no `://`), so an absolute URL is
+ * rejected at invite time with a 400.
  */
-export function sandboxShareLandingPath(): string {
-  return DockPointer.forHome().withPage(PageId.HUB).toUrl();
+export function sandboxShareLandingPath(nodeId: string): string {
+  return `/open-sandbox?node=${encodeURIComponent(nodeId)}`;
 }
 
 // `setAutoLogin` used to live here. It moved to `use-sandboxes`, next to the
@@ -125,7 +131,7 @@ export async function shareSandboxByEmail(
   for (const email of emails) {
     try {
       await node.inviteMember(email, role, {
-        callbackOverride: sandboxShareLandingPath(),
+        callbackOverride: sandboxShareLandingPath(node.id),
         ...(opts.transfer ? { transfer: true, roleToKeep: opts.roleToKeep ?? null } : {}),
       });
       outcome.granted.push(email);
