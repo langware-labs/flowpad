@@ -19,8 +19,8 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  sandboxes: [] as unknown[],
-  isLoading: false,
+  /** What the addressed GET answers with: a node, null (no such box), or a throw. */
+  getById: vi.fn(),
   launchSandbox: vi.fn(),
   steps: [] as unknown[],
 }));
@@ -29,17 +29,21 @@ vi.mock('@src/hooks/use-sandboxes', async (importOriginal) => {
   // `isLaunched` and `workspaceServiceUrl` stay REAL: they are the contract with
   // the hub (one field, one route), and stubbing them would leave this test
   // asserting its own opinion of when a box needs launching.
+  //
+  // `sandboxes`/`isLoading` are deliberately NOT provided: the page must not read
+  // the list again. A disabled react-query reports `isLoading: false` with no
+  // data, which made "still loading" indistinguishable from "no such box" — the
+  // bug this file now pins.
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    useSandboxes: () => ({
-      sandboxes: mocks.sandboxes,
-      isLoading: mocks.isLoading,
-      launchSandbox: mocks.launchSandbox,
-      steps: mocks.steps,
-    }),
+    useSandboxes: () => ({ launchSandbox: mocks.launchSandbox, steps: mocks.steps }),
   };
 });
+
+const { ComputeNode } = await import('@sdk');
+vi.spyOn(ComputeNode as unknown as { getById: unknown }, 'getById' as never).mockImplementation(((id: string) =>
+  mocks.getById(id)) as never);
 
 const { default: OpenSandboxLanding } = await import('@src/pages/entry/OpenSandboxLanding');
 const { workspaceServiceUrl } = await import('@src/hooks/use-sandboxes');
@@ -56,10 +60,9 @@ const originalLocation = window.location;
 let assign: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-  mocks.sandboxes = [];
-  mocks.isLoading = false;
   mocks.steps = [];
   mocks.launchSandbox = vi.fn();
+  mocks.getById = vi.fn().mockResolvedValue(null);
   // jsdom's real `location.assign` is unimplemented and logs a "not implemented"
   // error instead of navigating — the same swap `cloud-manager-hub-identity` makes.
   assign = vi.fn();
@@ -88,7 +91,7 @@ function renderLanding(nodeId = NODE_ID) {
 
 describe('open-sandbox landing', () => {
   it('opens a launched sandbox without touching the launch path', async () => {
-    mocks.sandboxes = [node({ node_provider_id: 'e2b-sandbox-1' })];
+    mocks.getById.mockResolvedValue(node({ node_provider_id: 'e2b-sandbox-1' }));
 
     renderLanding();
 
@@ -99,7 +102,7 @@ describe('open-sandbox landing', () => {
   });
 
   it('launches a sandbox that was shared before it was ever started, then opens it', async () => {
-    mocks.sandboxes = [node()];
+    mocks.getById.mockResolvedValue(node());
     mocks.launchSandbox.mockResolvedValue(node({ node_provider_id: 'e2b-sandbox-2' }));
 
     renderLanding();
@@ -113,7 +116,7 @@ describe('open-sandbox landing', () => {
   });
 
   it('shows the launch checklist while it boots', async () => {
-    mocks.sandboxes = [node()];
+    mocks.getById.mockResolvedValue(node());
     mocks.steps = [{ id: 'launch', label: 'Starting the sandbox', status: 'loading' }];
     // Never settles: the assertion is about what is on screen DURING the launch.
     mocks.launchSandbox.mockReturnValue(new Promise(() => {}));
@@ -126,7 +129,7 @@ describe('open-sandbox landing', () => {
   });
 
   it('names the owner when the recipient holds a plain share', async () => {
-    mocks.sandboxes = [node()];
+    mocks.getById.mockResolvedValue(node());
     // `ops` resolves for `owner` and nobody else, so an `admin` share — which is
     // what the dialog grants without the transfer checkbox — gets exactly this.
     mocks.launchSandbox.mockRejectedValue({ response: { status: 403 } });
@@ -139,11 +142,29 @@ describe('open-sandbox landing', () => {
     expect(assign).not.toHaveBeenCalled();
   });
 
-  it('waits for the sandbox list before deciding', async () => {
-    // Mid-load the list is empty, which is indistinguishable from "not launched"
-    // if the page acts on it — and acting means spending money on a VM.
-    mocks.isLoading = true;
-    mocks.sandboxes = [];
+  it('ASKS for the node instead of looking for it in a list', async () => {
+    // The regression, reported from staging: this page used to find the node in
+    // `useSandboxes().sandboxes`, gated on `enabled: !!user`. A DISABLED
+    // react-query reports `isLoading: false` with no data, so before auth
+    // resolved "still loading" and "loaded, and no such box" were the same
+    // observation — and the page took the second one, redirected to
+    // `open-service`, and produced the exact 409 it exists to prevent. Arriving
+    // from a sign-in round trip, which is what an invitation does, made that the
+    // common path.
+    //
+    // An addressed GET has no such ambiguity: it answers, or it fails.
+    mocks.getById.mockResolvedValue(node());
+
+    renderLanding();
+
+    await waitFor(() => expect(mocks.getById).toHaveBeenCalledWith(NODE_ID));
+    await waitFor(() => expect(mocks.launchSandbox).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not decide anything while the node is still being fetched', async () => {
+    // Never settles. Redirecting here would be the old bug in a new place:
+    // acting on the absence of an answer rather than on an answer.
+    mocks.getById.mockReturnValue(new Promise(() => {}));
 
     renderLanding();
 
@@ -153,9 +174,20 @@ describe('open-sandbox landing', () => {
   });
 
   it('falls through to the hub for a node it cannot see', async () => {
-    // Not in the list: the hub authorizes this route, and its 403/404 is a
-    // better answer than a guess made here.
-    mocks.sandboxes = [];
+    // A definitive "no such box": the hub authorizes this route, and its 403/404
+    // is a better answer than a guess made here.
+    mocks.getById.mockResolvedValue(null);
+
+    renderLanding();
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
+    expect(mocks.launchSandbox).not.toHaveBeenCalled();
+  });
+
+  it('falls through to the hub when the fetch itself fails', async () => {
+    // 401 from a session that expired mid-flight, or an unreachable hub. Both are
+    // the hub's to explain, and both must NOT read as "this box does not exist".
+    mocks.getById.mockRejectedValue({ response: { status: 401 } });
 
     renderLanding();
 
