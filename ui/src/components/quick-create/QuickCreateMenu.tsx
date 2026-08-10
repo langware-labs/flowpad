@@ -26,7 +26,7 @@ import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { openNewChat } from '@src/navigation/open-new-chat';
+import { openNewChat, reportChatStartFailure } from '@src/navigation/open-new-chat';
 import { FolderOpen, FolderPlus, GitBranch } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
@@ -97,8 +97,15 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
     async (workerType: 'claude_code' | 'codex' | 'copilot') => {
       onOpenChange(false);
       // openNewChat creates AND navigates (carrying the chat mode) — no second nav.
-      const process = await openNewChat(navigation, { workerType });
-      if (!process) notify.error({ title: t`Failed to start session` });
+      // The catch is load-bearing: this is invoked as `void handleStartSession(…)`,
+      // so a rejected create used to become an unhandled rejection and the user
+      // got no feedback at all in any view mode.
+      try {
+        const process = await openNewChat(navigation, { workerType });
+        if (!process) notify.error({ title: t`Failed to start session` });
+      } catch (err) {
+        reportChatStartFailure(navigation, err);
+      }
     },
     [navigation, onOpenChange, t],
   );

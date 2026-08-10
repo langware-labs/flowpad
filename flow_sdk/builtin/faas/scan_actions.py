@@ -57,6 +57,78 @@ def _resolve_session_record(session_id: str, hint: str | None = None):
     return None, None
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# launch pre-flight — a "needs a human" verdict is a 4xx, not a 500
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: Human copy per launch-error code. The machine-readable ``code`` in ``data``
+#: is what the UI branches on; this is only what the user reads.
+_CAPABILITY_MESSAGES = {
+    "not_installed": "{name} is not installed on this machine.",
+    "not_authenticated": "{name} is installed but not signed in.",
+    "no_api_key": "{name} has no API key configured.",
+}
+
+
+def _capability_fail(error, worker_type: str) -> ApiFailResponse:
+    """A ``LaunchError`` verdict → a structured 400.
+
+    ``LaunchHealth.CONFIG_ERROR`` means "needs a human" — a client error, not a
+    server fault. Left alone, such a verdict reaches HTTP as an
+    ``ApiFailResponse`` carrying no ``status_code``, which ``response.py``
+    defaults to 500 and ``graph.py`` stamps onto the response: the FLOWPAD-1971
+    symptom, where a missing CLI read as an internal server error.
+
+    ``data`` carries ``LaunchError.as_dict()`` verbatim (health / code / detail /
+    worker_type) plus the capability identity, so the UI can name the provider
+    and deep-link ``/dock/capabilities?capability=<kind>`` without guessing.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+        worker_capability_kind,
+    )
+
+    kind = worker_capability_kind(worker_type)
+    name, homepage = worker_type, None
+    try:
+        from flow_sdk.core.capabilities.registry import get_capability_registry
+
+        spec = get_capability_registry().get(kind).spec
+        name, homepage = spec.name, spec.homepage_url
+    except Exception:  # noqa: BLE001 — an error builder must never become the error
+        logging.debug(f"createProcess: no capability spec for {kind!r}", exc_info=True)
+
+    template = _CAPABILITY_MESSAGES.get(str(error.code))
+    message = template.format(name=name) if template else f"{name} is not available: {error.detail}"
+    return ApiFailResponse(
+        message=message,
+        status_code=400,
+        data={
+            **error.as_dict(),
+            "capability_kind": kind,
+            "name": name,
+            "homepage_url": homepage,
+        },
+    )
+
+
+def _start_failure_response(reason, worker_type: str, fallback: ApiFailResponse) -> ApiFailResponse:
+    """Classify a spawn failure that got past the pre-flight.
+
+    The pre-flight can still lose a race — a CLI deleted between the check and
+    the spawn. ``LaunchError.classify`` already recognises ``WorkerSpawnError``
+    and the "no … installation discovered" text, so a config verdict answers
+    4xx here instead of inheriting the 500 default. Anything transient keeps the
+    caller's original response.
+    """
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
+
+    exc = reason if isinstance(reason, BaseException) else RuntimeError(str(reason))
+    verdict = LaunchError.classify(exc, worker_type)
+    if verdict.health is LaunchHealth.CONFIG_ERROR:
+        return _capability_fail(verdict, worker_type)
+    return fallback
+
+
 class ScanActionsMixin:
     async def _scan_scoped_roots(self):
         """Full-coverage (user + all projects) indexer roots for resource scans."""
@@ -268,6 +340,7 @@ class ScanActionsMixin:
         from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
         from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions
         from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions
+        from flow_sdk.builtin.agentic_process.launch_health import ensure_launchable
         from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
 
         try:
@@ -346,7 +419,32 @@ class ScanActionsMixin:
             try:
                 worker_type = WorkerType(worker_type_raw)
             except ValueError:
-                return ApiFailResponse(message=f"Unknown worker_type: {worker_type_raw!r}")
+                # A client naming a worker this backend doesn't have is a client
+                # error; without an explicit status_code it would answer 500.
+                return ApiFailResponse(
+                    message=f"Unknown worker_type: {worker_type_raw!r}", status_code=400
+                )
+
+            # Pre-flight the harness BEFORE anything is persisted, so a provider
+            # the machine can't run is refused with a structured 400 instead of
+            # failing deep in the spawn (which reached HTTP as a bare 500) and
+            # leaving a FAILED row behind for every attempt.
+            #
+            # Install-only: no subprocess auth probe enters the create path. The
+            # check reads the same discovery SSOT ``worker_path_env`` reads at
+            # spawn, so it can never turn away a launch that would have worked.
+            #
+            # Deliberately gates headless creates too. A standard-mode session
+            # with a missing CLI used to be born fine and only break on its first
+            # prompt, where the failure rides a 200 stream and no status code can
+            # reach the user.
+            launch_problem = await ensure_launchable(worker_type.value, check_auth=False)
+            if launch_problem is not None:
+                logging.info(
+                    f"ComputeNode {self.id} createProcess refused: "
+                    f"{worker_type.value} → {launch_problem.code}"
+                )
+                return _capability_fail(launch_problem, worker_type.value)
 
             model = context_data.pop("model", None) or None
             permission_mode = context_data.pop("permission_mode", "bypassPermissions")
@@ -541,12 +639,22 @@ class ScanActionsMixin:
                     logging.exception(
                         f"ComputeNode {self.id} createProcess start error for {process.id}: {start_err}"
                     )
-                    return ApiFailResponse(
-                        message=f"Process {process.id} created but failed to start: {start_err}"
+                    return _start_failure_response(
+                        start_err,
+                        worker_type.value,
+                        ApiFailResponse(
+                            message=f"Process {process.id} created but failed to start: {start_err}"
+                        ),
                     )
 
                 if isinstance(start_resp, ApiFailResponse):
-                    return start_resp
+                    # ``_perform_open`` returns its failure with no status_code
+                    # (⇒ 500). Classify the latched reason so a harness that
+                    # vanished between the pre-flight and the spawn still reads
+                    # as a client error the UI can act on.
+                    return _start_failure_response(
+                        start_resp.message or "", worker_type.value, start_resp
+                    )
             elif launch_prompt and str(launch_prompt).strip():
                 # Headless launch (visible=False) with a seeded first prompt: PTY
                 # drains the queue head via ``start_pty`` above, but headless has no

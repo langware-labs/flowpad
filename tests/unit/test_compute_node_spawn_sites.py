@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from flow_sdk.builtin.faas.compute_node import ComputeNode
-from flow_sdk.responses.response import ApiSuccessResponse
+from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -35,6 +35,21 @@ def _make_request_info(body: dict):
 
 
 _PATCH_REQ_SCAN = "flow_sdk.builtin.faas.scan_actions.get_current_request_info"
+_PATCH_LAUNCHABLE = "flow_sdk.builtin.agentic_process.launch_health.ensure_launchable"
+
+
+@pytest.fixture(autouse=True)
+def _harness_available():
+    """Neutralise the harness pre-flight for every test in this file.
+
+    ``_scan_create_process`` now refuses before persisting anything when the
+    chosen harness isn't installed. These tests replace ``AgenticProcess`` with a
+    fake that has no ``is_installed``, so the real pre-flight would classify that
+    AttributeError as a launch problem and every case here would answer 400. The
+    refusal has its own coverage below, which patches over this fixture.
+    """
+    with patch(_PATCH_LAUNCHABLE, AsyncMock(return_value=None)) as mock:
+        yield mock
 
 
 # ─── createProcess fresh path ────────────────────────────────────────────────
@@ -137,6 +152,144 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
     assert captured["visible"] is False
     # Critical: start_pty() must NOT be called for headless processes.
     assert "__started_visible" not in captured
+
+
+# ─── createProcess harness pre-flight (FLOWPAD-1971) ─────────────────────────
+
+
+class _NeverBuilt:
+    """An AgenticProcess stand-in that fails the test if it is constructed."""
+
+    def __init__(self, **kwargs):
+        raise AssertionError(f"AgenticProcess must not be constructed: {kwargs}")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("visible", [True, False])
+async def test_scan_create_process_missing_harness_is_400_not_500(visible):
+    """A harness the machine can't run is a client error, and nothing is created.
+
+    Before this, the miss surfaced deep in ``_perform_open`` as a RuntimeError
+    that became an ``ApiFailResponse`` with no ``status_code`` — which defaults to
+    500 — after the row had already been saved and latched FAILED. Both modes are
+    covered: headless used to be born fine and only break on its first prompt.
+    """
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchErrorCode
+
+    node = _make_compute_node()
+    info = _make_request_info({
+        "context": {"workdir": "/tmp/proj", "worker_type": "codex"},
+        "visible": visible,
+    })
+    problem = LaunchError.config(LaunchErrorCode.NOT_INSTALLED, "harness is not installed", "codex")
+
+    with patch(_PATCH_REQ_SCAN, return_value=info), \
+         patch(_PATCH_LAUNCHABLE, AsyncMock(return_value=problem)), \
+         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _NeverBuilt):
+        resp = await node._scan_create_process()
+
+    assert isinstance(resp, ApiFailResponse)
+    assert resp.status_code == 400, "a missing harness must not read as a server fault"
+    # The machine-readable half — what the UI branches on and deep-links with.
+    assert resp.data["code"] == LaunchErrorCode.NOT_INSTALLED.value
+    assert resp.data["capability_kind"] == "harness.codex.cli"
+    assert resp.data["worker_type"] == "codex"
+    assert resp.data["health"] == "config_error"
+    # The human half must name the provider, not restate the status line.
+    assert "not installed" in (resp.message or "")
+
+
+@pytest.mark.asyncio
+async def test_scan_create_process_preflight_runs_install_only():
+    """The gate must not pay for an auth probe on the create path.
+
+    ``ensure_launchable``'s login half shells out to the vendor CLI, uncached,
+    per call. Creation asks for the install check alone.
+    """
+    node = _make_compute_node()
+    info = _make_request_info({
+        "context": {"workdir": "/tmp/proj", "worker_type": "codex"},
+        "visible": False,
+    })
+
+    class FakeProc:
+        def __init__(self, **kwargs):
+            self.id = "preflight-1"
+            self.type = "agentic_process"
+            self.shell_id = None
+            self._data = kwargs
+
+        async def save(self, owner=None):
+            return None
+
+        def model_dump(self, mode=None):
+            return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
+
+    launchable = AsyncMock(return_value=None)
+    with patch(_PATCH_REQ_SCAN, return_value=info), \
+         patch(_PATCH_LAUNCHABLE, launchable), \
+         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+        resp = await node._scan_create_process()
+
+    assert resp.status == "SUCCESS"
+    launchable.assert_awaited_once_with("codex", check_auth=False)
+
+
+@pytest.mark.asyncio
+async def test_scan_create_process_unknown_worker_type_is_400():
+    """An unrecognised worker_type is unambiguously the caller's mistake; it
+    answered 500 purely because ``ApiFailResponse.status_code`` defaults there."""
+    node = _make_compute_node()
+    info = _make_request_info({"context": {"worker_type": "not_a_worker"}, "visible": False})
+
+    with patch(_PATCH_REQ_SCAN, return_value=info), \
+         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _NeverBuilt):
+        resp = await node._scan_create_process()
+
+    assert isinstance(resp, ApiFailResponse)
+    assert resp.status_code == 400
+    assert "not_a_worker" in (resp.message or "")
+
+
+@pytest.mark.asyncio
+async def test_scan_create_process_start_race_classifies_to_400():
+    """The pre-flight can lose a race — a CLI deleted between check and spawn.
+
+    ``_perform_open`` returns that as an ``ApiFailResponse`` with no status_code.
+    Classifying the latched reason keeps it a client error rather than a 500.
+    """
+    node = _make_compute_node()
+    info = _make_request_info({
+        "context": {"workdir": "/tmp/proj", "worker_type": "codex"},
+        "visible": True,
+    })
+
+    class FakeProc:
+        def __init__(self, **kwargs):
+            self.id = "raced-1"
+            self.type = "agentic_process"
+            self.shell_id = None
+            self._data = kwargs
+
+        async def save(self, owner=None):
+            return None
+
+        async def start_pty(self, visible=False, **kwargs):
+            raise RuntimeError(
+                "Command not found: 'codex' — no harness.codex.cli installation discovered"
+            )
+
+        def model_dump(self, mode=None):
+            return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
+
+    with patch(_PATCH_REQ_SCAN, return_value=info), \
+         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+        resp = await node._scan_create_process()
+
+    assert isinstance(resp, ApiFailResponse)
+    assert resp.status_code == 400
+    assert resp.data["code"] == "not_installed"
+    assert resp.data["capability_kind"] == "harness.codex.cli"
 
 
 @pytest.mark.asyncio
