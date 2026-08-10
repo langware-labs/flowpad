@@ -23,7 +23,6 @@ import {
   dataContext,
   GraphContext,
   HARNESS_CAPABILITY_KINDS,
-  ViewType,
   type ComputeNode,
 } from '@sdk';
 import { type UseCapabilityResult } from '@sdk/react/hooks';
@@ -37,7 +36,7 @@ import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { openNewChat } from '@src/navigation/open-new-chat';
+import { openNewChat, reportChatStartFailure } from '@src/navigation/open-new-chat';
 import { Cloud, Container, History, SquareTerminal } from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -159,14 +158,15 @@ export function useTerminalStripController({
           ...(spawnProjectId ? { projectId: spawnProjectId } : {}),
           ...(workerType ? { workerType } : {}),
         });
-      } catch {
+      } catch (err) {
         // The spawn failed — overwhelmingly because the harness this capability
         // row still calls available is gone from disk (uninstalled since the
-        // last discovery sweep, which only runs at backend start). Show the
-        // Capabilities view for THIS kind rather than an error: its arrival
+        // last discovery sweep, which only runs at backend start). The shared
+        // reporter shows the Capabilities view for THIS kind: its arrival
         // re-probe corrects the stale row and offers install / switch harness,
-        // which is the thing the user actually needs to do next.
-        navigation.openTab(ViewType.CAPABILITIES, { capabilityKind: requiredKind });
+        // which is the thing the user actually needs to do next. It also names
+        // the provider, which this catch used to drop on the floor.
+        reportChatStartFailure(navigation, err, requiredKind);
       } finally {
         clearPending();
       }

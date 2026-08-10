@@ -5,7 +5,7 @@ import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
 import type { NavigatorDescriptor } from '@src/components/navigator-panel/types';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { openNewChat } from '@src/navigation/open-new-chat';
+import { openNewChat, reportChatStartFailure } from '@src/navigation/open-new-chat';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useOpenTabTargetIds } from '@src/tabs/useTabs';
 import { useProject } from '@src/hooks/useProject';
@@ -143,12 +143,15 @@ export function ChatsNavigator() {
       // Opens in the user's chat mode (their last pick), like every other
       // front-face open-chat action. This used to key on the View mode alone,
       // so a Standard user who had chosen `terminal` still got a chat pane.
+      // `err.message` used to be shown here, which for an axios rejection is
+      // "Request failed with status code 500" — the server's own explanation
+      // lives in the envelope. The shared reporter reads that instead.
       void openNewChat(navigation, { workerType }).catch((err) => {
         console.error('[ChatsNavigator] new chat failed', err);
-        notify.error({ title: t`Could not start chat`, message: err instanceof Error ? err.message : String(err) });
+        reportChatStartFailure(navigation, err);
       });
     },
-    [navigation, t],
+    [navigation],
   );
 
   const descriptor: NavigatorDescriptor = useMemo(
