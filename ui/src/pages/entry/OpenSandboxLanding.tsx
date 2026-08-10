@@ -64,12 +64,21 @@ export default function OpenSandboxLanding() {
   // resume from scratch, and launching twice would orphan a VM.
   const started = useRef(false);
 
-  // The same hook the card uses, for the same reason: `launchSandbox` is where
-  // `ops/setup` → `workspace-ready` → the project setup live, and a second copy
-  // of that sequence here would be one to keep in step forever. `steps` is the
-  // identical checklist the launcher sees, which is the point — arriving by
-  // invitation should look like launching it yourself.
-  const { sandboxes, isLoading, launchSandbox, steps } = useSandboxes();
+  // `launchSandbox` is where `ops/setup` → `workspace-ready` → the project setup
+  // live, and a second copy of that sequence here would be one to keep in step
+  // forever. `steps` is the identical checklist the launcher sees, which is the
+  // point — arriving by invitation should look like launching it yourself.
+  //
+  // Deliberately NOT `sandboxes` from the same hook. This page used to find the
+  // node in that list, and the list is the wrong instrument: it is gated on
+  // `enabled: !!user`, and a DISABLED react-query reports `isLoading: false`
+  // (v5 defines it as `isPending && isFetching`, and a disabled query never
+  // fetches). So before auth resolved, "still loading" and "loaded, and this box
+  // does not exist" were the same observation — and this page took the second
+  // reading, redirected to `open-service`, and the recipient got the 409 this
+  // page exists to prevent. Arriving straight from a sign-in round trip, which is
+  // exactly what an invitation does, made that the COMMON path rather than a race.
+  const { launchSandbox, steps } = useSandboxes();
 
   useEffect(() => {
     if (started.current) return;
@@ -89,24 +98,29 @@ export default function OpenSandboxLanding() {
       return;
     }
     setTarget(url);
-
-    // Wait for the list before deciding. `started` stays false so this effect
-    // runs again when it arrives — the decision below needs the NODE, and acting
-    // on a list that has not loaded would read every box as never-launched.
-    if (isLoading) return;
     started.current = true;
 
-    const node = sandboxes.find((s) => s.id === nodeId);
-    // Not in the list, or already provisioned: go, exactly as before. A node we
-    // cannot see is not a node we should reason about — the hub authorizes this
-    // route and its answer is better than a guess made here.
-    if (!node || isLaunched(node)) {
-      window.location.assign(url);
-      return;
-    }
-
-    setLaunching(true);
     void (async () => {
+      // ASK FOR THE NODE. One addressed GET, which either answers with the box or
+      // fails — two outcomes that cannot be confused with each other, unlike an
+      // empty list. It also needs no auth timing of its own: the request carries
+      // the session the page was loaded with, and a 401 lands in the catch rather
+      // than quietly reading as "no such sandbox".
+      let node: ComputeNode | null = null;
+      try {
+        node = await ComputeNode.getById<ComputeNode>(nodeId);
+      } catch {
+        // Unreachable or refused: the hub is the authority on both, and
+        // `open-service` will say so in a language the browser can render.
+        window.location.assign(url);
+        return;
+      }
+      if (!node || isLaunched(node)) {
+        window.location.assign(url);
+        return;
+      }
+
+      setLaunching(true);
       try {
         // `autoLogin: true` matches the launch dialog's default. The recipient of
         // a handover is the box's one person now, which is what the flag means.
@@ -128,7 +142,7 @@ export default function OpenSandboxLanding() {
         );
       }
     })();
-  }, [nodeId, isLoading, sandboxes, launchSandbox, t]);
+  }, [nodeId, launchSandbox, t]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
