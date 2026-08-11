@@ -1,4 +1,4 @@
-import { ComputeNode, TypeId } from '@sdk';
+import { acceptInvitationOnHub, ComputeNode, fetchPendingInvitations, TypeId } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { StepList } from '@src/components/ui/step-list';
 import { isLaunched, useSandboxes, workspaceServiceUrl } from '@src/hooks/use-sandboxes';
@@ -64,6 +64,36 @@ import { Trans, useLingui } from '@lingui/react/macro';
  * The redirect is a top-level `assign`, not `window.open`: this runs on load
  * rather than inside a click, and a popup blocker eats the latter.
  */
+/**
+ * Accept the invitation to THIS sandbox, if one is waiting for the signed-in user.
+ *
+ * Returns whether anything was accepted, and never throws: every failure here —
+ * offline, a hub that does not serve `pending`, an invitation that expired between
+ * the listing and the accept — means the same thing to the caller, which is "carry
+ * on and let the hub explain".
+ *
+ * Matched on the invitation's TARGET, not on its id, because the URL names a
+ * machine and nothing else. A recipient with several pending invitations gets the
+ * one for the box they are standing on and no other — accepting a stranger's
+ * invitation because it happened to be first in the list would grant a role nobody
+ * asked for.
+ */
+async function acceptPendingInvitationFor(nodeId: string): Promise<boolean> {
+  try {
+    const pending = await fetchPendingInvitations();
+    const invite = pending.find((i) => i.target_type === ComputeNode.type && i.target_id === nodeId);
+    if (!invite) return false;
+    // The hub's own ceremony, not a re-implementation of it: `members/accept` is
+    // where the role is granted, a transfer is re-authorized against the CURRENT
+    // owner, the sender is stepped down and the cookie gate is retired. None of
+    // that can be done from here, and a second spelling of it would drift.
+    await acceptInvitationOnHub(invite.id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function OpenSandboxLanding() {
   const { t } = useLingui();
   const { nodeId: routeNodeId } = useParams();
@@ -76,6 +106,10 @@ export default function OpenSandboxLanding() {
   // Whether we are booting the machine rather than just opening it. Drives which
   // of the two waits is described, since they are minutes apart in length.
   const [launching, setLaunching] = useState(false);
+  // The handover step, which only a first-time recipient ever sees. Named on
+  // screen because it is the one moment where something changes hands, and a
+  // silent spinner through it reads as a stall.
+  const [accepting, setAccepting] = useState(false);
   // StrictMode double-invokes effects; navigating twice would restart the box's
   // resume from scratch, and launching twice would orphan a VM.
   const started = useRef(false);
@@ -126,10 +160,35 @@ export default function OpenSandboxLanding() {
       try {
         node = await ComputeNode.getById<ComputeNode>(nodeId);
       } catch {
-        // Unreachable or refused: the hub is the authority on both, and
-        // `open-service` will say so in a language the browser can render.
-        window.location.assign(url);
-        return;
+        // ONE LINK FOR BOTH. A refusal here is ambiguous in a way worth resolving
+        // rather than forwarding: it means "no role on this node", and the single
+        // most likely reason someone is standing on a sandbox's URL with no role
+        // is that they were just invited to it and have not accepted yet. That was
+        // the whole two-link problem — the emailed link performed the handover and
+        // the pasted one could only arrive after it, so sending someone the wrong
+        // one produced a "Wrong account" screen naming a problem they did not have.
+        //
+        // `pending` is the only way to see it: invitations are saved with no owner,
+        // so the recipient holds no role on the row either and an ordinary query
+        // returns nothing for exactly the person it is addressed to.
+        //
+        // Terminates on its own. Accepting removes the row from `pending`, so a
+        // second pass finds nothing and falls through — no flag, no counter.
+        setAccepting(true);
+        const accepted = await acceptPendingInvitationFor(nodeId);
+        setAccepting(false);
+        if (!accepted) {
+          // Unreachable, or genuinely not theirs. The hub is the authority on
+          // both, and `open-service` says so in a language the browser renders.
+          window.location.assign(url);
+          return;
+        }
+        try {
+          node = await ComputeNode.getById<ComputeNode>(nodeId);
+        } catch {
+          window.location.assign(url);
+          return;
+        }
       }
       if (!node || isLaunched(node)) {
         window.location.assign(url);
@@ -170,6 +229,16 @@ export default function OpenSandboxLanding() {
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
               <Trans>Ask whoever shared it to start it, or to send a new link.</Trans>
+            </p>
+          </>
+        ) : accepting ? (
+          <>
+            <div
+              className="mx-auto mb-5 h-10 w-10 animate-spin rounded-full border-b-2 border-muted-foreground/40"
+              aria-hidden
+            />
+            <p className="text-sm font-medium" data-testid="open-sandbox-accepting">
+              <Trans>Accepting your invitation…</Trans>
             </p>
           </>
         ) : launching ? (
