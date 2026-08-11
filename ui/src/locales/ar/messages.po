@@ -780,6 +780,10 @@ msgstr ""
 msgid "Accepting adds it to your Sandboxes below."
 msgstr ""
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "Accepting your invitation…"
+msgstr ""
+
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Accepting…"
 msgstr ""
