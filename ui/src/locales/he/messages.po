@@ -3693,8 +3693,8 @@ msgid "Could not start automation"
 msgstr "לא ניתן להתחיל אוטומציה"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
-msgid "Could not start chat"
-msgstr "לא היה ניתן להתחיל שיחה"
+#~ msgid "Could not start chat"
+#~ msgstr "לא היה ניתן להתחיל שיחה"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Could not start room"

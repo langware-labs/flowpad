@@ -60,10 +60,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   const [newLocalProjectOpen, setNewLocalProjectOpen] = useState(false);
   const [newGitProjectOpen, setNewGitProjectOpen] = useState(false);
 
-  const defaultWorkspacePath = useMemo(
-    () => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '',
-    [],
-  );
+  const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
 
   const handlePickFolder = useCallback(async (): Promise<string | null> => {
     if (!computeNode) {
@@ -126,9 +123,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   );
 
   const items = useMemo(() => {
-    const serverCreatable = new Set(
-      serverTypes.filter((t) => t.creatable).map((t) => t.type_name),
-    );
+    const serverCreatable = new Set(serverTypes.filter((t) => t.creatable).map((t) => t.type_name));
     // When server list is empty (still loading / older backend), fall back to the
     // full UI registry — it's the best-effort source of truth.
     const enforce = serverCreatable.size > 0;
@@ -161,7 +156,9 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
             </button>
           </div>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel><Trans>New session</Trans></DropdownMenuLabel>
+          <DropdownMenuLabel>
+            <Trans>New session</Trans>
+          </DropdownMenuLabel>
           <DropdownMenuItem onSelect={() => void handleStartSession('claude_code')}>
             <ClaudeIcon className="mr-2 h-4 w-4 text-orange-500" />
             <Trans>Claude Code session</Trans>
@@ -175,7 +172,9 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
             <Trans>Copilot session</Trans>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel><Trans>New project</Trans></DropdownMenuLabel>
+          <DropdownMenuLabel>
+            <Trans>New project</Trans>
+          </DropdownMenuLabel>
           <DropdownMenuItem
             onSelect={() => {
               onOpenChange(false);
@@ -195,7 +194,9 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
             <Trans>From git</Trans>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel><Trans>Create new…</Trans></DropdownMenuLabel>
+          <DropdownMenuLabel>
+            <Trans>Create new…</Trans>
+          </DropdownMenuLabel>
           {items.map((item) => {
             // Backend type registry owns the glyph (TypeInfo.icon).
             const Icon = iconForType(item.type);
@@ -213,7 +214,9 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
             );
           })}
           {items.length === 0 && (
-            <DropdownMenuItem disabled><Trans>No creatable types available</Trans></DropdownMenuItem>
+            <DropdownMenuItem disabled>
+              <Trans>No creatable types available</Trans>
+            </DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
