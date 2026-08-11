@@ -130,8 +130,8 @@ describe('ancestor-active highlight in the global strip', () => {
     expect(activeChips()).toHaveLength(1);
   });
 
-  it('navigates away when the lit ancestor is closed', () => {
-    const { processRow } = setupStrip();
+  it('lands on a SURVIVING chip when the lit ancestor is closed', () => {
+    const { processRow, siblingRow } = setupStrip();
     vi.spyOn(Tab, 'closeById').mockResolvedValue([]);
     vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
     render(<UnifiedTabStrip />);
@@ -141,7 +141,11 @@ describe('ancestor-active highlight in the global strip', () => {
     const close = chipFor(processRow)!.querySelector('[aria-label="Close tab"]')!;
     fireEvent.click(close);
 
-    expect(h.openDock).toHaveBeenCalled();
+    // Asserting only "navigated" is not enough: resolved over the wrong list this
+    // lands on the very CHILD being orphaned, which is a no-op that leaves the
+    // strip with nothing lit — the exact state this feature exists to avoid.
+    expect(h.openDock).toHaveBeenCalledTimes(1);
+    expect((h.openDock.mock.calls[0][0] as DockPointer).tabHash).toBe(siblingRow.pointer);
   });
 
   it('cycles from the chip the user sees lit', () => {
