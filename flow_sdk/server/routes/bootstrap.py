@@ -1871,10 +1871,11 @@ async def _with_runtime(info: BootstrapInfo, electron: bool) -> ApiSuccessRespon
     whichever client happened to miss the cache first to everyone else for the
     next 30 seconds.
 
-    ``default_project`` is per-caller for a different reason: a freshly
-    provisioned box carries a one-shot instruction to open the project the hub
-    just set up, and it must reach exactly one bootstrap. Through the cached
-    payload it would either be served repeatedly for 30s or skipped entirely.
+    ``default_project`` is per-caller for a different reason: a provisioned box
+    carries an instruction to open the project the hub just set up, and it must
+    reach exactly one bootstrap PER PERSON (a shared sandbox is handed to a
+    second reader who has not been served yet). Through the cached payload it
+    would either be served repeatedly for 30s or skipped entirely.
 
     ``model_copy`` leaves the cached object untouched — mutating ``info`` in
     place would write through to the cache, which is the same bug wearing a
