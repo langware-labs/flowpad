@@ -5,11 +5,27 @@ import { isLaunched, useSandboxes, workspaceServiceUrl } from '@src/hooks/use-sa
 import { errorMessage, errorStatus } from '@src/lib/error-message';
 import { ExternalLink } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useParams } from 'react-router';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
- * `/open-sandbox?node=<compute_node id>` — where a share invitation lands.
+ * `/compute_node/<id>` — where a share invitation lands.
+ *
+ * Addressed the way every other entry journey is: entity type, then id, in the
+ * PATH. `flow_message/:messageId` is the same route doing the same job for a
+ * conversation — land from an email, resolve the entity, go into it — and it is
+ * four lines above this one in the router. This used to be
+ * `/open-sandbox?node=<id>`, the only URL in the codebase carrying an
+ * identifier in a query string.
+ *
+ * It does NOT collide with `/dock/hub/entity/compute_node/<id>`, the generic
+ * record viewer. Those are a pair, and `flow_message` already has both: one
+ * address to arrive at from outside the app, one to browse to from inside.
+ *
+ * Being the shape the hub already emits is the point. `_post_accept_landing_url`
+ * ends in `build_entity_url(chosen_target.typeid)`, which produces exactly this
+ * URL — so accepting a sandbox invitation now lands here on its own and the
+ * `callback_override` that used to steer it is gone.
  *
  * It exists because the two obvious destinations are both worse. Sending the
  * recipient straight to `open-service` gives them a blank tab for as long as the
@@ -50,8 +66,8 @@ import { Trans, useLingui } from '@lingui/react/macro';
  */
 export default function OpenSandboxLanding() {
   const { t } = useLingui();
-  const [params] = useSearchParams();
-  const nodeId = (params.get('node') ?? '').trim();
+  const { nodeId: routeNodeId } = useParams();
+  const nodeId = (routeNodeId ?? '').trim();
   const [error, setError] = useState<string | null>(null);
   // Held in state rather than rebuilt during render: the fallback link below
   // would otherwise call `workspaceServiceUrl` on an id nothing has validated

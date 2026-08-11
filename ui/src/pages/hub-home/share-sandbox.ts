@@ -32,22 +32,24 @@ export const SANDBOX_SHARE_ROLE = 'admin';
 export const SANDBOX_TRANSFER_ROLE_TO_KEEP = 'reader';
 
 /**
- * Where the emailed invitation lands the recipient: the `/open-sandbox` page,
- * which says "Preparing your sandbox…" and then redirects into the box.
+ * Where the emailed invitation lands the recipient: `/compute_node/<id>`, the
+ * page that says "Preparing your sandbox…" and then goes into the box.
  *
- * Not hub home, and not `open-service` directly. Hub home makes the recipient
- * hunt for a card and press Open — the one thing the invitation already knows
- * they want. `open-service` is the right destination but the wrong first
- * screen: the hub resumes the machine and waits for it to answer before it
- * redirects, so the recipient stares at a blank tab for up to a minute with no
- * way to tell working from broken.
+ * NO `callback_override` rides with the invite any more, and that is the point.
+ * `_post_accept_landing_url` already ends in
+ * `build_entity_url(chosen_target.typeid)` — the hub's own answer to "where do I
+ * send someone who just accepted an invitation to this entity" — and for a
+ * ComputeNode target that IS this URL. The override existed only because the app
+ * had no page listening at the address the hub was already generating; now it
+ * does, so a sandbox invitation lands correctly by the same route every other
+ * entity's does, with nothing steering it.
  *
- * Must stay a PATH. `callback_override` is validated hub-side by
- * `is_safe_app_path` (leading `/`, no `//`, no `://`), so an absolute URL is
- * rejected at invite time with a 400.
+ * Kept as a function rather than inlined because {@link sandboxShareLink} builds
+ * the pasteable copy of the same destination, and two spellings of one address
+ * is how the emailed link and the copied link drifted apart the first time.
  */
 export function sandboxShareLandingPath(nodeId: string): string {
-  return `/open-sandbox?node=${encodeURIComponent(nodeId)}`;
+  return `/${ComputeNode.type}/${encodeURIComponent(nodeId)}`;
 }
 
 // `setAutoLogin` used to live here. It moved to `use-sandboxes`, next to the
@@ -130,8 +132,11 @@ export async function shareSandboxByEmail(
 
   for (const email of emails) {
     try {
+      // No `callbackOverride`. The hub's default post-accept landing is
+      // `build_entity_url(target.typeid)` = `/compute_node/<id>`, which is now a
+      // real page — so steering the invitation would only be a second, hand-made
+      // spelling of the address the hub already produces.
       await node.inviteMember(email, role, {
-        callbackOverride: sandboxShareLandingPath(node.id),
         ...(opts.transfer ? { transfer: true, roleToKeep: opts.roleToKeep ?? null } : {}),
       });
       outcome.granted.push(email);
@@ -156,24 +161,24 @@ export async function shareSandboxByEmail(
  * shared before its first launch is ordinary, not exotic — and it is exactly the
  * state a handover arrives in when the new owner is meant to start it.
  *
- * `/open-sandbox` is the page that knows both verbs. It launches the box when
- * the box needs launching and the recipient may launch it, and redirects
+ * `/compute_node/<id>` is the page that knows both verbs. It launches the box
+ * when the box needs launching and the recipient may launch it, and redirects
  * through `open-service` otherwise — which is still what does the authorizing,
  * the resuming and the waiting. This adds a step in front of that route; it
  * takes nothing away from it.
  *
  * Absolute, unlike {@link sandboxShareLandingPath}: this one is pasted into a
  * chat or an email, where a bare path resolves against the wrong origin or
- * nothing at all. The invite keeps the path form because `callback_override` is
- * validated hub-side by `is_safe_app_path`, which rejects an absolute url.
+ * nothing at all — while the path form is what the hub composes against its own
+ * base.
  *
  * ANCHORED TO THE API ORIGIN — the hub — and to nothing else. Two plausible
  * sources are both wrong, and both were shipped here before this comment existed:
  *
  * `window.location.origin` is where the SENDER's browser happens to be. Run the
  * app locally against a remote hub and the link reads
- * `http://localhost:4093/open-sandbox?node=…`: a flawless link to the sender's
- * own laptop, handed to somebody who cannot reach it.
+ * `http://localhost:4093/compute_node/…`: a flawless link to the sender's own
+ * laptop, handed to somebody who cannot reach it.
  *
  * `cloudManager.cloudAppUrl` looks like the fix and is the same bug wearing a
  * better name. In hub mode — which is ANY app pointed at a hub, including that
