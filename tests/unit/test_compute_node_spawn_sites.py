@@ -218,6 +218,70 @@ async def test_scan_create_process_uses_capability_default_without_overriding_ex
     assert captured[1]["cli_config"]["worker_type"] == "claude"
 
 
+# ─── createProcess harness pre-flight (FLOWPAD-1971) ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_scan_create_process_refuses_missing_harness_with_400_and_creates_nothing():
+    """A harness this machine can't run is a 400 — and nothing is persisted.
+
+    The bug: the missing CLI only blew up deep in the spawn, which reached HTTP
+    as a bare 500 and left a FAILED row behind for every attempt. Both halves
+    are asserted here — the status code the UI keys on, and the absence of any
+    construct/save.
+    """
+    node = _make_compute_node()
+    info = _make_request_info(
+        {
+            "context": {"workdir": "/tmp/proj", "worker_type": "claude_code"},
+            "visible": True,
+        }
+    )
+
+    class FakeProc:
+        constructed = False
+        saved = False
+
+        @staticmethod
+        async def is_installed(worker_type=None) -> bool:
+            return False
+
+        def __init__(self, **kwargs):
+            FakeProc.constructed = True
+
+        async def save(self, owner=None):
+            FakeProc.saved = True
+
+    with patch(_PATCH_REQ_SCAN, return_value=info), patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+        resp = await node._scan_create_process()
+
+    assert resp.status == "FAIL", resp
+    assert resp.status_code == 400, "a machine-config verdict must not answer 500"
+    # The harness's display name, not the internal ``claude_code`` token.
+    assert "Claude CLI" in resp.message, resp.message
+    assert FakeProc.constructed is False, "refusal must precede any entity construction"
+    assert FakeProc.saved is False, "refusal must leave no FAILED row behind"
+
+
+@pytest.mark.asyncio
+async def test_scan_create_process_rejects_unknown_worker_type_with_400():
+    """A worker_type this backend doesn't define is a client error, not a 500."""
+    node = _make_compute_node()
+    info = _make_request_info(
+        {
+            "context": {"workdir": "/tmp/proj", "worker_type": "not_a_harness"},
+            "visible": True,
+        }
+    )
+
+    with patch(_PATCH_REQ_SCAN, return_value=info):
+        resp = await node._scan_create_process()
+
+    assert resp.status == "FAIL", resp
+    assert resp.status_code == 400
+    assert "not_a_harness" in resp.message
+
+
 # ─── upsertSessionProcess resume path ────────────────────────────────────────
 
 

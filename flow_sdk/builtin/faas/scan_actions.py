@@ -75,14 +75,24 @@ def _start_failure_response(reason, worker_type: str, fallback: ApiFailResponse)
     otherwise stamp on — the FLOWPAD-1971 symptom). Anything transient keeps the
     caller's original response.
     """
+    # Function-local, like every other capability/driver import in this module:
+    # a module-level import of either one is a circular import (scan_actions is
+    # reached while ComputeNode/AgenticProcess are still partially initialized).
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+        worker_capability_kind,
+    )
     from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
+    from flow_sdk.core.capabilities.registry import get_capability_registry
 
     exc = reason if isinstance(reason, BaseException) else RuntimeError(str(reason))
     verdict = LaunchError.classify(exc, worker_type)
     if verdict.health is not LaunchHealth.CONFIG_ERROR:
         return fallback
+    # The capability spec is the SSOT for what a harness is *called*; the worker
+    # type (``claude_code``) is an internal token and reads like one in a toast.
+    name = get_capability_registry().get(worker_capability_kind(worker_type)).spec.name
     return ApiFailResponse(
-        message=f"{worker_type} is not available on this machine.",
+        message=f"{name} is not available on this machine.",
         status_code=400,
     )
 
@@ -394,9 +404,17 @@ class ScanActionsMixin:
             # prompt, where the failure rides a 200 stream and no status code can
             # reach the user.
             if not await AgenticProcess.is_installed(worker_type.value):
+                from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+                    worker_capability_kind,
+                )
+                from flow_sdk.core.capabilities.registry import get_capability_registry
+
                 logging.info(f"ComputeNode {self.id} createProcess refused: {worker_type.value} is not installed")
+                # The capability spec's name, not the internal ``claude_code``
+                # token — this string is shown to the user verbatim.
+                harness_name = get_capability_registry().get(worker_capability_kind(worker_type.value)).spec.name
                 return ApiFailResponse(
-                    message=f"{worker_type.value} is not installed on this machine.",
+                    message=f"{harness_name} is not installed on this machine.",
                     status_code=400,
                 )
 
