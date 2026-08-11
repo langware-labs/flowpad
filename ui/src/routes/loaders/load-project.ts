@@ -18,6 +18,7 @@ import {
   Shell,
   TypeId,
 } from '@sdk';
+import { applyProjectLocale } from '@src/contexts/locale-context';
 import { applyProjectViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation';
 import { resolveNextTab, tabTargetKey } from '@src/tabs/tab-candidates';
@@ -181,11 +182,13 @@ export async function loadProject(projectTypeId: TypeId): Promise<Project> {
     throw new ProjectLoadError('not_found', projectTypeId.id);
   }
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, projectTypeId);
-  // Per-project view-mode memory: apply the project's remembered mode (or stamp
-  // the current one onto a project that has none). After the context write, so
-  // dataContext.project is this project before any recording. Synchronous apart
-  // from fire-and-forget saves — the loader stays fast.
+  // Per-project view-mode and language memory: apply the project's remembered
+  // mode/locale (or stamp the current one onto a project that has none). After
+  // the context write, so dataContext.project is this project before any
+  // recording. Synchronous apart from fire-and-forget saves and the locale's
+  // catalog import — the loader stays fast.
   applyProjectViewMode(project);
+  applyProjectLocale(project);
   return project;
 }
 
