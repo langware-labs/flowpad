@@ -1,11 +1,18 @@
-import { acceptInvitationOnHub, ComputeNode, fetchPendingInvitations, TypeId } from '@sdk';
+import {
+  acceptInvitationOnHub,
+  cloudManager,
+  ComputeNode,
+  fetchPendingInvitations,
+  navigator as sdkNavigator,
+  TypeId,
+} from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { StepList } from '@src/components/ui/step-list';
 import { isLaunched, useSandboxes, workspaceServiceUrl } from '@src/hooks/use-sandboxes';
 import { errorMessage, errorStatus } from '@src/lib/error-message';
 import { ExternalLink } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router';
+import { useLocation, useParams, useSearchParams } from 'react-router';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
@@ -65,6 +72,16 @@ import { Trans, useLingui } from '@lingui/react/macro';
  * rather than inside a click, and a popup blocker eats the latter.
  */
 /**
+ * Marks a load that has already been through the sign-in round trip.
+ *
+ * The loop guard, and it has to be in the URL: the trip goes out through the
+ * provider and back, so nothing in memory survives it. Coming back still
+ * unauthorized means signing in was not the answer, and the hub gets to explain
+ * why rather than being asked a second time.
+ */
+const RETURNED_PARAM = 'signed-in';
+
+/**
  * Accept the invitation to THIS sandbox, if one is waiting for the signed-in user.
  *
  * Returns whether anything was accepted, and never throws: every failure here —
@@ -78,6 +95,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
  * invitation because it happened to be first in the list would grant a role nobody
  * asked for.
  */
+
 async function acceptPendingInvitationFor(nodeId: string): Promise<boolean> {
   try {
     const pending = await fetchPendingInvitations();
@@ -98,6 +116,12 @@ export default function OpenSandboxLanding() {
   const { t } = useLingui();
   const { nodeId: routeNodeId } = useParams();
   const nodeId = (routeNodeId ?? '').trim();
+  const [params] = useSearchParams();
+  const alreadyReturned = params.get(RETURNED_PARAM) === '1';
+  // The router's location, not `window.location`: this page's address is the one
+  // the ROUTER resolved, and the return address handed to the login has to be
+  // that — the global is a different fact that merely usually agrees.
+  const here = useLocation();
   const [error, setError] = useState<string | null>(null);
   // Held in state rather than rebuilt during render: the fallback link below
   // would otherwise call `workspaceServiceUrl` on an id nothing has validated
@@ -160,13 +184,31 @@ export default function OpenSandboxLanding() {
       try {
         node = await ComputeNode.getById<ComputeNode>(nodeId);
       } catch {
-        // ONE LINK FOR BOTH. A refusal here is ambiguous in a way worth resolving
-        // rather than forwarding: it means "no role on this node", and the single
-        // most likely reason someone is standing on a sandbox's URL with no role
-        // is that they were just invited to it and have not accepted yet. That was
-        // the whole two-link problem — the emailed link performed the handover and
-        // the pasted one could only arrive after it, so sending someone the wrong
-        // one produced a "Wrong account" screen naming a problem they did not have.
+        // TWO REASONS WEAR THE SAME 401, and they need opposite answers.
+        //
+        // NO SESSION ("missing or invalid token"). Sign them in and come BACK
+        // HERE. Falling through to `open-service` instead is what broke every
+        // unlaunched transfer: the hub builds the post-login callback from the url
+        // that reached it, so forwarding first makes `open-service` the return
+        // address — and the recipient lands on the one route that cannot launch a
+        // box, which 409s. The launch page has to be the address they return to.
+        // (Measured on staging: sign-in also completes the invitation accept, so
+        // they come back holding the role.)
+        if (!cloudManager.isLoggedIn && !alreadyReturned) {
+          const back = new URL(`${here.pathname}${here.search}`, window.location.origin);
+          back.searchParams.set(RETURNED_PARAM, '1');
+          window.location.assign(sdkNavigator.getLoginWithCallbackUrl(back.toString()));
+          return;
+        }
+
+        // A SESSION, BUT NO ROLE ("has no roles on compute_node-…"). Signing in
+        // again would change nothing — they are already the right person. What is
+        // missing is the acceptance, and the single most likely reason to be
+        // standing on a sandbox's url with no role is an invitation not yet taken
+        // up. That was the whole two-link problem: the emailed link performed the
+        // handover and the pasted one could only arrive after it, so sending
+        // someone the wrong one produced a "Wrong account" screen naming a problem
+        // they did not have.
         //
         // `pending` is the only way to see it: invitations are saved with no owner,
         // so the recipient holds no role on the row either and an ordinary query
@@ -217,7 +259,7 @@ export default function OpenSandboxLanding() {
         );
       }
     })();
-  }, [nodeId, launchSandbox, t]);
+  }, [nodeId, alreadyReturned, here.pathname, here.search, launchSandbox, t]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
