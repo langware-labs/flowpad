@@ -2,7 +2,7 @@ import type { Project } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Flag, LocalePicker } from '@src/components/locale/LocalePicker';
-import { setLocale, useLocale, useSupportedLocales } from '@src/contexts/locale-context';
+import { DEFAULT_LOCALE, setLocale, useSupportedLocales } from '@src/contexts/locale-context';
 import { ChevronDown, Languages } from 'lucide-react';
 import React, { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -25,12 +25,14 @@ interface ProjectLanguageCardProps {
 export const ProjectLanguageCard: React.FC<ProjectLanguageCardProps> = ({ project }) => {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
-  const activeCode = useLocale();
   const supportedLocales = useSupportedLocales();
 
-  // The project's stored language; until it has been stamped (first load), the
-  // active language is what this project will be read in.
-  const selectedCode = project.locale ?? activeCode;
+  // The project's stored language. A project that has never been given one is
+  // read in English — `applyProjectLocale` opens it that way — so unset shows as
+  // English here rather than as whatever the app happens to be showing now.
+  const selectedCode = supportedLocales.some((l) => l.code === project.locale)
+    ? (project.locale as string)
+    : DEFAULT_LOCALE;
   const selectedInfo = supportedLocales.find((l) => l.code === selectedCode) ?? supportedLocales[0];
 
   const handleSelect = (code: string) => {

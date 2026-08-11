@@ -209,13 +209,23 @@ function stampProjectLocale(project: Project | null | undefined, code: string): 
   });
 }
 
+/**
+ * Make a locale the active one — preference, recents, catalog, `<html>` attrs.
+ * Deliberately does NOT touch the current project: this is "show the app in this
+ * language", not "the user chose this language for this project". Only
+ * `setLocale` (a real user choice) records onto the project.
+ */
+async function activateLocale(code: string): Promise<void> {
+  instancePreferences.set(PrefKey.LOCALE, code); // mirrors to localStorage (boot key)
+  pushRecent(code);
+  await loadAndActivate(code);
+  applyLocaleAttributes(code);
+}
+
 export async function setLocale(code: string): Promise<void> {
   const next = isSupported(code) ? code : DEFAULT_LOCALE;
-  instancePreferences.set(PrefKey.LOCALE, next); // mirrors to localStorage (boot key)
-  pushRecent(next);
   stampProjectLocale(dataContext.project, next);
-  await loadAndActivate(next);
-  applyLocaleAttributes(next);
+  await activateLocale(next);
 }
 
 /**
@@ -223,23 +233,26 @@ export async function setLocale(code: string): Promise<void> {
  * `loadProject`, after CurrentProjectTypeId is written to context, so
  * `dataContext.project` is already this project).
  *
- * A stored supported `locale` that differs from the active one switches the app
- * exactly as the footer picker would; a project without one adopts — and
- * records — the active language. The catalog load and the save are
- * fire-and-forget so the loader stays fast (URL-first rule); `<html lang/dir>`
- * and the Lingui catalog land a tick later, as they do for a footer switch.
+ * A stored supported `locale` switches the app exactly as the footer picker
+ * would. NO stored locale means English: an unset (or unrecognized) project
+ * opens in `DEFAULT_LOCALE` rather than inheriting whatever language happened
+ * to be active — a project's language is a property of the project, so an
+ * unanswered one must not silently take the colour of the last project you were
+ * in. Unset is left unset on the row, not stamped: `en-US` here is the meaning
+ * of "no answer", not an answer the user gave. It becomes a real stored value
+ * the moment they pick one (via the Language card or the footer chip, both of
+ * which converge in `setLocale` → `stampProjectLocale`).
+ *
+ * The switch is fire-and-forget so the loader stays fast (URL-first rule);
+ * `<html lang/dir>` and the Lingui catalog land a tick later, as they do for a
+ * footer switch.
  */
 export function applyProjectLocale(project: Project): void {
-  const remembered = project.locale;
-  if (isSupported(remembered)) {
-    if (remembered !== getLocale()) {
-      void setLocale(remembered).catch((err) => {
-        console.warn('[locale] failed to apply project locale', err);
-      });
-    }
-  } else {
-    stampProjectLocale(project, getLocale());
-  }
+  const target = isSupported(project.locale) ? project.locale : DEFAULT_LOCALE;
+  if (target === getLocale()) return;
+  void activateLocale(target).catch((err) => {
+    console.warn('[locale] failed to apply project locale', err);
+  });
 }
 
 /** Resolve, (optionally) persist the first-run pick, set `<html>` attrs, activate. */
