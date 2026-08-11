@@ -6,7 +6,6 @@ import { ViewType } from '@src/types/ViewType';
 import type { VibeWorkspaceSession } from '@src/pages/flow-page/use-vibe-workspace-session';
 
 const mocks = vi.hoisted(() => ({
-  setActiveTabParent: vi.fn(),
   setupTabAndAdopt: vi.fn(),
   requestedTypeId: null as TypeId | null,
   process: {
@@ -21,7 +20,6 @@ vi.mock('@src/hooks/entity-hooks', () => ({
     return { data: mocks.process };
   },
 }));
-vi.spyOn(tabManager, 'setActiveParentTabId').mockImplementation(mocks.setActiveTabParent);
 vi.mock('@src/tabs/tab-content-lifecycle', async (orig) => ({
   ...(await orig<typeof import('@src/tabs/tab-content-lifecycle')>()),
   setupTabAndAdopt: mocks.setupTabAndAdopt,
@@ -32,7 +30,6 @@ import { useVibeWorkspaceSessionHost } from '@src/pages/flow-page/use-vibe-works
 afterEach(() => {
   cleanup();
   mocks.requestedTypeId = null;
-  mocks.setActiveTabParent.mockReset();
   mocks.setupTabAndAdopt.mockReset();
 });
 
@@ -63,8 +60,11 @@ describe('useVibeWorkspaceSessionHost', () => {
       new TypeId(AgenticProcess.type, mocks.process.id).toString(),
     );
     expect(result.current).toBe(mocks.process);
-    expect(mocks.setActiveTabParent).toHaveBeenCalledWith(processTab.id);
+    // The host no longer registers itself in an ambient slot for the next tab
+    // mint to pick up — the URL names it, so the hook only resolves the process.
+    // Its one remaining side effect is minting the anchor tab when it is absent,
+    // and this session already has one.
+    expect(mocks.setupTabAndAdopt).not.toHaveBeenCalled();
     unmount();
-    expect(mocks.setActiveTabParent).toHaveBeenLastCalledWith(null);
   });
 });

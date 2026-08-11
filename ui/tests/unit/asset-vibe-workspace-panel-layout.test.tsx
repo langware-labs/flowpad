@@ -31,11 +31,6 @@ vi.mock('@src/tabs/tab-content-lifecycle', async (orig) => ({
   setupTabAndAdopt: vi.fn(),
 }));
 
-vi.mock('@src/tabs/vibe-parent', () => ({
-  resolveAssetVibeHost: vi.fn().mockResolvedValue(null),
-  ensureAssetVibeParentTab: vi.fn(),
-}));
-
 vi.mock('@sdk/react/hooks', () => ({
   useEntityOps: () => undefined,
 }));

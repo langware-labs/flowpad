@@ -16,7 +16,7 @@ import {
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import { EVENTS_VIEW_TYPES } from '@src/types/ViewType';
-import type { ViewMode } from '@src/contexts/view-mode-context';
+import { getViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
@@ -24,7 +24,7 @@ import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
 import { isContentAssetDock } from './content-asset-dock';
-import { isAdoptableChildDock } from './adoptable-child-dock';
+import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-dock';
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import { vfsLocatorForComputeNode } from './vfs-locator';
 
@@ -84,6 +84,19 @@ export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
 // live URL onto any target that doesn't set it. A param here means "topmost
 // until explicitly closed" — clearing it must bypass openDock (see closeJourney).
 export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM, JOURNEY_STEP_PARAM];
+
+/**
+ * The host id when `dock` IS a vibe workspace's anchor — the process dock the
+ * Display renders. Null for everything else, including the same dock in standard
+ * mode, where there is no display pane and so nothing is being hosted.
+ *
+ * The anchor cannot carry a `host` option itself (it is not an adoptable child),
+ * so this is how content opened while sitting on the Display inherits it.
+ */
+function hostOfWorkspaceAnchor(dock: DockPointer): string | null {
+  if (!isWorkspaceAnchorDock(dock) || dock.viewType !== ViewType.SHELL) return null;
+  return (dock.viewMode ?? getViewMode()) === ViewMode.Vibe ? (dock.pointer ?? null) : null;
+}
 
 /**
  * NavigationActions - Navigation actions implementation
@@ -207,14 +220,21 @@ export class NavigationActions {
    * a param reordering counted as a different URL and re-pushed.
    */
   static commitDetached(pointer: IDockPointer): void {
-    const target = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
-    const url = target.toUrl(window.location.pathname);
+    let target = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
     let here: DockPointer | null = null;
     try {
       here = DockPointer.fromUrl(NavigationActions.getCurrentBrowserUrl());
     } catch {
       here = null;
     }
+    // Same workspace-host carry as `openDock`. A backend-driven navigate that
+    // lands on workspace content while a workspace is on screen keeps it inside
+    // that workspace, instead of the target quietly becoming a top-level tab.
+    const liveHost = here ? (here.hostProcessId ?? hostOfWorkspaceAnchor(here)) : null;
+    if (liveHost && !target.hostProcessId && isAdoptableChildDock(target)) {
+      target = target.withHost(liveHost);
+    }
+    const url = target.toUrl(window.location.pathname);
     if (here?.equals(target)) return;
     window.history.pushState(null, '', url);
     window.dispatchEvent(new PopStateEvent('popstate'));
@@ -405,7 +425,13 @@ export class NavigationActions {
     // around a top-level surface. Carrying it from the live URL is what keeps a
     // click inside workspace A in workspace A, rather than following the shown
     // document's last writer into workspace B.
-    const liveHost = here.hostProcessId;
+    // On a CHILD url the host is already an option; on the workspace's own
+    // anchor url (`/dock/shell/agentic_process-<id>`, the Display) there is
+    // none to inherit — an anchor is never an adoptable child, so it never
+    // carries one. That anchor is where most opens actually start, so without
+    // the second clause everything opened from the Display would land outside
+    // the workspace. The anchor's pointer IS the host id.
+    const liveHost = here.hostProcessId ?? hostOfWorkspaceAnchor(here);
     if (liveHost && !dock.hostProcessId && isAdoptableChildDock(dock)) {
       dock = dock.withHost(liveHost);
     }
