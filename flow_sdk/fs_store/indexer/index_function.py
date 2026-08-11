@@ -31,6 +31,7 @@ from flow_sdk.fs_store.indexer.progress_table import (
     TypeProgressRow,
 )
 from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
+from flow_sdk.fs_store.path_owners import PathOwnerIndex
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.server.search_filters import SCOPED_RECORD_TYPES, ScopeFilter
 
@@ -187,11 +188,15 @@ def _has_dispatch(info) -> bool:
     return info.from_disk_fn is not None
 
 
-def ref_typeid(ref) -> str | None:
+def ref_typeid(ref, owners: "PathOwnerIndex | None" = None) -> str | None:
     """Resolve a repo-asset FSRef to its ``<type>-<id>`` via the type's
     identity API. None when the ref is absent, isn't a repo asset, or has no id
     resolver. The single ref→typeid primitive shared by the enclosure-parent
-    derivation (below) and the bundle's descendant collector."""
+    derivation (below) and the bundle's descendant collector.
+
+    ``owners`` matters here: this resolves the PARENT folder asset, so minting
+    would stamp a fresh capsule into a skill/task folder and fork it on the
+    next walk. Callers with a preloaded owner map should pass it."""
     if ref is None or ref.record_type is None:
         return None
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
@@ -203,7 +208,10 @@ def ref_typeid(ref) -> str | None:
     if info is None:
         return None
     try:
-        rid = info.extract_id(ref) or info.mint_id(ref)
+        rid = info.resolve_id(
+            ref,
+            owner_id=owners.owner_for(rtype, str(ref._path)) if owners is not None else None,
+        )
     except Exception:
         return None
     return f"{rtype}-{rid}" if rid else None
@@ -682,6 +690,20 @@ class FSIndexer:
         dupe_ids_by_path = _same_path_dupe_groups(existing_db_paths) if opts.dedup_on_adopt else {}
         stale_dupe_candidates: dict[RecordType, set[str]] = {}
 
+        # Who already owns each walked path. Built from the SAME preload as the
+        # freshness/dedup maps above — no extra query — and empty when the
+        # preload failed, in which case identity degrades to the historic
+        # carrier-or-mint behaviour rather than silently adopting a wrong row.
+        path_owners = PathOwnerIndex.from_preload(existing_db_paths)
+        # Only a preload that HELD rows yet yielded no owners is a problem — a
+        # first index legitimately has type keys with no rows behind them.
+        if any(existing_db_paths.values()) and not path_owners:
+            logging.warning(
+                "[FSIndexer] preloaded %d row(s) but resolved no path owners; "
+                "a source whose identity carrier was wiped will mint a NEW id and fork its entity",
+                sum(len(v) for v in existing_db_paths.values()),
+            )
+
         # Deepest-project-wins association: snapshot (canonical_mount, id) for
         # every project once per run. With NESTED project mounts (an umbrella
         # workspace folder that is itself a Project), the outer root's walk
@@ -736,7 +758,17 @@ class FSIndexer:
             for ref, info in items:
                 canon_path = canonical_posix_path(str(ref._path))
                 try:
-                    ref_id = info.extract_id(ref) or info.mint_id(ref)
+                    # Owner-first identity: a source whose capsule was wiped by a
+                    # full-content rewrite is NOT a new asset. Minting here forks
+                    # the entity and the same-path sweep below then reaps the row
+                    # every reference points at. ``path_owners`` comes from the
+                    # preload above, so this costs no extra query.
+                    ref_id = info.resolve_id(
+                        ref,
+                        owner_id=path_owners.owner_for(str(ref.record_type), str(ref._path), canon_path),
+                        live_ids=existing_db_ids.get(str(ref.record_type)),
+                        restamp=True,
+                    )
                     probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
                     # Skip-fresh: on-disk ``.hash`` equality AND a live DB row.
                     # The probe reads its own sentinel (shadow home) and the
@@ -900,7 +932,7 @@ class FSIndexer:
                     # parented. Loop-invariant — derive once from the FSRef
                     # parent chain. Only when the enclosing ref is itself a
                     # repo asset (not the walk root).
-                    parent_typeid = ref_typeid(getattr(ref, "_parent", None))
+                    parent_typeid = ref_typeid(getattr(ref, "_parent", None), path_owners)
                     for rec in records:
                         if ref_scope is not None:
                             object.__setattr__(rec, "scope", ref_scope)

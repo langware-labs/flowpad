@@ -476,6 +476,25 @@ class SQLiteDBDriver(DBDriver):
             )
         )
 
+        # "Who owns this path" — `Entity.get_by_asset_ref`, and now every
+        # identity resolution that recovers a wiped carrier instead of minting a
+        # fork. It ran as a full scan PER owner type, and the watcher path calls
+        # it on every file change.
+        #
+        # Deliberately NOT UNIQUE. The invariant IS one path = one live row, but
+        # enforcing it here would turn any residual duplicate into an
+        # IntegrityError on the user's hot path mid-index, and the collapse
+        # migration needs a window in which two rows briefly coexist. The
+        # constraint is the resolver; this index makes violations cheap to find
+        # (GROUP BY … HAVING COUNT(*) > 1).
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_entities_asset_ref "
+                "ON entities(json_extract(data, '$.asset_ref')) "
+                "WHERE json_extract(data, '$.asset_ref') IS NOT NULL"
+            )
+        )
+
     async def close(self):
         """Close database connection and ensure worker threads stop."""
         if self.engine:

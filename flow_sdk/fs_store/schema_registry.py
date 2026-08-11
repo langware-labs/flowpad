@@ -14,14 +14,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import uuid
+from collections.abc import Container
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
 from flow_sdk.capsules import CapsuleSpec
-from flow_sdk.fs_store.identity_backend import IdentityBackend, IdentityState
+from flow_sdk.fs_store.identity_backend import IdentityBackend, IdentityObservation, IdentityState
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
@@ -417,6 +419,22 @@ class TypeInfo:
             return path.parent
         return path
 
+    def _observe(self, ref: Any) -> "IdentityObservation | None":
+        """Observe the carrier once, failing closed on a malformed one.
+
+        The single read+parse of the source's identity carrier. ``extract_id``,
+        ``mint_id`` and ``resolve_id`` all route through it, so an asset's
+        carrier is parsed once per resolution instead of once per method.
+        """
+        if self.identity_backend is None:
+            return None
+        observation = self.identity_backend.observe(self.capsule_target_for(ref))
+        if observation.state is IdentityState.MALFORMED:
+            if observation.error is not None:
+                raise observation.error
+            raise ValueError(observation.detail or "malformed asset identity")
+        return observation
+
     def extract_id(self, ref: Any) -> str | None:
         """Read and validate this asset type's existing id without writing.
 
@@ -426,14 +444,102 @@ class TypeInfo:
         """
         from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
 
-        if self.identity_backend is None:
+        observation = self._observe(ref)
+        if observation is None:
             return None
-        observation = self.identity_backend.observe(self.capsule_target_for(ref))
-        if observation.state is IdentityState.MALFORMED:
-            if observation.error is not None:
-                raise observation.error
-            raise ValueError(observation.detail or "malformed asset identity")
         return adopt_entity_id(observation.candidate) if observation.state is IdentityState.VALID else None
+
+    def resolve_id(
+        self,
+        ref: Any,
+        *,
+        owner_id: str | None = None,
+        live_ids: "Container[str] | None" = None,
+        proposed_id: str | None = None,
+        restamp: bool = False,
+    ) -> str:
+        """Resolve this asset's entity id, preferring an EXISTING row over a mint.
+
+        The single identity chokepoint. An asset's id lives in the source (a
+        capsule), but a full-content rewrite — what an agent does on every
+        revision — WIPES that carrier. Resolving from the source alone then
+        mints a fresh v4 and forks a new entity for a path a row already owns;
+        the same-path duplicate sweep reaps the old row, and every reference
+        pinned to it (bookmarks, ``last_shown``, ``display_stack``) dangles.
+        So a carrier-less source is not a new asset: it is an existing one whose
+        id has to be recovered, not invented.
+
+        Ordering, by CARRIER LIVENESS::
+
+            1. the carrier      IF no row owns this path
+                                OR the carrier IS that row
+                                OR the carrier is a live id of this type
+            2. else ``owner_id`` — the row that owns ``ref``'s path
+            3. else mint (unchanged)
+
+        ``live_ids`` is the liveness oracle. ``None`` means "cannot prove dead",
+        and a valid carrier then always wins — only a caller holding the
+        complete per-type id set (the index walk) may conclude that a carrier
+        names no entity.
+
+        Contract:
+
+        * **Sync, and never touches the DB.** ``owner_id``/``live_ids`` are
+          supplied by the caller, which is what keeps DB-free callers
+          (``Entity.from_fs_ref``) and the zero-extra-query index walk working.
+        * **Never writes ``asset_ref``.** Primary-path selection belongs to
+          ``resolve_asset_collisions`` alone — writing it here would let a copy
+          steal the original's path and flip the row every walk.
+        * ``owner_id=None, live_ids=None`` is byte-equivalent to the historic
+          ``extract_id(ref) or mint_id(ref, proposed_id=...)``.
+        * ``restamp`` heals the source ONLY when the carrier was ABSENT. An
+          INVALID carrier keeps its bytes (``mint_id`` deliberately never
+          overwrites invalid canonical data), and a read-only ref or a
+          non-persisting (derived) backend is never written.
+
+        Known trade-off: because an absent carrier yields to the owning row,
+        deleting a file and creating a DIFFERENT file at the same path before
+        the next index makes the new content adopt the old entity. That is the
+        price of keeping every reference alive across a rewrite, and it only
+        applies while the old row still exists — once swept as an orphan, a
+        fresh id is minted.
+        """
+        from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+
+        observation = self._observe(ref)
+        carrier = (
+            adopt_entity_id(observation.candidate)
+            if observation is not None and observation.state is IdentityState.VALID
+            else None
+        )
+
+        if carrier is not None and (
+            owner_id is None or carrier == owner_id or live_ids is None or carrier in live_ids
+        ):
+            return carrier
+
+        # A derived/provider identity is a pure function of the source, so an
+        # owning row must never override it — a stale row on a rotated session
+        # path would otherwise swallow a genuinely different session.
+        persists = self.identity_backend is not None and self.identity_backend.persists_identity
+        if owner_id and persists:
+            absent = observation is None or observation.state is IdentityState.ABSENT
+            if restamp and absent and not bool(getattr(ref, "read_only", False)):
+                # store_if_absent is enough here (the carrier IS absent) and
+                # keeps the write path identical to a normal mint.
+                self.identity_backend.store_if_absent(self.capsule_target_for(ref), owner_id)
+            elif not absent:
+                logging.warning(
+                    "[asset-id] %s carrier %r names no live entity; path is owned by %s (%s)",
+                    self.type_name,
+                    observation.candidate,
+                    owner_id,
+                    self._identity_path(ref),
+                )
+            return owner_id
+
+        # Reuse the observation above — minting must not re-read the carrier.
+        return self._mint_from(ref, observation, proposed_id=proposed_id)
 
     def mint_id(self, ref: Any, *, proposed_id: str | None = None) -> str:
         """Return the existing id, or mint this asset type's configured id.
@@ -443,17 +549,27 @@ class TypeInfo:
         path-v5 fallback keeps repeated scans idempotent. Natural/provider
         identities supply ``id_stable_key_fn`` and mint deterministic v5 ids.
         """
+        return self._mint_from(ref, self._observe(ref), proposed_id=proposed_id)
+
+    def _mint_from(
+        self,
+        ref: Any,
+        observation: "IdentityObservation | None",
+        *,
+        proposed_id: str | None = None,
+    ) -> str:
+        """``mint_id``'s body, minus the observe.
+
+        Split out so a caller that has ALREADY observed the carrier — the only
+        one is ``resolve_id``, on every asset the walk touches — does not read
+        and re-parse the same file a second time.
+        """
         from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid  # noqa: PLC0415
 
         if proposed_id is not None and not is_valid_entity_id(proposed_id):
             raise ValueError("proposed entity id must be a UUID v4 or v5")
 
         path = self.capsule_target_for(ref)
-        observation = self.identity_backend.observe(path) if self.identity_backend is not None else None
-        if observation is not None and observation.state is IdentityState.MALFORMED:
-            if observation.error is not None:
-                raise observation.error
-            raise ValueError(observation.detail or "malformed asset identity")
         if observation is not None and observation.state is IdentityState.VALID:
             return str(observation.candidate)
 

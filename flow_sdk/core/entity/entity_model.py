@@ -1002,7 +1002,9 @@ class Entity(DBEntity):
         if info is None or info.from_disk_fn is None:
             return None
 
-        resolved_id = info.extract_id(ref) or info.mint_id(ref)
+        # DB-FREE by contract, so no owner lookup: with no owning row to consult
+        # this degrades to the historic carrier-or-mint.
+        resolved_id = info.resolve_id(ref)
         records = info.from_disk_fn(ref, resolved_id)
         if not records:
             return None
