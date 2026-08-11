@@ -1338,16 +1338,17 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     @action.post(action_name="set-default-project")
     async def _set_default_project_action(self) -> ApiResponse:
-        """Name the project this box should OPEN on, for the next bootstrap only.
+        """Name the project this box should OPEN on — once for each person.
 
         Body: ``{ "project_id": "<uuid v4/v5>" }``.
 
         The provisioning side (today: the hub, after cloning a repo in) is the
         only one that knows which of several projects the user actually asked
         for. It is an opening instruction, not a stored preference: bootstrap
-        hands it out once and forgets it, so a later refresh cannot re-assert it
-        over whatever the user has since selected. See
-        ``flow_sdk/server/state.py``.
+        serves it once per signed-in user, so a later refresh cannot re-assert it
+        over whatever that user has since selected — while someone the box has
+        not served yet (the recipient of a shared sandbox) still lands on the
+        project the machine was made for. See ``flow_sdk/server/state.py``.
         """
         from flow_sdk.server.state import set_pending_default_project  # noqa: PLC0415
 
