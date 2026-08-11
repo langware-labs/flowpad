@@ -14,7 +14,9 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { EyeOff, MessageSquarePlus, Rss, Send } from 'lucide-react';
 import { useCallback, useMemo, useState, type FormEvent } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { FeedEntryCard } from './FeedEntryCard';
+import { FeedEntryCard, UnavailableFeedEntryCard } from './FeedEntryCard';
+import { FeedData } from './feed-data';
+import { ErrorBoundary } from '@src/components/error-boundary/error-boundary';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Textarea } from '@src/components/ui/textarea';
@@ -206,19 +208,34 @@ export function HomeFeedColumn() {
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain p-2">
+            {/* One boundary per card: a card that throws while rendering degrades to
+                the dismissible "Unavailable feed item" instead of reaching the router's
+                root errorElement, which would replace the whole app (FLOWPAD-1974). */}
             {newEntries.map((entry) => (
-              <FeedEntryCard
+              <ErrorBoundary
                 key={entry.id}
-                entry={entry}
-                busy={busyId === entry.id}
-                error={sendError?.entryId === entry.id ? sendError.message : undefined}
-                onDismiss={(item) => void handleDismiss(item)}
-                onReportIssue={(item, suggest) => void handleReportIssue(item, suggest)}
-                reported={!!entry.id && reportedIds.has(entry.id)}
-                onForwardMessageSuggest={(item, suggest, conversationId) =>
-                  void handleForwardMessageSuggest(item, suggest, conversationId)
+                label={`feed-card:${entry.id}`}
+                fallback={
+                  <UnavailableFeedEntryCard
+                    entry={entry}
+                    busy={busyId === entry.id}
+                    feedData={FeedData.fromEntry(entry)}
+                    onDismiss={(item) => void handleDismiss(item)}
+                  />
                 }
-              />
+              >
+                <FeedEntryCard
+                  entry={entry}
+                  busy={busyId === entry.id}
+                  error={sendError?.entryId === entry.id ? sendError.message : undefined}
+                  onDismiss={(item) => void handleDismiss(item)}
+                  onReportIssue={(item, suggest) => void handleReportIssue(item, suggest)}
+                  reported={!!entry.id && reportedIds.has(entry.id)}
+                  onForwardMessageSuggest={(item, suggest, conversationId) =>
+                    void handleForwardMessageSuggest(item, suggest, conversationId)
+                  }
+                />
+              </ErrorBoundary>
             ))}
           </div>
         )}

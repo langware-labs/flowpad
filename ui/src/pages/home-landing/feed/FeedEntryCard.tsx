@@ -3,7 +3,16 @@ import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-
 import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AgentTrace, AssetCleanupReport, FlowMessage, Markdown, MessageSuggest, UsageReport, UserNote, type FeedEntry } from '@sdk';
+import {
+  AgentTrace,
+  AssetCleanupReport,
+  FlowMessage,
+  Markdown,
+  MessageSuggest,
+  UsageReport,
+  UserNote,
+  type FeedEntry,
+} from '@sdk';
 import { formatDuration } from '@src/components/lens-viewer/shared/format-utils';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -608,14 +617,20 @@ function UsageReportFeedEntryCard({ entry, report, busy, feedData, onDismiss }: 
   );
 }
 
-interface UnavailableFeedEntryCardProps {
+export interface UnavailableFeedEntryCardProps {
   entry: FeedEntry;
   busy: boolean;
   feedData: FeedData;
   onDismiss: (entry: FeedEntry) => void;
 }
 
-function UnavailableFeedEntryCard({ entry, busy, feedData, onDismiss }: UnavailableFeedEntryCardProps) {
+/**
+ * The feed's degraded card: keeps the frame (so the entry stays dismissible)
+ * and drops the body. Used both for an entry whose target entity is missing and
+ * — via `<ErrorBoundary>` in `HomeFeedColumn` — for one whose card threw while
+ * rendering.
+ */
+export function UnavailableFeedEntryCard({ entry, busy, feedData, onDismiss }: UnavailableFeedEntryCardProps) {
   return (
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
       <p className="min-w-0 text-xs font-medium leading-snug text-foreground">
