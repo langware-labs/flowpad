@@ -64,15 +64,17 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
     """_scan_create_process must construct AgenticProcess with the field set
     declared at scan_actions.py:318-328 — and never source_vfs_path."""
     node = _make_compute_node()
-    info = _make_request_info({
-        "context": {
-            "workdir": "/tmp/proj",
-            "permission_mode": "bypassPermissions",
-            "model": "md",
-            "worker_type": "claude_code",
-        },
-        "visible": True,
-    })
+    info = _make_request_info(
+        {
+            "context": {
+                "workdir": "/tmp/proj",
+                "permission_mode": "bypassPermissions",
+                "model": "md",
+                "worker_type": "claude_code",
+            },
+            "visible": True,
+        }
+    )
 
     captured: dict = {}
 
@@ -94,16 +96,22 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
         def model_dump(self, mode=None):
             return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
 
-    with patch(_PATCH_REQ_SCAN, return_value=info), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+    with patch(_PATCH_REQ_SCAN, return_value=info), patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
         resp = await node._scan_create_process()
 
     assert resp.status == "SUCCESS", resp.message if hasattr(resp, "message") else resp
     assert resp.data["id"] == "fresh-1"
     # Validate post-refactor field set
     expected = {
-        "worker_type", "instruction_content", "cli_config", "context_data",
-        "workdir", "visible", "additional_dirs", "project_id", "target_typeid_str",
+        "worker_type",
+        "instruction_content",
+        "cli_config",
+        "context_data",
+        "workdir",
+        "visible",
+        "additional_dirs",
+        "project_id",
+        "target_typeid_str",
     }
     assert expected.issubset(captured.keys()), captured.keys()
     assert captured["workdir"] == "/tmp/proj"
@@ -122,10 +130,12 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
     session_id without ever writing a JSONL, which then makes the next
     ``/prompt`` land on a stale session and emit no assistant turn."""
     node = _make_compute_node()
-    info = _make_request_info({
-        "context": {"workdir": "/tmp/proj", "worker_type": "claude_code"},
-        "visible": False,
-    })
+    info = _make_request_info(
+        {
+            "context": {"workdir": "/tmp/proj", "worker_type": "claude_code"},
+            "visible": False,
+        }
+    )
 
     captured: dict = {}
 
@@ -147,8 +157,7 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
         def model_dump(self, mode=None):
             return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
 
-    with patch(_PATCH_REQ_SCAN, return_value=info), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+    with patch(_PATCH_REQ_SCAN, return_value=info), patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
         resp = await node._scan_create_process()
 
     assert resp.status == "SUCCESS"
@@ -177,19 +186,26 @@ async def test_scan_create_process_uses_capability_default_without_overriding_ex
         def model_dump(self, mode=None):
             return {"id": self.id, "type": self.type, "shell_id": self.shell_id, **self._data}
 
-    default_info = _make_request_info({
-        "context": {"workdir": "/tmp/proj", "env_vars": {"FLOWPAD_TEST_MARKER": "1"}},
-        "visible": False,
-    })
-    explicit_info = _make_request_info({
-        "context": {"workdir": "/tmp/proj", "worker_type": "claude_code"},
-        "visible": False,
-    })
+    default_info = _make_request_info(
+        {
+            "context": {"workdir": "/tmp/proj", "env_vars": {"FLOWPAD_TEST_MARKER": "1"}},
+            "visible": False,
+        }
+    )
+    explicit_info = _make_request_info(
+        {
+            "context": {"workdir": "/tmp/proj", "worker_type": "claude_code"},
+            "visible": False,
+        }
+    )
 
-    with patch(
-        "flow_sdk.core.capabilities.registry.resolve_default_worker_type",
-        AsyncMock(return_value="codex"),
-    ), patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+    with (
+        patch(
+            "flow_sdk.core.capabilities.registry.resolve_default_worker_type",
+            AsyncMock(return_value="codex"),
+        ),
+        patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc),
+    ):
         with patch(_PATCH_REQ_SCAN, return_value=default_info):
             assert (await node._scan_create_process()).status == "SUCCESS"
         with patch(_PATCH_REQ_SCAN, return_value=explicit_info):
@@ -211,10 +227,12 @@ async def test_scan_upsert_session_process_creates_fresh_when_no_existing():
     with session_id, use_worker_history=True, context_data, project_id —
     no source_vfs_path."""
     node = _make_compute_node()
-    info = _make_request_info({
-        "sessionId": "sess-new-1",
-        "workdir": "/tmp/wd",
-    })
+    info = _make_request_info(
+        {
+            "sessionId": "sess-new-1",
+            "workdir": "/tmp/wd",
+        }
+    )
 
     captured: dict = {}
 
@@ -255,8 +273,7 @@ async def test_scan_upsert_session_process_creates_fresh_when_no_existing():
                 "worker_type": self.worker_type,
             }
 
-    with patch(_PATCH_REQ_SCAN, return_value=info), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+    with patch(_PATCH_REQ_SCAN, return_value=info), patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
         resp = await node._scan_upsert_session_process()
 
     assert resp.status == "SUCCESS", resp
@@ -309,8 +326,7 @@ async def test_scan_upsert_session_process_returns_existing_on_resume():
         def __init__(self, **kwargs):
             FakeProc.constructed = True
 
-    with patch(_PATCH_REQ_SCAN, return_value=info), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+    with patch(_PATCH_REQ_SCAN, return_value=info), patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
         resp = await node._scan_upsert_session_process()
 
     assert resp.status == "SUCCESS"
