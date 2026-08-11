@@ -248,6 +248,11 @@ export async function setLocale(code: string): Promise<void> {
  * footer switch.
  */
 export function applyProjectLocale(project: Project): void {
+  // Hub: not the surface a project is WORKED in — and the hub's bootstrap ships
+  // no `supported_locales`, so every real code reads as unsupported there and
+  // this would resolve to en-US and yank a Hebrew reader into English on a page
+  // that has no per-project language to offer instead. Leave their choice alone.
+  if (isHubOnly()) return;
   const target = isSupported(project.locale) ? project.locale : DEFAULT_LOCALE;
   if (target === getLocale()) return;
   void activateLocale(target).catch((err) => {
