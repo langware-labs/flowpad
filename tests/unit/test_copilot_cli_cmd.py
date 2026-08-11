@@ -124,22 +124,45 @@ def test_to_json_roundtrip():
         add_dirs=["/extra"],
         json_stream=False,
         no_ask_user=False,
+        no_auto_update=False,
+        no_custom_instructions=False,
         allow_all=False,
+        custom_instruction_dirs=["/runtime/instructions"],
     )
-    loaded = CopilotAgentOptions.from_json(cmd.to_json())
+    cmd.fork_session_id = "launch-only-fork"
+    cmd.system_prompt_append = "launch derived"
+    cmd.system_prompt_file = "/tmp/system-prompt"
+    data = cmd.to_json()
+    loaded = CopilotAgentOptions.from_json(data)
 
-    assert loaded.session_id == "abc"
-    assert loaded.resume is True
-    assert loaded.model == "m"
-    assert loaded.permission_mode == "default"
-    assert loaded.effort == "medium"
-    assert loaded.skill_names == ["reviewer"]
-    assert loaded.workdir == "/repo"
-    assert loaded.env_vars == {"X": "1"}
-    assert loaded.add_dirs == ["/extra"]
-    assert loaded.json_stream is False
-    assert loaded.no_ask_user is False
-    assert loaded.allow_all is False
+    assert data == {
+        "workdir": "/repo",
+        "env_vars": {"X": "1"},
+        "worker_type": "copilot",
+        "session_id": "abc",
+        "resume": True,
+        "model": "m",
+        "permission_mode": "default",
+        "effort": "medium",
+        "skill_names": ["reviewer"],
+        "add_dirs": ["/extra"],
+        "json_stream": False,
+        "no_ask_user": False,
+        "no_auto_update": False,
+        "no_custom_instructions": False,
+        "allow_all": False,
+    }
+    assert loaded.to_json() == data
+
+
+def test_custom_instruction_dirs_are_runtime_only_and_preserve_existing_env(monkeypatch):
+    monkeypatch.setenv("COPILOT_CUSTOM_INSTRUCTIONS_DIRS", "/global,/shared")
+    cmd = CopilotAgentOptions(custom_instruction_dirs=["/shared", "/process"])
+
+    _argv, env = cmd.to_spawn_args()
+
+    assert env["COPILOT_CUSTOM_INSTRUCTIONS_DIRS"] == "/global,/shared,/process"
+    assert "custom_instruction_dirs" not in cmd.to_json()
 
 
 def test_factory_returns_copilot_cli_cmd():

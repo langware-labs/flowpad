@@ -20,11 +20,11 @@ lines are easy to filter independently of the Claude CLI lines.
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import serialize_toml_cli_value
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.agentic_process.model_tiers import CODEX_MODEL_TIERS
 
@@ -97,7 +97,8 @@ class CodexAgentOptions(AgentOptions):
     def _developer_instruction_flags(self) -> list[str]:
         if not self.developer_instructions:
             return []
-        return ["-c", f"developer_instructions={json.dumps(self.developer_instructions)}"]
+        value = serialize_toml_cli_value(self.developer_instructions)
+        return ["-c", f"developer_instructions={value}"]
 
     def _interactive_trust_flags(self) -> list[str]:
         """Trust the injected-input target only when full access was requested."""
@@ -115,12 +116,8 @@ class CodexAgentOptions(AgentOptions):
             workdir = str(Path(self.workdir).resolve(strict=True))
         except OSError:
             workdir = self.workdir
-        # JSON and TOML basic strings share the escapes used here. JSON leaves
-        # DEL (U+007F) raw, though TOML forbids it, so escape that one extra
-        # codepoint while preserving non-BMP Unicode as real UTF-8.
-        project = json.dumps(workdir, ensure_ascii=False).replace("\x7f", "\\u007f")
-        trusted = json.dumps("trusted")
-        return ["-c", f"projects={{{project}={{trust_level={trusted}}}}}"]
+        projects = {workdir: {"trust_level": "trusted"}}
+        return ["-c", f"projects={serialize_toml_cli_value(projects)}"]
 
     def _interactive_update_flags(self) -> list[str]:
         """Keep Codex's startup updater out of automation-owned PTYs.
@@ -151,7 +148,7 @@ class CodexAgentOptions(AgentOptions):
         ``-c`` helpers; empty in device mode."""
         flags: list[str] = []
         for key, value in self.extra_config_overrides:
-            flags.extend(["-c", f"{key}={json.dumps(value)}"])
+            flags.extend(["-c", f"{key}={serialize_toml_cli_value(value)}"])
         return flags
 
     def _emit_flags(self) -> list[str]:

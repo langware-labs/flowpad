@@ -15,6 +15,7 @@ portable.
 """
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import shutil
@@ -85,6 +86,27 @@ _INSTRUCTIONS = {"none": None, "instr": "fix the bug", "dash": "-rf danger", "mu
 # consolidation must keep Windows output byte-identical too.
 _PLATFORMS = ["linux", "win32"]
 
+# Constructor coverage that intentionally stays outside the frozen golden
+# matrix.  Adding these cases to MATRIX would require rewriting the historical
+# fixture, so the inventory combines both sources instead.
+_SUPPLEMENTAL_CONSTRUCTOR_KWARGS: dict[str, dict] = {
+    "claude": {"verbose": True},
+    "codex": {},
+    "copilot": {"custom_instruction_dirs": ["/instructions"]},
+}
+
+_LAUNCH_ONLY_FIELDS: dict[str, set[str]] = {
+    "claude": {"system_prompt_append", "system_prompt_file"},
+    "codex": {
+        "fork_session_id",
+        "system_prompt_append",
+        "system_prompt_file",
+        "developer_instructions",
+        "extra_config_overrides",
+    },
+    "copilot": {"fork_session_id", "system_prompt_append", "system_prompt_file"},
+}
+
 
 def _capture(vendor: str, kwargs: dict, platform: str) -> dict:
     """All output forms for one option config under one mocked OS — the unit of
@@ -124,6 +146,12 @@ _CASES = [
     for plat in _PLATFORMS
 ]
 
+_SPAWN_CASES = [
+    (*case, instruction_key, instruction)
+    for case in _CASES
+    for instruction_key, instruction in _INSTRUCTIONS.items()
+]
+
 
 @pytest.mark.parametrize(
     "vendor,cid,kwargs,platform", _CASES, ids=[f"{v}-{c}-{p}" for v, c, _, p in _CASES]
@@ -140,6 +168,58 @@ def test_cli_options_match_golden(vendor, cid, kwargs, platform, monkeypatch):
     assert _capture(vendor, kwargs, platform) == golden[vendor][cid][platform], (
         f"{vendor}/{cid}/{platform} diverged from the frozen golden — the consolidation changed output"
     )
+
+
+@pytest.mark.parametrize(
+    "vendor,cid,kwargs,platform,instruction_key,instruction",
+    _SPAWN_CASES,
+    ids=[f"{v}-{c}-{p}-{key}" for v, c, _kw, p, key, _instruction in _SPAWN_CASES],
+)
+def test_spawn_contract_preserves_argv_env_and_prompt_channel(
+    vendor, cid, kwargs, platform, instruction_key, instruction, monkeypatch
+):
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr(shutil, "which", lambda *args, **kwargs: None)
+    options = _VENDORS[vendor](**kwargs)
+    argv, env, stdin = options.to_spawn(instruction=instruction)
+    compat_argv, compat_env = options.to_spawn_args(instruction=instruction)
+
+    assert (argv, env) == (compat_argv, compat_env)
+    assert stdin == (None if vendor == "claude" else instruction or "")
+    if instruction:
+        assert (argv[-2:] == ["--", instruction]) is (vendor == "claude")
+
+
+@pytest.mark.parametrize("vendor", _VENDORS)
+def test_cli_option_inventory_covers_constructor_and_instance_fields(vendor):
+    cls = _VENDORS[vendor]
+    constructor_fields = set(inspect.signature(cls.__init__).parameters) - {"self"}
+    matrix_fields = {key for _case, kwargs in MATRIX[vendor] for key in kwargs}
+    exercised_fields = matrix_fields | set(_SUPPLEMENTAL_CONSTRUCTOR_KWARGS[vendor])
+
+    assert exercised_fields == constructor_fields
+
+    options = cls(**_SUPPLEMENTAL_CONSTRUCTOR_KWARGS[vendor])
+    instance_fields = {"model" if name == "_model" else name for name in vars(options)}
+    assert instance_fields == constructor_fields | _LAUNCH_ONLY_FIELDS[vendor]
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ClaudeAgentOptions(session_id="O'Brien"),
+        CodexAgentOptions(model="O'Brien"),
+        CopilotAgentOptions(model="O'Brien"),
+    ],
+    ids=["claude", "codex", "copilot"],
+)
+def test_win32_renderer_uses_powershell_apostrophe_quoting(options):
+    assert "O'Brien" in options.cli_cmd()
+
+    rendered = options._render_shell_string("win32", instruction=None)
+
+    assert "'O''Brien'" in rendered
+    assert "'\"'\"'" not in rendered
 
 
 if __name__ == "__main__":

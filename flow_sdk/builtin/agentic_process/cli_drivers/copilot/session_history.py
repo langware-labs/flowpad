@@ -51,7 +51,13 @@ def copilot_transcript_path_for_process(process_id: str) -> Path:
 
 
 def copilot_session_state_root() -> Path:
-    return Path.home() / ".copilot" / "session-state"
+    # Instance configuration, not necessarily ``~/.copilot`` — test sandboxes
+    # and isolated instances point it elsewhere. Same source of truth the
+    # transcript resolver, watcher and session indexer read, so a redirected
+    # home stays visible to all of them (mirrors codex's ``codex_sessions_dir``).
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return get_instance_settings().copilot_session_state_dir
 
 
 def copilot_session_events_path(session_id: str) -> Path:

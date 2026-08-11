@@ -33,7 +33,6 @@ import asyncio
 import logging
 import os
 import re
-import shlex
 import shutil
 import signal
 import sys
@@ -51,6 +50,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
     DeviceLoginSpec,
     WorkerAuthResult,
     probe_worker_auth,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
+    quote_powershell_literal,
+    quote_shell_arg,
 )
 from flow_sdk.builtin.compute_node import ComputeNode
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
@@ -685,8 +688,8 @@ class AgentOptions:
     """Base class for worker CLI commands.
 
     Converts a structured configuration into a shell command string suitable
-    for PTY injection. Subclasses override ``_build_worker_args()`` to provide
-    the actual executable and its flags.
+    for PTY injection. Subclasses declare ``EXECUTABLE`` and override
+    ``_emit_flags()`` to provide their raw CLI arguments.
 
     Model **tier** resolution lives here, once: ``self.model`` keeps the raw
     persisted intent (``sm``/``md``/``lg`` or a concrete model), while
@@ -808,10 +811,7 @@ class AgentOptions:
         return self.cli_cmd(instruction=instruction), dict(self.env_vars)
 
     def to_shell_string(self, instruction: str | None = None) -> str:
-        args = self._build_worker_args()
-        if sys.platform == "win32":
-            return self._build_win32(args, instruction)
-        return self._build_posix(args, instruction)
+        return self._render_shell_string(sys.platform, instruction)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -832,22 +832,26 @@ class AgentOptions:
         return self.to_json() == other.to_json()
 
     def _build_worker_args(self) -> list[str]:
-        """Shell-token form of the argv (sans instruction — appended by
-        ``_build_posix``/``_build_win32``). Built from ``_emit_flags`` so the
-        shell string can never drift from argv; ``args[0]`` stays the bare binary
-        name (``Shell`` reads it as the worker name, and we skip resolving the
-        real path here since callers only want the name). Vendors that track
-        ``skill_names`` get cosmetic ``# skill=<name>`` suffixes so ``cmd_line``
-        reflects materialized skills (they aren't real CLI args)."""
-        args = [self.EXECUTABLE, *[shlex.quote(a) for a in self._emit_flags()]]
+        """Raw worker argv without the instruction or resolved binary path.
+
+        ``Shell`` reads ``args[0]`` as the worker name. Shell quoting happens
+        later in :meth:`_render_shell_string`, exactly once per argv value.
+        """
+        return [self.EXECUTABLE, *self._emit_flags()]
+
+    def _render_shell_string(self, platform: str, instruction: str | None) -> str:
+        """Render raw worker argv for the target shell platform."""
+        args = [quote_shell_arg(arg, platform) for arg in self._build_worker_args()]
         for sk in getattr(self, "skill_names", []):
-            args.append(f"# skill={shlex.quote(sk)}")
-        return args
+            args.append(f"# skill={quote_shell_arg(sk, platform)}")
+        if platform == "win32":
+            return self._build_win32(args, instruction)
+        return self._build_posix(args, instruction)
 
     def _build_posix(self, args: list[str], instruction: str | None) -> str:
         workdir = self.workdir or "."
-        cd_part = f"cd {shlex.quote(workdir)}"
-        env_part = " ".join(f"{k}={shlex.quote(v)}" for k, v in self.env_vars.items())
+        cd_part = f"cd {quote_shell_arg(workdir, 'linux')}"
+        env_part = " ".join(f"{k}={quote_shell_arg(v, 'linux')}" for k, v in self.env_vars.items())
         cmd = f"{cd_part} && {env_part} {' '.join(args)}" if env_part else f"{cd_part} && {' '.join(args)}"
         if instruction:
             escaped = instruction.replace("\\", "\\\\").replace("'", "\\'").replace("\r", "").replace("\n", "\\n")
@@ -857,12 +861,9 @@ class AgentOptions:
     def _build_win32(self, args: list[str], instruction: str | None) -> str:
         import base64 as _b64
 
-        def _ps_quote(s: str) -> str:
-            return "'" + s.replace("'", "''") + "'"
-
         workdir = self.workdir or "."
-        cd_part = f"cd {_ps_quote(workdir)}"
-        env_commands = [f"$env:{k} = {_ps_quote(v)}" for k, v in self.env_vars.items()]
+        cd_part = f"cd {quote_powershell_literal(workdir)}"
+        env_commands = [f"$env:{k} = {quote_powershell_literal(v)}" for k, v in self.env_vars.items()]
         env_part = "; ".join(env_commands) + "; " if env_commands else ""
         cmd_part = " ".join(args)
         if instruction:
@@ -1013,7 +1014,17 @@ async def run_worker_auth_probe(worker_type: str) -> WorkerAuthResult:
         pass  # unregistered worker: fall through and report NOT_INSTALLED as before
     ctx = resolve_worker_probe_context(worker_type)
     path, env = ctx if ctx is not None else (None, {})  # env unread on the NOT_INSTALLED path
-    return await asyncio.to_thread(probe_worker_auth, worker_type, path, env, Path.home())
+    # Copilot's heuristic reads its instance-redirectable config dir. Avoid
+    # resolving unrelated settings for the executable probes used by the other
+    # vendors.
+    copilot_home = None
+    if worker_type == "copilot":
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        copilot_home = get_instance_settings().copilot_home
+    return await asyncio.to_thread(
+        probe_worker_auth, worker_type, path, env, Path.home(), copilot_home
+    )
 
 
 def build_worker_spawn_env(

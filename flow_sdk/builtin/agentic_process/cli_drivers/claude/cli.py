@@ -8,9 +8,12 @@ Auto-injects CLAUDE_PROJECT_DIR from workdir.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
+    quote_shell_arg,
+    serialize_json_cli_value,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.agentic_process.model_tiers import CLAUDE_MODEL_TIERS
 from flow_sdk.config import PLATFORM_WIN32
@@ -144,14 +147,14 @@ class ClaudeAgentOptions(AgentOptions):
         if self.effort:
             flags.extend(["--effort", self.effort])
         if self.agents_json:
-            flags.extend(["--agents", json.dumps(self.agents_json)])
+            flags.extend(["--agents", serialize_json_cli_value(self.agents_json)])
         if self.print_mode:
             flags.append("-p")
         for d in self.add_dirs:
             flags.extend(["--add-dir", d])
         return flags
 
-    def to_shell_string(self, instruction: str | None = None) -> str:
+    def _render_shell_string(self, platform: str, instruction: str | None) -> str:
         """Shell form of the claude command. The shell ordering differs from argv
         (and between OSes) — a pre-existing claude quirk we reproduce exactly:
 
@@ -161,9 +164,6 @@ class ClaudeAgentOptions(AgentOptions):
 
         Both derive from ``_emit_flags`` (the single argv source) — no second
         flag list."""
-        import shlex
-        import sys
-
         p_flag: list[str] = []
         add_dir: list[str] = []
         rest: list[str] = []
@@ -187,14 +187,14 @@ class ClaudeAgentOptions(AgentOptions):
         if self.system_prompt_append and self.SYSTEM_PROMPT_FLAG:
             rest.extend([self.SYSTEM_PROMPT_FLAG, self.system_prompt_append])
 
-        def q(xs: list[str]) -> list[str]:
-            return [shlex.quote(x) for x in xs]
+        def quote_all(values: list[str]) -> list[str]:
+            return [quote_shell_arg(value, platform) for value in values]
 
-        if sys.platform == "win32":
-            return self._build_win32(["claude", *q(rest), *q(add_dir), *p_flag], instruction)
-        cmd = self._build_posix(["claude", *q(rest), *p_flag], instruction)
+        if platform == "win32":
+            return self._build_win32(quote_all(["claude", *rest, *add_dir, *p_flag]), instruction)
+        cmd = self._build_posix(quote_all(["claude", *rest, *p_flag]), instruction)
         if add_dir:
-            cmd += " " + " ".join(q(add_dir))
+            cmd += " " + " ".join(quote_all(add_dir))
         return cmd
 
     # ------------------------------------------------------------------
