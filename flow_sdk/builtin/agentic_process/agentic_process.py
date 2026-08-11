@@ -4602,7 +4602,6 @@ class AgenticProcess(Entity):
         stale ``plan_path`` if the file is missing.
         """
         from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
-        from flow_sdk.transcript_analyzer.entries.meta import MetaEntry
 
         plan_file_path = ""
 
@@ -4614,16 +4613,8 @@ class AgenticProcess(Entity):
         if not plan_file_path:
             plan_file_path = self.plan_path or ""
 
-        if not plan_file_path and transcript is not None:
-            # plan_mode attachment fallback (Claude interactive PTY).
-            for e in reversed(transcript.entries):
-                if not isinstance(e, MetaEntry) or e.meta_kind != "attachment":
-                    continue
-                att = (e.payload or {}).get("attachment") or {}
-                if att.get("type") == "plan_mode":
-                    plan_file_path = str(att.get("planFilePath") or "")
-                    if plan_file_path:
-                        break
+        if not plan_file_path:
+            plan_file_path = self.plan_path_from_attachments(transcript)
 
         if not plan_file_path or not Path(plan_file_path).exists():
             if self.plan_path:
@@ -4713,6 +4704,36 @@ class AgenticProcess(Entity):
                 "entries": [e.to_dict() for e in transcript.entries],
             }
         )
+
+    @staticmethod
+    def plan_path_from_attachments(transcript: "AgentTranscriptFile | None") -> str:
+        """Newest ``plan_mode`` attachment's ``planFilePath``, or ``""``.
+
+        Claude Code announces the plan file on a ``plan_mode`` ATTACHMENT when the
+        turn ENTERS plan mode; the later ``ExitPlanMode`` tool_use carries only the
+        ``plan`` prose and no ``planFilePath`` at all. So for an ordinary plan-mode
+        turn this attachment is the only place the path ever appears.
+
+        Both plan-detection paths resolve through here — the pull action
+        (``transcript/plan``) and the live streamer flush
+        (``_process_transcript_entries``). They used to disagree: the pull path had
+        this fallback and the push path did not, so a plan detected mid-session
+        never persisted ``plan_path`` and the ribbon's Open-Plan chip only appeared
+        after a reload (FLOWPAD-1972).
+        """
+        from flow_sdk.transcript_analyzer.entries.meta import MetaEntry  # noqa: PLC0415
+
+        if transcript is None:
+            return ""
+        for e in reversed(transcript.entries):
+            if not isinstance(e, MetaEntry) or e.meta_kind != "attachment":
+                continue
+            att = (e.payload or {}).get("attachment") or {}
+            if att.get("type") == "plan_mode":
+                path = str(att.get("planFilePath") or "")
+                if path:
+                    return path
+        return ""
 
     def _transcript_header(self, transcript: "AgentTranscriptFile") -> dict[str, Any]:
         meta = transcript._session_meta_payload()
@@ -7219,14 +7240,21 @@ class AgenticProcess(Entity):
         touched: list[str] = []
         touched_set: set[str] = set()
         for entry in entries:
-            if isinstance(entry, ExitPlanModeEntry) and entry.plan_file_path:
+            if isinstance(entry, ExitPlanModeEntry):
+                # The tool_use input carries only the ``plan`` prose — the path
+                # lives on the earlier ``plan_mode`` attachment. Resolve through
+                # the same helper the pull path uses so a live plan and a reloaded
+                # one agree on where the plan is.
+                plan_file_path = entry.plan_file_path or self.plan_path_from_attachments(self._load_transcript())
+                if not plan_file_path:
+                    continue
                 # Order matters: cross-link save first so the entity-update
                 # WS broadcast precedes plan.create. Consumers reading
                 # AP.private_context_entities on the event see the link.
-                await self.on_plan_created(entry)
+                await self.on_plan_created(entry, plan_file_path=plan_file_path)
                 await self.emit_entity_event(
                     "plan.create",
-                    {"plan_file_path": entry.plan_file_path, "session_id": self.session_id},
+                    {"plan_file_path": plan_file_path, "session_id": self.session_id},
                 )
                 continue
 
@@ -7639,21 +7667,26 @@ class AgenticProcess(Entity):
                 exc_info=True,
             )
 
-    async def on_plan_created(self, entry) -> None:
+    async def on_plan_created(self, entry, plan_file_path: str | None = None) -> None:
         """T7: Connect a freshly-detected plan to this AgenticProcess.
 
         Resolves the plan entity (indexing it on demand if the indexer hasn't
         caught up), sets ``plan_path`` if stale, and mutually cross-links the
         plan and this process via ``private_context_entities``. Shares the plan
         resolver with PlanHandler (indexer).
+
+        ``plan_file_path`` overrides ``entry.plan_file_path`` for callers that
+        already resolved it. An ``ExitPlanMode`` tool_use carries no
+        ``planFilePath``, so the live path resolves it from the ``plan_mode``
+        attachment first — see :meth:`plan_path_from_attachments`.
         """
         from flow_sdk.core.entity.cross_link import cross_link_entities
         from flow_sdk.fs_store.transcript_indexer.handlers.plan_handler import resolve_plan
 
-        plan = await resolve_plan(entry.plan_file_path)
+        path_str = str(plan_file_path or entry.plan_file_path)
+        plan = await resolve_plan(path_str)
         if plan is None:
             return
-        path_str = str(entry.plan_file_path)
         if self.plan_path != path_str:
             self.plan_path = path_str
             await self.save()
