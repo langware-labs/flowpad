@@ -55,6 +55,12 @@ _MIRRORED_FIELDS = (
     "account",
     "domain",
     "icon",
+    # The language a project is worked in: a property of the WORK, so a
+    # recipient — a person accepting an invitation, or the box behind a sandbox
+    # handover — opens it in the language its author chose instead of falling
+    # back to English. (Per-device UI state like ``last_mode`` deliberately does
+    # not travel and must not be added here.)
+    "locale",
     "members",
     "shared_context_entities",
     "shared_context_origins",
