@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { Tab } from '@sdk';
 import {
   childrenOfTab,
+  displayAncestorForDockKey,
   isWorkspaceChild,
   openTabHashes,
   openTabTargetIds,
+  parentOfTab,
   projectTabCounts,
   tabForDockKey,
   tabForTargetId,
@@ -75,6 +77,38 @@ describe('tab selectors', () => {
     const foreign = tab('foreign', { parent_tab_id: 'other' });
 
     expect(childrenOfTab([first, hidden, second, foreign], 'parent')).toEqual([first, second]);
+  });
+
+  it('resolves a child to its parent, and to null for every un-parentable case', () => {
+    const parent = tab('parent');
+    const child = tab('child', { parent_tab_id: parent.id });
+    const topLevel = tab('top');
+    const orphan = tab('orphan', { parent_tab_id: 'no-such-row' });
+    const closedParent = tab('closed', { visible: false });
+    const childOfClosed = tab('child-of-closed', { parent_tab_id: closedParent.id });
+
+    expect(parentOfTab([parent, child], child)).toBe(parent);
+    // A top-level tab has no parent; nor does a nullish tab.
+    expect(parentOfTab([parent, topLevel], topLevel)).toBeNull();
+    expect(parentOfTab([parent], null)).toBeNull();
+    // Dangling edge, and a parent outside the list passed in (e.g. another
+    // project's strip) — both degrade to "no ancestor", never a throw.
+    expect(parentOfTab([parent, orphan], orphan)).toBeNull();
+    expect(parentOfTab([child], child)).toBeNull();
+    // A soft-closed parent is not a usable ancestor.
+    expect(parentOfTab([closedParent, childOfClosed], childOfClosed)).toBeNull();
+  });
+
+  it('resolves the displayed ancestor only when the active child is omitted', () => {
+    const parent = tab('parent');
+    const child = tab('child', { parent_tab_id: parent.id });
+
+    expect(displayAncestorForDockKey([parent], [parent, child], child.getKey())).toEqual({
+      parent,
+      child,
+    });
+    expect(displayAncestorForDockKey([parent, child], [parent, child], child.getKey())).toBeNull();
+    expect(displayAncestorForDockKey([parent], [parent], child.getKey())).toBeNull();
   });
 
   it('finds tabs and derives open sets from canonical dock/target identity', () => {

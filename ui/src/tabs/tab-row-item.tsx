@@ -203,15 +203,15 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
 
   return useMemo(
     () =>
-      tabs.map((t) => {
-        const key = tabKey(t);
-        const item = tabItem(t, lifecycles.get(key) ?? null);
+      tabs.map((tab) => {
+        const key = tabKey(tab);
+        const item = tabItem(tab, lifecycles.get(key) ?? null);
         if (key === currentDock?.tabHash && activeAssetTitle) {
           item.title = activeAssetTitle;
         }
         // `focusType` is only set on an assets dock, so it implies viewType==='assets'.
         if (key === currentDock?.tabHash && focusType && focusEditable) {
-          const effectiveRemote = focusEntity?.remote ?? t.target_remote;
+          const effectiveRemote = focusEntity?.remote ?? tab.target_remote;
           item.icon = (
             <EntityIcon
               type={focusType}
@@ -225,7 +225,7 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
           const typeLabel = VIEWER_REGISTRY[ViewType.ASSETS]?.title || humanizeType(focusType);
           item.tooltip = (
             <ContentTabTooltip
-              tab={t}
+              tab={tab}
               typeLabel={typeLabel}
               statusReason={item.statusReason || undefined}
               location={effectiveRemote}
@@ -237,6 +237,3 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
     [tabs, lifecycles, currentDock, focusType, focusEditable, focusEntity, activeAssetTitle],
   );
 }
-
-// Backward-compat alias for migration
-export const tabRowItem = tabItem;

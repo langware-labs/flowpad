@@ -1,4 +1,4 @@
-import { AgenticProcess, tabForDockKey, tabManager, Tab, TypeId } from '@sdk';
+import { AgenticProcess, parentOfTab, tabForDockKey, tabManager, Tab, TypeId } from '@sdk';
 import { useEffect, useMemo } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -79,10 +79,7 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
     }
 
     // Case 2 — a child URL: the current tab's parent is a live process dock.
-    const currentTab = tabByHash(currentDock.tabHash);
-    const parent = currentTab?.parent_tab_id
-      ? allTabs.find((t) => t.id === currentTab.parent_tab_id && t.visible !== false)
-      : undefined;
+    const parent = parentOfTab(allTabs, tabByHash(currentDock.tabHash));
     if (parent?.dockPointer) return build(parent, new DockPointer(parent.dockPointer), false);
 
     return null;
