@@ -76,6 +76,28 @@ describe('workspace host stickiness', () => {
     expect(url).toContain(`host=${encodeURIComponent(HOST_A)}`);
   });
 
+  it('inherits the host from the workspace ANCHOR url — where most opens start', () => {
+    // The Display is the process dock itself. An anchor can never be an
+    // adoptable child, so it carries no `host` option to inherit; without the
+    // anchor fallback everything opened while sitting on the Display would land
+    // outside the workspace — the most common case, and the one the ambient
+    // `activeParentTabId` global used to cover.
+    const anchor = `/dock/shell/${HOST_A}?viewMode=vibe`;
+    const target = DockPointer.fromUrl(`/dock/project/${PROJ}/editor/markdown/typeid/markdown-${ASSET}`);
+
+    expect(navigateFrom(anchor, target)).toContain(`/process/${HOST_A}/display/`);
+  });
+
+  it('does not host anything from the same process dock in standard mode', () => {
+    // No display pane, nothing being hosted.
+    const anchor = `/dock/shell/${HOST_A}?viewMode=standard`;
+    const target = DockPointer.fromUrl(`/dock/project/${PROJ}/editor/markdown/typeid/markdown-${ASSET}`);
+
+    const url = navigateFrom(anchor, target);
+    expect(url).not.toContain('/process/');
+    expect(url).not.toContain('host=');
+  });
+
   it('adds nothing when there is no live host', () => {
     const target = DockPointer.fromUrl(`/dock/project/${PROJ}/editor/markdown/typeid/markdown-${ASSET}`);
 

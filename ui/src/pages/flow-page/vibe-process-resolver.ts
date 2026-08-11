@@ -30,22 +30,4 @@ export function lastVibeChatQuery(projectId: string): QueryRequest {
   return vibeChatQuery(projectId, { openedOnly: true });
 }
 
-/**
- * Asset workspace contract: every Chat keyed to the exact asset and project.
- * Headlessly-created hosts are included even before their process dock opens.
- */
-export function targetVibeChatQuery(projectId: string, targetVfsPath: string): QueryRequest {
-  return vibeChatQuery(projectId, { targetVfsPath, openedOnly: false });
-}
-
 export const pickLastVibeChat = mostRecentProcess;
-
-export async function resolveTargetVibeChat(
-  projectId: string,
-  targetVfsPath: string,
-): Promise<AgenticProcess | null> {
-  const candidates = await AgenticProcess.query<AgenticProcess>(
-    targetVibeChatQuery(projectId, targetVfsPath),
-  );
-  return pickLastVibeChat(candidates);
-}

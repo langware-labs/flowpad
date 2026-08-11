@@ -296,10 +296,26 @@ describe('workspace child adoption guard', () => {
     return DockPointer.forFile('/project/src/main.ts');
   }
 
-  afterEach(() => tabManager.setActiveParentTabId(null));
+  /** The host process whose display is doing the opening. */
+  const HOST = `agentic_process-${MD}`;
+  /** Put the host's own tab in the store so the URL host resolves to PARENT. */
+  function seedHostTab(): void {
+    tabManager.adoptGlobal([
+      new Tab({
+        id: PARENT,
+        pointer: DockPointer.forShell(HOST).toJSON() ?? '',
+        target_type: 'agentic_process',
+        target_id: MD,
+        visible: true,
+      }),
+    ]);
+  }
+
+  afterEach(() => tabManager.adoptGlobal([]));
 
   async function materializedParent(d: DockPointer): Promise<string | null | undefined> {
-    tabManager.setActiveParentTabId(PARENT);
+    seedHostTab();
+    d = d.withHost(HOST);
     mockNoExistingTabs();
     const spy = vi
       .spyOn(Tab, 'getFromDockPointer')
@@ -322,10 +338,10 @@ describe('workspace child adoption guard', () => {
   it('never materializes (so never adopts) the new-terminal launcher landing', async () => {
     // It redirects into a real shell first; `shouldMaterializeDock` keeps it
     // away from the chokepoint entirely, so there is no tab to adopt.
-    tabManager.setActiveParentTabId(PARENT);
+    seedHostTab();
     mockNoExistingTabs();
     const spy = vi.spyOn(Tab, 'getFromDockPointer');
-    await setupTab(new DockPointer(ViewType.SHELL, 'new_terminal'));
+    await setupTab(new DockPointer(ViewType.SHELL, 'new_terminal').withHost(HOST));
     expect(spy).not.toHaveBeenCalled();
   });
 
@@ -342,8 +358,8 @@ describe('workspace child adoption guard', () => {
   });
 
   it('does not re-parent an EXISTING process tab on navigation (reuse fast-path)', async () => {
-    tabManager.setActiveParentTabId(PARENT);
-    const d = processDock();
+    seedHostTab();
+    const d = processDock().withHost(HOST);
     const existing = new Tab({
       id: nextTabId(),
       pointer: d.toJSON() ?? '',
@@ -426,8 +442,8 @@ describe('workspace child adoption guard', () => {
   });
 
   it('still re-parents an existing asset tab into the active workspace', async () => {
-    tabManager.setActiveParentTabId(PARENT);
-    const d = assetDock();
+    seedHostTab();
+    const d = assetDock().withHost(HOST);
     const existing = new Tab({
       id: nextTabId(),
       pointer: d.toJSON() ?? '',
@@ -470,8 +486,6 @@ describe('the URL names the workspace host', () => {
   it('adopts the document under the host in the URL, with no ambient slot', async () => {
     const host = processTabRow();
     tabManager.adoptGlobal([host]);
-    // The ambient slot is what this replaces — it must not be consulted.
-    tabManager.setActiveParentTabId(null);
 
     const hosted = DockPointer.fromUrl(
       `/dock/project/${PROJ}/process/agentic_process-${PROC}/display/editor/markdown/typeid/markdown-${ASSET}`,
@@ -499,7 +513,6 @@ describe('the URL names the workspace host', () => {
 
   it('falls back cleanly when the host tab is not open yet (cold link)', async () => {
     tabManager.adoptGlobal([]);
-    tabManager.setActiveParentTabId(null);
 
     const hosted = DockPointer.fromUrl(
       `/dock/project/${PROJ}/process/agentic_process-${PROC}/display/editor/markdown/typeid/markdown-${ASSET}`,

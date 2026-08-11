@@ -2,14 +2,12 @@ import { AgenticProcess, dataContext, fsStore, TypeId, VFSPath } from '@sdk';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { isContentAssetDock } from '@src/navigation/content-asset-dock';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { shellIdFromShowTarget } from '@src/navigation/shell-show-target';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
 import type { ImperativePanelGroupHandle, ImperativePanelHandle } from 'react-resizable-panels';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
 import { ContentPanel } from './content-panel/content-panel';
 import { WorkspaceChildStrip } from './workspace-child-strip';
 import { useProcessSurface } from '@src/components/terminal/interactive-terminal/use-process-surface';
@@ -17,8 +15,6 @@ import { VibeChatPane } from './vibe-chat-pane';
 import { type VibeWorkspaceSession, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
 import { assetWorkContextForDock } from './asset-work-context';
 import type { DisplayShowTarget } from './display-annotation';
-import { setupTabAndAdopt } from '@src/tabs/tab-content-lifecycle';
-import { ensureAssetVibeParentTab, resolveAssetVibeHost } from '@src/tabs/vibe-parent';
 import { useEntityOps } from '@sdk/react/hooks';
 import type { IEntity } from '@sdk';
 
@@ -50,24 +46,18 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   const hasObservedLastShownRef = useRef(false);
   const handledLastShownKeyRef = useRef('');
   const [transitionsReady, setTransitionsReady] = useState(false);
-  const [provisionalSession, setProvisionalSession] = useState<{
-    dockKey: string;
-    session: VibeWorkspaceSession;
-    process: AgenticProcess;
-  } | null>(null);
-  const matchingProvisionalSession =
-    currentDock?.tabHash && provisionalSession?.dockKey === currentDock.tabHash ? provisionalSession.session : null;
-  // Render the chat as soon as the exact target-keyed process resolves. Tab
-  // materialization and child adoption continue behind it and replace this
-  // provisional shape through the all-tabs store when complete.
-  const effectiveSession = session ?? matchingProvisionalSession;
-  const watchedProcess = useVibeWorkspaceSessionHost(effectiveSession, isVibe);
-  const provisionalProcess = provisionalSession?.dockKey === currentDock?.tabHash ? provisionalSession.process : null;
-  const process = watchedProcess ?? provisionalProcess;
+  // The session resolves synchronously from the URL + the tab store, so there is
+  // no unknown-host window to paper over: no provisional shape, no dual-source
+  // process identity, no flushSync.
+  const effectiveSession = session;
+  const process = useVibeWorkspaceSessionHost(effectiveSession, isVibe);
   // Kept in a ref because `openShownTarget` is deliberately stable (see below):
   // re-creating it would open a cleanup/re-subscribe gap against the process
   // save that lands immediately before `on_show`.
-  hostProcessIdRef.current = effectiveSession?.processId ?? null;
+  // The pointer form (`agentic_process-<uuid>`), NOT the bare `processId`: the
+  // host is resolved back through `DockPointer.forShell(host)`, so a bare uuid
+  // silently matches no tab and the URL-carried host does nothing.
+  hostProcessIdRef.current = effectiveSession?.processDock.pointer ?? null;
   // Vibe has no InteractiveTerminal, so this is where the session's transport
   // is kept aligned with the view mode while the workspace is on screen.
   useProcessSurface({ process });
@@ -117,49 +107,13 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
     setTransitionsReady(true);
   }, []);
 
-  // Session/process attachment is a mounted-view side effect, not a route
-  // loader dependency. This keeps URL → loader → asset render fast, then
-  // adopts the already-visible asset under its exact target-keyed Chat through
-  // the canonical tab seam.
-  useEffect(() => {
-    if (!isVibe || session || !currentDock || !isContentAssetDock(currentDock)) return;
-    let cancelled = false;
-    const dockKey = currentDock.tabHash;
-    void resolveAssetVibeHost(currentDock).then(async (host) => {
-      if (cancelled || !host || !dockKey) return;
-      // Commit the resolved chat before starting process-tab materialization.
-      // That request may queue behind other boot traffic; it must not hold the
-      // visible Standard → Vibe morph or chat controls behind it.
-      flushSync(() => {
-        setProvisionalSession({
-          dockKey,
-          process: host.process,
-          session: {
-            processTab: null,
-            processDock: new DockPointer(host.process.terminalDockPointer),
-            processId: host.process.id,
-            onProcessUrl: false,
-          },
-        });
-      });
-      const processTab = await ensureAssetVibeParentTab(host);
-      if (cancelled || !processTab) return;
-      setProvisionalSession({
-        dockKey,
-        process: host.process,
-        session: {
-          processTab,
-          processDock: new DockPointer(host.process.terminalDockPointer),
-          processId: host.process.id,
-          onProcessUrl: false,
-        },
-      });
-      await setupTabAndAdopt(currentDock, { parentTabId: processTab.id });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentDock, isVibe, session]);
+  // NOTE: there is deliberately no host RE-DERIVATION here any more. A document
+  // opened in vibe without a host in its URL is just a document at its natural
+  // asset address — the app never infers or invents a workspace for it. What
+  // used to live here resolved the project over the network, queried every Chat
+  // for one matching the asset, and CREATED a process when none matched, which
+  // is why a reload could land on a different process than the one that showed
+  // the document. The URL carries the host now (`DockPointer.hostProcessId`).
 
   const openShownTarget = useCallback((target: DisplayShowTarget) => {
     try {
@@ -186,11 +140,10 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   // The callback is stable so the process save emitted immediately before
   // `on_show` cannot create a React cleanup/re-subscribe gap.
   useEffect(() => {
-    if (!isVibe || !effectiveSession) return;
-    const candidates = [...new Set([watchedProcess, provisionalProcess].filter(Boolean))];
-    const unsubscribes = candidates.map((candidate) => candidate!.onShow(openShownTarget));
-    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
-  }, [effectiveSession, isVibe, openShownTarget, provisionalProcess, watchedProcess]);
+    // ONE process identity now — there is no provisional twin to also subscribe.
+    if (!isVibe || !effectiveSession || !process) return;
+    return process.onShow(openShownTarget);
+  }, [effectiveSession, isVibe, openShownTarget, process]);
 
   useEffect(() => {
     if (!isVibe || !effectiveSession?.processId) return;
@@ -237,9 +190,7 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   // `on_show` is persisted before its ephemeral entity event is emitted. Replay
   // that durable pin when a late-mounted client finishes attaching its process
   // listener, closing the small watch-registered → React-effect race.
-  const lastShown = (
-    (watchedProcess?.context_data ?? provisionalProcess?.context_data) as { last_shown?: DisplayShowTarget } | undefined
-  )?.last_shown;
+  const lastShown = (process?.context_data as { last_shown?: DisplayShowTarget } | undefined)?.last_shown;
   const lastShownKey = lastShown ? JSON.stringify(lastShown) : '';
   const displayStack = process?.displayStack ?? [];
   const newestShownAt = displayStack[displayStack.length - 1]?.shown_at;

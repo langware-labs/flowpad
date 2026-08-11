@@ -84,7 +84,7 @@ async function materializeTab(
   // view mounts.
   const addressesAdoptable = isAdoptableChildDock(dock);
   const parentTabId = addressesAdoptable
-    ? (options.parentTabId ?? hostTabIdFromDock(dock) ?? tabManager.getActiveParentTabId())
+    ? (options.parentTabId ?? hostTabIdFromDock(dock))
     : null;
   // Mirror the backend's self-parent guard: a tab can never adopt itself, and
   // would otherwise re-resolve on every return navigation forever.
