@@ -449,3 +449,68 @@ describe('workspace child adoption guard', () => {
     ).toBe(PARENT);
   });
 });
+
+describe('the URL names the workspace host', () => {
+  const PROJ = 'dd682350-c185-52c9-a92b-d0667141b069';
+  const ASSET = 'a684848a-af63-4c8a-988e-37a2c01b20b5';
+  const PROC = 'abc1e873-1ae2-4c55-9242-6b4ddea51420';
+
+  /** The process tab a hosted document should be adopted under. */
+  function processTabRow(): Tab {
+    return new Tab({
+      id: nextTabId(),
+      pointer: DockPointer.forShell(`agentic_process-${PROC}`).toJSON() ?? '',
+      target_type: 'agentic_process',
+      target_id: PROC,
+      project_id: PROJ,
+      visible: true,
+    });
+  }
+
+  it('adopts the document under the host in the URL, with no ambient slot', async () => {
+    const host = processTabRow();
+    tabManager.adoptGlobal([host]);
+    // The ambient slot is what this replaces — it must not be consulted.
+    tabManager.setActiveParentTabId(null);
+
+    const hosted = DockPointer.fromUrl(
+      `/dock/project/${PROJ}/process/agentic_process-${PROC}/display/editor/markdown/typeid/markdown-${ASSET}`,
+    );
+    const doc = new Tab({
+      id: nextTabId(),
+      pointer: hosted.toJSON() ?? '',
+      target_type: 'markdown',
+      target_id: ASSET,
+      project_id: PROJ,
+      visible: true,
+    });
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([host]);
+    vi.spyOn(Tab, 'activateById').mockResolvedValue([]);
+    const mint = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([doc]);
+
+    await setupTab(hosted);
+
+    // The parent edge comes from the URL, resolved by a pure store lookup — no
+    // project resolve, no "which chat discusses this asset" query, no process
+    // creation, none of which a route loader should ever await.
+    expect(mint).toHaveBeenCalledTimes(1);
+    expect(mint.mock.calls[0][1]).toMatchObject({ parentTabId: host.id });
+  });
+
+  it('falls back cleanly when the host tab is not open yet (cold link)', async () => {
+    tabManager.adoptGlobal([]);
+    tabManager.setActiveParentTabId(null);
+
+    const hosted = DockPointer.fromUrl(
+      `/dock/project/${PROJ}/process/agentic_process-${PROC}/display/editor/markdown/typeid/markdown-${ASSET}`,
+    );
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+    vi.spyOn(Tab, 'activateById').mockResolvedValue([]);
+    const mint = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([]);
+
+    await setupTab(hosted);
+
+    expect(mint).toHaveBeenCalledTimes(1);
+    expect(mint.mock.calls[0][1]?.parentTabId ?? null).toBeNull();
+  });
+});

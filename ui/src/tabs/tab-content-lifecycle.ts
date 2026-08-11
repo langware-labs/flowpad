@@ -84,7 +84,7 @@ async function materializeTab(
   // view mounts.
   const addressesAdoptable = isAdoptableChildDock(dock);
   const parentTabId = addressesAdoptable
-    ? (options.parentTabId ?? tabManager.getActiveParentTabId())
+    ? (options.parentTabId ?? hostTabIdFromDock(dock) ?? tabManager.getActiveParentTabId())
     : null;
   // Mirror the backend's self-parent guard: a tab can never adopt itself, and
   // would otherwise re-resolve on every return navigation forever.
@@ -166,6 +166,25 @@ async function materializeTab(
   const all = await tabManager.listAll();
   const tab = tabForDockKey(all, dock.tabHash) ?? scopedTab;
   return { tab, tabs: all };
+}
+
+/**
+ * The tab id of the workspace this dock's URL says is hosting it, or null.
+ *
+ * A pure lookup in the already-loaded tab store — no network, so it is safe on
+ * the loader path. This is the URL-first replacement for reading the ambient
+ * `activeParentTabId` slot: the host is a fact the caller spelled out, not one
+ * inferred from whatever workspace happened to be mounted when the loader ran.
+ *
+ * Null when the URL names no host, or when the host's own tab is not open yet
+ * (a cold open from a shared link) — the caller falls back, and the mounted
+ * workspace's adoption pass still stamps the edge.
+ */
+function hostTabIdFromDock(dock: DockPointer): string | null {
+  const host = dock.hostProcessId;
+  if (!host) return null;
+  const hostKey = DockPointer.forShell(host).tabHash;
+  return tabForDockKey(tabManager.getSnapshot(), hostKey)?.id ?? null;
 }
 
 function adapterFor(dock: DockPointer, options: SetupTabOptions): TabContentAdapter {
