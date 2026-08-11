@@ -127,8 +127,11 @@ export const router = createBrowserRouter(
       {/* One-click "try this repo": /launch?repo=<git url> asks before it
           launches anything (the link came from outside the app). */}
       {/* Where a sandbox share invitation lands: says "preparing" and then
-          goes, instead of a blank tab or a hunt for the card. */}
-      <Route path="open-sandbox" element={<OpenSandboxLanding />} />
+          goes, instead of a blank tab or a hunt for the card.
+          Addressed `<entity type>/<id>` like `flow_message/:messageId` above —
+          and it is the URL the hub's own `build_entity_url` already emits as the
+          post-accept landing, so nothing has to steer the invitation here. */}
+      <Route path="compute_node/:nodeId" element={<OpenSandboxLanding />} />
       <Route path="launch" element={<LaunchLanding />} />
       <Route path="install" element={<InstallLanding />} />
       {/* Root dock routes - use default agent from bootstrap */}
