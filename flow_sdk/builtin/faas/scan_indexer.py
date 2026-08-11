@@ -102,24 +102,31 @@ async def _project_nodes(
     out: list[dict] = []
     seen: set[str] = set()
     resolved: list[tuple[Any, str, str]] = []
+
+    # Rows first: identity resolution needs to know who already owns each path,
+    # or a source whose capsule was wiped mints a fresh id and forks its entity.
+    # The same rows also feed the stored-occurrence view below — one fetch.
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    from flow_sdk.fs_store.path_owners import PathOwnerIndex  # noqa: PLC0415
+
+    driver = get_db_driver()
+    rows = (
+        await driver.list_entity_sources_by_type(et) if hasattr(driver, "list_entity_sources_by_type") else {}
+    )
+    owners = PathOwnerIndex.from_preload({et: {rid: src[0] for rid, src in rows.items() if src and src[0]}})
+    live_ids = rows.keys()
+
     for n in nodes:
         if n.record_type is None or str(n.record_type) != et:
             continue
         try:
-            rid = info.extract_id(n) or info.mint_id(n)
-            resolved.append((n, rid, canonical_posix_path(str(n._path))))
+            canon = canonical_posix_path(str(n._path))
+            rid = info.resolve_id(n, owner_id=owners.owner_for(et, str(n._path), canon), live_ids=live_ids)
+            resolved.append((n, rid, canon))
         except Exception:
             continue
 
     if stored is None:
-        from flow_sdk.db import get_db_driver  # noqa: PLC0415
-
-        driver = get_db_driver()
-        rows = (
-            await driver.list_entity_sources_by_type(et)
-            if hasattr(driver, "list_entity_sources_by_type")
-            else {}
-        )
         stored = stored_asset_occurrences(et, rows)
 
     def _resolve_projection():

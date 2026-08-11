@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from flow_sdk.core.entity.entity_model import DEFAULT_BROWSE_LIMIT
+from flow_sdk.fs_store.path_owners import owner_id_for
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -647,7 +648,7 @@ class FsRecordsActionsMixin:
         if info is None:
             return None
         try:
-            return info.extract_id(ref) or info.mint_id(ref)
+            return info.resolve_id(ref)
         except Exception:
             return None
 
@@ -2630,7 +2631,14 @@ async def discover_record_by_path(
                 # the original's updated_date. On a capsule MISS, re-stamp the
                 # known id so the SAME entity updates. A still-present valid
                 # carrier id always wins; folder types are unaffected.
-                resolved_id = _info.extract_id(one_ref) or _info.mint_id(one_ref, proposed_id=proposed_id)
+                # Owner-first: when the caller didn't already resolve the row
+                # (``proposed_id``), ask who owns this path before minting — a
+                # capsule wiped by a full-content rewrite must recover its id,
+                # not fork a new entity. ``live_ids=None`` (single path, no
+                # per-type id set) means a VALID carrier always wins here; only
+                # the full walk may conclude a carrier names no entity.
+                _owner_id = proposed_id or await owner_id_for(record_type, expanded)
+                resolved_id = _info.resolve_id(one_ref, owner_id=_owner_id, proposed_id=proposed_id)
 
                 # Match the full indexer's deterministic primary ranking. A
                 # non-primary path remains observable but is neither parsed nor

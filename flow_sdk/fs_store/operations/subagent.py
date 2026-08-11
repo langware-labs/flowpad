@@ -29,7 +29,7 @@ def extract_subagent_from_path(path: str | Path) -> FSRecord | None:
     info = SchemaRegistry.get(str(RecordType.SUBAGENT))
     if info is None:
         return None
-    resolved_id = info.extract_id(ref) or info.mint_id(ref)
+    resolved_id = info.resolve_id(ref)
     records = extract_subagent(ref, resolved_id)
     return records[0] if records else None
 
