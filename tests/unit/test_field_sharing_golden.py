@@ -122,27 +122,65 @@ def _override_delta(inst: Entity) -> tuple[list[str], list[str]]:
 # `Task` and `MessageAttachment` still re-declare it PRIVATE, so they carry it in
 # `extra_private` per type instead.
 BASE_BUNDLE_EXCLUDE = [
-    "asset_occurrences", "asset_ref", "created_by", "cwd", "duplicate_count", "expand",
-    "fetched_at", "fs_storage_mount_path", "installed_root", "members",
-    "message_count", "path", "private_context_entities", "private_context_entities_",
-    "private_context_entity_data", "project_id", "remote", "scope",
-    "shared_context_entity_data", "system", "tags", "updated_by",
+    "asset_occurrences",
+    "asset_ref",
+    "created_by",
+    "cwd",
+    "duplicate_count",
+    "expand",
+    "fetched_at",
+    "fs_storage_mount_path",
+    "installed_root",
+    "members",
+    "message_count",
+    "path",
+    "private_context_entities",
+    "private_context_entities_",
+    "private_context_entity_data",
+    "project_id",
+    "remote",
+    "scope",
+    "shared_context_entity_data",
+    "system",
+    "tags",
+    "updated_by",
 ]
 # The hub-push exclude as it stood BEFORE the seams were derived: it stripped the
 # DATES but kept the placement fields, i.e. local paths were pushed to the hub —
 # which is why the receiver defended with `sanitized.pop("asset_ref")`.
 BASE_HUB_EXCLUDE = [
-    "asset_occurrences", "created_by", "created_date", "duplicate_count", "fetched_at",
-    "members", "message_count", "private_context_entities",
-    "private_context_entities_", "private_context_entity_data", "project_id", "remote",
-    "shared_context_entity_data", "system", "tags", "updated_by", "updated_date",
+    "asset_occurrences",
+    "created_by",
+    "created_date",
+    "duplicate_count",
+    "fetched_at",
+    "members",
+    "message_count",
+    "private_context_entities",
+    "private_context_entities_",
+    "private_context_entity_data",
+    "project_id",
+    "remote",
+    "shared_context_entity_data",
+    "system",
+    "tags",
+    "updated_by",
+    "updated_date",
 ]
 # Now WITHHELD from the hub as well as from bundles — the one intended behaviour
 # change of this work. Each is a local path or a local projection the hub has no
 # use for; a receiver cannot bind a sender's absolute path.
 CONVERGED_TO_PRIVATE = {
-    "asset_ref", "scope", "path", "cwd", "installed_root", "fs_storage_mount_path", "expand",
-    "my_process_id", "project_root", "project_name",
+    "asset_ref",
+    "scope",
+    "path",
+    "cwd",
+    "installed_root",
+    "fs_storage_mount_path",
+    "expand",
+    "my_process_id",
+    "project_root",
+    "project_name",
 }
 # Fields that carried NO policy at all (bare pydantic `Field`, so they resolved
 # to SHARED and travelled) and are now declared PRIVATE. `fs_storage_provider`
@@ -184,55 +222,134 @@ def test_the_two_egress_seams_now_agree():
     "module, name, kwargs, extra_private, local_only, unfillable",
     [
         (
-            "flow_sdk.builtin.task", "Task", {"title": "x"},
+            "flow_sdk.builtin.task",
+            "Task",
+            {"title": "x"},
             # Task is the ONLY type declaring TypeInfo.local_fields.
             # `git_origin`: re-declared PRIVATE here, so this type keeps the
             # pre-2259df26 answer while the base now shares it.
             ["git_origin", "my_process_id", "project_name", "project_root"],
             BASE_LOCAL_ONLY,
-            ["artifacts", "env_vars", "expand", "fs_storage_provider", "git_origin",
-             "last_active_at", "private_context_entities_", "shared_context_entities", "ttl"],
+            [
+                "artifacts",
+                "env_vars",
+                "expand",
+                "fs_storage_provider",
+                "git_origin",
+                "last_active_at",
+                "private_context_entities_",
+                "shared_context_entities",
+                "ttl",
+            ],
         ),
         (
-            "flow_sdk.builtin.folder", "Folder", {}, [], BASE_LOCAL_ONLY,
-            ["env_vars", "expand", "fs_storage_provider", "git_origin", "last_active_at",
-             "origin", "private_context_entities_", "shared_context_entities"],
+            "flow_sdk.builtin.folder",
+            "Folder",
+            {},
+            [],
+            BASE_LOCAL_ONLY,
+            [
+                "env_vars",
+                "expand",
+                "fs_storage_provider",
+                "git_origin",
+                "last_active_at",
+                "origin",
+                "private_context_entities_",
+                "shared_context_entities",
+            ],
         ),
         (
-            "flow_sdk.builtin.flow_message", "FlowMessage", {"text": "t"}, [],
+            "flow_sdk.builtin.flow_message",
+            "FlowMessage",
+            {"text": "t"},
+            [],
             # Per-device inbox state: travels outward, but a hub refresh must not reset it.
-            ["asset_occurrences", "asset_ref", "body_status", "fetched_at", "is_archived",
-             "is_draft", "is_read", "prompt_auto_handled", "received_at", "remote", "system"],
+            [
+                "asset_occurrences",
+                "asset_ref",
+                "body_status",
+                "fetched_at",
+                "is_archived",
+                "is_draft",
+                "is_read",
+                "prompt_auto_handled",
+                "received_at",
+                "remote",
+                "system",
+            ],
             # `body_status` is an enum the filler leaves None — it is still pinned by
             # the LOCAL_ONLY assertion above, just not by the leak guard.
             # `origin` is a nested CloudOrigin model the filler leaves None —
             # the cloud record this message caches, absent on Flowpad-native ones.
-            ["attachment", "body_status", "env_vars", "expand", "fs_storage_provider",
-             "git_origin", "kind", "last_active_at", "origin",
-             "private_context_entities_", "shared_context_entities"],
+            [
+                "attachment",
+                "body_status",
+                "env_vars",
+                "expand",
+                "fs_storage_provider",
+                "git_origin",
+                "kind",
+                "last_active_at",
+                "origin",
+                "private_context_entities_",
+                "shared_context_entities",
+            ],
         ),
         (
-            "flow_sdk.builtin.claude_session", "ClaudeSession", {}, [],
+            "flow_sdk.builtin.claude_session",
+            "ClaudeSession",
+            {},
+            [],
             ["asset_occurrences", "asset_ref", "fetched_at", "received", "remote", "system"],
-            ["env_vars", "expand", "fs_storage_provider", "git_origin", "last_active_at",
-             "private_context_entities_", "shared_context_entities"],
+            [
+                "env_vars",
+                "expand",
+                "fs_storage_provider",
+                "git_origin",
+                "last_active_at",
+                "private_context_entities_",
+                "shared_context_entities",
+            ],
         ),
         (
             # `git_origin`: re-declared PRIVATE here (see Task above).
-            "flow_sdk.builtin.message_attachment", "MessageAttachment", {}, ["git_origin"],
+            "flow_sdk.builtin.message_attachment",
+            "MessageAttachment",
+            {},
+            ["git_origin"],
             BASE_LOCAL_ONLY,
-            ["env_vars", "expand", "fs_storage_provider", "last_active_at",
-             "private_context_entities_", "shared_context_entities"],
+            [
+                "env_vars",
+                "expand",
+                "fs_storage_provider",
+                "last_active_at",
+                "private_context_entities_",
+                "shared_context_entities",
+            ],
         ),
         (
             # `hub_updated_date`: the hub revision this device last reconciled.
             # PRIVATE — a local sync watermark that must never travel back out.
-            "flow_sdk.builtin.conversation", "Conversation", {}, ["hub_updated_date"], BASE_LOCAL_ONLY,
+            "flow_sdk.builtin.conversation",
+            "Conversation",
+            {},
+            ["hub_updated_date"],
+            BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.
-            ["env_vars", "expand", "fs_storage_provider", "git_origin", "kind",
-             "last_active_at", "message_count", "message_ids",
-             "private_context_entities_", "shared_context_entities"],
+            [
+                "env_vars",
+                "expand",
+                "fs_storage_provider",
+                "git_origin",
+                "kind",
+                "last_active_at",
+                "message_count",
+                "message_ids",
+                "private_context_entities_",
+                "shared_context_entities",
+            ],
         ),
     ],
 )
@@ -310,13 +427,23 @@ def test_project_hub_body_override_strips_local_project_state():
     # leaves None, so `exclude_none` removes it before the pop can — the same
     # blind spot that hid Folder's `path`, here made explicit instead of assumed.
     assert "fs_storage_provider" in could_not_fill
+    # `locale` joins `last_mode`: both are local UI preferences, not shared state.
     # `fs_storage_mount_path` has dropped off this list: the base seam now
     # withholds it, so the override's pop is a no-op. The override is shrinking
     # toward the remainder that genuinely is not per-field policy.
     assert popped == [
-        "context_dir_infos", "host_member_id", "include_dirs", "last_mode",
-        "last_session_at", "presence", "secret_origins", "session_code",
-        "session_count", "shared_context_origins", "shared_secret_origins",
+        "context_dir_infos",
+        "host_member_id",
+        "include_dirs",
+        "last_mode",
+        "last_session_at",
+        "locale",
+        "presence",
+        "secret_origins",
+        "session_code",
+        "session_count",
+        "shared_context_origins",
+        "shared_secret_origins",
     ]
     assert added == []
     assert "name" in inst._hub_body(), "the hub hosts a project's name verbatim"

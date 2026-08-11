@@ -23,7 +23,29 @@ const mocks = vi.hoisted(() => ({
   getById: vi.fn(),
   launchSandbox: vi.fn(),
   steps: [] as unknown[],
+  /** Invitations addressed to the signed-in user, as `pending` would return them. */
+  pending: vi.fn(),
+  acceptOnHub: vi.fn(),
+  /** Whether the SDK reports a live cloud session. */
+  loggedIn: true,
+  loginUrl: vi.fn((cb: string) => `https://hub.test/api/v1/login?target_path=${encodeURIComponent(cb)}`),
 }));
+
+vi.mock('@sdk', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    fetchPendingInvitations: () => mocks.pending(),
+    acceptInvitationOnHub: (id: string) => mocks.acceptOnHub(id),
+    cloudManager: {
+      ...(actual.cloudManager as object),
+      get isLoggedIn() {
+        return mocks.loggedIn;
+      },
+    },
+    navigator: { getLoginWithCallbackUrl: (cb: string) => mocks.loginUrl(cb) },
+  };
+});
 
 vi.mock('@src/hooks/use-sandboxes', async (importOriginal) => {
   // `isLaunched` and `workspaceServiceUrl` stay REAL: they are the contract with
@@ -63,6 +85,10 @@ beforeEach(() => {
   mocks.steps = [];
   mocks.launchSandbox = vi.fn();
   mocks.getById = vi.fn().mockResolvedValue(null);
+  mocks.pending = vi.fn().mockResolvedValue([]);
+  mocks.acceptOnHub = vi.fn().mockResolvedValue(undefined);
+  mocks.loggedIn = true;
+  mocks.loginUrl = vi.fn((cb: string) => `https://hub.test/api/v1/login?target_path=${encodeURIComponent(cb)}`);
   // jsdom's real `location.assign` is unimplemented and logs a "not implemented"
   // error instead of navigating — the same swap `cloud-manager-hub-identity` makes.
   assign = vi.fn();
@@ -202,5 +228,169 @@ describe('compute_node landing', () => {
 
     await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
     expect(mocks.launchSandbox).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * ONE LINK for share and for handover.
+ *
+ * There used to be two, with different powers: the emailed link performed the
+ * handover, the pasted one could only be followed after it. Sending someone the
+ * wrong one produced a "Wrong account" screen naming a problem they did not have
+ * — they were signed in correctly and simply had no role yet.
+ *
+ * So a refusal from the node fetch is not forwarded blindly. It means "no role on
+ * this node", and the likeliest reason to be standing on a sandbox's URL with no
+ * role is an invitation waiting to be accepted.
+ */
+describe('compute_node landing — accepting the invitation', () => {
+  const refused = { response: { status: 401 } };
+  const invite = (over: Record<string, unknown> = {}) => ({
+    id: 'inv-1',
+    target_type: 'compute_node',
+    target_id: NODE_ID,
+    ...over,
+  });
+
+  it('accepts the pending invitation for THIS box, then carries on', async () => {
+    mocks.getById.mockRejectedValueOnce(refused).mockResolvedValueOnce(node());
+    mocks.pending.mockResolvedValue([invite()]);
+    mocks.launchSandbox.mockResolvedValue(node({ node_provider_id: 'e2b-1' }));
+
+    renderLanding();
+
+    await waitFor(() => expect(mocks.acceptOnHub).toHaveBeenCalledWith('inv-1'));
+    // Re-asked AFTER the accept: the first answer was "you have no role", and
+    // the accept is what changes it. Acting on the stale refusal would strand
+    // the recipient on the hub route that cannot launch.
+    await waitFor(() => expect(mocks.getById).toHaveBeenCalledTimes(2));
+    // …and then the ordinary never-launched path runs, unchanged.
+    await waitFor(() => expect(mocks.launchSandbox).toHaveBeenCalledTimes(1));
+  });
+
+  it('accepts only the invitation addressed to the box in the URL', async () => {
+    // Matched on the TARGET, never on position. Accepting whichever invitation
+    // happened to be first would grant a role on a machine nobody asked about.
+    mocks.getById.mockRejectedValueOnce(refused).mockResolvedValueOnce(node());
+    mocks.pending.mockResolvedValue([
+      invite({ id: 'inv-other', target_id: '99999999-2222-4333-8444-555555555555' }),
+      invite({ id: 'inv-mine' }),
+    ]);
+    mocks.launchSandbox.mockResolvedValue(node({ node_provider_id: 'e2b-1' }));
+
+    renderLanding();
+
+    await waitFor(() => expect(mocks.acceptOnHub).toHaveBeenCalledWith('inv-mine'));
+    expect(mocks.acceptOnHub).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores an invitation to a different kind of thing', async () => {
+    mocks.getById.mockRejectedValue(refused);
+    mocks.pending.mockResolvedValue([invite({ target_type: 'project' })]);
+
+    renderLanding();
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
+    expect(mocks.acceptOnHub).not.toHaveBeenCalled();
+  });
+
+  it('falls through to the hub when nothing is waiting for them', async () => {
+    // A genuine stranger. The hub renders the 403 — this page must not invent one.
+    mocks.getById.mockRejectedValue(refused);
+    mocks.pending.mockResolvedValue([]);
+
+    renderLanding();
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
+    expect(mocks.acceptOnHub).not.toHaveBeenCalled();
+  });
+
+  it('falls through when the accept itself fails', async () => {
+    // Expired between the listing and the accept, or the hub went away. Either
+    // way the hub explains it better than a sentence invented here.
+    mocks.getById.mockRejectedValue(refused);
+    mocks.pending.mockResolvedValue([invite()]);
+    mocks.acceptOnHub.mockRejectedValue(new Error('gone'));
+
+    renderLanding();
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
+  });
+
+  it('says what it is doing while the handover runs', async () => {
+    mocks.getById.mockRejectedValue(refused);
+    mocks.pending.mockResolvedValue([invite()]);
+    mocks.acceptOnHub.mockReturnValue(new Promise(() => {}));
+
+    renderLanding();
+
+    await waitFor(() => expect(screen.getByTestId('open-sandbox-accepting')).toBeTruthy());
+  });
+});
+
+/**
+ * ARRIVING SIGNED OUT.
+ *
+ * The other half of the same failure. `getById` answers 401 for two different
+ * reasons — "missing or invalid token" and "has no roles" — and they need
+ * opposite responses. Forwarding to `open-service` was the response to both, and
+ * it is what made every unlaunched transfer dead-end: the hub builds the
+ * post-login callback from the url that reached it, so forwarding first makes
+ * `open-service` the return address, and the recipient comes back signed in and
+ * holding the role to the one route that cannot launch a box.
+ *
+ * Reproduced on staging 2026-08-11 (node ea357cf5): 401 "missing or invalid
+ * token" at 09:48:18, transfer completed at 09:48:28, 409 at 09:48:29.
+ */
+describe('compute_node landing — arriving signed out', () => {
+  const refused = { response: { status: 401 } };
+
+  it('sends them to sign in and BACK HERE, not to the hub route', async () => {
+    mocks.loggedIn = false;
+    mocks.getById.mockRejectedValue(refused);
+
+    renderLanding();
+
+    await waitFor(() => expect(mocks.loginUrl).toHaveBeenCalledTimes(1));
+    const callback = new URL(mocks.loginUrl.mock.calls[0][0]);
+    // The return address is this page — the one that can launch — carrying the
+    // guard flag so a second failure does not bounce again.
+    expect(callback.pathname).toBe(`/compute_node/${NODE_ID}`);
+    expect(callback.searchParams.get('signed-in')).toBe('1');
+    // And nothing was forwarded to the hub, which is what poisoned the callback.
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(assign.mock.calls[0][0]).not.toContain('open-service');
+  });
+
+  it('does not bounce a second time', async () => {
+    // Back from the round trip and still refused: signing in was not the answer,
+    // so hand over to the hub, which can say why.
+    mocks.loggedIn = false;
+    mocks.getById.mockRejectedValue(refused);
+
+    render(
+      <MemoryRouter initialEntries={[`/compute_node/${NODE_ID}?signed-in=1`]}>
+        <Routes>
+          <Route path="compute_node/:nodeId" element={<OpenSandboxLanding />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
+    expect(mocks.loginUrl).not.toHaveBeenCalled();
+  });
+
+  it('still accepts the invitation when they DO have a session', async () => {
+    // The signed-out branch must not swallow the case it sits in front of.
+    mocks.loggedIn = true;
+    mocks.loginUrl = vi.fn((cb: string) => `https://hub.test/api/v1/login?target_path=${encodeURIComponent(cb)}`);
+    mocks.getById.mockRejectedValueOnce(refused).mockResolvedValueOnce(node());
+    mocks.pending.mockResolvedValue([{ id: 'inv-1', target_type: 'compute_node', target_id: NODE_ID }]);
+    mocks.launchSandbox.mockResolvedValue(node({ node_provider_id: 'e2b-1' }));
+
+    renderLanding();
+
+    await waitFor(() => expect(mocks.acceptOnHub).toHaveBeenCalledWith('inv-1'));
+    expect(mocks.loginUrl).not.toHaveBeenCalled();
   });
 });

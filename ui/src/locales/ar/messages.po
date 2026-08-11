@@ -780,6 +780,10 @@ msgstr ""
 msgid "Accepting adds it to your Sandboxes below."
 msgstr ""
 
+#: src/pages/entry/OpenSandboxLanding.tsx
+msgid "Accepting your invitation…"
+msgstr ""
+
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Accepting…"
 msgstr ""
@@ -837,7 +841,7 @@ msgid "active"
 msgstr ""
 
 #: src/components/api-keys-view/api-keys-view.tsx
-#: src/components/footer/LanguageSelector.tsx
+#: src/components/locale/LocalePicker.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Active"
 msgstr ""
@@ -1226,7 +1230,7 @@ msgstr ""
 msgid "All guides"
 msgstr ""
 
-#: src/components/footer/LanguageSelector.tsx
+#: src/components/locale/LocalePicker.tsx
 msgid "All languages"
 msgstr ""
 
@@ -2322,6 +2326,10 @@ msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Change the installed flow SDK version"
+msgstr ""
+
+#: src/components/project-home/ProjectLanguageCard.tsx
+msgid "Change this project's language"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -7821,6 +7829,10 @@ msgstr ""
 msgid "Labels:"
 msgstr ""
 
+#: src/components/project-home/ProjectLanguageCard.tsx
+msgid "Language"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -9633,7 +9645,7 @@ msgstr ""
 #~ msgid "No labels found."
 #~ msgstr ""
 
-#: src/components/footer/LanguageSelector.tsx
+#: src/components/locale/LocalePicker.tsx
 msgid "No languages found."
 msgstr ""
 
@@ -13457,7 +13469,7 @@ msgstr ""
 #~ msgid "Search labels..."
 #~ msgstr ""
 
-#: src/components/footer/LanguageSelector.tsx
+#: src/components/locale/LocalePicker.tsx
 msgid "Search languages…"
 msgstr ""
 
@@ -15382,6 +15394,10 @@ msgstr ""
 #: src/components/account/danger-zone.tsx
 #~ msgid "The in-app terminal is always the primary shell. This setting controls whether a sidecar OS Terminal window is also opened."
 #~ msgstr ""
+
+#: src/components/project-home/ProjectLanguageCard.tsx
+msgid "The language this project is worked in. Choosing one switches the app now, and switches back to it every time you open this project."
+msgstr ""
 
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "The lens path could not be parsed."
