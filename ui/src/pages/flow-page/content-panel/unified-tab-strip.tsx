@@ -174,18 +174,24 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     [tabByKey, navigation],
   );
 
-  // Where to go when the active tab(s) close: the next tab in the current
-  // project (confined to its scope — `resolveNextTab` with `projectId`), or the
-  // project home (`DockPointer.forProject`, which renders `ProjectHome`) when the
-  // project has no tabs left. Closing a project's last tab lands on its project
-  // home rather than jumping to a tab in another project — same destination a
-  // fresh project entry resolves to (`dockForProjectEntry`). Falls back to Home
-  // only when there's no project scope at all.
+  // Where to go when the active tab(s) close: another of THIS STRIP'S OWN chips,
+  // or the project home (`DockPointer.forProject`, which renders `ProjectHome`)
+  // when none is left, falling back to Home with no project scope at all. So
+  // closing a project's last tab lands on its project home rather than jumping to
+  // another project's tab — the same destination a fresh project entry resolves to
+  // (`dockForProjectEntry`).
+  //
+  // Candidates come from `tabs`, not `allTabs`: it already carries the scope rule,
+  // so the landing spot tracks it for free, and it cannot offer a tab that has no
+  // chip here. `allTabs` can — a workspace child, which `topLevelTabsForProject`
+  // filters out — and then closing a lit ancestor "navigates" to the very child
+  // being orphaned, i.e. nowhere. `resolveNext` won't catch that: it filters on
+  // disabled/target, never on parentage.
   const navigateAfterClose = useCallback(
     (closing: Tab[]) => {
       const closingIds = new Set(closing.map((t) => t.id));
-      const remaining = allTabs.filter((t) => !closingIds.has(t.id));
-      const next = tabManager.resolveNext(remaining, new Set(), projectId);
+      const remaining = tabs.filter((t) => !closingIds.has(t.id));
+      const next = tabManager.resolveNext(remaining, new Set());
       if (next?.dockPointer) navigation.openDock(next.dockPointer);
       else if (projectId) navigation.openDock(DockPointer.forProject(projectId));
       else navigation.closeDock();
