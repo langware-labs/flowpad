@@ -86,12 +86,36 @@ export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
 export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM, JOURNEY_STEP_PARAM];
 
 /**
- * The host id when `dock` IS a vibe workspace's anchor — the process dock the
- * Display renders. Null for everything else, including the same dock in standard
- * mode, where there is no display pane and so nothing is being hosted.
+ * The workspace host to carry from `here` onto `target`, or null.
  *
- * The anchor cannot carry a `host` option itself (it is not an adoptable child),
- * so this is how content opened while sitting on the Display inherits it.
+ * Both commit paths (`openDock` and `commitDetached`) apply this, so the rule is
+ * stated once: content opened from inside a workspace stays in that workspace,
+ * and a navigation AWAY — a process, project or list dock — drops it rather than
+ * resurrecting a workspace around a top-level surface. `isAdoptableChildDock` is
+ * the same predicate that decides whether a tab may adopt a parent at all.
+ *
+ * Carrying from the live URL, rather than reading the target's own tab row, is
+ * what keeps a click inside workspace A in workspace A: one document is one tab
+ * however many agents display it, so the row's `parent_tab_id` is
+ * last-writer-wins and would teleport the user into whichever workspace showed
+ * it most recently.
+ */
+function hostToCarry(here: DockPointer | null, target: DockPointer): string | null {
+  if (!here || target.hostProcessId || !isAdoptableChildDock(target)) return null;
+  return here.hostProcessId ?? hostOfWorkspaceAnchor(here);
+}
+
+/**
+ * The host id when `dock` IS a vibe workspace's anchor — the process dock the
+ * Display renders. The anchor cannot carry a `host` option itself (it is not an
+ * adoptable child), so this is how content opened while sitting on the Display
+ * inherits it — and that is where most opens actually start.
+ *
+ * Reading the ambient mode here is deliberate, and is NOT the thing
+ * `canonicalWorkspaceDisplayPath` refuses to do. That runs in the LOADER, before
+ * `applyProjectViewMode` has applied a project's own `last_mode`, so an ambient
+ * read there is wrong for exactly the projects that default to vibe. This runs
+ * at click time, long after mount, when the effective mode is settled.
  */
 function hostOfWorkspaceAnchor(dock: DockPointer): string | null {
   if (!isWorkspaceAnchorDock(dock) || dock.viewType !== ViewType.SHELL) return null;
@@ -227,13 +251,9 @@ export class NavigationActions {
     } catch {
       here = null;
     }
-    // Same workspace-host carry as `openDock`. A backend-driven navigate that
-    // lands on workspace content while a workspace is on screen keeps it inside
-    // that workspace, instead of the target quietly becoming a top-level tab.
-    const liveHost = here ? (here.hostProcessId ?? hostOfWorkspaceAnchor(here)) : null;
-    if (liveHost && !target.hostProcessId && isAdoptableChildDock(target)) {
-      target = target.withHost(liveHost);
-    }
+    // A backend-driven navigate onto workspace content stays in the workspace.
+    const carriedHost = hostToCarry(here, target);
+    if (carriedHost) target = target.withHost(carriedHost);
     const url = target.toUrl(window.location.pathname);
     if (here?.equals(target)) return;
     window.history.pushState(null, '', url);
@@ -425,16 +445,8 @@ export class NavigationActions {
     // around a top-level surface. Carrying it from the live URL is what keeps a
     // click inside workspace A in workspace A, rather than following the shown
     // document's last writer into workspace B.
-    // On a CHILD url the host is already an option; on the workspace's own
-    // anchor url (`/dock/shell/agentic_process-<id>`, the Display) there is
-    // none to inherit — an anchor is never an adoptable child, so it never
-    // carries one. That anchor is where most opens actually start, so without
-    // the second clause everything opened from the Display would land outside
-    // the workspace. The anchor's pointer IS the host id.
-    const liveHost = here.hostProcessId ?? hostOfWorkspaceAnchor(here);
-    if (liveHost && !dock.hostProcessId && isAdoptableChildDock(dock)) {
-      dock = dock.withHost(liveHost);
-    }
+    const carriedHost = hostToCarry(here, dock);
+    if (carriedHost) dock = dock.withHost(carriedHost);
 
     // URL-first default scope for scope-aware surfaces (assets, triggers, file
     // explorer): a dock opened WITHOUT an explicit scope (no `scope-*` keys →

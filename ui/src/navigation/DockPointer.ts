@@ -111,10 +111,11 @@ export const VIEW_MODE_PARAM = 'viewMode';
  * however many agents display it, existing rows keep their stored pointer
  * (no migration), and the backend never sees the composite form.
  *
- * Unlike the other option params it does NOT appear as a query key: the URL
- * spells it as path segments — `/dock/project/<P>/process/<typeid>/display/<tail>`
- * — which `fromUrl` lifts into this option and `toUrl` puts back. Pairs with
- * `DockPointer.hostProcessId` / `withHost()`.
+ * Where the URL can nest it, it is spelled as path segments —
+ * `/dock/project/<P>/process/<typeid>/display/<tail>` — which `fromUrl` lifts
+ * into this option and `toUrl` puts back. A hosted dock with no project segment
+ * to nest under (a terminal, a web app) keeps the plain `?host=` query form.
+ * Pairs with `DockPointer.hostProcessId` / `withHost()`.
  */
 export const HOST_PARAM = 'host';
 
@@ -478,10 +479,7 @@ export class DockPointer implements IDockPointer {
 
   /** Clone this dock hosted by a process's display, or unhosted with null. */
   withHost(processId: string | null): DockPointer {
-    const nextOptions = { ...(this.options ?? {}) };
-    if (processId) nextOptions[HOST_PARAM] = processId;
-    else delete nextOptions[HOST_PARAM];
-    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
+    return this.withOption(HOST_PARAM, processId);
   }
 
   /** Clone this dock with a page-local view-mode override, or remove it with null. */
@@ -1283,11 +1281,19 @@ export class DockPointer implements IDockPointer {
     // `loadAssetRoute` swallows it with a console.warn, and the user gets a
     // blank pane. Fail loudly at the one chokepoint every consumer shares.
     if (assetSubPointer.startsWith(`${HOST_SEGMENT}/`)) {
-      throw new NavigationError(
-        NavigationErrorType.INVALID_POINTER,
-        `Project pointer still carries its workspace host: ${pointer}. ` +
+      // Loud, but NOT fatal: this is a read path — three components call it
+      // during render (AssetsPage, useAssetsModel, HubProjectPage) and so does
+      // `isAdoptableChildDock` on the navigation path. Throwing would upgrade a
+      // degraded pane into a dead screen. Strip and carry on; the write
+      // boundary (`fromUrl`/`withHost`) is where a composite is refused.
+      console.error(
+        `[DockPointer] project pointer still carries its workspace host: ${pointer}. ` +
           'Build it through DockPointer.fromUrl/withHost so the host rides in options.',
       );
+      return {
+        projectId: pointer.slice(0, slash),
+        assetSubPointer: liftHostFromProjectPointer(pointer).pointer?.slice(slash + 1) ?? '',
+      };
     }
     return {
       projectId: pointer.slice(0, slash),
@@ -2267,21 +2273,33 @@ export class DockPointer implements IDockPointer {
   toUrlSegments(): { viewType: ViewType; pointer?: string; layout: Layout; page: PageId } {
     return {
       viewType: this.viewType!,
-      pointer: this.urlPointer,
+      pointer: this.urlParts.pointer,
       layout: this.layout,
       page: this.page,
     };
   }
 
   /**
-   * The pointer as it appears in the URL — the stored pointer with the host put
-   * back as path segments. The inverse of `fromUrl`'s lift; everything that
-   * SERIALIZES a dock goes through here, everything that reads identity or
-   * content uses `pointer`.
+   * This dock as it is SERIALIZED — the stored pointer with the host put back as
+   * path segments where it can nest, and the query options that go with that
+   * choice. The inverse of `fromUrl`'s lift.
+   *
+   * Both halves come from one branch on purpose: the host must be stripped from
+   * the query exactly when the path absorbed it. Deriving that twice and
+   * comparing the results would make it a coincidence rather than a fact.
+   * Everything that serializes goes through here; everything that reads identity
+   * or content uses `pointer`.
    */
-  private get urlPointer(): string | undefined {
-    if (this.viewType !== ViewType.PROJECT) return this.pointer;
-    return embedHostInProjectPointer(this.pointer, this.hostProcessId);
+  private get urlParts(): { pointer?: string; options?: Record<string, string> } {
+    const host = this.hostProcessId;
+    const embedded = host && this.viewType === ViewType.PROJECT
+      ? embedHostInProjectPointer(this.pointer, host)
+      : undefined;
+    // A hosted dock with no project segment to nest under (a terminal, a web
+    // app) keeps the plain `?host=` form rather than losing the host.
+    if (!embedded || embedded === this.pointer) return { pointer: this.pointer, options: this.options };
+    const { [HOST_PARAM]: _host, ...rest } = this.options ?? {};
+    return { pointer: embedded, options: rest };
   }
 
   /**
@@ -2291,29 +2309,16 @@ export class DockPointer implements IDockPointer {
     if (!this.viewType) {
       throw new NavigationError(NavigationErrorType.UNKNOWN_VIEW, 'Cannot serialize DockPointer without a view type');
     }
-    // The host leaves as path segments, never as `?host=` — so it is stripped
-    // from the query here and re-embedded by `urlPointer`.
-    return buildDockUrl(currentPath, this.viewType, this.urlPointer, this.urlOptions, this.layout, this.page);
+    const { pointer, options } = this.urlParts;
+    return buildDockUrl(currentPath, this.viewType, pointer, options, this.layout, this.page);
   }
 
-  /**
-   * Options as they appear in the query string. The host is dropped only when
-   * `urlPointer` actually spelled it into the path — a hosted TERMINAL or web
-   * app has no project segment to nest under, so it keeps the plain `?host=`
-   * form rather than losing the host entirely.
-   */
-  private get urlOptions(): Record<string, string> | undefined {
-    if (!this.options || !(HOST_PARAM in this.options)) return this.options;
-    if (this.urlPointer === this.pointer) return this.options;
-    const { [HOST_PARAM]: _host, ...rest } = this.options;
-    return rest;
-  }
 
   /**
    * Convert options to URLSearchParams
    */
   toSearchParams(): URLSearchParams {
-    const options = this.urlOptions;
+    const { options } = this.urlParts;
     if (!options) {
       return new URLSearchParams();
     }

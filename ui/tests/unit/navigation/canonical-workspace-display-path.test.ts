@@ -41,12 +41,22 @@ describe('canonicalWorkspaceDisplayPath', () => {
   it('ignores URLs that carry no host', () => {
     expect(canonicalWorkspaceDisplayPath(`/dock/project/${PROJ}/${TAIL}`, '')).toBeNull();
     expect(canonicalWorkspaceDisplayPath(`/dock/project/${PROJ}`, '')).toBeNull();
-    expect(canonicalWorkspaceDisplayPath('/dock/shell/shell-1', '?host=x')).toBeNull();
     // A room pointer is a different composite entirely — never touched.
     expect(canonicalWorkspaceDisplayPath(`/dock/project/${PROJ}/collaboration_room/r1/tab/shell-1`, '')).toBeNull();
   });
 
-  it('does not strip a host with nothing displayed (not an address)', () => {
-    expect(canonicalWorkspaceDisplayPath(`/dock/project/${PROJ}/process/${HOST}/display/`, '')).toBeNull();
+  it('also strips a host that had no project segment to nest under', () => {
+    // A hosted TERMINAL carries the plain `?host=` form. Going through the
+    // pointer rather than a path regex means standard mode drops that too,
+    // instead of only the nested spelling.
+    expect(canonicalWorkspaceDisplayPath('/dock/shell/shell-1', `?host=${HOST}`)).toBe('/dock/shell/shell-1');
+    expect(canonicalWorkspaceDisplayPath('/dock/shell/shell-1', `?host=${HOST}&viewMode=vibe`)).toBeNull();
+  });
+
+  it('collapses a host with nothing displayed — not an address either way', () => {
+    // The empty tail survives as a trailing slash; the host is what matters.
+    expect(canonicalWorkspaceDisplayPath(`/dock/project/${PROJ}/process/${HOST}/display/`, '')).toBe(
+      `/dock/project/${PROJ}/`,
+    );
   });
 });

@@ -913,10 +913,12 @@ tab identity:
 - **Entry stays URL-first:** the strip's `Discuss` action opens the same
   dock with `viewMode=vibe`; it performs no context or tab writes.
 - **Adoption has one seam:** `materializeTab` classifies workspace CONTENT as
-  adoptable (`isAdoptableChildDock`). With no mounted workspace,
-  `resolveColdOpenParent` resolves the asset's project and canonical
-  TypeId/VFS target, reuses the newest matching Chat, or creates one
-  headlessly. `Tab.getFromDockPointer` persists the resulting `parent_tab_id`.
+  adoptable (`isAdoptableChildDock`) and takes the host from the URL
+  (`DockPointer.hostProcessId`, spelled
+  `/dock/project/<P>/process/<typeid>/display/<tail>`), resolved to its tab by a
+  pure store read. `Tab.getFromDockPointer` persists the resulting
+  `parent_tab_id`. A dock whose URL names no host is not workspace content — the
+  app never infers or creates a host for it.
 - **Raw files are first-class children:** non-empty `editor` pointers are
   adoptable; scope-keyed Assets tabs fold that sub-pointer out of tab identity
   but preserve `workspaceContent: true` in their serialized pointer so backend
