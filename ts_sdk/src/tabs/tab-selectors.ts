@@ -64,6 +64,46 @@ export function childrenOfTab(tabs: readonly Tab[], parentTabId: string): Tab[] 
   return tabs.filter((tab) => tab.parent_tab_id === parentTabId && tab.visible !== false);
 }
 
+/**
+ * The tab a workspace child hangs off, looked up in `tabs` — the inverse of
+ * {@link childrenOfTab}, same `visible !== false` rule.
+ *
+ * ONE hop, deliberately: children are leaves (a workspace anchor can never be
+ * adopted — `_PARENT_FORBIDDEN_TARGET_TYPES` backend-side), so there is no
+ * ancestor chain to walk and recursion would only invent one.
+ *
+ * `null` covers every "no usable parent" case at once — a top-level tab, a
+ * soft-closed parent, and a `parent_tab_id` pointing at a row that isn't in the
+ * list passed in. Callers pass the LIST THEY CARE ABOUT (a strip's own items,
+ * not the global snapshot) so scope filtering falls out of the lookup itself.
+ */
+export function parentOfTab(tabs: readonly Tab[], tab: Tab | ITab | null | undefined): Tab | null {
+  const parentId = tab?.parent_tab_id;
+  if (!parentId) return null;
+  return tabs.find((candidate) => candidate.id === parentId && candidate.visible !== false) ?? null;
+}
+
+export interface DisplayAncestorMatch {
+  parent: Tab;
+  child: Tab;
+}
+
+/**
+ * Resolve the visible parent chip that represents an active child omitted from
+ * a display list. When the active dock already has a chip, no substitution is
+ * needed and the result is null.
+ */
+export function displayAncestorForDockKey(
+  displayTabs: readonly Tab[],
+  allTabs: readonly Tab[],
+  dockKey: string | null | undefined,
+): DisplayAncestorMatch | null {
+  if (!dockKey || tabForDockKey(displayTabs, dockKey)) return null;
+  const child = tabForDockKey(allTabs, dockKey);
+  const parent = parentOfTab(displayTabs, child);
+  return child && parent ? { parent, child } : null;
+}
+
 export function terminalTabsForScope(
   tabs: readonly Tab[],
   scope: TabScope,

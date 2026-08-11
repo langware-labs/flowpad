@@ -1,6 +1,8 @@
 import {
   childrenOfTab,
   dataContext,
+  displayAncestorForDockKey,
+  type DisplayAncestorMatch,
   openTabHashes,
   openTabTargetIds,
   Project,
@@ -33,6 +35,26 @@ export function useCurrentTabs(projectId?: string | null): Tab[] {
     () => topLevelTabsForProject(tabs, resolvedProjectId),
     [tabs, resolvedProjectId],
   );
+}
+
+/**
+ * The tab in `tabs` that stands in for the active dock when that dock is a
+ * workspace CHILD which `tabs` itself omits — the vibe display showing a
+ * document, seen from the global strip (`topLevelTabsForProject` filters
+ * children out). Null when no substitution applies.
+ *
+ * The SDK selector's first guard is the whole safety argument: if the active key
+ * already names a tab in this list there is nothing to resolve, so exactly one
+ * chip is ever active and `TabStrip`'s single-valued `activeKey` stays honest.
+ * The parent is looked up in `tabs`, so scope filtering and a missing or
+ * soft-closed parent all degrade to null — today's behavior, never a crash.
+ */
+export function useAncestorActiveTab(
+  tabs: readonly Tab[],
+  dockKey: string | null | undefined,
+): DisplayAncestorMatch | null {
+  const allTabs = useAllTabs();
+  return useMemo(() => displayAncestorForDockKey(tabs, allTabs, dockKey), [tabs, allTabs, dockKey]);
 }
 
 export function useWorkspaceChildren(parentTabId: string | null | undefined): Tab[] {

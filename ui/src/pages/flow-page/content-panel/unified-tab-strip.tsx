@@ -16,7 +16,7 @@
  * The controller is kept ONLY for the surrounding controls: leading/trailing
  * toolbars, the new-tab menu, spawn modals, and the close-shortcut label.
  */
-import { Project, tabKey, tabManager, Tab, uniqueTabsByDockKey } from '@sdk';
+import { dataManager, Project, tabKey, tabManager, Tab, TypeId, uniqueTabsByDockKey } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { TabStrip } from '@src/components/tabs/TabStrip';
@@ -30,6 +30,7 @@ import {
 } from '@src/tabs/tab-content-lifecycle';
 import {
   useAllTabs,
+  useAncestorActiveTab,
   useCurrentTabs,
   useSyncContentTabNames,
   useTabLifecycles,
@@ -65,6 +66,23 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   useTabLifecycles();
   const tabs = tabManager.lifecycle.excludeClosing(scope === 'all' ? globalTabs : currentTabs);
   const baseItems = useTabStripItems(tabs);
+
+  // The URL's own key. Only mod+W still uses it directly — everything else wants
+  // `activeKey` below, the key of the chip actually ON SCREEN.
+  const urlActiveKey = currentDock?.tabHash ?? '';
+  // The URL can name a WORKSPACE CHILD, which this strip filters out
+  // (`topLevelTabsForProject`). Then the chip on screen is the child's ancestor —
+  // the vibe display — and without this the strip renders with nothing lit while
+  // a child surface fills the panel. Still exactly one active chip: the resolver
+  // returns null whenever the URL key already names a chip here.
+  const ancestor = useAncestorActiveTab(tabs, urlActiveKey);
+  const activeKey = ancestor ? tabKey(ancestor.parent) : urlActiveKey;
+  // The child's own chip, built by the SAME mapper so it carries the live
+  // overlay — a scope-keyed assets child would otherwise read as its frozen
+  // "<project>'s Assets" name. Only its icon/title are borrowed, below.
+  const ancestorChildTabs = useMemo(() => (ancestor ? [ancestor.child] : []), [ancestor]);
+  const ancestorChildItem = useTabStripItems(ancestorChildTabs)[0];
+
   const tabByKey = useMemo(() => {
     const m = new Map<string, Tab>();
     for (const t of tabs) {
@@ -81,7 +99,14 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   const items = useMemo(() => {
     const openProjectLabel = t`Open Project`;
     const ProjectIcon = iconForType(Project.type);
-    return baseItems.map((item) => {
+    return baseItems.map((base) => {
+      // The ancestor chip DISPLAYS the child filling the panel. `standsFor` is
+      // display-only, so this chip's key and title — hence select, close and
+      // rename — stay pointed at the process row it actually is.
+      const item =
+        ancestorChildItem && base.key === activeKey
+          ? { ...base, standsFor: { icon: ancestorChildItem.icon, title: ancestorChildItem.title } }
+          : base;
       const projectId = tabByKey.get(item.key)?.project_id;
       if (!projectId) return item;
       return {
@@ -97,10 +122,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
         ],
       };
     });
-  }, [baseItems, tabByKey, navigation, t]);
-
-  // Active highlight is the URL, full stop (every chip is keyed by its tabHash).
-  const activeKey = currentDock?.tabHash ?? '';
+  }, [baseItems, tabByKey, navigation, t, ancestorChildItem, activeKey]);
 
   // A tab click navigates URL-first (click → navigate → loader → context). Under
   // load the target route's loader can still be resolving when the user closes
@@ -123,6 +145,12 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
       return null;
     }
   }, [routerNavigation.location]);
+  // Keyed on the ON-SCREEN chip, so an ancestor standing in for a child counts:
+  // that chip is lit, so its X is persistent rather than hover-revealed, and
+  // closing it must navigate away like any other active chip. Otherwise the row
+  // soft-closes (`visible=false`, never a delete) while the URL still points at
+  // its child, and the child stays filtered out of every strip until the parent
+  // is reopened.
   const isCurrentTab = useCallback(
     (key: string) => key !== '' && (key === activeKey || key === pendingActiveKey),
     [activeKey, pendingActiveKey],
@@ -193,7 +221,18 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
       // ADDRESS, not a label — suppress it and keep the existing name rather
       // than writing a name that reads like a pointer.
       if (isTypeIdLikeName(newName)) return;
-      void tabManager.rename(tab.id, newName).then(() => void tabManager.refresh());
+      if (newName === tab.name?.trim()) return;
+      const target =
+        tab.target_type && tab.target_id
+          ? new TypeId(tab.target_type, tab.target_id)
+          : null;
+      void tabManager.rename(tab.id, newName).then(async () => {
+        const entity = target
+          ? await dataManager.getByTypeId(target).catch(() => null)
+          : null;
+        entity?.markEdit();
+        void tabManager.refresh();
+      });
     },
     [tabByKey],
   );
@@ -236,15 +275,18 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
       const mod = modKey === 'Ctrl' ? e.ctrlKey : modKey === 'Meta' ? e.metaKey : e.altKey;
       if (!mod) return;
       if (e.key === 'w' || e.key === 'W') {
-        if (!activeKey || !tabByKey.has(activeKey)) return;
+        if (!urlActiveKey || !tabByKey.has(urlActiveKey)) return;
         e.preventDefault();
-        handleClose(activeKey);
+        handleClose(urlActiveKey);
       } else if (e.key === 't' || e.key === 'T') {
         // mod+T = New Terminal, matching the advertised labels. Claude gets no
         // binding: the mod is Ctrl on Mac, and Ctrl+C is terminal interrupt.
         e.preventDefault();
         void controller.handleStartTerminal();
       } else if (e.key === 'PageUp') {
+        // Cycling steps relative to the chip the user can SEE lit, so a
+        // workspace-child URL cycles from its ancestor instead of dead-ending
+        // on a `findIndex` miss.
         e.preventDefault();
         const idx = tabs.findIndex((t) => tabKey(t) === activeKey);
         if (idx > 0) handleSelect(tabKey(tabs[idx - 1]));
@@ -256,7 +298,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, [activeKey, tabs, tabByKey, handleClose, handleSelect, controller]);
+  }, [urlActiveKey, activeKey, tabs, tabByKey, handleClose, handleSelect, controller]);
 
   return (
     <>
