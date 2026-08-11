@@ -3,6 +3,9 @@
  */
 export enum NavigationErrorType {
   UNKNOWN_VIEW = 'UNKNOWN_VIEW',
+  /** A pointer reached a parser in a form that parser cannot own — e.g. a
+   *  project pointer still carrying its workspace host segments. */
+  INVALID_POINTER = 'INVALID_POINTER',
 }
 
 /**
