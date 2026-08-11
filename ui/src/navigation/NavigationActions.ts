@@ -24,6 +24,7 @@ import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
 import { isContentAssetDock } from './content-asset-dock';
+import { isAdoptableChildDock } from './adoptable-child-dock';
 import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
 import { vfsLocatorForComputeNode } from './vfs-locator';
 
@@ -397,6 +398,18 @@ export class NavigationActions {
       }
     }
 
+    // The workspace host is sticky the same way, but ONLY onto surfaces that may
+    // live inside a workspace — the same predicate that decides whether a tab may
+    // adopt a parent. Navigating to a process, a project or a list is a
+    // navigation AWAY, and inheriting the host there would resurrect a workspace
+    // around a top-level surface. Carrying it from the live URL is what keeps a
+    // click inside workspace A in workspace A, rather than following the shown
+    // document's last writer into workspace B.
+    const liveHost = here.hostProcessId;
+    if (liveHost && !dock.hostProcessId && isAdoptableChildDock(dock)) {
+      dock = dock.withHost(liveHost);
+    }
+
     // URL-first default scope for scope-aware surfaces (assets, triggers, file
     // explorer): a dock opened WITHOUT an explicit scope (no `scope-*` keys →
     // `scopeFilter === null`) adopts the current project's scope — project mode
@@ -649,7 +662,7 @@ export class NavigationActions {
 
   async openShell(
     shellId: string,
-    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean; viewMode?: string },
+    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean; viewMode?: string; host?: string },
   ): Promise<Shell | null> {
     const extraOptions = toStringRecord(options);
     const shell = Shell.getByIdFromCache(shellId) ?? (await Shell.getById(shellId));

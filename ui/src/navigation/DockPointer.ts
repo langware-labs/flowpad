@@ -2296,10 +2296,15 @@ export class DockPointer implements IDockPointer {
     return buildDockUrl(currentPath, this.viewType, this.urlPointer, this.urlOptions, this.layout, this.page);
   }
 
-  /** Options as they appear in the query string — everything except the host,
-   *  which `urlPointer` writes into the path instead. */
+  /**
+   * Options as they appear in the query string. The host is dropped only when
+   * `urlPointer` actually spelled it into the path — a hosted TERMINAL or web
+   * app has no project segment to nest under, so it keeps the plain `?host=`
+   * form rather than losing the host entirely.
+   */
   private get urlOptions(): Record<string, string> | undefined {
     if (!this.options || !(HOST_PARAM in this.options)) return this.options;
+    if (this.urlPointer === this.pointer) return this.options;
     const { [HOST_PARAM]: _host, ...rest } = this.options;
     return rest;
   }
