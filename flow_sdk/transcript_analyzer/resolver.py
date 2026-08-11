@@ -41,7 +41,12 @@ def _codex_sessions_dir() -> Path:
 
 
 def _copilot_session_state_dir() -> Path:
-    return Path.home() / ".copilot" / "session-state"
+    # Same reasoning as ``_codex_sessions_dir`` — copilot has no home env var
+    # of its own, so FLOWPAD_COPILOT_HOME is the redirect and instance settings
+    # are where it lands.
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return get_instance_settings().copilot_session_state_dir
 
 
 class TranscriptNotFoundError(LookupError):

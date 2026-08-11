@@ -273,18 +273,39 @@ def test_to_json_roundtrip():
         json_stream=False,
         ephemeral=False,
     )
-    loaded = CodexAgentOptions.from_json(cmd.to_json())
+    cmd.fork_session_id = "launch-only-fork"
+    cmd.system_prompt_append = "launch derived"
+    cmd.system_prompt_file = "/tmp/system-prompt"
+    cmd.developer_instructions = "launch derived"
+    cmd.extra_config_overrides = [("provider.name", "runtime")]
+    data = cmd.to_json()
+    loaded = CodexAgentOptions.from_json(data)
 
-    assert loaded.session_id == "abc"
-    assert loaded.resume is True
-    assert loaded.model == "gpt-5.2"
-    assert loaded.permission_mode == "default"
-    assert loaded.skill_names == ["reviewer"]
-    assert loaded.workdir == "/repo"
-    assert loaded.env_vars == {"X": "1"}
-    assert loaded.add_dirs == ["/extra"]
-    assert loaded.json_stream is False
-    assert loaded.ephemeral is False
+    assert data == {
+        "workdir": "/repo",
+        "env_vars": {"X": "1"},
+        "worker_type": "codex",
+        "session_id": "abc",
+        "resume": True,
+        "model": "gpt-5.2",
+        "permission_mode": "default",
+        "skill_names": ["reviewer"],
+        "add_dirs": ["/extra"],
+        "json_stream": False,
+        "ephemeral": False,
+    }
+    assert loaded.to_json() == data
+
+
+def test_launch_only_config_fields_emit_process_local_overrides():
+    cmd = CodexAgentOptions(workdir="/repo")
+    cmd.developer_instructions = "Review O'Brien's change"
+    cmd.extra_config_overrides = [("model_provider", "openrouter")]
+
+    argv, _env = cmd.to_spawn_args()
+
+    assert 'developer_instructions="Review O\'Brien\'s change"' in argv
+    assert 'model_provider="openrouter"' in argv
 
 
 def test_factory_returns_codex_cli_cmd():
