@@ -23,7 +23,7 @@ import { canonicalProcessDockPath } from '@src/navigation/process-dock-canonical
 import { canonicalCredentialsDockPath } from '@src/navigation/credentials-dock-canonicalization';
 import { canonicalWorldViewDockPath } from '@src/navigation/worldview-dock-canonicalization';
 import { pageRedirectUrl } from '@src/navigation/supported-pages';
-import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
+import { setupTabAndAdopt } from '@src/tabs/tab-content-lifecycle';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
 import { redirect, replace, type LoaderFunctionArgs as LoaderArgs } from 'react-router';

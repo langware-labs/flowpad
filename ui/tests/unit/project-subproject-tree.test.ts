@@ -8,7 +8,7 @@
  *     columns each row draws, including multi-level nesting.
  */
 import { buildProjectTreeRows, isPathInside } from '@src/components/terminal/ProjectsCounterChip';
-import type { TabProjectBucket } from '@src/tabs/useTabs';
+import type { TabProjectBucket } from '@src/tabs/use-tab-manager';
 import type { Project } from '@sdk';
 import { describe, expect, it } from 'vitest';
 

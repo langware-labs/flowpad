@@ -26,7 +26,8 @@ vi.mock('@src/components/terminal/interactive-terminal/use-process-surface', () 
   useProcessSurface: () => undefined,
 }));
 
-vi.mock('@src/tabs/setup-tab-and-adopt', () => ({
+vi.mock('@src/tabs/tab-content-lifecycle', async (orig) => ({
+  ...(await orig<typeof import('@src/tabs/tab-content-lifecycle')>()),
   setupTabAndAdopt: vi.fn(),
 }));
 

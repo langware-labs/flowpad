@@ -16,12 +16,12 @@ import {
   dataManager,
   Project,
   Shell,
+  tabManager,
+  tabTargetKey,
   TypeId,
 } from '@sdk';
 import { applyProjectViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation';
-import { resolveNextTab, tabTargetKey } from '@src/tabs/tab-candidates';
-import { getTerminalTabsSnapshot } from '@src/tabs/useTabs';
 import { redirect } from 'react-router';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
 import { loadShell, ShellLoadError } from './load-shell';
@@ -280,7 +280,7 @@ export async function loadProjectRoute(
       // Room membership lives on the backing shell (`collaboration_room_id`),
       // which isn't denormalized on the Tab — resolve it from cache: a shell tab's
       // own shell, a process tab's linked shell.
-      const allTabs = await getTerminalTabsSnapshot('all');
+      const allTabs = await tabManager.getTerminalTabsSnapshot('all');
       const tabs = allTabs.filter((t) => {
         const shellId =
           t.target_type === AgenticProcess.type
@@ -289,7 +289,7 @@ export async function loadProjectRoute(
         const shell = shellId ? Shell.getByIdFromCache<Shell>(shellId) : null;
         return shell?.collaboration_room_id === roomId;
       });
-      const tab = resolveNextTab(tabs);
+      const tab = tabManager.resolveNext(tabs);
       if (tab) {
         // The room-tab segment is the target TypeId string (shell-<id> /
         // agentic_process-<id>) — exactly `tabTargetKey`.

@@ -1,4 +1,4 @@
-import { Tab } from '@sdk';
+import { tabKey, tabManager, Tab } from '@sdk';
 import { Monitor, X } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { Button } from '@src/components/ui/button';
@@ -6,11 +6,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import { TabStrip, type TabStripItem } from '@src/components/tabs/TabStrip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { refreshAllTabs, useAllTabs } from '@src/tabs/all-tabs-store';
-import { resolveNextTab } from '@src/tabs/tab-candidates';
-import { closeTabWithLifecycle, excludeClosingTabs, useTabLifecycles } from '@src/tabs/tab-lifecycle';
+import { closeTabWithLifecycle } from '@src/tabs/tab-content-lifecycle';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
-import { tabKey } from '@src/tabs/useTabs';
+import { useAllTabs, useTabLifecycles, useWorkspaceChildren } from '@src/tabs/use-tab-manager';
 import { useLingui } from '@lingui/react/macro';
 
 interface WorkspaceChildStripProps {
@@ -46,17 +44,9 @@ export function WorkspaceChildStrip({
 
   // Children = the global list filtered to this display's tab (backend global
   // order preserved by filtering — no separate ordering).
-  const lifecycles = useTabLifecycles();
-  const children = useMemo(
-    () =>
-      processTab
-        ? excludeClosingTabs(
-            allTabs.filter((tab) => tab.parent_tab_id === processTab.id && tab.visible !== false),
-            lifecycles,
-          )
-        : [],
-    [allTabs, processTab, lifecycles],
-  );
+  useTabLifecycles();
+  const workspaceChildren = useWorkspaceChildren(processTab?.id);
+  const children = tabManager.lifecycle.excludeClosing(workspaceChildren);
   // The child TABS only — the Display is NOT a tab (it renders as a fixed,
   // square header to the left of the strip). The strip starts after it.
   const items: TabStripItem[] = useTabStripItems(children);
@@ -88,7 +78,7 @@ export function WorkspaceChildStrip({
       // Closing the active child always returns to the Display (the workspace
       // home), never to an arbitrary sibling.
       if (key === activeKey) navigation.openDock(processDock);
-      void closeTabWithLifecycle(tab).finally(() => void refreshAllTabs());
+      void closeTabWithLifecycle(tab).finally(() => void tabManager.refresh());
     },
     [childByKey, activeKey, processDock, navigation],
   );
@@ -103,12 +93,12 @@ export function WorkspaceChildStrip({
     const closing = [...children, processTab]; // children first, then the anchor
     const closingIds = new Set(closing.map((t) => t.id));
     const remaining = allTabs.filter((t) => !closingIds.has(t.id));
-    const next = resolveNextTab(remaining, undefined, projectId);
+    const next = tabManager.resolveNext(remaining, undefined, projectId);
     if (next?.dockPointer) navigation.openDock(next.dockPointer);
     else if (projectId) navigation.openDock(DockPointer.forProject(projectId));
     else navigation.closeDock();
     void Promise.allSettled(closing.map((t) => closeTabWithLifecycle(t))).finally(
-      () => void refreshAllTabs(),
+      () => void tabManager.refresh(),
     );
   }, [processTab, children, allTabs, projectId, navigation]);
 

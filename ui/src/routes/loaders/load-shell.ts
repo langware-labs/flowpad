@@ -29,10 +29,9 @@ import {
   Shell,
   ShellStatus,
   systemTools,
+  tabManager,
   TypeId,
 } from '@sdk';
-import { closeTerminalTab } from '@src/tabs/useTabs';
-import { stampTabRecencyForTarget } from '@src/tabs/tab-recency';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
@@ -74,7 +73,7 @@ export class ShellLoadError extends Error {
 
 // Synchronously iterate the DataManager entity cache, returning all live
 // entities of a given type. Used to skip redundant backend queries on tab
-// switches — the cache is kept warm by the tabs store's (`useTabs`) live subscription.
+// switches — mounted tab bodies keep the cache warm through entity subscriptions.
 function cachedEntitiesByType<U>(type: string): U[] {
   const out: U[] = [];
   for (const [typeId, ref] of dataManager.entities.entries()) {
@@ -135,13 +134,13 @@ export async function loadShell(shellId: string): Promise<Shell> {
   // Stamp recency on the Tab too — the close-resolver reads Tab.last_active_at,
   // not the Shell row, so without this close-to-most-recently-active falls back
   // to tab_order.
-  stampTabRecencyForTarget(Shell.type, shell.id);
+  tabManager.stampTargetRecency(Shell.type, shell.id);
   dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
   return shell;
 }
 
-// Default-tab resolution moved to `resolveNextTab` (src/tabs/tab-candidates.ts):
+// Default-tab resolution lives in the SDK TabManager's `resolveNext` facade:
 // the single `resolveActive` resolver applied to the pre-filtered tab list,
 // retiring `resolveDefaultTab` (tab-management.md Part 1 §5, Phase 3).
 
@@ -352,7 +351,7 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
   }
 
   // Cache miss — cold navigation (hard refresh / deep link / page.goto): the
-  // loader runs before the tabs store (`useTabs`) warms the cache. The shell carries
+  // loader runs before a mounted tab body warms the cache. The shell carries
   // its owner directly (Shell.agentic_process_id, the reverse of
   // AgenticProcess.shell_id), so a plain get-by-id resolves ownership — no
   // reverse scan over processes.
@@ -419,7 +418,7 @@ async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupReco
         description: e.errorMessage ?? 'Shell error',
       };
     case 'start_failed': {
-      await closeTerminalTab(new TypeId(Shell.type, e.shellId)).catch(() => {});
+      await tabManager.closeTarget(new TypeId(Shell.type, e.shellId)).catch(() => {});
       const desc = describeProcessStartError(e.cause ?? e);
       return { kind: 'shell_start_failed', shellId: e.shellId, title: desc.title, description: desc.description };
     }

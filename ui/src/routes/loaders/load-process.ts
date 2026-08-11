@@ -9,8 +9,7 @@
  * decides how to recover (redirect URL, recovery skips, etc).
  */
 
-import { AgenticProcess, ContextEntitiesEnum, dataContext, Project, Shell, systemTools, TypeId } from '@sdk';
-import { stampTabRecencyForTarget } from '@src/tabs/tab-recency';
+import { AgenticProcess, ContextEntitiesEnum, dataContext, Project, Shell, systemTools, tabManager, TypeId } from '@sdk';
 import { perfLog, perfTime } from './_perf';
 import { loadProject } from './load-project';
 
@@ -201,7 +200,7 @@ export async function loadProcess(processId: string): Promise<{ process: Agentic
     // Stamp recency on the Tab too — the close-resolver reads Tab.last_active_at,
     // not the AgenticProcess row, so without this close-to-most-recently-active
     // falls back to tab_order.
-    stampTabRecencyForTarget(AgenticProcess.type, processId);
+    tabManager.stampTargetRecency(AgenticProcess.type, processId);
     dataContext.setWorkdir(process.workdir ?? shell?.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   });
   await perfTime('setContextEntityTypeId(CurrentProcessTypeId)', () =>

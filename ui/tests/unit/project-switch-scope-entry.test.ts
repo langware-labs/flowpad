@@ -23,10 +23,9 @@
  *   B. loadDockPointer: a project-pinned scope on a browse dock loads that
  *      project into context (delegation to `loadProject`).
  */
-import { Tab, TypeId, type TabRow } from '@sdk';
+import { Tab, tabManager, TypeId, type TabRow } from '@sdk';
 import { projectScope } from '@src/lib/scope-filter';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { applyAllTabs } from '@src/tabs/all-tabs-store';
 import { dockForProjectEntry } from '@src/tabs/project-entry';
 import { ViewType } from '@src/types/ViewType';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -92,7 +91,7 @@ function unstampedTabs(): Tab[] {
 describe('dockForScopeEntry — unknown last tab is never guessed (A)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    applyAllTabs([]);
+    tabManager.adoptGlobal([]);
   });
 
   it('falls back to the project landing (not the lowest-order browse tab) when no tab is stamped', async () => {

@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render as rtlRender, screen } from '@testing-librar
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type React from 'react';
+import { tabManager } from '@sdk';
 
 const ACTIVE = 'c82a1115-2f20-52e0-aa2a-4658898b5873';
 
@@ -24,7 +25,6 @@ vi.mock('@src/hooks/useContext', () => ({
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useCurrentDock: () => h.currentDock,
 }));
-vi.mock('@src/tabs/all-tabs-store', () => ({ getAllTabsSnapshot: () => h.allTabs }));
 // Capture the picker's onPick; render its trigger so we can find the row.
 vi.mock('@src/components/asset-manager/AssetManagerPopover', () => ({
   AssetManagerPopover: (p: { onPick: (d: unknown) => void }) => {
@@ -52,6 +52,7 @@ afterEach(() => {
   h.activeEntityTypeId = null;
   h.currentDock = null;
   h.allTabs = [];
+  tabManager.adoptGlobal([]);
 });
 
 describe('FavoritesAddRow — build into the level it sits under', () => {
@@ -101,6 +102,7 @@ describe('FavoritesAddRow — build into the level it sits under', () => {
     h.activeEntityTypeId = null;
     h.currentDock = { tabHash: 'web_app|4098', toJSON: () => '{"viewType":"web_app","pointer":"4098"}' };
     h.allTabs = [{ getKey: () => 'web_app|4098', name: 'localhost:4098' }];
+    tabManager.adoptGlobal(h.allTabs as never);
     render(<FavoritesAddRow parentId="folder-9" />);
 
     fireEvent.click(screen.getByLabelText(/what's open/i));

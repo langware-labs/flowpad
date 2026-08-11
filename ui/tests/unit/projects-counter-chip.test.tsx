@@ -1,7 +1,7 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ProjectsCounterChip } from '@src/components/terminal/ProjectsCounterChip';
-import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
+import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/use-tab-manager';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const navMocks = vi.hoisted(() => ({
@@ -15,7 +15,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   useCurrentDock: () => null,
 }));
 
-vi.mock('@src/tabs/useTabs', () => ({
+vi.mock('@src/tabs/use-tab-manager', () => ({
   useTabProjectBuckets: vi.fn(),
 }));
 

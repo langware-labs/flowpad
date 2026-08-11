@@ -1,19 +1,9 @@
-import { Tab, toplog } from '@sdk';
-import { useSyncExternalStore } from 'react';
+import { Tab, TabLifecycleState, tabForDockKey, tabKey, tabManager, toplog } from '@sdk';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { isContentAssetDock } from '@src/navigation/content-asset-dock';
 import { isAdoptableChildDock } from '@src/navigation/adoptable-child-dock';
 import { ViewType } from '@src/types/ViewType';
-import { getActiveTabParent } from './tab-parent-context';
-
-export enum TabLifecycleState {
-  Opening = 'opening',
-  Opened = 'opened',
-  OpenFailed = 'open_failed',
-  Closing = 'closing',
-  CloseFailed = 'close_failed',
-}
 
 export interface TabSetupResult {
   tab: Tab | null;
@@ -26,15 +16,7 @@ export interface TabContentAdapter {
   cleanupTab(dock: DockPointer, tab: Tab): Promise<void>;
 }
 
-export interface TabLifecycleEntry {
-  key: string;
-  tabId: string | null;
-  state: TabLifecycleState;
-  error: string | null;
-  updatedAt: number;
-}
-
-interface SetupTabOptions {
+export interface SetupTabOptions {
   setupContent?: () => Promise<void>;
   adapter?: TabContentAdapter;
   onMaterialized?: (tabs: Tab[]) => void;
@@ -42,10 +24,7 @@ interface SetupTabOptions {
   parentTabId?: string | null;
 }
 
-const entries = new Map<string, TabLifecycleEntry>();
-const listeners = new Set<() => void>();
 const setupInFlight = new Map<string, Promise<TabSetupResult>>();
-let snapshot: ReadonlyMap<string, TabLifecycleEntry> = new Map();
 
 const defaultAdapter: TabContentAdapter = {
   setupTab: () => Promise.resolve({ tab: null }),
@@ -53,26 +32,6 @@ const defaultAdapter: TabContentAdapter = {
 };
 
 const adapters = new Map<string, TabContentAdapter>();
-
-function notify(): void {
-  snapshot = new Map(entries);
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-function getSnapshot(): ReadonlyMap<string, TabLifecycleEntry> {
-  return snapshot;
-}
-
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  return 'Tab content failed to load.';
-}
 
 function isRedirectResponse(error: unknown): boolean {
   if (typeof Response !== 'undefined' && error instanceof Response) {
@@ -86,34 +45,6 @@ function isRedirectResponse(error: unknown): boolean {
     candidate.status < 400 &&
     candidate.headers?.get?.('Location')
   );
-}
-
-function setEntry(
-  key: string,
-  state: TabLifecycleState,
-  options: { tabId?: string | null; error?: unknown } = {},
-): TabLifecycleEntry {
-  const previous = entries.get(key);
-  const entry: TabLifecycleEntry = {
-    key,
-    tabId: options.tabId !== undefined ? options.tabId : (previous?.tabId ?? null),
-    state,
-    error: options.error === undefined || options.error === null ? null : getErrorMessage(options.error),
-    updatedAt: Date.now(),
-  };
-  entries.set(key, entry);
-  notify();
-  return entry;
-}
-
-function tabKey(tab: Tab): string {
-  return tab.dockPointer?.tabHash ?? tab.id;
-}
-
-function findTabForDock(tabs: Tab[], dock: DockPointer): Tab | null {
-  const key = dock.tabHash;
-  if (!key) return null;
-  return tabs.find((tab) => tabKey(tab) === key) ?? null;
 }
 
 function shouldMaterializeDock(dock: DockPointer): boolean {
@@ -130,12 +61,12 @@ async function materializeTab(
   options: SetupTabOptions,
 ): Promise<{ tab: Tab | null; tabs: Tab[] }> {
   const t0 = performance.now();
-  const existing = await Tab.listAll();
+  const existing = await tabManager.listAll();
   toplog.log(
     'process_load',
-    `materializeTab Tab.listAll took ${(performance.now() - t0).toFixed(1)}ms (${existing.length} tabs) dock=${dock.tabHash}`,
+    `materializeTab tabManager.listAll took ${(performance.now() - t0).toFixed(1)}ms (${existing.length} tabs) dock=${dock.tabHash}`,
   );
-  const existingTab = findTabForDock(existing, dock);
+  const existingTab = tabForDockKey(existing, dock.tabHash);
   // A workspace surface (the vibe workspace) may have registered its process
   // tab as the parent for tabs materialized right now. Only workspace CONTENT
   // is adoptable — content assets/files and a plain terminal (a shell opened
@@ -153,7 +84,7 @@ async function materializeTab(
   // view mounts.
   const addressesAdoptable = isAdoptableChildDock(dock);
   const parentTabId = addressesAdoptable
-    ? (options.parentTabId ?? getActiveTabParent())
+    ? (options.parentTabId ?? tabManager.getActiveParentTabId())
     : null;
   // Mirror the backend's self-parent guard: a tab can never adopt itself, and
   // would otherwise re-resolve on every return navigation forever.
@@ -166,7 +97,7 @@ async function materializeTab(
   // denormalized target/project metadata; send it through the same backend
   // `new_tab` ensure seam with only the new parent edge.
   if (needsReparent && existingTab?.pointer) {
-    await Tab.newTab(existingTab.pointer, {
+    await tabManager.newTab(existingTab.pointer, {
       targetType: existingTab.target_type,
       targetId: existingTab.target_id,
       projectId: existingTab.project_id,
@@ -175,8 +106,8 @@ async function materializeTab(
       worktree: existingTab.worktree,
       parentTabId,
     });
-    const all = await Tab.listAll();
-    return { tab: findTabForDock(all, dock) ?? existingTab, tabs: all };
+    const all = await tabManager.listAll();
+    return { tab: tabForDockKey(all, dock.tabHash) ?? existingTab, tabs: all };
   }
   // Inverse of the adopt guard: a NON-adoptable dock must never CARRY a parent
   // either. A stale edge persisted onto e.g. an assets-list row (written under
@@ -199,7 +130,7 @@ async function materializeTab(
   const lensProjectStale =
     dock.viewType === ViewType.LENS &&
     !!existingTab &&
-    (await Tab.resolveDockTarget(dock)).projectId !== (existingTab.project_id ?? null);
+    (await tabManager.resolveDockTarget(dock)).projectId !== (existingTab.project_id ?? null);
   // Reuse an existing tab verbatim EXCEPT a project-less content tab (see the
   // project self-heal below), a stale lens tab (above), one that needs
   // re-parenting into the active workspace, or one carrying a stale parent
@@ -224,16 +155,16 @@ async function materializeTab(
 
   toplog.log('process_load', `materializeTab cache-miss → new_tab round trip dock=${dock.tabHash}`);
   // Create-or-resolve the dock's tab. `getFromDockPointer` → `new_tab` returns
-  // the PROJECT-SCOPED list ({that project} + projectless), which must NEVER be
-  // adopted into the GLOBAL all-tabs store (the caller applies `tabs` via
-  // `applyAllTabs`): doing so erases every other project's tabs, collapsing the
+  // one PROJECT-SCOPED list (exactly that project, or Global), which must NEVER be
+  // adopted into the manager's GLOBAL snapshot from the scoped response:
+  // doing so erases every other project's tabs, collapsing the
   // footer projects-chip to a single project. Use the scoped list only to find
   // the materialized tab, then re-read the UNSCOPED global list for adoption.
-  const scoped = await Tab.getFromDockPointer(dock, { parentTabId });
-  const scopedTab = findTabForDock(scoped, dock);
+  const scoped = await tabManager.ensureDock(dock, { parentTabId });
+  const scopedTab = tabForDockKey(scoped, dock.tabHash);
 
-  const all = await Tab.listAll();
-  const tab = findTabForDock(all, dock) ?? scopedTab;
+  const all = await tabManager.listAll();
+  const tab = tabForDockKey(all, dock.tabHash) ?? scopedTab;
   return { tab, tabs: all };
 }
 
@@ -278,21 +209,21 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
   // behind a FETCHING entity ref. A shell dock has no such morph, and routing
   // it through materializeTab on every navigation is exactly what re-asserts
   // its workspace adoption when it is reopened from inside the workspace.
-  const opened = entries.get(key);
+  const opened = tabManager.lifecycle.get(key);
   if (
     isContentAssetDock(dock) &&
     opened?.state === TabLifecycleState.Opened &&
     opened.tabId &&
     options.parentTabId === undefined
   ) {
-    setEntry(key, TabLifecycleState.Opening, { tabId: opened.tabId });
-    void Tab.activateById(opened.tabId).catch(() => {});
+    tabManager.lifecycle.set(key, TabLifecycleState.Opening, { tabId: opened.tabId });
+    void tabManager.activate(opened.tabId).catch(() => {});
     try {
       await adapter.setupTab(dock);
-      setEntry(key, TabLifecycleState.Opened, { tabId: opened.tabId });
+      tabManager.lifecycle.set(key, TabLifecycleState.Opened, { tabId: opened.tabId });
       return { tab: null };
     } catch (error) {
-      setEntry(key, TabLifecycleState.OpenFailed, {
+      tabManager.lifecycle.set(key, TabLifecycleState.OpenFailed, {
         tabId: opened.tabId,
         error,
       });
@@ -309,7 +240,7 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
   if (inFlight) return inFlight;
 
   const promise = (async (): Promise<TabSetupResult> => {
-    setEntry(key, TabLifecycleState.Opening);
+    tabManager.lifecycle.set(key, TabLifecycleState.Opening);
     let tab: Tab | null = null;
     let tabs: Tab[] = [];
     try {
@@ -319,22 +250,22 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
       if (!tab) {
         throw new Error('Tab could not be materialized for this URL.');
       }
-      setEntry(key, TabLifecycleState.Opening, { tabId: tab.id });
+      tabManager.lifecycle.set(key, TabLifecycleState.Opening, { tabId: tab.id });
       // Stamp recency on EVERY tab landing, not just terminals: `last_active_at`
       // is what scope-entry (project switching) reads as "the last tab open in
       // this project", so browse/content tabs (project, assets, plan, …) must
       // record selection too — the shell/process loaders' own stamp covers only
       // their tabs. Fire-and-forget: loaders stay fast.
-      void Tab.activateById(tab.id).catch(() => {});
+      void tabManager.activate(tab.id).catch(() => {});
       options.onMaterialized?.(tabs);
       await adapter.setupTab(dock);
-      setEntry(key, TabLifecycleState.Opened, { tabId: tab.id });
+      tabManager.lifecycle.set(key, TabLifecycleState.Opened, { tabId: tab.id });
       return { tab, tabs };
     } catch (error) {
       if (isRedirectResponse(error)) {
         throw error;
       }
-      setEntry(key, TabLifecycleState.OpenFailed, { tabId: tab?.id ?? null, error });
+      tabManager.lifecycle.set(key, TabLifecycleState.OpenFailed, { tabId: tab?.id ?? null, error });
       return { tab, tabs, error };
     }
   })();
@@ -354,12 +285,12 @@ export async function cleanupTab(
 ): Promise<void> {
   const key = tabKey(tab);
   if (options.markClosing !== false) {
-    setEntry(key, TabLifecycleState.Closing, { tabId: tab.id });
+    tabManager.lifecycle.set(key, TabLifecycleState.Closing, { tabId: tab.id });
   }
   try {
     await (adapters.get(dock.viewType ?? '') ?? defaultAdapter).cleanupTab(dock, tab);
   } catch (error) {
-    setEntry(key, TabLifecycleState.CloseFailed, { tabId: tab.id, error });
+    tabManager.lifecycle.set(key, TabLifecycleState.CloseFailed, { tabId: tab.id, error });
     throw error;
   }
 }
@@ -378,11 +309,11 @@ export async function closeTabWithLifecycle(tab: Tab): Promise<Tab[]> {
     if (dock) {
       await cleanupTab(dock, tab);
     } else {
-      setEntry(key, TabLifecycleState.Closing, { tabId: tab.id });
+      tabManager.lifecycle.set(key, TabLifecycleState.Closing, { tabId: tab.id });
     }
-    return await Tab.closeById(tab.id);
+    return await tabManager.close(tab.id);
   } catch (error) {
-    setEntry(key, TabLifecycleState.CloseFailed, { tabId: tab.id, error });
+    tabManager.lifecycle.set(key, TabLifecycleState.CloseFailed, { tabId: tab.id, error });
     return [];
   }
 }
@@ -415,74 +346,41 @@ export async function closeTabsWithLifecycle(
 
   if (ready.length === 0) return [];
   try {
-    const result = await Tab.closeManyByIds(ready.map((tab) => tab.id), projectId);
+    const result = await tabManager.closeMany(ready.map((tab) => tab.id), projectId);
     for (const tab of ready) {
-      setEntry(tabKey(tab), TabLifecycleState.Closing, { tabId: tab.id });
+      tabManager.lifecycle.set(tabKey(tab), TabLifecycleState.Closing, { tabId: tab.id });
     }
     return result;
   } catch (error) {
     for (const tab of ready) {
-      setEntry(tabKey(tab), TabLifecycleState.CloseFailed, { tabId: tab.id, error });
+      tabManager.lifecycle.set(tabKey(tab), TabLifecycleState.CloseFailed, { tabId: tab.id, error });
     }
     return [];
   }
 }
 
-/**
- * Drop tabs whose lifecycle state is `Closing` — the strip's optimistic close:
- * the chip vanishes on the click tick while the backend close/teardown runs.
- * Only `Closing` is filtered, so a failed close (`CloseFailed`) resurfaces the
- * chip with its error state, and the entry is GC'd by `syncTabLifecycleWithTabs`
- * once the refreshed list drops the row for real.
- */
-export function excludeClosingTabs(tabs: Tab[], lifecycles: ReadonlyMap<string, TabLifecycleEntry>): Tab[] {
-  const open = tabs.filter((tab) => lifecycles.get(tabKey(tab))?.state !== TabLifecycleState.Closing);
-  // Preserve input identity when nothing is closing (the common case) so
-  // downstream memos short-circuit on lifecycle traffic unrelated to closes.
-  return open.length === tabs.length ? tabs : open;
-}
-
-export function syncTabLifecycleWithTabs(tabs: Tab[]): void {
-  const visibleIds = new Set(tabs.map((tab) => tab.id));
-  const visibleKeys = new Set(tabs.map((tab) => tabKey(tab)));
-  let changed = false;
-  for (const [key, entry] of entries) {
-    if (entry.tabId ? !visibleIds.has(entry.tabId) : !visibleKeys.has(key)) {
-      entries.delete(key);
-      changed = true;
-    }
+/** Materialize a dock and immediately adopt its returned global projection. */
+export async function setupTabAndAdopt(
+  dock: DockPointer,
+  options?: SetupTabOptions,
+): Promise<void> {
+  const onMaterialized = options?.onMaterialized;
+  let adoptedMaterializedTabs = false;
+  const result = await setupTab(dock, {
+    ...options,
+    onMaterialized: (tabs) => {
+      adoptedMaterializedTabs = true;
+      onMaterialized?.(tabs);
+      tabManager.adoptGlobal(tabs);
+    },
+  });
+  if (!adoptedMaterializedTabs && result.tabs && result.tabs.length > 0) {
+    tabManager.adoptGlobal(result.tabs);
   }
-  if (changed) notify();
 }
 
-export function getTabLifecycle(key: string | null | undefined): TabLifecycleEntry | null {
-  return key ? (entries.get(key) ?? null) : null;
-}
-
-export function getTabLifecycleForTab(tab: Tab): TabLifecycleEntry | null {
-  return getTabLifecycle(tabKey(tab));
-}
-
-export function useTabLifecycle(key: string | null | undefined): TabLifecycleEntry | null {
-  const lifecycleSnapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  return key ? (lifecycleSnapshot.get(key) ?? null) : null;
-}
-
-export function useTabLifecycles(): ReadonlyMap<string, TabLifecycleEntry> {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-}
-
-export function resetTabLifecycleForTests(): void {
-  entries.clear();
+export function resetTabContentLifecycleForTests(): void {
   setupInFlight.clear();
   adapters.clear();
-  notify();
-}
-
-export function setTabLifecycleForTests(
-  key: string,
-  state: TabLifecycleState,
-  options: { tabId?: string | null; error?: unknown } = {},
-): void {
-  setEntry(key, state, options);
+  tabManager.lifecycle.resetForTests();
 }

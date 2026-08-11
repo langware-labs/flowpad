@@ -17,7 +17,7 @@ import { VibeChatPane } from './vibe-chat-pane';
 import { type VibeWorkspaceSession, useVibeWorkspaceSessionHost } from './use-vibe-workspace-session';
 import { assetWorkContextForDock } from './asset-work-context';
 import type { DisplayShowTarget } from './display-annotation';
-import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
+import { setupTabAndAdopt } from '@src/tabs/tab-content-lifecycle';
 import { ensureAssetVibeParentTab, resolveAssetVibeHost } from '@src/tabs/vibe-parent';
 import { useEntityOps } from '@sdk/react/hooks';
 import type { IEntity } from '@sdk';

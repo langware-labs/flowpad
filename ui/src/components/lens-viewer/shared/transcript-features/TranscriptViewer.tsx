@@ -20,7 +20,7 @@ import { notify } from '@src/notifications';
 import { TRANSCRIPT_ENTRY_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTranscript, TranscriptFetchError, type WorkerType } from '@src/hooks/use-transcript';
-import { useSyncTranscriptTabName } from '@src/tabs/useTabs';
+import { useSyncTranscriptTabName } from '@src/tabs/use-tab-manager';
 
 import { WorkerToolbar, WORKER_ICON_BUTTON_CLASS } from '@src/components/workers/WorkerToolbar';
 import { useIsAdvanced } from '@src/components/view-mode';
