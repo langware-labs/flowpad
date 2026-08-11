@@ -1,6 +1,6 @@
 import { i18n } from '@lingui/core';
 import { useSyncExternalStore } from 'react';
-import { instancePreferences, InstancePreferencesEvent, PrefKey } from '@sdk';
+import { dataContext, instancePreferences, InstancePreferencesEvent, isHubOnly, PrefKey, type Project } from '@sdk';
 import type { SupportedLocale } from '@sdk/models';
 import { usePreference } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
@@ -78,11 +78,7 @@ declare global {
 
 function localeInfo(code: string): LocaleInfo {
   const supported = getSupportedLocales();
-  return (
-    supported.find((l) => l.code === code) ??
-    supported.find((l) => l.code === DEFAULT_LOCALE) ??
-    supported[0]
-  );
+  return supported.find((l) => l.code === code) ?? supported.find((l) => l.code === DEFAULT_LOCALE) ?? supported[0];
 }
 
 function isSupported(code: string | null | undefined): code is string {
@@ -102,7 +98,7 @@ function matchLanguageTag(raw: string | null | undefined): string | null {
 
 /** Navigator (OS-preference) language tags, in order. */
 function navigatorLanguages(): readonly string[] {
-  return typeof navigator !== 'undefined' ? navigator.languages ?? [navigator.language] : [];
+  return typeof navigator !== 'undefined' ? (navigator.languages ?? [navigator.language]) : [];
 }
 
 /**
@@ -193,12 +189,70 @@ function pushRecent(code: string): void {
   }
 }
 
+/**
+ * Per-project language memory: every locale change (footer picker, the project's
+ * own Language card, `window.setLocale`) converges in `setLocale`, which stamps
+ * the current project — so the language a project is read in follows the project.
+ * The equality guard breaks the apply→record feedback loop: `applyProjectLocale`
+ * → `setLocale(project.locale)` lands here with an already-matching value and
+ * no-ops. Mirrors `stampProjectViewMode` in view-mode-context.
+ */
+function stampProjectLocale(project: Project | null | undefined, code: string): void {
+  if (!project || project.locale === code) return;
+  // Hub: same hazard as view mode — the hub's project schema has no `locale`, so
+  // `toJSON` would emit a full-row PUT missing it AND missing `name`, wiping the
+  // name off every project the hub loads. Don't write projects from here on the hub.
+  if (isHubOnly()) return;
+  project.locale = code;
+  void project.save().catch((err) => {
+    console.warn('[locale] failed to record locale on project', err);
+  });
+}
+
+/**
+ * Make a locale the active one — preference, recents, catalog, `<html>` attrs.
+ * Deliberately does NOT touch the current project: this is "show the app in this
+ * language", not "the user chose this language for this project". Only
+ * `setLocale` (a real user choice) records onto the project.
+ */
+async function activateLocale(code: string): Promise<void> {
+  instancePreferences.set(PrefKey.LOCALE, code); // mirrors to localStorage (boot key)
+  pushRecent(code);
+  await loadAndActivate(code);
+  applyLocaleAttributes(code);
+}
+
 export async function setLocale(code: string): Promise<void> {
   const next = isSupported(code) ? code : DEFAULT_LOCALE;
-  instancePreferences.set(PrefKey.LOCALE, next); // mirrors to localStorage (boot key)
-  pushRecent(next);
-  await loadAndActivate(next);
-  applyLocaleAttributes(next);
+  stampProjectLocale(dataContext.project, next);
+  await activateLocale(next);
+}
+
+/**
+ * Apply a project's remembered language on project load (called from
+ * `loadProject`, after CurrentProjectTypeId is written to context, so
+ * `dataContext.project` is already this project).
+ *
+ * A stored supported `locale` switches the app exactly as the footer picker
+ * would. NO stored locale means English: an unset (or unrecognized) project
+ * opens in `DEFAULT_LOCALE` rather than inheriting whatever language happened
+ * to be active — a project's language is a property of the project, so an
+ * unanswered one must not silently take the colour of the last project you were
+ * in. Unset is left unset on the row, not stamped: `en-US` here is the meaning
+ * of "no answer", not an answer the user gave. It becomes a real stored value
+ * the moment they pick one (via the Language card or the footer chip, both of
+ * which converge in `setLocale` → `stampProjectLocale`).
+ *
+ * The switch is fire-and-forget so the loader stays fast (URL-first rule);
+ * `<html lang/dir>` and the Lingui catalog land a tick later, as they do for a
+ * footer switch.
+ */
+export function applyProjectLocale(project: Project): void {
+  const target = isSupported(project.locale) ? project.locale : DEFAULT_LOCALE;
+  if (target === getLocale()) return;
+  void activateLocale(target).catch((err) => {
+    console.warn('[locale] failed to apply project locale', err);
+  });
 }
 
 /** Resolve, (optionally) persist the first-run pick, set `<html>` attrs, activate. */
@@ -274,4 +328,3 @@ export function useSupportedLocales(): LocaleInfo[] {
     getSupportedLocales,
   );
 }
-
