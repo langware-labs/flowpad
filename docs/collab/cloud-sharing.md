@@ -36,7 +36,7 @@ not Flowpad's. If they cannot clone the repo, they see an error, not your code.
 if you have given them one:
 
 <!-- pinned:when-set -->
-`created_through`, `env_vars`, `group_id`, `helpdesk`, `hub_published_at`, `key`, `labels`, `last_active_at`, `namespace`, `parent_type_id`, `root_vfs_path`, `schema_version`, `title`, `uname`, `updated_through`
+`created_through`, `env_vars`, `group_id`, `helpdesk`, `hub_published_at`, `key`, `labels`, `last_active_at`, `locale`, `namespace`, `parent_type_id`, `root_vfs_path`, `schema_version`, `title`, `uname`, `updated_through`
 <!-- pinned:/when-set -->
 
 **Never sent.** Two different mechanisms, which fail differently — a
@@ -44,7 +44,7 @@ declaration-withheld field stays hidden even if `_hub_body()` is rewritten,
 while a popped one is hidden only for as long as that line survives:
 
 <!-- pinned:withheld -->
-`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `git_origin`, `host_member_id`, `last_mode`, `last_session_at`, `locale`, `members`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `remote`, `scope`, `session_code`, `session_count`, `shared_context_entity_data`, `shared_context_origins`, `shared_secret_origins`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
+`asset_occurrences`, `created_by`, `created_date`, `fetched_at`, `fs_storage_mount_path`, `fs_storage_provider`, `git_origin`, `host_member_id`, `last_mode`, `last_session_at`, `members`, `presence`, `private_context_entities_`, `private_context_entity_data`, `project_id`, `remote`, `scope`, `session_code`, `session_count`, `shared_context_entity_data`, `shared_context_origins`, `shared_secret_origins`, `system`, `tags`, `updated_by`, `updated_date`, `visitor_role`
 <!-- pinned:/withheld -->
 
 Note what is in that list: `fs_storage_mount_path` and `fs_storage_provider` —

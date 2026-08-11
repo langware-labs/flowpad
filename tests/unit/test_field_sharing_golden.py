@@ -427,7 +427,9 @@ def test_project_hub_body_override_strips_local_project_state():
     # leaves None, so `exclude_none` removes it before the pop can — the same
     # blind spot that hid Folder's `path`, here made explicit instead of assumed.
     assert "fs_storage_provider" in could_not_fill
-    # `locale` joins `last_mode`: both are local UI preferences, not shared state.
+    # `locale` is NOT here: the language a project is worked in travels with it,
+    # so a recipient opens it in the language its author chose (unlike
+    # `last_mode`, which is per-device UI state and stays home).
     # `fs_storage_mount_path` has dropped off this list: the base seam now
     # withholds it, so the override's pop is a no-op. The override is shrinking
     # toward the remainder that genuinely is not per-field policy.
@@ -437,7 +439,6 @@ def test_project_hub_body_override_strips_local_project_state():
         "include_dirs",
         "last_mode",
         "last_session_at",
-        "locale",
         "presence",
         "secret_origins",
         "session_code",
