@@ -78,18 +78,29 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
         // On a home surface, switching a project stays home — on the new
         // project — in every view mode.
         if (isVibe) {
-          await selectProjectContext(project);
           if (!isHome) {
+            // Leaving home for a build process: adopt the context here, because
+            // this branch resolves the destination FROM the project rather than
+            // spelling it out in a scope-carrying URL.
+            await selectProjectContext(project);
             const processId = project.id ? await agenticProcessIdForProjectEntry(project.id) : null;
             if (processId) {
               void navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
               return;
             }
           }
-          // The HOME loader has no vibe-specific clears, so the vibe home
-          // adopts context imperatively (above) and resets the stale process/
-          // active entity before landing on the fresh hero. The scope filter
-          // makes a hard reload of the landing re-adopt the project.
+          // URL-first, exactly as the non-vibe home branch below: the
+          // scope-carrying HOME dock's loader (adoptScopeProject → loadProject)
+          // is the single writer of project context.
+          //
+          // This used to pre-write the context with `selectProjectContext`,
+          // which DISARMED that loader: `adoptScopeProject` skips when
+          // `dataContext.project?.id` already equals the URL's project, so
+          // `loadProject` never ran and nothing that hangs off it happened —
+          // the project's remembered LANGUAGE and view mode were never applied,
+          // so switching projects here left you reading the previous project's
+          // language. The vibe-only clears below stay: they are about the stale
+          // process/active entity, not about which project is current.
           await dataContext.setActiveEntityTypeId(null);
           await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
           navigation.openDock(
