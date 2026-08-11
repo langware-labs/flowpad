@@ -371,14 +371,8 @@ export class OAuthService {
         // backend bounds this at OAUTH_CALLBACK_TIMEOUT and returns
         // `{status: "polling"}` if the user takes longer than that window —
         // polling continues server-side as a background task in that case.
-        const waitAction = new ActionInfo('oauth');
-        if (targetEntity) waitAction.targetEntity = targetEntity;
-        waitAction.subpath = [provider, 'wait-callback'];
-        waitAction.method = 'POST';
-        waitAction.queryParameters = { state: payload.state };
-        waitAction.bodyParameters = {};
         // Fire-and-forget — the modal + completionHandler own the UX via the broadcast.
-        void dataManager.callAction<unknown, unknown>(waitAction).catch((err) => {
+        void this.waitCallback(provider, payload.state, targetEntity).catch((err) => {
           console.warn(`[OAuthService] device-flow wait-callback errored for ${provider}:`, err);
         });
         return null;
@@ -402,10 +396,106 @@ export class OAuthService {
       const oauthFlow = new OauthFlow(oauthRequestInfo, popupWindow, targetEntity, sharedEntityVarName);
       this.oAuthFlows.set(oauthRequestInfo.oauth_request_id, oauthFlow);
 
+      // A `code` grant looks like a `loopback` one from here — same popup, same
+      // auth_url — but it does not finish like one: its redirect is handled by
+      // the HUB, not by a port on this machine. So no local server posts a
+      // result back, `onOAuthMessage` is never called, and the hub's completion
+      // websocket is not one this process is on either. Treated as loopback,
+      // the user authorized successfully and the app waited forever for a
+      // message nobody would send: the token sat on the hub, the connection read
+      // as MISSING, and the caller's spinner never stopped. `wait-callback` is
+      // the backend's own answer — it polls the hub and adopts the token into
+      // local SOD — so drive it.
+      if ((raw as { kind?: OAuthFlowKind }).kind === 'code') {
+        void this.driveHubCallback(provider, oauthRequestInfo, oauthFlow, targetEntity);
+      }
+
       return oauthFlow;
     } catch (error) {
       console.error(`[OAuthService] OAuth connection failed for ${provider}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * The backend's `wait-callback` for one flow.
+   *
+   * Both grants that finish somewhere OTHER than this machine go through it —
+   * the device grant so the backend polls the provider, the hub-redirected
+   * `code` grant so it polls the hub — so the call is built once here rather
+   * than twice, subtly differently. What the two do with the ANSWER still
+   * differs, and that stays at the call sites: the device flow is told by a
+   * broadcast and the backend keeps polling in the background, while a hub flow
+   * has no background task and no broadcast that reaches here, so its caller
+   * loops until the answer changes.
+   */
+  private waitCallback(
+    provider: string,
+    state: string,
+    targetEntity?: TypeId,
+  ): Promise<{ status?: string } | null> {
+    const wait = new ActionInfo('oauth');
+    if (targetEntity) wait.targetEntity = targetEntity;
+    wait.subpath = [provider, 'wait-callback'];
+    wait.method = 'POST';
+    wait.queryParameters = { state };
+    wait.bodyParameters = {};
+    return dataManager.callAction<unknown, { status?: string }>(wait);
+  }
+
+  /**
+   * Carry a hub-redirected (`code`) grant to completion, since nothing else will.
+   *
+   * `wait-callback` answers `success` once the hub holds the token (the backend
+   * then copies it into local SOD), or `polling` when the user is still at the
+   * provider. `polling` is the backend asking to be called again — it is the
+   * protocol's own continuation, not a retry budget bolted on out here, and the
+   * loop is bounded by the popup: close it and the flow is over. Emitting
+   * OAUTH_FLOW_COMPLETE is what releases every caller's spinner, so it happens
+   * on EVERY exit, including the one where the user walks away.
+   */
+  private async driveHubCallback(
+    provider: string,
+    info: OAuthClientRequestInfo,
+    flow: OauthFlow,
+    targetEntity?: TypeId,
+  ): Promise<void> {
+    const finish = (status: OAuthStatus) => {
+      this.oAuthFlows.delete(info.oauth_request_id);
+      this.emitFlowComplete({
+        provider,
+        status,
+        oauth_request_id: info.oauth_request_id,
+        targetEntity,
+        attachSuccess: null,
+      });
+    };
+
+    try {
+      // `isClosed` reports whether the popup is OPEN (an inversion this class
+      // already carries); read it through the flow so the two agree.
+      for (;;) {
+        const result = await this.waitCallback(provider, info.oauth_request_id, targetEntity);
+        const status = String(result?.status ?? '');
+        if (status === 'success') {
+          finish(OAuthStatus.SUCCESS);
+          return;
+        }
+        if (status !== 'polling') {
+          console.warn(`[OAuthService] hub wait-callback for ${provider} answered ${status || 'nothing'}`);
+          finish(OAuthStatus.FAILED);
+          return;
+        }
+        if (!flow.isClosed) {
+          // The popup is gone and the hub still has nothing: the user closed it
+          // or gave up. Say so rather than leaving the caller waiting.
+          finish(OAuthStatus.FAILED);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn(`[OAuthService] hub wait-callback failed for ${provider}:`, err);
+      finish(OAuthStatus.FAILED);
     }
   }
 
