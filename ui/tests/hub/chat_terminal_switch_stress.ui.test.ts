@@ -263,15 +263,18 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
     const end = Date.now() + SWITCH_BUDGET_MS;
     while (Date.now() < end) {
       const browserPty = await currentPty();
-      const sdkPty = typeof proc.pty_mode === 'boolean' ? proc.pty_mode : null;
       const expectedMode = targetPty ? 'advanced' : 'standard';
       const urlMode = new URL(page!.page.url()).searchParams.get('viewMode');
-      if (
-        browserPty === targetPty &&
-        sdkPty === targetPty &&
-        urlMode === expectedMode &&
-        inst!.sdk.isReadyForInput(proc)
-      ) return;
+      // Reconciliation is ONE-DIRECTIONAL since bf9b51706 ("let a surface watch a
+      // turn it didn't start"): only a TERMINAL mode forces a transport. Chat
+      // renders from `flowDataStream` and is transport-independent, so switching
+      // BACK to standard deliberately leaves a healthy PTY alive. Advanced must
+      // therefore own the transport on both sides; standard only owns what the
+      // mode switch itself commits — the URL, a live pane, a ready session.
+      const surfaceOk = targetPty
+        ? browserPty === true && proc.pty_mode === true
+        : browserPty !== null;
+      if (surfaceOk && urlMode === expectedMode && inst!.sdk.isReadyForInput(proc)) return;
       await page!.page.waitForTimeout(150);
     }
     const uiState = await page!.page.evaluate(() => ({

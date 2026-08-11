@@ -171,6 +171,15 @@ export function useShownJourney(): UseJourneyResult {
   // reason.
   const [, forceRender] = useReducer((n: number) => n + 1, 0);
 
+  // Stable: `refresh` forces a render, so a fresh arrow per render meant every
+  // consumer that closed over it churned too — and an effect keyed on one of
+  // those re-fired on the render `refresh` itself had just caused. That is a
+  // feedback loop, and it spun the main thread until the tab froze.
+  const refresh = useCallback(() => {
+    forceRender();
+    if (live) void refetchJournals();
+  }, [live, refetchJournals]);
+
   const journey = memory ?? (shownId ? (journeys.find((j) => j.id === shownId) ?? null) : null);
   const journal = memory ? memory.currentJournal : JourneyJournal.pick(journals, shownId);
 
@@ -191,9 +200,6 @@ export function useShownJourney(): UseJourneyResult {
     stepNumber: cursorIndex >= 0 ? stepNumber : null,
     cursorIndex,
     loading: journeysLoading || journalsLoading || stepsLoading,
-    refresh: () => {
-      forceRender();
-      if (live) void refetchJournals();
-    },
+    refresh,
   };
 }

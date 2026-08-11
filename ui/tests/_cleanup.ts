@@ -208,11 +208,52 @@ function isOurRunEntity(label: string): boolean {
  */
 export async function purgeRunScoped(extraTypes: string[] = []): Promise<void> {
   const sdk = await loadSdk();
-  if (!sdk) return;
-  for (const type of sweepTypeSet(extraTypes)) {
-    for (const r of await listType(sdk, type)) {
+  if (sdk) await purgeRunScopedWith(sdk, extraTypes);
+}
+
+/**
+ * `purgeRunScoped` against ANOTHER instance's backend (the receiver of a share).
+ *
+ * `loadSdk()` resolves `@sdk` — the CURRENT realm only — so anything a share
+ * materialises on the other instance survives teardown and leaks into the next
+ * file. `SdkLike` is structural, not a realm, so a raw-fetch transport pointed
+ * at `apiUrl` reuses the whole sweep (same RUN_ID scoping, same type union,
+ * same fs-records-then-graph purge) without touching the realm lifecycle
+ * `hub/_instances.ts` owns.
+ */
+export async function purgeRunScopedAt(apiUrl: string, extraTypes: string[] = []): Promise<void> {
+  const sdk = await loadSdk();
+  if (!sdk) return; // no realm reachable — the constants below come from it
+  await purgeRunScopedWith(remoteSdk(apiUrl, sdk), extraTypes);
+}
+
+/** Build a fetch-backed `SdkLike` for `apiUrl`, borrowing route constants from `local`. */
+function remoteSdk(apiUrl: string, local: SdkLike): SdkLike {
+  const call = async (method: string, url: string): Promise<unknown> => {
+    const res = await fetch(`${apiUrl}${url}`, { method });
+    // `apiClient` throws on a non-2xx; `fetch` does not. Match it, or `purgeOne`
+    // can never tell a successful fs-records delete from a 404 and would always
+    // fire its graph-delete fallback.
+    if (!res.ok) throw new Error(`${method} ${url} → ${res.status}`);
+    return res.json();
+  };
+  return {
+    apiClient: { get: (url) => call('GET', url), delete: (url) => call('DELETE', url) },
+    GRAPH_API_PREFIX: local.GRAPH_API_PREFIX,
+    ComputeNode: local.ComputeNode,
+  };
+}
+
+/** The sweep itself, over whichever backend `sdk` addresses. */
+async function purgeRunScopedWith(sdk: SdkLike, extraTypes: string[]): Promise<void> {
+  const types = [...sweepTypeSet(extraTypes)];
+  // Listing is read-only and independent per type — fan out. Purging stays
+  // sequential: concurrent fs-records deletes contend on the same SQLite writer.
+  const listings = await Promise.all(types.map((type) => listType(sdk, type)));
+  for (const [i, rows] of listings.entries()) {
+    for (const r of rows) {
       if (isOurRunEntity(labelOf(r)) && r.id) {
-        await purgeOne(sdk, type, r.id);
+        await purgeOne(sdk, types[i], r.id);
       }
     }
   }
