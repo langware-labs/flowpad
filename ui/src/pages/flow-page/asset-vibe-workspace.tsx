@@ -36,6 +36,11 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   const { currentDock, navigation } = useDockNavigation();
   const currentDockRef = useRef(currentDock);
   const navigationRef = useRef(navigation);
+  // The process doing the showing IS the host, and it is in scope on the very
+  // line that builds a `flow show` destination — stamping it there is what stops
+  // the arrival from re-deriving it (and possibly resolving a DIFFERENT process
+  // than the one that showed it).
+  const hostProcessIdRef = useRef<string | null>(null);
   currentDockRef.current = currentDock;
   navigationRef.current = navigation;
   const panelGroupRef = useRef<ImperativePanelGroupHandle>(null);
@@ -59,6 +64,10 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   const watchedProcess = useVibeWorkspaceSessionHost(effectiveSession, isVibe);
   const provisionalProcess = provisionalSession?.dockKey === currentDock?.tabHash ? provisionalSession.process : null;
   const process = watchedProcess ?? provisionalProcess;
+  // Kept in a ref because `openShownTarget` is deliberately stable (see below):
+  // re-creating it would open a cleanup/re-subscribe gap against the process
+  // save that lands immediately before `on_show`.
+  hostProcessIdRef.current = effectiveSession?.processId ?? null;
   // Vibe has no InteractiveTerminal, so this is where the session's transport
   // is kept aligned with the view mode while the workspace is on screen.
   useProcessSurface({ process });
@@ -154,16 +163,17 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
 
   const openShownTarget = useCallback((target: DisplayShowTarget) => {
     try {
+      const host = hostProcessIdRef.current;
       // A terminal is hosted as a workspace child tab, not opened as an asset
       // — the same path the journey's open_terminal act takes.
       const shellId = shellIdFromShowTarget(target);
       if (shellId) {
-        void navigationRef.current.openShell(shellId, { viewMode: ViewMode.Vibe });
+        void navigationRef.current.openShell(shellId, { viewMode: ViewMode.Vibe, host: host ?? undefined });
         return;
       }
       const targetDock = dockForDisplayTarget(target);
       if (!targetDock || !isContentAssetDock(targetDock)) return;
-      const vibeDock = targetDock.withViewMode(ViewMode.Vibe);
+      const vibeDock = targetDock.withViewMode(ViewMode.Vibe).withHost(host);
       if (currentDockRef.current?.equals(vibeDock)) return;
       navigationRef.current.openDock(vibeDock);
     } catch (error) {
