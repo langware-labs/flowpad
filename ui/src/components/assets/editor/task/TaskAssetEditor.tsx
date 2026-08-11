@@ -98,9 +98,14 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
   const save = useCallback(async (patch: Partial<Task>) => {
     const t = taskRef.current;
     if (!t) return;
+    const changed = Object.entries(patch).some(
+      ([key, value]) => (t as unknown as Record<string, unknown>)[key] !== value,
+    );
+    if (!changed) return;
     Object.assign(t, patch);
     try {
       await t.save();
+      t.markEdit();
     } catch (e) {
       notify.error({
         title: 'Could not save task',

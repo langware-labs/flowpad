@@ -80,6 +80,7 @@ export function GraphContextViewer({ pointer }: GraphContextViewerProps) {
       try {
         c.name = name;
         await c.save();
+        c.markEdit();
       } catch (e) {
         notify.error({
           title: t`Could not rename context`,

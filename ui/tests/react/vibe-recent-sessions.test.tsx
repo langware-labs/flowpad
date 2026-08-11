@@ -1,18 +1,18 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { SearchResult } from '@src/hooks/use-record-search';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
+import type { RecentActivityItem } from '@src/pages/flow-page/use-recent-activity';
 
 const getByWorkerId = vi.fn();
 const getByIdFromCache = vi.fn(() => null);
 const openDockPointer = vi.fn();
-const useChatHistorySpy = vi.fn();
-let buckets: Array<{ label: string; entries: WorkerHistoryEntry[] }> = [];
-let isLoading = false;
+const navigateToResult = vi.fn();
+const useRecentActivitySpy = vi.fn();
+let activityItems: RecentActivityItem[] = [];
 let projectId: string | null = 'proj-1';
 
-// Partial: `@sdk` is a barrel other importers (locale-context, i18n-init) pull
-// real exports from — replacing it wholesale breaks them.
 vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sdk')>();
   return {
@@ -30,118 +30,149 @@ vi.mock('@sdk/react/hooks', async (importOriginal) => {
   return { ...actual, useProject: () => ({ project: projectId ? { id: projectId } : null }) };
 });
 
-vi.mock('@src/components/chats-navigator/useChatHistory', () => ({
-  useChatHistory: (...args: unknown[]) => {
-    useChatHistorySpy(...args);
-    return { buckets, total: 0, isLoading, refetch: vi.fn() };
+vi.mock('@src/pages/flow-page/use-recent-activity', () => ({
+  useRecentActivity: (...args: unknown[]) => {
+    useRecentActivitySpy(...args);
+    return { items: activityItems, isLoading: false, error: null, hasMore: false };
   },
 }));
+
+vi.mock('@src/navigation/record-type-nav', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@src/navigation/record-type-nav')>();
+  return { ...actual, navigateToResult: (...args: unknown[]) => navigateToResult(...args) };
+});
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useCurrentDock: () => null,
   useDockNavigation: () => ({ navigation: { openDockPointer } }),
 }));
 
-vi.mock('@src/components/terminal/HistoryModal', () => ({
-  HistoryModal: ({ open }: { open: boolean }) => (open ? <div data-testid="history-modal-open" /> : null),
-}));
-
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn() } }));
 
 import { VibeRecentSessions } from '@src/pages/flow-page/vibe-recent-sessions';
 
-function entry(n: number): WorkerHistoryEntry {
+function sessionEntry(n: number): WorkerHistoryEntry {
   return {
     worker_type: 'claude',
     worker_id: `w${n}`,
-    project_id: null,
-    project_name: null,
-    project_cwd: null,
-    last_active_time: new Date().toISOString(),
+    project_id: 'proj-1',
+    project_name: 'Project',
+    project_cwd: '/tmp/project',
+    last_active_time: new Date(1_700_000_000_000 + n).toISOString(),
     name: `Session ${n}`,
     last_prompt: null,
     git_branch: null,
     message_count: null,
     agentic_process_id: null,
-  } as WorkerHistoryEntry;
+  };
+}
+
+function markdownResult(n: number): SearchResult {
+  return {
+    record_id: `11111111-1111-4111-8111-${String(n).padStart(12, '0')}`,
+    record_type: 'markdown',
+    name: `Document ${n}`,
+    text: '',
+    status: 'indexed',
+    scope: 'project',
+    created_at: '',
+    modified_at: '',
+    last_edited_at: 1_800_000_000_000 + n,
+    asset_ref: `/tmp/document-${n}.md`,
+  };
+}
+
+function sessionItem(n: number, timestampMs = 1_700_000_000_000 + n): RecentActivityItem {
+  return { kind: 'session', key: `session:${n}`, timestampMs, entry: sessionEntry(n) };
+}
+
+function entityItem(n: number, timestampMs = 1_800_000_000_000 + n): RecentActivityItem {
+  return { kind: 'entity', key: `entity:${n}`, timestampMs, result: markdownResult(n) };
 }
 
 describe('VibeRecentSessions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getByIdFromCache.mockReturnValue(null);
-    buckets = [];
-    isLoading = false;
+    activityItems = [];
     projectId = 'proj-1';
   });
 
-  it('scopes the list to the current project', () => {
-    buckets = [{ label: 'Today', entries: [entry(1)] }];
+  it('requests project-scoped activity and renders edited assets with sessions', () => {
+    activityItems = [entityItem(1), sessionItem(1)];
     render(<VibeRecentSessions />);
 
-    expect(useChatHistorySpy).toHaveBeenCalledWith(
-      { scope: { mode: 'project', activeProjectId: 'proj-1' }, search: '' },
+    expect(useRecentActivitySpy).toHaveBeenCalledWith(
+      { mode: 'project', activeProjectId: 'proj-1' },
       expect.any(Number),
     );
+    expect(screen.getByRole('heading', { name: 'Recent activity' })).toBeInTheDocument();
+    expect(screen.getByTestId('vibe-recent-entity')).toHaveTextContent('Document 1');
+    expect(screen.getByTestId('vibe-recent-session')).toHaveTextContent('Session 1');
   });
 
-  it('renders nothing when there is no current project', () => {
+  it('renders nothing when there is no current project or activity', () => {
+    const { rerender } = render(<VibeRecentSessions />);
+    expect(screen.queryByTestId('vibe-recent-sessions')).toBeNull();
+
     projectId = null;
-    // Entries the projectless scope might still surface must not leak through.
-    buckets = [{ label: 'Today', entries: [entry(1)] }];
-    render(<VibeRecentSessions />);
-
+    activityItems = [sessionItem(1)];
+    rerender(<VibeRecentSessions />);
     expect(screen.queryByTestId('vibe-recent-sessions')).toBeNull();
   });
 
-  it('renders nothing when there are no sessions', () => {
+  it('caps the compact mixed feed at five rows', () => {
+    activityItems = Array.from({ length: 7 }, (_, i) => (
+      i % 2 ? sessionItem(i + 1) : entityItem(i + 1)
+    ));
     render(<VibeRecentSessions />);
 
-    expect(screen.queryByTestId('vibe-recent-sessions')).toBeNull();
-    expect(screen.queryByTestId('vibe-recent-show-more')).toBeNull();
+    expect([
+      ...screen.queryAllByTestId('vibe-recent-entity'),
+      ...screen.queryAllByTestId('vibe-recent-session'),
+    ]).toHaveLength(5);
   });
 
-  it('renders nothing (no skeleton) while loading with no entries', () => {
-    isLoading = true;
+  it('routes an edited entity through the central URL-first dispatcher', async () => {
+    const user = userEvent.setup();
+    const item = entityItem(1);
+    activityItems = [item];
     render(<VibeRecentSessions />);
 
-    expect(screen.queryByTestId('vibe-recent-sessions')).toBeNull();
+    await user.click(screen.getByTestId('vibe-recent-entity'));
+
+    expect(navigateToResult).toHaveBeenCalledWith(item.result, expect.any(Object));
   });
 
-  it('caps at 5 rows and preserves recency order across buckets', () => {
-    buckets = [
-      { label: 'Today', entries: [entry(1), entry(2), entry(3)] },
-      { label: 'Yesterday', entries: [entry(4), entry(5), entry(6), entry(7)] },
-    ];
-    render(<VibeRecentSessions />);
-
-    const rows = screen.getAllByTestId('vibe-recent-session');
-    expect(rows).toHaveLength(5);
-    expect(rows[0]).toHaveTextContent('Session 1');
-    expect(rows[4]).toHaveTextContent('Session 5');
-  });
-
-  it('opens a clicked session in the vibe skin', async () => {
+  it('keeps worker sessions resumable in the vibe skin', async () => {
     const user = userEvent.setup();
     const terminalDockPointer = { viewType: 'shell' };
     getByWorkerId.mockResolvedValue({ id: 'p1', terminalDockPointer });
-    buckets = [{ label: 'Today', entries: [entry(1)] }];
+    activityItems = [sessionItem(1)];
     render(<VibeRecentSessions />);
 
     await user.click(screen.getByTestId('vibe-recent-session'));
 
     expect(getByWorkerId).toHaveBeenCalledWith('w1', 'claude');
-    await waitFor(() => expect(openDockPointer).toHaveBeenCalledWith(terminalDockPointer, { viewMode: 'vibe' }));
+    await waitFor(() => expect(openDockPointer).toHaveBeenCalledWith(
+      terminalDockPointer,
+      { viewMode: 'vibe' },
+    ));
   });
 
-  it('opens the history modal from "Show more"', async () => {
+  it('opens a full mixed activity dialog from More', async () => {
     const user = userEvent.setup();
-    buckets = [{ label: 'Today', entries: [entry(1)] }];
+    activityItems = [entityItem(1), sessionItem(1)];
     render(<VibeRecentSessions />);
 
-    expect(screen.queryByTestId('history-modal-open')).toBeNull();
     await user.click(screen.getByTestId('vibe-recent-show-more'));
 
-    expect(screen.getByTestId('history-modal-open')).toBeInTheDocument();
+    const dialog = screen.getByTestId('recent-activity-dialog');
+    expect(within(dialog).getByTestId('vibe-recent-entity')).toHaveTextContent('Document 1');
+    expect(within(dialog).getByTestId('vibe-recent-session')).toHaveTextContent('Session 1');
+    expect(useRecentActivitySpy).toHaveBeenLastCalledWith(
+      { mode: 'project', activeProjectId: 'proj-1' },
+      expect.any(Number),
+    );
   });
 });

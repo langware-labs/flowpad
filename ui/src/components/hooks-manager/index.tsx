@@ -37,6 +37,7 @@ function TriggerInline({ trigger, onEdit, onDelete, onRefresh }: TriggerInlinePr
       try {
         trigger.enabled = enabled;
         await trigger.save();
+        trigger.markEdit();
         onRefresh();
       } catch (error: unknown) {
         notify.error({
@@ -187,6 +188,7 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
         hook.project_id = project.id;
       }
       await hook.save();
+      if (selectedHook) hook.markEdit();
       setShowHookForm(false);
       await fetchHooks();
       notify.success({
@@ -233,6 +235,7 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
   const handleSaveTrigger = async (trigger: Trigger, hookId?: string) => {
     try {
       await trigger.save();
+      if (selectedTrigger) trigger.markEdit();
 
       // If hookId is provided, connect the trigger to the hook
       if (hookId) {

@@ -57,4 +57,29 @@ describe('useRecordSearch request ownership', () => {
     });
     expect(hook.current.results.map((row) => row.name)).toEqual(['wiki-target']);
   });
+
+  it('supports scoped last-edited browse with an explicit page size', async () => {
+    vi.useFakeTimers();
+    vi.mocked(apiClient.get).mockResolvedValue({ results: [], total: 12 });
+
+    const { result: hook } = renderHook(() => useRecordSearch(
+      '',
+      { sort_by: 'last_edited_at' },
+      {},
+      { mode: 'project', activeProjectId: 'project-1' },
+      0,
+      { limit: 7 },
+    ));
+    await act(async () => vi.runOnlyPendingTimersAsync());
+
+    const requested = new URL(
+      vi.mocked(apiClient.get).mock.calls[0][0] as string,
+      'http://flowpad.local',
+    );
+    expect(requested.searchParams.get('q')).toBe('');
+    expect(requested.searchParams.get('sort_by')).toBe('last_edited_at');
+    expect(requested.searchParams.get('limit')).toBe('7');
+    expect(requested.searchParams.get('projects')).toBe('project-1');
+    expect(hook.current.total).toBe(12);
+  });
 });

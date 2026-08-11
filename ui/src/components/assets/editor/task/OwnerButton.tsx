@@ -58,6 +58,7 @@ export function OwnerButton({ task }: OwnerButtonProps) {
     setSending(true);
     try {
       await task.assign(person, { message, ensureCloudLogin });
+      task.markEdit();
       notify.success({
         title: 'Task assigned',
         message: `${person.name || person.email} now has "${task.title}".`,

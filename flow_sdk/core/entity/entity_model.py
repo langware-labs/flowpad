@@ -294,8 +294,8 @@ class Entity(DBEntity):
         ),
     )
     # Tab-strip membership is no longer a base-Entity flag — it is the `Tab`
-    # entity (docs/tab-management.md). `tab_order`/`last_active_at` remain
-    # generic (used by the Tab entity + the `activate` action).
+    # entity (docs/tab-management.md). `tab_order` and the activity timestamps
+    # remain generic so every entity type shares the same recency contract.
     tab_order: int = APIField(
         default=0,
         persist=Persist.FALSE,
@@ -317,12 +317,21 @@ class Entity(DBEntity):
             "legacy rows are parsed tolerantly on load."
         ),
     )
+    last_edited_at: int | None = APIField(
+        default=None,
+        description=(
+            "Epoch-ms of this entity's last content edit. This is the generic "
+            "recency field for edit tracking and future recent-activity "
+            "surfaces; edit flows that own a successful mutation are "
+            "responsible for stamping it. ISO-string values are parsed "
+            "tolerantly on load."
+        ),
+    )
 
-    @field_validator("last_active_at", mode="before")
+    @field_validator("last_active_at", "last_edited_at", mode="before")
     @classmethod
-    def _last_active_at_epoch_ms(cls, value):
-        """Legacy rows stored ISO strings; the field is epoch-ms. Parse
-        tolerantly (via ``_as_datetime``) so no data migration is needed."""
+    def _activity_timestamp_epoch_ms(cls, value):
+        """Activity fields use epoch-ms; tolerate legacy/external ISO values."""
         if isinstance(value, str):
             dt = cls._as_datetime(value)
             return int(dt.timestamp() * 1000) if dt else None
@@ -548,21 +557,72 @@ class Entity(DBEntity):
     @classmethod
     async def browse(
         cls,
-        record_type: str,
-        limit: int = DEFAULT_BROWSE_LIMIT,
+        record_type: str | None,
+        limit: int | None = DEFAULT_BROWSE_LIMIT,
         status: str | None = None,
+        *,
+        offset: int = 0,
+        sort_by: Literal["updated_date", "last_edited_at"] = "updated_date",
+        entity_types: Sequence[str] | None = None,
     ) -> list[Entity]:
-        """List entities of a type with FTS metadata, ordered by recency.
+        """Browse entities with FTS metadata using a typed recency order.
 
-        Used for filter-only browsing (no search query). Returns fts_title
-        populated so callers can display meaningful names without filesystem reads.
+        The ordinary filter-only search path supplies ``record_type`` and keeps
+        the historical ``updated_date`` order.  Server-owned mixed projections
+        may instead supply an explicit ``entity_types`` eligibility set; callers
+        never provide that set over the wire.
         """
         from flow_sdk.db import get_db_driver
 
         driver = get_db_driver()
         if not hasattr(driver, "browse_by_type"):
             return []
-        return await driver.browse_by_type(entity_type=record_type, limit=limit, status=status)
+        return await driver.browse_by_type(
+            entity_type=record_type,
+            limit=limit,
+            status=status,
+            offset=offset,
+            sort_by=sort_by,
+            entity_types=entity_types,
+        )
+
+    @classmethod
+    async def browse_page(
+        cls,
+        record_type: str | None,
+        *,
+        limit: int | None,
+        offset: int = 0,
+        status: str | None = None,
+        sort_by: Literal["updated_date", "last_edited_at"] = "updated_date",
+        entity_types: Sequence[str] | None = None,
+        scope: object | None = None,
+        include_system: bool = True,
+    ) -> tuple[list[Entity], int]:
+        """Browse one SQL-paged projection and its pre-page total."""
+        from flow_sdk.db import get_db_driver
+
+        driver = get_db_driver()
+        if not hasattr(driver, "browse_page"):
+            entities = await cls.browse(
+                record_type,
+                limit,
+                status,
+                offset=offset,
+                sort_by=sort_by,
+                entity_types=entity_types,
+            )
+            return entities, len(entities)
+        return await driver.browse_page(
+            entity_type=record_type,
+            limit=limit,
+            status=status,
+            offset=offset,
+            sort_by=sort_by,
+            entity_types=entity_types,
+            scope=scope,
+            include_system=include_system,
+        )
 
     @classmethod
     async def assets_by_path(cls, opts: PathQueryOptions) -> list["Entity"]:
@@ -3287,7 +3347,6 @@ async def _http_activate(self: Entity):
     resolver's recency seed (docs/tab-management.md Part 3 §4). Loaders call
     this fire-and-forget on tab activation. Never touches membership:
     membership promotion is explicit-only (``tabs/open``)."""
-    from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
     from flow_sdk.fs_store.fs_record import record_sync_guard  # noqa: PLC0415
     from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
     from flow_sdk.utils.serialization import now_epoch_ms  # noqa: PLC0415
@@ -3324,23 +3383,10 @@ async def _http_activate(self: Entity):
 
                     from_exception(record, exc, trigger="activate").save()
 
-        # Keep the action receiver coherent without clearing any unrelated
-        # pending mutation it may carry.  The DB write above is deliberately
-        # recency-only.
-        was_dirty = self._dirty
-        self.last_active_at = stamped_at
-        self._dirty = was_dirty
-
         # Publish before releasing the record guard, so a newer normal save
         # cannot emit first and then be followed by this older full-row update.
         # The payload is the freshly persisted row, never stale ``self``.
-        change = DataOpMessage(
-            data=persisted,
-            op=OperationType.UPDATE,
-            to_entity=self.typeid,
-        )
-        await self.add_entity_op_notification(change)
-        self._notify_observers(change)
+        await _publish_server_managed_field_update(self, persisted, "last_active_at")
         return ApiSuccessResponse(data={"last_active_at": stamped_at})
 
 
@@ -3348,6 +3394,64 @@ _action_registry.register(
     action_name="activate",
     function_name="activate",
     handler=_http_activate,
+    methods="post",
+    types="all",
+)
+
+
+async def _publish_server_managed_field_update(
+    receiver: Entity,
+    persisted: Entity,
+    field_name: str,
+) -> None:
+    """Reflect and publish one authoritative field without dirtying a receiver."""
+    from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
+
+    was_dirty = receiver._dirty
+    setattr(receiver, field_name, getattr(persisted, field_name))
+    receiver._dirty = was_dirty
+    change = DataOpMessage(
+        data=persisted,
+        op=OperationType.UPDATE,
+        to_entity=receiver.typeid,
+    )
+    await receiver.add_entity_op_notification(change)
+    receiver._notify_observers(change)
+
+
+async def _http_mark_edit(self: Entity):
+    """Stamp ``last_edited_at`` from the server clock after a real UI edit.
+
+    The SDK coalesces user-input calls before invoking this action. The backend
+    owns only the durable, update-only stamp: it never rewrites the request's
+    potentially stale entity snapshot or mirrors this DB recency field to disk.
+    """
+    from flow_sdk.fs_store.fs_record import record_sync_guard  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.utils.serialization import now_epoch_ms  # noqa: PLC0415
+
+    async with record_sync_guard(self.get_type(), self.id):
+        stamped_at = now_epoch_ms()
+        persisted, did_stamp = await self._db.update_existing_data_field(
+            self.id,
+            self.get_type(),
+            "last_edited_at",
+            stamped_at,
+        )
+        if persisted is None or not did_stamp:
+            return ApiFailResponse(message=f"Entity no longer exists: {self.typeid}", status_code=404)
+
+        # Publish the canonical post-write row while normal entity saves are
+        # still excluded by the record guard. ``updated_date`` remains the
+        # content write's clock; this delayed recency stamp does not advance it.
+        await _publish_server_managed_field_update(self, persisted, "last_edited_at")
+        return ApiSuccessResponse(data={"last_edited_at": persisted.last_edited_at})
+
+
+_action_registry.register(
+    action_name="mark-edit",
+    function_name="mark_edit",
+    handler=_http_mark_edit,
     methods="post",
     types="all",
 )

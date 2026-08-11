@@ -196,7 +196,10 @@ const PlanFileEditor: React.FC = () => {
         if (!agenticProcess || !filePath) return;
         setIsExecuting(true);
         try {
-          if (fs && isDirty) await fs.writeBack(filePath);
+          if (fs && isDirty) {
+            await fs.writeBack(filePath);
+            plan?.markEdit();
+          }
           void action();
           navigation.openDock(agenticProcess.terminalDockPointer);
         } catch (error) {
@@ -207,7 +210,7 @@ const PlanFileEditor: React.FC = () => {
       };
       void run();
     },
-    [agenticProcess, filePath, fs, isDirty, navigation],
+    [agenticProcess, filePath, fs, isDirty, navigation, plan],
   );
 
   // Cancel — discard dirty cache and navigate back. Prefer the owning process'
@@ -434,6 +437,7 @@ const SpecEntityEditor: React.FC = () => {
     try {
       spec.content = localContent;
       await spec.save();
+      spec.markEdit();
     } catch (e) {
       console.error('[SpecEntityEditor] save failed', e);
     } finally {

@@ -81,6 +81,7 @@ _LOCAL_OR_RUNTIME_FIELDS = frozenset(
         "updated_by",
         "updated_through",
         "last_active_at",
+        "last_edited_at",
         "fetched_at",
         "visitor_role",
         "members",

@@ -36,7 +36,7 @@ not Flowpad's. If they cannot clone the repo, they see an error, not your code.
 if you have given them one:
 
 <!-- pinned:when-set -->
-`created_through`, `env_vars`, `group_id`, `helpdesk`, `hub_published_at`, `key`, `labels`, `last_active_at`, `namespace`, `parent_type_id`, `root_vfs_path`, `schema_version`, `title`, `uname`, `updated_through`
+`created_through`, `env_vars`, `group_id`, `helpdesk`, `hub_published_at`, `key`, `labels`, `last_active_at`, `last_edited_at`, `namespace`, `parent_type_id`, `root_vfs_path`, `schema_version`, `title`, `uname`, `updated_through`
 <!-- pinned:/when-set -->
 
 **Never sent.** Two different mechanisms, which fail differently — a

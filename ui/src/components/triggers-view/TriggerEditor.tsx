@@ -10,11 +10,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@src/components/ui/alert-dialog';
-import { ActionInfo, dataManager, type ITrigger } from '@sdk';
+import { ActionInfo, dataManager, Trigger, type ITrigger } from '@sdk';
 import Editor from '@monaco-editor/react';
 import { Pencil } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { scopeColor } from './scope-colors';
 
@@ -31,6 +31,7 @@ export function TriggerEditor({ trigger }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [unlocked, setUnlocked] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const savedContentRef = useRef('');
   const { resolvedTheme } = useTheme();
 
   const isSystem = trigger.scope === 'system';
@@ -49,7 +50,9 @@ export function TriggerEditor({ trigger }: Props) {
     dataManager.callAction<undefined, { content: string }>(action)
       .then((data) => {
         if (data && typeof (data as { content: string }).content === 'string') {
-          setContent((data as { content: string }).content);
+          const loadedContent = (data as { content: string }).content;
+          savedContentRef.current = loadedContent;
+          setContent(loadedContent);
         } else {
           setError(t`Failed to load trigger.py`);
         }
@@ -65,6 +68,10 @@ export function TriggerEditor({ trigger }: Props) {
       const action = new ActionInfo('trigger-content', 'trigger', trigger.id, 'PUT');
       action.bodyParameters = { content };
       await dataManager.callAction(action);
+      if (content !== savedContentRef.current) {
+        savedContentRef.current = content;
+        Trigger.markEditById(trigger.id);
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {

@@ -60,6 +60,7 @@ export function RoomHeader({ room, isHost, isSupport = false, onEnded }: Props) 
     try {
       room.name = next;
       await room.save();
+      room.markEdit();
       notify.success({ title: t`Room renamed`, message: trimmed || '(cleared)' });
     } catch (err) {
       console.error('[RoomHeader] rename failed', err);

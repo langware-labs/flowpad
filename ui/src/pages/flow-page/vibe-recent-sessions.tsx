@@ -2,82 +2,167 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { AgenticProcess } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { HistoryModal } from '@src/components/terminal/HistoryModal';
-import { useChatHistory } from '@src/components/chats-navigator/useChatHistory';
 import {
   WorkerIcon,
   pickHistoryTitle,
   timeAgo,
 } from '@src/components/entity-execution-panel/history-row';
+import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@src/components/ui/dialog';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
-import { defaultScopeFilter } from '@src/lib/scope-filter';
+import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
+import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
+import {
+  useRecentActivity,
+  type RecentActivityItem,
+} from './use-recent-activity';
 
-/** Rows shown inline on the hero; the rest live behind "Show more". */
 const RECENT_LIMIT = 5;
+const COMPACT_FETCH_LIMIT = 10;
+const FULL_PAGE_SIZE = 50;
 
-/**
- * Fetch deeper than we render: the backend applies its cap by TRANSCRIPT
- * recency, while `useChatHistory` re-sorts by open-recency ("last active OR
- * last opened"). Fetching exactly RECENT_LIMIT would let a session that ranks
- * low by transcript time but was just opened get dropped before the re-sort
- * could promote it to row 1.
- */
-const FETCH_LIMIT = 10;
+function ActivityRows({
+  items,
+  openSession,
+}: {
+  items: readonly RecentActivityItem[];
+  openSession: (entry: WorkerHistoryEntry) => void;
+}) {
+  const { navigation } = useDockNavigation();
 
-/**
- * The last few sessions in the CURRENT PROJECT, listed under the vibe-home
- * composer — a one-click resume for "the thing I was just doing", which vibe
- * home otherwise has no affordance for at all. Scoped to the same project the
- * composer would start a new session in, so the list matches where `New` goes.
- * Anything older or in another project is one "Show more" away in the terminal's
- * HistoryModal (mounted here as a second, independent instance, and carrying its
- * own "All projects" toggle).
- *
- * Not vibe-only: a vibe process is indistinguishable from any other headless
- * chat at the data layer (no vibe flag is persisted, and a WorkerHistoryEntry
- * carries no vibe provenance), so this lists the project's recent sessions
- * whatever their origin, and opens each one INTO the vibe skin.
- *
- * Renders nothing when the project has no sessions — a fresh project keeps the
- * clean hero.
- */
-export function VibeRecentSessions() {
+  return (
+    <div className="divide-y divide-border/60">
+      {items.map((item) => {
+        if (item.kind === 'session') {
+          const proc = item.entry.agentic_process_id
+            ? AgenticProcess.getByIdFromCache<AgenticProcess>(item.entry.agentic_process_id) ?? null
+            : null;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => openSession(item.entry)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-accent"
+              data-testid="vibe-recent-session"
+            >
+              <WorkerIcon workerType={item.entry.worker_type} />
+              <span className="min-w-0 flex-1 truncate text-foreground">
+                {pickHistoryTitle(proc, item.entry)}
+              </span>
+              <span className="shrink-0 text-[10px] text-muted-foreground">
+                {timeAgo(new Date(item.timestampMs).toISOString())}
+              </span>
+            </button>
+          );
+        }
+
+        const Icon = iconForType(item.result.record_type);
+        const title = item.result.name?.trim()
+          || item.result.fts_title?.trim()
+          || item.result.record_id;
+        return (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => void navigateToResult(item.result, navigation)}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-accent"
+            data-testid="vibe-recent-entity"
+          >
+            <Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate text-foreground">{title}</span>
+            <span className="shrink-0 text-[10px] text-muted-foreground">
+              {labelForType(item.result.record_type)} · {timeAgo(new Date(item.timestampMs).toISOString())}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function RecentActivityDialog({
+  scope,
+  open,
+  onOpenChange,
+  openSession,
+}: {
+  scope: ScopeFilter;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  openSession: (entry: WorkerHistoryEntry) => void;
+}) {
+  const [fetchLimit, setFetchLimit] = useState(FULL_PAGE_SIZE);
+  const { items, isLoading, error, hasMore } = useRecentActivity(scope, fetchLimit);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[80vh] overflow-hidden p-0 sm:max-w-xl" data-testid="recent-activity-dialog">
+        <DialogHeader className="px-4 pt-4">
+          <DialogTitle><Trans>Recent activity</Trans></DialogTitle>
+          <DialogDescription className="sr-only">
+            <Trans>Recently edited items and chat sessions</Trans>
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto border-t border-border/60">
+          {items.length > 0 ? (
+            <>
+              <ActivityRows items={items} openSession={openSession} />
+              {error && (
+                <p className="px-4 py-2 text-xs text-destructive">
+                  <Trans>Edited items could not be loaded. Chat sessions are still shown.</Trans>
+                </p>
+              )}
+              {hasMore && (
+                <button
+                  type="button"
+                  className="w-full border-t border-border/60 px-4 py-3 text-center text-xs font-medium text-primary hover:bg-accent/50"
+                  onClick={() => setFetchLimit((current) => current + FULL_PAGE_SIZE)}
+                  disabled={isLoading}
+                  data-testid="recent-activity-load-more"
+                >
+                  {isLoading ? <Trans>Loading…</Trans> : <Trans>Load more</Trans>}
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              {isLoading
+                ? <Trans>Loading activity…</Trans>
+                : error
+                  ? <Trans>Recent activity could not be loaded</Trans>
+                  : <Trans>No recent activity</Trans>}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProjectRecentActivity({ projectId }: { projectId: string }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const { project } = useProject();
-  const [historyOpen, setHistoryOpen] = useState(false);
-  // The resolve below is async; without this a double-click fires two
-  // getByWorkerId + two navigations (same guard as useResumeInTerminal).
+  const [moreOpen, setMoreOpen] = useState(false);
   const busyRef = useRef(false);
+  const scope = useMemo(() => defaultScopeFilter(projectId), [projectId]);
+  const { items } = useRecentActivity(scope, COMPACT_FETCH_LIMIT);
+  const recent = items.slice(0, RECENT_LIMIT);
 
-  const projectId = project?.id ?? null;
-  // Project scope pushes the id to the backend so the per-project cap is computed
-  // there — an under-active project's sessions would otherwise never make it into
-  // the response to be filtered client-side.
-  const filters = useMemo(
-    () => ({ scope: defaultScopeFilter(projectId), search: '' }),
-    [projectId],
-  );
-  const { buckets } = useChatHistory(filters, FETCH_LIMIT);
-  // The hook groups into time buckets for the Chats side-menu; the hero wants a
-  // flat top-N, already recency-sorted across buckets.
-  const recent = useMemo(
-    () => buckets.flatMap((b) => b.entries).slice(0, RECENT_LIMIT),
-    [buckets],
-  );
-
-  const openRecent = useCallback(
+  const openSession = useCallback(
     (entry: WorkerHistoryEntry) => {
       if (!entry.worker_id || busyRef.current) return;
       busyRef.current = true;
       void (async () => {
         try {
-          // Resolve by the durable worker_id, NOT agentic_process_id: sessions
-          // resumable from disk but never opened through this instance have no
-          // process id yet, and getByWorkerId is what materializes one.
           const proc = await AgenticProcess.getByWorkerId(entry.worker_id, entry.worker_type);
           if (!proc) {
             notify.error({
@@ -87,8 +172,6 @@ export function VibeRecentSessions() {
             });
             return;
           }
-          // Pin the skin: "Show more" can reach another project, and loading one
-          // whose last_mode is Standard would otherwise drop the user out of vibe.
           navigation.openDockPointer(proc.terminalDockPointer, { viewMode: ViewMode.Vibe });
         } catch (error) {
           console.error('[VibeRecentSessions] Failed to open session:', error);
@@ -100,61 +183,44 @@ export function VibeRecentSessions() {
     [navigation, t],
   );
 
-  // No project → nothing to scope to. Also covers "still loading" and "this
-  // project has no sessions" — no skeleton, no wrapper.
-  if (!projectId || recent.length === 0) return null;
+  if (recent.length === 0) return null;
 
   return (
     <>
-      <div
+      <section
         className="w-full overflow-hidden rounded-lg border border-border/60 text-left"
         data-testid="vibe-recent-sessions"
       >
-        <div className="divide-y divide-border/60">
-          {recent.map((entry) => {
-            // Cached read only — never a fetch per row. The entity wins over the
-            // history snapshot so a renamed session doesn't show a stale title.
-            const proc = entry.agentic_process_id
-              ? AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id) ?? null
-              : null;
-            // `text-left` on the rows/footer is load-bearing: a button's UA
-            // text-align is center, so it ignores the wrapper's alignment.
-            return (
-              <button
-                key={entry.worker_id}
-                type="button"
-                onClick={() => openRecent(entry)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-accent"
-                data-testid="vibe-recent-session"
-              >
-                <WorkerIcon workerType={entry.worker_type} />
-                <span className="min-w-0 flex-1 truncate text-foreground">
-                  {pickHistoryTitle(proc, entry)}
-                </span>
-                <span className="shrink-0 text-[10px] text-muted-foreground">
-                  {timeAgo(entry.last_active_time)}
-                </span>
-              </button>
-            );
-          })}
+        <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
+          <h2 className="text-xs font-medium text-muted-foreground">
+            <Trans>Recent activity</Trans>
+          </h2>
           <button
             type="button"
-            onClick={() => setHistoryOpen(true)}
-            className="flex w-full items-center gap-1 px-3 py-2 text-left text-xs font-medium text-primary transition-colors hover:bg-accent/50"
+            onClick={() => setMoreOpen(true)}
+            className="text-xs font-medium text-primary hover:underline"
             data-testid="vibe-recent-show-more"
           >
-            <Trans>Show more</Trans>
+            <Trans>More</Trans>
           </button>
         </div>
-      </div>
-      <HistoryModal
-        open={historyOpen}
-        onOpenChange={setHistoryOpen}
-        onSelect={(entry) => {
-          setHistoryOpen(false);
-          openRecent(entry);
-        }}
-      />
+        <ActivityRows items={recent} openSession={openSession} />
+      </section>
+      {moreOpen && (
+        <RecentActivityDialog
+          scope={scope}
+          open={moreOpen}
+          onOpenChange={setMoreOpen}
+          openSession={openSession}
+        />
+      )}
     </>
   );
+}
+
+/** Project-scoped mixed timeline for Vibe Home. Kept under its established
+ * export name so callers do not need a parallel home-only activity surface. */
+export function VibeRecentSessions() {
+  const { project } = useProject();
+  return project?.id ? <ProjectRecentActivity projectId={project.id} /> : null;
 }

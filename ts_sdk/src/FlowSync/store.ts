@@ -50,6 +50,94 @@ interface PendingPromise<T> {
   reject: (reason: any) => void;
 }
 
+/** One minute of inactivity before a user edit is stamped on the backend. */
+export const EDIT_MARK_DEBOUNCE_MS = 60_000;
+
+interface PendingEditMark {
+  target: TypeId;
+  revision: number;
+  dueAt: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  inFlight: Promise<void> | null;
+}
+
+/**
+ * One trailing edit marker per logical entity in this DataManager realm.
+ *
+ * APIEntity objects can be re-hydrated or addressed through a uname alias, so
+ * timers cannot live on an individual object. The caller supplies the
+ * canonical type + entity UUID and this coordinator owns the debounce and
+ * request serialization without mutating the cached entity locally.
+ */
+class EntityEditMarker {
+  private pending = new TypeIdMap<PendingEditMark>();
+
+  constructor(private readonly send: (target: TypeId) => Promise<unknown>) {}
+
+  mark(target: TypeId): void {
+    let state = this.pending.get(target);
+    if (!state) {
+      const canonicalTarget = new TypeId(target);
+      state = {
+        target: canonicalTarget,
+        revision: 0,
+        dueAt: 0,
+        timer: null,
+        inFlight: null,
+      };
+      this.pending.set(canonicalTarget, state);
+    }
+
+    state.revision += 1;
+    state.dueAt = Date.now() + EDIT_MARK_DEBOUNCE_MS;
+    this.arm(state);
+  }
+
+  reset(): void {
+    for (const state of this.pending.values()) {
+      if (state.timer) clearTimeout(state.timer);
+    }
+    this.pending.clear();
+  }
+
+  private arm(state: PendingEditMark): void {
+    if (state.timer) clearTimeout(state.timer);
+    state.timer = setTimeout(() => {
+      state.timer = null;
+      void this.flush(state);
+    }, Math.max(0, state.dueAt - Date.now()));
+  }
+
+  private async flush(state: PendingEditMark): Promise<void> {
+    if (this.pending.get(state.target) !== state) return;
+
+    // A newer mark may reach its deadline while the prior request is still
+    // running. Its revision remains pending; the prior request's finally block
+    // re-arms it without ever overlapping two writes for this entity.
+    if (state.inFlight) return;
+
+    const sentRevision = state.revision;
+    const request = Promise.resolve()
+      .then(() => this.send(state.target))
+      .then(() => undefined);
+    state.inFlight = request;
+
+    try {
+      await request;
+    } catch (error) {
+      // Edit recency is best-effort. Do not retry a failed generation: a later
+      // real user edit creates a fresh trailing window, avoiding request loops.
+      console.warn(`[EntityEditMarker] Failed to mark ${state.target.toString()} as edited:`, error);
+    } finally {
+      // reset() may have discarded this state while its request was in flight.
+      if (this.pending.get(state.target) !== state) return;
+      state.inFlight = null;
+      if (state.revision > sentRevision) this.arm(state);
+      else this.pending.delete(state.target);
+    }
+  }
+}
+
 class EntityRef<T> {
   status: EntityStatus = EntityStatus.NA;
   error: ApiError | null = null;
@@ -109,11 +197,19 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   private watches: WatchMap = new WatchMap();
   private watchedQueries: WatchQueryMap<T> = new WatchQueryMap<T>();
   private streamingRequestsCount: number = 0;
+  private editMarker: EntityEditMarker;
   scanInfo: ScanInfo | null = null;
   recordsRoot: string | null = null;
 
   constructor() {
     super();
+    this.editMarker = new EntityEditMarker(async (target) => {
+      // Local recency only in v1. A later explicit share can carry the stored
+      // field, but this delayed marker does not reflect an action to the Hub.
+      const action = new ActionInfo('mark-edit', target.type, target.id, 'POST');
+      const ref = this.getRef(target);
+      await this.enqueueEntityWrite(ref, () => this.callAction<undefined, unknown>(action));
+    });
     this.attach_connection_manager(ConnectionManager.getInstance());
     // Schedule the repeated function call every 5 seconds
     //setInterval(() => this.onSaveAllDirty(), this.saveIntervalMs);
@@ -544,9 +640,15 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   public async reset() {
+    this.editMarker.reset();
     await this.clearCache();
     clearStats();
     this.streamingRequestsCount = 0;
+  }
+
+  /** Schedule one server-owned edit stamp after the entity becomes idle. */
+  public markEdit(typeId: TypeId): void {
+    this.editMarker.mark(typeId);
   }
 
   get apiStats() {
@@ -1084,13 +1186,24 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     const capturedJson = JSON.parse(JSON.stringify(entityJson ?? entity.toJSON())) as IEntity;
     const capturedScope = [...scope];
 
-    const operation = ref.saveTail.then(() => this.saveSnapshot<U>(ref, selfTypeId, capturedScope, capturedJson));
-    // A failed write rejects its own caller but must not poison the queue.
+    const operation = this.enqueueEntityWrite(ref, () =>
+      this.saveSnapshot<U>(ref, selfTypeId, capturedScope, capturedJson),
+    );
+    return await operation;
+  }
+
+  /**
+   * Serialize every mutation for one cached entity through the same tail.
+   * Each operation still reports its own failure, while the settled void tail
+   * keeps a rejection from poisoning later saves or edit-recency stamps.
+   */
+  private enqueueEntityWrite<R>(ref: EntityRef<T>, write: () => Promise<R>): Promise<R> {
+    const operation = ref.saveTail.then(write);
     ref.saveTail = operation.then(
       () => undefined,
       () => undefined,
     );
-    return await operation;
+    return operation;
   }
 
   private async saveSnapshot<U extends T>(
