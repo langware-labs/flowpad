@@ -483,12 +483,15 @@ class FsRecordsActionsMixin:
             apply_system_filter,
             apply_tag_filter,
             resolve_project_scope,
+            scope_record_project_ids,
         )
 
         qp = request_info.request.query_params
         q = qp.get("q", "").strip()
         limit = max(1, int(qp.get("limit", DEFAULT_BROWSE_LIMIT)))
+        offset = max(0, int(qp.get("offset", 0)))
         record_type = qp.get("record_type", "") or None
+        sort_by = qp.get("sort_by", "") or None
         status = qp.get("status", "") or None
         # Unified ScopeFilter wire format: `?user=true&projects=A,B`. Absent
         # both params means no filter applied (legacy callers).
@@ -516,6 +519,7 @@ class FsRecordsActionsMixin:
                 "scope": getattr(ent, "scope", "") or "",
                 "created_at": (d.isoformat() if (d := getattr(ent, "created_date", None)) else ""),
                 "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
+                "last_edited_at": getattr(ent, "last_edited_at", None),
                 "asset_ref": "",  # filled below; awaitable
                 "labels": getattr(ent, "labels", None) or [],
             }
@@ -536,16 +540,68 @@ class FsRecordsActionsMixin:
 
         if not q:
             # Filter-only browse: query DB with FTS join so fts_title is populated
-            if not record_type:
+            recent_activity = sort_by == "last_edited_at"
+            if not record_type and not recent_activity:
                 return ApiSuccessResponse(data={"results": [], "query": q, "total": 0, "indexer_ready": True})
-            entities = await Entity.browse(record_type=record_type, limit=limit, status=status)
-            entities = apply_scope_filter(entities, scope_filter)
-            entities = apply_folder_filter(entities, parent_path, vault_root)
-            entities = apply_system_filter(entities, include_system)
-            entities = apply_tag_filter(entities, tag_list)
+            if sort_by not in (None, "updated_date", "last_edited_at"):
+                return ApiFailResponse(message=f"Unsupported browse sort field: {sort_by}", status_code=400)
+
+            # Marker presence is the explicit enrollment signal: only UI paths
+            # that represent a real edit call markEdit(). Registry visibility
+            # keeps the projection constructible by clients, while db_only
+            # generically removes infrastructure rows (Tab/DataSourceCursor).
+            eligible_types = None
+            if recent_activity:
+                from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+                eligible_types = [
+                    type_name
+                    for type_name in SchemaRegistry.get_public_entity_types()
+                    if (info := SchemaRegistry.get(type_name)) is not None and not info.db_only
+                ]
+
+            if recent_activity:
+                # Scope/system visibility is the common path and is pushed into
+                # SQLite together with the edit-stamp filter, count, ordering,
+                # offset and limit. Folder/tag filters are uncommon on this
+                # projection and remain the canonical Python predicates; when
+                # present, fetch the already scope-narrowed set before paging so
+                # their total and page cannot underfill.
+                post_filter = bool(parent_path or vault_root or tag_list)
+                entities, total = await Entity.browse_page(
+                    record_type,
+                    limit=None if post_filter else limit,
+                    offset=0 if post_filter else offset,
+                    status=status,
+                    sort_by="last_edited_at",
+                    entity_types=eligible_types,
+                    scope=scope_filter,
+                    include_system=include_system,
+                )
+                if post_filter:
+                    entities = apply_folder_filter(entities, parent_path, vault_root)
+                    entities = apply_tag_filter(entities, tag_list)
+                    total = len(entities)
+                    entities = entities[offset : offset + limit]
+            else:
+                entities = await Entity.browse(
+                    record_type=record_type,
+                    limit=limit,
+                    status=status,
+                    offset=offset,
+                )
+                entities = apply_scope_filter(entities, scope_filter)
+                entities = apply_folder_filter(entities, parent_path, vault_root)
+                entities = apply_system_filter(
+                    entities,
+                    include_system,
+                    scope_record_project_ids(scope_filter),
+                )
+                entities = apply_tag_filter(entities, tag_list)
+                total = len(entities)
             results = await _rows(entities, with_snippet=False)
             return ApiSuccessResponse(
-                data={"results": results, "query": "", "total": len(results), "indexer_ready": True}
+                data={"results": results, "query": "", "total": total, "indexer_ready": True}
             )
 
         # Parse optional calibration params

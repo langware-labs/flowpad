@@ -63,6 +63,7 @@ interface WikiLinkInsertDialogProps {
    * fires; the next sync_to_db will pick it up.
    */
   sourceTypeId: string | null;
+  onUserEdit?: () => void;
 }
 
 type Stage =
@@ -74,6 +75,7 @@ export function WikiLinkInsertDialog({
   onOpenChange,
   editorRef,
   sourceTypeId,
+  onUserEdit,
 }: WikiLinkInsertDialogProps) {
   const [query, setQuery] = useState('');
   const [recordTypeFilter, setRecordTypeFilter] = useState<string>(ALL_TYPES_VALUE);
@@ -118,9 +120,10 @@ export function WikiLinkInsertDialog({
         const tr = view.state.tr.insertText(name, from, to);
         tr.addMark(from, from + name.length, linkType.create({ href }));
         view.dispatch(tr);
+        onUserEdit?.();
       });
     },
-    [editorRef],
+    [editorRef, onUserEdit],
   );
 
   const triggerSourceReindex = useCallback(async () => {
@@ -172,6 +175,7 @@ export function WikiLinkInsertDialog({
       if (entity) {
         (entity as { name?: string }).name = name;
         await entity.save();
+        entity.markEdit();
       }
     } catch (e) {
       console.warn('[WikiLinkInsertDialog] saving entity name failed:', e);

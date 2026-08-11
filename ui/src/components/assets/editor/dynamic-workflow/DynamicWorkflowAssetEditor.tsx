@@ -127,6 +127,7 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
           onChange={(e) => {
             setScript(e.target.value);
             setDirty(true);
+            workflow.markEdit();
           }}
         />
       </div>

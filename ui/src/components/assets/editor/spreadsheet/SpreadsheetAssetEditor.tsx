@@ -32,6 +32,7 @@ export function SpreadsheetAssetEditor({ fsRef, spreadsheet }: SpreadsheetAssetE
     (spreadsheet as { updated_date?: unknown }).updated_date,
   );
   const [dirty, setDirty] = useState(false);
+  const markSpreadsheetEdited = useCallback(() => spreadsheet.markEdit(), [spreadsheet]);
 
   const { fileName, dirPath } = useMemo(() => {
     const idx = path.lastIndexOf('/');
@@ -72,7 +73,12 @@ export function SpreadsheetAssetEditor({ fsRef, spreadsheet }: SpreadsheetAssetE
       />
       <div className="min-h-0 flex-1">
         {format === 'csv' ? (
-          <CsvGrid fsRef={fsRef} reloadKey={reloadKey} onDirtyChange={setDirty} />
+          <CsvGrid
+            fsRef={fsRef}
+            reloadKey={reloadKey}
+            onDirtyChange={setDirty}
+            onUserEdit={markSpreadsheetEdited}
+          />
         ) : (
           <XlsxGrid fsRef={fsRef} reloadKey={reloadKey} />
         )}

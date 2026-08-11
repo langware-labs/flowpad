@@ -4,7 +4,7 @@ import { DockPointer } from './DockPointer';
 import { openNewChat } from './open-new-chat';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
-import { AgenticProcess, Artifact, dataContext, dataManager, isTypeId, RecordType, TypeId } from '@sdk';
+import { AgenticProcess, Artifact, dataContext, dataManager, editorForType, isTypeId, RecordType, TypeId } from '@sdk';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import type { NavigationActions } from './NavigationActions';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
@@ -23,6 +23,8 @@ export interface RecordTypeNav {
   dockPointer?: (result: SearchResult) => DockPointer | null;
   /** Async primary click — use when navigation requires entity lookup */
   primaryAction?: (result: SearchResult, navigation: NavigationActions) => void | Promise<void>;
+  /** Extra reachability check for imperative arms whose target fields are optional. */
+  isNavigable?: (result: SearchResult) => boolean;
   /** Optional sub-navigation chips shown on the card */
   actions?: DockNavigationAction[];
 }
@@ -92,6 +94,16 @@ function assetEditorPointer(assetType: string, r: SearchResult): DockPointer | n
   return r.asset_ref ? DockPointer.forAssetEditor(assetType, r.asset_ref) : null;
 }
 
+/** Registry-backed fallback for entity types with an asset editor. Explicit
+ * navigation arms below still win; this keeps new editable asset types from
+ * becoming inert search/recent-activity rows just because this dispatcher was
+ * not updated in lockstep with the editor registry. */
+function registeredAssetPointer(result: SearchResult): DockPointer | null {
+  return editorForType(result.record_type)
+    ? assetEditorPointer(result.record_type, result)
+    : null;
+}
+
 export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   skill: {
     dockPointer: (r) => assetEditorPointer('skill', r),
@@ -111,6 +123,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     dockPointer: (r) => assetEditorPointer('subagent', r),
   },
   annotation: {
+    isNavigable: (r) => !!r.session_id,
     primaryAction: async (r, navigation) => {
       const sessionId = r.session_id;
       if (sessionId) {
@@ -120,6 +133,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     },
   },
   bookmark: {
+    isNavigable: (r) => !!r.session_id,
     primaryAction: async (r, navigation) => {
       const sessionId = r.session_id;
       if (sessionId) {
@@ -136,6 +150,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     dockPointer: (r) => assetEditorPointer('command', r),
   },
   comment: {
+    isNavigable: (r) => !!r.session_id,
     primaryAction: async (r, navigation) => {
       const sessionId = r.session_id;
       if (sessionId) {
@@ -146,6 +161,24 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   },
   [RecordType.MARKDOWN]: {
     dockPointer: (r) => assetEditorPointer(RecordType.MARKDOWN, r),
+  },
+  graph_workflow: {
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      return tid ? DockPointer.forGraphWorkflow(tid.id) : null;
+    },
+  },
+  graph_context: {
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      return tid ? DockPointer.forGraphContext(tid.id) : null;
+    },
+  },
+  spec: {
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      return tid ? DockPointer.forSpec(tid.id) : null;
+    },
   },
   plan: {
     dockPointer: (r) => assetEditorPointer('plan', r),
@@ -316,7 +349,8 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
 
 /** Returns the primary DockPointer for a result, or null if the type has no navigation */
 export function getDockPointerForResult(result: SearchResult): DockPointer | null {
-  return RECORD_TYPE_NAV[result.record_type]?.dockPointer?.(result) ?? null;
+  return RECORD_TYPE_NAV[result.record_type]?.dockPointer?.(result)
+    ?? registeredAssetPointer(result);
 }
 
 /** Returns true if the result actually has a reachable target — not merely that
@@ -325,22 +359,22 @@ export function getDockPointerForResult(result: SearchResult): DockPointer | nul
  * treating it as navigable is what made tiles look clickable yet do nothing. */
 export function isResultNavigable(result: SearchResult): boolean {
   const nav = RECORD_TYPE_NAV[result.record_type];
-  if (!nav) return false;
-  if (nav.primaryAction) return true;
-  if (nav.dockPointer) return nav.dockPointer(result) != null;
-  return false;
+  if (nav?.isNavigable && !nav.isNavigable(result)) return false;
+  if (nav?.primaryAction) return true;
+  if (nav?.dockPointer?.(result)) return true;
+  return registeredAssetPointer(result) != null;
 }
 
 /** Navigate to a result — handles both sync dockPointer and async primaryAction */
 export async function navigateToResult(result: SearchResult, navigation: NavigationActions): Promise<void> {
   const nav = RECORD_TYPE_NAV[result.record_type];
-  if (!nav) return;
-  if (nav.primaryAction) {
+  if (nav?.isNavigable && !nav.isNavigable(result)) return;
+  if (nav?.primaryAction) {
     await nav.primaryAction(result, navigation);
-  } else if (nav.dockPointer) {
-    const dp = nav.dockPointer(result);
-    if (dp) navigation.openDock(dp);
+    return;
   }
+  const dock = nav?.dockPointer?.(result) ?? registeredAssetPointer(result);
+  if (dock) navigation.openDock(dock);
 }
 
 /** Returns the action list for a result's record type */

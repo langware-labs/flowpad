@@ -107,6 +107,14 @@ function stripEphemeralAppState(appState: unknown): Record<string, unknown> {
   return rest;
 }
 
+/** Only durable canvas content counts as an edit; viewport/app-state changes do not. */
+function semanticBoardFingerprint(elements: unknown, files: unknown): string {
+  return JSON.stringify({
+    elements: Array.isArray(elements) ? elements : [],
+    files: files ?? {},
+  });
+}
+
 function spliceMermaidBlock(currentDoc: string, mermaid: string): string {
   const block = '```mermaid\n' + mermaid + '```\n';
   const wrapped = `${BEGIN_MARKER}\n${block}\n_Auto-generated from board.json — edits inside this block are overwritten on next save._\n${END_MARKER}`;
@@ -118,7 +126,7 @@ function spliceMermaidBlock(currentDoc: string, mermaid: string): string {
   return `${trimmed}\n${wrapped}\n`;
 }
 
-export function WhiteboardAssetEditor({ fsRef }: WhiteboardAssetEditorProps) {
+export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEditorProps) {
   const boardRef = useMemo(() => fsRef.child('board.json'), [fsRef]);
   const docRef = useMemo(() => fsRef.child('WHITE_BOARD.md'), [fsRef]);
   const thumbRef = useMemo(() => fsRef.child('thumbnail.svg'), [fsRef]);
@@ -167,6 +175,7 @@ export function WhiteboardAssetEditor({ fsRef }: WhiteboardAssetEditorProps) {
   // re-writes byte-identical board.json, churning the file (and its mtime) with
   // no real change. Skip the write when the payload matches the last one.
   const lastWrittenRef = useRef<string | null>(null);
+  const lastSemanticRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -188,10 +197,12 @@ export function WhiteboardAssetEditor({ fsRef }: WhiteboardAssetEditorProps) {
         if (data.appState && typeof data.appState === 'object') {
           data.appState = stripEphemeralAppState(data.appState);
         }
+        lastSemanticRef.current = semanticBoardFingerprint(data.elements, data.files);
         setInitialData(data);
       } catch (err) {
         if (cancelled) return;
         setLoadError(err instanceof Error ? err.message : String(err));
+        lastSemanticRef.current = semanticBoardFingerprint([], {});
         setInitialData({});
       }
     })();
@@ -240,13 +251,18 @@ export function WhiteboardAssetEditor({ fsRef }: WhiteboardAssetEditorProps) {
 
   const onChange = useCallback(
     (elements: unknown, appState: unknown, files: unknown) => {
+      const els = Array.isArray(elements) ? (elements as unknown[]) : [];
+      const semanticFingerprint = semanticBoardFingerprint(els, files);
+      if (semanticFingerprint !== lastSemanticRef.current) {
+        lastSemanticRef.current = semanticFingerprint;
+        whiteboard?.markEdit();
+      }
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
-        const els = Array.isArray(elements) ? (elements as unknown[]) : [];
         void persist(els, appState, files);
       }, DEBOUNCE_MS);
     },
-    [persist],
+    [persist, whiteboard],
   );
 
   useEffect(() => {

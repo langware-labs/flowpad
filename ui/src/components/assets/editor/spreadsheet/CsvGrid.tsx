@@ -20,6 +20,8 @@ interface CsvGridProps {
   reloadKey: string | number;
   /** Reports dirty state up to the header. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Records a real grid edit on the resolved Spreadsheet entity. */
+  onUserEdit?: () => void;
 }
 
 /**
@@ -32,7 +34,7 @@ interface CsvGridProps {
  * (guarded by `lastSerializedRef`), so a keystroke doesn't tear down the grid
  * and steal focus. Mirrors the whiteboard's `lastWrittenRef` guard.
  */
-export function CsvGrid({ fsRef, reloadKey, onDirtyChange }: CsvGridProps) {
+export function CsvGrid({ fsRef, reloadKey, onDirtyChange, onUserEdit }: CsvGridProps) {
   const { resolvedTheme } = useTheme();
   // RevoGrid ships light/dark as separate named themes; it won't follow the app's `dark` class.
   const gridTheme = resolvedTheme === 'dark' ? 'darkCompact' : 'compact';
@@ -67,8 +69,9 @@ export function CsvGrid({ fsRef, reloadKey, onDirtyChange }: CsvGridProps) {
       const csv = serializeGridToCsv(grid.columns, sourceRef.current);
       lastSerializedRef.current = csv;
       setContent(csv);
+      onUserEdit?.();
     },
-    [grid.columns, setContent],
+    [grid.columns, onUserEdit, setContent],
   );
 
   if (loadError) {

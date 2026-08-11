@@ -528,6 +528,7 @@ export function useSandboxes() {
       const trimmed = name.trim();
       if (!trimmed || trimmed === node.name) return;
       await dataManager.save(node.typeId, [], hubEntityJson(node, { name: trimmed }) as never);
+      node.markEdit();
       await refetch();
     },
     [refetch],

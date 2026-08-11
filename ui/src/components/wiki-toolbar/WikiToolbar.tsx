@@ -21,9 +21,10 @@ interface WikiToolbarProps {
    * lands later via sync_to_db once the doc is registered.
    */
   sourceTypeId: string | null;
+  onUserEdit?: () => void;
 }
 
-export function WikiToolbar({ editorRef, sourceTypeId }: WikiToolbarProps) {
+export function WikiToolbar({ editorRef, sourceTypeId, onUserEdit }: WikiToolbarProps) {
   const { t } = useLingui();
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -43,6 +44,7 @@ export function WikiToolbar({ editorRef, sourceTypeId }: WikiToolbarProps) {
         onOpenChange={setDialogOpen}
         editorRef={editorRef}
         sourceTypeId={sourceTypeId}
+        onUserEdit={onUserEdit}
       />
     </>
   );

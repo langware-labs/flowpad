@@ -179,6 +179,7 @@ export function SkillAssetEditor({
   return (
     <MarkdownEditor
       fsRef={editorRef}
+      editEntity={skill}
       chatTarget={skillKey}
       headerExtras={headerExtras}
       extraSideTabs={extraSideTabs}

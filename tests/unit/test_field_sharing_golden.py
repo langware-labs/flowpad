@@ -191,12 +191,14 @@ def test_the_two_egress_seams_now_agree():
             ["git_origin", "my_process_id", "project_name", "project_root"],
             BASE_LOCAL_ONLY,
             ["artifacts", "env_vars", "expand", "fs_storage_provider", "git_origin",
-             "last_active_at", "private_context_entities_", "shared_context_entities", "ttl"],
+             "last_active_at", "last_edited_at", "private_context_entities_",
+             "shared_context_entities", "ttl"],
         ),
         (
             "flow_sdk.builtin.folder", "Folder", {}, [], BASE_LOCAL_ONLY,
             ["env_vars", "expand", "fs_storage_provider", "git_origin", "last_active_at",
-             "origin", "private_context_entities_", "shared_context_entities"],
+             "last_edited_at", "origin", "private_context_entities_",
+             "shared_context_entities"],
         ),
         (
             "flow_sdk.builtin.flow_message", "FlowMessage", {"text": "t"}, [],
@@ -208,20 +210,20 @@ def test_the_two_egress_seams_now_agree():
             # `origin` is a nested CloudOrigin model the filler leaves None —
             # the cloud record this message caches, absent on Flowpad-native ones.
             ["attachment", "body_status", "env_vars", "expand", "fs_storage_provider",
-             "git_origin", "kind", "last_active_at", "origin",
+             "git_origin", "kind", "last_active_at", "last_edited_at", "origin",
              "private_context_entities_", "shared_context_entities"],
         ),
         (
             "flow_sdk.builtin.claude_session", "ClaudeSession", {}, [],
             ["asset_occurrences", "asset_ref", "fetched_at", "received", "remote", "system"],
             ["env_vars", "expand", "fs_storage_provider", "git_origin", "last_active_at",
-             "private_context_entities_", "shared_context_entities"],
+             "last_edited_at", "private_context_entities_", "shared_context_entities"],
         ),
         (
             # `git_origin`: re-declared PRIVATE here (see Task above).
             "flow_sdk.builtin.message_attachment", "MessageAttachment", {}, ["git_origin"],
             BASE_LOCAL_ONLY,
-            ["env_vars", "expand", "fs_storage_provider", "last_active_at",
+            ["env_vars", "expand", "fs_storage_provider", "last_active_at", "last_edited_at",
              "private_context_entities_", "shared_context_entities"],
         ),
         (
@@ -231,7 +233,7 @@ def test_the_two_egress_seams_now_agree():
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.
             ["env_vars", "expand", "fs_storage_provider", "git_origin", "kind",
-             "last_active_at", "message_count", "message_ids",
+             "last_active_at", "last_edited_at", "message_count", "message_ids",
              "private_context_entities_", "shared_context_entities"],
         ),
     ],

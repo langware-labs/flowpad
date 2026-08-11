@@ -155,7 +155,11 @@ const BASE_WIRE_FIELDS = new Set<string>([
   'root_vfs_path',
   'fs_storage_mount_path',
   'visitor_role',
+  'last_edited_at',
 ]);
+
+/** Backend-owned fields that hydrate into the cache but never ride a full save. */
+const SERVER_MANAGED_SAVE_FIELDS = new Set<string>(['last_edited_at']);
 
 export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   static type?: string = defaultEntityType;
@@ -196,6 +200,8 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   root_vfs_path?: string;
   fs_storage_mount_path?: string;
   visitor_role?: string;
+  /** Epoch-ms of the last successful content edit. */
+  last_edited_at?: number | string | null;
   /**
    * Hub role roster cache: one row per member with their hub-set role. Membership
    * is a generic capability of any remote entity; the hub is the source of truth
@@ -666,6 +672,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     // This includes properties in subclasses
     for (const key in this) {
       if (!key.startsWith('_') && this.hasOwnProperty(key) && baseObject[key] === undefined) {
+        // Edit recency is patched atomically by the generic mark-edit action.
+        // Echoing a cached value in a normal full-entity save could overwrite a
+        // newer stamp that arrived after this entity snapshot was hydrated.
+        if (SERVER_MANAGED_SAVE_FIELDS.has(key)) continue;
         if (this.schema && !this.isDbField(key)) {
           continue; // Skip non-database fields
         }
@@ -1043,6 +1053,21 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   public async activate(): Promise<void> {
     const info = new ActionInfo('activate', this.typeId.type, this.typeId.id, 'POST');
     await dataManager.callAction<unknown, unknown>(info);
+  }
+
+  /**
+   * Record real user editing without issuing a request for every input event.
+   * Calls coalesce by canonical type + entity id and stamp server-side one
+   * minute after the final call. Fire-and-forget by design; a pending mark is
+   * not flushed during a hard page close.
+   */
+  public static markEditById(this: { type: string }, id: string): void {
+    dataManager.markEdit(new TypeId(this.type, id));
+  }
+
+  public markEdit(): void {
+    const entityClass = this.constructor as typeof APIEntity & { type: string };
+    entityClass.markEditById(this.id);
   }
 
   /** POST /entity-event {event, payload}. Unknown events are a server-side no-op. */
