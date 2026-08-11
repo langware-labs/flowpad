@@ -12,10 +12,9 @@ import { useFeedMutations } from '@src/hooks/use-feed-mutations';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { EyeOff, MessageSquarePlus, Rss, Send } from 'lucide-react';
-import { useCallback, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { FeedEntryCard, UnavailableFeedEntryCard } from './FeedEntryCard';
-import { FeedData } from './feed-data';
+import { FeedEntryCard } from './FeedEntryCard';
 import { ErrorBoundary } from '@src/components/error-boundary/error-boundary';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -209,21 +208,10 @@ export function HomeFeedColumn() {
         ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain p-2">
             {/* One boundary per card: a card that throws while rendering degrades to
-                the dismissible "Unavailable feed item" instead of reaching the router's
-                root errorElement, which would replace the whole app (FLOWPAD-1974). */}
+                <InvalidFeedItem> instead of reaching the router's root errorElement,
+                which would replace the whole app (FLOWPAD-1974). */}
             {newEntries.map((entry) => (
-              <ErrorBoundary
-                key={entry.id}
-                label={`feed-card:${entry.id}`}
-                fallback={
-                  <UnavailableFeedEntryCard
-                    entry={entry}
-                    busy={busyId === entry.id}
-                    feedData={FeedData.fromEntry(entry)}
-                    onDismiss={(item) => void handleDismiss(item)}
-                  />
-                }
-              >
+              <ErrorBoundary key={entry.id} label={`feed-card:${entry.id}`} fallback={<InvalidFeedItem />}>
                 <FeedEntryCard
                   entry={entry}
                   busy={busyId === entry.id}
@@ -277,3 +265,20 @@ export function HomeFeedColumn() {
     </div>
   );
 }
+
+/**
+ * What a feed card degrades to when it throws while rendering. Deliberately dumb
+ * — no props, no entity reads, nothing that could throw a second time inside the
+ * boundary's own fallback. The entry id is already in the boundary's log label.
+ */
+const InvalidFeedItem = () => {
+  useEffect(() => {
+    console.error('[feed] error while displaying the suggestion');
+  }, []);
+
+  return (
+    <div className="rounded border border-border bg-muted/40 px-2.5 py-2 text-xs text-muted-foreground">
+      <Trans>Error while displaying the suggestion, contact support</Trans>
+    </div>
+  );
+};

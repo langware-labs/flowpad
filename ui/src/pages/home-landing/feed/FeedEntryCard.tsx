@@ -617,20 +617,14 @@ function UsageReportFeedEntryCard({ entry, report, busy, feedData, onDismiss }: 
   );
 }
 
-export interface UnavailableFeedEntryCardProps {
+interface UnavailableFeedEntryCardProps {
   entry: FeedEntry;
   busy: boolean;
   feedData: FeedData;
   onDismiss: (entry: FeedEntry) => void;
 }
 
-/**
- * The feed's degraded card: keeps the frame (so the entry stays dismissible)
- * and drops the body. Used both for an entry whose target entity is missing and
- * — via `<ErrorBoundary>` in `HomeFeedColumn` — for one whose card threw while
- * rendering.
- */
-export function UnavailableFeedEntryCard({ entry, busy, feedData, onDismiss }: UnavailableFeedEntryCardProps) {
+function UnavailableFeedEntryCard({ entry, busy, feedData, onDismiss }: UnavailableFeedEntryCardProps) {
   return (
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
       <p className="min-w-0 text-xs font-medium leading-snug text-foreground">

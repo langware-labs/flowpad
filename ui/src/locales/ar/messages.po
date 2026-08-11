@@ -5456,6 +5456,10 @@ msgstr ""
 msgid "Error Loading Transcript"
 msgstr ""
 
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx
+msgid "Error while displaying the suggestion, contact support"
+msgstr ""
+
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Error: {errorMessage}"
 #~ msgstr ""

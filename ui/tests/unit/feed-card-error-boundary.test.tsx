@@ -140,21 +140,21 @@ describe('Home feed per-card error boundary', () => {
     expect(screen.getByText('a healthy neighbour card')).toBeInTheDocument();
   });
 
-  it('renders the crashed card as a dismissible "Unavailable feed item"', async () => {
+  it('renders the crashed card as <InvalidFeedItem>', async () => {
     await renderFeed();
 
-    expect(screen.getByText('Unavailable feed item')).toBeInTheDocument();
-    // The frame — and therefore the hide control — survives, so a permanently
-    // broken entry can still be cleared from the feed.
-    expect(screen.getAllByRole('button', { name: /hide feed entry/i }).length).toBeGreaterThan(0);
+    expect(screen.getByText('Error while displaying the suggestion, contact support')).toBeInTheDocument();
   });
 
   it('logs the failure so a crashed card is not silent', async () => {
     await renderFeed();
 
-    const logged = consoleError.mock.calls.some((args) =>
-      args.some((a) => typeof a === 'string' && a.includes(`[ErrorBoundary: feed-card:${SUGGEST_ENTRY_ID}]`)),
-    );
-    expect(logged).toBe(true);
+    const logs = consoleError.mock.calls.flat();
+    const loggedBy = (needle: string) => logs.some((a) => typeof a === 'string' && a.includes(needle));
+
+    // The boundary carries the error + which entry; the fallback states the
+    // user-facing symptom. Both, so neither the cause nor the card is silent.
+    expect(loggedBy(`[ErrorBoundary: feed-card:${SUGGEST_ENTRY_ID}]`)).toBe(true);
+    expect(loggedBy('[feed] error while displaying the suggestion')).toBe(true);
   });
 });
