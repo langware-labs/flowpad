@@ -7010,6 +7010,7 @@ msgid "Hide empty"
 msgstr ""
 
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Hide feed entry"
 msgstr ""
 

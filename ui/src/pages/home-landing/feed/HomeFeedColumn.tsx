@@ -211,7 +211,11 @@ export function HomeFeedColumn() {
                 <InvalidFeedItem> instead of reaching the router's root errorElement,
                 which would replace the whole app (FLOWPAD-1974). */}
             {newEntries.map((entry) => (
-              <ErrorBoundary key={entry.id} label={`feed-card:${entry.id}`} fallback={<InvalidFeedItem />}>
+              <ErrorBoundary
+                key={entry.id}
+                label={`feed-card:${entry.id}`}
+                fallback={<InvalidFeedItem busy={busyId === entry.id} onDismiss={() => void handleDismiss(entry)} />}
+              >
                 <FeedEntryCard
                   entry={entry}
                   busy={busyId === entry.id}
@@ -268,17 +272,36 @@ export function HomeFeedColumn() {
 
 /**
  * What a feed card degrades to when it throws while rendering. Deliberately dumb
- * — no props, no entity reads, nothing that could throw a second time inside the
- * boundary's own fallback. The entry id is already in the boundary's log label.
+ * — no entity reads, nothing that could throw a second time inside the boundary's
+ * own fallback. The entry id is already in the boundary's log label.
+ *
+ * Carries its own hide button rather than `FeedEntryFrame`: a permanently broken
+ * entry must still be clearable, and the frame reads `feedData` off the entry —
+ * exactly the kind of work this fallback exists to avoid.
  */
-const InvalidFeedItem = () => {
+const InvalidFeedItem = ({ busy, onDismiss }: { busy: boolean; onDismiss: () => void }) => {
+  const { t } = useLingui();
+  const hideLabel = t`Hide feed entry`;
+
   useEffect(() => {
     console.error('[feed] error while displaying the suggestion');
   }, []);
 
   return (
-    <div className="rounded border border-border bg-muted/40 px-2.5 py-2 text-xs text-muted-foreground">
-      <Trans>Error while displaying the suggestion, contact support</Trans>
+    <div className="flex items-start justify-between gap-2 rounded border border-border bg-muted/40 px-2.5 py-2">
+      <p className="min-w-0 text-xs leading-snug text-muted-foreground">
+        <Trans>Error while displaying the suggestion, contact support</Trans>
+      </p>
+      <button
+        type="button"
+        aria-label={hideLabel}
+        title={hideLabel}
+        disabled={busy}
+        onClick={onDismiss}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+      >
+        <EyeOff className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 };

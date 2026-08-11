@@ -7013,6 +7013,7 @@ msgid "Hide empty"
 msgstr "הסתר ריקים"
 
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Hide feed entry"
 msgstr "הסתר הזנה"
 

@@ -26,7 +26,7 @@
  * needs jsdom but no live launcher-owned backend (which the react tier demands).
  */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { FeedEntry, MessageSuggest, UserNote } from '@sdk';
 import { TooltipProvider } from '@src/components/ui/tooltip';
@@ -144,6 +144,18 @@ describe('Home feed per-card error boundary', () => {
     await renderFeed();
 
     expect(screen.getByText('Error while displaying the suggestion, contact support')).toBeInTheDocument();
+  });
+
+  it('lets the user dismiss a permanently broken card', async () => {
+    await renderFeed();
+
+    // Two cards render, but only the crashed one is <InvalidFeedItem> — scope the
+    // query to it so this can't accidentally assert on the healthy card's button.
+    const broken = screen.getByText('Error while displaying the suggestion, contact support').closest('div')!;
+    fireEvent.click(within(broken).getByRole('button', { name: /hide feed entry/i }));
+
+    expect(dismissSpy).toHaveBeenCalledTimes(1);
+    expect(dismissSpy.mock.calls[0][0]).toMatchObject({ id: SUGGEST_ENTRY_ID });
   });
 
   it('logs the failure so a crashed card is not silent', async () => {
