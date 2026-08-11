@@ -6,13 +6,13 @@ import type { NavigatorDescriptor } from '@src/components/navigator-panel/types'
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { openNewChat } from '@src/navigation/open-new-chat';
+import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useOpenTabTargetIds } from '@src/tabs/useTabs';
 import { useProject } from '@src/hooks/useProject';
 import { useContext } from '@src/hooks/useContext';
 import { notify } from '@src/notifications';
 import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
-import { ViewType } from '@src/types/ViewType';
 import type { WorkerHistoryEntry, WorkerType } from '@src/hooks/useWorkerHistory';
 import { pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
@@ -130,7 +130,7 @@ export function ChatsNavigator() {
         (await AgenticProcess.getByWorkerId(workerId, workerType));
       if (!process) return;
       await process.delete();
-      refetch();
+      void refetch();
     } catch (err) {
       console.error('[ChatsNavigator] delete failed', err);
       notify.error({ title: t`Could not delete`, message: err instanceof Error ? err.message : String(err) });
@@ -144,12 +144,9 @@ export function ChatsNavigator() {
       // Opens in the user's chat mode (their last pick), like every other
       // front-face open-chat action. This used to key on the View mode alone,
       // so a Standard user who had chosen `terminal` still got a chat pane.
-      // A failed create is overwhelmingly the chosen harness missing from this
-      // machine, which the toast here could only describe. Capabilities re-probes
-      // on arrival, so it both corrects the stale row and offers the install.
       void openNewChat(navigation, { workerType }).catch((err) => {
         console.error('[ChatsNavigator] new chat failed', err);
-        navigation.openTab(ViewType.CAPABILITIES);
+        openCapabilitiesForWorker(navigation, workerType);
       });
     },
     [navigation],
