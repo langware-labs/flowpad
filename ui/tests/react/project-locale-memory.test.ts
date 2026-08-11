@@ -2,13 +2,13 @@
  * Per-project language memory (`Project.locale`).
  *
  * Contract under test (real backend, no mocks):
- *   1. First `loadProject` of a project with no `locale` stamps the active
- *      language onto it (fire-and-forget save).
+ *   1. A project with no `locale` opens in ENGLISH — it does not inherit the
+ *      language of the project you came from — and is left unset, not stamped:
+ *      en-US is the meaning of "no answer", not an answer the user gave.
  *   2. Every language switch (`setLocale` — the same call the footer chip and
  *      the project's Language card make) records onto the CURRENT project only.
  *   3. Re-entering a project switches the app back to its remembered language.
- *   4. An unsupported stored `locale` reads as unset — the active language is
- *      kept and the garbage is overwritten (never laundered into en-US).
+ *   4. An unsupported stored `locale` reads as unset — English, row untouched.
  *   5. Re-loading a project whose `locale` already matches performs no
  *      redundant save (backend `updated_date` stays put).
  *
@@ -73,25 +73,41 @@ describe('per-project language memory (Project.locale)', () => {
     await projectB?.delete().catch(() => {});
   });
 
-  it('first load stamps the active language onto a project without locale', async () => {
+  it('a project with no locale opens in English, and is not stamped', async () => {
+    // Start the app somewhere else entirely, so "opened in English" can only
+    // come from the project, not from the language that was already active.
+    await setLocale('ar');
+    expect(getLocale()).toBe('ar');
+
     const loaded = await loadProject(projectA.typeId);
     expect(loaded.id).toBe(projectA.id);
-    await waitForBackendLocale(projectA.id, getLocale());
+    await waitFor(() => expect(getLocale()).toBe('en-US'));
+    // `<html lang/dir>` follows one tick behind the preference — the catalog
+    // import is awaited first — so wait for the DOM rather than assuming it.
+    await waitFor(() => {
+      expect(document.documentElement.lang).toBe('en-US');
+      expect(document.documentElement.dir).toBe('ltr');
+    });
+
+    // Unset stays unset — no answer was invented on the user's behalf
+    // (null fields are omitted from the wire).
+    await sleep(600);
+    expect((await backendProject(projectA.id)).locale ?? null).toBeNull();
   });
 
   it('a language switch records onto the current project only', async () => {
     await setLocale('he');
     expect(getLocale()).toBe('he');
     await waitForBackendLocale(projectA.id, 'he');
-    // B was never loaded — untouched (null fields are omitted from the wire).
+    // B was never loaded — untouched.
     expect((await backendProject(projectB.id)).locale ?? null).toBeNull();
   });
 
-  it('loading another project stamps it, and its switches record there', async () => {
+  it('entering an unset project resets to English, and its switches record there', async () => {
     await loadProject(projectB.typeId);
-    // B had no locale → adopts (and records) the active language.
-    expect(getLocale()).toBe('he');
-    await waitForBackendLocale(projectB.id, 'he');
+    // B has no locale → English, NOT project A's Hebrew.
+    await waitFor(() => expect(getLocale()).toBe('en-US'));
+    expect((await backendProject(projectB.id)).locale ?? null).toBeNull();
 
     await setLocale('ar');
     await waitForBackendLocale(projectB.id, 'ar');
@@ -103,27 +119,35 @@ describe('per-project language memory (Project.locale)', () => {
     expect(getLocale()).toBe('ar');
     await loadProject(projectA.typeId);
     await waitFor(() => expect(getLocale()).toBe('he'));
-    expect(document.documentElement.lang).toBe('he');
-    expect(document.documentElement.dir).toBe('rtl');
+    await waitFor(() => {
+      expect(document.documentElement.lang).toBe('he');
+      expect(document.documentElement.dir).toBe('rtl');
+    });
     // Applying a remembered language must not clobber the other project's memory.
     expect((await backendProject(projectB.id)).locale).toBe('ar');
   });
 
-  it('unsupported locale reads as unset: active language kept, garbage overwritten', async () => {
+  it('unsupported locale reads as unset: English, row left alone', async () => {
     projectB.locale = 'kl-KL';
     await projectB.save();
     await waitForBackendLocale(projectB.id, 'kl-KL');
 
+    await loadProject(projectA.typeId); // → he
+    await waitFor(() => expect(getLocale()).toBe('he'));
+
     await loadProject(projectB.typeId);
-    // Not laundered into en-US — the active language (he, from project A) wins…
-    expect(getLocale()).toBe('he');
-    // …and replaces the garbage on the project.
-    await waitForBackendLocale(projectB.id, 'he');
+    // Unrecognized is treated as no answer → English, not project A's Hebrew.
+    await waitFor(() => expect(getLocale()).toBe('en-US'));
+    // And the row is not rewritten: we don't know what they meant, so we don't
+    // guess on their behalf. Picking a language in the UI overwrites it.
+    await sleep(600);
+    expect((await backendProject(projectB.id)).locale).toBe('kl-KL');
   });
 
   it('re-loading a project whose locale already matches saves nothing', async () => {
+    await setLocale('he'); // an explicit choice while B is current → stamps B
+    await waitForBackendLocale(projectB.id, 'he');
     const before = await backendProject(projectB.id);
-    expect(before.locale).toBe('he');
 
     await loadProject(projectB.typeId);
     expect(getLocale()).toBe('he');

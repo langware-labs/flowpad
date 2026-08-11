@@ -183,10 +183,11 @@ export async function loadProject(projectTypeId: TypeId): Promise<Project> {
   }
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, projectTypeId);
   // Per-project view-mode and language memory: apply the project's remembered
-  // mode/locale (or stamp the current one onto a project that has none). After
-  // the context write, so dataContext.project is this project before any
-  // recording. Synchronous apart from fire-and-forget saves and the locale's
-  // catalog import — the loader stays fast.
+  // mode (or stamp the current one onto a project that has none) and its
+  // language (English when it has none). After the context write, so
+  // dataContext.project is this project before any recording. Synchronous apart
+  // from fire-and-forget saves and the locale's catalog import — the loader
+  // stays fast.
   applyProjectViewMode(project);
   applyProjectLocale(project);
   return project;
