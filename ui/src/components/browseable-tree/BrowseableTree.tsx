@@ -17,7 +17,7 @@ import {
 } from './drag';
 import { subscribeRefresh } from './refresh-store';
 import { TreeSelectionContext, type TreeSelectionApi } from './useTreeSelection';
-import { useOpenTabHashes } from '@src/tabs/useTabs';
+import { useOpenTabHashes } from '@src/tabs/use-tab-manager';
 import { RAIL_DIM_WHEN_CLOSED } from '@src/lib/utils';
 
 /** Walk a root's currently-visible (expanded) subtree in render order,

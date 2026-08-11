@@ -1,7 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
-import { ConnectionManager, Tab, type IEntity, type ITab } from '@sdk';
-import { applyAllTabs, getAllTabsSnapshot } from '@src/tabs/all-tabs-store';
-import { useSyncContentTabNames } from '@src/tabs/useTabs';
+import { ConnectionManager, Tab, tabManager, type IEntity, type ITab } from '@sdk';
+import { useSyncContentTabNames } from '@src/tabs/use-tab-manager';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 let tabId = '';
@@ -38,13 +37,13 @@ describe('useSyncContentTabNames remote invalidation', () => {
   beforeEach(() => {
     tabId = crypto.randomUUID();
     targetId = crypto.randomUUID();
-    applyAllTabs([row()]);
-    listAllSpy = vi.spyOn(Tab, 'listAll').mockImplementation(() => Promise.resolve(getAllTabsSnapshot()));
+    tabManager.adoptGlobal([row()]);
+    listAllSpy = vi.spyOn(Tab, 'listAll').mockImplementation(() => Promise.resolve([...tabManager.getSnapshot()]));
     setNameSpy = vi.spyOn(Tab, 'setNameById').mockResolvedValue([]);
   });
 
   afterEach(() => {
-    applyAllTabs([]);
+    tabManager.adoptGlobal([]);
     vi.restoreAllMocks();
   });
 

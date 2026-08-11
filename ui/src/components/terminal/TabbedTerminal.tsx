@@ -1,11 +1,11 @@
-import { AgenticProcess, connectionManager, dataContext, Shell, Tab, toplog, TypeId } from '@sdk';
+import { AgenticProcess, connectionManager, dataContext, Shell, tabKey, tabManager, Tab, toplog, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { Button } from '@src/components/ui/button';
 import { DockPointer } from '@src/navigation';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { tabKey, useTerminalTabs } from '@src/tabs/useTabs';
+import { useTerminalTabs } from '@src/tabs/use-tab-manager';
 import { notify } from '@src/notifications';
 import { AlertTriangle, LoaderCircle, PlayCircle, RefreshCw } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
@@ -21,8 +21,8 @@ import {
 
 interface TabbedTerminalProps {
   className?: string;
-  /** Which terminals the body keeps warm-mounted: the active project +
-   *  projectless (`'project'`, default) or every project (`'all'`, the dev
+  /** Which terminals the body keeps warm-mounted: the active project's exact
+   *  scope (`'project'`, default) or every scope (`'all'`, the dev
    *  sessions view). Matches the `scope` passed to the host's `UnifiedTabStrip`. */
   scope?: 'project' | 'all';
   /** Pin spawned shells/processes to this project (CollaborationSpace / dev view);
@@ -252,7 +252,7 @@ const TerminalPanel: React.FC<{
     void source.save().catch(() => {});
     // Mirror onto the durable Tab label so the chip stays right once inactive —
     // set_name, NOT rename (which would pin auto_rename off).
-    void Tab.setNameById(tab.id, clean).catch(() => {});
+    void tabManager.setName(tab.id, clean).catch(() => {});
   };
 
   return (

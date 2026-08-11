@@ -11,12 +11,12 @@ id: 4123bb18-2066-5923-9cd7-fc2417b2b880
 > `TerminalTab` view-model, Part 0 supersedes them. Code comments that cite
 > "Part 3 §N" point at the historical design rationale, not the current wiring.**
 
-# Part 0 — As-built: the `Tab` entity + lifecycle wrapper + one source
+# Part 0 — As-built: the `Tab` entity + SDK `TabManager` + one source
 
 **Every tab in the content-panel strip — terminals and content alike — is a
 first-class `Tab` entity** (`flow_sdk/builtin/tab.py`, DB-only, the `File`
 pattern). There is ONE membership system, ONE backend-authoritative source, ONE
-client store, and ONE strip component.
+client manager, and ONE strip component.
 
 ## The `Tab` entity (backend)
 
@@ -50,8 +50,8 @@ missed → a _second_ canonical row was minted → two visible chips for one poi
 
 ## The `tab` actions (the only wire contract)
 
-Collection-level: `list?project=<id>` (the project view = that project +
-projectless tabs, `filter_for_project`), `list_all` (every visible tab, all
+Collection-level: `list?project=<id>` (the exact project scope;
+`project=` is the separate Global scope, via `filter_for_project`), `list_all` (every visible tab, all
 projects — the global source the client store reads), `new_tab` (loader-driven
 get-or-create + global-order placement), `order` (drag-reorder commit).
 By-id: `close` (soft `visible=false` + per-`target_type` teardown via
@@ -73,8 +73,11 @@ true tab recency.
 ## Runtime lifecycle (frontend only)
 
 `Tab.visible` remains the durable membership source. Opening/closing progress is
-client runtime state in `ui/src/tabs/tab-lifecycle.ts`; it is not persisted and
-does not ride backend `Tab` rows.
+client runtime state in the SDK's headless `TabLifecycleRegistry`
+(`ts_sdk/src/tabs/tab-lifecycle-registry.ts`); it is not persisted and does not
+ride backend `Tab` rows. Route/content setup, cleanup, and adoption policy stay
+in `ui/src/tabs/tab-content-lifecycle.ts`, because they depend on the concrete UI
+`DockPointer`, route classifiers, and content adapters.
 
 ```ts
 type TabLifecycleState = 'opening' | 'opened' | 'open_failed' | 'closing' | 'close_failed';
@@ -97,7 +100,7 @@ navigate to dock
 close chip
   -> closing
   -> cleanupTab(dock, tab)
-  -> Tab.closeById(tab.id)
+  -> tabManager.close(tab.id)
   -> tabs_changed/list_all no longer contains tab
   -> lifecycle entry removed
 
@@ -162,9 +165,11 @@ the client. Ambient context is the wrong source: on a cross-project open, deep
 link, or loader race it can be a _different_ project, and stamping it re-parents
 the tab so its chip vanishes from the real project's strip.
 
-The frontend chokepoint is **`Tab.getFromDockPointer(dock)`** (SDK,
-`entities/tab.ts`), called by the loader. It resolves the target cache-first with a
-network fallback and sends that project hint to `new_tab`:
+The frontend chokepoint is **`tabManager.ensureDock(dock)`** (SDK,
+`tabs/tab-manager.ts`), called by the UI content-lifecycle coordinator. The
+manager delegates to the low-level `Tab.getFromDockPointer(dock)` gateway in
+`entities/tab.ts`, which resolves the target cache-first with a network fallback
+and sends that project hint to `new_tab`:
 
 - a **project** tab (`targetTypeId.type === 'project'`) → its **own id** (a project
   belongs to itself);
@@ -196,16 +201,22 @@ The pieces, each at the right layer:
   `_backfill_tab_projects` supplies the read-time target/pointer fallback for old
   or still-unresolved rows.
 
-## One client store, views derived locally
+## One SDK tab manager, views derived locally
 
-`ui/src/tabs/all-tabs-store.ts` is the **single store**: it holds the global
-visible-tab list from `Tab.listAll()` and refreshes on the `tabs_changed` ping.
-There is NO reactive entity query and NO second (project-scoped) store. Every
-consumer reads this one source and derives its view client-side:
+The headless **`TabManager`** (`ts_sdk/src/tabs/tab-manager.ts`) is the single
+client store: it holds the global visible-tab list from `Tab.listAll()` and
+refreshes on the `tabs_changed` ping. Pure membership, topology, ordering, and
+selection projections live beside it in `ts_sdk/src/tabs/`. There is NO reactive
+entity query and NO second (project-scoped) store.
+
+`ui/src/tabs/use-tab-manager.ts` is only the React subscription layer. It binds
+`useSyncExternalStore` to the manager and supplies React context/entity hydration
+needed for rendering; it does not own tab membership or actions. Every consumer
+reads this one source and derives its view through SDK selectors:
 
 - **strip** (`UnifiedTabStrip`, `scope='project'|'all'`): `'project'` filters to
-  the active project + projectless (mirroring the backend `filter_for_project`,
-  order preserved); `'all'` is the developer sessions view.
+  the active project's exact scope (mirroring the backend `filter_for_project`,
+  order preserved); `'all'` is the developer sessions view, including Global.
 - **terminal body** (`useTerminalTabs`): filters to terminal target types.
 - **project switcher chip** (`useTabProjectBuckets`): buckets by `project_id`,
   **kind-agnostically** (terminal AND content); `project_id == null` tabs are
@@ -219,11 +230,11 @@ consumer reads this one source and derives its view client-side:
   (terminal glyph from `icon_key` + `PROVIDER_META`; content glyph from
   `iconForType` / the backend TypeInfo registry — never a hardcoded per-call-site
   glyph). Active = `currentDock.tabHash` (URL-first; never a `Tab` field).
-  Close goes through `closeTabWithLifecycle` (cleanup first, then `Tab.closeById`);
-  rename/reorder go through the `tab` actions by id (`renameById` / `reorder`).
-  Drag-reorder paints an optimistic `applyPredictedOrder` (the
-  parity-tested `computeReorder`) and commits `Tab.reorder`; the `tabs_changed`
-  refresh adopts the canonical order.
+  Close goes through `closeTabWithLifecycle` (cleanup first, then the manager's
+  close command); rename/reorder go through `TabManager` commands by id.
+  Drag-reorder paints an optimistic `tabManager.previewReorder` (using the
+  parity-tested `computeReorder`) and commits `tabManager.reorder`; the
+  `tabs_changed` refresh adopts the canonical order.
 - Content tabs also carry runtime-only `target_remote`, resolved by the backend
   in one bulk query per distinct target type. The field is a `NoDBAPIField`: it
   is serialized for the strip but never persisted or denormalized at tab
@@ -276,23 +287,24 @@ the radix `<Tabs>` ladder are deleted. Agent stream focus is URL-first:
 ```
 click → navigation.openDock(pointer)              # click handlers do ONLY this
       → react-router loader runs
-      → setupTab(dock)                            # lifecycle wrapper
-           → Tab.getFromDockPointer(dock)         # materialize membership
+      → setupTab(dock)                            # UI content coordinator
+           → tabManager.ensureDock(dock)          # materialize membership
            → route setup (loadShellRoute, loadProjectRoute, ...)
            → opened OR open_failed
            → backend broadcasts tabs_changed
-      → all-tabs-store refreshes → strip + body re-render from the one source
+      → TabManager refreshes → strip + body re-render from the one source
 ```
 
 Default-tab pick (pointer-less `/dock/shell`, recovery): the loaders read a
-`Tab.listAll()` snapshot and choose via `resolveNextTab` (the pure
+`tabManager.getTerminalTabsSnapshot()` result and choose via
+`tabManager.resolveNext` (the pure
 `resolveActive` precedence — pending intent → recency `last_active_at` →
 `tab_order`). The resolver reads recency from `Tab.last_active_at`; currently the
 terminal loaders still stamp the backing Shell/AP entity, so tab recency is a
 known drift and `tab_order` is the effective fallback when no Tab row has
 recency. Close/rename/sync for a target (loaders, notifications, PTY auto-title)
-resolve the Tab row by `target_id` then call the by-id action (`closeById` /
-`renameById` / `setNameById`).
+resolve the Tab row by `target_id` through `TabManager`, which delegates to the
+corresponding low-level by-id action.
 
 ## Deleted by the cutover
 
@@ -310,9 +322,12 @@ chrome.
 `tests/unit/test_tab_entity.py` (dedup-by-`pointer` heal, `list_all` global vs
 scoped, `set_label` vs `rename`, soft-close, teardown dispatch, rename
 reflection, orphan cleanup, the `visible=false` wire rule);
-`ui/tests/unit/tab-lifecycle.test.ts` (opening/opened/open_failed/closing/
-close_failed and `new_terminal` non-materialization), `all-tabs-store.test.ts`
-(drag data-path), `resolve-next-tab.test.ts`
+`ui/tests/unit/tab-lifecycle.test.ts` (route/content materialization, cleanup,
+and `new_terminal` non-materialization), `tab-lifecycle-registry.test.ts`
+(opening/opened/open_failed/closing/close_failed), `tab-manager*.test.ts`
+(canonical refresh, pending intent, recency, and drag data-path),
+`tab-selectors.test.ts` (membership and topology projections),
+`resolve-next-tab.test.ts`
 (`resolveNextTab` precedence), `tab-project-filter.test.ts`
 (`terminalRowsForScope`), `tab-hash.test.ts` (identity), `tab-name.test.ts`,
 `terminal-tab-switch.test.ts` (warm-mount), and the live browser matrix (§11,

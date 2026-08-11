@@ -45,7 +45,8 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   // module made every consumer of it throw "No useCurrentDock export".
   useCurrentDock: () => currentDock,
 }));
-vi.mock('@src/tabs/setup-tab-and-adopt', () => ({
+vi.mock('@src/tabs/tab-content-lifecycle', async (orig) => ({
+  ...(await orig<typeof import('@src/tabs/tab-content-lifecycle')>()),
   setupTabAndAdopt: setupMocks.setupTabAndAdopt,
 }));
 vi.mock('@src/tabs/vibe-parent', () => ({

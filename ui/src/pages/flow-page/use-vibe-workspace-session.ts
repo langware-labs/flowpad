@@ -1,12 +1,11 @@
-import { AgenticProcess, Tab, TypeId } from '@sdk';
+import { AgenticProcess, tabForDockKey, tabManager, Tab, TypeId } from '@sdk';
 import { useEffect, useMemo } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useAllTabs } from '@src/tabs/all-tabs-store';
+import { useAllTabs } from '@src/tabs/use-tab-manager';
 import { ViewType } from '@src/types/ViewType';
 import { useEntity } from '@src/hooks/entity-hooks';
-import { setActiveTabParent } from '@src/tabs/tab-parent-context';
-import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
+import { setupTabAndAdopt } from '@src/tabs/tab-content-lifecycle';
 
 /**
  * Resolved vibe-workspace session for the current URL.
@@ -44,8 +43,7 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
 
   return useMemo(() => {
     if (!currentDock) return null;
-    const tabByHash = (hash: string | null | undefined) =>
-      hash ? (allTabs.find((t) => t.dockPointer?.tabHash === hash) ?? null) : null;
+    const tabByHash = (hash: string | null | undefined) => tabForDockKey(allTabs, hash);
 
     // One session shape from "a process dock + its tab" — null if the dock isn't
     // a process dock. Both entry cases build through here so the 4 fields never
@@ -111,8 +109,8 @@ export function useVibeWorkspaceSessionHost(
 
   useEffect(() => {
     if (!active || !session) return;
-    setActiveTabParent(session.processTab?.id ?? null);
-    return () => setActiveTabParent(null);
+    tabManager.setActiveParentTabId(session.processTab?.id ?? null);
+    return () => tabManager.setActiveParentTabId(null);
   }, [active, session, session?.processTab?.id]);
 
   useEffect(() => {

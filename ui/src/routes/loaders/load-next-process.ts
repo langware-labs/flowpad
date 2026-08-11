@@ -20,9 +20,7 @@
  * branches that used to live in `routeProcessPointer` / `routePlainShellPointer`.
  */
 
-import { AgenticProcess, Shell, TypeId } from '@sdk';
-import { closeTerminalTab, getTerminalTabsSnapshot } from '@src/tabs/useTabs';
-import { resolveNextTab, tabTargetKey } from '@src/tabs/tab-candidates';
+import { AgenticProcess, Shell, tabManager, tabTargetKey, tabsForProject, TypeId } from '@sdk';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
 import { loadShell, ShellLoadError } from './load-shell';
 
@@ -157,7 +155,7 @@ async function buildShellCleanup(e: ShellLoadError): Promise<CleanupRecord> {
     case 'start_failed': {
       // Best-effort close so the user isn't stuck with a zombie row
       // (mirrors the pre-refactor behaviour at routePlainShellPointer:272-273).
-      await closeTerminalTab(new TypeId(Shell.type, e.shellId)).catch(() => {});
+      await tabManager.closeTarget(new TypeId(Shell.type, e.shellId)).catch(() => {});
       const desc = describeProcessStartError(e.cause ?? e);
       return {
         kind: 'shell_start_failed',
@@ -175,12 +173,12 @@ export async function loadNextProcess(options: LoadNextProcessOptions = {}): Pro
   const cleaned: CleanupRecord[] = [];
   const tried = new Set(options.excludeIds ?? []);
 
-  const allTabs = await getTerminalTabsSnapshot('all');
+  const allTabs = await tabManager.getTerminalTabsSnapshot('all');
   const projectId = options.projectId ?? null;
-  const tabs = projectId == null ? allTabs : allTabs.filter((t) => t.project_id === projectId);
+  const tabs = projectId == null ? allTabs : tabsForProject(allTabs, projectId);
 
   while (true) {
-    const tab = resolveNextTab(tabs, tried);
+    const tab = tabManager.resolveNext(tabs, tried);
     if (!tab) {
       return { loaded: null, cleaned };
     }

@@ -16,9 +16,7 @@ const ctx = vi.hoisted(() => ({
   activeEntityTypeId: null as unknown,
 }));
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => ctx }));
-vi.mock('@src/tabs/all-tabs-store', () => ({ getAllTabsSnapshot: () => [] }));
-
-import { dataManager, Tab, TypeId } from '@sdk';
+import { dataManager, Tab, tabManager, TypeId } from '@sdk';
 import { canonicalWikiWord } from '@src/navigation/asset-doc-pointer-grammar';
 import * as ancestors from '@src/navigation/entity-ancestors';
 import { useEntityBreadcrumbs } from '@src/components/top-nav-bar/use-entity-breadcrumbs';
@@ -51,6 +49,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  tabManager.adoptGlobal([]);
   ctx.project = { displayName: 'Acme', id: 'p1' };
   ctx.activeEntity = null;
   ctx.activeEntityTypeId = null;

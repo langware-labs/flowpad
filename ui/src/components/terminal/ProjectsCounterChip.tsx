@@ -7,7 +7,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockForGlobalEntry, dockForProjectEntry } from '@src/tabs/project-entry';
-import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
+import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/use-tab-manager';
 import { Globe, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 

@@ -8,13 +8,24 @@
  * Display data is backend-resolved on the Tab (`name`, `icon_key`, `worktree`,
  * `status`/`is_disabled`).
  */
-import { AgentTrace, AgenticProcess, dataManager, editorForType, Shell, Tab, TypeId } from '@sdk';
+import {
+  AgentTrace,
+  AgenticProcess,
+  dataManager,
+  editorForType,
+  Shell,
+  Tab,
+  tabKey,
+  TabLifecycleState,
+  TypeId,
+  type TabLifecycleEntry,
+} from '@sdk';
 import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { type TabStripItem } from '@src/components/tabs/TabStrip';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { TabLifecycleState, type TabLifecycleEntry, useTabLifecycles } from '@src/tabs/tab-lifecycle';
+import { useTabLifecycles } from '@src/tabs/use-tab-manager';
 import {
   ContentTabTooltip,
   humanizeType,
@@ -48,9 +59,8 @@ function lifecycleStatus(lifecycle: TabLifecycleEntry | null): {
 
 /** Tab → chip. */
 export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): TabStripItem {
-  // DockPointer from the stored JSON pointer; key is the tabHash.
   const dock = tab.dockPointer;
-  const key = dock?.tabHash ?? tab.id;
+  const key = tabKey(tab);
   // No char-level clipping: CSS truncation in the strip owns visible clipping
   // at every chip width, and tooltips need the full name.
   const label = tab.name ?? '';
@@ -194,7 +204,7 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
   return useMemo(
     () =>
       tabs.map((t) => {
-        const key = t.dockPointer?.tabHash ?? t.id;
+        const key = tabKey(t);
         const item = tabItem(t, lifecycles.get(key) ?? null);
         if (key === currentDock?.tabHash && activeAssetTitle) {
           item.title = activeAssetTitle;

@@ -1,4 +1,4 @@
-import { AgenticProcess, dataContext, Tab } from '@sdk';
+import { AgenticProcess, dataContext, tabForDockKey, tabManager, Tab } from '@sdk';
 import { getViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { contentAssetTargetForDock } from '@src/navigation/content-asset-dock';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -33,7 +33,7 @@ async function processTab(proc: AgenticProcess): Promise<Tab | null> {
   // The process entity is already resolved. Calling getFromDockPointer here
   // would resolve the same target a second time before it can mint/reopen its
   // tab, serializing a mode-only transition behind unrelated entity work.
-  const tabs = await Tab.newTab(pointer, {
+  const tabs = await tabManager.newTab(pointer, {
     targetType: AgenticProcess.type,
     targetId: proc.id,
     projectId: proc.project_id ?? null,
@@ -50,7 +50,7 @@ async function processTab(proc: AgenticProcess): Promise<Tab | null> {
       (tab) =>
         tab.target_type === AgenticProcess.type && tab.target_id === proc.id,
     ) ??
-    tabs.find((tab) => tab.dockPointer?.tabHash === hash) ??
+    tabForDockKey(tabs, hash) ??
     null
   );
 }
@@ -69,7 +69,7 @@ export async function resolveAssetVibeHost(
   const target = contentAssetTargetForDock(dock, dock.targetTypeId);
   if (!target) return null;
   const projectId =
-    dock.scopeProjectId ?? (await Tab.resolveDockTarget(dock)).projectId;
+    dock.scopeProjectId ?? (await tabManager.resolveDockTarget(dock)).projectId;
   if (!projectId) return null;
 
   const targetVfsPath = target.targetVfsPath;

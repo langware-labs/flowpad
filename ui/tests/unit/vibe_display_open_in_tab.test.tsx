@@ -22,7 +22,7 @@ import { type PropsWithChildren } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AgenticProcess, dataManager, Tab } from '@sdk';
+import { AgenticProcess, dataManager, Tab, tabManager } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 
@@ -60,7 +60,6 @@ vi.mock('@src/pages/flow-page/use-vibe-workspace-session', async (importOriginal
 import { VibeWorkspace } from '@src/pages/flow-page/vibe-workspace';
 import { WorkspaceChildStrip } from '@src/pages/flow-page/workspace-child-strip';
 import { TooltipProvider } from '@src/components/ui/tooltip';
-import { applyAllTabs } from '@src/tabs/all-tabs-store';
 
 /** Providers the real components need; none of them is on the path under test. */
 const queryClient = new QueryClient();
@@ -112,7 +111,7 @@ function lastOpened(): DockPointer {
  * real implementations; neither is re-derived here.
  */
 function chipFor(opened: DockPointer): { label: string; reopened: DockPointer } {
-  applyAllTabs([
+  tabManager.adoptGlobal([
     new Tab({
       id: 'f5ce6f9c-3a51-5205-bb9b-40bf97e27e65',
       pointer: opened.toJSON(),
@@ -136,7 +135,7 @@ function chipFor(opened: DockPointer): { label: string; reopened: DockPointer } 
 
 afterEach(() => {
   cleanup();
-  applyAllTabs([]);
+  tabManager.adoptGlobal([]);
   openDock.mockReset();
   showListener = null;
   currentDock = processDock;

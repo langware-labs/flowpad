@@ -1,6 +1,5 @@
-import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess, snifferManager } from '@sdk';
+import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess, snifferManager, tabManager } from '@sdk';
 import { gitResolvePrompt } from '@src/components/status-bar/gitResolvePrompt';
-import { closeTerminalTab } from '@src/tabs/useTabs';
 import { notify } from './notify';
 import type { NotificationAction } from './types';
 
@@ -50,7 +49,7 @@ registerCommand('cloud.signin', () => {
 });
 
 registerCommand('terminal.terminate', (args) => {
-  if (args.typeId) void closeTerminalTab(String(args.typeId));
+  if (args.typeId) void tabManager.closeTarget(String(args.typeId));
 });
 
 // `Resolve` on a failed-push toast: launch an agentic process in the current
