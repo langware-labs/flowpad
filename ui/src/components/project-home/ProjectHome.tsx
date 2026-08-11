@@ -11,6 +11,7 @@ import type { PanelHandlers } from '@src/components/quick-create';
 import { EnvLocalCard } from './EnvLocalCard';
 import { SecretsCard } from './SecretsCard';
 import { HomeCustomizationCard } from './HomeCustomizationCard';
+import { ProjectLanguageCard } from './ProjectLanguageCard';
 import { VIBE_AGENTS_TAG, VibeAgentsCard } from './VibeAgentsCard';
 import { useHighlight } from '@src/components/wiki-tip/highlight';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
@@ -54,14 +55,16 @@ const SessionTiles: React.FC<{ spawnProjectId?: string | null; panelProps: Panel
   const terminalTile = useMemo(() => {
     const opener = openers.find((o) => o.id === 'terminal');
     if (!opener) return [];
-    return [{
-      key: 'terminal',
-      Icon: opener.Icon,
-      label: t`Terminal`,
-      wikiword: 'Terminal sessions',
-      disabled: isTabCreationPending,
-      onClick: () => opener.onActivate(),
-    }];
+    return [
+      {
+        key: 'terminal',
+        Icon: opener.Icon,
+        label: t`Terminal`,
+        wikiword: 'Terminal sessions',
+        disabled: isTabCreationPending,
+        onClick: () => opener.onActivate(),
+      },
+    ];
   }, [openers, isTabCreationPending, t]);
 
   return (
@@ -112,10 +115,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
 
   // Resolve the target project (explicit spawn pin, else the active project).
   const projectId = spawnProjectId ?? dataCtx.project?.id ?? null;
-  const projectTypeId = useMemo(
-    () => (projectId ? new TypeId(Project.type, projectId) : null),
-    [projectId],
-  );
+  const projectTypeId = useMemo(() => (projectId ? new TypeId(Project.type, projectId) : null), [projectId]);
 
   // The dialogs the create tiles defer to. Hosted here rather than in the panel
   // so they outlive whatever the tile click dismisses.
@@ -131,10 +131,9 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   const beforeProjectInvite = useMemo<(() => Promise<boolean>) | undefined>(() => {
     if (!projectId || cloudMode) return undefined;
     return async () => {
-      const result = await apiClient.post<{ result?: { available?: boolean; message?: string; details?: { reason?: string } } }>(
-        '/graph/capabilities/test',
-        { kind: CapabilityKinds.GitHub, scope_type: 'project', scope_id: projectId },
-      );
+      const result = await apiClient.post<{
+        result?: { available?: boolean; message?: string; details?: { reason?: string } };
+      }>('/graph/capabilities/test', { kind: CapabilityKinds.GitHub, scope_type: 'project', scope_id: projectId });
       const capability = result?.result;
       if (capability?.available) return true;
       const reason = capability?.details?.reason;
@@ -144,22 +143,31 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
       return false;
     };
   }, [cloudMode, projectId]);
-  const gitGate = useMemo<GitShareGate>(() => ({
-    state: gitGateState,
-    reason: gitGateReason,
-    busy: false,
-    runSetup: async () => {
-      if (!project?.fs_storage_mount_path) return;
-      await launchWizard('git-context-folder', {
-        title: 'Set up Git for project sharing',
-        targetTypeId: project.typeId.toString(),
-        payload: { projectId: project.id, scope: 'private', mode: 'adopt', path: project.fs_storage_mount_path, name: project.name },
-        prompt: `Set up Git in the exact project folder ${project.fs_storage_mount_path}, create or configure its origin remote, and report when it is ready for sharing.`,
-      });
-      setGitGateOpen(false);
-    },
-    runCommit: async () => {},
-  }), [gitGateReason, gitGateState, project]);
+  const gitGate = useMemo<GitShareGate>(
+    () => ({
+      state: gitGateState,
+      reason: gitGateReason,
+      busy: false,
+      runSetup: async () => {
+        if (!project?.fs_storage_mount_path) return;
+        await launchWizard('git-context-folder', {
+          title: 'Set up Git for project sharing',
+          targetTypeId: project.typeId.toString(),
+          payload: {
+            projectId: project.id,
+            scope: 'private',
+            mode: 'adopt',
+            path: project.fs_storage_mount_path,
+            name: project.name,
+          },
+          prompt: `Set up Git in the exact project folder ${project.fs_storage_mount_path}, create or configure its origin remote, and report when it is ready for sharing.`,
+        });
+        setGitGateOpen(false);
+      },
+      runCommit: async () => {},
+    }),
+    [gitGateReason, gitGateState, project],
+  );
 
   const createTab = <CreateTab projectId={projectId} spawnProjectId={spawnProjectId} panelProps={panelProps} />;
 
@@ -210,7 +218,10 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
         />
       )}
       {!cloudMode && gitGateState === 'blocked' && gitGateReason && (
-        <div className="border-b border-red-300 bg-red-50 px-4 py-2 text-xs text-red-800" data-testid="project-git-access-warning">
+        <div
+          className="border-b border-red-300 bg-red-50 px-4 py-2 text-xs text-red-800"
+          data-testid="project-git-access-warning"
+        >
           {gitGateReason}
         </div>
       )}
@@ -240,6 +251,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
               <TabsContent value="customize" className="flex flex-col gap-6">
                 {project && (
                   <>
+                    <ProjectLanguageCard project={project} />
                     <HomeCustomizationCard project={project} />
                     <VibeAgentsCard project={project} />
                   </>

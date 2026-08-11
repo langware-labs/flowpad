@@ -841,7 +841,7 @@ msgid "active"
 msgstr "פעיל"
 
 #: src/components/api-keys-view/api-keys-view.tsx
-#: src/components/footer/LanguageSelector.tsx
+#: src/components/locale/LocalePicker.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Active"
 msgstr "פעיל"
@@ -1230,7 +1230,7 @@ msgstr "הכל בסדר"
 msgid "All guides"
 msgstr ""
 
-#: src/components/footer/LanguageSelector.tsx
+#: src/components/locale/LocalePicker.tsx
 msgid "All languages"
 msgstr "כל השפות"
 
@@ -2327,6 +2327,10 @@ msgstr ""
 #: src/components/version-popover/version-popover.tsx
 msgid "Change the installed flow SDK version"
 msgstr "שנה את גרסת SDK של flow המותקנת"
+
+#: src/components/project-home/ProjectLanguageCard.tsx
+msgid "Change this project's language"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "changed"
@@ -7828,6 +7832,10 @@ msgstr "תווית / דפוס"
 msgid "Labels:"
 msgstr "תוויות:"
 
+#: src/components/project-home/ProjectLanguageCard.tsx
+msgid "Language"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -9640,7 +9648,7 @@ msgstr "אין תיקון ידוע עדיין — השתמש ב\"תקן\" כדי
 #~ msgid "No labels found."
 #~ msgstr "לא נמצאו תוויות."
 
-#: src/components/footer/LanguageSelector.tsx
+#: src/components/locale/LocalePicker.tsx
 msgid "No languages found."
 msgstr "לא נמצאו שפות."
 
@@ -13468,7 +13476,7 @@ msgstr "אינדקס החיפוש מתחמם. הריץ Refresh Index כדי לא
 #~ msgid "Search labels..."
 #~ msgstr "חיפוש תוויות..."
 
-#: src/components/footer/LanguageSelector.tsx
+#: src/components/locale/LocalePicker.tsx
 msgid "Search languages…"
 msgstr "חיפוש שפות…"
 
@@ -15395,6 +15403,10 @@ msgstr "ה-Hub דחה את הלקוח הזה."
 #: src/components/account/danger-zone.tsx
 #~ msgid "The in-app terminal is always the primary shell. This setting controls whether a sidecar OS Terminal window is also opened."
 #~ msgstr "הטרמינל בתוך האפליקציה הוא תמיד ה-shell הראשי. הגדרה זו קובעת האם גם חלון Terminal חיצוני של מערכת ההפעלה יופעל."
+
+#: src/components/project-home/ProjectLanguageCard.tsx
+msgid "The language this project is worked in. Choosing one switches the app now, and switches back to it every time you open this project."
+msgstr ""
 
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "The lens path could not be parsed."

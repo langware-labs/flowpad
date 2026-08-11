@@ -16,6 +16,7 @@
       "host_member_id",
       "last_mode",
       "last_session_at",
+      "locale",
       "presence",
       "session_code",
       "session_count",
