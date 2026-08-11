@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DockPointer } from '@src/navigation/DockPointer';
 
 describe('DockPointer.splitProjectPointer', () => {
@@ -74,12 +74,20 @@ describe('the workspace host never reaches the asset layer', () => {
     expect(String(hosted.targetTypeId)).toBe(`markdown-${ASSET}`);
   });
 
-  it('throws when a composite pointer reaches the split — never a blank pane', () => {
-    // A stored row or hand-built dock that kept the composite form. Left alone
-    // this degrades to `AssetDocPointer.parse` throwing, `loadAssetRoute`
-    // swallowing it with a console.warn, and a blank pane with no error.
-    expect(() =>
-      DockPointer.splitProjectPointer(`${PID}/process/agentic_process-abc/display/editor/markdown/typeid/markdown-${ASSET}`),
-    ).toThrow(/workspace host/i);
+  it('complains loudly but still degrades gracefully if a composite slips through', () => {
+    // A stored row or hand-built dock that kept the composite form. Silently it
+    // would reach `AssetDocPointer.parse`, get swallowed by `loadAssetRoute`,
+    // and leave a blank pane. But this is a READ path — three components call it
+    // during render — so it must not throw either: name it, strip it, continue.
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(
+      DockPointer.splitProjectPointer(
+        `${PID}/process/agentic_process-abc/display/editor/markdown/typeid/markdown-${ASSET}`,
+      ),
+    ).toEqual({ projectId: PID, assetSubPointer: `editor/markdown/typeid/markdown-${ASSET}` });
+    expect(err).toHaveBeenCalledWith(expect.stringMatching(/workspace host/i));
+
+    err.mockRestore();
   });
 });

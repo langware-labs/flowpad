@@ -46,18 +46,16 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   const hasObservedLastShownRef = useRef(false);
   const handledLastShownKeyRef = useRef('');
   const [transitionsReady, setTransitionsReady] = useState(false);
-  // The session resolves synchronously from the URL + the tab store, so there is
-  // no unknown-host window to paper over: no provisional shape, no dual-source
-  // process identity, no flushSync.
-  const effectiveSession = session;
-  const process = useVibeWorkspaceSessionHost(effectiveSession, isVibe);
+  // The session resolves synchronously from the URL plus the tab store, so there
+  // is no unknown-host window to paper over and one process identity throughout.
+  const process = useVibeWorkspaceSessionHost(session, isVibe);
   // Kept in a ref because `openShownTarget` is deliberately stable (see below):
   // re-creating it would open a cleanup/re-subscribe gap against the process
   // save that lands immediately before `on_show`.
   // The pointer form (`agentic_process-<uuid>`), NOT the bare `processId`: the
   // host is resolved back through `DockPointer.forShell(host)`, so a bare uuid
   // silently matches no tab and the URL-carried host does nothing.
-  hostProcessIdRef.current = effectiveSession?.processDock.pointer ?? null;
+  hostProcessIdRef.current = session?.processDock.pointer ?? null;
   // Vibe has no InteractiveTerminal, so this is where the session's transport
   // is kept aligned with the view mode while the workspace is on screen.
   useProcessSurface({ process });
@@ -107,13 +105,9 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
     setTransitionsReady(true);
   }, []);
 
-  // NOTE: there is deliberately no host RE-DERIVATION here any more. A document
-  // opened in vibe without a host in its URL is just a document at its natural
-  // asset address — the app never infers or invents a workspace for it. What
-  // used to live here resolved the project over the network, queried every Chat
-  // for one matching the asset, and CREATED a process when none matched, which
-  // is why a reload could land on a different process than the one that showed
-  // the document. The URL carries the host now (`DockPointer.hostProcessId`).
+  // A document whose URL names no host is just a document at its natural asset
+  // address: nothing here infers or invents a workspace for it. Host identity
+  // arrives with the URL (`DockPointer.hostProcessId`).
 
   const openShownTarget = useCallback((target: DisplayShowTarget) => {
     try {
@@ -140,26 +134,25 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   // The callback is stable so the process save emitted immediately before
   // `on_show` cannot create a React cleanup/re-subscribe gap.
   useEffect(() => {
-    // ONE process identity now — there is no provisional twin to also subscribe.
-    if (!isVibe || !effectiveSession || !process) return;
+    if (!isVibe || !session || !process) return;
     return process.onShow(openShownTarget);
-  }, [effectiveSession, isVibe, openShownTarget, process]);
+  }, [session, isVibe, openShownTarget, process]);
 
   useEffect(() => {
-    if (!isVibe || !effectiveSession?.processId) return;
+    if (!isVibe || !session?.processId) return;
     const manager = dataContext.dataManager;
     // Lightweight unit hosts can render the workspace before the SDK manager
     // is installed. The process-instance listener above remains sufficient in
     // that environment; the manager listener closes the live WS attach race.
     if (!manager) return;
-    const processTypeId = `${AgenticProcess.type}-${effectiveSession.processId}`;
+    const processTypeId = `${AgenticProcess.type}-${session.processId}`;
     const onEntityEvent = (typeId: TypeId, event: string, payload: Record<string, unknown>) => {
       if (typeId.toString() !== processTypeId || event !== 'on_show') return;
       openShownTarget(payload as DisplayShowTarget);
     };
     manager.on('on_entity_event', onEntityEvent);
     return () => manager.off('on_entity_event', onEntityEvent);
-  }, [effectiveSession?.processId, isVibe, openShownTarget]);
+  }, [session?.processId, isVibe, openShownTarget]);
 
   // `on_show` is persisted on the process before the transient entity event is
   // emitted. Consume that ordinary process update directly too: it is the
@@ -170,8 +163,8 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
     (typeId: TypeId, op: 'create' | 'update' | 'delete', data: IEntity) => {
       if (
         !isVibe ||
-        !effectiveSession?.processId ||
-        typeId.id !== effectiveSession.processId ||
+        !session?.processId ||
+        typeId.id !== session.processId ||
         (op !== 'create' && op !== 'update')
       ) {
         return;
@@ -183,7 +176,7 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
       handledLastShownKeyRef.current = key;
       openShownTarget(shown);
     },
-    [effectiveSession?.processId, isVibe, openShownTarget],
+    [session?.processId, isVibe, openShownTarget],
   );
   useEntityOps(processEntityTypes, onProcessEntityOp);
 
@@ -197,7 +190,7 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   const parsedNewestShownAt = newestShownAt ? Date.parse(newestShownAt) : Number.NaN;
   const newestShownAtMs = Number.isFinite(parsedNewestShownAt) ? parsedNewestShownAt : null;
   useEffect(() => {
-    if (!isVibe || !effectiveSession || !lastShown) return;
+    if (!isVibe || !session || !lastShown) return;
     if (!hasObservedLastShownRef.current) {
       hasObservedLastShownRef.current = true;
       // The URL that mounted this workspace is authoritative. Persisted show
@@ -212,7 +205,7 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
     if (handledLastShownKeyRef.current === lastShownKey) return;
     handledLastShownKeyRef.current = lastShownKey;
     openShownTarget(lastShown);
-  }, [effectiveSession, isVibe, lastShownKey, newestShownAtMs, openShownTarget]);
+  }, [session, isVibe, lastShownKey, newestShownAtMs, openShownTarget]);
 
   // Bridge live worker writes into the canonical FS invalidation channel. The
   // store keeps dirty cache entries, so this refreshes clean viewers without
@@ -275,10 +268,10 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
       <ResizablePanel id="asset-vibe-content" order={2} defaultSize={isVibe ? 64 : 100} minSize={45}>
         <div className="flex h-full flex-col">
           <div className={isVibe ? 'block' : 'hidden'}>
-            {effectiveSession ? (
+            {session ? (
               <WorkspaceChildStrip
-                processTab={effectiveSession.processTab}
-                processDock={effectiveSession.processDock}
+                processTab={session.processTab}
+                processDock={session.processDock}
                 projectId={project?.id ?? null}
               />
             ) : (
