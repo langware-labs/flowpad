@@ -34,11 +34,25 @@ export function AddressSearchField({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState('');
   const [opening, setOpening] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const [scope] = useDefaultScopeFilter();
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (fieldRef.current?.contains(target) || resultsRef.current?.contains(target)) return;
+      onClose();
+    };
+
+    window.addEventListener('pointerdown', closeOutside, true);
+    return () => window.removeEventListener('pointerdown', closeOutside, true);
+  }, [onClose]);
 
   const { results, isLoading } = useRecordSearch(query, undefined, {}, scope, 250);
   const rows = useMemo(() => results.map(searchResultToRow), [results]);
@@ -59,7 +73,11 @@ export function AddressSearchField({ onClose }: { onClose: () => void }) {
     <Popover open={searchable} modal={false}>
       <Command shouldFilter={false} className="contents">
         <PopoverAnchor asChild>
-          <div data-testid="top-nav-search" className={`${ADDRESS_PILL_CLASS} border-primary ring-1 ring-primary/30`}>
+          <div
+            ref={fieldRef}
+            data-testid="top-nav-search"
+            className={`${ADDRESS_PILL_CLASS} border-primary ring-1 ring-primary/30`}
+          >
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
             <input
               ref={inputRef}
@@ -92,6 +110,7 @@ export function AddressSearchField({ onClose }: { onClose: () => void }) {
           </div>
         </PopoverAnchor>
         <PopoverContent
+          ref={resultsRef}
           align="start"
           // The panel must never steal the caret — you are still typing into the
           // bar while it opens, re-renders, and re-sorts underneath you.
