@@ -55,19 +55,20 @@ describe('the landing path', () => {
     expect(path).not.toContain('://');
   });
 
-  it('points at the open-sandbox page, carrying the node', () => {
-    // Not hub home: the recipient would have to find the card and press Open.
-    // Not open-service: that is a blank tab while the box resumes.
+  it('is the entity url the hub itself would have built', () => {
+    // `<type>/<id>` in the PATH — the shape of `build_entity_url`, and of
+    // `flow_message/:messageId`, the entry journey doing this same job for a
+    // conversation. Asserted through `ComputeNode.type` rather than the literal
+    // 'compute_node' so a type rename cannot leave this URL behind.
     const path = sandboxShareLandingPath(NODE_ID);
 
-    expect(path.startsWith('/open-sandbox?')).toBe(true);
-    expect(path).toContain(NODE_ID);
+    expect(path).toBe(`/${ComputeNode.type}/${NODE_ID}`);
   });
 
   it('escapes the node id rather than interpolating it raw', () => {
-    // The id reaches the hub as a stored redirect target; a value that can
-    // smuggle another query param into it must not be pasted in unescaped.
-    expect(sandboxShareLandingPath('a&b=c')).toBe('/open-sandbox?node=a%26b%3Dc');
+    // The id lands in a URL PATH: a value carrying a slash or a `?` would change
+    // which route it addresses, not merely which node.
+    expect(sandboxShareLandingPath('a/b?c')).toBe(`/${ComputeNode.type}/a%2Fb%3Fc`);
   });
 });
 
@@ -110,7 +111,12 @@ describe('shareSandboxByEmail wire contract', () => {
     const body = lastBody();
     expect(body.recipient_email).toBe('bob@example.com');
     expect(body.invitation_targets).toEqual([{ typeid: `${ComputeNode.type}-${NODE_ID}`, role: SANDBOX_SHARE_ROLE }]);
-    expect(body.callback_override).toBe(sandboxShareLandingPath(NODE_ID));
+    // NO override: the hub's own post-accept landing is
+    // `build_entity_url(target.typeid)`, which is exactly
+    // `sandboxShareLandingPath`. Sending one would be a second, hand-made
+    // spelling of an address the hub already produces — and the drift between
+    // two spellings is what this whole module keeps learning about.
+    expect('callback_override' in body).toBe(false);
     // Not a transfer unless asked: these keys must be absent, not false/null.
     expect('transfer' in body).toBe(false);
     expect('role_to_keep' in body).toBe(false);
@@ -188,7 +194,7 @@ describe('shareFailureText', () => {
  * links to one machine with different abilities is the drift these assert away.
  *
  * Still safe to paste into a chat: it names a node and carries no credential,
- * and `/open-sandbox` reaches the box only through `open-service`, which is what
+ * and `/compute_node/<id>` reaches the box only through `open-service`, which is
  * authorizes the caller and attaches the cookie-gate secret.
  */
 describe('sandboxShareLink', () => {
@@ -214,7 +220,7 @@ describe('sandboxShareLink', () => {
   it('points at the HUB, not at whatever machine the sender is sitting on', () => {
     // The regression this exists for, shipped twice: run the app locally against
     // a remote hub and the link came out
-    // `http://localhost:4093/open-sandbox?node=…` — a flawless link to the
+    // `http://localhost:4093/compute_node/…` — a flawless link to the
     // sender's own laptop, handed to somebody who cannot reach it.
     //
     // Asserted against the `open-service` origin rather than a literal: that is
@@ -259,13 +265,12 @@ describe('sandboxShareLink', () => {
   });
 
   it('names a node and nothing else, so a shared link cannot aim anywhere but the box', () => {
-    // The `?` is now load-bearing (`?node=`), so "no query at all" is no longer
-    // the guard. What must never appear is a second, caller-chosen parameter —
-    // a `next`/redirect the sender picks would make this an open redirect
-    // wearing a sandbox link's clothes.
-    const params = new URL(sandboxShareLink(node)).searchParams;
+    // With the id in the PATH there is nothing left for a query to carry, and a
+    // caller-chosen `next`/redirect parameter would turn this into an open
+    // redirect wearing a sandbox link's clothes.
+    const url = new URL(sandboxShareLink(node));
 
-    expect([...params.keys()]).toEqual(['node']);
-    expect(params.get('node')).toBe(NODE_ID);
+    expect(url.search).toBe('');
+    expect(url.pathname).toBe(`/${ComputeNode.type}/${NODE_ID}`);
   });
 });

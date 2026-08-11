@@ -1,5 +1,5 @@
 /**
- * `/open-sandbox` — the invitation landing, and the branch it was missing.
+ * `/compute_node/<id>` — the invitation landing, and the branch it was missing.
  *
  * The page used to do one thing: build the `open-service` URL and go. That is
  * right for a box with a VM behind it and a dead end for one without, because a
@@ -15,7 +15,7 @@
  * same field the hub decides it by.
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -70,8 +70,8 @@ beforeEach(() => {
   (window as unknown as { location: Partial<Location> }).location = {
     origin: originalLocation.origin,
     href: originalLocation.href,
-    pathname: '/open-sandbox',
-    search: `?node=${NODE_ID}`,
+    pathname: `/compute_node/${NODE_ID}`,
+    search: '',
     assign,
   };
 });
@@ -81,15 +81,24 @@ afterEach(() => {
   (window as unknown as { location: Location }).location = originalLocation;
 });
 
+/**
+ * Rendered through a real `<Route path="compute_node/:nodeId">`, not bare.
+ *
+ * The id arrives via `useParams` now, and a bare render supplies no params at
+ * all — the page would read an empty id and take the "this link is missing the
+ * sandbox" exit, passing nothing and proving nothing.
+ */
 function renderLanding(nodeId = NODE_ID) {
   return render(
-    <MemoryRouter initialEntries={[`/open-sandbox?node=${nodeId}`]}>
-      <OpenSandboxLanding />
+    <MemoryRouter initialEntries={[`/compute_node/${nodeId}`]}>
+      <Routes>
+        <Route path="compute_node/:nodeId" element={<OpenSandboxLanding />} />
+      </Routes>
     </MemoryRouter>,
   );
 }
 
-describe('open-sandbox landing', () => {
+describe('compute_node landing', () => {
   it('opens a launched sandbox without touching the launch path', async () => {
     mocks.getById.mockResolvedValue(node({ node_provider_id: 'e2b-sandbox-1' }));
 
