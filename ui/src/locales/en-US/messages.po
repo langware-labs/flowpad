@@ -3705,8 +3705,8 @@ msgid "Could not start automation"
 msgstr "Could not start automation"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
-msgid "Could not start chat"
-msgstr "Could not start chat"
+#~ msgid "Could not start chat"
+#~ msgstr "Could not start chat"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Could not start room"

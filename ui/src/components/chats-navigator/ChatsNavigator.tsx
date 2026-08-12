@@ -6,6 +6,7 @@ import type { NavigatorDescriptor } from '@src/components/navigator-panel/types'
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { openNewChat } from '@src/navigation/open-new-chat';
+import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useOpenTabTargetIds } from '@src/tabs/useTabs';
 import { useProject } from '@src/hooks/useProject';
@@ -129,7 +130,7 @@ export function ChatsNavigator() {
         (await AgenticProcess.getByWorkerId(workerId, workerType));
       if (!process) return;
       await process.delete();
-      refetch();
+      void refetch();
     } catch (err) {
       console.error('[ChatsNavigator] delete failed', err);
       notify.error({ title: t`Could not delete`, message: err instanceof Error ? err.message : String(err) });
@@ -145,10 +146,10 @@ export function ChatsNavigator() {
       // so a Standard user who had chosen `terminal` still got a chat pane.
       void openNewChat(navigation, { workerType }).catch((err) => {
         console.error('[ChatsNavigator] new chat failed', err);
-        notify.error({ title: t`Could not start chat`, message: err instanceof Error ? err.message : String(err) });
+        openCapabilitiesForWorker(navigation, workerType);
       });
     },
-    [navigation, t],
+    [navigation],
   );
 
   const descriptor: NavigatorDescriptor = useMemo(
