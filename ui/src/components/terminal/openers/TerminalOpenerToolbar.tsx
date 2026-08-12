@@ -15,6 +15,7 @@ import { useCallback } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { OpenerDescriptor, OpenerId } from './tab_opener_types';
+import { OpenerWarningBadge } from './OpenerWarningBadge';
 import { usePinnedOpeners } from './usePinnedOpeners';
 
 interface Props {
@@ -24,19 +25,6 @@ interface Props {
 
 function dockerNodeName(node: ComputeNode): string {
   return (node as { uname?: string }).uname?.replace(/^docker-/, '') ?? node.id;
-}
-
-/** Small "!" sub-icon overlaid on an opener whose capability check failed. */
-function OpenerWarningBadge({ openerId }: { openerId: OpenerId }) {
-  return (
-    <span
-      className="absolute -right-0.5 -top-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold leading-none text-black"
-      data-testid={`opener-warning-${openerId}`}
-      aria-hidden="true"
-    >
-      !
-    </span>
-  );
 }
 
 export function getInlineOpeners(
@@ -91,7 +79,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
     ) : (
       <>
         <Icon className={`h-4 w-4 ${opener.iconClassName ?? ''}`} />
-        {opener.warning && <OpenerWarningBadge openerId={opener.id} />}
+        {opener.warning && <OpenerWarningBadge id={opener.id} />}
       </>
     );
 
@@ -227,7 +215,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
       >
         <span className="relative inline-flex">
           <Icon className={`h-4 w-4 ${opener.iconClassName ?? ''}`} />
-          {opener.warning && <OpenerWarningBadge openerId={opener.id} />}
+          {opener.warning && <OpenerWarningBadge id={opener.id} />}
         </span>
         <span>{opener.label}</span>
         {pinButton}
