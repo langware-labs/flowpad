@@ -21,8 +21,8 @@ from flow_sdk.app.actions.desktop_oauth import (
     wait_for_desktop_oauth_callback,
 )
 from flow_sdk.app.actions.oauth_attachment import attach_action, detach_action, disconnect_action
+from flow_sdk.core import action
 from flow_sdk.core.oauth import resolve_user_credentials_name, unresolved_provider_reason
-from flow_sdk.core.oauth.provider_registry import get_local_provider, prefers_hub_flow
 from flow_sdk.core.oauth.hub_oauth import (
     hub_credential_value,
     hub_credentials_name_for,
@@ -30,7 +30,7 @@ from flow_sdk.core.oauth.hub_oauth import (
     poll_hub_credential,
     redirect_unreachable_reason,
 )
-from flow_sdk.core import action
+from flow_sdk.core.oauth.provider_registry import OAuthFlowKind, get_local_provider, prefers_hub_flow
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -289,7 +289,18 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
             hub_refusal = await redirect_unreachable_reason(str(hub_payload.get("auth_url") or ""))
             if not hub_refusal:
                 logger.info("OAuth: %s runs the authorization-code flow on the hub", provider)
-                return ApiSuccessResponse(data=hub_payload)
+                # Name the grant, so the client knows where it completes.
+                # ``CODE`` already means exactly this one — "authorization code,
+                # redirect handled by the hub" — while ``LOOPBACK`` is the same
+                # grant redirected to a port on THIS machine. The two finish in
+                # completely different places and only the loopback one posts its
+                # result back here, so a payload that says neither is a payload
+                # the client has to guess about: it guessed loopback, waited for
+                # a local callback that could never arrive, and left the token
+                # sitting on the hub with the connection reading MISSING. A
+                # ``code`` flow tells the client to drive ``wait-callback``,
+                # which polls the hub and adopts the token into local SOD.
+                return ApiSuccessResponse(data={**hub_payload, "kind": OAuthFlowKind.CODE.value})
 
         # The hub cannot carry this flow — unreachable, or its callback host is
         # not serving. Either way it is "hub unavailable": a provider with a

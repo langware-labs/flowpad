@@ -1,6 +1,15 @@
 import { i18n } from '@lingui/core';
 import { useSyncExternalStore } from 'react';
-import { dataContext, instancePreferences, InstancePreferencesEvent, isHubOnly, PrefKey, type Project } from '@sdk';
+import {
+  ContextEventType,
+  dataContext,
+  dataManager,
+  instancePreferences,
+  InstancePreferencesEvent,
+  isHubOnly,
+  PrefKey,
+  type Project,
+} from '@sdk';
 import type { SupportedLocale } from '@sdk/models';
 import { usePreference } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
@@ -229,9 +238,9 @@ export async function setLocale(code: string): Promise<void> {
 }
 
 /**
- * Apply a project's remembered language on project load (called from
- * `loadProject`, after CurrentProjectTypeId is written to context, so
- * `dataContext.project` is already this project).
+ * Apply a project's remembered language. Driven by the context subscription
+ * below — NOT wired to any one route — so every way of entering a project gets
+ * it (see `onCurrentProjectChanged`).
  *
  * A stored supported `locale` switches the app exactly as the footer picker
  * would. NO stored locale means English: an unset (or unrecognized) project
@@ -243,9 +252,9 @@ export async function setLocale(code: string): Promise<void> {
  * the moment they pick one (via the Language card or the footer chip, both of
  * which converge in `setLocale` → `stampProjectLocale`).
  *
- * The switch is fire-and-forget so the loader stays fast (URL-first rule);
- * `<html lang/dir>` and the Lingui catalog land a tick later, as they do for a
- * footer switch.
+ * The switch is fire-and-forget so no caller waits on it (the URL-first rule
+ * keeps loaders fast); `<html lang/dir>` and the Lingui catalog land a tick
+ * later, as they do for a footer switch.
  */
 export function applyProjectLocale(project: Project): void {
   // Hub: not the surface a project is WORKED in — and the hub's bootstrap ships
@@ -293,6 +302,9 @@ export async function initLocale(): Promise<void> {
 export async function applySupportedLocales(list: LocaleInfo[] | null | undefined): Promise<void> {
   _supported = list && list.length > 0 ? list : FALLBACK_LOCALES;
   _supportedListeners.forEach((fn) => fn());
+  // From here on a project's language can actually be resolved, so start
+  // following the current project (see `ensureProjectLocaleSync`).
+  ensureProjectLocaleSync();
   await resolveAndApply(true);
 }
 
@@ -305,6 +317,63 @@ async function onPrefLocaleChanged(): Promise<void> {
     applyLocaleAttributes(code);
   }
 }
+/**
+ * The language follows the CURRENT PROJECT, however it became current.
+ *
+ * Deliberately hung off the context change rather than a route loader. Becoming
+ * "in" a project is not one code path: a loader does it, but so do the project
+ * picker, quick-create, the task/conversation/asset loaders adopting an entity's
+ * owner, the boot-time restore, and — the one that made this non-negotiable —
+ * `initSdk` adopting `bootstrapInfo.default_project`, which is how a provisioned
+ * SANDBOX adopts the project it was built for. Wired to `loadProject` alone, a
+ * box opened its Hebrew project reading English, and each of the other writers
+ * was the same bug waiting for someone to walk into it.
+ *
+ * `setContextEntityTypeId` is the single choke point all of them funnel through
+ * and it already early-returns on an unchanged TypeId, so this fires exactly
+ * once per real switch. The id guard here covers the rest of CONTEXT_CHANGED,
+ * which is emitted for every context key, not just the project.
+ *
+ * Leaving a project (id → null) deliberately does NOT change the language:
+ * there is no project asking for one, and yanking the user's language on the
+ * way out would be a change nobody requested.
+ */
+let _localeProjectId: string | null = null;
+
+async function onCurrentProjectChanged(): Promise<void> {
+  const typeId = dataContext.projectTypeId;
+  const id = typeId?.id ?? null;
+  if (id === _localeProjectId) return;
+  _localeProjectId = id;
+  if (!id || !typeId) return;
+  // Usually already cached (whoever set the context had the entity in hand);
+  // fetch only when it isn't, and let a failure pass — a language is not worth
+  // failing a navigation over.
+  const project =
+    dataContext.project?.id === id
+      ? dataContext.project
+      : await dataManager.getByTypeId<Project>(typeId).catch(() => null);
+  if (project) applyProjectLocale(project);
+}
+
+let _projectLocaleSyncInstalled = false;
+
+/**
+ * Installed from `applySupportedLocales`, not at module import.
+ *
+ * Two reasons, and the first is the real one: before the backend's locale list
+ * is in, `isSupported('he')` is false and every project would resolve to en-US —
+ * the subscription has nothing correct to do until then. The second is that this
+ * module is pulled in transitively by `i18n-init`, so subscribing at import time
+ * made every unit test that mocks `@sdk` with a partial `dataContext` fail on
+ * `dataContext.on is not a function`.
+ */
+function ensureProjectLocaleSync(): void {
+  if (_projectLocaleSyncInstalled) return;
+  _projectLocaleSyncInstalled = true;
+  dataContext.on(ContextEventType.CONTEXT_CHANGED, () => void onCurrentProjectChanged());
+}
+
 instancePreferences.on(InstancePreferencesEvent.PREFERENCES_CHANGED, () => void onPrefLocaleChanged());
 instancePreferences.on(InstancePreferencesEvent.PREFERENCES_LOADED, () => void onPrefLocaleChanged());
 

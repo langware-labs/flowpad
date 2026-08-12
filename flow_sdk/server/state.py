@@ -34,26 +34,29 @@ reporter_registry = ReporterRegistry()
 reporter_registry.add(buffer_reporter)
 reporter_registry.add(ws_reporter)
 
-# The project a provisioned box should OPEN — once PER PERSON.
+# The project a provisioned box should OPEN — once, then forgotten.
 #
 # When the hub sets a sandbox up it clones one or more projects in and then says
-# which one the user meant. That answer has to reach each person who opens the
-# box exactly once: `initSdk` only honours `default_project` when the client has
-# no project of its own remembered, so re-asserting it would drag someone back to
-# the starting project every time they refreshed. Handing it out once makes it an
-# *opening* instruction rather than a standing preference.
+# which one the user meant. Handing that out exactly once makes it an *opening*
+# instruction rather than a standing preference: `initSdk` only honours
+# `default_project` when the client has no project of its own remembered, so
+# re-asserting it would drag someone back to the starting project on every
+# refresh.
 #
-# ONCE PER PERSON, not once per box, and that distinction is the whole point of
-# this file's shape. A shared sandbox has a second reader: Alice provisions it and
-# opens it, Bob is handed the link later. A single pop meant Alice's first load
-# consumed the only copy and Bob — whose first visit the box cannot distinguish
-# from Alice pressing refresh — landed on the ordinary default instead of the
-# project the machine was made for. So consumption is recorded per hub user id,
-# and the record is on DISK: the box restarts (it pauses on idle and resumes),
-# and a handover that survives the sender's session must survive that too.
+# ONE-SHOT PER BOX, deliberately — this side cannot honestly do better. Every
+# visitor reaches a sandbox through the SAME shared cookie-gate secret, so the
+# second person to open it is indistinguishable from the first one refreshing.
+# A shared box therefore needs its instruction RE-ARMED for each new person, and
+# only the hub knows who is asking, because the hub authorized the request:
+# `ComputeNode._rearm_opening_project_for` re-issues `set-default-project` right
+# before it hands someone the machine. Do not try to re-derive the person here —
+# an earlier attempt keyed on the box's own cloud login, which is one identity
+# for the whole machine, so it read as the same consumer every time and changed
+# nothing.
 #
-# Nobody signed in yet gets one anonymous slot, which is exactly the pre-handover
-# behaviour: a box opened before any cloud login still opens on its project.
+# On DISK rather than in memory because a sandbox pauses when idle and resumes:
+# process state lost the instruction on every restart, including the gap between
+# the hub arming it and the browser arriving.
 _OPENING_PROJECT_FILE = "opening_project.json"
 _opening_project_lock = threading.Lock()
 
@@ -86,53 +89,27 @@ def _write_opening_project(record: Dict[str, Any]) -> None:
         logging.warning("[provisioning] could not persist the opening project: %s", err)
 
 
-def _consumer_key() -> str:
-    """Who is asking — the signed-in hub user id, or ``anonymous`` before login.
-
-    Keying on the hub user (not a session or a browser) is what makes the
-    instruction follow the PERSON: Bob signing in on the box Alice provisioned
-    is a consumer the box has not served yet, whichever tab he opens it in.
-    """
-    try:
-        from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
-
-        user = get_user()
-        uid = user.get("id") if user else None
-        return str(uid) if uid else "anonymous"
-    except Exception:  # noqa: BLE001
-        return "anonymous"
-
-
 def set_pending_default_project(project_id: str | None) -> None:
-    """Name the project this box opens on. ``None`` clears it.
+    """Name the project the next bootstrap should open. ``None`` clears it.
 
-    Resets the consumed-by roster: naming a (different) project is a fresh
-    instruction, and everyone who opens the box afterwards should be served it.
+    Called at provisioning, and again by the hub each time it hands the box to
+    someone it has not sent there yet.
     """
     with _opening_project_lock:
-        if not project_id:
-            _write_opening_project({})
-            return
-        _write_opening_project({"project_id": str(project_id), "consumed_by": []})
+        _write_opening_project({"project_id": str(project_id)} if project_id else {})
 
 
 def take_pending_default_project() -> str | None:
-    """Return the opening project for the CALLER, once, then remember they got it.
+    """Return the pending project id and forget it.
 
-    Returns ``None`` for a caller already served — so their own refresh or a
-    second tab lands on whatever they have since selected — while a person the
-    box has not served yet still gets the project it was provisioned with.
+    Popping rather than reading is the mechanism: the next bootstrap — a refresh,
+    or a second tab — gets the ordinary default and cannot overwrite whatever the
+    user has selected in the meantime. A second PERSON is served by the hub
+    re-arming this, not by anything decidable here.
     """
     with _opening_project_lock:
-        record = _read_opening_project()
-        project_id = record.get("project_id")
+        project_id = _read_opening_project().get("project_id")
         if not project_id:
             return None
-        consumer = _consumer_key()
-        consumed = list(record.get("consumed_by") or [])
-        if consumer in consumed:
-            return None
-        consumed.append(consumer)
-        record["consumed_by"] = consumed
-        _write_opening_project(record)
+        _write_opening_project({})
         return str(project_id)
