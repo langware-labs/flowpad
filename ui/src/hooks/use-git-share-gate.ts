@@ -5,10 +5,7 @@ import { notify } from '@src/notifications';
 import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 import { useGitPush } from '@src/hooks/use-git-push';
 import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
-import {
-  gitShareGateState,
-  type GitShareGateState,
-} from '@src/components/share-to-conversation/git-share-gate-state';
+import { gitShareGateState, type GitShareGateState } from '@src/components/share-to-conversation/git-share-gate-state';
 import type { ContextFolderTarget } from '@src/hooks/use-context-folder-for-rel';
 
 export interface GitShareGate {

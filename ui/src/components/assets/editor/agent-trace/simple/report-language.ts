@@ -21,19 +21,26 @@ export interface FriendlyVerdict {
 }
 
 /** ok/mixed/bad/none → a friendly headline + emoji + the model's reason line. */
-export function friendlyVerdict(
-  verdict?: string | null,
-  reason?: string | null,
-): FriendlyVerdict {
+export function friendlyVerdict(verdict?: string | null, reason?: string | null): FriendlyVerdict {
   const v = (verdict ?? '').toLowerCase();
   const plainReason = (reason ?? '').trim();
   switch (v) {
     case 'ok':
       return { emoji: '🟢', headline: 'Looks good — it did what you asked.', reason: plainReason, tone: 'ok' };
     case 'mixed':
-      return { emoji: '🟡', headline: "Mostly fine — a few things could've gone better.", reason: plainReason, tone: 'mixed' };
+      return {
+        emoji: '🟡',
+        headline: "Mostly fine — a few things could've gone better.",
+        reason: plainReason,
+        tone: 'mixed',
+      };
     case 'bad':
-      return { emoji: '🔴', headline: 'Ran into trouble — several things went wrong.', reason: plainReason, tone: 'bad' };
+      return {
+        emoji: '🔴',
+        headline: 'Ran into trouble — several things went wrong.',
+        reason: plainReason,
+        tone: 'bad',
+      };
     default:
       return { emoji: '⚪', headline: 'Not rated yet.', reason: plainReason, tone: 'neutral' };
   }

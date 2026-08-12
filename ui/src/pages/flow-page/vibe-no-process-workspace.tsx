@@ -95,17 +95,17 @@ export function VibeNoProcessWorkspace() {
                 // that gets sent must all be the same string.
                 const p = t(descriptor);
                 return (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => void startFromPrompt(p)}
-                  disabled={!project?.id || starting || !!startingPrompt}
-                  data-testid="display-starter-chip"
-                  className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {startingPrompt === p ? <Loader2 className="me-1 inline h-3.5 w-3.5 animate-spin" /> : null}
-                  {p}
-                </button>
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => void startFromPrompt(p)}
+                    disabled={!project?.id || starting || !!startingPrompt}
+                    data-testid="display-starter-chip"
+                    className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {startingPrompt === p ? <Loader2 className="me-1 inline h-3.5 w-3.5 animate-spin" /> : null}
+                    {p}
+                  </button>
                 );
               })}
             </div>

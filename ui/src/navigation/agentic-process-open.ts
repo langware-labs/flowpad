@@ -78,10 +78,9 @@ export async function resolveAgenticProcessName(processId: string): Promise<void
   const shellId = ap?.shell_id;
   const sessionWarm = sessionId ? warmClaudeSession(sessionId) : null;
   await Promise.allSettled(
-    [
-      sessionWarm,
-      shellId && !Shell.getByIdFromCache<Shell>(shellId) ? Shell.getById<Shell>(shellId) : null,
-    ].filter(Boolean) as Promise<unknown>[],
+    [sessionWarm, shellId && !Shell.getByIdFromCache<Shell>(shellId) ? Shell.getById<Shell>(shellId) : null].filter(
+      Boolean,
+    ) as Promise<unknown>[],
   );
 }
 
@@ -111,7 +110,7 @@ export async function openAgenticProcess(
     const ap =
       interactive === true
         ? cached
-        : cached ?? ((await AgenticProcess.getById<AgenticProcess>(processId)) as APWithIds | null);
+        : (cached ?? ((await AgenticProcess.getById<AgenticProcess>(processId)) as APWithIds | null));
     const asTerminal = interactive ?? !!ap?.visible;
 
     if (asTerminal) {

@@ -99,7 +99,10 @@ export function HooksTable({ rows, selectedRowId, onRowClick, onAddClick, onDele
               >
                 <TableCell className="font-medium">
                   {HOOK_EVENTS[row.eventName as keyof typeof HOOK_EVENTS]?.icon}{' '}
-                  {(() => { const d = HOOK_EVENTS[row.eventName as keyof typeof HOOK_EVENTS]?.title; return d ? t(d) : row.eventName; })()}
+                  {(() => {
+                    const d = HOOK_EVENTS[row.eventName as keyof typeof HOOK_EVENTS]?.title;
+                    return d ? t(d) : row.eventName;
+                  })()}
                 </TableCell>
                 <TableCell>
                   <code className="text-xs">{row.matcher}</code>

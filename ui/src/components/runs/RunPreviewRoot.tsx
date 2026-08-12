@@ -2,13 +2,7 @@ import { t } from '@lingui/core/macro';
 import { useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';

@@ -27,48 +27,39 @@ export function ScopeFilterIconBar({
   currentProjectName,
   onScopeChange,
 }: ScopeFilterIconBarProps): React.ReactElement {
-  const {
-    activeMode,
-    selectedCount,
-    projectDisabled,
-    handleSelect,
-    pickerOpen,
-    setPickerOpen,
-    onPickerConfirm,
-  } = useScopeFilterChips({ scope, currentProjectId, onScopeChange });
+  const { activeMode, selectedCount, projectDisabled, handleSelect, pickerOpen, setPickerOpen, onPickerConfirm } =
+    useScopeFilterChips({ scope, currentProjectId, onScopeChange });
 
   // Per the type-icon rule, the Project scope icon comes from the type registry.
   const ProjectIcon = useMemo(() => iconForType('project'), []);
 
-  const options: ScopeBarOption<ScopeMode>[] = useMemo(() => [
-    { value: 'all', label: t`All`, icon: Layers, title: t`All assets (user + every project)` },
-    { value: 'user', label: t`User`, icon: User, title: t`User assets only` },
-    {
-      value: 'project',
-      label: t`Project`,
-      icon: ProjectIcon,
-      disabled: projectDisabled,
-      title: projectDisabled
-        ? 'No current project'
-        : `Current project${currentProjectName ? `: ${currentProjectName}` : ''}`,
-    },
-    {
-      value: 'selected',
-      label: t`Selected`,
-      icon: Filter,
-      count: activeMode === 'selected' ? selectedCount : undefined,
-      title: t`Pick specific projects…`,
-    },
-  ], [ProjectIcon, projectDisabled, currentProjectName, activeMode, selectedCount]);
+  const options: ScopeBarOption<ScopeMode>[] = useMemo(
+    () => [
+      { value: 'all', label: t`All`, icon: Layers, title: t`All assets (user + every project)` },
+      { value: 'user', label: t`User`, icon: User, title: t`User assets only` },
+      {
+        value: 'project',
+        label: t`Project`,
+        icon: ProjectIcon,
+        disabled: projectDisabled,
+        title: projectDisabled
+          ? 'No current project'
+          : `Current project${currentProjectName ? `: ${currentProjectName}` : ''}`,
+      },
+      {
+        value: 'selected',
+        label: t`Selected`,
+        icon: Filter,
+        count: activeMode === 'selected' ? selectedCount : undefined,
+        title: t`Pick specific projects…`,
+      },
+    ],
+    [ProjectIcon, projectDisabled, currentProjectName, activeMode, selectedCount],
+  );
 
   return (
     <>
-      <ScopeBar
-        variant="icon"
-        value={activeMode}
-        options={options}
-        onChange={handleSelect}
-      />
+      <ScopeBar variant="icon" value={activeMode} options={options} onChange={handleSelect} />
       <ProjectPickerModal
         open={pickerOpen}
         onOpenChange={setPickerOpen}

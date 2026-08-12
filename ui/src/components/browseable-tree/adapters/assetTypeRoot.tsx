@@ -157,14 +157,7 @@ export function buildAssetChild(
     id: assetNodeId(typeName, result.asset_ref),
     kind: 'asset',
     label,
-    icon: (
-      <EntityIcon
-        type={typeName}
-        remote={result.remote}
-        density="compact"
-        className="h-3.5 w-3.5 flex-shrink-0"
-      />
-    ),
+    icon: <EntityIcon type={typeName} remote={result.remote} density="compact" className="h-3.5 w-3.5 flex-shrink-0" />,
     hasChildren: false,
     pointer,
     // Stable typeid (`<type>-<uuid>`) so a typeid-form active pointer selects this
@@ -412,13 +405,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
         id: assetNodeId(type.type_name, parsed.vfsPath),
         kind: 'asset',
         label: basename(parsed.vfsPath),
-        icon: (
-          <EntityIcon
-            type={type.type_name}
-            density="compact"
-            className="h-3.5 w-3.5 flex-shrink-0"
-          />
-        ),
+        icon: <EntityIcon type={type.type_name} density="compact" className="h-3.5 w-3.5 flex-shrink-0" />,
         hasChildren: false,
         pointer: DockPointer.forAssetEditor(type.type_name, parsed.vfsPath),
       };

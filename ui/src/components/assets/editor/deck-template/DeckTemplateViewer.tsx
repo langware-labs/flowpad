@@ -114,7 +114,6 @@ export function DeckTemplateViewer({ fsRef, deckTemplate }: DeckTemplateViewerPr
       cancelled = true;
     };
     // reloadKey (entity updated_date) re-reads on out-of-band reindex.
-     
   }, [fsRef, reloadKey]);
 
   const title = deckTemplate?.name || deckTemplate?.title || 'Deck template';

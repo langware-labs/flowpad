@@ -20,9 +20,7 @@ export interface ContentInstallSpec {
   review_branch: typeof INSTALL_REVIEW_BRANCH;
 }
 
-export type InstallIntentResult =
-  | { ok: true; intent: InstallIntent }
-  | { ok: false; message: string };
+export type InstallIntentResult = { ok: true; intent: InstallIntent } | { ok: false; message: string };
 
 export interface InstallNavigationResult {
   project?: { id?: string };
@@ -69,10 +67,7 @@ export function contentInstallSpec(intent: InstallIntent): ContentInstallSpec {
 }
 
 /** Convert the box install result into its URL-first Project landing. */
-export function installProjectLandingUrl(
-  host: string,
-  result: InstallNavigationResult,
-): string | null {
+export function installProjectLandingUrl(host: string, result: InstallNavigationResult): string | null {
   const projectId = result.install_result?.target_project_id || result.project?.id;
   if (!projectId) return null;
 

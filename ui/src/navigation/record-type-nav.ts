@@ -61,8 +61,6 @@ function codexThreadIdFromResult(result: SearchResult): string {
   return result.record_id.replace(/^codex_session-/, '');
 }
 
-
-
 /**
  * The stable TypeId for a search result, or null when no usable id is present.
  * ``record_id`` may be a full ``<type>-<uuid>`` typeid (favorites store the full
@@ -100,15 +98,24 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   skill: {
     dockPointer: (r) => assetEditorPointer('skill', r),
     actions: [
-      { icon: Search, name: msg`All skills`, dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }) },
+      {
+        icon: Search,
+        name: msg`All skills`,
+        dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }),
+      },
     ],
   },
   claude_hook: {
-    dockPointer: (r) => new DockPointer(ViewType.HOOKS, undefined, {
-      hookId: r.record_id,
-    }),
+    dockPointer: (r) =>
+      new DockPointer(ViewType.HOOKS, undefined, {
+        hookId: r.record_id,
+      }),
     actions: [
-      { icon: Search, name: msg`All hooks`, dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'claude_hook' }) },
+      {
+        icon: Search,
+        name: msg`All hooks`,
+        dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'claude_hook' }),
+      },
     ],
   },
   agent: {
@@ -119,7 +126,11 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const sessionId = r.session_id;
       if (sessionId) {
         const p = await navigation.openWorkerSession(sessionId);
-        if (!p) notify.error({ title: t`Session not found`, message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        if (!p)
+          notify.error({
+            title: t`Session not found`,
+            message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+          });
       }
     },
   },
@@ -129,7 +140,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       if (sessionId) {
         const p = await AgenticProcess.getByWorkerId(sessionId);
         if (!p) {
-          notify.error({ title: t`Session not found`, message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+          notify.error({
+            title: t`Session not found`,
+            message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+          });
           return;
         }
         navigation.openDockPointer(p.dockPointer, r.created_at ? { t: r.created_at } : undefined);
@@ -144,7 +158,11 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const sessionId = r.session_id;
       if (sessionId) {
         const p = await navigation.openWorkerSession(sessionId);
-        if (!p) notify.error({ title: t`Session not found`, message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        if (!p)
+          notify.error({
+            title: t`Session not found`,
+            message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+          });
       }
     },
   },
@@ -174,9 +192,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const tid = resultTypeId(r);
       return tid ? DockPointer.forTasks(tid.id) : null;
     },
-    actions: [
-      { icon: CheckSquare, name: msg`All tasks`, dockPointer: () => DockPointer.forTasks() },
-    ],
+    actions: [{ icon: CheckSquare, name: msg`All tasks`, dockPointer: () => DockPointer.forTasks() }],
   },
   agentic_process: {
     dockPointer: (r) => {
@@ -199,9 +215,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   project: {
     dockPointer: (r) => {
       const tid = resultTypeId(r);
-      return tid
-        ? new DockPointer(ViewType.ASSETS, 'list/all', { scope: 'project', project_ids: tid.id })
-        : null;
+      return tid ? new DockPointer(ViewType.ASSETS, 'list/all', { scope: 'project', project_ids: tid.id }) : null;
     },
   },
   artifact: {
@@ -213,9 +227,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     primaryAction: async (r, navigation) => {
       const tid = resultTypeId(r);
       if (!tid) return;
-      const artifact = await dataManager
-        .getByTypeId<Artifact>(new TypeId(Artifact.type, tid.id))
-        .catch(() => null);
+      const artifact = await dataManager.getByTypeId<Artifact>(new TypeId(Artifact.type, tid.id)).catch(() => null);
       if (!artifact) {
         notify.error({ title: t`App not found`, message: t`This app is no longer available.` });
         return;
@@ -231,7 +243,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const threadId = codexThreadIdFromResult(r);
       const p = await AgenticProcess.getByWorkerId(threadId);
       if (!p) {
-        notify.error({ title: t`Session not found`, message: t`Session ${threadId} is not in Claude, Codex, or Copilot history.` });
+        notify.error({
+          title: t`Session not found`,
+          message: t`Session ${threadId} is not in Claude, Codex, or Copilot history.`,
+        });
         return;
       }
       navigation.openDock(p.dockPointer);
@@ -254,7 +269,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const sessionId = r.record_id.replace(/^copilot_session-/, '');
       const p = await AgenticProcess.getByWorkerId(sessionId);
       if (!p) {
-        notify.error({ title: t`Session not found`, message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        notify.error({
+          title: t`Session not found`,
+          message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+        });
         return;
       }
       navigation.openDock(p.dockPointer);
@@ -274,7 +292,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const sessionId = sessionIdFromResult(r);
       const p = await AgenticProcess.getByWorkerId(sessionId);
       if (!p) {
-        notify.error({ title: t`Session not found`, message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        notify.error({
+          title: t`Session not found`,
+          message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+        });
         return;
       }
       navigation.openDock(p.dockPointer);

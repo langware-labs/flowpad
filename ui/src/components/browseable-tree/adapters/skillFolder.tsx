@@ -26,9 +26,21 @@ const COMPUTE_NODE_ID = new TypeId('compute_node', DEFAULT_WIKI_SPACE);
 
 // Extension → lucide icon name. Module-level so it isn't rebuilt per file row.
 const FILE_EXT_ICONS: Record<string, string> = {
-  py: 'FileCode', js: 'FileCode', ts: 'FileCode', tsx: 'FileCode', jsx: 'FileCode',
-  json: 'FileJson', md: 'FileText', txt: 'FileText', yaml: 'FileText', yml: 'FileText',
-  png: 'FileImage', jpg: 'FileImage', jpeg: 'FileImage', gif: 'FileImage', svg: 'FileImage',
+  py: 'FileCode',
+  js: 'FileCode',
+  ts: 'FileCode',
+  tsx: 'FileCode',
+  jsx: 'FileCode',
+  json: 'FileJson',
+  md: 'FileText',
+  txt: 'FileText',
+  yaml: 'FileText',
+  yml: 'FileText',
+  png: 'FileImage',
+  jpg: 'FileImage',
+  jpeg: 'FileImage',
+  gif: 'FileImage',
+  svg: 'FileImage',
 };
 
 export function skillFolderNodeId(absPath: string): string {
@@ -137,9 +149,7 @@ export function skillFolderListChildren(
       fsStore.getState().invalidate(COMPUTE_NODE_ID, rel, 'browse');
     }
     const entries = await fsStore.getState().listDirectory(COMPUTE_NODE_ID, rel);
-    const items = [...(entries.items ?? [])]
-      .filter((item) => !(item.name ?? '').startsWith('.'))
-      .slice(0, pageSize);
+    const items = [...(entries.items ?? [])].filter((item) => !(item.name ?? '').startsWith('.')).slice(0, pageSize);
     items.sort((a, b) => {
       if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
       return (a.name ?? '').localeCompare(b.name ?? '');

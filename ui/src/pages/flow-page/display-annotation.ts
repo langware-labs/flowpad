@@ -7,13 +7,7 @@ import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asse
 
 export { isMarkdownDocumentPath } from '@src/lib/markdown-path';
 
-export type DisplayAnnotationKind =
-  | 'website'
-  | 'markdown-document'
-  | 'asset'
-  | 'file'
-  | 'diff'
-  | 'active-view';
+export type DisplayAnnotationKind = 'website' | 'markdown-document' | 'asset' | 'file' | 'diff' | 'active-view';
 
 export interface DisplayAnnotationContext {
   kind: DisplayAnnotationKind;
@@ -48,7 +42,6 @@ function slug(value: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 48);
 }
-
 
 export function displayAnnotationContextForWebapp(
   host?: string | null,

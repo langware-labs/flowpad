@@ -27,9 +27,7 @@ export function ExplorerNavigator() {
         label: t`Project`,
         icon: ProjectIcon,
         disabled: m.projectDisabled,
-        title: m.projectDisabled
-          ? 'No current project'
-          : `Project${m.projectName ? `: ${m.projectName}` : ''}`,
+        title: m.projectDisabled ? 'No current project' : `Project${m.projectName ? `: ${m.projectName}` : ''}`,
       },
     ],
     [ProjectIcon, m.projectDisabled, m.projectName],
@@ -45,14 +43,7 @@ export function ExplorerNavigator() {
     search: { recordTypes: ['markdown'], placeholder: t`Search files…` },
     header: {
       title: t`Files`,
-      filterBar: (
-        <ScopeBar
-          variant="icon"
-          value={m.scopeMode}
-          options={options}
-          onChange={m.handleSelectMode}
-        />
-      ),
+      filterBar: <ScopeBar variant="icon" value={m.scopeMode} options={options} onChange={m.handleSelectMode} />,
     },
   };
 

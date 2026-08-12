@@ -30,18 +30,9 @@ export function SearchScopeToggle({
       value: 'current',
       label: t`Current project`,
       disabled: !currentProjectAvailable,
-      title: currentProjectAvailable
-        ? 'Search only the current project'
-        : 'No current project is selected',
+      title: currentProjectAvailable ? 'Search only the current project' : 'No current project is selected',
     },
   ];
 
-  return (
-    <ScopeBar
-      value={value}
-      options={options}
-      onChange={onChange}
-      className={className}
-    />
-  );
+  return <ScopeBar value={value} options={options} onChange={onChange} className={className} />;
 }

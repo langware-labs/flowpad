@@ -1,13 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  type AgentTrace,
-  type FSRef,
-  ProcessKind,
-  type Skill,
-  type WorkerStatus,
-  isWorkerRunning,
-} from '@sdk';
+import { type AgentTrace, type FSRef, ProcessKind, type Skill, type WorkerStatus, isWorkerRunning } from '@sdk';
 import { useAgentTraceDoc } from '@src/components/assets/editor/agent-trace/useAgentTraceDoc';
 import type { TraceFinding } from '@src/components/assets/editor/agent-trace/trace-types';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';

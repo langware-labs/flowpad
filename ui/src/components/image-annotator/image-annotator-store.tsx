@@ -83,7 +83,10 @@ async function writeImageToClipboard(blob: Promise<Blob>): Promise<void> {
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
   } catch {
     // Clipboard write can fail (permissions / focus) — surface, never block.
-    notify.error({ title: t`Clipboard not updated`, message: t`The annotated image was attached but could not be copied to the clipboard.` });
+    notify.error({
+      title: t`Clipboard not updated`,
+      message: t`The annotated image was attached but could not be copied to the clipboard.`,
+    });
   }
 }
 

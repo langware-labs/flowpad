@@ -66,10 +66,7 @@ export function GraphWorkflowsNavigator() {
     }
   }, [newName, openFlow]);
 
-  const sorted = useMemo(
-    () => [...flows].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
-    [flows],
-  );
+  const sorted = useMemo(() => [...flows].sort((a, b) => (a.name || '').localeCompare(b.name || '')), [flows]);
 
   const descriptor: NavigatorDescriptor = useMemo(
     () => ({
@@ -125,11 +122,26 @@ export function GraphWorkflowsNavigator() {
               </button>
             );
           })}
-          {!sorted.length && <div className="afl-note" style={{ padding: 12 }}>No flows yet.</div>}
+          {!sorted.length && (
+            <div className="afl-note" style={{ padding: 12 }}>
+              No flows yet.
+            </div>
+          )}
         </div>
       ),
     }),
-    [flows.length, sorted, urlScope, project, handleScopeChange, creating, newName, createFlow, activePointer, openFlow],
+    [
+      flows.length,
+      sorted,
+      urlScope,
+      project,
+      handleScopeChange,
+      creating,
+      newName,
+      createFlow,
+      activePointer,
+      openFlow,
+    ],
   );
 
   return <NavigatorPanel descriptor={descriptor} />;

@@ -1,21 +1,8 @@
 import { t } from '@lingui/core/macro';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import {
-  AlertTriangle,
-  PlayCircle,
-  Plug,
-  RefreshCw,
-  Wand2,
-  type LucideIcon,
-} from 'lucide-react';
-import {
-  AgenticProcess,
-  Project,
-  TypeId,
-  dataContext,
-  type TerminalRuntimeError,
-} from '@sdk';
+import { AlertTriangle, PlayCircle, Plug, RefreshCw, Wand2, type LucideIcon } from 'lucide-react';
+import { AgenticProcess, Project, TypeId, dataContext, type TerminalRuntimeError } from '@sdk';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { useContext as useDataContext } from '@src/hooks/useContext';
@@ -71,7 +58,10 @@ async function retryStart(processId: string): Promise<boolean> {
     dataContext.setTerminalRuntimeError(null);
     return true;
   } catch (err) {
-    notify.error({ title: err instanceof Error ? err.message : 'Reconnect failed.', id: `terminal-recover:${processId}` });
+    notify.error({
+      title: err instanceof Error ? err.message : 'Reconnect failed.',
+      id: `terminal-recover:${processId}`,
+    });
     return false;
   }
 }
@@ -122,7 +112,10 @@ async function recoverProject(processId: string): Promise<boolean> {
     dataContext.setTerminalRuntimeError(null);
     return true;
   } catch (err) {
-    notify.error({ title: err instanceof Error ? err.message : 'Project recovery failed.', id: `terminal-recover:${processId}` });
+    notify.error({
+      title: err instanceof Error ? err.message : 'Project recovery failed.',
+      id: `terminal-recover:${processId}`,
+    });
     return false;
   }
 }
@@ -188,8 +181,7 @@ const KIND_CONFIG: Record<TerminalRuntimeError['kind'], KindConfig> = {
   failed_to_start: {
     icon: AlertTriangle,
     title: t`Failed to start.`,
-    detail:
-      'The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again.',
+    detail: 'The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again.',
     actionLabel: 'Retry',
     actionIcon: RefreshCw,
     action: retryFailedStart,
@@ -219,12 +211,9 @@ export function TerminalRuntimeErrorBanner() {
   // Prefer it over the generic copy when the process is in cache.
   const latchedReason =
     terminalRuntimeError.kind === 'failed_to_start'
-      ? AgenticProcess.getByIdFromCache<AgenticProcess>(terminalRuntimeError.processId)
-          ?.start_failure
+      ? AgenticProcess.getByIdFromCache<AgenticProcess>(terminalRuntimeError.processId)?.start_failure
       : null;
-  const detail = latchedReason
-    ? `${latchedReason} Auto-relaunch is paused — Retry to launch again.`
-    : cfg.detail;
+  const detail = latchedReason ? `${latchedReason} Auto-relaunch is paused — Retry to launch again.` : cfg.detail;
 
   const Icon = cfg.icon;
   const ActionIcon = cfg.actionIcon;

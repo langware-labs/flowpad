@@ -75,11 +75,7 @@ interface UseTranslationsResult {
  * moment its worker leaves a running state, which the editor uses to bump its
  * reload key and re-read the now-filled file.
  */
-export function useTranslations({
-  entity,
-  chatTarget,
-  assetRef,
-}: UseTranslationsArgs): UseTranslationsResult {
+export function useTranslations({ entity, chatTarget, assetRef }: UseTranslationsArgs): UseTranslationsResult {
   const { navigation, currentDock } = useDockNavigation();
   const { project } = useProject();
   const [isAdding, setIsAdding] = useState(false);
@@ -117,7 +113,7 @@ export function useTranslations({
   );
 
   const activeView = useMemo(
-    () => (rawLang ? translations.find((t) => t.lang === rawLang) ?? null : null),
+    () => (rawLang ? (translations.find((t) => t.lang === rawLang) ?? null) : null),
     [translations, rawLang],
   );
   // Effective active language: the found translation's lang (=== rawLang), or

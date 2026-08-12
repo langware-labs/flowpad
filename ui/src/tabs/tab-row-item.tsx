@@ -74,7 +74,11 @@ export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): T
       title: label || i18n._(meta.label),
       titleClassName,
       icon: (
-        <Icon className={`h-3.5 w-3.5 shrink-0 ${meta.iconClassName}`} data-provider={kind} aria-label={i18n._(meta.label)} />
+        <Icon
+          className={`h-3.5 w-3.5 shrink-0 ${meta.iconClassName}`}
+          data-provider={kind}
+          aria-label={i18n._(meta.label)}
+        />
       ),
       // Worktree glyph + the agent's "I showed you something" marker. The badge
       // slot is inline markers after the icon; both are optional and either can

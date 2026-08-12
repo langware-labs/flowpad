@@ -37,11 +37,7 @@ interface SkillAssetEditorProps {
  * into its folder tree (see the `skillFolder` adapter) — there is no second
  * tree here.
  */
-export function SkillAssetEditor({
-  fsRef,
-  skill: providedSkill,
-  wikiLinkTarget,
-}: SkillAssetEditorProps) {
+export function SkillAssetEditor({ fsRef, skill: providedSkill, wikiLinkTarget }: SkillAssetEditorProps) {
   const { entity: discoveredSkill } = useEntityByPath<Skill>(
     providedSkill ? null : Skill.type,
     providedSkill ? null : fsRef,
@@ -73,9 +69,7 @@ export function SkillAssetEditor({
   const editorRef = useMemo(
     // Same guard as Skill.doc: a file-valued ref (already .../SKILL.md) must not
     // get the main file appended again, or the download 404s on SKILL.md/SKILL.md.
-    () =>
-      skillRef.current?.doc ??
-      (fsRef.path.endsWith('/SKILL.md') ? fsRef : fsRef.child('SKILL.md')),
+    () => skillRef.current?.doc ?? (fsRef.path.endsWith('/SKILL.md') ? fsRef : fsRef.child('SKILL.md')),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [skillKey],
   );

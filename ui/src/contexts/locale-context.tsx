@@ -400,10 +400,25 @@ instancePreferences.on(InstancePreferencesEvent.PREFERENCES_LOADED, () => void o
 defineGlobal('setLocale', setLocale);
 defineGlobal('getLocale', getLocale);
 
-/** Reactive accessor for the active locale code. */
+/**
+ * Reactive accessor for the active locale code.
+ *
+ * Reads BOTH stores, and must: the preference holds the code, but whether that
+ * code counts is decided by the backend-derived supported list — and that list
+ * lands with bootstrap, one root-loader tick AFTER this tree first renders.
+ * Until it does, a stored `he` reads as unsupported and this answers `en-US`.
+ * Subscribing to the list (not merely reading it) is what re-renders when the
+ * real one arrives; without it the React-side answer freezes at that
+ * pre-bootstrap `en-US` for the whole session, because the preference never
+ * changes afterwards and so never notifies. That froze `<DirectionProvider>` at
+ * `ltr` while `<html dir>` — written imperatively — correctly went `rtl`, and
+ * every Radix primitive that stamps its own `dir` (Tabs.Root) then pinned its
+ * whole subtree left-to-right against the document.
+ */
 export function useLocale(): string {
+  const supported = useSupportedLocales();
   const [value] = usePreference<string>(PrefKey.LOCALE);
-  return isSupported(value) ? value : DEFAULT_LOCALE;
+  return supported.some((l) => l.code === value) ? value : DEFAULT_LOCALE;
 }
 
 /** Reactive accessor for the full active LocaleInfo. */

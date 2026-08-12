@@ -20,10 +20,7 @@ export function DocsNavigator() {
   // No process in the URL → no docs folder to browse. Guard the TypeId ctor,
   // which throws "Invalid typeId" on an undefined id (would crash the shell
   // since this navigator mounts at the page root).
-  const flowTypeId = useMemo(
-    () => (processId ? new TypeId(AgenticProcess.type, processId) : null),
-    [processId],
-  );
+  const flowTypeId = useMemo(() => (processId ? new TypeId(AgenticProcess.type, processId) : null), [processId]);
   const { navigation, currentDock } = useDockNavigation();
 
   const browseDocsActionInfo = useMemo(() => {

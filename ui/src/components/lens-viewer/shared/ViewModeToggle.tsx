@@ -13,7 +13,12 @@ interface Props {
 const MODES: { mode: TranscriptMode; icon: LucideIcon; label: MessageDescriptor; title: MessageDescriptor }[] = [
   { mode: 'chat', icon: MessageSquare, label: msg`Chat`, title: msg`Chat view` },
   { mode: 'trace', icon: ScrollText, label: msg`Trace`, title: msg`Trace view` },
-  { mode: 'callstack', icon: Network, label: msg`Call stack`, title: msg`Call stack — which assets were called, by whom` },
+  {
+    mode: 'callstack',
+    icon: Network,
+    label: msg`Call stack`,
+    title: msg`Call stack — which assets were called, by whom`,
+  },
   { mode: 'execution', icon: ListTree, label: msg`Execution`, title: msg`Execution trace` },
 ];
 
@@ -22,7 +27,7 @@ export function ViewModeToggle({ mode, onChange }: Props) {
   const inactiveClass = 'text-muted-foreground hover:bg-muted hover:text-foreground';
 
   return (
-    <div className="flex items-center rounded border border-border overflow-hidden text-xs">
+    <div className="flex items-center overflow-hidden rounded border border-border text-xs">
       {MODES.map(({ mode: m, icon: Icon, label, title }) => (
         <button
           key={m}

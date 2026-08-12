@@ -75,8 +75,7 @@ export function useFS(typeid?: TypeId) {
     /** Monotonic change token for this exact path. Folder paths also advance
      * when a descendant changes, as owned by FSStore.invalidate(). */
     revision: (path: string): number => {
-      const normalizedPath =
-        path.replace(/\/+/g, '/').replace(/\/$/, '').replace(/^\/+/, '') || '/';
+      const normalizedPath = path.replace(/\/+/g, '/').replace(/\/$/, '').replace(/^\/+/, '') || '/';
       return pathRevisions.get(`${typeid.toString()}:${normalizedPath}`) ?? 0;
     },
 

@@ -24,42 +24,34 @@ export function ScopeFilterBar({
   currentProjectName,
   onScopeChange,
 }: ScopeFilterBarProps): React.ReactElement {
-  const {
-    activeMode,
-    selectedCount,
-    projectDisabled,
-    handleSelect,
-    pickerOpen,
-    setPickerOpen,
-    onPickerConfirm,
-  } = useScopeFilterChips({ scope, currentProjectId, onScopeChange });
+  const { activeMode, selectedCount, projectDisabled, handleSelect, pickerOpen, setPickerOpen, onPickerConfirm } =
+    useScopeFilterChips({ scope, currentProjectId, onScopeChange });
 
-  const options: ScopeBarOption<ScopeMode>[] = useMemo(() => [
-    { value: 'all', label: t`All`, title: t`All assets (user + every project)` },
-    { value: 'user', label: t`User`, title: t`User assets only` },
-    {
-      value: 'project',
-      label: t`Project`,
-      disabled: projectDisabled,
-      title: projectDisabled
-        ? 'No current project'
-        : `Current project${currentProjectName ? `: ${currentProjectName}` : ''}`,
-    },
-    {
-      value: 'selected',
-      label: t`Selected`,
-      count: activeMode === 'selected' ? selectedCount : undefined,
-      title: t`Pick specific projects…`,
-    },
-  ], [projectDisabled, currentProjectName, activeMode, selectedCount]);
+  const options: ScopeBarOption<ScopeMode>[] = useMemo(
+    () => [
+      { value: 'all', label: t`All`, title: t`All assets (user + every project)` },
+      { value: 'user', label: t`User`, title: t`User assets only` },
+      {
+        value: 'project',
+        label: t`Project`,
+        disabled: projectDisabled,
+        title: projectDisabled
+          ? 'No current project'
+          : `Current project${currentProjectName ? `: ${currentProjectName}` : ''}`,
+      },
+      {
+        value: 'selected',
+        label: t`Selected`,
+        count: activeMode === 'selected' ? selectedCount : undefined,
+        title: t`Pick specific projects…`,
+      },
+    ],
+    [projectDisabled, currentProjectName, activeMode, selectedCount],
+  );
 
   return (
     <>
-      <ScopeBar
-        value={activeMode}
-        options={options}
-        onChange={handleSelect}
-      />
+      <ScopeBar value={activeMode} options={options} onChange={handleSelect} />
       <ProjectPickerModal
         open={pickerOpen}
         onOpenChange={setPickerOpen}

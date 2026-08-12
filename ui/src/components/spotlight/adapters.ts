@@ -142,7 +142,6 @@ export function workerHistoryToRow(e: WorkerHistoryEntry): SpotlightRow {
     title: historyDisplayName(e),
     subtitle: e.project_name ?? '',
     timestamp: e.last_active_time ?? null,
-    onActivate: (navigation) =>
-      resolveProcessAndOpenTerminal(navigation, e.worker_id, e.agentic_process_id),
+    onActivate: (navigation) => resolveProcessAndOpenTerminal(navigation, e.worker_id, e.agentic_process_id),
   };
 }

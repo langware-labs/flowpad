@@ -66,7 +66,7 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
           </div>
         ) : isError ? (
           <div className="px-3 py-4 text-xs text-destructive">
-            Failed to load branches: {(error)?.message ?? 'unknown error'}
+            Failed to load branches: {error?.message ?? 'unknown error'}
           </div>
         ) : list.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">

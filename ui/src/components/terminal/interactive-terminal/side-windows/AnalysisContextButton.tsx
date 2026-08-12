@@ -10,13 +10,7 @@ import { compactTypeIds } from '@src/components/context-process/contextTypeids';
  * AgentTrace + the analyzed process + project) and delegates to the generic
  * {@link ContextProcessButton}. The analysis surface's consumer of the pattern.
  */
-export function AnalysisContextButton({
-  trace,
-  process,
-}: {
-  trace: AgentTrace;
-  process: AgenticProcess | null;
-}) {
+export function AnalysisContextButton({ trace, process }: { trace: AgentTrace; process: AgenticProcess | null }) {
   const target = trace.id ? new TypeId(AgentTrace.type, trace.id).toString() : null;
   const analyzedId = trace.analyzed_process_id ?? process?.id ?? null;
   const projectId = process?.project_id ?? null;

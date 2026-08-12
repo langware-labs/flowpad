@@ -130,8 +130,7 @@ export const PROVIDERS: readonly ProviderSpec[] = [
         kind: 'lines',
         required: true,
         placeholder: msg`C0123456789`,
-        hint:
-          'One per line, and the ID — not the name. Slack: open the channel → its name → the ID is at the bottom. A renamed channel keeps its ID; keying on the name would fork its history.',
+        hint: 'One per line, and the ID — not the name. Slack: open the channel → its name → the ID is at the bottom. A renamed channel keeps its ID; keying on the name would fork its history.',
       },
     ],
   },
@@ -212,10 +211,16 @@ export function emptyDraft(provider = 'rss'): SourceDraft {
 }
 
 const splitLines = (raw: string): string[] =>
-  raw.split('\n').map((s) => s.trim()).filter(Boolean);
+  raw
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
 const splitCsv = (raw: string): string[] =>
-  raw.split(',').map((s) => s.trim()).filter(Boolean);
+  raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
 function isHttpUrl(raw: string): boolean {
   try {

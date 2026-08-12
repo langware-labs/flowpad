@@ -1,9 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { FlowData, isTypeId, type ReceiveShowTarget, TypeId } from '@sdk';
-import {
-  describeToolInput,
-  describeToolName,
-} from '@src/components/flowdata-renderer/ToolCallMessageComponent';
+import { describeToolInput, describeToolName } from '@src/components/flowdata-renderer/ToolCallMessageComponent';
 import {
   Bot,
   FileDiff,

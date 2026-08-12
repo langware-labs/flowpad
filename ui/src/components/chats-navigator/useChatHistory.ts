@@ -36,7 +36,7 @@ export interface ChatBucket {
 
 function processFor(entry: WorkerHistoryEntry): AgenticProcess | null {
   return entry.agentic_process_id
-    ? AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id) ?? null
+    ? (AgenticProcess.getByIdFromCache<AgenticProcess>(entry.agentic_process_id) ?? null)
     : null;
 }
 
@@ -67,11 +67,7 @@ export const CHAT_SORT_STABILITY_MS = 60_000;
  *  field is the backend/live-query snapshot, while `processFor` reads the
  *  cache the WS merge keeps fresh for entries whose id was already known. */
 function tsOf(entry: WorkerHistoryEntry): number {
-  return Math.max(
-    toMs(entry.last_active_time),
-    toMs(entry.last_active_at),
-    toMs(processFor(entry)?.last_active_at),
-  );
+  return Math.max(toMs(entry.last_active_time), toMs(entry.last_active_at), toMs(processFor(entry)?.last_active_at));
 }
 
 /** Group a recency-sorted list into Today / Yesterday / Previous 7|30 days / Older. */

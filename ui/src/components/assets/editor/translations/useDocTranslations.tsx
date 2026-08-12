@@ -54,17 +54,12 @@ export function useDocTranslations({
   // source `asset_ref`. `activeRef` points at the stored FSRef object, which is
   // stable across status polls, so the editor re-downloads only when the
   // language actually changes — not on every poll.
-  const editorRef = useMemo(
-    () => (activeRef ? FSRef.fromJson(activeRef) : baseEditorRef),
-    [activeRef, baseEditorRef],
-  );
+  const editorRef = useMemo(() => (activeRef ? FSRef.fromJson(activeRef) : baseEditorRef), [activeRef, baseEditorRef]);
 
   // Auto-refresh a translation the moment its worker finishes: folding the
   // process-derived status into the key re-reads the now-filled file
   // (translating → ready flips the key exactly once).
-  const reloadKey = activeLang
-    ? `${baseReloadKey ?? ''}:${activeLang}:${activeStatus ?? ''}`
-    : baseReloadKey;
+  const reloadKey = activeLang ? `${baseReloadKey ?? ''}:${activeLang}:${activeStatus ?? ''}` : baseReloadKey;
 
   // Each surface renders only ONE of these (the side tab OR the inline switcher),
   // so memoize both on their shared inputs — the unused one costs nothing beyond

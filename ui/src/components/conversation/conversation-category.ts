@@ -1,13 +1,7 @@
 import { t } from '@lingui/core/macro';
 import type { LucideIcon } from 'lucide-react';
 import { Archive, ArchiveRestore, CheckSquare, LifeBuoy, Trash2 } from 'lucide-react';
-import {
-  Conversation,
-  FlowMessage,
-  FlowMessageKind,
-  Invitation,
-  isHelpdeskKind,
-} from '@sdk';
+import { Conversation, FlowMessage, FlowMessageKind, Invitation, isHelpdeskKind } from '@sdk';
 
 // ── Conversation category — the single source of truth ──────────────────────
 // The inbox "category" is NOT one axis: a conversation can be helpdesk AND
@@ -71,22 +65,15 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   // arrives. Compare against the pointer ts (not the FM) to avoid the fetch race.
   const archivedAt = conv.archived_at ? new Date(conv.archived_at).getTime() : null;
   const latestTime = latestPtrTs ? new Date(latestPtrTs).getTime() : 0;
-  const isArchived =
-    archivedAt !== null && !Number.isNaN(archivedAt) && latestTime <= archivedAt;
+  const isArchived = archivedAt !== null && !Number.isNaN(archivedAt) && latestTime <= archivedAt;
 
   // Unread — viewer-relative, like invitation: sending a message must not make
   // the conversation look unread to the sender himself (there is nothing for
   // him to read). Invitation rows always carry an actionable CTA, so they
   // count as unread.
   const senderId = latestMessage?.sender_id ?? null;
-  const isSelfSent =
-    !!senderId &&
-    (senderId === viewer.cloudUserId || senderId === viewer.localUserId);
-  const isUnread = isInvitation
-    ? true
-    : latestMessage
-      ? !latestMessage.is_read && !isSelfSent
-      : false;
+  const isSelfSent = !!senderId && (senderId === viewer.cloudUserId || senderId === viewer.localUserId);
+  const isUnread = isInvitation ? true : latestMessage ? !latestMessage.is_read && !isSelfSent : false;
 
   return { kind, isInvitation, isArchived, isUnread };
 }
@@ -117,8 +104,7 @@ export interface ChipSpec {
   className: string;
 }
 
-const VIOLET_CHIP =
-  'border-violet-500/40 bg-violet-500/15 text-violet-600 dark:text-violet-400';
+const VIOLET_CHIP = 'border-violet-500/40 bg-violet-500/15 text-violet-600 dark:text-violet-400';
 const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
 
 export function chipsFor(f: ConversationFacets): ChipSpec[] {

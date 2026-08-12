@@ -83,11 +83,7 @@ export function DocLanguageSwitcher({
           <CommandList>
             <CommandEmpty>No languages found.</CommandEmpty>
             <CommandGroup heading={t`This document`}>
-              <CommandItem
-                value="original Original"
-                onSelect={() => switchTo(null)}
-                className="cursor-pointer gap-2"
-              >
+              <CommandItem value="original Original" onSelect={() => switchTo(null)} className="cursor-pointer gap-2">
                 <span className="flex-1">Original</span>
                 {activeLang === null && <Check className="h-4 w-4" />}
               </CommandItem>

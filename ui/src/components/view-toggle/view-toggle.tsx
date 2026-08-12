@@ -1,16 +1,6 @@
 import { t } from '@lingui/core/macro';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@src/components/ui/tooltip';
-import {
-  SEGMENTED_ACTIVE,
-  SEGMENTED_BUTTON,
-  SEGMENTED_GROUP,
-  SEGMENTED_IDLE,
-} from '@src/components/ui/segmented';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { SEGMENTED_ACTIVE, SEGMENTED_BUTTON, SEGMENTED_GROUP, SEGMENTED_IDLE } from '@src/components/ui/segmented';
 import { ViewMode, setViewMode, useViewMode } from '@src/contexts/view-mode-context';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation';
@@ -88,9 +78,7 @@ export function ViewToggle() {
   // is the mode selector, not a power-user ladder. Only Dev is hidden, until the
   // double-click reveal on Terminal (or until it IS the mode, so landing there
   // from a stored pref or a URL can never hide the selected button).
-  const modes = DISPLAY_ORDER.filter(
-    (m) => m !== ViewMode.Dev || revealed.has(ViewMode.Dev) || mode === ViewMode.Dev,
-  );
+  const modes = DISPLAY_ORDER.filter((m) => m !== ViewMode.Dev || revealed.has(ViewMode.Dev) || mode === ViewMode.Dev);
 
   // URL-first: the click only navigates — same pointer, requested mode. All
   // arrangements (applying + persisting the mode) happen on load, driven by the
@@ -114,43 +102,43 @@ export function ViewToggle() {
         aria-label={t`View mode`}
         className={SEGMENTED_GROUP}
       >
-      {modes.map((m) => {
-        const Icon = ICONS[m];
-        const active = m === mode;
-        return (
-          <Tooltip key={m} delayDuration={0}>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={active}
-                // Keyed on the enum value, not the label: the testid is a stable
-                // contract (and matches the persisted pref / `?viewMode` value),
-                // while the label is user-facing wording that may change.
-                data-testid={`view-toggle-${m}`}
-                // The tag is what makes each mode button observable and
-                // highlightable: a click on it becomes `app.ui.button.clicked`
-                // with this word as the target. The GROUP carries `ViewToggle`
-                // for highlighting the control as a whole; clicks resolve to
-                // the nearest tagged ancestor, which is always the button.
-                {...tagAttrs(TAGS[m], 'button')}
-                onClick={() => select(m)}
-                // Reveal-only: adds the next mode's button, never selects it.
-                // No dblclick/click disambiguation needed — the two preceding
-                // clicks hit select(m) with m === mode, which early-returns.
-                onDoubleClick={() => {
-                  if (m === mode && m === ViewMode.Advanced) reveal(ViewMode.Dev);
-                }}
-                className={`${SEGMENTED_BUTTON} ${active ? SEGMENTED_ACTIVE : SEGMENTED_IDLE}`}
-                aria-label={LABELS[m]}
-              >
-                <Icon className="h-3 w-3" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>{LABELS[m]}</TooltipContent>
-          </Tooltip>
-        );
-      })}
+        {modes.map((m) => {
+          const Icon = ICONS[m];
+          const active = m === mode;
+          return (
+            <Tooltip key={m} delayDuration={0}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  // Keyed on the enum value, not the label: the testid is a stable
+                  // contract (and matches the persisted pref / `?viewMode` value),
+                  // while the label is user-facing wording that may change.
+                  data-testid={`view-toggle-${m}`}
+                  // The tag is what makes each mode button observable and
+                  // highlightable: a click on it becomes `app.ui.button.clicked`
+                  // with this word as the target. The GROUP carries `ViewToggle`
+                  // for highlighting the control as a whole; clicks resolve to
+                  // the nearest tagged ancestor, which is always the button.
+                  {...tagAttrs(TAGS[m], 'button')}
+                  onClick={() => select(m)}
+                  // Reveal-only: adds the next mode's button, never selects it.
+                  // No dblclick/click disambiguation needed — the two preceding
+                  // clicks hit select(m) with m === mode, which early-returns.
+                  onDoubleClick={() => {
+                    if (m === mode && m === ViewMode.Advanced) reveal(ViewMode.Dev);
+                  }}
+                  className={`${SEGMENTED_BUTTON} ${active ? SEGMENTED_ACTIVE : SEGMENTED_IDLE}`}
+                  aria-label={LABELS[m]}
+                >
+                  <Icon className="h-3 w-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{LABELS[m]}</TooltipContent>
+            </Tooltip>
+          );
+        })}
       </div>
     </TooltipProvider>
   );

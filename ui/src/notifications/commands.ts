@@ -72,7 +72,10 @@ registerCommand('sniffer.disable', (_args, ctx) => {
     .disable()
     .then(() => {
       notify.dismiss(ctx.id);
-      notify.success({ title: t`Hook sniffer disabled`, message: t`Claude Code hooks were removed from your settings.` });
+      notify.success({
+        title: t`Hook sniffer disabled`,
+        message: t`Claude Code hooks were removed from your settings.`,
+      });
     })
     .catch((e: unknown) => {
       notify.error({ title: t`Could not disable the sniffer`, message: String(e) });

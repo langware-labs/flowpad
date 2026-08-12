@@ -8,7 +8,7 @@ import { useDockNavigation } from '@src/navigation';
 import { APIEntity } from '@sdk/APIEntity';
 import { useContext } from '@sdk/react/hooks';
 import React, { useState } from 'react';
-import { Trans, useLingui, useLingui } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import type { AnnotationElement, AnnotationElementKind } from './use-annotation-gutter';
 
 interface AnnotationGutterProps {
@@ -842,7 +842,9 @@ function AnnotationCell({
         )}
         <div className="my-0.5 border-t border-border" />
         <div className="flex justify-between">
-          <CoordLabel title={t`Current resolved buffer row — prompt annotations position by text-search in xterm buffer`}>
+          <CoordLabel
+            title={t`Current resolved buffer row — prompt annotations position by text-search in xterm buffer`}
+          >
             <Trans>live row</Trans>
           </CoordLabel>
           <span className="text-foreground">{el.absRow}</span>

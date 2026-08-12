@@ -41,13 +41,7 @@ const FALLBACK: ChatPlanModeValue = {
 
 const Ctx = createContext<ChatPlanModeValue | null>(null);
 
-export function ChatPlanModeProvider({
-  process,
-  children,
-}: {
-  process: AgenticProcess | null;
-  children: ReactNode;
-}) {
+export function ChatPlanModeProvider({ process, children }: { process: AgenticProcess | null; children: ReactNode }) {
   const enabled = !!process && process.isHeadless && !!process.supports_plan_mode;
   const [planPending, setPlanPending] = useState(false);
   const [sending, setSending] = useState(false);

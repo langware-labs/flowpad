@@ -337,7 +337,7 @@ export function ProjectActivityStrip({
         return (
           item.name.toLowerCase().includes(query) ||
           (item.subtitle || '').toLowerCase().includes(query) ||
-          ((meta?.label ? i18n._(meta.label) : item.type)).toLowerCase().includes(query)
+          (meta?.label ? i18n._(meta.label) : item.type).toLowerCase().includes(query)
         );
       })
       .slice(0, maxItems);

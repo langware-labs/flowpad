@@ -349,7 +349,7 @@ msgstr "{0} لم يُختبر"
 #: src/components/assets/editor/task/OwnerButton.tsx
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "{0} now has \"{1}\"."
-msgstr ""
+msgstr "لدى {0} الآن \"{1}\"."
 
 #. js-lingui-explicit-id
 #. placeholder {0}: row.orphan_count
@@ -430,7 +430,7 @@ msgstr "{count} تغيير معلّق — لعرض الفرق"
 #. placeholder {0}: selected.displayName ?? selected.name
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "{created} member task(s) created for \"{0}\"."
-msgstr ""
+msgstr "נוצרו {created} משימות חברים עבור \"{0}\"."
 
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 #~ msgid "{days}d ago"
@@ -860,7 +860,7 @@ msgstr "دقيق"
 
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Act as the \"{name}\" agent and work on the current context."
-msgstr ""
+msgstr "التصرف كوكيل \"{name}\" والعمل على السياق الحالي."
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Action Type"
@@ -962,11 +962,11 @@ msgstr "إضافة مصدر بيانات"
 
 #: src/components/assets/editor/task/TaskDescription.tsx
 msgid "Add a description…"
-msgstr ""
+msgstr "إضافة وصف…"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Add a key in \"LLM API keys\" above to use it here"
-msgstr ""
+msgstr "إضافة مفتاح في \"LLM API keys\" أعلاه لاستخدامه هنا"
 
 #: src/components/conversation/chips/MessageChips.tsx
 #: src/components/conversation/chips/MessageChips.tsx
@@ -1059,7 +1059,7 @@ msgstr "إضافة رابط الكيان"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Add file or folder"
-msgstr ""
+msgstr "إضافة ملف أو مجلد"
 
 #: src/components/project-home/ProjectGitChip.tsx
 #: src/components/project-home/ProjectGitChip.tsx
@@ -1771,7 +1771,7 @@ msgstr "أرشفة جميع المهام"
 
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 msgid "Archive task"
-msgstr ""
+msgstr "أرشفة المهمة"
 
 #: src/components/conversation/conversation-category.ts
 #: src/components/inbox-view/InboxView.tsx
@@ -1793,7 +1793,7 @@ msgstr "هل أنت متأكد من رغبتك في مسح جميع البيان
 #. placeholder {0}: itemToDelete?.name || ''
 #: src/components/directory-tree/DirectoryTree.tsx
 msgid "Are you sure you want to delete \"{0}\"? This cannot be undone."
-msgstr ""
+msgstr "تأكيد حذف \"{0}\"؟ لا يمكن التراجع عن هذا الإجراء."
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Are you sure?"
@@ -2270,7 +2270,7 @@ msgstr "ربط السر"
 
 #: src/components/browseable-tree/adapters/tagRoot.tsx
 msgid "Bless \"{name}\" — create its Tag entity"
-msgstr ""
+msgstr "אישור \"{name}\" — יצירת ישות Tag"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "blocked"
@@ -3703,7 +3703,7 @@ msgstr "مجموعة جهات الاتصال"
 #. placeholder {0}: name.trim()
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 msgid "Contacts group \"{0}\" created"
-msgstr ""
+msgstr "تم إنشاء مجموعة جهات الاتصال \"{0}\""
 
 #: src/components/hooks-view/HooksTable.tsx
 msgid "Content"
@@ -4181,7 +4181,7 @@ msgstr "تعذّر استرجاع مشروع هذه الجلسة."
 
 #: src/routes/loaders/load-next-process.ts
 msgid "Could not recover this session’s project."
-msgstr ""
+msgstr "לא ניתן היה לשחזר את הפרויקט של הפעילות הזו."
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Could not remove"
@@ -4610,7 +4610,7 @@ msgstr "المؤشر"
 
 #: src/pages/entry/MessageLanding.tsx
 msgid "Cursor"
-msgstr ""
+msgstr "المؤشر"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Custom agents"
@@ -4814,7 +4814,7 @@ msgstr "وضع الأذونات الافتراضي"
 
 #: src/components/show-view/ShowView.tsx
 msgid "Defaults: page=\"{DEFAULT_PAGE}\", component=\"{DEFAULT_COMPONENT}\""
-msgstr ""
+msgstr "الإعدادات الافتراضية: page=\"{DEFAULT_PAGE}\"، component=\"{DEFAULT_COMPONENT}\""
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Define the conditions that must match for this trigger to fire"
@@ -4857,7 +4857,7 @@ msgstr "حذف — إزالة نهائية"
 #. placeholder {0}: confirmDelete ?? ''
 #: src/components/account/secrets-section.tsx
 msgid "Delete \"{0}\" from the OS keychain? This cannot be undone."
-msgstr ""
+msgstr "حذف \"{0}\" من سلسلة مفاتيح نظام التشغيل؟ لا يمكن التراجع عن هذا الإجراء."
 
 #. placeholder {0}: c.displayName
 #. placeholder {0}: s.name
@@ -5731,7 +5731,7 @@ msgstr "يحذف سجلات هذا المصدر ويعيد ضبط موضع ال�
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Duplicate assets"
-msgstr ""
+msgstr "الأصول المكررة"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Duplicates {duplicateCount}"
@@ -5767,15 +5767,15 @@ msgstr "مثال: فصلي"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "e.g., \"my-pre-tool-guard\", \"lint-on-save\""
-msgstr ""
+msgstr "مثال: \"my-pre-tool-guard\"، \"lint-on-save\""
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "e.g., \"Read\", \"Edit|Write\", \"*\" (leave empty for all tools)"
-msgstr ""
+msgstr "مثال: \"Read\"، \"Edit|Write\"، \"*\" (اترك الحقل فارغاً لجميع الأدوات)"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
-msgstr ""
+msgstr "مثال: /path/to/script.sh أو if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
 
 #: src/hooks/use-add-context-folder.tsx
 msgid "Each selected project's folder is added as a context folder."
@@ -6274,7 +6274,7 @@ msgstr "تقييم"
 #. placeholder {0}: frame.callable
 #: src/components/assets/editor/agent-trace/CallTreeView.tsx
 msgid "Evaluate \"{0}\""
-msgstr ""
+msgstr "تقييم \"{0}\""
 
 #: src/components/hooks-view/HooksTable.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -7174,7 +7174,7 @@ msgstr "جارٍ البث…"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "First indexed"
-msgstr ""
+msgstr "أول فهرسة"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Fit (f)"
@@ -7512,7 +7512,7 @@ msgstr "الثقة الكاملة"
 
 #: src/components/assets/editor/deck/DeckViewer.tsx
 msgid "Fullscreen"
-msgstr ""
+msgstr "ملء الشاشة"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "garbage"
@@ -8215,7 +8215,7 @@ msgstr "كيفية إكمال الإعداد"
 
 #: src/components/html-preview/HtmlPreview.tsx
 msgid "HTML preview"
-msgstr ""
+msgstr "معاينة HTML"
 
 #: src/components/code-editor/EditorPane.tsx
 msgid "HTML Preview"
@@ -8401,7 +8401,7 @@ msgstr "في git ({gitLabel})، انقر للفتح."
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "In Git since"
-msgstr ""
+msgstr "في Git منذ"
 
 #: src/components/graph-view/ui/EntityIcon.tsx
 msgid "In git, click to open."
@@ -9010,7 +9010,7 @@ msgstr "الطبقات"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Learn about duplicates"
-msgstr ""
+msgstr "تعرّف على الأصول المكررة"
 
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Learn about your data"
@@ -9061,11 +9061,11 @@ msgstr "العدسة"
 #. placeholder {1}: lensParts.type
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Lens type \"{0}/{1}\" is not supported."
-msgstr ""
+msgstr "نوع العدسة \"{0}/{1}\" غير مدعوم."
 
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Let an agent assess progress and fill in missing fields"
-msgstr ""
+msgstr "يمكن لوكيل تقييم التقدم وملء الحقول الناقصة"
 
 #: src/components/hooks/EventListPanel.tsx
 msgid "Level"
@@ -9710,7 +9710,7 @@ msgstr "تحديد الكل كمقروء"
 
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Mark this task as Done?"
-msgstr ""
+msgstr "تحديد هذه المهمة كمكتملة؟"
 
 #: src/components/quick-create/registry.ts
 #: src/types/ViewType.ts
@@ -9972,7 +9972,7 @@ msgstr "المقاييس"
 
 #: src/components/cron-view/CronForm.tsx
 msgid "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
-msgstr ""
+msgstr "الدقيقة والساعة ويوم الشهر والشهر ويوم الأسبوع — أو \"30s\" / \"5m\" للفاصل الزمني"
 
 #: src/components/claude-terminal/claude-terminal.tsx
 msgid "Minimize"
@@ -10852,7 +10852,7 @@ msgstr "لا توجد مفاتيح في ملف .env.local لهذا المشرو�
 
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "No known fix yet — use \"Fix It\" to start a session."
-msgstr ""
+msgstr "لا يوجد إصلاح معروف بعد — يمكن استخدام \"Fix It\" لبدء جلسة."
 
 #: src/components/context-select.tsx
 #~ msgid "No labels found."
@@ -11003,7 +11003,7 @@ msgstr "لا توجد محادثات سابقة"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "No past sessions used \"{skillName}\"."
-msgstr ""
+msgstr "لم تستخدم أي جلسات سابقة \"{skillName}\"."
 
 #: src/components/collaboration/sidebar/PlansCategory.tsx
 #~ msgid "No plans shared"
@@ -11040,7 +11040,7 @@ msgstr "سياق المشروع غير متاح"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "No project matches \"{normalizedCode}\"."
-msgstr ""
+msgstr "لا يوجد مشروع يطابق \"{normalizedCode}\"."
 
 #: src/components/join-room-dialog/JoinConversationDialog.tsx
 #~ msgid "No project matches code \"{normalizedCode}\"."
@@ -11237,7 +11237,7 @@ msgstr "لا توجد أسرار بعد. أضف واحدة أدناه — الق
 
 #: src/components/account/secrets-section.tsx
 msgid "No secrets yet. Click \"Add secret\" to create one."
-msgstr ""
+msgstr "لا توجد أسرار حتى الآن. انقر على \"إضافة سر\" لإنشاء واحد."
 
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "No services to monitor"
@@ -11904,7 +11904,7 @@ msgstr "فتح خارجيًا"
 msgid ""
 "Open externally\n"
 "{childPath}"
-msgstr ""
+msgstr "فتح خارجيًا\n{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Open externally: {childPath}"
@@ -11953,7 +11953,7 @@ msgstr "فتح البحث الكامل"
 
 #: src/components/assets/editor/deck/DeckViewer.tsx
 msgid "Open in a new browser tab"
-msgstr ""
+msgstr "فتح في علامة تبويب جديدة"
 
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
@@ -12231,7 +12231,7 @@ msgstr "فتح صفحة تسجيل الدخول"
 
 #: src/components/assets/editor/deck/DeckViewer.tsx
 msgid "Open the source template"
-msgstr ""
+msgstr "فتح قالب المصدر"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Open the transcript analysis session"
@@ -12319,11 +12319,11 @@ msgstr "وصف اختياري"
 
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "Optional message to the members…"
-msgstr ""
+msgstr "رسالة اختيارية للأعضاء…"
 
 #: src/components/assets/editor/task/OwnerButton.tsx
 msgid "Optional message to the owner…"
-msgstr ""
+msgstr "הודעה לבעלים (אופציונלי)…"
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Or send them this link"
@@ -12438,7 +12438,7 @@ msgstr "ترقيم الصفحات"
 
 #: src/components/assets/editor/task/TaskAssetEditor.tsx
 msgid "Parent comments"
-msgstr ""
+msgstr "הערות הורה"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Parent directory"
@@ -14284,7 +14284,7 @@ msgstr "إظهار في Finder"
 msgid ""
 "Reveal in Finder/Explorer\n"
 "{childPath}"
-msgstr ""
+msgstr "إظهار في مدير الملفات\n{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Reveal in Finder/Explorer: {childPath}"
@@ -14519,7 +14519,7 @@ msgstr "تشغيل المهارة في المشروع"
 
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Run the skill \"{name}\" on the current context."
-msgstr ""
+msgstr "تشغيل المهارة \"{name}\" على السياق الحالي."
 
 #: src/components/conversation/ExecutePromptDialog.tsx
 #~ msgid "Run this prompt in the shared session now. Optionally let future prompts from {who} run automatically."
@@ -14778,7 +14778,7 @@ msgstr "جارٍ فحص hooks..."
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Scanning sessions for \"{skillName}\"…"
-msgstr ""
+msgstr "جاري البحث في الجلسات عن \"{skillName}\"…"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Scanning…"
@@ -14870,7 +14870,7 @@ msgstr "بحث"
 
 #: src/components/assets/editor/task/OwnerButton.tsx
 msgid "Search a contact or type an email"
-msgstr ""
+msgstr "חיפוש איש קשר או הקלדת דוא\"ל"
 
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Search agents and skills…"
@@ -15648,7 +15648,7 @@ msgstr "مشاركة في محادثة"
 msgid ""
 "Share to a conversation\n"
 "{childPath}"
-msgstr ""
+msgstr "مشاركة في محادثة\n{childPath}"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Share to a conversation: {childPath}"
@@ -17047,7 +17047,7 @@ msgstr "هذا الوكيل لم يعد موجودًا في مساحة عملك.
 
 #: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
 msgid "The \"{skillName}\" skill is not installed."
-msgstr ""
+msgstr "היכולת \"{skillName}\" אינה מותקנת."
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
 #~ msgid "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. Enable it to continue."
@@ -17185,7 +17185,7 @@ msgstr "نص الموجه…"
 
 #: src/components/conversation/PromptComposerDialog.tsx
 msgid "The prompt will be attached to your next message. The other user will see an \"Approve & Execute\" chip; once approved, the prompt runs in their forked Claude Code session."
-msgstr ""
+msgstr "سيتم إرفاق المطالبة برسالتك التالية. سيرى المستخدم الآخر زر \"Approve & Execute\"؛ وعند الموافقة عليه، ستُنفَّذ المطالبة في جلسة Claude Code المتفرعة الخاصة به."
 
 #: src/components/connections-manager.tsx
 msgid "The provider accepted the token."
@@ -17347,7 +17347,7 @@ msgstr "هذا السياق فارغ."
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "This conversation came from a project called \"{remoteProjectName}\" on another machine. Pick the local project folder it should map to."
-msgstr ""
+msgstr "جاءت هذه المحادثة من مشروع باسم \"{remoteProjectName}\" على جهاز آخر. يُرجى اختيار المجلد المحلي الذي يجب ربطه به."
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "This conversation came from a project on another machine. Pick the local project folder it should map to."
@@ -17752,7 +17752,7 @@ msgstr "الأداة"
 
 #: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 msgid "Tool calls"
-msgstr ""
+msgstr "קריאות כלים"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Tool Calls"
@@ -17768,7 +17768,7 @@ msgstr "خطأ في الأداة"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Tool pattern to match: exact name, regex pattern, or \"*\" for all. Case-sensitive."
-msgstr ""
+msgstr "نمط مطابقة الأداة: اسم دقيق أو نمط regex أو \"*\" للكل. حسّاس لحالة الأحرف."
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Tool patterns allowed without prompting"
@@ -18281,7 +18281,7 @@ msgstr "استخدام"
 
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Use \"Send to Expert\" to create a task"
-msgstr ""
+msgstr "يمكن استخدام \"Send to Expert\" لإنشاء مهمة"
 
 #: src/components/assets/editor/subagent/SubAgentAssetEditor.tsx
 msgid "Use agent"
@@ -18571,7 +18571,7 @@ msgstr "عرض إعدادات الخطاف"
 
 #: src/components/view-toggle/view-toggle.tsx
 msgid "View mode"
-msgstr ""
+msgstr "מצב תצוגה"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "View on GitHub"

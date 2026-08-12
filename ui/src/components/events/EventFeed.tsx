@@ -9,7 +9,7 @@
  */
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Pause, Play, Trash2, X } from 'lucide-react';
-import { Trans, useLingui, useLingui } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';

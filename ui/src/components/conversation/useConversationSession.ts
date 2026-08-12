@@ -55,7 +55,11 @@ export function useConversationSession(opts: {
   useEffect(() => {
     let cancelled = false;
     void Promise.all(
-      processTids.map((t) => AgenticProcess.getByIdFromCache<AgenticProcess>(t.id) ?? AgenticProcess.getById<AgenticProcess>(t.id).catch(() => null)),
+      processTids.map(
+        (t) =>
+          AgenticProcess.getByIdFromCache<AgenticProcess>(t.id) ??
+          AgenticProcess.getById<AgenticProcess>(t.id).catch(() => null),
+      ),
     ).then((procs) => {
       if (!cancelled) setLinkedProcesses(procs.filter((p): p is AgenticProcess => !!p));
     });

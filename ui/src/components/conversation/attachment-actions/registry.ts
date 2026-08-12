@@ -41,9 +41,7 @@ export const ATTACHMENT_ACTION_DESCRIPTORS: AttachmentActionDescriptor[] = [
         icon: Play,
         variant: 'primary',
         pulse: ctx.workerSessionInFlight,
-        title: sessionLabel
-          ? t`Approve and run this prompt in ${sessionLabel}`
-          : t`Approve this prompt and run it`,
+        title: sessionLabel ? t`Approve and run this prompt in ${sessionLabel}` : t`Approve this prompt and run it`,
         testId: 'message-bubble-execute-prompt',
         run: () => ctx.handlers.approveAndExecute?.(firstUnapprovedPromptIdx(ctx.fm)),
       };

@@ -4,7 +4,6 @@ import { dataContext, fsManager } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AlertTriangle, CheckCircle2, Circle, Clock, FileText, Loader2, ArrowRight } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { msg } from '@lingui/macro';
 
 interface TaskData {
   id: string;

@@ -211,7 +211,9 @@ export function ProjectResourceList({
                 <FolderOpen className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent><Trans>Open or create project</Trans></TooltipContent>
+            <TooltipContent>
+              <Trans>Open or create project</Trans>
+            </TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -241,7 +243,9 @@ export function ProjectResourceList({
             <label className="project-resource-filter-option">
               <input type="checkbox" checked={showSessions} onChange={toggleSessions} />
               <FolderOpen className="h-3 w-3" />
-              <span><Trans>Show Sessions</Trans></span>
+              <span>
+                <Trans>Show Sessions</Trans>
+              </span>
             </label>
             <div className="project-resource-filter-separator" />
             {availableResourceTypes.map((type) => {
@@ -263,21 +267,29 @@ export function ProjectResourceList({
         {isLoading ? (
           <div className="project-resource-list-loading">
             <FusionSpinner size="xs" />
-            <span><Trans>Loading resources...</Trans></span>
+            <span>
+              <Trans>Loading resources...</Trans>
+            </span>
           </div>
         ) : !selectedProjectId ? (
           <div className="project-resource-list-empty">
             <Folder className="h-8 w-8 opacity-30" />
-            <span><Trans>Select a project to view resources</Trans></span>
+            <span>
+              <Trans>Select a project to view resources</Trans>
+            </span>
           </div>
         ) : totalItems === 0 ? (
           <div className="project-resource-list-empty">
             <Folder className="h-8 w-8 opacity-30" />
-            <span><Trans>No resources found in this project</Trans></span>
+            <span>
+              <Trans>No resources found in this project</Trans>
+            </span>
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="project-resource-list-empty">
-            <span><Trans>No resources match those filters</Trans></span>
+            <span>
+              <Trans>No resources match those filters</Trans>
+            </span>
           </div>
         ) : (
           <ul className="project-resource-list-items">

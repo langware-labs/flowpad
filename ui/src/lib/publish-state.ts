@@ -49,8 +49,7 @@ export function derivePublishState(input: PublishStatusInput): PublishStatus {
 // Advanced copy is for power-user tiers only. Vibe (simpler than Standard) and
 // Standard both get the plain-language copy — so test for the advanced tiers
 // explicitly rather than "!== Standard" (which would wrongly catch Vibe).
-const isAdvanced = (mode: ViewMode): boolean =>
-  mode === ViewMode.Advanced || mode === ViewMode.Dev;
+const isAdvanced = (mode: ViewMode): boolean => mode === ViewMode.Advanced || mode === ViewMode.Dev;
 
 export interface PublishLabels {
   /** Button label for the publish action. */
@@ -66,9 +65,7 @@ export function publishCopy(state: PublishState, mode: ViewMode): PublishLabels 
   const advanced = isAdvanced(mode);
   return {
     publishLabel: 'Publish',
-    publishTitle: advanced
-      ? 'Publish your changes to the remote'
-      : 'Publish your changes',
+    publishTitle: advanced ? 'Publish your changes to the remote' : 'Publish your changes',
     showCount: advanced,
   };
 }
@@ -101,34 +98,63 @@ export function pushToastCopy(
         resolvable: false,
       };
     case 'nothing':
-      return { level: 'success', title: t`Nothing to publish`, message: t`Everything is already up to date.`, resolvable: false };
+      return {
+        level: 'success',
+        title: t`Nothing to publish`,
+        message: t`Everything is already up to date.`,
+        resolvable: false,
+      };
     case 'conflict':
       return advanced
-        ? { level: 'error', title: t`Publish hit a conflict`, message: raw || 'A rebase conflict is in progress.', resolvable: true }
-        : { level: 'error', title: t`Couldn't publish`, message: t`Someone else changed this too. Switch to Advanced view to merge.`, resolvable: false };
+        ? {
+            level: 'error',
+            title: t`Publish hit a conflict`,
+            message: raw || 'A rebase conflict is in progress.',
+            resolvable: true,
+          }
+        : {
+            level: 'error',
+            title: t`Couldn't publish`,
+            message: t`Someone else changed this too. Switch to Advanced view to merge.`,
+            resolvable: false,
+          };
     case 'permission':
       return {
         level: 'error',
         title: advanced ? 'Push rejected — no access' : "Can't publish here",
-        message: advanced ? (raw || 'You do not have write access to this remote.') : "You don't have access to publish to this location.",
+        message: advanced
+          ? raw || 'You do not have write access to this remote.'
+          : "You don't have access to publish to this location.",
         resolvable: false,
       };
     case 'no_remote':
       return {
         level: 'error',
         title: advanced ? 'No remote configured' : 'Nowhere to publish yet',
-        message: advanced ? (raw || 'No git remote/upstream is configured for this branch.') : "This project isn't connected to a place to publish to.",
+        message: advanced
+          ? raw || 'No git remote/upstream is configured for this branch.'
+          : "This project isn't connected to a place to publish to.",
         resolvable: false,
       };
     case 'network':
-      return { level: 'error', title: t`Couldn't reach the server`, message: t`Check your connection and try again.`, resolvable: false };
+      return {
+        level: 'error',
+        title: t`Couldn't reach the server`,
+        message: t`Check your connection and try again.`,
+        resolvable: false,
+      };
     case 'no_repo':
-      return { level: 'error', title: t`Not set up for publishing`, message: t`This file is not in a versioned project.`, resolvable: false };
+      return {
+        level: 'error',
+        title: t`Not set up for publishing`,
+        message: t`This file is not in a versioned project.`,
+        resolvable: false,
+      };
     default:
       return {
         level: 'error',
         title: advanced ? 'Push failed' : "Couldn't publish",
-        message: advanced ? (raw || 'Push failed.') : 'Something went wrong. Please try again.',
+        message: advanced ? raw || 'Push failed.' : 'Something went wrong. Please try again.',
         resolvable: false,
       };
   }

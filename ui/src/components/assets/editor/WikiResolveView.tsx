@@ -1,7 +1,7 @@
 import { t } from '@lingui/core/macro';
 import { dataContext, FSRef, Markdown, PageId, TypeId, Whiteboard, type APIEntity, type WikiResolveResult } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { Trans, useLingui, useLingui } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ExternalLink, FileQuestion, RefreshCw } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';

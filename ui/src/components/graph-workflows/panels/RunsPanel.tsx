@@ -7,11 +7,7 @@
  */
 import { t } from '@lingui/core/macro';
 import { useEffect, useState } from 'react';
-import {
-  graphWorkflows,
-  type ArtifactExecution,
-  type RunJournalEntry,
-} from '@sdk/services/graph-workflows';
+import { graphWorkflows, type ArtifactExecution, type RunJournalEntry } from '@sdk/services/graph-workflows';
 import { formatBytes } from '@src/utils/format-bytes';
 import { asStr, fmtRelative, parseIsoMs } from '../fmt';
 import { useStudio } from '../store';
@@ -71,7 +67,7 @@ function ArtifactList({
             return (
               <div key={id} className="afl-file">
                 <button
-                  className={`afl-filerow ${f.direction}${open === id ? ' on' : ''}`}
+                  className={`afl-filerow ${f.direction}${open === id ? 'on' : ''}`}
                   onClick={() => show(ex.key, f.name)}
                   title={f.path}
                   disabled={!f.previewable}
@@ -122,9 +118,7 @@ function JournalTimeline({
         return (
           <div key={i} className={`afl-jrow ${e.kind}`}>
             <span className="k">{e.kind}</span>
-            <span className="n">
-              {[seq ? `#${seq}` : '', node, event].filter(Boolean).join(' · ')}
-            </span>
+            <span className="n">{[seq ? `#${seq}` : '', node, event].filter(Boolean).join(' · ')}</span>
             {detail && <span className="d">{detail}</span>}
             {processId && (e.kind === 'agent_spawn' || e.kind === 'node_done' || e.kind === 'node_error') && (
               <a className="lnk" title={`open process ${processId}`} onClick={() => onOpenProcess(processId)}>
@@ -132,8 +126,11 @@ function JournalTimeline({
               </a>
             )}
             {seq !== undefined && (e.kind === 'node_done' || e.kind === 'node_error') && (
-              <a className="lnk" title="re-deliver this execution's recorded input in a fresh run"
-                 onClick={() => onReexecute(seq)}>
+              <a
+                className="lnk"
+                title="re-deliver this execution's recorded input in a fresh run"
+                onClick={() => onReexecute(seq)}
+              >
                 ↻ re-run
               </a>
             )}
@@ -216,9 +213,7 @@ export function RunsPanel({ onSelectRun }: { onSelectRun: (runId: string | null)
           <button
             className="lnk"
             title="open this flow's full run history"
-            onClick={() =>
-              previewRuns?.({ scope: { flow_id: flowId }, title: t`Runs of this flow` })
-            }
+            onClick={() => previewRuns?.({ scope: { flow_id: flowId }, title: t`Runs of this flow` })}
           >
             all ⬈
           </button>
@@ -244,8 +239,11 @@ export function RunsPanel({ onSelectRun }: { onSelectRun: (runId: string | null)
       {selectedRunId && (
         <>
           <div className="afl-runactions">
-            <button className="afl-cta" onClick={replay}
-                    title="re-inject this run's recorded entry events into a fresh run (side effects re-fire)">
+            <button
+              className="afl-cta"
+              onClick={replay}
+              title="re-inject this run's recorded entry events into a fresh run (side effects re-fire)"
+            >
               Replay run ▶
             </button>
             {actionStatus && <div className="afl-status">{actionStatus}</div>}
@@ -261,9 +259,7 @@ export function RunsPanel({ onSelectRun }: { onSelectRun: (runId: string | null)
               })
             }
           />
-          {flowId && (
-            <ArtifactList flowId={flowId} runId={selectedRunId} executions={artifacts} />
-          )}
+          {flowId && <ArtifactList flowId={flowId} runId={selectedRunId} executions={artifacts} />}
         </>
       )}
     </div>

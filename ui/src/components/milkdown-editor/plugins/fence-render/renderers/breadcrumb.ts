@@ -22,17 +22,8 @@ import type { MessageDescriptor } from '@lingui/core';
 import { FileCode, RefreshCw } from 'lucide-react';
 
 import { registerFenceRenderer, type FenceRenderContext, type FenceRenderer } from '../registry';
-import {
-  ensureBreadcrumbContext,
-  invalidateBreadcrumbContext,
-  peekBreadcrumbContext,
-} from './breadcrumb-context';
-import {
-  formatSiteLabel,
-  parseBreadcrumbBlock,
-  type BreadcrumbSite,
-  type BreadcrumbSpec,
-} from './breadcrumb-schema';
+import { ensureBreadcrumbContext, invalidateBreadcrumbContext, peekBreadcrumbContext } from './breadcrumb-context';
+import { formatSiteLabel, parseBreadcrumbBlock, type BreadcrumbSite, type BreadcrumbSpec } from './breadcrumb-schema';
 import { el, iconMarkup } from './dom';
 import { resolveRelPath, type SourceLocation } from './source-location';
 
