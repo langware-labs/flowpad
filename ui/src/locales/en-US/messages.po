@@ -2310,6 +2310,7 @@ msgstr "Can't update — showing last synced"
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cancel"
 msgstr "Cancel"
@@ -7053,6 +7054,10 @@ msgid "Guides"
 msgstr "Guides"
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "Hand it over"
+msgstr "Hand it over"
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Hand it over — they become the owner and you keep view-only access."
 msgstr "Hand it over — they become the owner and you keep view-only access."
 
@@ -10746,6 +10751,10 @@ msgstr "Onboarding reset"
 msgid "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
 msgstr "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
 
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "Only a sandbox's owner can start one. If you share it as it is, they'll get the link but won't be able to open it — they'll be told to ask you to start it first."
+msgstr "Only a sandbox's owner can start one. If you share it as it is, they'll get the link but won't be able to open it — they'll be told to ask you to start it first."
+
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
 msgstr "Only harness entries here — enable “Show all” to view them."
@@ -14364,6 +14373,10 @@ msgid "Share {0} over Git"
 msgstr "Share {0} over Git"
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "Share anyway"
+msgstr "Share anyway"
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Share by name or email…"
 msgstr "Share by name or email…"
 
@@ -15054,6 +15067,14 @@ msgstr "Start Copilot"
 #: src/components/tasks-viewer/TasksViewer.tsx
 #~ msgid "Start date"
 #~ msgstr "Start date"
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "Start it first"
+msgstr "Start it first"
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "Start it yourself before sharing, or hand it over so they become the owner."
+msgstr "Start it yourself before sharing, or hand it over so they become the owner."
 
 #: src/journey/JourneyViewer.tsx
 msgid "Start journey"
@@ -16022,9 +16043,17 @@ msgstr "This runs in the background — feel free to keep working. When it's don
 msgid "This sandbox could not be started."
 msgstr "This sandbox could not be started."
 
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "This sandbox has never been started, and only its owner can start one — so they won't be able to open it until you start it or hand it over."
+msgstr "This sandbox has never been started, and only its owner can start one — so they won't be able to open it until you start it or hand it over."
+
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This sandbox has not been started yet, and only its owner can start it."
 msgstr "This sandbox has not been started yet, and only its owner can start it."
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "This sandbox hasn't been started yet"
+msgstr "This sandbox hasn't been started yet"
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx

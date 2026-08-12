@@ -686,6 +686,12 @@ export function HubHome() {
         currentUserId={currentUser?.id}
         currentUserEmail={currentUser?.email}
         onShared={() => void refetch()}
+        // Sharing a box that was never launched hands out a link the recipient
+        // cannot act on, so the confirm offers the fix: the SAME dialog the card's
+        // Launch button opens, with its checklist and its auto-login choice.
+        // Only opens the launcher — the share dialog closes itself, as it does on
+        // every other exit.
+        onLaunchInstead={() => setLaunching(sharing)}
       />
 
       {/* Deleting a project is not undoable and it is shared — the people it was

@@ -2310,6 +2310,7 @@ msgstr "לא ניתן לעדכן — מוצגים הנתונים מהסנכרו�
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cancel"
 msgstr "ביטול"
@@ -7053,6 +7054,10 @@ msgid "Guides"
 msgstr "מדריכים"
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "Hand it over"
+msgstr "מסרו אותו"
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Hand it over — they become the owner and you keep view-only access."
 msgstr "מסרו אותו — הם הופכים לבעלים ואתם שומרים גישה לצפייה בלבד."
 
@@ -10746,6 +10751,10 @@ msgstr "איפוס הכנה ראשונית"
 msgid "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
 msgstr "מקור אחד לכל הזנה חיצונית או חשבון. המנגנון מסנכרן כל מקור בהתאם לקצב הפעימות והופך את הממצאים לרשומות שניתן לחפש, לקרוא ולבנות איתן זרימות עבודה."
 
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "Only a sandbox's owner can start one. If you share it as it is, they'll get the link but won't be able to open it — they'll be told to ask you to start it first."
+msgstr "רק הבעלים של סנדבוקס יכול להפעיל אותו. אם תשתפו אותו כמו שהוא, הם יקבלו את הקישור אך לא יוכלו לפתוח אותו — ותוצג להם הודעה לבקש מכם להפעיל אותו קודם."
+
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
 msgstr "כאן מוצגים רק ערכי harness — יש להפעיל את \"Show all\" כדי לראות את הכול."
@@ -14364,6 +14373,10 @@ msgid "Share {0} over Git"
 msgstr "לשתף את {0} דרך Git"
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "Share anyway"
+msgstr "שתפו בכל זאת"
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Share by name or email…"
 msgstr "שיתוף לפי שם או דוא״ל…"
 
@@ -15054,6 +15067,14 @@ msgstr "התחל Copilot"
 #: src/components/tasks-viewer/TasksViewer.tsx
 #~ msgid "Start date"
 #~ msgstr "תאריך התחלה"
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "Start it first"
+msgstr "הפעילו אותו קודם"
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "Start it yourself before sharing, or hand it over so they become the owner."
+msgstr "הפעילו אותו בעצמכם לפני השיתוף, או מסרו אותו כדי שהם יהפכו לבעלים."
 
 #: src/journey/JourneyViewer.tsx
 msgid "Start journey"
@@ -16022,9 +16043,17 @@ msgstr "התהליך רץ ברקע — אפשר להמשיך לעבוד. כשה�
 msgid "This sandbox could not be started."
 msgstr "לא ניתן היה להפעיל את ה-Sandbox הזה."
 
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "This sandbox has never been started, and only its owner can start one — so they won't be able to open it until you start it or hand it over."
+msgstr "הסנדבוקס הזה מעולם לא הופעל, ורק הבעלים שלו יכול להפעיל אותו — כך שהם לא יוכלו לפתוח אותו עד שתפעילו אותו או תמסרו אותו."
+
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This sandbox has not been started yet, and only its owner can start it."
 msgstr "ה-Sandbox הזה עדיין לא הופעל, ורק לבעלים שלו יש אפשרות להפעיל אותו."
+
+#: src/pages/hub-home/ShareSandboxDialog.tsx
+msgid "This sandbox hasn't been started yet"
+msgstr "הסנדבוקס הזה עדיין לא הופעל"
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
