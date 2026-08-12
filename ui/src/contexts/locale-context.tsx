@@ -302,10 +302,22 @@ export async function initLocale(): Promise<void> {
 export async function applySupportedLocales(list: LocaleInfo[] | null | undefined): Promise<void> {
   _supported = list && list.length > 0 ? list : FALLBACK_LOCALES;
   _supportedListeners.forEach((fn) => fn());
-  // From here on a project's language can actually be resolved, so start
-  // following the current project (see `ensureProjectLocaleSync`).
-  ensureProjectLocaleSync();
   await resolveAndApply(true);
+  // From here on a project's language can actually be resolved, so start
+  // following the current project (see `ensureProjectLocaleSync`) — and
+  // RECONCILE THE ONE THAT IS ALREADY CURRENT.
+  //
+  // The catch-up is the load-bearing half, not defensiveness. `loadRoot` is
+  // `initSdk()` then this, and `initSdk` adopts `bootstrapInfo.default_project`
+  // — so on a provisioned box the project is current BEFORE anything here is
+  // listening, and the event a subscription waits for is already in the past.
+  // A real sandbox proved it: the box carried `locale='he'`, ran the build with
+  // the subscription in it, and still opened in English.
+  //
+  // After `resolveAndApply` deliberately: that re-resolves the app's own stored
+  // choice, and the project must have the final say over the surface it owns.
+  ensureProjectLocaleSync();
+  await onCurrentProjectChanged(true);
 }
 
 // React to prefMan-driven locale changes (a backend value reconciled in on load, or a
@@ -340,10 +352,18 @@ async function onPrefLocaleChanged(): Promise<void> {
  */
 let _localeProjectId: string | null = null;
 
-async function onCurrentProjectChanged(): Promise<void> {
+/**
+ * @param reconcile true = apply the CURRENT project's language even though the
+ *   id has not changed. The id guard exists to ignore the rest of
+ *   CONTEXT_CHANGED (it fires for every context key), but "already current" is
+ *   exactly the boot case — so the catch-up must not be filtered out by it.
+ *   `applyProjectLocale` no-ops when the language already matches, so forcing
+ *   costs nothing.
+ */
+async function onCurrentProjectChanged(reconcile = false): Promise<void> {
   const typeId = dataContext.projectTypeId;
   const id = typeId?.id ?? null;
-  if (id === _localeProjectId) return;
+  if (!reconcile && id === _localeProjectId) return;
   _localeProjectId = id;
   if (!id || !typeId) return;
   // Usually already cached (whoever set the context had the entity in hand);
