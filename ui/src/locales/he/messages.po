@@ -6666,6 +6666,10 @@ msgstr "שינויים בגיט"
 msgid "Git is required to share files"
 msgstr "Git נדרש כדי לשתף קבצים"
 
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Git is set up"
+msgstr ""
+
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/status-bar/GitPushButton.tsx
 msgid "git push"
@@ -6685,7 +6689,15 @@ msgid "Git repository"
 msgstr "מאגר Git"
 
 #: src/components/project-home/ProjectPublishButton.tsx
+msgid "Git setup cancelled"
+msgstr ""
+
+#: src/components/project-home/ProjectPublishButton.tsx
 msgid "Git setup failed."
+msgstr ""
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Git setup finished, but the project still isn't ready to link."
 msgstr ""
 
 #: src/components/project-home/ProjectGitChip.tsx
@@ -8032,6 +8044,11 @@ msgstr ""
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Linked to cloud"
+msgstr ""
+
+#. placeholder {0}: project.name ?? 'this project'
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Linking {0} to the cloud…"
 msgstr ""
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
@@ -14911,6 +14928,10 @@ msgstr "צעד: {0}ms · debounce: {1}ms"
 msgid "Steps taken"
 msgstr "שלבים בוצעו"
 
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Still can't link this project"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Still signed in"
 msgstr "ההתחברות עדיין פעילה"
@@ -15419,6 +15440,10 @@ msgstr "ההפעלה החיה הסתיימה."
 #: src/components/project-home/BindSecretDialog.tsx
 msgid "The local secrets store is not enabled yet."
 msgstr "מאגר הסודות המקומי עדיין לא מופעל"
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "The project was not linked to the cloud."
+msgstr ""
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "The project will no longer ask for it. The stored value is not deleted."

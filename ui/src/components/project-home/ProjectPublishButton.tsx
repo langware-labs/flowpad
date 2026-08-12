@@ -75,6 +75,16 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
     const mount = project.fs_storage_mount_path;
     if (!mount || setupBusy) return;
     setSetupBusy(true);
+    // Hand the screen to the wizard BEFORE awaiting it. `git-context-folder`
+    // finishes its work and then waits for the user to press Done, so
+    // `launchWizard` stays pending for as long as that wizard is open. Leaving
+    // this modal up means the person the wizard is waiting for is told
+    // "Checking Git…" over the top of it — and since `setupBusy` keeps the gate
+    // in its `checking` face, the only face with no action, the dialog can never
+    // resolve on its own. The user saw an unchanging spinner while the setup had
+    // in fact already succeeded. Closing here is what makes the wizard reachable;
+    // the `resumeWhenReady` flag below carries the publish on once it returns.
+    setGateOpen(false);
     try {
       const result = await launchWizard('git-context-folder', {
         title: 'Set up Git for cloud linking',
@@ -90,9 +100,22 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
           `Set up Git in the exact project folder ${mount}. Initialize it there if needed, ` +
           'configure a GitHub origin, commit the entire repository, and push its branch. Do not clone or copy it elsewhere.',
       });
-      if (result.status === 'done') setResumeWhenReady(true);
-      else if (result.status === 'error') {
+      // Say something on every way out. The wizard runs on its own surface, so
+      // this button is off-screen when it lands — without a notification the
+      // user is left to guess whether the setup took, which is exactly what
+      // happened when the gate sat there claiming to still be checking.
+      if (result.status === 'done') {
+        notify.success({
+          title: t`Git is set up`,
+          message: t`Linking ${project.name ?? 'this project'} to the cloud…`,
+        });
+        setResumeWhenReady(true);
+      } else if (result.status === 'error') {
         notify.error({ title: t`Could not set up Git`, message: result.errorStr ?? undefined });
+      } else {
+        // Cancelled. Silence here reads as a failure the user can't see, and
+        // the publish they asked for is simply not happening.
+        notify.info({ title: t`Git setup cancelled`, message: t`The project was not linked to the cloud.` });
       }
     } catch (error) {
       notify.error({ title: t`Could not set up Git`, message: errorMessage(error, t`Git setup failed.`) });
@@ -161,10 +184,21 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
   // Publish intent sets this flag; an ordinary preflight on mount can never
   // auto-publish the Project.
   useEffect(() => {
-    if (!resumeWhenReady || checking || !preflight.available) return;
+    if (!resumeWhenReady || checking) return;
     setResumeWhenReady(false);
+    if (!preflight.available) {
+      // The remediation reported success and we told the user we were linking —
+      // but the re-check still says no. Saying nothing here would leave that
+      // promise hanging exactly like the stuck gate did; the backend's own
+      // reason is the only useful thing to hand back.
+      notify.error({
+        title: t`Still can't link this project`,
+        message: preflight.reason ?? t`Git setup finished, but the project still isn't ready to link.`,
+      });
+      return;
+    }
     void checkGithubAndPublish();
-  }, [resumeWhenReady, checking, preflight.available, checkGithubAndPublish]);
+  }, [resumeWhenReady, checking, preflight.available, preflight.reason, checkGithubAndPublish, t]);
 
   const remediation = gitShareGateState(preflight.code);
   const busy = publishing || githubChecking || setupBusy || pushBusy || oauthConnecting;
@@ -249,13 +283,7 @@ export function ProjectPublishButton({ project }: ProjectPublishButtonProps) {
         ) : (
           <CloudUpload className="h-3.5 w-3.5" aria-hidden />
         )}
-        {publishing ? (
-          <Trans>Linking…</Trans>
-        ) : checking ? (
-          <Trans>Checking…</Trans>
-        ) : (
-          <Trans>Link to cloud</Trans>
-        )}
+        {publishing ? <Trans>Linking…</Trans> : checking ? <Trans>Checking…</Trans> : <Trans>Link to cloud</Trans>}
       </Button>
 
       <GitShareGateDialog
