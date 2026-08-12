@@ -176,6 +176,13 @@ def _entries(ap: AgenticProcess) -> list:
     return list(transcript.entries)
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.live_plan_detection.rules: FAILING? the path is on the plan_mode
+#       ATTACHMENT, not on ExitPlanMode - read this tag before touching the guard
+# flowpad:endcapsule tag
 @pytest.mark.asyncio
 async def test_live_push_sets_plan_path_when_tool_use_omits_plan_file_path(
     claude_home: Path, initialize_test_db,
