@@ -35,13 +35,16 @@ export function SessionInput({
   const [internal, setInternal] = useState('');
   const controlled = value !== undefined;
   const message = controlled ? (value ?? '') : internal;
-  const setMessage = useCallback((next: string) => {
-    if (controlled) {
-      onChange?.(next);
-    } else {
-      setInternal(next);
-    }
-  }, [controlled, onChange]);
+  const setMessage = useCallback(
+    (next: string) => {
+      if (controlled) {
+        onChange?.(next);
+      } else {
+        setInternal(next);
+      }
+    },
+    [controlled, onChange],
+  );
 
   const picker = usePickedFiles({ enabled: allowAttachments, disabled });
   const files = picker.files;
@@ -106,7 +109,9 @@ export function SessionInput({
         disabled={disabled}
         rows={1}
       />
-      <div className={cn('flex items-center gap-2', allowAttachments || footerSlot ? 'justify-between' : 'justify-end')}>
+      <div
+        className={cn('flex items-center gap-2', allowAttachments || footerSlot ? 'justify-between' : 'justify-end')}
+      >
         {(allowAttachments || footerSlot) && (
           <div className="flex min-w-0 items-center gap-1.5">
             {allowAttachments && (
@@ -127,7 +132,7 @@ export function SessionInput({
           className="rounded-full bg-gradient-to-r from-primary to-primary/80 text-white"
           data-testid="session-input-submit"
         >
-          <Send className="h-4 w-4" />
+          <Send className="h-4 w-4 rtl:-scale-x-100" />
         </Button>
       </div>
     </form>

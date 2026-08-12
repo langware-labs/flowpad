@@ -315,7 +315,7 @@ const PlanFileEditor: React.FC = () => {
             onClick={() => setShowShareDialog(true)}
             title={t`Share this plan with someone`}
           >
-            <Send className="me-2 h-4 w-4" />
+            <Send className="me-2 h-4 w-4 rtl:-scale-x-100" />
             <Trans>Share</Trans>
           </Button>
 
@@ -465,7 +465,7 @@ const SpecEntityEditor: React.FC = () => {
           <Button
             size="sm"
             variant="default"
-            onClick={handleSave}
+            onClick={() => void handleSave()}
             disabled={!isDirty || isSaving}
             title={isDirty ? t`Save changes` : t`No unsaved changes`}
           >
@@ -479,7 +479,7 @@ const SpecEntityEditor: React.FC = () => {
             onClick={() => setShowShareDialog(true)}
             title={t`Share this plan with someone`}
           >
-            <Send className="me-2 h-4 w-4" />
+            <Send className="me-2 h-4 w-4 rtl:-scale-x-100" />
             <Trans>Share</Trans>
           </Button>
 
