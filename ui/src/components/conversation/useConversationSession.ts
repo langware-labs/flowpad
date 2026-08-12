@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AgenticProcess, Conversation, ProcessKind, TypeId } from '@sdk';
 import { notify } from '@src/notifications';
@@ -111,7 +112,7 @@ export function useConversationSession(opts: {
         }
       } catch (err) {
         console.error('[useConversationSession] start session failed', err);
-        notify.error({ title: 'Failed to start session' });
+        notify.error({ title: t`Failed to start session` });
       } finally {
         setStarting(false);
       }

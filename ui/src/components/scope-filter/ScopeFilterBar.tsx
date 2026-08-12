@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import React, { useMemo } from 'react';
 import { scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 import { ProjectPickerModal } from '@src/components/assets/ProjectPickerModal';
@@ -34,11 +35,11 @@ export function ScopeFilterBar({
   } = useScopeFilterChips({ scope, currentProjectId, onScopeChange });
 
   const options: ScopeBarOption<ScopeMode>[] = useMemo(() => [
-    { value: 'all', label: 'All', title: 'All assets (user + every project)' },
-    { value: 'user', label: 'User', title: 'User assets only' },
+    { value: 'all', label: t`All`, title: t`All assets (user + every project)` },
+    { value: 'user', label: t`User`, title: t`User assets only` },
     {
       value: 'project',
-      label: 'Project',
+      label: t`Project`,
       disabled: projectDisabled,
       title: projectDisabled
         ? 'No current project'
@@ -46,9 +47,9 @@ export function ScopeFilterBar({
     },
     {
       value: 'selected',
-      label: 'Selected',
+      label: t`Selected`,
       count: activeMode === 'selected' ? selectedCount : undefined,
-      title: 'Pick specific projects…',
+      title: t`Pick specific projects…`,
     },
   ], [projectDisabled, currentProjectName, activeMode, selectedCount]);
 

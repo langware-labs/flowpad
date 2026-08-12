@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActionInfo,
@@ -137,7 +138,7 @@ export function useTranslations({
     async (lang: string) => {
       const typeId = entity?.typeId;
       if (!typeId || !chatTarget) {
-        notify.error({ title: 'Cannot translate', message: 'This file has no backing entity yet.' });
+        notify.error({ title: t`Cannot translate`, message: t`This file has no backing entity yet.` });
         return;
       }
       setIsAdding(true);
@@ -176,7 +177,7 @@ export function useTranslations({
         }
       } catch (err) {
         console.error('[translations] addTranslation failed', err);
-        notify.error({ title: 'Failed to start translation' });
+        notify.error({ title: t`Failed to start translation` });
       } finally {
         setIsAdding(false);
       }

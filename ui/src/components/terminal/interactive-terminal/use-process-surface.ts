@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useEffect, useRef, useState } from 'react';
 import { isReadyForInput, PrefKey, WorkerMode, type AgenticProcess } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
@@ -140,7 +141,7 @@ export function useProcessSurface({
       } catch (err) {
         console.error('[sessionSurface] mode switch failed', err);
         notify.error({
-          title: 'Could not switch to terminal',
+          title: t`Could not switch to terminal`,
           message: err instanceof Error ? err.message : String(err),
         });
       } finally {

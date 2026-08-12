@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { Button } from '@src/components/ui/button';
 import { Textarea } from '@src/components/ui/textarea';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
@@ -119,7 +120,7 @@ export function SessionInput({
                 inputId={picker.inputId}
                 onFiles={picker.addFiles}
                 disabled={disabled}
-                title="Attach files"
+                title={t`Attach files`}
                 testId="session-input-attach"
               />
             )}

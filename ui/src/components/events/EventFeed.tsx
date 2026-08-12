@@ -9,7 +9,7 @@
  */
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Pause, Play, Trash2, X } from 'lucide-react';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Trans, useLingui, useLingui } from '@lingui/react/macro';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
@@ -185,7 +185,7 @@ export function EventFeed({
               type="button"
               onClick={onClearTarget}
               className="text-muted-foreground hover:text-foreground"
-              aria-label="Clear subject filter"
+              aria-label={t`Clear subject filter`}
             >
               <X className="size-3" />
             </button>

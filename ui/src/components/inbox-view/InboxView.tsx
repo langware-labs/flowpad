@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
@@ -321,7 +322,7 @@ export function ConversationListRow({
       await acceptInvitation({ invitation_id: invitationId });
     } catch (e) {
       if (isInvitationGoneError(e)) {
-        notify.warning({ title: 'Invitation no longer valid', id: 'membership-invite' });
+        notify.warning({ title: t`Invitation no longer valid`, id: 'membership-invite' });
       } else {
         console.error('[InboxView] acceptInvitation failed', e);
       }

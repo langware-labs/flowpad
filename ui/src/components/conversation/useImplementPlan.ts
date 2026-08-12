@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
 import {
   AgenticProcess,
@@ -83,7 +84,7 @@ export function useImplementPlan({
       const run = async () => {
         const workdir = await resolveWorkdir(task.project_id);
         if (!workdir) {
-          notify.warning({ title: 'Map this conversation to a local project first.' });
+          notify.warning({ title: t`Map this conversation to a local project first.` });
           return;
         }
         try {
@@ -110,7 +111,7 @@ export function useImplementPlan({
           proc.openTerminalDock();
         } catch (err) {
           console.error('[useImplementPlan] failed', err);
-          notify.error({ title: 'Failed to start session' });
+          notify.error({ title: t`Failed to start session` });
         }
       };
       if (ensureMapped) ensureMapped(run);

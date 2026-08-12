@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess, snifferManager } from '@sdk';
 import { gitResolvePrompt } from '@src/components/status-bar/gitResolvePrompt';
 import { closeTerminalTab } from '@src/tabs/useTabs';
@@ -59,7 +60,7 @@ registerCommand('terminal.terminate', (args) => {
 registerCommand('git.resolve-conflict', (args) => {
   const branch = String(args.branch ?? '');
   void AgenticProcess.openTab('claude_code', gitResolvePrompt(branch)).catch((e: unknown) => {
-    notify.error({ title: 'Could not start resolver', message: String(e) });
+    notify.error({ title: t`Could not start resolver`, message: String(e) });
   });
 });
 
@@ -71,10 +72,10 @@ registerCommand('sniffer.disable', (_args, ctx) => {
     .disable()
     .then(() => {
       notify.dismiss(ctx.id);
-      notify.success({ title: 'Hook sniffer disabled', message: 'Claude Code hooks were removed from your settings.' });
+      notify.success({ title: t`Hook sniffer disabled`, message: t`Claude Code hooks were removed from your settings.` });
     })
     .catch((e: unknown) => {
-      notify.error({ title: 'Could not disable the sniffer', message: String(e) });
+      notify.error({ title: t`Could not disable the sniffer`, message: String(e) });
     });
 });
 
@@ -98,7 +99,7 @@ registerCommand('debug.logHubError', (args) => {
 
   notify.info({
     id: 'cloud-error-detail',
-    title: 'Cloud error detail (copied to clipboard)',
+    title: t`Cloud error detail (copied to clipboard)`,
     message: detail || 'No additional detail was provided.',
     durationMs: 15000,
   });

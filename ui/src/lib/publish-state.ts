@@ -6,6 +6,7 @@
  * `lib/` (peer to scope-filter / color-palette), not in a components dir.
  */
 
+import { t } from '@lingui/core/macro';
 import type { PushKind } from '@sdk';
 import { ViewMode } from '@src/components/view-mode';
 
@@ -95,16 +96,16 @@ export function pushToastCopy(
     case 'pushed':
       return {
         level: 'success',
-        title: 'Published',
+        title: t`Published`,
         message: advanced && opts.branch ? `Pushed to ${opts.branch}.` : 'Your changes are now published.',
         resolvable: false,
       };
     case 'nothing':
-      return { level: 'success', title: 'Nothing to publish', message: 'Everything is already up to date.', resolvable: false };
+      return { level: 'success', title: t`Nothing to publish`, message: t`Everything is already up to date.`, resolvable: false };
     case 'conflict':
       return advanced
-        ? { level: 'error', title: 'Publish hit a conflict', message: raw || 'A rebase conflict is in progress.', resolvable: true }
-        : { level: 'error', title: "Couldn't publish", message: 'Someone else changed this too. Switch to Advanced view to merge.', resolvable: false };
+        ? { level: 'error', title: t`Publish hit a conflict`, message: raw || 'A rebase conflict is in progress.', resolvable: true }
+        : { level: 'error', title: t`Couldn't publish`, message: t`Someone else changed this too. Switch to Advanced view to merge.`, resolvable: false };
     case 'permission':
       return {
         level: 'error',
@@ -120,9 +121,9 @@ export function pushToastCopy(
         resolvable: false,
       };
     case 'network':
-      return { level: 'error', title: "Couldn't reach the server", message: 'Check your connection and try again.', resolvable: false };
+      return { level: 'error', title: t`Couldn't reach the server`, message: t`Check your connection and try again.`, resolvable: false };
     case 'no_repo':
-      return { level: 'error', title: 'Not set up for publishing', message: 'This file is not in a versioned project.', resolvable: false };
+      return { level: 'error', title: t`Not set up for publishing`, message: t`This file is not in a versioned project.`, resolvable: false };
     default:
       return {
         level: 'error',

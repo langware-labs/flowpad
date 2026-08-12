@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import React, { useMemo } from 'react';
 import { Filter, Layers, User } from 'lucide-react';
 import { scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
@@ -40,11 +41,11 @@ export function ScopeFilterIconBar({
   const ProjectIcon = useMemo(() => iconForType('project'), []);
 
   const options: ScopeBarOption<ScopeMode>[] = useMemo(() => [
-    { value: 'all', label: 'All', icon: Layers, title: 'All assets (user + every project)' },
-    { value: 'user', label: 'User', icon: User, title: 'User assets only' },
+    { value: 'all', label: t`All`, icon: Layers, title: t`All assets (user + every project)` },
+    { value: 'user', label: t`User`, icon: User, title: t`User assets only` },
     {
       value: 'project',
-      label: 'Project',
+      label: t`Project`,
       icon: ProjectIcon,
       disabled: projectDisabled,
       title: projectDisabled
@@ -53,10 +54,10 @@ export function ScopeFilterIconBar({
     },
     {
       value: 'selected',
-      label: 'Selected',
+      label: t`Selected`,
       icon: Filter,
       count: activeMode === 'selected' ? selectedCount : undefined,
-      title: 'Pick specific projects…',
+      title: t`Pick specific projects…`,
     },
   ], [ProjectIcon, projectDisabled, currentProjectName, activeMode, selectedCount]);
 

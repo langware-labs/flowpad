@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import {
   AgentTrace,
   AgenticProcess,
@@ -44,7 +45,7 @@ export async function runSkillWorker(
 ): Promise<AgenticProcess | null> {
   const skill = (await loadSkillsByName()).get(attachSkillName) ?? null;
   if (!skill) {
-    notify.error({ title: notInstalledTitle, message: `The "${attachSkillName}" skill is not installed.` });
+    notify.error({ title: notInstalledTitle, message: t`The "${attachSkillName}" skill is not installed.` });
     return null;
   }
   const computeNode = await ComputeNode.getById('@local');
@@ -316,7 +317,7 @@ export function launchAssetCorrect({
   analysisTrace,
 }: LaunchAssetCorrectArgs): Promise<AgenticProcess | null> {
   if (!findings.length) {
-    notify.error({ title: 'Nothing to improve', message: 'No substantiated findings to apply for this asset.' });
+    notify.error({ title: t`Nothing to improve`, message: t`No substantiated findings to apply for this asset.` });
     return Promise.resolve(null);
   }
   const ctx = sessionId ? ` (from analysis of session ${sessionId})` : '';
@@ -346,7 +347,7 @@ export function launchSkillCorrect({
   analysisTrace,
 }: LaunchSkillCorrectArgs): Promise<AgenticProcess | null> {
   if (!findings.length) {
-    notify.error({ title: 'Nothing to improve', message: 'No substantiated findings to apply for this skill.' });
+    notify.error({ title: t`Nothing to improve`, message: t`No substantiated findings to apply for this skill.` });
     return Promise.resolve(null);
   }
   const ctx = sessionId ? ` (from analysis of session ${sessionId})` : '';

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { TypeId, launchWizard, type Project } from '@sdk';
 import { notify } from '@src/notifications';
@@ -58,7 +59,7 @@ export function useGitShareGate(
     setSetupBusy(true);
     try {
       const result = await launchWizard<{ path?: string }>('git-context-folder', {
-        title: 'Set up Git for sharing',
+        title: t`Set up Git for sharing`,
         targetTypeId: project.typeId.toString(),
         payload: {
           projectId: project.id,
@@ -76,7 +77,7 @@ export function useGitShareGate(
           `origin remote and a pushed commit.`,
       });
       if (result.status === 'error') {
-        notify.error({ title: 'Could not set up Git', message: result.errorStr ?? undefined });
+        notify.error({ title: t`Could not set up Git`, message: result.errorStr ?? undefined });
         return;
       }
       if (result.status !== 'done') return;
@@ -87,7 +88,7 @@ export function useGitShareGate(
       await remove(folder.workdir);
       await addPaths([folder.workdir], 'private');
     } catch (e) {
-      notify.error({ title: 'Could not set up Git', message: String(e) });
+      notify.error({ title: t`Could not set up Git`, message: String(e) });
     } finally {
       setSetupBusy(false);
       preflight.refetch();

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import {
   MarkdownEditor,
   type MarkdownHeaderExtrasCtx,
@@ -106,7 +107,7 @@ export function SkillAssetEditor({
         s.metadata = { ...(s.metadata ?? {}), eval: next };
         void s.save().catch((e) => {
           notify.error({
-            title: 'Could not update eval flag',
+            title: t`Could not update eval flag`,
             message: e instanceof Error ? e.message : 'Save failed.',
           });
         });
@@ -149,16 +150,16 @@ export function SkillAssetEditor({
     return [
       {
         id: 'usage',
-        label: 'Usage',
+        label: t`Usage`,
         icon: History,
-        description: 'Sessions that used this skill — analyze, improve, commit',
+        description: t`Sessions that used this skill — analyze, improve, commit`,
         panel: <UsagePanel skill={skillRef.current} skillFile={editorRef} />,
       },
       {
         id: 'eval',
-        label: 'Eval',
+        label: t`Eval`,
         icon: FlaskConical,
-        description: 'Skill evaluations',
+        description: t`Skill evaluations`,
         panel: (
           <EntityExecutionPanel
             target={skillKey}

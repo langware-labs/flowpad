@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import {
   cloudManager,
   HubConnectionStatus,
@@ -48,23 +49,23 @@ function computeButton(
   connection: HubConnectionStatus,
 ): { label: string; action: ButtonAction; disabled: boolean; busy: boolean } {
   if (login === 'logged_out' || login === 'login_failed') {
-    return { label: 'Sign in', action: 'sign_in', disabled: false, busy: false };
+    return { label: t`Sign in`, action: 'sign_in', disabled: false, busy: false };
   }
   if (login === 'logging_in') {
-    return { label: 'Signing in…', action: null, disabled: true, busy: true };
+    return { label: t`Signing in…`, action: null, disabled: true, busy: true };
   }
   // login === 'logged_in'
   if (connection === 'connecting') {
-    return { label: 'Connecting…', action: null, disabled: true, busy: true };
+    return { label: t`Connecting…`, action: null, disabled: true, busy: true };
   }
   if (connection === 'verified') {
-    return { label: 'Disconnect', action: 'disconnect', disabled: false, busy: false };
+    return { label: t`Disconnect`, action: 'disconnect', disabled: false, busy: false };
   }
   if (connection === 'connected') {
-    return { label: 'Verify', action: 'verify', disabled: false, busy: false };
+    return { label: t`Verify`, action: 'verify', disabled: false, busy: false };
   }
   // disconnected | error | auth_rejected
-  return { label: 'Reconnect', action: 'reconnect', disabled: false, busy: false };
+  return { label: t`Reconnect`, action: 'reconnect', disabled: false, busy: false };
 }
 
 export function UserInfo({ user }: UserInfoProps) {

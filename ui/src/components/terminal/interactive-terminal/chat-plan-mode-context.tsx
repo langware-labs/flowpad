@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { AgenticProcess, type PermissionMode } from '@sdk';
 import { notify } from '@src/notifications/notify';
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
@@ -61,7 +62,7 @@ export function ChatPlanModeProvider({
         await process.prompt(text, undefined, permissionMode ? { permissionMode } : undefined);
       } catch (err) {
         console.error('[ChatPlanMode] send failed', err);
-        notify.error({ title: 'Message not sent', message: err instanceof Error ? err.message : String(err) });
+        notify.error({ title: t`Message not sent`, message: err instanceof Error ? err.message : String(err) });
       } finally {
         setSending(false);
       }

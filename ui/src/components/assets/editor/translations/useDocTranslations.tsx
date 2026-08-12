@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useMemo, type ReactNode } from 'react';
 import { FSRef, type APIEntity } from '@sdk';
 import { Languages } from 'lucide-react';
@@ -73,7 +74,7 @@ export function useDocTranslations({
       id: 'translations',
       label: translations.length > 0 ? `Translations ${translations.length}` : 'Translations',
       icon: Languages,
-      description: 'Translated copies of this doc',
+      description: t`Translated copies of this doc`,
       availableInNonAdvanced: true,
       panel: (
         <TranslationsPanel

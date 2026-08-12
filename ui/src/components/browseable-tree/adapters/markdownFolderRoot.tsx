@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import React from 'react';
 import { FileText, Folder, FolderPlus, Library, Network, Plus, RefreshCw, User as UserIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
@@ -119,7 +120,7 @@ function folderToolbar(
     {
       id: `new-folder:${target.typeid}:${target.relPath || 'root'}`,
       icon: <FolderPlus />,
-      label: `New folder in ${target.label}`,
+      label: t`New folder in ${target.label}`,
       run: () => onCreateFolder(target),
       showBusyIndicator: false,
     },
@@ -137,7 +138,7 @@ function rootToolbar(type: AssetTypeInfo, deps: MarkdownFolderRootDeps): Toolbar
     {
       id: `scan:${type.type_name}`,
       icon: <RefreshCw />,
-      label: 'Scan for changes',
+      label: t`Scan for changes`,
       run: async () => {
         // Reindex; resulting data_ops refresh the tree via useAssetTreeRefresh.
         await deps.indexType(type.type_name, deps.filter?.scope);
@@ -148,7 +149,7 @@ function rootToolbar(type: AssetTypeInfo, deps: MarkdownFolderRootDeps): Toolbar
     actions.push({
       id: `new:${type.type_name}`,
       icon: <Plus />,
-      label: `New ${type.label}`,
+      label: t`New ${type.label}`,
       run: () => deps.onNew?.(type.type_name),
       showBusyIndicator: false,
     });
@@ -303,7 +304,7 @@ function folderBrowseable(args: {
           {
             id: `kbrowser:${typeid}:${absPath}`,
             icon: <Network />,
-            label: 'Open knowledge browser',
+            label: t`Open knowledge browser`,
             run: () => onOpenKnowledgeBrowser(absPath),
             showBusyIndicator: false,
           },

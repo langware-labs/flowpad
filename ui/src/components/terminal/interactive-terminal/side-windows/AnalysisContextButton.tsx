@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useMemo } from 'react';
 import { MessagesSquare } from 'lucide-react';
 import { AgentTrace, AgenticProcess, Project, TypeId } from '@sdk';
@@ -38,8 +39,8 @@ export function AnalysisContextButton({
       name={trace.id ? `Analysis ${trace.id.slice(0, 8)}` : undefined}
       copy={{
         icon: MessagesSquare,
-        launch: { label: 'Discuss analysis', tooltip: 'Start a worker with this analysis as context' },
-        resume: { label: 'Resume discussion', tooltip: 'Resume the worker discussing this analysis' },
+        launch: { label: t`Discuss analysis`, tooltip: 'Start a worker with this analysis as context' },
+        resume: { label: t`Resume discussion`, tooltip: 'Resume the worker discussing this analysis' },
       }}
     />
   );
