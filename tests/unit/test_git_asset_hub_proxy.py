@@ -53,12 +53,30 @@ def _request(
 
 def test_only_git_backed_remote_fs_uses_replacement_proxy(monkeypatch):
     monkeypatch.setattr("flow_sdk.server.routes._hub_reflect.is_local_mode", lambda: False)
-    git_remote = SimpleNamespace(remote=True, git_origin={"provider": "github"})
+    git_remote = SimpleNamespace(type="skill", remote=True, git_origin={"provider": "github"})
 
     assert is_git_backed_remote_fs(git_remote, "fs")
-    assert not is_git_backed_remote_fs(SimpleNamespace(remote=True, git_origin=None), "fs")
-    assert not is_git_backed_remote_fs(SimpleNamespace(remote=False, git_origin={}), "fs")
+    assert not is_git_backed_remote_fs(SimpleNamespace(type="skill", remote=True, git_origin=None), "fs")
+    assert not is_git_backed_remote_fs(SimpleNamespace(type="skill", remote=False, git_origin={}), "fs")
     assert not is_git_backed_remote_fs(git_remote, "record")
+
+
+def test_project_git_origin_is_read_locally_not_proxied(monkeypatch):
+    """A cloned-repo project is not a published asset.
+
+    ``project`` is not git-publishable, so Hub has no Git mount for it and
+    answers every browse with "Invalid file system operation" — while the
+    checkout that IS authoritative sits on this machine. Its VFS reads must
+    stay local no matter how its ``git_origin`` is populated.
+    """
+    monkeypatch.setattr("flow_sdk.server.routes._hub_reflect.is_local_mode", lambda: False)
+    cloned_project = SimpleNamespace(
+        type="project",
+        remote=True,
+        git_origin={"kind": "git", "provider": "github", "owner": "o", "name": "r", "branch": "main"},
+    )
+
+    assert not is_git_backed_remote_fs(cloned_project, "fs")
 
 
 @pytest.mark.asyncio
