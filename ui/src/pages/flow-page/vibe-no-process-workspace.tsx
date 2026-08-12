@@ -65,11 +65,13 @@ export function VibeNoProcessWorkspace() {
             tests/unit/use-project-opener-home-stay.test.tsx. So the history is
             OFFERED (one click) rather than entered — which is also why the
             project's builds have to be reachable from this pane at all, instead
-            of only from the Chats rail icon. */}
+            of only from the Chats rail icon.
+
+            No standalone "no session" caption: it is a claim about EXISTENCE
+            that the "Past builds" list directly below it contradicts whenever
+            the project has any. The action and the labelled list carry the
+            state on their own, in both the empty and populated case. */}
         <div className="flex h-full min-h-0 flex-col items-center justify-center gap-3 overflow-y-auto border-r border-border p-4 text-center">
-          <p className="text-sm text-muted-foreground">
-            <Trans>No build session open</Trans>
-          </p>
           <button
             type="button"
             onClick={() => void startNewChat()}
