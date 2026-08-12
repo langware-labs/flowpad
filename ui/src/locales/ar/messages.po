@@ -9383,6 +9383,14 @@ msgstr ""
 msgid "No bookmarks yet"
 msgstr ""
 
+#: src/pages/flow-page/vibe-no-process-workspace.tsx
+msgid "No build session open"
+msgstr ""
+
+#: src/pages/flow-page/vibe-no-process-workspace.tsx
+#~ msgid "No build session yet"
+#~ msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "No changes"
 msgstr ""
@@ -11209,6 +11217,7 @@ msgstr ""
 #~ msgstr ""
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
+#: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Past builds"
 msgstr ""
 
