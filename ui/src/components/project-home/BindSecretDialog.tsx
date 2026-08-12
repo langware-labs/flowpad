@@ -128,7 +128,7 @@ export const BindSecretDialog: React.FC<BindSecretDialogProps> = ({ project, ope
               </span>
             </div>
             <Button type="button" onClick={() => void handleEnable()} disabled={busy} data-testid="bind-secret-enable">
-              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {busy ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : null}
               <Trans>Enable secrets</Trans>
             </Button>
           </div>
@@ -184,7 +184,7 @@ export const BindSecretDialog: React.FC<BindSecretDialogProps> = ({ project, ope
                 <Trans>Cancel</Trans>
               </Button>
               <Button type="button" onClick={() => void handleAdd()} disabled={!selected || !envVar.trim() || busy}>
-                {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {busy ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : null}
                 <Trans>Bind</Trans>
               </Button>
             </DialogFooter>

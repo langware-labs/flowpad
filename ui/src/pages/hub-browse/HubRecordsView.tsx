@@ -77,9 +77,13 @@ export function HubRecordsView({ type }: { type?: string }) {
         <h1 className="text-xl font-semibold">{label}</h1>
 
         {isLoading ? (
-          <p className="text-sm text-muted-foreground"><Trans>Loading…</Trans></p>
+          <p className="text-sm text-muted-foreground">
+            <Trans>Loading…</Trans>
+          </p>
         ) : rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground"><Trans>Nothing here yet.</Trans></p>
+          <p className="text-sm text-muted-foreground">
+            <Trans>Nothing here yet.</Trans>
+          </p>
         ) : (
           <div className="flex flex-col gap-2">
             {rows.map((row) => (
@@ -87,7 +91,7 @@ export function HubRecordsView({ type }: { type?: string }) {
                 key={row.id}
                 type="button"
                 onClick={() => open(row)}
-                className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-accent"
+                className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-start transition-colors hover:bg-accent"
               >
                 <RowIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate text-sm">{row.displayName || row.id}</span>

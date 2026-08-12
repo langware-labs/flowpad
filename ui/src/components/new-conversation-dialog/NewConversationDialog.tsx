@@ -239,7 +239,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
 
         <div className="flex items-center gap-2 pt-2">
           <SendProgressNotice busy={busy} hasAttachments={files.length > 0 || assetRefs.length > 0} />
-          <div className="ml-auto flex gap-2">
+          <div className="ms-auto flex gap-2">
             <Button variant="outline" onClick={onClose} disabled={busy}>
               <Trans>Cancel</Trans>
             </Button>

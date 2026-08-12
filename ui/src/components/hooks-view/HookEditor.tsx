@@ -76,11 +76,11 @@ export function HookEditor({
           <CardTitle>{isEditing ? <Trans>Edit Hook</Trans> : <Trans>Add New Hook</Trans>}</CardTitle>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={onCancel}>
-              <X className="mr-2 h-4 w-4" />
+              <X className="me-2 h-4 w-4" />
               <Trans>Cancel</Trans>
             </Button>
             <Button size="sm" onClick={onSave} disabled={isSaveDisabled}>
-              <Save className="mr-2 h-4 w-4" />
+              <Save className="me-2 h-4 w-4" />
               {isEditing ? <Trans>Update</Trans> : <Trans>Save</Trans>}
             </Button>
           </div>

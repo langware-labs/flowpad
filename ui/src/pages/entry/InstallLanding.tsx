@@ -1,9 +1,4 @@
-import {
-  type BranchSummary,
-  type RepoSummary,
-  isHubOnly,
-  navigator as sdkNavigator,
-} from '@sdk';
+import { type BranchSummary, type RepoSummary, isHubOnly, navigator as sdkNavigator } from '@sdk';
 import { BranchPicker } from '@src/components/git/BranchPicker';
 import { CreatePrivateRepoForm } from '@src/components/git/CreatePrivateRepoForm';
 import { RepoPicker } from '@src/components/git/RepoPicker';
@@ -38,7 +33,12 @@ export default function InstallLanding() {
   const failed = steps.some((step) => step.status === 'error');
 
   if (!isHubOnly()) {
-    return <EntryMessage title="Open this link on Flowpad Hub" detail="Content installation launches a cloud desktop from the Hub." />;
+    return (
+      <EntryMessage
+        title="Open this link on Flowpad Hub"
+        detail="Content installation launches a cloud desktop from the Hub."
+      />
+    );
   }
   if (!parsed.ok) {
     return <EntryMessage title="Invalid install link" detail={parsed.message} />;
@@ -76,7 +76,7 @@ export default function InstallLanding() {
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
       <div className="w-full max-w-lg text-center">
         {started ? (
-          <div className="rounded-lg border border-border p-5 text-left" data-testid="install-progress">
+          <div className="rounded-lg border border-border p-5 text-start" data-testid="install-progress">
             <p className="mb-3 text-sm font-medium">
               {launchUrl ? (
                 <Trans>Your CloudNSite workspace is ready</Trans>
@@ -97,7 +97,9 @@ export default function InstallLanding() {
             )}
           </div>
         ) : cancelled ? (
-          <p className="text-sm text-muted-foreground"><Trans>Nothing was installed. You can close this tab.</Trans></p>
+          <p className="text-sm text-muted-foreground">
+            <Trans>Nothing was installed. You can close this tab.</Trans>
+          </p>
         ) : null}
       </div>
     </div>
@@ -114,21 +116,31 @@ export default function InstallLanding() {
               Where do you want to install {intent.name}?
             </DialogTitle>
             <DialogDescription>
-              Flowpad will propose the install on <code>flowpad/install-cloudnsite-agents</code>. Your default branch is not changed and no pull request is opened automatically.
+              Flowpad will propose the install on <code>flowpad/install-cloudnsite-agents</code>. Your default branch is
+              not changed and no pull request is opened automatically.
             </DialogDescription>
           </DialogHeader>
 
           {!user ? (
             <div className="rounded-md border border-border bg-muted/30 p-4 text-sm">
-              <p className="mb-3"><Trans>Sign in to choose one of your GitHub repositories.</Trans></p>
-              <Button onClick={() => window.location.assign(sdkNavigator.getLoginWithCallbackUrl(window.location.href))}>
+              <p className="mb-3">
+                <Trans>Sign in to choose one of your GitHub repositories.</Trans>
+              </p>
+              <Button
+                onClick={() => window.location.assign(sdkNavigator.getLoginWithCallbackUrl(window.location.href))}
+              >
                 <Trans>Sign in to Flowpad</Trans>
               </Button>
             </div>
           ) : view === 'repos' ? (
             <div className="flex flex-col gap-3">
               <RepoPicker provider="github" allowedRoles={['admin', 'write']} onSelect={selectRepo} />
-              <Button variant="outline" className="w-full gap-2" onClick={() => setView('create')} data-testid="install-create-private">
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                onClick={() => setView('create')}
+                data-testid="install-create-private"
+              >
                 <Lock className="h-4 w-4" /> <Trans>Create a private repository</Trans>
               </Button>
             </div>
@@ -138,7 +150,10 @@ export default function InstallLanding() {
             <CreatePrivateRepoForm onBack={() => setView('repos')} onCreated={createdRepo} />
           ) : repo && branch ? (
             <div className="rounded-md border border-border bg-muted/30 p-4 text-sm" data-testid="install-confirmation">
-              <div className="flex items-center gap-2 font-medium"><GitBranch className="h-4 w-4" />{repo.full_name}</div>
+              <div className="flex items-center gap-2 font-medium">
+                <GitBranch className="h-4 w-4" />
+                {repo.full_name}
+              </div>
               <div className="mt-1 font-mono text-xs text-muted-foreground">{branch.name}</div>
               <p className="mt-3 text-xs text-muted-foreground">
                 {intent.name} stays linked as shared project context after the workspace opens.
@@ -147,7 +162,9 @@ export default function InstallLanding() {
           ) : null}
 
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setCancelled(true)} data-testid="install-cancel"><Trans>Cancel</Trans></Button>
+            <Button variant="ghost" onClick={() => setCancelled(true)} data-testid="install-cancel">
+              <Trans>Cancel</Trans>
+            </Button>
             {user && view === 'confirm' && (
               <Button onClick={startInstall} disabled={!repo || !branch} data-testid="install-launch">
                 <Trans>Launch workspace</Trans>

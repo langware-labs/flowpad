@@ -53,13 +53,9 @@ function formatValue(v: unknown): string {
   }
 }
 
-function fieldNames(
-  loaded: SnapshotPayload | null,
-  current: SnapshotPayload,
-  section: 'generic' | 'worker',
-): string[] {
-  const l = (loaded?.[section] ?? {}) as Record<string, unknown>;
-  const c = (current?.[section] ?? {}) as Record<string, unknown>;
+function fieldNames(loaded: SnapshotPayload | null, current: SnapshotPayload, section: 'generic' | 'worker'): string[] {
+  const l = (loaded?.[section] ?? {});
+  const c = (current?.[section] ?? {});
   return Array.from(new Set([...Object.keys(l), ...Object.keys(c)])).sort();
 }
 
@@ -108,14 +104,18 @@ export function CommandStatusViewer({ open, onClose, process }: Props) {
   const noLoadedYet = data && data.loaded === null;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent
-        className="flex flex-col gap-0 p-0"
-        style={{ width: 'min(820px, 92vw)', maxHeight: '85vh' }}
-      >
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) onClose();
+      }}
+    >
+      <DialogContent className="flex flex-col gap-0 p-0" style={{ width: 'min(820px, 92vw)', maxHeight: '85vh' }}>
         <DialogHeader className="shrink-0 border-b border-border px-4 py-3">
           <div className="flex items-center justify-between gap-2">
-            <DialogTitle className="text-sm font-medium"><Trans>Command Status</Trans></DialogTitle>
+            <DialogTitle className="text-sm font-medium">
+              <Trans>Command Status</Trans>
+            </DialogTitle>
             <div className="flex items-center gap-1">
               <TooltipProvider>
                 <Tooltip>
@@ -130,7 +130,9 @@ export function CommandStatusViewer({ open, onClose, process }: Props) {
                       <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent><Trans>Refresh</Trans></TooltipContent>
+                  <TooltipContent>
+                    <Trans>Refresh</Trans>
+                  </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
               <button
@@ -154,7 +156,7 @@ export function CommandStatusViewer({ open, onClose, process }: Props) {
 
           {!error && !data && (
             <div className="py-8 text-center text-xs text-muted-foreground">
-              {loading ? t`Loading…` : (processId ? t`No data.` : t`No process selected.`)}
+              {loading ? t`Loading…` : processId ? t`No data.` : t`No process selected.`}
             </div>
           )}
 
@@ -172,8 +174,8 @@ export function CommandStatusViewer({ open, onClose, process }: Props) {
                 title={t`Generic options`}
                 section="generic"
                 fields={fieldNames(data.loaded, data.current, 'generic')}
-                loaded={(data.loaded?.generic ?? null) as Record<string, unknown> | null}
-                current={(data.current.generic ?? {}) as Record<string, unknown>}
+                loaded={(data.loaded?.generic ?? null)}
+                current={(data.current.generic ?? {})}
                 changed={changedSet}
                 showLoaded={!noLoadedYet}
               />
@@ -182,8 +184,8 @@ export function CommandStatusViewer({ open, onClose, process }: Props) {
                 title={t`Worker options${data.worker_type ? ` (${data.worker_type})` : ''}`}
                 section="worker"
                 fields={fieldNames(data.loaded, data.current, 'worker')}
-                loaded={(data.loaded?.worker ?? null) as Record<string, unknown> | null}
-                current={(data.current.worker ?? {}) as Record<string, unknown>}
+                loaded={(data.loaded?.worker ?? null)}
+                current={(data.current.worker ?? {})}
                 changed={changedSet}
                 showLoaded={!noLoadedYet}
               />
@@ -232,7 +234,9 @@ function StatusHeader({ restartRequired, changedCount, workerType, running, noLo
       <div className="mt-1 text-[11px] text-muted-foreground">{subtitleBits.join(' · ')}</div>
       {noLoadedYet && (
         <div className="mt-1 text-[11px] text-muted-foreground">
-          <Trans>Showing current configuration only — there is no loaded snapshot until the first successful start.</Trans>
+          <Trans>
+            Showing current configuration only — there is no loaded snapshot until the first successful start.
+          </Trans>
         </div>
       )}
     </div>
@@ -253,9 +257,7 @@ function SnapshotSection({ title, section, fields, loaded, current, changed, sho
   const { t } = useLingui();
   return (
     <div className="mb-4">
-      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        {title}
-      </div>
+      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title}</div>
       {fields.length === 0 ? (
         <div className="rounded border border-border bg-card/30 px-2 py-2 text-xs text-muted-foreground">
           <Trans>(no fields)</Trans>
@@ -265,11 +267,17 @@ function SnapshotSection({ title, section, fields, loaded, current, changed, sho
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/30 text-[11px] uppercase tracking-wide text-muted-foreground">
-                <th className="px-2 py-1.5 text-left font-medium" style={{ width: '32%' }}><Trans>Field</Trans></th>
+                <th className="px-2 py-1.5 text-start font-medium" style={{ width: '32%' }}>
+                  <Trans>Field</Trans>
+                </th>
                 {showLoaded && (
-                  <th className="px-2 py-1.5 text-left font-medium" style={{ width: '34%' }}><Trans>Loaded</Trans></th>
+                  <th className="px-2 py-1.5 text-start font-medium" style={{ width: '34%' }}>
+                    <Trans>Loaded</Trans>
+                  </th>
                 )}
-                <th className="px-2 py-1.5 text-left font-medium"><Trans>Current</Trans></th>
+                <th className="px-2 py-1.5 text-start font-medium">
+                  <Trans>Current</Trans>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -282,17 +290,19 @@ function SnapshotSection({ title, section, fields, loaded, current, changed, sho
                 return (
                   <tr key={key} className={`border-t border-border ${rowClass}`}>
                     <td className="px-2 py-1.5 font-mono text-[11px] text-foreground/90">
-                      {diff && <span className="mr-1" aria-label={t`changed`}>🔶</span>}
+                      {diff && (
+                        <span className="me-1" aria-label={t`changed`}>
+                          🔶
+                        </span>
+                      )}
                       {f}
                     </td>
                     {showLoaded && (
-                      <td className="px-2 py-1.5 font-mono text-[11px] text-muted-foreground break-all">
+                      <td className="break-all px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
                         {formatValue(lVal)}
                       </td>
                     )}
-                    <td className="px-2 py-1.5 font-mono text-[11px] text-foreground break-all">
-                      {formatValue(cVal)}
-                    </td>
+                    <td className="break-all px-2 py-1.5 font-mono text-[11px] text-foreground">{formatValue(cVal)}</td>
                   </tr>
                 );
               })}

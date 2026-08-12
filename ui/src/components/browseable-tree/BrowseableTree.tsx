@@ -147,11 +147,9 @@ export function BrowseableTree(props: BrowseableTreeProps) {
         const resourceUri = resourcePointer.resourceVfsPath?.uri;
         const treeElement = treeElementRef.current;
         const el =
-          (resourceUri &&
-            treeElement?.querySelector(`[data-resource-vfs="${CSS.escape(resourceUri)}"]`)) ||
+          (resourceUri && treeElement?.querySelector(`[data-resource-vfs="${CSS.escape(resourceUri)}"]`)) ||
           (activeKey && treeElement?.querySelector(`[data-selection-key="${CSS.escape(activeKey)}"]`)) ||
-          (leaves[0] &&
-            treeElement?.querySelector(`[data-browseable-id="${CSS.escape(leaves[0].id)}"]`));
+          (leaves[0] && treeElement?.querySelector(`[data-browseable-id="${CSS.escape(leaves[0].id)}"]`));
         if (!el) return;
         lastResolvedRef.current = key;
         el.scrollIntoView({ block: 'center' });
@@ -185,12 +183,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   }
 
   return (
-    <div
-      ref={treeElementRef}
-      className={`flex h-full flex-col ${className}`}
-      role="tree"
-      aria-label={header?.title}
-    >
+    <div ref={treeElementRef} className={`flex h-full flex-col ${className}`} role="tree" aria-label={header?.title}>
       {header && (
         <div className="flex items-center gap-1 border-b p-1.5">
           <span className="text-xs font-medium text-muted-foreground">{header.title}</span>
@@ -322,8 +315,7 @@ function BrowseableRow({
       // Pointer-string match: the original path (vfs leaf, list/folder roots, etc.).
       (node.pointer &&
         activePointer &&
-        ((node.pointer.viewType === activePointer.viewType &&
-          node.pointer.pointer === activePointer.pointer) ||
+        ((node.pointer.viewType === activePointer.viewType && node.pointer.pointer === activePointer.pointer) ||
           node.pointer.resourceVfsPath?.equals((activeResourcePointer ?? activePointer).resourceVfsPath)))
     )
   );
@@ -613,7 +605,7 @@ function BrowseableRow({
             ) : cuePointsLeft ? (
               <ChevronLeft className="h-3 w-3 text-muted-foreground" />
             ) : (
-              <ChevronRight className="h-3 w-3 text-muted-foreground" />
+              <ChevronRight className="h-3 w-3 text-muted-foreground rtl:-scale-x-100" />
             )}
           </button>
         ) : (

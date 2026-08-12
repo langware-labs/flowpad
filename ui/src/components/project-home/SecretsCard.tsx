@@ -26,10 +26,7 @@ export const SecretsCard: React.FC<SecretsCardProps> = ({ project }) => {
   const originLabel = useSecretOriginLabel();
   const { secretOrigins, status, add, provide, remove } = useProjectSecretOrigins(project);
 
-  const statusByTypeId = useMemo(
-    () => new Map(status.map((s) => [s.typeid, s])),
-    [status],
-  );
+  const statusByTypeId = useMemo(() => new Map(status.map((s) => [s.typeid, s])), [status]);
 
   const [busy, setBusy] = useState(false);
   const [wizardFor, setWizardFor] = useState<string | null>(null);
@@ -109,7 +106,7 @@ export const SecretsCard: React.FC<SecretsCardProps> = ({ project }) => {
                   <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">{s.kind}</span>
                   <span className="text-[10px] text-muted-foreground">→ {s.sod_store || 'sodot'}</span>
                   <span
-                    className={`ml-auto flex items-center gap-0.5 text-[10px] ${available ? 'text-green-600' : 'text-amber-600'}`}
+                    className={`ms-auto flex items-center gap-0.5 text-[10px] ${available ? 'text-green-600' : 'text-amber-600'}`}
                     data-testid={`secret-status-${s.env_var}`}
                   >
                     {available ? <Check className="h-3 w-3" /> : <TriangleAlert className="h-3 w-3" />}
@@ -141,7 +138,7 @@ export const SecretsCard: React.FC<SecretsCardProps> = ({ project }) => {
                         className="text-[10px] text-primary hover:underline"
                         data-testid={`secret-setup-${s.env_var}`}
                       >
-                        {comingSoon ? (st?.setup_hint?.prompt || t`Set up`) : <Trans>Set up →</Trans>}
+                        {comingSoon ? st?.setup_hint?.prompt || t`Set up` : <Trans>Set up →</Trans>}
                       </button>
                     )}
                   </div>
@@ -174,7 +171,9 @@ export const SecretsCard: React.FC<SecretsCardProps> = ({ project }) => {
                 Credentials screen offers only the working ones — worth
                 reconciling, but that is a product call, not a cleanup. */}
             {SECRET_ORIGIN_KINDS.map((p) => (
-              <option key={p.kind} value={p.kind}>{originLabel(p.kind)}</option>
+              <option key={p.kind} value={p.kind}>
+                {originLabel(p.kind)}
+              </option>
             ))}
           </select>
         </div>
@@ -204,7 +203,14 @@ export const SecretsCard: React.FC<SecretsCardProps> = ({ project }) => {
             onClick={() => void handleAdd()}
             data-testid="secret-add-submit"
           >
-            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <><Plus className="mr-0.5 h-3 w-3" /><Trans>Add</Trans></>}
+            {busy ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <>
+                <Plus className="me-0.5 h-3 w-3" />
+                <Trans>Add</Trans>
+              </>
+            )}
           </Button>
         </div>
       </div>

@@ -83,8 +83,14 @@ export function DeckTemplateViewer({ fsRef, deckTemplate }: DeckTemplateViewerPr
     void (async () => {
       try {
         const [tokens, theme, files] = await Promise.all([
-          fsRef.child('common/tokens.css').read().catch(() => ''),
-          fsRef.child('common/theme.css').read().catch(() => ''),
+          fsRef
+            .child('common/tokens.css')
+            .read()
+            .catch(() => ''),
+          fsRef
+            .child('common/theme.css')
+            .read()
+            .catch(() => ''),
           fsRef.child('layouts').ls(),
         ]);
         const htmlFiles = files.filter((f) => f.path.toLowerCase().endsWith('.html'));
@@ -108,15 +114,13 @@ export function DeckTemplateViewer({ fsRef, deckTemplate }: DeckTemplateViewerPr
       cancelled = true;
     };
     // reloadKey (entity updated_date) re-reads on out-of-band reindex.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [fsRef, reloadKey]);
 
   const title = deckTemplate?.name || deckTemplate?.title || 'Deck template';
 
   if (error) {
-    return (
-      <div className="p-6 text-sm text-destructive">Failed to load deck template: {error}</div>
-    );
+    return <div className="p-6 text-sm text-destructive">Failed to load deck template: {error}</div>;
   }
   if (!layouts) {
     return <div className="p-6 text-sm text-muted-foreground">Loading layouts…</div>;
@@ -155,14 +159,7 @@ export function DeckTemplateViewer({ fsRef, deckTemplate }: DeckTemplateViewerPr
 
       <Dialog open={!!expanded} onOpenChange={(o) => !o && setExpanded(null)}>
         <DialogContent className="max-w-[90vw] p-0" style={{ width: SLIDE_W * 0.7 + 2 }}>
-          {expanded ? (
-            <LayoutFrame
-              layout={expanded}
-              tokensCss={tokensCss}
-              themeCss={themeCss}
-              scale={0.7}
-            />
-          ) : null}
+          {expanded ? <LayoutFrame layout={expanded} tokensCss={tokensCss} themeCss={themeCss} scale={0.7} /> : null}
         </DialogContent>
       </Dialog>
     </div>
@@ -184,7 +181,7 @@ function LayoutCard({
     <button
       type="button"
       onClick={onOpen}
-      className="group flex flex-col overflow-hidden rounded-lg border border-border bg-card text-left transition hover:border-primary"
+      className="group flex flex-col overflow-hidden rounded-lg border border-border bg-card text-start transition hover:border-primary"
       style={{ width: CARD_W }}
     >
       <LayoutFrame layout={layout} tokensCss={tokensCss} themeCss={themeCss} scale={CARD_SCALE} />
@@ -212,15 +209,9 @@ function LayoutFrame({
   themeCss: string;
   scale: number;
 }) {
-  const doc = useMemo(
-    () => buildSrcDoc(layout.html, tokensCss, themeCss),
-    [layout.html, tokensCss, themeCss],
-  );
+  const doc = useMemo(() => buildSrcDoc(layout.html, tokensCss, themeCss), [layout.html, tokensCss, themeCss]);
   return (
-    <div
-      className="relative overflow-hidden bg-black"
-      style={{ width: SLIDE_W * scale, height: SLIDE_H * scale }}
-    >
+    <div className="relative overflow-hidden bg-black" style={{ width: SLIDE_W * scale, height: SLIDE_H * scale }}>
       <iframe
         title={`${layout.name} preview`}
         sandbox="allow-scripts"

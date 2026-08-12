@@ -1,13 +1,6 @@
 import { cn } from '@src/lib/utils';
 import { FlowData, FlowElementTypes } from '@sdk';
-import {
-  Activity,
-  AlertTriangle,
-  ChevronDown,
-  ChevronRight,
-  Sparkles,
-  Wrench,
-} from 'lucide-react';
+import { Activity, AlertTriangle, ChevronDown, ChevronRight, Sparkles, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { pairToolEvents, type ToolPair } from './groupTurnEvents';
@@ -72,22 +65,18 @@ export function ToolEntryRow({ events }: ToolEntryRowProps) {
           'transition-colors',
         ].join(' ')}
       >
-        <OneLinerIcon
-          icon={latest?.icon ?? Wrench}
-          isError={latest?.isError}
-          inFlight={latest?.inFlight ?? false}
-        />
+        <OneLinerIcon icon={latest?.icon ?? Wrench} isError={latest?.isError} inFlight={latest?.inFlight ?? false} />
         {latest && <span className="whitespace-nowrap font-medium">{latest.label}</span>}
         {headlineDetail && (
           <span className="max-w-[260px] truncate font-mono text-[12px] text-muted-foreground/80">
             {headlineDetail}
           </span>
         )}
-        {totalCount > 1 && <span className="tabular-nums text-[11px] opacity-50">·&nbsp;{totalCount}</span>}
+        {totalCount > 1 && <span className="text-[11px] tabular-nums opacity-50">·&nbsp;{totalCount}</span>}
       </button>
 
       {expanded && (
-        <div className="ml-3 max-w-full rounded-md border border-border/60 bg-muted/30 px-2 py-1">
+        <div className="ms-3 max-w-full rounded-md border border-border/60 bg-muted/30 px-2 py-1">
           <TurnEventList events={events} />
         </div>
       )}
@@ -156,7 +145,7 @@ function ExpandableRow({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex min-w-0 items-center gap-1.5 text-left"
+          className="flex min-w-0 items-center gap-1.5 text-start"
         >
           {open ? (
             <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
@@ -196,7 +185,13 @@ function ToolPairItem({ pair }: { pair: ToolPair }) {
       <ExpandableRow
         payload={
           <>
-            <PayloadBlock label="input" value={(pair.call.data as Record<string, unknown> | undefined)?.args ?? (pair.call.data as Record<string, unknown> | undefined)?.input} />
+            <PayloadBlock
+              label="input"
+              value={
+                (pair.call.data as Record<string, unknown> | undefined)?.args ??
+                (pair.call.data as Record<string, unknown> | undefined)?.input
+              }
+            />
             <PayloadBlock label={inFlight ? 'output (running…)' : 'output'} value={resultOutput} />
           </>
         }
@@ -207,7 +202,7 @@ function ToolPairItem({ pair }: { pair: ToolPair }) {
               data-testid="tool-entry-target"
               title={desc.detail}
               onClick={openTarget}
-              className="min-w-0 flex-1 truncate text-left font-mono text-[12px] text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
+              className="min-w-0 flex-1 truncate text-start font-mono text-[12px] text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
             >
               {desc.detail}
             </button>
@@ -238,9 +233,7 @@ function OtherEventItem({ event }: { event: FlowData }) {
         payload={
           <>
             <PayloadBlock label="data" value={event.data} />
-            {Object.keys(event.attributes).length > 0 && (
-              <PayloadBlock label="attributes" value={event.attributes} />
-            )}
+            {Object.keys(event.attributes).length > 0 && <PayloadBlock label="attributes" value={event.attributes} />}
           </>
         }
       >
@@ -254,11 +247,7 @@ function OtherEventItem({ event }: { event: FlowData }) {
 
 function OrphanResultItem({ event }: { event: FlowData }) {
   return (
-    <li
-      data-testid="tool-entry"
-      data-state="done"
-      className={cn('px-1.5 py-0.5 text-[11px] text-muted-foreground')}
-    >
+    <li data-testid="tool-entry" data-state="done" className={cn('px-1.5 py-0.5 text-[11px] text-muted-foreground')}>
       <span className="opacity-60">tool result (no matching call):</span>{' '}
       <span className="truncate font-mono text-[10px]">{extractText(event)}</span>
     </li>
@@ -331,11 +320,7 @@ function describeLatest(events: FlowData[], pairs: ToolPair[]): OneLiner | null 
   return null;
 }
 
-const DENSE_OTHER = new Set<string>([
-  FlowElementTypes.REASONING,
-  FlowElementTypes.STATUS,
-  FlowElementTypes.ERROR,
-]);
+const DENSE_OTHER = new Set<string>([FlowElementTypes.REASONING, FlowElementTypes.STATUS, FlowElementTypes.ERROR]);
 
 function describeOther(event: FlowData): { icon: LucideIcon; label: string; isError?: boolean } {
   if (event.elementType === FlowElementTypes.REASONING) return { icon: Sparkles, label: 'thinking' };

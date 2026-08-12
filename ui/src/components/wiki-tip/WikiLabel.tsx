@@ -35,10 +35,7 @@ interface WikiLabelProps {
  */
 export function WikiLabel({ wikiword, label, fragment, space }: WikiLabelProps) {
   const { navigation } = useDockNavigation();
-  const previewWiki = useCallback(
-    () => openWikiModal(wikiword, space, fragment),
-    [wikiword, space, fragment],
-  );
+  const previewWiki = useCallback(() => openWikiModal(wikiword, space, fragment), [wikiword, space, fragment]);
   // The hub page has no /dock/assets/wiki route (it redirects home), so hub
   // mode opens every wiki surface in the modal instead.
   const openWiki = useCallback(
@@ -81,10 +78,10 @@ export function WikiLabel({ wikiword, label, fragment, space }: WikiLabelProps) 
           </div>
           <div className="flex gap-2 pt-1">
             <Button size="sm" variant="secondary" onClick={previewWiki}>
-              <Eye className="mr-1 h-3.5 w-3.5" /> Preview
+              <Eye className="me-1 h-3.5 w-3.5" /> Preview
             </Button>
             <Button size="sm" variant="ghost" onClick={openWiki}>
-              <ExternalLink className="mr-1 h-3.5 w-3.5" /> Open
+              <ExternalLink className="me-1 h-3.5 w-3.5" /> Open
             </Button>
           </div>
         </div>

@@ -116,7 +116,7 @@ export function NewProjectDialog({
             <Trans>Cancel</Trans>
           </Button>
           <Button onClick={() => void handleCreate()} disabled={!canCreate}>
-            {isSubmitting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            {isSubmitting && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
             <Trans>Create</Trans>
           </Button>
         </DialogFooter>

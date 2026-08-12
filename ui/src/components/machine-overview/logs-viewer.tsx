@@ -140,7 +140,9 @@ export const LogsViewer = forwardRef<LogsViewerHandle, LogsViewerProps>(
         {/* Header */}
         <div className="flex items-center justify-between border-b px-4 py-2">
           <div className="flex items-center gap-4">
-            <h3 className="text-sm font-semibold"><Trans>Sandbox Logs</Trans></h3>
+            <h3 className="text-sm font-semibold">
+              <Trans>Sandbox Logs</Trans>
+            </h3>
             {totalAlerts > 0 && (
               <div className="flex items-center gap-3 text-xs">
                 {alertCounts.cpu > 0 && (
@@ -180,7 +182,7 @@ export const LogsViewer = forwardRef<LogsViewerHandle, LogsViewerProps>(
             className="h-7 text-xs"
             onClick={() => setAlertsOnly(!alertsOnly)}
           >
-            <AlertTriangle className="mr-1 h-3 w-3" />
+            <AlertTriangle className="me-1 h-3 w-3" />
             <Trans>Alerts Only ({totalAlerts})</Trans>
           </Button>
         </div>
@@ -190,12 +192,20 @@ export const LogsViewer = forwardRef<LogsViewerHandle, LogsViewerProps>(
           <div className="flex flex-1 items-center justify-center text-muted-foreground">
             <div className="text-center">
               <p className="text-red-500">{error}</p>
-              <p className="mt-1 text-xs"><Trans>Use the refresh button in the toolbar to retry</Trans></p>
+              <p className="mt-1 text-xs">
+                <Trans>Use the refresh button in the toolbar to retry</Trans>
+              </p>
             </div>
           </div>
         ) : filteredLogs.length === 0 ? (
           <div className="flex flex-1 items-center justify-center text-muted-foreground">
-            {isLoading ? <Trans>Loading logs...</Trans> : alertsOnly ? <Trans>No alert logs found</Trans> : <Trans>No logs available</Trans>}
+            {isLoading ? (
+              <Trans>Loading logs...</Trans>
+            ) : alertsOnly ? (
+              <Trans>No alert logs found</Trans>
+            ) : (
+              <Trans>No logs available</Trans>
+            )}
           </div>
         ) : (
           <ScrollArea className="flex-1">
@@ -234,10 +244,10 @@ export const LogsViewer = forwardRef<LogsViewerHandle, LogsViewerProps>(
                   <span className={`flex-1 break-all ${log.alert ? 'font-medium' : ''}`}>
                     {log.message}
                     {log.cpu_used_percent !== undefined && (
-                      <span className="ml-2 text-orange-500">({log.cpu_used_percent.toFixed(1)}%)</span>
+                      <span className="ms-2 text-orange-500">({log.cpu_used_percent.toFixed(1)}%)</span>
                     )}
                     {log.mem_used_percent !== undefined && (
-                      <span className="ml-2 text-orange-500">({log.mem_used_percent.toFixed(1)}%)</span>
+                      <span className="ms-2 text-orange-500">({log.mem_used_percent.toFixed(1)}%)</span>
                     )}
                   </span>
                 </div>

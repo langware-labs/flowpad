@@ -250,8 +250,10 @@ export function ClaudeTasksViewer({ sessionId, selectedActiveForm }: Props) {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-        <span><Trans>Loading tasks...</Trans></span>
+        <Loader2 className="me-2 h-5 w-5 animate-spin" />
+        <span>
+          <Trans>Loading tasks...</Trans>
+        </span>
       </div>
     );
   }
@@ -259,7 +261,7 @@ export function ClaudeTasksViewer({ sessionId, selectedActiveForm }: Props) {
   if (error) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
-        <AlertTriangle className="mr-2 h-5 w-5 text-amber-500" />
+        <AlertTriangle className="me-2 h-5 w-5 text-amber-500" />
         <span>{error}</span>
       </div>
     );
@@ -268,7 +270,9 @@ export function ClaudeTasksViewer({ sessionId, selectedActiveForm }: Props) {
   if (tasks.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
-        <span><Trans>No tasks found for this session.</Trans></span>
+        <span>
+          <Trans>No tasks found for this session.</Trans>
+        </span>
       </div>
     );
   }
@@ -279,7 +283,9 @@ export function ClaudeTasksViewer({ sessionId, selectedActiveForm }: Props) {
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 text-primary" />
-          <span className="text-sm font-medium"><Trans>Session Tasks</Trans></span>
+          <span className="text-sm font-medium">
+            <Trans>Session Tasks</Trans>
+          </span>
           <span className="text-xs text-muted-foreground">({sessionId.slice(0, 8)}...)</span>
           {sessionId && (
             <button
@@ -293,7 +299,9 @@ export function ClaudeTasksViewer({ sessionId, selectedActiveForm }: Props) {
           )}
         </div>
         <span className="text-xs text-muted-foreground">
-          <Trans>{completedCount}/{totalCount} completed</Trans>
+          <Trans>
+            {completedCount}/{totalCount} completed
+          </Trans>
         </span>
       </div>
 

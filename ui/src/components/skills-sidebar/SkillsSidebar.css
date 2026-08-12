@@ -26,7 +26,7 @@
 }
 
 .skills-sidebar-count {
-  margin-left: auto;
+  margin-inline-start: auto;
   border-radius: 999px;
   background: hsl(var(--muted));
   padding: 0.1rem 0.5rem;
@@ -137,7 +137,7 @@
   gap: 0.4rem;
   width: 100%;
   padding: 0.25rem 0.45rem;
-  padding-right: 2.2rem;
+  padding-inline-end: 2.2rem;
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
@@ -160,14 +160,14 @@
   flex: 1;
   width: 100%;
   padding: 0.1rem 0.2rem;
-  padding-right: 1.6rem;
+  padding-inline-end: 1.6rem;
   border: 1px solid transparent;
   background: transparent;
   cursor: pointer;
   transition:
     background-color 0.15s ease,
     border-color 0.15s ease;
-  text-align: left;
+  text-align: start;
 }
 
 .skills-sidebar-item-main:focus-visible {

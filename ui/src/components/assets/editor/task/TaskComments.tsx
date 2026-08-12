@@ -123,7 +123,7 @@ export function TaskComments({ task, readOnly, collapsible, hideWhenEmpty, title
               />
               <div className="flex justify-end">
                 <Button size="sm" onClick={() => void handleAdd()} disabled={!commentText.trim()}>
-                  <Send className="mr-2 h-3 w-3" />
+                  <Send className="me-2 h-3 w-3" />
                   <Trans>Send</Trans>
                 </Button>
               </div>

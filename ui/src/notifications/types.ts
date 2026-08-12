@@ -40,6 +40,10 @@ export interface NotificationData {
   busy?: boolean;
   /** Present → rendered as a persistent badge under this sidebar view (not a toast). */
   category?: ViewType;
+  /** Alerts (`warning`/`error`) only pop as a toast in Dev mode. Set this on the
+   *  rare alert that must reach the user in EVERY mode — one that explains why an
+   *  action they just took did nothing. It still lands in the warnings log too. */
+  forceToast?: boolean;
   /** Stamped on ingest by the dispatcher. */
   timestamp: number;
 }

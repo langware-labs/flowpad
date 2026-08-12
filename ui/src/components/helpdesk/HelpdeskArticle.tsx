@@ -83,7 +83,7 @@ export function HelpdeskArticle({
       <Button
         variant="ghost"
         size="sm"
-        className="-ml-2 w-fit gap-1 text-muted-foreground"
+        className="-ms-2 w-fit gap-1 text-muted-foreground"
         onClick={() => navigation.openDock(DockPointer.forHelpdesk(projectId))}
         data-testid="helpdesk-article-back"
       >

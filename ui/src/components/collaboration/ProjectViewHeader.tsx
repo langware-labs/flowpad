@@ -110,7 +110,7 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
           <Copy className="h-3 w-3" />
         </button>
       )}
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="ms-auto flex items-center gap-1.5">
         {members.map((m) => {
           const online = onlineWithin(m, 30_000);
           const isHost = m.member_id === project.host_member_id;
@@ -140,7 +140,9 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
               <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
             </Button>
           </TooltipTrigger>
-          <TooltipContent><Trans>Refresh project index</Trans></TooltipContent>
+          <TooltipContent>
+            <Trans>Refresh project index</Trans>
+          </TooltipContent>
         </Tooltip>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -161,7 +163,7 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
               data-testid="project-actions-hard-refresh"
             >
               <Trans>
-                <RotateCcw className="mr-2 h-4 w-4" />
+                <RotateCcw className="me-2 h-4 w-4" />
                 Hard refresh
               </Trans>
             </DropdownMenuItem>
