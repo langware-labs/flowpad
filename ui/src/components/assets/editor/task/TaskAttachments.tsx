@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import {
   dataContext,
   Folder,
@@ -219,7 +220,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
           await fsManager.uploadFromBlob(task.typeId, '/', blob as Blob, name);
         } catch (e) {
           notify.error({
-            title: `Could not attach ${name}`,
+            title: t`Could not attach ${name}`,
             message: e instanceof Error ? e.message : 'Copy failed.',
           });
           continue;
@@ -257,7 +258,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
           await fsManager.uploadFile(task.typeId, '/', file);
         } catch (e) {
           notify.error({
-            title: `Could not attach ${file.name}`,
+            title: t`Could not attach ${file.name}`,
             message: e instanceof Error ? e.message : 'Copy failed.',
           });
           continue;
@@ -280,7 +281,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
       const url = a.git_origin ? gitOriginCloneUrl(a.git_origin) : '';
       if (!url) return null;
       return launchWizard('git-context-folder', {
-        title: `Pull ${a.label}`,
+        title: t`Pull ${a.label}`,
         payload: {
           projectId: scopeProjectId ?? dataContext.project?.id ?? null,
           scope: 'private',
@@ -340,7 +341,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
           openPathContent(local, false);
         } catch (e) {
           notify.error({
-            title: `Could not open ${a.label}`,
+            title: t`Could not open ${a.label}`,
             message: e instanceof Error ? e.message : 'File is not available yet.',
           });
         }

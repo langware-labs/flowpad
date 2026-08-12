@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { dataManager, MessageAttachment, Project, TypeId } from '@sdk';
 import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
 import { useEntity } from '@sdk/react/hooks';
@@ -25,10 +26,10 @@ import { StagedAssetViewer } from './StagedAssetViewer';
 function sourceOf(ma: MessageAttachment): { label: string; Icon: typeof Cloud; detail: string | null } {
   const origin = (ma.git_origin ?? null) as GitOrigin | null;
   if (ma.transfer_mode === 'git' || origin) {
-    return { label: 'Git', Icon: GitBranch, detail: origin ? gitOriginCloneUrl(origin) : null };
+    return { label: t`Git`, Icon: GitBranch, detail: origin ? gitOriginCloneUrl(origin) : null };
   }
-  if (ma.unpacked_path) return { label: 'Embedded in message', Icon: Package, detail: null };
-  return { label: 'Cloud', Icon: Cloud, detail: null };
+  if (ma.unpacked_path) return { label: t`Embedded in message`, Icon: Package, detail: null };
+  return { label: t`Cloud`, Icon: Cloud, detail: null };
 }
 
 const isGitAttachment = (ma: MessageAttachment): boolean => ma.transfer_mode === 'git' || ma.git_origin != null;

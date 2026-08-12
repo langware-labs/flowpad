@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { ConversationParticipant, Task, TaskKind } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { Button } from '@src/components/ui/button';
@@ -59,12 +60,12 @@ export function OwnerButton({ task }: OwnerButtonProps) {
     try {
       await task.assign(person, { message, ensureCloudLogin });
       notify.success({
-        title: 'Task assigned',
-        message: `${person.name || person.email} now has "${task.title}".`,
+        title: t`Task assigned`,
+        message: t`${person.name || person.email} now has "${task.title}".`,
       });
     } catch (e: unknown) {
       notify.error({
-        title: 'Could not assign',
+        title: t`Could not assign`,
         message: e instanceof Error ? e.message : String(e),
       });
     } finally {

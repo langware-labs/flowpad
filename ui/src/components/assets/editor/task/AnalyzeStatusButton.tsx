@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { ActionInfo, dataManager, Task, TaskKind, type WizardData, type WizardProcessResult } from '@sdk';
 import { openArtifact, TaskStatus } from '@src/components/task-bar/task-utils';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
@@ -66,7 +67,7 @@ export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStat
         readyForDone: '<true|false>',
         missing: ['<field>'],
         analysisPath: '<absolute path to references/analysis.html>',
-        summary: '<one short line>',
+        summary: t`<one short line>`,
       },
       prompt: isGroup
         ? 'Analyze the status of this group task across all its member tasks and produce the owner summary.'

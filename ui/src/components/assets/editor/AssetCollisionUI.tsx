@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import type { APIEntity, AssetOccurrence } from '@sdk';
 import { AlertTriangle } from 'lucide-react';
 import { createContext, type ReactNode, useContext, useMemo } from 'react';
@@ -212,9 +213,9 @@ export function useAssetCollisionSideTab(): ExtraSideTab | null {
     if (!entity || duplicateCount <= 0) return null;
     return {
       id: assetCollisionWindowId(entity),
-      label: `Duplicates ${duplicateCount}`,
+      label: t`Duplicates ${duplicateCount}`,
       icon: AlertTriangle,
-      description: 'Other paths with this asset identity',
+      description: t`Other paths with this asset identity`,
       // The Markdown tab registry retains panel elements by id. Read the live
       // context instead of capturing this render's mutable APIEntity prop.
       panel: <AssetCollisionPanel />,

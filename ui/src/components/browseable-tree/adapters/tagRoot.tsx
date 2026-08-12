@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import React from 'react';
 import { GitFork, Sparkles, Trash2 } from 'lucide-react';
 import apiClient from '@sdk/client';
@@ -98,7 +99,7 @@ function blessAction(name: string, refreshId: string): ToolbarAction {
   return {
     id: `bless:${name}`,
     icon: <Sparkles />,
-    label: `Bless "${name}" — create its Tag entity`,
+    label: t`Bless "${name}" — create its Tag entity`,
     run: async () => {
       await new Tag({ name, title: name }).save();
       refreshNode(refreshId);
@@ -126,7 +127,7 @@ function tagRow(row: TagRow, refreshId: string): Browseable {
     toolbar.push({
       id: `delete:tag:${blessed.id}`,
       icon: <Trash2 />,
-      label: `Delete tag ${name}`,
+      label: t`Delete tag ${name}`,
       run: () =>
         showDeleteAssetModal({
           name,
@@ -169,7 +170,7 @@ export async function tagListChildren(rootId: string): Promise<Browseable[]> {
   const graphRow: Browseable = {
     id: 'tag-graph-entry',
     kind: 'asset',
-    label: 'Tag graph',
+    label: t`Tag graph`,
     icon: <GitFork className="h-3.5 w-3.5 flex-shrink-0" />,
     hasChildren: false,
     pointer: DockPointer.forTagGraph(),

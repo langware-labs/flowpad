@@ -169,6 +169,11 @@ msgstr "[[{name}]] אינו חד-משמעי"
 msgid "[[{name}]] not found"
 msgstr "[[{name}]] לא נמצאה"
 
+#: src/components/top-nav-bar/RuntimeChip.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "[[{WIKI_PAGE}]]"
+msgstr ""
+
 #. placeholder {0}: clipboard.items.length
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "{0, plural, one {# item copied} other {# items copied}}"
@@ -291,6 +296,11 @@ msgstr "{0} כבר פרוס"
 msgid "{0} is deployed"
 msgstr "{0} פרוס"
 
+#. placeholder {0}: result.name || result.record_id
+#: src/components/assets/AssetsPage.tsx
+msgid "{0} is indexed without a valid source path and cannot be opened."
+msgstr ""
+
 #. placeholder {0}: workerLabel(unavailableWorker)
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "{0} is unavailable"
@@ -336,6 +346,7 @@ msgstr "{0} לא נבדק"
 
 #. placeholder {0}: person.name || person.email
 #. placeholder {1}: task.title
+#: src/components/assets/editor/task/OwnerButton.tsx
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "{0} now has \"{1}\"."
 msgstr "המשימה \"{1}\" הוקצתה כעת ל־{0}."
@@ -415,6 +426,11 @@ msgstr "{count} {0} מצורפים"
 #: src/components/assets/ContextFolderGitBadge.tsx
 msgid "{count} pending change(s) — click to view diff"
 msgstr "{count} שינויים ממתינים — לחצו להצגת ההבדלים"
+
+#. placeholder {0}: selected.displayName ?? selected.name
+#: src/components/assets/editor/task/GroupTaskDialog.tsx
+msgid "{created} member task(s) created for \"{0}\"."
+msgstr ""
 
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 #~ msgid "{days}d ago"
@@ -671,6 +687,14 @@ msgstr "<0>התעלם</0> — הסר את שורת ה-DB, שמור את ספרי
 msgid "<0>New / Stale / Mis-Sc</0> sum to <1>Pending</1>: a Fast index drives them all to 0. <2>Orphan</2> rows persist until you Scan Orphans → sweep."
 msgstr "<0>New / Stale / Mis-Sc</0> מסתכם ל-<1>Pending</1>: אינדקס Fast מוביל אותם כולם ל-0. שורות <2>Orphan</2> נמשכות עד שתנקה Scan Orphans → sweep."
 
+#: src/components/assets/editor/task/AnalyzeStatusButton.tsx
+msgid "<one short line>"
+msgstr ""
+
+#: src/components/webapp-display/useWebappFix.ts
+msgid "<what was wrong and what you did>"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "~2s. Use to check what's on disk without changing anything."
 msgstr "~2 שניות. בשביל לבדוק מה יש בדיסק ללא שינוי של שום דבר."
@@ -711,6 +735,7 @@ msgstr "🤖 Prompt - בקש מ-AI (Claude Haiku)"
 #~ msgid "$items"
 #~ msgstr "$פריטים"
 
+#: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "1 hour"
 msgstr "שעה אחת"
@@ -718,6 +743,10 @@ msgstr "שעה אחת"
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "1 message"
 msgstr "הודעה אחת"
+
+#: src/components/lens-viewer/ClaudeErrorsViewer.tsx
+msgid "1 week"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "1. Copy this code"
@@ -735,6 +764,10 @@ msgstr "1Password"
 msgid "2. Copy & open the sign-in page"
 msgstr "2. העתיקו ופתחו את עמוד ההתחברות"
 
+#: src/components/lens-viewer/ClaudeErrorsViewer.tsx
+msgid "24 hours"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "24h+ idle"
 msgstr "24+ שעות בטלה"
@@ -743,6 +776,7 @@ msgstr "24+ שעות בטלה"
 msgid "3. Your browser will show a code — paste it here"
 msgstr "3. הדפדפן יציג קוד — הדביקו אותו כאן"
 
+#: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "4 hours"
 msgstr "4 שעות"
@@ -791,6 +825,7 @@ msgstr "אודות עירובי Hook"
 msgid "Abs line"
 msgstr "שורה אבסולוטית"
 
+#: src/components/conversation/conversation-category.ts
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Accept"
 msgstr "קבל"
@@ -996,6 +1031,7 @@ msgid "Add comment..."
 msgstr "הוסף תגובה..."
 
 #: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Add context folder"
 msgstr "הוסיפו תיקיית הקשר"
@@ -1024,6 +1060,7 @@ msgid "Add Git"
 msgstr "הוסיפו Git"
 
 #: src/components/assets/AddGitFolderDialog.tsx
+#: src/hooks/use-add-context-folder.tsx
 msgid "Add Git folder"
 msgstr "הוספת תיקיית Git"
 
@@ -1245,6 +1282,7 @@ msgstr "יישור ההתחלה (שמאל ב-LTR, ימין ב-RTL)"
 msgid "all"
 msgstr "הכל"
 
+#: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
 #: src/components/graph-view/ui/TopBar.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -1490,6 +1528,15 @@ msgstr "הניתוח מתנהל — לחץ כדי לראות אותו בלוח �
 #~ msgid "Analysis Report"
 #~ msgstr "דוח ניתוח"
 
+#: src/components/task-bar/task-utils.ts
+msgid "analysis.html"
+msgstr ""
+
+#: src/components/task-bar/task-utils.ts
+#: src/components/task-bar/task-utils.ts
+msgid "analysis.json"
+msgstr ""
+
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Analyze"
@@ -1542,6 +1589,10 @@ msgstr "הוספת הערות לתצוגה"
 #: src/i18n/type-labels.ts
 msgid "Annotation"
 msgstr "הערה"
+
+#: src/components/image-annotator/image-annotator-store.tsx
+msgid "Annotation not submitted"
+msgstr ""
 
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Annotation submitted"
@@ -1671,6 +1722,10 @@ msgstr "סודות האפליקציה מאוחסנים במחזיק המפתחו
 #~ msgid "App Settings"
 #~ msgstr "הגדרות היישום"
 
+#: src/components/diagnose/diagnosis-details.tsx
+msgid "App version"
+msgstr ""
+
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "Appended to the current worker's prompt queue, tagged with this message."
 msgstr "הוספה לתור ההנמקות של העובד הנוכחי, מסומנת בהודעה זו."
@@ -1693,6 +1748,10 @@ msgstr "אפליקציות"
 msgid "Archive"
 msgstr "ארכיון"
 
+#: src/components/conversation/conversation-category.ts
+msgid "Archive — moves to Archived, kept"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "Archive all"
 msgstr "ארכיון הכל"
@@ -1705,6 +1764,7 @@ msgstr "ארכיב את כל המשימות"
 #~ msgid "Archive task"
 #~ msgstr "ארכיבון משימה"
 
+#: src/components/conversation/conversation-category.ts
 #: src/components/inbox-view/InboxView.tsx
 msgid "Archived"
 msgstr "ממופקד"
@@ -2199,6 +2259,10 @@ msgstr "חיבור app secret קיים למשתנה סביבה בפרויקט"
 msgid "Bind secret"
 msgstr "קישור סוד"
 
+#: src/components/browseable-tree/adapters/tagRoot.tsx
+msgid "Bless \"{name}\" — create its Tag entity"
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "blocked"
 msgstr "חסום"
@@ -2521,6 +2585,10 @@ msgstr "לא ניתן לקבוע קובץ הגדרות"
 msgid "Cannot edit"
 msgstr "לא ניתן לערוך"
 
+#: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
+msgid "Cannot improve"
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
@@ -2750,6 +2818,11 @@ msgstr "Chrome"
 msgid "Chrome browser"
 msgstr "דפדפן Chrome"
 
+#: src/components/task-bar/task-utils.ts
+#: src/components/task-bar/task-utils.ts
+msgid "classification.json"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "claude"
 msgstr "Claude"
@@ -2931,6 +3004,10 @@ msgstr "נקה את אינדקס החיפוש?"
 msgid "Clear selection"
 msgstr "נקה בחירה"
 
+#: src/components/lens-viewer/ClaudeErrorsViewer.tsx
+msgid "Cleared"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "Clearing..."
 msgstr "ניקוי..."
@@ -3007,6 +3084,10 @@ msgstr "לחץ לצפייה"
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 msgid "Click to view full prompt"
 msgstr "לחץ כדי לצפות בבקשה המלאה"
+
+#: src/components/image-annotator/image-annotator-store.tsx
+msgid "Clipboard not updated"
+msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Clone"
@@ -3124,6 +3205,7 @@ msgstr "סגירת סביבת העבודה"
 msgid "Closed"
 msgstr "סגור"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Cloud"
 msgstr "ענן"
@@ -3158,6 +3240,10 @@ msgstr ""
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Cloud Sandbox"
 msgstr "ארגז חול בענן"
+
+#: src/components/lens-viewer/ClaudeErrorsViewer.tsx
+msgid "Cloud search failed"
+msgstr ""
 
 #: src/notifications/ingest.ts
 msgid "Cloud service is having trouble"
@@ -3397,6 +3483,10 @@ msgstr ""
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Commit failed"
 msgstr "commit נכשל"
+
+#: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
+msgid "Commit or discard first"
+msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Commit your changes to share them"
@@ -3695,6 +3785,10 @@ msgstr "שיחה"
 msgid "Conversation deleted"
 msgstr "שיחה נמחקה"
 
+#: src/routes/loaders/load-conversation.ts
+msgid "Conversation not found"
+msgstr ""
+
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Conversation project set"
 msgstr "הגדר פרויקט השיחה"
@@ -3702,6 +3796,10 @@ msgstr "הגדר פרויקט השיחה"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Conversation title"
 msgstr "כותרת שיחה"
+
+#: src/routes/loaders/load-conversation.ts
+msgid "Conversation unavailable"
+msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #~ msgid "Conversations"
@@ -3718,6 +3816,12 @@ msgstr "סנכרון"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Copied"
 msgstr "הועתק"
+
+#. placeholder {0}: urls.length
+#. placeholder {1}: urls.length > 1 ? 's' : ''
+#: src/components/assets/useAssetsModel.tsx
+msgid "Copied {0} link{1}"
+msgstr ""
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Copied to Clipboard"
@@ -3819,6 +3923,10 @@ msgstr "העתק קוד הצטרפות"
 msgid "Copy link"
 msgstr "העתק קישור"
 
+#: src/components/assets/useAssetsModel.tsx
+msgid "Copy links"
+msgstr ""
+
 #: src/components/hooks/sniffer_view_mock.tsx
 #~ msgid "Copy Log"
 #~ msgstr "העתק יומן"
@@ -3872,6 +3980,19 @@ msgstr "עלות"
 msgid "Could not annotate view"
 msgstr "לא ניתן להוסיף הערות לתצוגה"
 
+#: src/components/assets/editor/task/OwnerButton.tsx
+msgid "Could not assign"
+msgstr ""
+
+#. placeholder {0}: file.name
+#: src/components/assets/editor/task/TaskAttachments.tsx
+msgid "Could not attach {0}"
+msgstr ""
+
+#: src/components/assets/editor/task/TaskAttachments.tsx
+msgid "Could not attach {name}"
+msgstr ""
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Could not change privacy mode"
 msgstr "לא היה ניתן לשנות את מצב הפרטיות"
@@ -3903,6 +4024,10 @@ msgstr "לא ניתן להתחבר ל-{0}."
 msgid "Could not copy the code"
 msgstr "לא היה ניתן להעתיק את הקוד"
 
+#: src/components/assets/editor/task/GroupTaskDialog.tsx
+msgid "Could not create group task"
+msgstr ""
+
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 msgid "Could not declare"
 msgstr "לא ניתן היה להצהיר"
@@ -3923,6 +4048,7 @@ msgid "Could not delete {0}"
 msgstr "לא ניתן למחוק את {0}"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
+#: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "Could not deploy"
 msgstr "לא ניתן לפרוס"
 
@@ -3990,8 +4116,21 @@ msgstr "לא ניתן לטעון את משתני הסביבה"
 msgid "Could not load source: {error}"
 msgstr "לא ניתן לטעון מקור: {error}"
 
+#: src/routes/loaders/load-conversation.ts
+msgid "Could not load this conversation. Try again in a moment."
+msgstr ""
+
 #: src/routes/loaders/load-project.ts
 msgid "Could not load this project. Try again in a moment."
+msgstr ""
+
+#: src/routes/loaders/load-tasks.ts
+msgid "Could not load this task. Try again in a moment."
+msgstr ""
+
+#. placeholder {0}: a.label
+#: src/components/assets/editor/task/TaskAttachments.tsx
+msgid "Could not open {0}"
 msgstr ""
 
 #: src/components/entity-execution-panel/useOpenSkill.ts
@@ -4094,6 +4233,10 @@ msgstr "לא ניתן לשלוח את הדוח לצוות Flowpad"
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "Could not set up Git"
 msgstr "לא ניתן להגדיר את Git"
+
+#: src/hooks/use-sandboxes.ts
+msgid "Could not sign the sandbox out"
+msgstr ""
 
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
@@ -4304,10 +4447,12 @@ msgstr "יצירה כ-Whiteboard"
 msgid "Create bookmark on the recipient's desktop"
 msgstr "ליצור סימניה על שולחן העבודה של המקבל"
 
+#: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Create File"
 msgstr "צור קובץ"
 
+#: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Create Folder"
 msgstr "צור תיקייה"
@@ -4596,6 +4741,10 @@ msgstr "מוגדר בכרטיס הסוכן. טרם הוחל על העובד."
 msgid "Decline"
 msgstr "דחה"
 
+#: src/components/conversation/conversation-category.ts
+msgid "Decline (delete) invitation"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "Decline (notifies the inviter)"
 msgstr "דחה (מודיע למזמין)"
@@ -4717,6 +4866,11 @@ msgstr "למחוק את אישור {0}?"
 msgid "Delete {0}?"
 msgstr "מחק את {0}?"
 
+#: src/components/browseable-tree/adapters/assetTypeRoot.tsx
+#: src/components/browseable-tree/adapters/skillFolder.tsx
+msgid "Delete {label}"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "Delete {selectedCount} conversations"
 msgstr "מחק {selectedCount} שיחות"
@@ -4803,6 +4957,10 @@ msgstr "מחק קובץ"
 msgid "Delete folder"
 msgstr "הסרה מהעדפות"
 
+#: src/components/browseable-tree/adapters/groupRoot.tsx
+msgid "Delete folder (children move up)"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "Delete for everyone"
@@ -4855,6 +5013,10 @@ msgstr "מחיקת סנדבוקס"
 #: src/components/account/secrets-section.tsx
 msgid "Delete secret"
 msgstr "מחק סוד"
+
+#: src/components/browseable-tree/adapters/tagRoot.tsx
+msgid "Delete tag {name}"
+msgstr ""
 
 #: src/components/image-annotator/TextBoxLayer.tsx
 msgid "Delete text"
@@ -5071,6 +5233,10 @@ msgstr "גרסת שולחן עבודה"
 #~ msgid "Desktops"
 #~ msgstr "שולחנות עבודה"
 
+#: src/components/assets/useAssetsModel.tsx
+msgid "Destination already has an item with that name"
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #~ msgid "Detach"
 #~ msgstr "נתק"
@@ -5153,6 +5319,10 @@ msgstr "דיאגנוזה הועתקה ללוח"
 #: src/components/account/system-diagnoses.tsx
 msgid "Diagnosis forwarded"
 msgstr "דיאגנוזה הועברה בהצלחה"
+
+#: src/components/diagnose/diagnosis-details.tsx
+msgid "Diagnosis id"
+msgstr ""
 
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 msgid "Diagnosis is not available yet"
@@ -5285,6 +5455,10 @@ msgstr "השלך טיוטה זו?"
 msgid "Discard unsaved changes and go back to inbox"
 msgstr "בטל שינויים שלא נשמרו וחזור לתיבה הנכנסת"
 
+#: src/hooks/useFS.ts
+msgid "Discarded unsaved edits"
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/collaboration/SharedSessionView.tsx
 msgid "Disconnect"
@@ -5388,6 +5562,10 @@ msgstr "מסמכים"
 #: src/components/asset-manager/EntityTypeBar.tsx
 msgid "Document"
 msgstr "מסמך"
+
+#: src/components/docs-viewer/DocsNavigator.tsx
+msgid "Documentation"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Documents"
@@ -5532,6 +5710,10 @@ msgstr "הפעולה מוחקת את רשומות המקור ומאפסת את �
 #: src/components/task-bar/TaskDetailPanel.tsx
 #~ msgid "Due date"
 #~ msgstr "תאריך יעד"
+
+#: src/components/assets/editor/AssetCollisionUI.tsx
+msgid "Duplicates {duplicateCount}"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -5698,6 +5880,10 @@ msgstr "רמת מאמץ"
 msgid "Email:"
 msgstr "דוא״ל:"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Embedded in message"
+msgstr ""
+
 #. placeholder {0}: event.id
 #: src/components/events/InjectorPanel.tsx
 msgid "Emitted {0} — watch for it in the feed."
@@ -5853,10 +6039,12 @@ msgstr "יש להזין כתובת URL תקינה של מאגר GitHub."
 msgid "Enter chat rules..."
 msgstr "הזן חוקי צ'אט..."
 
+#: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Enter file name"
 msgstr "הזן שם קובץ"
 
+#: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Enter folder name"
 msgstr "הזן שם תיקייה"
@@ -6291,6 +6479,15 @@ msgstr "נכשל"
 msgid "Failed to add comment"
 msgstr "הוספת תגובה נכשלה"
 
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to add files to context folder"
+msgstr ""
+
+#: src/hooks/use-add-context-folder.tsx
+#: src/hooks/use-add-context-folder.tsx
+msgid "Failed to add Git folder"
+msgstr ""
+
 #: src/components/project-home/SecretsCard.tsx
 msgid "Failed to add secret"
 msgstr "הוספת הסוד נכשלה"
@@ -6315,6 +6512,10 @@ msgstr "כשל בבניית stack של קריאות: {error}"
 msgid "Failed to clear database"
 msgstr "ניקוי בסיס הנתונים נכשל"
 
+#: src/components/lens-viewer/ClaudeErrorsViewer.tsx
+msgid "Failed to clear errors"
+msgstr ""
+
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Failed to clone repository"
 msgstr "כישלון בשיבוט המאגר"
@@ -6323,11 +6524,16 @@ msgstr "כישלון בשיבוט המאגר"
 #~ msgid "Failed to clone the git repository. Please check the URL and try again."
 #~ msgstr "נכשל בהעתקת מאגר ה-git. בבקשה בדוק את כתובת ה-URL ונסה שוב."
 
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to copy links"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "Failed to copy path to clipboard"
 msgstr "העתקת הנתיב ללוח נכשלה"
 
 #: src/components/assets/AssetsPage.tsx
+#: src/components/assets/useAssetsModel.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 msgid "Failed to create"
 msgstr "יצירה נכשלה"
@@ -6343,6 +6549,10 @@ msgstr "יצירת קבוצת אנשי קשר נכשלה"
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #~ msgid "Failed to create doc"
 #~ msgstr "נכשל ביצירת מסמך"
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to create folder"
+msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Failed to create hook"
@@ -6431,6 +6641,10 @@ msgstr "אחזור המדדים נכשל"
 msgid "Failed to generate API key"
 msgstr "הייתה שגיאה ביצירת מפתח API"
 
+#: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
+msgid "Failed to launch"
+msgstr ""
+
 #: src/components/browseable-tree/BrowseableTree.tsx
 msgid "Failed to load"
 msgstr "נכשל לטעון"
@@ -6509,6 +6723,10 @@ msgstr "טעינת תצוגת העולם נכשלה"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Failed to look up project."
 msgstr "כשל בחיפוש הפרויקט."
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to move item"
+msgstr ""
 
 #: src/components/account/database-section.tsx
 msgid "Failed to open {folderType} folder"
@@ -6638,6 +6856,7 @@ msgstr "כישלון בהתחלת חיבור GitHub"
 #~ msgid "Failed to start services"
 #~ msgstr "נכשל הפעלת השירותים"
 
+#: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Failed to start session"
@@ -6725,6 +6944,10 @@ msgstr "הערה בהזנה"
 msgid "Feed Entry"
 msgstr "רשומה בפיד"
 
+#: src/components/floating-chat/toolEventDescriptor.ts
+msgid "Fetch"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "Fetch new messages from hub"
 msgstr "קבל הודעות חדשות מהמרכז"
@@ -6792,6 +7015,7 @@ msgstr ""
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 #: src/components/assets/useAssetsModel.tsx
+#: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 #: src/components/top-nav-bar/TopNavBar.tsx
@@ -6936,9 +7160,9 @@ msgstr "התאמה (f)"
 msgid "Fit Atlas"
 msgstr "התאימו את תצוגת Atlas"
 
-#: src/components/workflow-runner/learning/PastAttemptsPane.tsx
-#~ msgid "Fix"
-#~ msgstr "תיקון"
+#: src/components/diagnose/diagnosis-details.tsx
+msgid "Fix"
+msgstr "תיקון"
 
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "Fix All"
@@ -6953,6 +7177,10 @@ msgstr "תיקון"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Fix It"
 msgstr "תקן זאת"
+
+#: src/components/webapp-display/useWebappFix.ts
+msgid "Fix the web app"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Fixing these tightens the skill for every future run."
@@ -7100,7 +7328,16 @@ msgstr "במיקוד"
 msgid "Folder"
 msgstr "תיקייה"
 
+#: src/components/assets/useAssetsModel.tsx
+msgid "Folder already exists"
+msgstr ""
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Folder created"
+msgstr ""
+
 #: src/components/assets/AssetsNavigator.tsx
+#: src/components/browseable-tree/adapters/groupRoot.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/quick-create/DesktopSurface.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -7319,6 +7556,7 @@ msgstr "רפאים"
 msgid "git"
 msgstr "Git"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Git"
 msgstr "Git"
@@ -7475,6 +7713,10 @@ msgstr "עבור לקונסול"
 msgid "Go to Homepage"
 msgstr "חזור לדף הבית"
 
+#: src/routes/loaders/load-conversation.ts
+msgid "Go to inbox"
+msgstr ""
+
 #: src/components/ui/pagination.tsx
 msgid "Go to next page"
 msgstr "עבור לעמוד הבא"
@@ -7534,6 +7776,7 @@ msgid "Graph Workflow Run"
 msgstr "הרצה בגרף הזרימה"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/graph-workflows/GraphWorkflowsNavigator.tsx
 #: src/i18n/type-labels.ts
 #: src/types/ViewType.ts
 msgid "Graph Workflows"
@@ -7555,6 +7798,14 @@ msgstr "שם הקבוצה"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Group Task"
 msgstr "משימת אב"
+
+#: src/components/assets/editor/task/GroupTaskDialog.tsx
+msgid "Group task created"
+msgstr ""
+
+#: src/components/assets/editor/task/GroupTaskDialog.tsx
+msgid "Group task created with issues"
+msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Guided setup"
@@ -8358,6 +8609,10 @@ msgstr "נתיב אפליקציה לא תקין"
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Invalid asset comparison."
 msgstr "השוואת נכסים לא תקינה"
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Invalid folder name"
+msgstr ""
 
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Invalid JSON"
@@ -9571,6 +9826,10 @@ msgstr "חברים"
 msgid "Members are unavailable in Local mode."
 msgstr "חברים אינם זמינים במצב Local"
 
+#: src/components/assets/editor/task/GroupTaskDialog.tsx
+msgid "Members assigned, but some messages failed"
+msgstr ""
+
 #: src/components/machine-overview/logs-viewer.tsx
 #: src/components/machine-overview/metrics-chart.tsx
 #: src/components/machine-overview/metrics-chart.tsx
@@ -9687,6 +9946,10 @@ msgstr "מזעור לסמל המסע"
 msgid "Minimum 60 — the heartbeat only ticks once a minute."
 msgstr "מינימום 60 — הדופק פועם פעם בדקה בלבד."
 
+#: src/components/assets/editor/agent-trace/simple/report-language.ts
+msgid "Minor"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
 msgstr "Mis-Sc"
@@ -9802,6 +10065,14 @@ msgstr "מעודכן"
 #~ msgid "Move up"
 #~ msgstr "הזז למעלה"
 
+#: src/components/assets/useAssetsModel.tsx
+msgid "Moved"
+msgstr ""
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Moved, but reindex failed"
+msgstr ""
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "msgs"
 msgstr "הודעות"
@@ -9879,6 +10150,10 @@ msgstr "שם ישות זו"
 msgid "Name:"
 msgstr "שם:"
 
+#: src/components/assets/editor/agent-trace/simple/report-language.ts
+msgid "Needs a look"
+msgstr ""
+
 #: src/components/graph-view/GraphView.tsx
 msgid "Neighbors"
 msgstr "צמתים שכנים"
@@ -9927,7 +10202,9 @@ msgstr "חדש"
 
 #. placeholder {0}: m.newTypeTarget ?? ''
 #. placeholder {0}: t(descriptor.label)
+#. placeholder {0}: type.label
 #: src/components/assets/AssetsNavigator.tsx
+#: src/components/browseable-tree/adapters/assetTypeRoot.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 msgid "New {0}"
 msgstr "{0} חדש"
@@ -9985,6 +10262,7 @@ msgstr "קבוצת אנשי קשר חדשה"
 #~ msgid "New doc"
 #~ msgstr "מסמך חדש"
 
+#: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New file"
 msgstr "קובץ חדש"
@@ -10002,6 +10280,8 @@ msgstr "קבצים חדשים ({0})"
 #~ msgid "New Flow"
 #~ msgstr "זרימה חדשה"
 
+#: src/components/browseable-tree/adapters/groupRoot.tsx
+#: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/quick-create/DesktopSurface.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -10785,6 +11065,10 @@ msgstr "לא הופעלו אירועי PTY עדיין."
 msgid "No published assets yet."
 msgstr "אין נכסים שפורסמו עדיין."
 
+#: src/components/terminal/TabbedTerminal.tsx
+msgid "No realtime connection"
+msgstr ""
+
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 msgid "No recent activity"
 msgstr "אין פעילות אחרונה"
@@ -11149,6 +11433,10 @@ msgstr "לא מוגדר"
 msgid "Not connected"
 msgstr "לא מחובר"
 
+#: src/components/assets/useAssetsModel.tsx
+msgid "Not copied into context folder"
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not found"
 msgstr "לא נמצא"
@@ -11192,6 +11480,10 @@ msgstr "טרם התחיל — גישה למכונה של {hostName} תתבקש �
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Not used yet"
 msgstr "עדיין לא בשימוש"
+
+#: src/components/assets/editor/agent-trace/simple/report-language.ts
+msgid "Note"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Note (optional)"
@@ -11271,6 +11563,7 @@ msgid "Nothing to push"
 msgstr "אין שינויים לדחיפה"
 
 #: src/components/asset-manager/AssetManagerButton.tsx
+#: src/components/code-editor/AssetCompareView.tsx
 msgid "Nothing to save"
 msgstr "אין מה לשמור"
 
@@ -11352,6 +11645,10 @@ msgstr "כבוי"
 #: src/components/recovery/cleanup-modal.tsx
 msgid "OK"
 msgstr "אישור"
+
+#: src/components/chats-navigator/useChatHistory.ts
+msgid "Older"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
 msgid "on"
@@ -12010,9 +12307,17 @@ msgstr "יתומים"
 msgid "orphans_total"
 msgstr "סה״כ יתומים"
 
+#: src/components/diagnose/diagnosis-details.tsx
+msgid "OS"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "OS:"
 msgstr "מערכת הפעלה:"
+
+#: src/components/assets/editor/AssetCollisionUI.tsx
+msgid "Other paths with this asset identity"
+msgstr ""
 
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Other projects"
@@ -12583,6 +12888,14 @@ msgstr "התצוגה קטומה."
 msgid "Previous"
 msgstr "הקודם"
 
+#: src/components/chats-navigator/useChatHistory.ts
+msgid "Previous 30 days"
+msgstr ""
+
+#: src/components/chats-navigator/useChatHistory.ts
+msgid "Previous 7 days"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Previous match (Shift+Enter)"
 msgstr "התאמה קודמת (Shift+Enter)"
@@ -12673,6 +12986,7 @@ msgstr "התקדמות"
 #: src/components/code-editor/CodeEditor.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
+#: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
@@ -12714,6 +13028,10 @@ msgstr "נכסי פרויקט"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Project Commands (.claude/commands/)"
 msgstr "פקודות פרויקט (.claude/commands/)"
+
+#: src/components/assets/AssetsPage.tsx
+msgid "Project deleted"
+msgstr ""
 
 #: src/components/credentials-view/CredentialsView.tsx
 msgid "Project Environment"
@@ -12978,6 +13296,11 @@ msgstr "פרסום הסוכן הזה לענן מעניק לו מכונה המת�
 #: src/components/project-home/ProjectPublishButton.tsx
 #~ msgid "Publishing…"
 #~ msgstr ""
+
+#. placeholder {0}: a.label
+#: src/components/assets/editor/task/TaskAttachments.tsx
+msgid "Pull {0}"
+msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull & Open"
@@ -13366,6 +13689,10 @@ msgstr "רענן ניתוח"
 #~ msgid "Refresh community tickets"
 #~ msgstr "רענן כרטיסי קהילה"
 
+#: src/components/docs-viewer/DocsNavigator.tsx
+msgid "Refresh docs"
+msgstr ""
+
 #: src/components/docs-viewer/DocsViewer.tsx
 msgid "Refresh document"
 msgstr "רענן מסמך"
@@ -13473,9 +13800,9 @@ msgstr "הסירו תמונת פרופיל"
 msgid "Remove bookmark"
 msgstr "הסר סימנייה"
 
-#: src/components/project-home/ContextFolders.tsx
-#~ msgid "Remove context folder"
-#~ msgstr ""
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+msgid "Remove context folder"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove directory"
@@ -13581,6 +13908,10 @@ msgstr "שינוי השם נכשל."
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Rename favorite"
 msgstr "שינוי שם מועדף"
+
+#: src/components/browseable-tree/adapters/groupRoot.tsx
+msgid "Rename folder"
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Reopen"
@@ -13994,6 +14325,10 @@ msgstr ""
 msgid "root"
 msgstr "שורש"
 
+#: src/components/diagnose/diagnosis-details.tsx
+msgid "Root cause"
+msgstr ""
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "roots"
 msgstr "שורשים"
@@ -14026,6 +14361,7 @@ msgstr "חוקים"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
+#: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Run"
 msgstr "הרץ"
@@ -14035,7 +14371,9 @@ msgstr "הרץ"
 #~ msgstr ""
 
 #. placeholder {0}: agent.name
+#. placeholder {0}: selectedRunId?.slice(0, 8) ?? ''
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
+#: src/components/graph-workflows/panels/RunsPanel.tsx
 msgid "Run {0}"
 msgstr "הריצו את {0}"
 
@@ -14138,6 +14476,10 @@ msgstr "פועל"
 msgid "Running /context…"
 msgstr "הרצת /context…"
 
+#: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
+msgid "Running in the background."
+msgstr ""
+
 #. placeholder {0}: session.status
 #: src/components/collaboration/SharedSessionView.tsx
 msgid "Running on the host's machine · status: {0}"
@@ -14161,6 +14503,10 @@ msgstr "הרצות"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Runs as an AgenticProcess — see per-row status + transcript."
 msgstr "פועל כ-AgenticProcess — ראה סטטוס לכל שורה + טרנסקריפט."
+
+#: src/components/graph-workflows/panels/RunsPanel.tsx
+msgid "Runs of this flow"
+msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "Sample prompts"
@@ -14196,6 +14542,10 @@ msgstr "יומני Sandbox"
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "Sandbox Metrics"
 msgstr "מדדי Sandbox"
+
+#: src/hooks/use-sandboxes.ts
+msgid "Sandbox started without cloud sign-in"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 #: src/pages/hub-home/HubHome.tsx
@@ -14239,6 +14589,8 @@ msgid "Save Changes"
 msgstr "שמור שינויים"
 
 #: src/components/asset-manager/AssetManagerButton.tsx
+#: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
+#: src/components/code-editor/AssetCompareView.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Save failed"
@@ -14267,6 +14619,12 @@ msgstr "שמירת גרסה"
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Saved"
 msgstr "נשמר"
+
+#. placeholder {0}: payload.assetLabel
+#. placeholder {1}: result.version ?? ''
+#: src/components/code-editor/AssetCompareView.tsx
+msgid "Saved {0} v{1}"
+msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Saved Contexts"
@@ -14298,6 +14656,10 @@ msgstr "סריקת שיחות למציאת אנשי קשר חדשים"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Scan failed."
 msgstr "סריקה נכשלה."
+
+#: src/components/browseable-tree/adapters/assetTypeRoot.tsx
+msgid "Scan for changes"
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -14487,6 +14849,10 @@ msgstr "כיול חיפוש"
 msgid "Search chats…"
 msgstr "חיפוש שיחות…"
 
+#: src/components/docs-viewer/DocsNavigator.tsx
+msgid "Search docs…"
+msgstr ""
+
 #: src/components/conversation/EmojiPicker.tsx
 msgid "Search emoji"
 msgstr "חיפוש אמוג'י"
@@ -14495,9 +14861,17 @@ msgstr "חיפוש אמוג'י"
 msgid "Search emoji…"
 msgstr "חיפוש אמוג'י…"
 
+#: src/components/explorer-view/ExplorerNavigator.tsx
+msgid "Search files…"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Search Flowpad"
 msgstr "חפש ב-Flowpad"
+
+#: src/components/graph-workflows/GraphWorkflowsNavigator.tsx
+msgid "Search flows…"
+msgstr ""
 
 #: src/components/ui/icon-picker.tsx
 msgid "Search icons"
@@ -14959,6 +15333,10 @@ msgstr "שיחה — {0}"
 msgid "Session {0} is not in Claude, Codex, or Copilot history."
 msgstr "סשן {0} אינו בהיסטוריית Claude, Codex, או Copilot."
 
+#: src/hooks/use-resume-in-terminal.ts
+msgid "Session {workerId} is not in Claude, Codex, or Copilot history."
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Session analysis"
 msgstr "ניתוח סשן"
@@ -14989,6 +15367,7 @@ msgstr "הסדרה לא פעילה"
 #~ msgid "Session mode"
 #~ msgstr ""
 
+#: src/hooks/use-resume-in-terminal.ts
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/routes/loaders/load-dock-pointer.ts
 #: src/routes/loaders/load-next-process.ts
@@ -15001,12 +15380,18 @@ msgstr "הפגישה לא נמצאה"
 msgid "Session Start"
 msgstr "התחלת סשן"
 
+#: src/components/lens-viewer/ClaudeErrorsViewer.tsx
+msgid "Session started"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Session Tasks"
 msgstr "משימות הסעיף"
 
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-process.ts
+#: src/routes/loaders/load-process.ts
 #: src/routes/loaders/process-load-error-resolution.ts
 #: src/routes/loaders/process-load-error-resolution.ts
 msgid "Session unavailable"
@@ -15086,6 +15471,14 @@ msgstr "הגדירו בשם הזה"
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 msgid "Set up Git"
 msgstr "הגדרת Git"
+
+#: src/components/project-home/ProjectPublishButton.tsx
+msgid "Set up Git for cloud linking"
+msgstr ""
+
+#: src/components/project-home/ProjectHome.tsx
+msgid "Set up Git for project sharing"
+msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Set up GitHub"
@@ -15274,6 +15667,10 @@ msgstr ""
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-project.ts
 msgid "Shell unavailable"
+msgstr ""
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Short-lived key for Open-in-FlowPad deep link"
 msgstr ""
 
 #. placeholder {0}: '{permissionDecision: allow or deny}'
@@ -15620,6 +16017,11 @@ msgstr "כישוריות לא מותקנת"
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
 #~ msgid "Skill: {skillName}"
 #~ msgstr "כישור: {skillName}"
+
+#: src/components/task-bar/task-utils.ts
+#: src/components/task-bar/task-utils.ts
+msgid "SKILL.md"
+msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "skills"
@@ -16159,6 +16561,7 @@ msgid "Sub-agents"
 msgstr "סוכנים משנה"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
+#: src/components/floating-chat/toolEventDescriptor.ts
 msgid "SubAgent"
 msgstr "SubAgent"
 
@@ -16207,9 +16610,14 @@ msgstr "הצע prompt"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
+#: src/components/diagnose/diagnosis-details.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Summary"
 msgstr "סיכום"
+
+#: src/components/conversation/conversation-category.ts
+msgid "Support"
+msgstr ""
 
 #: src/components/collaboration/RoomHeader.tsx
 msgid "Support room"
@@ -16300,6 +16708,10 @@ msgstr "עבור למצב אור"
 #~ msgid "Switching…"
 #~ msgstr "מעברים…"
 
+#: src/components/diagnose/diagnosis-details.tsx
+msgid "Symptoms"
+msgstr ""
+
 #: src/components/graph-view/GraphView.tsx
 #~ msgid "Sync"
 #~ msgstr "סנכרנו"
@@ -16371,6 +16783,10 @@ msgstr "לא הצליח לפתוח את הכרטיסייה"
 msgid "tag e.g. entity.created"
 msgstr "תג, לדוגמה entity.created"
 
+#: src/components/browseable-tree/adapters/tagRoot.tsx
+msgid "Tag graph"
+msgstr ""
+
 #: src/components/graph-view/TagGraphView.tsx
 #: src/types/ViewType.ts
 msgid "Tag Graph"
@@ -16420,6 +16836,7 @@ msgstr "יעד, לדוגמה usage_report:abc"
 msgid "Task"
 msgstr "משימה"
 
+#: src/components/assets/editor/task/OwnerButton.tsx
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "Task assigned"
 msgstr "המשימה הוקצתה"
@@ -16429,12 +16846,17 @@ msgid "Task created"
 msgstr "משימה נוצרה"
 
 #: src/components/assistance-viewer/AssistanceViewer.tsx
+#: src/routes/loaders/load-tasks.ts
 msgid "Task not found"
 msgstr "משימה לא נמצאה"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
 #~ msgid "Task title"
 #~ msgstr "כותרת המשימה"
+
+#: src/routes/loaders/load-tasks.ts
+msgid "Task unavailable"
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Tasked"
@@ -16483,8 +16905,16 @@ msgstr "תבנית:"
 msgid "Terminal"
 msgstr "טרמינל"
 
+#: src/components/terminal/TabbedTerminal.tsx
+msgid "Terminal may be unresponsive until the connection recovers."
+msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Terminal Progress Bar Enabled"
+msgstr ""
+
+#: src/routes/loaders/load-process.ts
+msgid "Terminal reattach failed"
 msgstr ""
 
 #: src/components/sessions-view/sessions-view.tsx
@@ -16547,6 +16977,10 @@ msgstr "בדוק טריגר"
 msgid "That agent is no longer in your workspace."
 msgstr ""
 
+#: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
+msgid "The \"{skillName}\" skill is not installed."
+msgstr ""
+
 #: src/components/assets/editor/run/useRunOnFile.tsx
 #~ msgid "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. Enable it to continue."
 #~ msgstr "שרת <0>flow-sdk-mcp</0> נדרש כדי להריץ עם עקיבות התקדמות. הפעל אותו כדי להמשיך."
@@ -16567,6 +17001,10 @@ msgstr "חבילת הסוכן אינה זמינה."
 msgid "The analysis completed but did not produce asset-scoped findings."
 msgstr "הניתוח הושלם אך לא הניב ממצאים בהיקף הנכס"
 
+#: src/components/image-annotator/image-annotator-store.tsx
+msgid "The annotated image was attached but could not be copied to the clipboard."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "The Anthropic API may be slow or unresponsive."
 #~ msgstr "ה-API של Anthropic עלול להיות איטי או לא משיב."
@@ -16581,6 +17019,7 @@ msgstr "הנכס זמין כעת לחברי הפרויקט."
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
+#: src/components/code-editor/AssetCompareView.tsx
 msgid "The asset matches HEAD."
 msgstr "הנכס תואם את HEAD"
 
@@ -16659,6 +17098,10 @@ msgstr "ההפעלה החיה הסתיימה."
 #: src/components/project-home/BindSecretDialog.tsx
 msgid "The local secrets store is not enabled yet."
 msgstr "מאגר הסודות המקומי עדיין לא מופעל"
+
+#: src/components/assets/editor/task/GroupTaskDialog.tsx
+msgid "The member tasks were created; {messageFailures} notification message(s) did not go through."
+msgstr ""
 
 #: src/components/project-home/ProjectPublishButton.tsx
 msgid "The project was not linked to the cloud."
@@ -16846,6 +17289,10 @@ msgstr "שיחה זו באה מפרויקט במכונה אחרת. בחר את �
 msgid "This conversation is local-only. It will be removed from this device."
 msgstr "שיחה זו היא רק מקומית. היא תוסר מהתקן זה."
 
+#: src/routes/loaders/load-conversation.ts
+msgid "This conversation no longer exists or is unavailable."
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "This entry was removed since the last stamp — it exists only in the baseline."
 msgstr "ערך זה הוסר מאז הלהט האחרון — הוא קיים רק בקו הבסיס."
@@ -16865,6 +17312,22 @@ msgstr "עדיין לא ניתן לשתף את התיקייה"
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This folder-backed asset has no main file metadata."
 msgstr "לנכס תיקייה זה אין מטא-נתונים של קובץ ראשי"
+
+#: src/lib/content-install.ts
+msgid "This install link has an invalid content branch."
+msgstr ""
+
+#: src/lib/content-install.ts
+msgid "This install link has an invalid display name."
+msgstr ""
+
+#: src/lib/content-install.ts
+msgid "This install link has an invalid GitHub repository."
+msgstr ""
+
+#: src/lib/content-install.ts
+msgid "This install link must name a GitHub content repository."
+msgstr ""
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This is its first start, so it takes a few minutes."
@@ -17004,8 +17467,16 @@ msgstr "ישיבה זו עדיין לא נבדקה, אז אין מה לדווח.
 msgid "This session is running remotely by {guestName} on your machine."
 msgstr "ההפעלה מתבצעת כרגע מרחוק על ידי {guestName} במחשב שלך."
 
+#: src/routes/loaders/load-process.ts
+msgid "This session points to a stale compute node and could not be restored."
+msgstr ""
+
 #: src/routes/loaders/load-dock-pointer.ts
 msgid "This session URL is malformed or unavailable."
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
+msgid "This skill has uncommitted changes — improve runs only on a clean skill."
 msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -17015,6 +17486,10 @@ msgstr "הזהות המרוחקת של המקור — מקור אחד לכל ח�
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 msgid "This starts the machine and sets up whatever it was created with."
 msgstr "פעולה זו מפעילה את המכונה וטוענת את התצורה שאיתה היא נוצרה."
+
+#: src/routes/loaders/load-tasks.ts
+msgid "This task no longer exists or is unavailable."
+msgstr ""
 
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-project.ts
@@ -17130,6 +17605,7 @@ msgstr "אל"
 #~ msgid "today"
 #~ msgstr "היום"
 
+#: src/components/chats-navigator/useChatHistory.ts
 #: src/components/cron-view/CronForm.tsx
 msgid "Today"
 msgstr "היום"
@@ -17146,6 +17622,7 @@ msgstr "קובץ משימות"
 msgid "Todo Files (~/.claude/todos/)"
 msgstr "קבצי משימות (~/.claude/todos/)"
 
+#: src/components/floating-chat/toolEventDescriptor.ts
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Todos"
@@ -17433,6 +17910,10 @@ msgstr ""
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Unable to fetch branches. Please check your repository permissions."
 msgstr "לא ניתן לאחזר ענפים. אנא בדקו את הרשאות המאגר שלכם."
+
+#: src/components/conversation/conversation-category.ts
+msgid "Unarchive — back to Inbox"
+msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/conversation/AttachmentChip.tsx
@@ -17777,6 +18258,8 @@ msgstr "נכסים בשימוש"
 msgid "Used by"
 msgstr "בשימוש על ידי"
 
+#: src/components/diagnose/diagnosis-details.tsx
+#: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
@@ -17784,6 +18267,10 @@ msgstr "בשימוש על ידי"
 #: src/i18n/type-labels.ts
 msgid "User"
 msgstr "משתמש"
+
+#: src/components/explorer-view/ExplorerNavigator.tsx
+msgid "User home folder"
+msgstr ""
 
 #: src/components/account/user-info.tsx
 msgid "User ID:"
@@ -17819,6 +18306,10 @@ msgstr "בשימוש"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Using {0} key"
 msgstr "מפתח {0} בשימוש"
+
+#: src/components/floating-chat/toolEventDescriptor.ts
+msgid "Using skill"
+msgstr ""
 
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
 msgid "Using skill: {skillName}"
@@ -18305,6 +18796,10 @@ msgstr "על מה היית רוצה לעבוד?"
 msgid "What's in the box."
 msgstr "מה יש בחבילה."
 
+#: src/components/diagnose/diagnosis-details.tsx
+msgid "When"
+msgstr ""
+
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 msgid "Where does it come from?"
 msgstr "מאיפה זה מגיע?"
@@ -18327,9 +18822,17 @@ msgstr "לוחות ציור"
 msgid "Who this agent is. Becomes its system prompt."
 msgstr "מי הסוכן הזה. הופך להנחיית המערכת שלו."
 
+#: src/components/explorer-view/ExplorerNavigator.tsx
+msgid "Whole computer"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Wiki Entries"
 msgstr "ערכי ויקי"
+
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "Wiki page not found on this hub."
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Wikis"
@@ -18346,6 +18849,10 @@ msgstr "מוחק שורות DB + רשומות FTS עבור כל סוג ניתן 
 #: src/components/wizard/WizardHost.tsx
 msgid "Wizard"
 msgstr "אשף"
+
+#: src/components/wizard/WizardHost.tsx
+msgid "Wizard close failed"
+msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Work on the other participant's machine"
@@ -18376,6 +18883,10 @@ msgstr "אפשרויות עובד{0}"
 #~ msgid "Workflow deleted"
 #~ msgstr "זרימת עבודה נמחקה"
 
+#: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
+msgid "Workflow launched"
+msgstr ""
+
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #~ msgid "Workflow name"
 #~ msgstr "שם זרימת העבודה"
@@ -18391,6 +18902,10 @@ msgstr "הרצת זרימת עבודה"
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 #~ msgid "Workflow runs"
 #~ msgstr "הרצות זרימות עבודה"
+
+#: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
+msgid "Workflow saved"
+msgstr ""
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #~ msgid "Workflows"
@@ -18466,6 +18981,7 @@ msgstr "זיכרון xterm: <0>{0}</0> נתחים ({1})"
 msgid "yanked"
 msgstr "הסור"
 
+#: src/components/chats-navigator/useChatHistory.ts
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Yesterday"
 msgstr "אתמול"

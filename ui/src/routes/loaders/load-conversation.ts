@@ -23,6 +23,7 @@
  * into declarative dock-load resolutions.
  */
 
+import { t } from '@lingui/core/macro';
 import { type Conversation, ContextEntitiesEnum, dataContext, dataManager, Project, type Task, TypeId } from '@sdk';
 import { Conversation as ConversationEntity } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -139,9 +140,9 @@ export async function loadConversationRoute(pointer: string | undefined): Promis
           'hard',
           {
             action: 'render_error',
-            title: 'Conversation not found',
-            message: 'This conversation no longer exists or is unavailable.',
-            link: { label: 'Go to inbox', pointer: DockPointer.forInbox() },
+            title: t`Conversation not found`,
+            message: t`This conversation no longer exists or is unavailable.`,
+            link: { label: t`Go to inbox`, pointer: DockPointer.forInbox() },
           },
           'conversation',
           e,
@@ -153,8 +154,8 @@ export async function loadConversationRoute(pointer: string | undefined): Promis
           'soft',
           {
             action: 'render_error',
-            title: 'Conversation unavailable',
-            message: 'Could not load this conversation. Try again in a moment.',
+            title: t`Conversation unavailable`,
+            message: t`Could not load this conversation. Try again in a moment.`,
             retryable: true,
           },
           'conversation',

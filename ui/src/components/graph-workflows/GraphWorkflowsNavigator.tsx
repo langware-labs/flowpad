@@ -4,6 +4,7 @@
  * records, customBody list. Clicking a flow opens its per-flow dock tab
  * (`graph_workflow-<id>` pointer — URL-first; the view loads from the pointer).
  */
+import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { GraphWorkflow, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
@@ -73,9 +74,9 @@ export function GraphWorkflowsNavigator() {
   const descriptor: NavigatorDescriptor = useMemo(
     () => ({
       id: 'graph-workflows',
-      search: { recordTypes: [GraphWorkflow.type], scope: urlScope, placeholder: 'Search flows…' },
+      search: { recordTypes: [GraphWorkflow.type], scope: urlScope, placeholder: t`Search flows…` },
       header: {
-        title: 'Graph Workflows',
+        title: t`Graph Workflows`,
         countBadge: flows.length,
         headerRight: (
           <ScopeFilterIconBar

@@ -5,6 +5,7 @@
  * beats (view wiring); this panel only renders store state + fetches
  * journals on demand.
  */
+import { t } from '@lingui/core/macro';
 import { useEffect, useState } from 'react';
 import {
   graphWorkflows,
@@ -216,7 +217,7 @@ export function RunsPanel({ onSelectRun }: { onSelectRun: (runId: string | null)
             className="lnk"
             title="open this flow's full run history"
             onClick={() =>
-              previewRuns?.({ scope: { flow_id: flowId }, title: 'Runs of this flow' })
+              previewRuns?.({ scope: { flow_id: flowId }, title: t`Runs of this flow` })
             }
           >
             all ⬈
@@ -256,7 +257,7 @@ export function RunsPanel({ onSelectRun }: { onSelectRun: (runId: string | null)
               previewRuns?.({
                 scope: selectedRunId ? { flow_run_id: selectedRunId } : {},
                 runId: pid,
-                title: `Run ${selectedRunId?.slice(0, 8) ?? ''}`,
+                title: t`Run ${selectedRunId?.slice(0, 8) ?? ''}`,
               })
             }
           />

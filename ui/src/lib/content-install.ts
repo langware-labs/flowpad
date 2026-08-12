@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { gitOriginFromUrl } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 
@@ -37,7 +38,7 @@ export function parseInstallIntent(search: string): InstallIntentResult {
   const contentBranch = (params.get('content_branch') ?? '').trim();
   const origin = gitOriginFromUrl(contentRepo, contentBranch);
   if (!origin || origin.provider !== 'github') {
-    return { ok: false, message: 'This install link must name a GitHub content repository.' };
+    return { ok: false, message: t`This install link must name a GitHub content repository.` };
   }
   if (
     !SAFE_GITHUB_SLUG.test(origin.owner) ||
@@ -45,14 +46,14 @@ export function parseInstallIntent(search: string): InstallIntentResult {
     origin.owner.includes('..') ||
     origin.name.includes('..')
   ) {
-    return { ok: false, message: 'This install link has an invalid GitHub repository.' };
+    return { ok: false, message: t`This install link has an invalid GitHub repository.` };
   }
   if (!contentBranch || !SAFE_BRANCH.test(contentBranch) || contentBranch.endsWith('/')) {
-    return { ok: false, message: 'This install link has an invalid content branch.' };
+    return { ok: false, message: t`This install link has an invalid content branch.` };
   }
   const name = (params.get('name') ?? origin.name ?? '').trim();
   if (!name || name.length > 120) {
-    return { ok: false, message: 'This install link has an invalid display name.' };
+    return { ok: false, message: t`This install link has an invalid display name.` };
   }
   return { ok: true, intent: { contentRepo, contentBranch, name } };
 }

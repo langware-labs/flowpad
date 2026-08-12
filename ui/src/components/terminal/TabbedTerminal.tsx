@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { AgenticProcess, connectionManager, dataContext, Shell, Tab, toplog, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
@@ -133,8 +134,8 @@ function startProcessRuntime(process: AgenticProcess, cols: number, rows: number
       await connectionManager.waitForConnected(5000);
     } catch {
       notify.error({
-        title: 'No realtime connection',
-        message: 'Terminal may be unresponsive until the connection recovers.',
+        title: t`No realtime connection`,
+        message: t`Terminal may be unresponsive until the connection recovers.`,
       });
     }
     await process.start({ visible: true, cols, rows });

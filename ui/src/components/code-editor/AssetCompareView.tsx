@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActionInfo, dataManager, GitWorkdir, type GitAssetDiff, type GitStatusFile } from '@sdk';
 import { Trans } from '@lingui/react/macro';
@@ -129,13 +130,13 @@ function AssetCompare({ payload }: { payload: AssetComparePointerPayload }) {
       const result = await dataManager.callAction<null, { committed: boolean; version?: number }>(action);
       invalidateGitStatus(payload.computeNodeId, payload.workdir);
       if (result?.committed) {
-        notify.success({ title: `Saved ${payload.assetLabel} v${result.version ?? ''}`.trim() });
+        notify.success({ title: t`Saved ${payload.assetLabel} v${result.version ?? ''}`.trim() });
       } else {
-        notify.info({ title: 'Nothing to save', message: 'The asset matches HEAD.' });
+        notify.info({ title: t`Nothing to save`, message: t`The asset matches HEAD.` });
       }
       await refresh();
     } catch (err) {
-      notify.error({ title: 'Save failed', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Save failed`, message: err instanceof Error ? err.message : String(err) });
     } finally {
       setSaving(false);
     }

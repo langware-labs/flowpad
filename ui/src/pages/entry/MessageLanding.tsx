@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { inboundParams } from '@src/navigation/inbound-link';
 import { ActionInfo, BodyStatus, dataManager, FlowMessage, navigator as sdkNavigator, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -102,7 +103,7 @@ const MessageLanding: React.FC = () => {
       const createKeyAction = new ActionInfo('api-keys', userTypeId.type, userTypeId.id, 'POST');
       createKeyAction.bodyParameters = {
         name: `flowpad-deeplink-${Date.now()}`,
-        description: 'Short-lived key for Open-in-FlowPad deep link',
+        description: t`Short-lived key for Open-in-FlowPad deep link`,
         expires_in_days: 1,
       };
       const result = await dataManager.callAction<unknown, { api_key?: string; data?: { api_key?: string } }>(

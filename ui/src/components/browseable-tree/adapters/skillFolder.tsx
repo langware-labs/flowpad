@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import React from 'react';
 import { FilePlus, FolderPlus, Trash2 } from 'lucide-react';
 import { fsManager, fsStore, TypeId } from '@sdk';
@@ -56,11 +57,11 @@ export function skillCreateActions(absPath: string, selfId: string): ToolbarActi
     {
       id: `new-file:${absPath}`,
       icon: <FilePlus />,
-      label: 'New file',
+      label: t`New file`,
       run: () =>
         showInputPrompt({
-          title: 'Create File',
-          placeholder: 'Enter file name',
+          title: t`Create File`,
+          placeholder: t`Enter file name`,
           onConfirm: async (name) => {
             await fsManager.writeFile(COMPUTE_NODE_ID, `${rel}/${name}`.replace(/\/+/g, '/'), '');
             refreshNode(selfId);
@@ -71,11 +72,11 @@ export function skillCreateActions(absPath: string, selfId: string): ToolbarActi
     {
       id: `new-folder:${absPath}`,
       icon: <FolderPlus />,
-      label: 'New folder',
+      label: t`New folder`,
       run: () =>
         showInputPrompt({
-          title: 'Create Folder',
-          placeholder: 'Enter folder name',
+          title: t`Create Folder`,
+          placeholder: t`Enter folder name`,
           onConfirm: async (name) => {
             await fsManager.mkdir(COMPUTE_NODE_ID, `${rel}/${name}`.replace(/\/+/g, '/'));
             refreshNode(selfId);
@@ -92,7 +93,7 @@ function deleteAction(absPath: string, label: string, parentRefreshId: string): 
   return {
     id: `delete:${absPath}`,
     icon: <Trash2 />,
-    label: `Delete ${label}`,
+    label: t`Delete ${label}`,
     run: () =>
       showDeleteAssetModal({
         name: label,

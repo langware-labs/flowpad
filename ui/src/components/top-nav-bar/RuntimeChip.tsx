@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Bot, Cloud, Globe, Monitor, Network, type LucideIcon } from 'lucide-react';
@@ -79,10 +80,10 @@ export function RuntimeChip({ kind }: { kind: RuntimeKind }) {
       try {
         const content = await fetchHubWikiContent(WIKI_PAGE);
         if (content) setHubDoc(content);
-        else notify.error({ title: `[[${WIKI_PAGE}]]`, message: 'Wiki page not found on this hub.' });
+        else notify.error({ title: t`[[${WIKI_PAGE}]]`, message: t`Wiki page not found on this hub.` });
       } catch (err) {
         notify.error({
-          title: `[[${WIKI_PAGE}]]`,
+          title: t`[[${WIKI_PAGE}]]`,
           message: err instanceof Error ? err.message : String(err),
         });
       }

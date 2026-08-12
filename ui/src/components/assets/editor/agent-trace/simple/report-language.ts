@@ -6,6 +6,7 @@
  * Pure / React-free on purpose, so it's covered by a no-mock unit test (mirrors
  * the `analysis-improvements.ts` style). The report component computes nothing.
  */
+import { t } from '@lingui/core/macro';
 import type { AgentTraceDoc, TraceFinding } from '../trace-types';
 
 /** Tone drives the tint — reuses the same palette key as `verdictStyle`. */
@@ -47,12 +48,12 @@ export interface FriendlySeverity {
 export function friendlySeverity(severity?: string | null): FriendlySeverity {
   switch ((severity ?? '').toLowerCase()) {
     case 'attention':
-      return { label: 'Needs a look', tone: 'bad' };
+      return { label: t`Needs a look`, tone: 'bad' };
     case 'warn':
     case 'warning':
-      return { label: 'Minor', tone: 'mixed' };
+      return { label: t`Minor`, tone: 'mixed' };
     default:
-      return { label: 'Note', tone: 'neutral' };
+      return { label: t`Note`, tone: 'neutral' };
   }
 }
 

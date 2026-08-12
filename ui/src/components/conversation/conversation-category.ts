@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import type { LucideIcon } from 'lucide-react';
 import { Archive, ArchiveRestore, CheckSquare, LifeBuoy, Trash2 } from 'lucide-react';
 import {
@@ -123,10 +124,10 @@ const MUTED_CHIP = 'border-border/60 bg-muted text-muted-foreground';
 export function chipsFor(f: ConversationFacets): ChipSpec[] {
   const chips: ChipSpec[] = [];
   if (f.kind === 'helpdesk') {
-    chips.push({ key: 'helpdesk', icon: LifeBuoy, label: 'Support', className: VIOLET_CHIP });
+    chips.push({ key: 'helpdesk', icon: LifeBuoy, label: t`Support`, className: VIOLET_CHIP });
   }
   if (f.isArchived) {
-    chips.push({ key: 'archived', icon: Archive, label: 'Archived', className: MUTED_CHIP });
+    chips.push({ key: 'archived', icon: Archive, label: t`Archived`, className: MUTED_CHIP });
   }
   return chips;
 }
@@ -172,7 +173,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
         key: 'accept',
         kind: 'primary',
         text: ctx.accepting ? 'Accepting…' : 'Accept',
-        label: 'Accept',
+        label: t`Accept`,
         onClick: ctx.onAccept,
         disabled: ctx.accepting || !ctx.invitationId,
         testId: 'inbox-accept-invitation-button',
@@ -184,7 +185,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
         kind: 'icon',
         icon: Trash2,
         tone: 'destructive',
-        label: 'Decline (delete) invitation',
+        label: t`Decline (delete) invitation`,
         onClick: ctx.onDecline,
         testId: 'inbox-invitation-delete-button',
       });
@@ -205,7 +206,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
           key: 'unarchive',
           kind: 'icon',
           icon: ArchiveRestore,
-          label: 'Unarchive — back to Inbox',
+          label: t`Unarchive — back to Inbox`,
           onClick: ctx.onUnarchive,
           testId: 'inbox-row-unarchive-button',
         }
@@ -214,7 +215,7 @@ export function actionsFor(f: ConversationFacets, ctx: RowActionContext): Action
           kind: 'icon',
           icon: Archive,
           tone: 'destructive',
-          label: 'Archive — moves to Archived, kept',
+          label: t`Archive — moves to Archived, kept`,
           onClick: ctx.onArchive,
           testId: 'inbox-row-archive-button',
         },

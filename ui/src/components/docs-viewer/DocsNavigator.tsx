@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { ActionInfo, AgenticProcess, FSEntry, TypeId } from '@sdk';
 import { NavigatorPanel } from '@src/components/navigator-panel/NavigatorPanel';
 import type { NavigatorDescriptor } from '@src/components/navigator-panel/types';
@@ -61,14 +62,14 @@ export function DocsNavigator() {
       id: 'docs',
       roots,
       isLoading,
-      search: { recordTypes: ['markdown'], placeholder: 'Search docs…' },
+      search: { recordTypes: ['markdown'], placeholder: t`Search docs…` },
       header: {
-        title: 'Documentation',
+        title: t`Documentation`,
         toolbar: [
           {
             id: 'refresh',
             icon: <RefreshCw />,
-            label: 'Refresh docs',
+            label: t`Refresh docs`,
             run: () => void refetch(),
           },
         ],

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { SharedTaskView } from '@src/components/task-bar/SharedTaskView';
 import { PRIORITY_CONFIG, STATUS_LABELS } from '@src/components/task-bar/constants';
 import { openArtifact } from '@src/components/task-bar/task-utils';
@@ -103,7 +104,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
       await t.save();
     } catch (e) {
       notify.error({
-        title: 'Could not save task',
+        title: t`Could not save task`,
         message: e instanceof Error ? e.message : 'Save failed.',
       });
     }

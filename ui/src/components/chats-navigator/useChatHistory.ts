@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useEffect, useMemo, useRef } from 'react';
 import { AgenticProcess, QueryFilter, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
@@ -83,11 +84,11 @@ function bucketize(sorted: WorkerHistoryEntry[], ts: (e: WorkerHistoryEntry) => 
   const start30 = startToday - 30 * day;
 
   const buckets: ChatBucket[] = [
-    { label: 'Today', entries: [] },
-    { label: 'Yesterday', entries: [] },
-    { label: 'Previous 7 days', entries: [] },
-    { label: 'Previous 30 days', entries: [] },
-    { label: 'Older', entries: [] },
+    { label: t`Today`, entries: [] },
+    { label: t`Yesterday`, entries: [] },
+    { label: t`Previous 7 days`, entries: [] },
+    { label: t`Previous 30 days`, entries: [] },
+    { label: t`Older`, entries: [] },
   ];
   for (const entry of sorted) {
     const t = ts(entry);

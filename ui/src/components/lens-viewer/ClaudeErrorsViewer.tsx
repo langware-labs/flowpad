@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { Shell, timeAgo } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -62,10 +63,10 @@ import {
 } from './error-viewer-utils';
 
 const SNOOZE_OPTIONS = [
-  { label: '1 hour', ms: 3_600_000 },
-  { label: '4 hours', ms: 14_400_000 },
-  { label: '24 hours', ms: 86_400_000 },
-  { label: '1 week', ms: 604_800_000 },
+  { label: t`1 hour`, ms: 3_600_000 },
+  { label: t`4 hours`, ms: 14_400_000 },
+  { label: t`24 hours`, ms: 86_400_000 },
+  { label: t`1 week`, ms: 604_800_000 },
 ] as const;
 
 function statusBadge(status: ErrorStatus) {
@@ -699,7 +700,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
     try {
       const result = await clearAll();
       if (!result) {
-        notify.success({ title: 'Cleared' });
+        notify.success({ title: t`Cleared` });
         return;
       }
       const parts: string[] = [];
@@ -719,7 +720,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
               : undefined,
       });
     } catch (e) {
-      notify.error({ title: 'Failed to clear errors', message: String(e) });
+      notify.error({ title: t`Failed to clear errors`, message: String(e) });
     } finally {
       setIsClearing(false);
     }
@@ -755,10 +756,10 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       void createTaskForError(error, instruction ? { instruction } : undefined).then(({ taskId, shellId }) => {
         if (taskId && shellId) {
           const description = instruction ? 'Claude is applying the fix.' : 'Claude is investigating the error.';
-          notify.success({ title: 'Session started', message: description });
+          notify.success({ title: t`Session started`, message: description });
           void navigation.openSession(shellId, { skipPermissions: true });
         } else {
-          notify.error({ title: 'Failed to start session' });
+          notify.error({ title: t`Failed to start session` });
         }
       });
     },
@@ -812,7 +813,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       const toAnalyse = results.filter((r) => r.action === 'analyse');
       setCloudResultsModal({ ignored: toIgnore.length, fixResults: toFix, remaining: toAnalyse.length });
     } catch (e) {
-      notify.error({ title: 'Cloud search failed', message: String(e) });
+      notify.error({ title: t`Cloud search failed`, message: String(e) });
     } finally {
       setIsSearchingCloud(false);
     }
