@@ -1,3 +1,6 @@
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { type ProjectResourceListItem, type ProjectResourceType } from '@src/components/project-resource-list';
 import type { SnifferEvent } from '@src/hooks/use-hooks-sniffer';
 import {
@@ -43,16 +46,16 @@ interface ResourceMeta {
 }
 
 const RESOURCE_META: Record<ProjectResourceType, ResourceMeta> = {
-  skill: { label: 'Skill', icon: Sparkles },
-  mcp_server: { label: 'MCP Server', icon: Plug },
-  plugin: { label: 'Plugin', icon: Settings },
-  hook: { label: 'Hook', icon: Terminal },
-  command: { label: 'Command', icon: Command },
-  agent: { label: 'SubAgent', icon: Bot },
-  session: { label: 'Session', icon: FolderOpen },
-  collaboration_room: { label: 'Collaboration Room', icon: FolderOpen },
-  todo: { label: 'Todo', icon: CheckSquare },
-  claude_md: { label: 'CLAUDE.md', icon: FileText },
+  skill: { label: msg`Skill`, icon: Sparkles },
+  mcp_server: { label: msg`MCP Server`, icon: Plug },
+  plugin: { label: msg`Plugin`, icon: Settings },
+  hook: { label: msg`Hook`, icon: Terminal },
+  command: { label: msg`Command`, icon: Command },
+  agent: { label: msg`SubAgent`, icon: Bot },
+  session: { label: msg`Session`, icon: FolderOpen },
+  collaboration_room: { label: msg`Collaboration Room`, icon: FolderOpen },
+  todo: { label: msg`Todo`, icon: CheckSquare },
+  claude_md: { label: msg`CLAUDE.md`, icon: FileText },
 };
 
 // ---------------------------------------------------------------------------
@@ -334,7 +337,7 @@ export function ProjectActivityStrip({
         return (
           item.name.toLowerCase().includes(query) ||
           (item.subtitle || '').toLowerCase().includes(query) ||
-          (meta?.label || item.type).toLowerCase().includes(query)
+          ((meta?.label ? i18n._(meta.label) : item.type)).toLowerCase().includes(query)
         );
       })
       .slice(0, maxItems);

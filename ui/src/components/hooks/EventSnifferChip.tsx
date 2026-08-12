@@ -1,3 +1,4 @@
+import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import { PrefKey } from '@sdk';
@@ -30,11 +31,11 @@ import { EventTooltipContent, getEventColor, getEventIcon, navigateToTranscript 
 type TimeSpan = '10s' | '1M' | '10' | '60' | '1D';
 
 const TIME_SPANS: { value: TimeSpan; ms: number; tooltip: string }[] = [
-  { value: '10s', ms: 10_000, tooltip: 'Time span: 10 seconds' },
-  { value: '1M', ms: 60_000, tooltip: 'Time span: 1 minute' },
-  { value: '10', ms: 600_000, tooltip: 'Time span: 10 minutes' },
-  { value: '60', ms: 3_600_000, tooltip: 'Time span: 60 minutes' },
-  { value: '1D', ms: 86_400_000, tooltip: 'Time span: 1 day' },
+  { value: '10s', ms: 10_000, tooltip: msg`Time span: 10 seconds` },
+  { value: '1M', ms: 60_000, tooltip: msg`Time span: 1 minute` },
+  { value: '10', ms: 600_000, tooltip: msg`Time span: 10 minutes` },
+  { value: '60', ms: 3_600_000, tooltip: msg`Time span: 60 minutes` },
+  { value: '1D', ms: 86_400_000, tooltip: msg`Time span: 1 day` },
 ];
 
 // ---------------------------------------------------------------------------
@@ -295,7 +296,7 @@ export function EventSnifferChip() {
                   {span.value}
                 </button>
               </TooltipTrigger>
-              <TooltipContent>{span.tooltip}</TooltipContent>
+              <TooltipContent>{i18n._(span.tooltip)}</TooltipContent>
             </Tooltip>
           ))}
         </div>

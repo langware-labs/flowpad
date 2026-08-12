@@ -1,3 +1,6 @@
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { cloudManager } from '@sdk';
 import {
   AlertDialog,
@@ -55,14 +58,14 @@ export const clearPendingAction = () => {
 
 const VARIANT_CONFIG = {
   require_login: {
-    title: 'Please sign in',
-    description: 'Sign in to access your flow and unlock Flowpad AI agent.',
+    title: msg`Please sign in`,
+    description: msg`Sign in to access your flow and unlock Flowpad AI agent.`,
     icon: LogIn,
     eventSource: 'require_login',
   },
   visitor_limit: {
     title: "You're doing great!",
-    description: 'Create a free account to continue your conversation and save your progress.',
+    description: msg`Create a free account to continue your conversation and save your progress.`,
     icon: PartyPopper,
     eventSource: 'visitor_limit',
   },
@@ -116,8 +119,8 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ open, onOpenChange, variant =
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
             <Icon className="h-7 w-7 text-primary" />
           </div>
-          <AlertDialogTitle>{config.title}</AlertDialogTitle>
-          <AlertDialogDescription>{config.description}</AlertDialogDescription>
+          <AlertDialogTitle>{i18n._(config.title)}</AlertDialogTitle>
+          <AlertDialogDescription>{i18n._(config.description)}</AlertDialogDescription>
         </AlertDialogHeader>
 
         <AlertDialogFooter className="flex-col items-stretch gap-2 space-x-0 sm:flex-col sm:space-x-0">

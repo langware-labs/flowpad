@@ -1,3 +1,4 @@
+import { i18n } from '@lingui/core';
 import type { ClaudeSessionStatus } from '@sdk/resource_management/fs_records/claude/claude-session';
 import { FusionSpinner } from '@src/components/icons/FusionSpinner';
 import { Badge } from '@src/components/ui/badge';
@@ -249,7 +250,7 @@ export function ProjectResourceList({
                 <label key={type} className="project-resource-filter-option">
                   <input type="checkbox" checked={activeFilters.has(type)} onChange={() => toggleFilter(type)} />
                   <TypeIcon className="h-3 w-3" />
-                  <span>{meta.label}</span>
+                  <span>{i18n._(meta.label)}</span>
                 </label>
               );
             })}
@@ -298,7 +299,7 @@ export function ProjectResourceList({
                             <span className="project-resource-name">{resource.name}</span>
                             <Badge variant="outline" className="project-resource-chip">
                               <TypeIcon className="h-2.5 w-2.5" />
-                              <span>{meta.label}</span>
+                              <span>{i18n._(meta.label)}</span>
                             </Badge>
                             {onSessionResume && resource.type === 'claude_session' && (
                               <button

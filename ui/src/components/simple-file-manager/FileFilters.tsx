@@ -1,3 +1,4 @@
+import { i18n } from '@lingui/core';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
@@ -46,7 +47,7 @@ export function FileFilters({ filters, enabledFilters, onFiltersChange }: FileFi
             }}
           >
             <Checkbox checked={enabledFilters.includes(filter.name)} />
-            <span className="flex-1">{filter.label}</span>
+            <span className="flex-1">{i18n._(filter.label)}</span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
