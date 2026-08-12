@@ -18,7 +18,6 @@ import {
   Shell,
   TypeId,
 } from '@sdk';
-import { applyProjectLocale } from '@src/contexts/locale-context';
 import { applyProjectViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation';
 import { resolveNextTab, tabTargetKey } from '@src/tabs/tab-candidates';
@@ -182,14 +181,17 @@ export async function loadProject(projectTypeId: TypeId): Promise<Project> {
     throw new ProjectLoadError('not_found', projectTypeId.id);
   }
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, projectTypeId);
-  // Per-project view-mode and language memory: apply the project's remembered
-  // mode (or stamp the current one onto a project that has none) and its
-  // language (English when it has none). After the context write, so
+  // Per-project view-mode memory: apply the project's remembered mode (or stamp
+  // the current one onto a project that has none). After the context write, so
   // dataContext.project is this project before any recording. Synchronous apart
-  // from fire-and-forget saves and the locale's catalog import — the loader
-  // stays fast.
+  // from fire-and-forget saves — the loader stays fast.
+  //
+  // The project's LANGUAGE is deliberately not applied here: it hangs off the
+  // context write above instead (`locale-context`'s CONTEXT_CHANGED
+  // subscription), because a project also becomes current through paths that
+  // never reach this loader — the boot-time `default_project` a sandbox opens
+  // on, the pickers, the entity loaders. Wiring it here covered one of them.
   applyProjectViewMode(project);
-  applyProjectLocale(project);
   return project;
 }
 
