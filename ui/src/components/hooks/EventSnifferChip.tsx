@@ -1,3 +1,5 @@
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { PrefKey } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
 import { useEventFilterMask } from '@src/hooks/use-event-filter-mask';

@@ -1,3 +1,4 @@
+import { i18n } from '@lingui/core';
 /**
  * CostMetricCard - Displays a single cost metric with icon, value, and sparkline.
  */
@@ -37,7 +38,7 @@ export function CostMetricCard({ category, value, sparklineData, isSelected, onC
         <div className="flex items-center gap-1.5">
           <span className="text-sm font-semibold">{formatValue(value, category.format)}</span>
         </div>
-        <span className="text-xs text-muted-foreground">{category.label}</span>
+        <span className="text-xs text-muted-foreground">{i18n._(category.label)}</span>
       </div>
 
       {/* Sparkline */}

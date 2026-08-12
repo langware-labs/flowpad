@@ -1,3 +1,5 @@
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { ActionInfo, AgenticProcess, dataContext, dataManager, PrefKey, Task } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useCallback, useMemo } from 'react';
@@ -27,11 +29,11 @@ export type ErrorCategory = (typeof ErrorCategory)[keyof typeof ErrorCategory];
 export type ErrorTimeSpan = '1m' | '1h' | '24h' | '1w' | 'all';
 
 export const ERROR_TIME_SPANS: { value: ErrorTimeSpan; ms: number; label: string; tooltip: string }[] = [
-  { value: '1m', ms: 60_000, label: '1m', tooltip: 'Last 1 minute' },
-  { value: '1h', ms: 3_600_000, label: '1h', tooltip: 'Last 1 hour' },
-  { value: '24h', ms: 86_400_000, label: '24h', tooltip: 'Last 24 hours' },
-  { value: '1w', ms: 604_800_000, label: '1w', tooltip: 'Last 1 week' },
-  { value: 'all', ms: Infinity, label: 'All', tooltip: 'All time' },
+  { value: '1m', ms: 60_000, label: msg`1m`, tooltip: 'Last 1 minute' },
+  { value: '1h', ms: 3_600_000, label: msg`1h`, tooltip: 'Last 1 hour' },
+  { value: '24h', ms: 86_400_000, label: msg`24h`, tooltip: 'Last 24 hours' },
+  { value: '1w', ms: 604_800_000, label: msg`1w`, tooltip: 'Last 1 week' },
+  { value: 'all', ms: Infinity, label: msg`All`, tooltip: 'All time' },
 ];
 
 /** Result from the Flowpad cloud known-issues search. */

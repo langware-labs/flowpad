@@ -1,3 +1,4 @@
+import { i18n } from '@lingui/core';
 /**
  * One ordering, one chip shape. `tabItem` maps a backend `Tab` (the single
  * render source) → a `TabStripItem` for EVERY tab kind — terminal (shell /
@@ -70,10 +71,10 @@ export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): T
     const processId = tab.target_type === AgenticProcess.type ? tab.target_id : null;
     return {
       key,
-      title: label || meta.label,
+      title: label || i18n._(meta.label),
       titleClassName,
       icon: (
-        <Icon className={`h-3.5 w-3.5 shrink-0 ${meta.iconClassName}`} data-provider={kind} aria-label={meta.label} />
+        <Icon className={`h-3.5 w-3.5 shrink-0 ${meta.iconClassName}`} data-provider={kind} aria-label={i18n._(meta.label)} />
       ),
       // Worktree glyph + the agent's "I showed you something" marker. The badge
       // slot is inline markers after the icon; both are optional and either can
@@ -91,7 +92,7 @@ export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): T
       tooltip: processId ? (
         <LazyProcessTooltip
           processId={processId}
-          fallbackName={label || meta.label}
+          fallbackName={label || i18n._(meta.label)}
           statusReason={statusReason || undefined}
         />
       ) : statusReason ? (

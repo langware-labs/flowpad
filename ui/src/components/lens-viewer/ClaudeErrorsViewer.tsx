@@ -1,3 +1,4 @@
+import { i18n } from '@lingui/core';
 import { t } from '@lingui/core/macro';
 import { Shell, timeAgo } from '@sdk';
 import { Button } from '@src/components/ui/button';
@@ -184,11 +185,11 @@ function ErrorActions({
             <PopoverContent side="bottom" align="end" className="w-28 p-1">
               {SNOOZE_OPTIONS.map((opt) => (
                 <button
-                  key={opt.label}
+                  key={opt.value}
                   className="w-full rounded px-2 py-1 text-start text-xs hover:bg-muted"
                   onClick={() => onSnooze(fp, new Date(Date.now() + opt.ms))}
                 >
-                  {opt.label}
+                  {i18n._(opt.label)}
                 </button>
               ))}
             </PopoverContent>
@@ -868,7 +869,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                       )}
                       onClick={() => setTimeSpan(span.value)}
                     >
-                      {span.label}
+                      {i18n._(span.label)}
                     </button>
                   </TooltipTrigger>
                   <TooltipContent>{span.tooltip}</TooltipContent>
