@@ -22,7 +22,7 @@ import {
   PROVIDER_META,
   ShownTargetBadge,
 } from '@src/tabs/provider-meta';
-import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
+import { ViewType, VIEWER_REGISTRY, viewerTitle } from '@src/types/ViewType';
 import { FileText, FolderGit2 } from 'lucide-react';
 import React, { useMemo } from 'react';
 
@@ -106,10 +106,10 @@ export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): T
   // has a target entity (CLAUDE.md icon rule), else the viewType registry glyph.
   const meta = VIEWER_REGISTRY[viewType as ViewType];
   if (tab.target_type && tab.target_id) {
-    const typeLabel = meta?.title || humanizeType(tab.target_type);
+    const typeLabel = viewerTitle(viewType) || humanizeType(tab.target_type);
     return {
       key,
-      title: label || meta?.title || viewType,
+      title: label || viewerTitle(viewType) || viewType,
       titleClassName,
       icon: (
         <EntityIcon
@@ -138,10 +138,10 @@ export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): T
     };
   }
   const Icon = (meta?.iconName && lucideByName(meta.iconName)) || FileText;
-  const typeLabel = meta?.title || humanizeType(viewType || 'Tab');
+  const typeLabel = viewerTitle(viewType) || humanizeType(viewType || 'Tab');
   return {
     key,
-    title: label || meta?.title || viewType,
+    title: label || viewerTitle(viewType) || viewType,
     titleClassName,
     icon: <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />,
     renameable: false,
@@ -212,7 +212,7 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
               aria-label={`${focusType} tab`}
             />
           );
-          const typeLabel = VIEWER_REGISTRY[ViewType.ASSETS]?.title || humanizeType(focusType);
+          const typeLabel = viewerTitle(ViewType.ASSETS) || humanizeType(focusType);
           item.tooltip = (
             <ContentTabTooltip
               tab={t}

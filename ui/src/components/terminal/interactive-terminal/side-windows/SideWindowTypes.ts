@@ -1,3 +1,5 @@
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import type { LucideIcon } from 'lucide-react';
 import { Activity, FolderTree, GitBranch, Layers, ListOrdered, MessageSquare, Paperclip, Sparkles, SquareTerminal } from 'lucide-react';
 
@@ -16,23 +18,23 @@ export type SideTabId = (typeof SideTabId)[keyof typeof SideTabId];
 
 export interface SideTabDescriptor {
   id: SideTabId;
-  label: string;
+  label: MessageDescriptor;
   icon: LucideIcon;
-  description: string;
+  description: MessageDescriptor;
   /** Skin layer: power-user tab — its ribbon button only appears in Advanced/Dev. See docs/viewmodes.md. */
   advancedOnly?: boolean;
 }
 
 export const SIDE_TABS: Record<SideTabId, SideTabDescriptor> = {
-  shell:   { id: 'shell',   label: 'Shell',   icon: SquareTerminal, description: 'Sidecar plain shell alongside Claude Code' },
-  git:     { id: 'git',     label: 'Git',     icon: GitBranch,      description: 'Git status of the working directory', advancedOnly: true },
-  prompts: { id: 'prompts', label: 'Prompts', icon: MessageSquare,  description: 'Index of prompts sent in this session' },
-  queue:   { id: 'queue',   label: 'Queue',   icon: ListOrdered,    description: 'Prompts queued for this agent; the backend injects each when the worker is ready', advancedOnly: true },
-  files:   { id: 'files',   label: 'Files',   icon: Paperclip,      description: 'Input files attached to this session' },
-  dir:     { id: 'dir',     label: 'Dir',     icon: FolderTree,     description: 'Browse the working directory', advancedOnly: true },
-  context: { id: 'context', label: 'Context', icon: Layers,         description: 'Context entities attached to this process — plans, skills, project, …', advancedOnly: true },
-  analysis:{ id: 'analysis',label: 'Analysis',icon: Activity,       description: 'Analyses (AgentTrace) of this session — run, list and open' },
-  'skills-agents': { id: 'skills-agents', label: 'Skills', icon: Sparkles, description: 'Skills and sub-agents invoked in this session', advancedOnly: true },
+  shell:   { id: 'shell',   label: msg`Shell`,   icon: SquareTerminal, description: msg`Sidecar plain shell alongside Claude Code` },
+  git:     { id: 'git',     label: msg`Git`,     icon: GitBranch,      description: msg`Git status of the working directory`, advancedOnly: true },
+  prompts: { id: 'prompts', label: msg`Prompts`, icon: MessageSquare,  description: msg`Index of prompts sent in this session` },
+  queue:   { id: 'queue',   label: msg`Queue`,   icon: ListOrdered,    description: msg`Prompts queued for this agent; the backend injects each when the worker is ready`, advancedOnly: true },
+  files:   { id: 'files',   label: msg`Files`,   icon: Paperclip,      description: msg`Input files attached to this session` },
+  dir:     { id: 'dir',     label: msg`Dir`,     icon: FolderTree,     description: msg`Browse the working directory`, advancedOnly: true },
+  context: { id: 'context', label: msg`Context`, icon: Layers,         description: msg`Context entities attached to this process — plans, skills, project, …`, advancedOnly: true },
+  analysis:{ id: 'analysis',label: msg`Analysis`,icon: Activity,       description: msg`Analyses (AgentTrace) of this session — run, list and open` },
+  'skills-agents': { id: 'skills-agents', label: msg`Skills`, icon: Sparkles, description: msg`Skills and sub-agents invoked in this session`, advancedOnly: true },
 };
 
 /** Narrow any string to a valid SideTabId, returning null if it's not one. */

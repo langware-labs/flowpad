@@ -1580,7 +1580,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         const d = SIDE_TABS[id];
         return {
           id,
-          label: d.label,
+          label: t(d.label),
           icon: d.icon,
           closable: true,
           tooltip: (
@@ -1589,7 +1589,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               isPrompts={id === SideTabId.Prompts}
               lastPromptText={lastPromptText}
               promptCount={mergedPrompts.length}
-              fallback={d.description}
+              fallback={t(d.description)}
             />
           ),
         };

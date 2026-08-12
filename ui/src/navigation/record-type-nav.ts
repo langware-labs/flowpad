@@ -1,3 +1,6 @@
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import type { LucideIcon } from 'lucide-react';
 import type { SearchResult } from '@src/hooks/use-record-search';
 import { DockPointer } from './DockPointer';
@@ -12,7 +15,7 @@ import { notify } from '@src/notifications';
 
 export interface DockNavigationAction {
   icon: LucideIcon;
-  name: string;
+  name: MessageDescriptor;
   // Either a sync dock pointer OR an async action callback (not both)
   dockPointer?: (result: SearchResult) => DockPointer;
   action?: (result: SearchResult, navigation: NavigationActions) => void | Promise<void>;
@@ -96,7 +99,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   skill: {
     dockPointer: (r) => assetEditorPointer('skill', r),
     actions: [
-      { icon: Search, name: 'All skills', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }) },
+      { icon: Search, name: msg`All skills`, dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }) },
     ],
   },
   claude_hook: {
@@ -104,7 +107,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       hookId: r.record_id,
     }),
     actions: [
-      { icon: Search, name: 'All hooks', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'claude_hook' }) },
+      { icon: Search, name: msg`All hooks`, dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'claude_hook' }) },
     ],
   },
   agent: {
@@ -171,7 +174,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       return tid ? DockPointer.forTasks(tid.id) : null;
     },
     actions: [
-      { icon: CheckSquare, name: 'All tasks', dockPointer: () => DockPointer.forTasks() },
+      { icon: CheckSquare, name: msg`All tasks`, dockPointer: () => DockPointer.forTasks() },
     ],
   },
   agentic_process: {
@@ -235,7 +238,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     actions: [
       {
         icon: FileText,
-        name: 'Transcript',
+        name: msg`Transcript`,
         action: (r, navigation) => {
           // codex/transcript lens (LensViewer.tsx case 'codex/transcript')
           // expects URL-encoded absolute path. DockPointer.forLensTranscript
@@ -258,7 +261,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     actions: [
       {
         icon: FileText,
-        name: 'Transcript',
+        name: msg`Transcript`,
         action: (r, navigation) => {
           if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript('copilot', r.asset_ref));
         },
@@ -278,14 +281,14 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     actions: [
       {
         icon: FileText,
-        name: 'Transcript',
+        name: msg`Transcript`,
         action: (r, navigation) => {
           navigation.openLens('claude', 'transcript', sessionIdFromResult(r));
         },
       },
       {
         icon: GitBranch,
-        name: 'Fork',
+        name: msg`Fork`,
         action: async (r, navigation) => {
           const sessionId = sessionIdFromResult(r);
           const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
@@ -305,7 +308,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     actions: [
       {
         icon: FileText,
-        name: 'Transcript',
+        name: msg`Transcript`,
         action: (r, navigation) => {
           if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript('workflow', r.asset_ref));
         },
@@ -345,5 +348,12 @@ export async function navigateToResult(result: SearchResult, navigation: Navigat
 
 /** Returns the action list for a result's record type */
 export function getActionsForResult(result: SearchResult): DockNavigationAction[] {
-  return RECORD_TYPE_NAV[result.record_type]?.actions ?? [];
+  // Resolved HERE, at the one accessor, so `DockNavigationAction.name` stays a
+  // plain string for every consumer while the table itself holds lazy
+  // descriptors (it is module-level, so an eager macro would bind the language
+  // at import and never follow a locale switch).
+  return (RECORD_TYPE_NAV[result.record_type]?.actions ?? []).map((action) => ({
+    ...action,
+    name: i18n._(action.name),
+  }));
 }
