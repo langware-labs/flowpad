@@ -137,6 +137,13 @@ async def _diagnose_worker_env() -> dict[str, str]:
     return env
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.worker_interpreter.rules: FAILING? read this tag's rules before
+#       editing - never assert on absence of the import error
+# flowpad:endcapsule tag
 async def test_step7_command_runs_report_py_from_a_non_project_cwd(tmp_path):
     """Run Step 7's command, verbatim, from a workdir that is not a uv project.
 
