@@ -1,5 +1,11 @@
 import { cloudManager } from '@sdk';
-import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@src/components/ui/alert-dialog';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@src/components/ui/alert-dialog';
 import { Button } from '@src/components/ui/button';
 import { AlertDialogFooter } from '@src/components/ui/alert-dialog';
 import { LogIn, Mail, PartyPopper, X } from 'lucide-react';
@@ -115,36 +121,46 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ open, onOpenChange, variant =
         </AlertDialogHeader>
 
         <AlertDialogFooter className="flex-col items-stretch gap-2 space-x-0 sm:flex-col sm:space-x-0">
-          <Button onClick={handleLogin('google')} title={tooltip} className="w-full justify-center border border-primary">
+          <Button
+            onClick={handleLogin('google')}
+            title={tooltip}
+            className="w-full justify-center border border-primary"
+          >
             <GoogleIcon />
-            <span className="ml-2"><Trans>Continue with Google</Trans></span>
+            <span className="ms-2">
+              <Trans>Continue with Google</Trans>
+            </span>
           </Button>
 
           <Button variant="outline" onClick={handleLogin('email')} title={tooltip} className="w-full justify-center">
             <Mail className="h-5 w-5" />
-            <span className="ml-2"><Trans>Continue with Email</Trans></span>
+            <span className="ms-2">
+              <Trans>Continue with Email</Trans>
+            </span>
           </Button>
 
           <p className="text-center text-xs text-muted-foreground">
-            <Trans>By continuing, you agree to our{' '}
-            <a
-              href="https://flowpad.ai/terms-and-conditions"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-foreground"
-            >
-              Terms
-            </a>{' '}
-            and{' '}
-            <a
-              href="https://flowpad.ai/privacy-policy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-foreground"
-            >
-              Privacy Policy
-            </a>
-            .</Trans>
+            <Trans>
+              By continuing, you agree to our{' '}
+              <a
+                href="https://flowpad.ai/terms-and-conditions"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground"
+              >
+                Terms
+              </a>{' '}
+              and{' '}
+              <a
+                href="https://flowpad.ai/privacy-policy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground"
+              >
+                Privacy Policy
+              </a>
+              .
+            </Trans>
           </p>
         </AlertDialogFooter>
       </AlertDialogContent>

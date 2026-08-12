@@ -231,7 +231,7 @@ export function ShareSandboxDialog({
             <Trans>Cancel</Trans>
           </Button>
           <Button onClick={() => void handleSubmit()} disabled={busy} data-testid="share-sandbox-submit">
-            {busy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+            {busy && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
             {transfer ? <Trans>Hand over</Trans> : <Trans>Share</Trans>}
           </Button>
         </DialogFooter>

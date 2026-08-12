@@ -126,10 +126,12 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
     // full UI registry — it's the best-effort source of truth.
     const enforce = serverCreatable.size > 0;
     return QUICK_CREATE_REGISTRY.filter((d) => !enforce || serverCreatable.has(d.type)).map((d) => {
-      const label = d.label ?? serverTypes.find((t) => t.type_name === d.type)?.label;
+      // `t(d.label)` translates at render, so the menu re-labels on a language
+      // switch; the server's own label is the fallback for a descriptor without one.
+      const label = d.label ? t(d.label) : serverTypes.find((s) => s.type_name === d.type)?.label;
       return { ...d, displayLabel: label };
     });
-  }, [serverTypes]);
+  }, [serverTypes, t]);
 
   return (
     <>
@@ -158,15 +160,15 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
             <Trans>New session</Trans>
           </DropdownMenuLabel>
           <DropdownMenuItem onSelect={() => void handleStartSession('claude_code')}>
-            <ClaudeIcon className="mr-2 h-4 w-4 text-orange-500" />
+            <ClaudeIcon className="me-2 h-4 w-4 text-orange-500" />
             <Trans>Claude Code session</Trans>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void handleStartSession('codex')}>
-            <CodexIcon className="mr-2 h-4 w-4 text-emerald-500" />
+            <CodexIcon className="me-2 h-4 w-4 text-emerald-500" />
             <Trans>Codex session</Trans>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void handleStartSession('copilot')}>
-            <CopilotIcon className="mr-2 h-4 w-4 text-sky-500" />
+            <CopilotIcon className="me-2 h-4 w-4 text-sky-500" />
             <Trans>Copilot session</Trans>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
@@ -179,7 +181,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
               setNewLocalProjectOpen(true);
             }}
           >
-            <FolderPlus className="mr-2 h-4 w-4" />
+            <FolderPlus className="me-2 h-4 w-4" />
             <Trans>Project (local)</Trans>
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -188,7 +190,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
               setNewGitProjectOpen(true);
             }}
           >
-            <GitBranch className="mr-2 h-4 w-4" />
+            <GitBranch className="me-2 h-4 w-4" />
             <Trans>From git</Trans>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
@@ -206,7 +208,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
                   onPick(item.type);
                 }}
               >
-                <Icon className="mr-2 h-4 w-4" />
+                <Icon className="me-2 h-4 w-4" />
                 {item.displayLabel}
               </DropdownMenuItem>
             );

@@ -81,6 +81,10 @@ msgstr ""
 msgid "\"{0}\" will be removed. This cannot be undone."
 msgstr ""
 
+#: src/components/simple-file-manager/SimpleFileManager.tsx
+msgid "({selectedCount} selected)"
+msgstr ""
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "(cleared)"
 msgstr ""
@@ -163,6 +167,21 @@ msgstr ""
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "[[{name}]] not found"
+msgstr ""
+
+#. placeholder {0}: clipboard.items.length
+#: src/components/simple-file-manager/SimpleFileManager.tsx
+msgid "{0, plural, one {# item copied} other {# items copied}}"
+msgstr ""
+
+#. placeholder {0}: clipboard.items.length
+#: src/components/simple-file-manager/SimpleFileManager.tsx
+msgid "{0, plural, one {# item cut} other {# items cut}}"
+msgstr ""
+
+#. placeholder {0}: sortedFiles.length
+#: src/components/simple-file-manager/SimpleFileManager.tsx
+msgid "{0, plural, one {# item} other {# items}}"
 msgstr ""
 
 #. placeholder {0}: source.stream_count
@@ -1105,12 +1124,21 @@ msgstr ""
 msgid "agent"
 msgstr ""
 
+#: src/components/quick-create/registry.ts
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Agent"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Agent avatar"
+msgstr ""
+
+#: src/components/quick-create/registry.ts
+msgid "Agent created"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Agent Hook"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
@@ -1134,6 +1162,10 @@ msgstr ""
 msgid "Agent title"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Agent Trace"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "agent-name"
 msgstr ""
@@ -1142,11 +1174,16 @@ msgstr ""
 #~ msgid "Agentic Flows"
 #~ msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Agentic Process"
+msgstr ""
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "agents"
 msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/i18n/type-labels.ts
 msgid "Agents"
 msgstr ""
 
@@ -1421,6 +1458,10 @@ msgstr ""
 msgid "Annotate view"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Annotation"
+msgstr ""
+
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Annotation submitted"
 msgstr ""
@@ -1468,6 +1509,10 @@ msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "API access test passed (200 OK)"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Api Key"
 msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
@@ -1536,6 +1581,10 @@ msgstr ""
 msgid "Approve"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Apps"
+msgstr ""
+
 #: src/components/account/system-log.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
@@ -1595,9 +1644,9 @@ msgstr ""
 msgid "artifacts"
 msgstr ""
 
-#: src/components/webapp-viewer/webapp-artifacts-tab.tsx
-#~ msgid "Artifacts"
-#~ msgstr ""
+#: src/i18n/type-labels.ts
+msgid "Artifacts"
+msgstr ""
 
 #: src/components/artifacts/artifacts-list.tsx
 msgid "Artifacts created during flow execution will appear here"
@@ -1660,6 +1709,10 @@ msgstr ""
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Asset cleanup"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Asset Cleanup Report"
 msgstr ""
 
 #: src/components/code-editor/AssetCompareView.tsx
@@ -1992,6 +2045,7 @@ msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
+#: src/i18n/type-labels.ts
 msgid "Bookmark"
 msgstr ""
 
@@ -2260,6 +2314,11 @@ msgstr ""
 msgid "Cancel"
 msgstr ""
 
+#: src/components/assets/AssetsPage.tsx
+#: src/components/assets/useAssetsModel.tsx
+msgid "Cannot create {newTypeTarget}"
+msgstr ""
+
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Cannot delete hook"
@@ -2305,6 +2364,10 @@ msgstr ""
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Capabilities"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Capability"
 msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
@@ -2531,9 +2594,29 @@ msgstr ""
 msgid "Claude Code Status"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Claude Hook"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Claude Md"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Claude Memory"
+msgstr ""
+
 #: src/components/open-project-component/open-project-component.tsx
 #~ msgid "Claude project"
 #~ msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Claude Rules"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Claude Session"
+msgstr ""
 
 #: src/components/claude-terminal/claude-terminal.tsx
 msgid "Claude Terminal"
@@ -2912,6 +2995,10 @@ msgstr ""
 #~ msgid "code from browser"
 #~ msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Code Ref"
+msgstr ""
+
 #: src/components/chat-input.tsx
 #~ msgid "Codebase"
 #~ msgstr ""
@@ -2932,6 +3019,10 @@ msgstr ""
 msgid "Codex session"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Codex Session"
+msgstr ""
+
 #: src/pages/flow-page/VibeCollaborateButton.tsx
 #~ msgid "Collaborate"
 #~ msgstr ""
@@ -2943,6 +3034,10 @@ msgstr ""
 #: src/pages/flow-page/VibeCollaborateButton.tsx
 #~ msgid "Collaboration"
 #~ msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Collaboration Room"
+msgstr ""
 
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
@@ -2998,6 +3093,7 @@ msgstr ""
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/i18n/type-labels.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Command"
 msgstr ""
@@ -3023,6 +3119,7 @@ msgstr ""
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
+#: src/i18n/type-labels.ts
 msgid "Comment"
 msgstr ""
 
@@ -3101,6 +3198,10 @@ msgstr ""
 #: src/components/conversation/ConversationView.tsx
 #~ msgid "Composing in {0}: “{sendingText}” — finish sending there"
 #~ msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Compute Node"
+msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Compute Node ID:"
@@ -3232,8 +3333,16 @@ msgstr ""
 msgid "Consent required"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Contact Permission"
+msgstr ""
+
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Contacts"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Contacts Group"
 msgstr ""
 
 #. placeholder {0}: name.trim()
@@ -3257,9 +3366,9 @@ msgstr ""
 #~ msgid "Context folder"
 #~ msgstr ""
 
-#: src/components/project-home/ContextFolders.tsx
-#~ msgid "Context folders"
-#~ msgstr ""
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+msgid "Context folders"
+msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Context Graph"
@@ -3309,6 +3418,7 @@ msgstr ""
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/i18n/type-labels.ts
 msgid "Conversation"
 msgstr ""
 
@@ -3355,6 +3465,10 @@ msgstr ""
 
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "Copilot session"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Copilot Session"
 msgstr ""
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
@@ -3855,7 +3969,7 @@ msgstr ""
 msgid "Create a folder in {0}."
 msgstr ""
 
-#. placeholder {0}: descriptor.label.toLowerCase()
+#. placeholder {0}: t(descriptor.label).toLowerCase()
 #: src/components/quick-create/QuickCreateDialog.tsx
 msgid "Create a new {0}."
 msgstr ""
@@ -3996,6 +4110,10 @@ msgstr ""
 msgid "Credentials"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Cron Event"
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Cross-link"
 msgstr ""
@@ -4058,8 +4176,13 @@ msgstr ""
 msgid "Data privacy mode"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Data Source Cursor"
+msgstr ""
+
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/data-sources/DataSourcesView.tsx
+#: src/i18n/type-labels.ts
 msgid "Data sources"
 msgstr ""
 
@@ -4082,6 +4205,10 @@ msgstr ""
 #: src/components/account/database-section.tsx
 #: src/components/account/database-section.tsx
 msgid "Database switched"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Dataset"
 msgstr ""
 
 #: src/components/cron-view/CronForm.tsx
@@ -4115,6 +4242,14 @@ msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Debug logging"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Deck Template"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Decks"
 msgstr ""
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
@@ -4502,6 +4637,10 @@ msgstr ""
 msgid "Deployment WorldView"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Deployments"
+msgstr ""
+
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "depth"
 msgstr ""
@@ -4855,6 +4994,10 @@ msgstr ""
 msgid "Document"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Documents"
+msgstr ""
+
 #: src/components/conversation/ExecutePromptDialog.tsx
 msgid "Don't ask again"
 msgstr ""
@@ -4994,6 +5137,15 @@ msgstr ""
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Duration"
+msgstr ""
+
+#: src/components/quick-create/registry.ts
+#: src/i18n/type-labels.ts
+msgid "Dynamic Workflow"
+msgstr ""
+
+#: src/components/quick-create/registry.ts
+msgid "Dynamic workflow created"
 msgstr ""
 
 #: src/components/collaboration/StartRoomDialog.tsx
@@ -6111,6 +6263,10 @@ msgstr ""
 msgid "Feed comment"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Feed Entry"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "Fetch new messages from hub"
 msgstr ""
@@ -6128,6 +6284,7 @@ msgid "Field"
 msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/i18n/type-labels.ts
 msgid "File"
 msgstr ""
 
@@ -6168,6 +6325,7 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/assets/MarkdownIndexPanel.tsx
+#: src/components/assets/useAssetsModel.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Files"
@@ -6345,6 +6503,10 @@ msgstr ""
 #~ msgid "Flow MCP not enabled"
 #~ msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Flow Message"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Flow or compute node not available"
 msgstr ""
@@ -6399,6 +6561,10 @@ msgstr ""
 
 #: src/components/account/user-info.tsx
 msgid "Flowpad Cloud:"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Flowpad Diagnosis"
 msgstr ""
 
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
@@ -6457,9 +6623,9 @@ msgstr ""
 msgid "Focused"
 msgstr ""
 
-#: src/components/artifacts/artifact-form.tsx
-#~ msgid "Folder"
-#~ msgstr ""
+#: src/i18n/type-labels.ts
+msgid "Folder"
+msgstr ""
 
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
@@ -6828,6 +6994,10 @@ msgstr ""
 msgid "Graph — taxonomy plus bound assets"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Graph Context"
+msgstr ""
+
 #: src/components/graph-view/GraphView.tsx
 msgid "Graph presentation"
 msgstr ""
@@ -6841,8 +7011,21 @@ msgstr ""
 msgid "Graph view needs WebGL"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Graph Workflow Node"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Graph Workflow Run"
+msgstr ""
+
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/i18n/type-labels.ts
 msgid "Graph Workflows"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Group"
 msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
@@ -6970,6 +7153,10 @@ msgstr ""
 msgid "Help desk files removed"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Help desks"
+msgstr ""
+
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Help desks or skills repos to load alongside it."
 msgstr ""
@@ -7078,6 +7265,7 @@ msgstr ""
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
+#: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 msgid "Home"
 msgstr ""
 
@@ -7411,6 +7599,10 @@ msgstr ""
 msgid "Inbox"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Inbox Manager"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "Inbox view"
 msgstr ""
@@ -7633,6 +7825,7 @@ msgstr ""
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/i18n/type-labels.ts
 msgid "Invitation"
 msgstr ""
 
@@ -7741,6 +7934,14 @@ msgstr ""
 msgid "Joining…"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Journey Journal"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Journeys"
+msgstr ""
+
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "JSON"
 msgstr ""
@@ -7815,6 +8016,10 @@ msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Knowledge Atlas"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Knowledge Base"
 msgstr ""
 
 #: src/components/contact-picker/AddressBookButton.tsx
@@ -8609,8 +8814,17 @@ msgstr ""
 msgid "Mark all read"
 msgstr ""
 
+#: src/components/quick-create/registry.ts
+msgid "Markdown"
+msgstr ""
+
 #: src/components/assets/editor/WikiResolveView.tsx
+#: src/components/quick-create/registry.ts
 msgid "Markdown created"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Markdown Index"
 msgstr ""
 
 #: src/components/skills-viewer/amd-editor/components/blocks/TextBlock.tsx
@@ -8666,6 +8880,10 @@ msgstr ""
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Maximum execution time (default: 60s, max: 600s)"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Mcp Server"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -8756,6 +8974,10 @@ msgstr ""
 msgid "Message (optional)"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Message Attachment"
+msgstr ""
+
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Message not queued"
 msgstr ""
@@ -8764,6 +8986,10 @@ msgstr ""
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Message not sent"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Message Suggest"
 msgstr ""
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -8778,6 +9004,10 @@ msgstr ""
 #: src/components/collaboration/chat/MessageInput.tsx
 #~ msgid "Message this space…"
 #~ msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Message Thread"
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Messages"
@@ -9058,14 +9288,14 @@ msgstr ""
 msgid "New"
 msgstr ""
 
-#. placeholder {0}: descriptor.label
 #. placeholder {0}: m.newTypeTarget ?? ''
+#. placeholder {0}: t(descriptor.label)
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 msgid "New {0}"
 msgstr ""
 
-#. placeholder {0}: descriptor.label.toLowerCase()
+#. placeholder {0}: t(descriptor.label).toLowerCase()
 #: src/components/quick-create/QuickCreateDialog.tsx
 msgid "New {0} name"
 msgstr ""
@@ -10415,6 +10645,7 @@ msgid "Nothing yet. Rule fires are read from each rule's log; live events show w
 msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
+#: src/i18n/type-labels.ts
 msgid "Notification"
 msgstr ""
 
@@ -11087,6 +11318,7 @@ msgid "Ordered list"
 msgstr ""
 
 #: src/components/account/organization-panel.tsx
+#: src/i18n/type-labels.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Organization"
 msgstr ""
@@ -11436,6 +11668,7 @@ msgstr ""
 #: src/components/task-bar/SharedTaskView.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
+#: src/i18n/type-labels.ts
 msgid "Plan"
 msgstr ""
 
@@ -11546,6 +11779,10 @@ msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "plugin"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Plugin"
 msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
@@ -11701,6 +11938,10 @@ msgstr ""
 msgid "Process not started yet"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Process Result"
+msgstr ""
+
 #: src/components/account/user-info.tsx
 msgid "Profile"
 msgstr ""
@@ -11720,6 +11961,7 @@ msgstr ""
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
+#: src/i18n/type-labels.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Project"
 msgstr ""
@@ -11773,6 +12015,7 @@ msgstr ""
 msgid "Project folder…"
 msgstr ""
 
+#: src/components/assets/useAssetsModel.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Project home"
 msgstr ""
@@ -11842,6 +12085,8 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentRunDialog.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
+#: src/components/quick-create/registry.ts
+#: src/i18n/type-labels.ts
 msgid "Prompt"
 msgstr ""
 
@@ -11851,6 +12096,10 @@ msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Prompt annotations"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Prompt Completion"
 msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -12433,6 +12682,10 @@ msgstr ""
 #: src/components/task-bar/ReminderButton.tsx
 #~ msgid "Remind in {count} {0}"
 #~ msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Remote Worker Session"
+msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Remove"
@@ -13580,6 +13833,10 @@ msgstr ""
 msgid "Secret deleted"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Secret Origin"
+msgstr ""
+
 #: src/components/flowdata-renderer/SecretMessageComponent.tsx
 #~ msgid "Secret Required"
 #~ msgstr ""
@@ -14187,6 +14444,7 @@ msgstr ""
 
 #: src/components/code-editor/CodeEditor.tsx
 #: src/components/terminal/interactive-terminal/PaneSelectorBar.tsx
+#: src/i18n/type-labels.ts
 msgid "Shell"
 msgstr ""
 
@@ -14490,6 +14748,7 @@ msgstr ""
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
+#: src/components/quick-create/registry.ts
 msgid "Skill"
 msgstr ""
 
@@ -14503,6 +14762,7 @@ msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
+#: src/components/quick-create/registry.ts
 msgid "Skill created"
 msgstr ""
 
@@ -14533,6 +14793,7 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
+#: src/i18n/type-labels.ts
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Skills"
@@ -14651,6 +14912,10 @@ msgstr ""
 msgid "Source File"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Source Item"
+msgstr ""
+
 #: src/components/artifacts/artifact-form.tsx
 msgid "Source kind"
 msgstr ""
@@ -14669,6 +14934,7 @@ msgstr ""
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/i18n/type-labels.ts
 msgid "Spec"
 msgstr ""
 
@@ -14678,6 +14944,10 @@ msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Spec created"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Spreadsheets"
 msgstr ""
 
 #: src/components/agentic-progress/shared/stack-frame-list.tsx
@@ -14720,9 +14990,15 @@ msgstr ""
 msgid "Star chat"
 msgstr ""
 
+#: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/journey/JourneyTray.tsx
 msgid "Start"
 msgstr ""
+
+#: src/components/top-nav-bar/use-entity-breadcrumbs.ts
+#~ msgctxt "breadcrumb: the app root"
+#~ msgid "Start"
+#~ msgstr ""
 
 #. placeholder {0}: workerLabel(worker)
 #: src/components/workers/WorkerToolbar.tsx
@@ -14982,9 +15258,9 @@ msgstr ""
 msgid "Structure"
 msgstr ""
 
-#: src/components/quick-create/QuickCreatePanel.tsx
-#~ msgid "Sub agent"
-#~ msgstr ""
+#: src/components/quick-create/registry.ts
+msgid "Sub agent"
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "sub-agent"
@@ -14992,12 +15268,17 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
+#: src/i18n/type-labels.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Sub-agents"
 msgstr ""
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 msgid "SubAgent"
+msgstr ""
+
+#: src/components/quick-create/registry.ts
+msgid "SubAgent created"
 msgstr ""
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
@@ -15177,6 +15458,10 @@ msgstr ""
 msgid "System-installed triggers are seeded at boot via <0>set_service_triggers()</0>. User-driven creation is API-only for now (UI builder coming soon)."
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Tab"
+msgstr ""
+
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "Tab failed to open"
 msgstr ""
@@ -15195,6 +15480,10 @@ msgstr ""
 
 #: src/components/graph-view/TagGraphView.tsx
 msgid "Tag Tree"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Tags"
 msgstr ""
 
 #: src/components/assets/editor/skill/SkillMetadataHeader.tsx
@@ -15220,11 +15509,17 @@ msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/quick-create/registry.ts
+#: src/i18n/type-labels.ts
 msgid "Task"
 msgstr ""
 
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "Task assigned"
+msgstr ""
+
+#: src/components/quick-create/registry.ts
+msgid "Task created"
 msgstr ""
 
 #: src/components/assistance-viewer/AssistanceViewer.tsx
@@ -15244,6 +15539,7 @@ msgid "Tasks"
 msgstr ""
 
 #: src/components/account/organization-panel.tsx
+#: src/i18n/type-labels.ts
 msgid "Team"
 msgstr ""
 
@@ -15860,6 +16156,10 @@ msgstr ""
 msgid "Today's cost"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Todo File"
+msgstr ""
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Todo Files (~/.claude/todos/)"
 msgstr ""
@@ -16049,9 +16349,9 @@ msgstr ""
 #~ msgid "Trending"
 #~ msgstr ""
 
-#: src/components/assets/editor/skill/SkillActivationEditor.tsx
-#~ msgid "Trigger"
-#~ msgstr ""
+#: src/i18n/type-labels.ts
+msgid "Trigger"
+msgstr ""
 
 #: src/components/hooks-manager/index.tsx
 msgid "Triggers"
@@ -16387,6 +16687,10 @@ msgstr ""
 msgid "Usage & improvement"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Usage Report"
+msgstr ""
+
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Usage scan failed"
 msgstr ""
@@ -16437,6 +16741,7 @@ msgstr ""
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
+#: src/i18n/type-labels.ts
 msgid "User"
 msgstr ""
 
@@ -16447,6 +16752,10 @@ msgstr ""
 #: src/components/api-keys-view/use-user-api-keys.ts
 #: src/components/api-keys-view/use-user-api-keys.ts
 msgid "User not found"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "User Note"
 msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
@@ -16698,6 +17007,10 @@ msgstr ""
 msgid "visible"
 msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Visitor"
+msgstr ""
+
 #: src/components/task-bar/ReminderButton.tsx
 #~ msgid "w"
 #~ msgstr ""
@@ -16926,15 +17239,29 @@ msgid "Where does it come from?"
 msgstr ""
 
 #: src/components/asset-manager/EntityTypeBar.tsx
+#: src/components/quick-create/registry.ts
 msgid "Whiteboard"
 msgstr ""
 
 #: src/components/assets/editor/WikiResolveView.tsx
+#: src/components/quick-create/registry.ts
 msgid "Whiteboard created"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Whiteboards"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Who this agent is. Becomes its system prompt."
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Wiki Entries"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Wikis"
 msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -16981,6 +17308,10 @@ msgstr ""
 #~ msgid "Workflow name"
 #~ msgstr ""
 
+#: src/i18n/type-labels.ts
+msgid "Workflow Run"
+msgstr ""
+
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 #~ msgid "Workflow running…"
 #~ msgstr ""
@@ -17023,6 +17354,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Working…"
+msgstr ""
+
+#: src/i18n/type-labels.ts
+msgid "Workspace"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx

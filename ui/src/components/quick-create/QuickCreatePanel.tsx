@@ -333,9 +333,19 @@ export function QuickCreatePanel({
       QUICK_CREATE_REGISTRY.filter((d) => !HIDDEN_ASSET_TYPES.has(d.type))
         .filter((d) => !enforce || serverCreatable.has(d.type))
         // Glyph from the backend type registry — never a per-type icon chosen here.
-        .map((d) => ({ type: d.type, Icon: iconForType(d.type) as TileIcon, label: d.label, wikiword: d.wikiword }))
+        // `t(d.label)` and NOT `labelForType`: this launcher creates ONE of a
+        // thing, so it needs the descriptor's singular ("Skill"), while the type
+        // registry's label is whatever that type calls a section of them
+        // ("Skills"). Same word, different number — translating the wrong one
+        // gives a "New Skills" tile.
+        .map((d) => ({
+          type: d.type,
+          Icon: iconForType(d.type) as TileIcon,
+          label: t(d.label),
+          wikiword: d.wikiword,
+        }))
     );
-  }, [serverTypes]);
+  }, [serverTypes, t]);
 
   const sessionTiles: Array<{
     key: string;

@@ -1,3 +1,5 @@
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FolderOpen, Home, Link, Trash2 } from 'lucide-react';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
@@ -543,7 +545,7 @@ export function useAssetsModel() {
       if (!name.trim() || !newTypeTarget) return;
       const descriptor = getDescriptor(newTypeTarget);
       if (!descriptor) {
-        notify.error({ title: `Cannot create ${newTypeTarget}` });
+        notify.error({ title: i18n._(msg`Cannot create ${newTypeTarget}`) });
         setNewTypeTarget(null);
         return;
       }
@@ -555,7 +557,7 @@ export function useAssetsModel() {
         // `project`, so a user-scope create wrongly shows up under a project.
         const createProject = effectiveFilter.scope.mode === 'user' ? null : (dataContext.project ?? null);
         const res = await descriptor.create({ project: createProject, name });
-        notify.success({ title: res.toastTitle });
+        notify.success({ title: i18n._(res.toastTitle) });
         // Local create: poke this type's tree root so the new entity shows
         // immediately. The useAssetTreeRefresh subscription also covers it
         // (and remote/async creates), but the explicit poke avoids waiting on
@@ -653,7 +655,7 @@ export function useAssetsModel() {
         ...flatEntityRoots([
           {
             id: `project-home:${scopeProjectId}`,
-            label: 'Project home',
+            label: i18n._(msg`Project home`),
             tag: 'ProjectHome',
             icon: <Home className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
             pointer: isProjectView
@@ -689,7 +691,7 @@ export function useAssetsModel() {
         typeId: fsTypeId,
         anchorRelPath: filesAnchor,
         scope: effectiveFilter.scope,
-        label: 'Files',
+        label: i18n._(msg`Files`),
         rootIcon: <FolderOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
         locatorTypeId: fsLocatorTypeId,
         pointerForVfs: (path) => DockPointer.forAssetFs(path),

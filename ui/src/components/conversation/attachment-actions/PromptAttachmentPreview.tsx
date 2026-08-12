@@ -219,7 +219,9 @@ export function PromptAttachmentPreview({
 
   return (
     <>
-      <span className="shrink-0"><Trans>Prompt to run:</Trans></span>
+      <span className="shrink-0">
+        <Trans>Prompt to run:</Trans>
+      </span>
 
       {/* Inline text portion (if any) — click to expand. */}
       {inlineText && (
@@ -227,13 +229,15 @@ export function PromptAttachmentPreview({
           type="button"
           title={t`Click to view full prompt`}
           onClick={() => setDialogOpen(true)}
-          className="min-w-0 max-w-full whitespace-pre-wrap break-words rounded px-1.5 py-0.5 text-left italic text-foreground/80 line-clamp-4 transition-colors hover:bg-muted hover:text-foreground"
+          className="line-clamp-4 min-w-0 max-w-full whitespace-pre-wrap break-words rounded px-1.5 py-0.5 text-start italic text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
         >
           “{trimmed}”
         </button>
       )}
       {!inlineText && entityAttachments.length > 0 && (
-        <span className="italic text-foreground/60"><Trans>(prompt content unavailable)</Trans></span>
+        <span className="italic text-foreground/60">
+          <Trans>(prompt content unavailable)</Trans>
+        </span>
       )}
 
       {/* Legacy prompt-file attachments. Images preview as a thumbnail that
@@ -284,11 +288,15 @@ export function PromptAttachmentPreview({
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle><Trans>Prompt to run</Trans></DialogTitle>
+            <DialogTitle>
+              <Trans>Prompt to run</Trans>
+            </DialogTitle>
           </DialogHeader>
           <div className="max-h-[60vh] space-y-3 overflow-auto">
             {dialogParts.length === 0 && (
-              <p className="text-sm italic text-muted-foreground"><Trans>(prompt content unavailable)</Trans></p>
+              <p className="text-sm italic text-muted-foreground">
+                <Trans>(prompt content unavailable)</Trans>
+              </p>
             )}
             {dialogParts.map((part, i) =>
               part.kind === 'image' ? (

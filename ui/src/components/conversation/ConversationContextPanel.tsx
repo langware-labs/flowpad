@@ -892,7 +892,7 @@ function PrivateContextSection({
                 type="button"
                 onClick={() => void handleAddSpec()}
                 disabled={adding}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-foreground transition-colors hover:bg-muted disabled:opacity-50"
                 data-testid="private-context-add-spec"
               >
                 {ICON_BY_TYPE.spec &&
@@ -906,7 +906,7 @@ function PrivateContextSection({
                 type="button"
                 onClick={() => void handleAddSkill()}
                 disabled={adding}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-foreground transition-colors hover:bg-muted disabled:opacity-50"
                 data-testid="private-context-add-skill"
               >
                 {ICON_BY_TYPE.skill &&
@@ -1151,7 +1151,7 @@ function Row({
           onClick={onFocus}
           title={focusTitle}
           aria-label={focusTitle ?? `Reveal ${type}: ${name}`}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded text-left transition-colors hover:bg-muted/40"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded text-start transition-colors hover:bg-muted/40"
         >
           {focusInner}
         </button>

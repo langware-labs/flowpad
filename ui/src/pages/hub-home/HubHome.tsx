@@ -117,7 +117,7 @@ function SandboxStatus({
   // `truncate`, and the sign-in — the half you cannot get anywhere else on this
   // page — was the part that disappeared.
   const login = (
-    <span className="flex min-w-0 items-center gap-1.5 pl-7 text-[11px] text-muted-foreground">
+    <span className="flex min-w-0 items-center gap-1.5 ps-7 text-[11px] text-muted-foreground">
       <LoginLine loggedInUser={loggedInUser} autoLogin={autoLogin} />
     </span>
   );
@@ -127,7 +127,7 @@ function SandboxStatus({
   if (!launched) {
     return (
       <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="flex items-center gap-1.5 pl-7 text-[11px] text-muted-foreground/50">
+        <span className="flex items-center gap-1.5 ps-7 text-[11px] text-muted-foreground/50">
           <span
             className={`h-2 w-2 shrink-0 rounded-full bg-muted-foreground/40 ${launching ? 'animate-pulse' : ''}`}
           />
@@ -139,7 +139,7 @@ function SandboxStatus({
   if (!info) {
     return (
       <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="flex items-center gap-1.5 pl-7 text-[11px] text-muted-foreground/50">
+        <span className="flex items-center gap-1.5 ps-7 text-[11px] text-muted-foreground/50">
           <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-muted-foreground/40" />
           {t`Checking…`}
         </span>
@@ -164,7 +164,7 @@ function SandboxStatus({
   if (size) parts.push(size);
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="flex min-w-0 items-center gap-1.5 pl-7 text-[11px] text-muted-foreground" title={status}>
+      <span className="flex min-w-0 items-center gap-1.5 ps-7 text-[11px] text-muted-foreground" title={status}>
         <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_STYLE[status]?.dot ?? 'bg-muted-foreground/40'}`} />
         <span className="shrink-0">{labels[status] ?? status}</span>
         {parts.length > 0 && <span className="truncate text-muted-foreground/70">· {parts.join(' · ')}</span>}
@@ -354,7 +354,7 @@ export function HubHome() {
             type="button"
             onClick={() => openWorldView(WorldViewProjection.WORLD)}
             data-testid="hub-home-world"
-            className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-card p-5 text-left transition-colors hover:bg-accent"
+            className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-card p-5 text-start transition-colors hover:bg-accent"
           >
             <Globe className="h-6 w-6 text-muted-foreground group-hover:text-foreground" />
             <span className="text-base font-semibold">
@@ -369,7 +369,7 @@ export function HubHome() {
             type="button"
             onClick={() => openWorldView(WorldViewProjection.ORGANIZATION)}
             data-testid="hub-home-organization"
-            className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-card p-5 text-left transition-colors hover:bg-accent"
+            className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-card p-5 text-start transition-colors hover:bg-accent"
           >
             <Building2 className="h-6 w-6 text-muted-foreground group-hover:text-foreground" />
             <span className="text-base font-semibold">
@@ -418,7 +418,7 @@ export function HubHome() {
                       // context — the same navigation the footer's name button uses,
                       // so the footer follows the click. URL-first: only openDock.
                       onClick={() => navigation.openDock(DockPointer.forProject(p.id).withPage(PageId.HUB))}
-                      className="min-w-0 flex-1 truncate text-left text-sm"
+                      className="min-w-0 flex-1 truncate text-start text-sm"
                       title={p.displayName}
                     >
                       {p.displayName || t`Untitled project`}
@@ -518,7 +518,7 @@ export function HubHome() {
                         setEditingId(d.id);
                       }}
                       disabled={!sandboxesEnabled}
-                      className="min-w-0 flex-1 truncate text-left text-sm hover:underline disabled:pointer-events-none"
+                      className="min-w-0 flex-1 truncate text-start text-sm hover:underline disabled:pointer-events-none"
                       title={sandboxesEnabled ? t`Click to rename` : undefined}
                       data-testid="sandbox-name"
                     >
@@ -556,7 +556,7 @@ export function HubHome() {
                       data-testid="sandbox-launch"
                       className="h-7 shrink-0 px-2.5 text-xs"
                     >
-                      {launchingId === d.id && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
+                      {launchingId === d.id && <Loader2 className="me-1.5 h-3 w-3 animate-spin" />}
                       <Trans>Launch</Trans>
                     </Button>
                   )}

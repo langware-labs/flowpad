@@ -55,7 +55,7 @@ export function CreatePrivateRepoForm({ onBack, onCreated }: CreatePrivateRepoFo
         </p>
       )}
       <Button onClick={submit} disabled={!name.trim() || createRepo.isPending} data-testid="install-create-repo-submit">
-        {createRepo.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+        {createRepo.isPending && <Loader2 className="me-1.5 h-4 w-4 animate-spin" />}
         <Trans>Create private repo</Trans>
       </Button>
     </div>

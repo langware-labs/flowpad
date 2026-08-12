@@ -158,7 +158,7 @@ export function ContactPicker({
             <button
               key={g.id}
               type="button"
-              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-50"
+              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-start text-sm hover:bg-muted disabled:opacity-50"
               onClick={() => addGroup(g)}
               disabled={disabled}
               data-testid={`contact-group-option-${g.id}`}
@@ -175,7 +175,7 @@ export function ContactPicker({
             <button
               key={u.id}
               type="button"
-              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-50"
+              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-start text-sm hover:bg-muted disabled:opacity-50"
               onClick={() => addContact(u)}
               disabled={alreadyAdded(participantFromContact(u)) || disabled}
             >
@@ -193,7 +193,7 @@ export function ContactPicker({
         !alreadyAdded({ email: filterText.trim() }) && (
           <button
             type="button"
-            className="rounded-md border border-dashed border-border px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
+            className="rounded-md border border-dashed border-border px-2 py-1.5 text-start text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
             onClick={addFreeFormEmail}
             disabled={disabled}
           >

@@ -92,8 +92,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
   // whole plan when you want your bearings.
   const [expanded, setExpanded] = useState(false);
   useEffect(() => {
-    const onResize = () =>
-      setPos((p) => (p ? clampToViewport(p, elementSize(containerRef.current)) : p));
+    const onResize = () => setPos((p) => (p ? clampToViewport(p, elementSize(containerRef.current)) : p));
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
@@ -202,224 +201,229 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
   // stopped receiving pointer events ("it's not moving, it's covered").
   return createPortal(
     <>
-    {celebration && (
-      <div className="pointer-events-none fixed inset-0 z-[120]" data-testid="journey-confetti">
-        <Confetti
-          width={window.innerWidth}
-          height={window.innerHeight}
-          recycle={false}
-          numberOfPieces={confettiPieces}
-          gravity={0.45}
-          initialVelocityY={16}
-          confettiSource={{ x: celebration.x, y: celebration.y, w: celebration.w, h: celebration.h }}
-          // Unmount the canvas + its rAF loop the moment the last piece exits —
-          // the CONFETTI_MAX_MS timer is only the safety ceiling.
-          onConfettiComplete={() => setCelebration(null)}
-        />
-      </div>
-    )}
-    <div
-      ref={containerRef}
-      role="dialog"
-      aria-label={journey.name}
-      data-testid="journey-tray"
-      className={cn(topmost, 'w-80 max-w-[calc(100vw-5rem)]', !pos && 'bottom-4 left-16')}
-      style={pos ? { left: pos.x, top: pos.y } : undefined}
-    >
-      <div
-        className="flex cursor-grab select-none items-start justify-between gap-2 border-b border-border px-3 py-2.5 active:cursor-grabbing"
-        onPointerDown={onHeaderPointerDown}
-        onPointerMove={onHeaderPointerMove}
-        onPointerUp={onHeaderPointerUp}
-        data-testid="journey-tray-drag-handle"
-      >
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold" style={{ color: INDIGO }}>
-            {journey.name}
-          </p>
-          <p className="text-xs text-muted-foreground" data-testid="journey-tray-steps-left">
-            {complete ? <Trans>Completed 🎉</Trans> : <Trans>{stepsLeft} steps left</Trans>}
-          </p>
+      {celebration && (
+        <div className="pointer-events-none fixed inset-0 z-[120]" data-testid="journey-confetti">
+          <Confetti
+            width={window.innerWidth}
+            height={window.innerHeight}
+            recycle={false}
+            numberOfPieces={confettiPieces}
+            gravity={0.45}
+            initialVelocityY={16}
+            confettiSource={{ x: celebration.x, y: celebration.y, w: celebration.w, h: celebration.h }}
+            // Unmount the canvas + its rAF loop the moment the last piece exits —
+            // the CONFETTI_MAX_MS timer is only the safety ceiling.
+            onConfettiComplete={() => setCelebration(null)}
+          />
         </div>
-        <button
-          type="button"
-          aria-label={expanded ? t`Show only the current step` : t`Show all steps`}
-          title={expanded ? t`Show only the current step` : t`Show all steps`}
-          onClick={() => setExpanded((v) => !v)}
-          onPointerDown={(e) => e.stopPropagation()}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          data-testid="journey-tray-expand"
+      )}
+      <div
+        ref={containerRef}
+        role="dialog"
+        aria-label={journey.name}
+        data-testid="journey-tray"
+        className={cn(topmost, 'w-80 max-w-[calc(100vw-5rem)]', !pos && 'bottom-4 left-16')}
+        style={pos ? { left: pos.x, top: pos.y } : undefined}
+      >
+        <div
+          className="flex cursor-grab select-none items-start justify-between gap-2 border-b border-border px-3 py-2.5 active:cursor-grabbing"
+          onPointerDown={onHeaderPointerDown}
+          onPointerMove={onHeaderPointerMove}
+          onPointerUp={onHeaderPointerUp}
+          data-testid="journey-tray-drag-handle"
         >
-          {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-        </button>
-        <button
-          type="button"
-          aria-label={t`Minimize to the journey icon`}
-          title={t`Minimize to the journey icon`}
-          onClick={minimize}
-          onPointerDown={(e) => e.stopPropagation()}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          data-testid="journey-tray-close"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold" style={{ color: INDIGO }}>
+              {journey.name}
+            </p>
+            <p className="text-xs text-muted-foreground" data-testid="journey-tray-steps-left">
+              {complete ? <Trans>Completed 🎉</Trans> : <Trans>{stepsLeft} steps left</Trans>}
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label={expanded ? t`Show only the current step` : t`Show all steps`}
+            title={expanded ? t`Show only the current step` : t`Show all steps`}
+            onClick={() => setExpanded((v) => !v)}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            data-testid="journey-tray-expand"
+          >
+            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            type="button"
+            aria-label={t`Minimize to the journey icon`}
+            title={t`Minimize to the journey icon`}
+            onClick={minimize}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            data-testid="journey-tray-close"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
 
-      <ul className="flex max-h-64 flex-col gap-0.5 overflow-y-auto overscroll-contain p-2">
-        {graph.sections.map((section) => {
-          const isDone = (i: number) =>
-            complete || doneIds.has(graph.steps[i].node_id) || (cursorIndex >= 0 && i < cursorIndex);
-          const renderStep = (step: JourneyStep, i: number, indent: boolean) => {
-            const done = isDone(i);
-            const current = !complete && i === cursorIndex;
-            return (
-              <li
-                key={step.node_id}
-                data-current={current || undefined}
-                className={cn(
-                  'flex items-start gap-2 rounded px-2 py-1.5 text-xs',
-                  current && 'bg-muted/60',
-                  indent && 'ml-4',
-                )}
-              >
-                <span className="mt-0.5 shrink-0">
-                  {done ? (
-                    <Check className="h-3.5 w-3.5" style={{ color: INDIGO }} aria-hidden />
-                  ) : current ? (
-                    <CircleDot className="h-3.5 w-3.5" style={{ color: AMBER }} aria-hidden />
-                  ) : (
-                    <Circle className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+        <ul className="flex max-h-64 flex-col gap-0.5 overflow-y-auto overscroll-contain p-2">
+          {graph.sections.map((section) => {
+            const isDone = (i: number) =>
+              complete || doneIds.has(graph.steps[i].node_id) || (cursorIndex >= 0 && i < cursorIndex);
+            const renderStep = (step: JourneyStep, i: number, indent: boolean) => {
+              const done = isDone(i);
+              const current = !complete && i === cursorIndex;
+              return (
+                <li
+                  key={step.node_id}
+                  data-current={current || undefined}
+                  className={cn(
+                    'flex items-start gap-2 rounded px-2 py-1.5 text-xs',
+                    current && 'bg-muted/60',
+                    indent && 'ms-4',
                   )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p
-                    className={cn(
-                      'truncate',
-                      current ? 'font-medium text-foreground' : done ? 'text-muted-foreground' : 'text-foreground/80',
+                >
+                  <span className="mt-0.5 shrink-0">
+                    {done ? (
+                      <Check className="h-3.5 w-3.5" style={{ color: INDIGO }} aria-hidden />
+                    ) : current ? (
+                      <CircleDot className="h-3.5 w-3.5" style={{ color: AMBER }} aria-hidden />
+                    ) : (
+                      <Circle className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
                     )}
-                  >
-                    {step.name}
-                  </p>
-                  {current && step.status_line && (
-                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{step.status_line}</p>
-                  )}
-                  {current && step.act && <JourneyStepLive act={step.act} />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={cn(
+                        'truncate',
+                        current ? 'font-medium text-foreground' : done ? 'text-muted-foreground' : 'text-foreground/80',
+                      )}
+                    >
+                      {step.name}
+                    </p>
+                    {current && step.status_line && (
+                      <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{step.status_line}</p>
+                    )}
+                    {current && step.act && <JourneyStepLive act={step.act} />}
+                  </div>
+                </li>
+              );
+            };
+
+            // Collapsed: one row — the step you're on. Its group header stays,
+            // so you still know which part of the tour you're in; a section with
+            // nothing to show drops out entirely.
+            const rows = expanded ? section.indices : section.indices.filter((i) => i === cursorIndex);
+            if (!rows.length) return null;
+            if (section.group === null) {
+              return rows.map((i) => renderStep(graph.steps[i], i, false));
+            }
+            const groupDone = section.indices.every(isDone);
+            const groupCurrent = !complete && section.indices.includes(cursorIndex);
+            return (
+              <li key={`group:${section.group}:${section.indices[0]}`} data-group={section.group}>
+                <div className="flex items-center gap-2 px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide">
+                  <span className="shrink-0">
+                    {groupDone ? (
+                      <Check className="h-3 w-3" style={{ color: INDIGO }} aria-hidden />
+                    ) : (
+                      <CircleDot
+                        className={cn('h-3 w-3', !groupCurrent && 'text-muted-foreground')}
+                        style={groupCurrent ? { color: AMBER } : undefined}
+                        aria-hidden
+                      />
+                    )}
+                  </span>
+                  <span className={groupCurrent ? 'text-foreground' : 'text-muted-foreground'}>{section.group}</span>
                 </div>
+                <ul className="flex flex-col gap-0.5">{rows.map((i) => renderStep(graph.steps[i], i, true))}</ul>
               </li>
             );
-          };
+          })}
+        </ul>
 
-          // Collapsed: one row — the step you're on. Its group header stays,
-          // so you still know which part of the tour you're in; a section with
-          // nothing to show drops out entirely.
-          const rows = expanded ? section.indices : section.indices.filter((i) => i === cursorIndex);
-          if (!rows.length) return null;
-          if (section.group === null) {
-            return rows.map((i) => renderStep(graph.steps[i], i, false));
-          }
-          const groupDone = section.indices.every(isDone);
-          const groupCurrent = !complete && section.indices.includes(cursorIndex);
-          return (
-            <li key={`group:${section.group}:${section.indices[0]}`} data-group={section.group}>
-              <div className="flex items-center gap-2 px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide">
-                <span className="shrink-0">
-                  {groupDone ? (
-                    <Check className="h-3 w-3" style={{ color: INDIGO }} aria-hidden />
-                  ) : (
-                    <CircleDot
-                      className={cn('h-3 w-3', !groupCurrent && 'text-muted-foreground')}
-                      style={groupCurrent ? { color: AMBER } : undefined}
-                      aria-hidden
-                    />
-                  )}
-                </span>
-                <span className={groupCurrent ? 'text-foreground' : 'text-muted-foreground'}>{section.group}</span>
-              </div>
-              <ul className="flex flex-col gap-0.5">
-                {rows.map((i) => renderStep(graph.steps[i], i, true))}
-              </ul>
-            </li>
-          );
-        })}
-      </ul>
-
-      <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
-        {!currentStep && !complete && (
-          <Button
-            type="button"
-            size="sm"
-            disabled={busy}
-            onClick={() => run(() => journey.launch(), () => view?.start())}
-            className="h-7 gap-1.5 px-3 text-xs text-white hover:brightness-110"
-            style={{ backgroundColor: INDIGO }}
-            data-testid="journey-tray-start"
-          >
-            <Play className="h-3 w-3" />
-            <Trans>Start</Trans>
-          </Button>
-        )}
-        {!complete && currentStep && (
-          <>
+        <div className="flex items-center gap-2 border-t border-border px-3 py-2.5">
+          {!currentStep && !complete && (
             <Button
               type="button"
               size="sm"
-              variant="outline"
-              disabled={busy || !view?.canGoBack}
-              onClick={() => view?.back()}
-              className="h-7 px-3 text-xs"
-              data-testid="journey-tray-back"
+              disabled={busy}
+              onClick={() =>
+                run(
+                  () => journey.launch(),
+                  () => view?.start(),
+                )
+              }
+              className="h-7 gap-1.5 px-3 text-xs text-white hover:brightness-110"
+              style={{ backgroundColor: INDIGO }}
+              data-testid="journey-tray-start"
             >
-              <Trans>Back</Trans>
+              <Play className="h-3 w-3" />
+              <Trans>Start</Trans>
             </Button>
-            {/* ONE mover. Next runs whatever this step does and loads the next
+          )}
+          {!complete && currentStep && (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busy || !view?.canGoBack}
+                onClick={() => view?.back()}
+                className="h-7 px-3 text-xs"
+                data-testid="journey-tray-back"
+              >
+                <Trans>Back</Trans>
+              </Button>
+              {/* ONE mover. Next runs whatever this step does and loads the next
                 one; if the step has a gate, the press waits for it and then
                 lands. Nothing else advances a journey — conditions used to, and
                 a walkthrough with two drivers is exactly what felt flaky. */}
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy}
+                onClick={() => view?.next()}
+                className={cn('h-7 px-3 text-xs text-white hover:brightness-110', view?.waiting && 'opacity-60')}
+                style={{ backgroundColor: INDIGO }}
+                data-testid="journey-tray-continue"
+              >
+                {view?.waiting ? <Trans>Waiting…</Trans> : <Trans>Next</Trans>}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => view?.skip()}
+                className="h-7 px-3 text-xs"
+                data-testid="journey-tray-skip"
+              >
+                <Trans>Skip</Trans>
+              </Button>
+            </>
+          )}
+          <div className="flex-1" />
+          {journal && (
             <Button
               type="button"
               size="sm"
+              variant="ghost"
               disabled={busy}
-              onClick={() => view?.next()}
-              className={cn(
-                'h-7 px-3 text-xs text-white hover:brightness-110',
-                view?.waiting && 'opacity-60',
-              )}
-              style={{ backgroundColor: INDIGO }}
-              data-testid="journey-tray-continue"
+              title={t`Restart this journey`}
+              onClick={() =>
+                run(
+                  () => journey.restart(),
+                  () => view?.start(),
+                )
+              }
+              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+              data-testid="journey-tray-restart"
             >
-              {view?.waiting ? <Trans>Waiting…</Trans> : <Trans>Next</Trans>}
+              <RotateCcw className="h-3 w-3" />
+              <Trans>Restart</Trans>
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() => view?.skip()}
-              className="h-7 px-3 text-xs"
-              data-testid="journey-tray-skip"
-            >
-              <Trans>Skip</Trans>
-            </Button>
-          </>
-        )}
-        <div className="flex-1" />
-        {journal && (
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={busy}
-            title={t`Restart this journey`}
-            onClick={() => run(() => journey.restart(), () => view?.start())}
-            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
-            data-testid="journey-tray-restart"
-          >
-            <RotateCcw className="h-3 w-3" />
-            <Trans>Restart</Trans>
-          </Button>
-        )}
+          )}
+        </div>
       </div>
-    </div>
     </>,
     document.body,
   );

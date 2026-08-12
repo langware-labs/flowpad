@@ -3,13 +3,7 @@ import type { SecretOriginLocator, SecretPointerScope } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@src/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Textarea } from '@src/components/ui/textarea';
 import { MAX_ENV_VAR_VALUE_LENGTH } from '@src/constants/validation';
 import { errorMessage } from '@src/lib/error-message';
@@ -18,11 +12,7 @@ import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import { useSecretOriginLabel } from '@src/components/secrets/OriginChip';
-import {
-  DEFAULT_ORIGIN_KIND,
-  OFFERED_ORIGIN_KINDS,
-  originKindSpec,
-} from '@src/components/secrets/secret-origin-kinds';
+import { DEFAULT_ORIGIN_KIND, OFFERED_ORIGIN_KINDS, originKindSpec } from '@src/components/secrets/secret-origin-kinds';
 
 const ENV_VAR_RE = /^[A-Z][A-Z0-9_]*$/;
 
@@ -129,7 +119,11 @@ export const DeclareEnvVarDialog: React.FC<DeclareEnvVarDialogProps> = ({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {lockedEnvVar ? <Trans>Record where {lockedEnvVar} comes from</Trans> : <Trans>Declare an environment variable</Trans>}
+            {lockedEnvVar ? (
+              <Trans>Record where {lockedEnvVar} comes from</Trans>
+            ) : (
+              <Trans>Declare an environment variable</Trans>
+            )}
           </DialogTitle>
         </DialogHeader>
 
@@ -155,8 +149,7 @@ export const DeclareEnvVarDialog: React.FC<DeclareEnvVarDialogProps> = ({
             {collides && (
               <p className="mt-1 text-xs text-muted-foreground" data-testid="declare-collision-note">
                 <Trans>
-                  {envVar} already exists here. This records where it comes from; the current value is
-                  kept.
+                  {envVar} already exists here. This records where it comes from; the current value is kept.
                 </Trans>
               </p>
             )}
@@ -200,7 +193,7 @@ export const DeclareEnvVarDialog: React.FC<DeclareEnvVarDialogProps> = ({
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
               data-testid="declare-advanced-toggle"
             >
-              {advanced ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+              {advanced ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3 rtl:-scale-x-100" />}
               <Trans>Where does it come from?</Trans>
               {!advanced && <span className="opacity-70">— {originLabel(kind)}</span>}
             </button>
@@ -211,10 +204,7 @@ export const DeclareEnvVarDialog: React.FC<DeclareEnvVarDialogProps> = ({
                   <label className="text-xs font-medium">
                     <Trans>Location</Trans>
                   </label>
-                  <Select
-                    value={kind}
-                    onValueChange={(v) => setKind(v as SecretOriginLocator['kind'])}
-                  >
+                  <Select value={kind} onValueChange={(v) => setKind(v as SecretOriginLocator['kind'])}>
                     <SelectTrigger data-testid="declare-origin-kind">
                       <SelectValue />
                     </SelectTrigger>
@@ -229,8 +219,8 @@ export const DeclareEnvVarDialog: React.FC<DeclareEnvVarDialogProps> = ({
                   {!spec.provideable && (
                     <p className="mt-1 text-xs text-muted-foreground">
                       <Trans>
-                        Values for this location are held elsewhere — the declaration records the need
-                        and reads as missing until that location has it.
+                        Values for this location are held elsewhere — the declaration records the need and reads as
+                        missing until that location has it.
                       </Trans>
                     </p>
                   )}
@@ -278,7 +268,7 @@ export const DeclareEnvVarDialog: React.FC<DeclareEnvVarDialogProps> = ({
             <Trans>Cancel</Trans>
           </Button>
           <Button disabled={!nameValid || busy} onClick={() => void submit()} data-testid="declare-submit">
-            {busy ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+            {busy ? <Loader2 className="me-1 h-3 w-3 animate-spin" /> : null}
             <Trans>Declare</Trans>
           </Button>
         </DialogFooter>

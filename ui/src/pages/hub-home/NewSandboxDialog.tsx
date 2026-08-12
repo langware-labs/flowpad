@@ -411,7 +411,7 @@ export function NewSandboxDialog({
                 <Trans>Done</Trans>
               </Button>
               <Button onClick={() => void handleLaunch()} disabled={phase === 'launching'} data-testid="launch-sandbox">
-                {phase === 'launching' && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                {phase === 'launching' && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
                 <Trans>Launch</Trans>
               </Button>
             </>
@@ -424,7 +424,7 @@ export function NewSandboxDialog({
                   source is already chosen, and GitHub only ever mattered for
                   reaching a private repo. */}
               <Button onClick={() => void handleCreate()} disabled={phase === 'creating'} data-testid="create-sandbox">
-                {phase === 'creating' && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                {phase === 'creating' && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
                 <Trans>Create</Trans>
               </Button>
             </>
@@ -503,7 +503,7 @@ function SourceField({
           {values.map((source, i) => (
             <span
               key={`${source.name}-${i}`}
-              className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-muted/50 py-0.5 pl-2 pr-1 text-xs"
+              className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-muted/50 py-0.5 pe-1 ps-2 text-xs"
             >
               {source.projectId ? (
                 <Briefcase className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -597,7 +597,7 @@ function SourceField({
                 data-testid="connect-github"
               >
                 {connecting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Github className="h-3 w-3" />}
-                <span className="ml-1.5">
+                <span className="ms-1.5">
                   <Trans>Connect</Trans>
                 </span>
               </Button>

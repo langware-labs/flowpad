@@ -123,7 +123,7 @@ function CompactProjectSelectDialog({
         onClick={() => onProjectClick(project)}
         disabled={!!openingProjectId || isSubmitting}
         title={project.cwd ? `${getProjectDisplayName(project)}\n${project.cwd}` : getProjectDisplayName(project)}
-        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
+        className={`flex w-full items-center gap-2 px-3 py-1.5 text-start text-sm transition-colors hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
       >
         {isOpening ? (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
@@ -158,7 +158,7 @@ function CompactProjectSelectDialog({
                 placeholder={t`Search projects…`}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-8 pl-8 text-sm"
+                className="h-8 ps-8 text-sm"
               />
             </div>
           )}
@@ -166,7 +166,7 @@ function CompactProjectSelectDialog({
           <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-card">
             {isLoadingProjects ? (
               <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
                 <Trans>Loading…</Trans>
               </div>
             ) : filtered.length === 0 ? (
@@ -352,7 +352,7 @@ function NewProjectDialog({
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="me-2 h-4 w-4 animate-spin" />
                 <Trans>Creating...</Trans>
               </>
             ) : (

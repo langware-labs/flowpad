@@ -30,15 +30,17 @@ const SettingsPane = React.forwardRef<HTMLDivElement, SettingsPaneProps>(
       <div
         ref={ref}
         className={cn(
-          'fixed right-0 top-0 h-full w-80 bg-background border-l shadow-lg transform transition-transform duration-300 ease-in-out z-[100]',
+          'fixed right-0 top-0 z-[100] h-full w-80 transform border-s bg-background shadow-lg transition-transform duration-300 ease-in-out',
           isOpen ? 'translate-x-0' : 'translate-x-full',
           className,
         )}
         {...props}
       >
-        <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between p-4 border-b">
-            <h2 className="text-lg font-semibold"><Trans>Chat Settings</Trans></h2>
+        <div className="flex h-full flex-col">
+          <div className="flex items-center justify-between border-b p-4">
+            <h2 className="text-lg font-semibold">
+              <Trans>Chat Settings</Trans>
+            </h2>
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X className="h-4 w-4" />
             </Button>
@@ -46,7 +48,7 @@ const SettingsPane = React.forwardRef<HTMLDivElement, SettingsPaneProps>(
           <div className="flex-1 p-4">
             <div className="space-y-4">
               <div>
-                <label htmlFor="rules" className="block text-sm font-medium mb-2">
+                <label htmlFor="rules" className="mb-2 block text-sm font-medium">
                   <Trans>Rules</Trans>
                 </label>
                 <textarea
@@ -54,12 +56,12 @@ const SettingsPane = React.forwardRef<HTMLDivElement, SettingsPaneProps>(
                   value={rules}
                   onChange={(e) => setRules(e.target.value)}
                   placeholder={t`Enter chat rules...`}
-                  className="w-full h-32 p-2 border rounded-md resize-none"
+                  className="h-32 w-full resize-none rounded-md border p-2"
                 />
               </div>
             </div>
           </div>
-          <div className="p-4 border-t">
+          <div className="border-t p-4">
             <Button onClick={handleSave} className="w-full">
               <Trans>Save Changes</Trans>
             </Button>

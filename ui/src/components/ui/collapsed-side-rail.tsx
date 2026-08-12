@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 
 /**
  * Shared collapsed side-window rail. The thin vertical strip shown in place of a
- * docked drawer when it's collapsed. Right-anchored (`border-l`), matches the
+ * docked drawer when it's collapsed. Right-anchored (`border-s`), matches the
  * drawer width vocabulary. The host passes whatever rail controls it needs as
  * `children` — `SideRailButton` for the common icon-button case, or a custom
  * node (e.g. a popover trigger). Consumed by the markdown side window and the
@@ -22,10 +22,7 @@ export function CollapsedSideRail({
 }) {
   return (
     <div
-      className={cn(
-        'flex w-9 shrink-0 flex-col items-center gap-0.5 border-l bg-background py-1',
-        className,
-      )}
+      className={cn('flex w-9 shrink-0 flex-col items-center gap-0.5 border-s bg-background py-1', className)}
       data-testid={dataTestId}
     >
       <TooltipProvider delayDuration={400}>{children}</TooltipProvider>

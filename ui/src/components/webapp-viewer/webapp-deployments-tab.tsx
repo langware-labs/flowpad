@@ -49,11 +49,7 @@ export const WebappDeploymentsTab: React.FC = () => {
 
   const deployButton = (
     <Button size="sm" disabled={!project || deploying} onClick={() => void deploy()}>
-      {deploying ? (
-        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-      ) : (
-        <Cloud className="mr-1.5 h-3.5 w-3.5" />
-      )}
+      {deploying ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : <Cloud className="me-1.5 h-3.5 w-3.5" />}
       <Trans>Deploy to cloud</Trans>
     </Button>
   );
@@ -97,7 +93,7 @@ export const WebappDeploymentsTab: React.FC = () => {
           <button
             type="button"
             key={deployment.id}
-            className="rounded-md border p-3 text-left transition-colors hover:bg-muted"
+            className="rounded-md border p-3 text-start transition-colors hover:bg-muted"
             onClick={() =>
               navigation.openDock(
                 DockPointer.forWorldView(WorldViewProjection.DEPLOYMENT, {
