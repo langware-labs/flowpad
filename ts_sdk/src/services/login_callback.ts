@@ -64,16 +64,21 @@ function isAuthResultPage(): boolean {
  * banner is the exception — see `isAuthResultPage`.
  *
  * Verification return: `current` is the app root Auth0 chose, which is exactly
- * the address the user did NOT ask for — return the recorded destination
- * instead, and clear it so a later login isn't dragged back to a stale one.
+ * the address the user did NOT ask for — return the recorded destination.
+ *
+ * READING DOES NOT CONSUME. This used to `removeItem` on the way out, which made
+ * the destination single-use across the whole page and is what broke the fix in
+ * production: more than one caller asks for a login URL on that load (the paired
+ * "Redirecting to OAuth" lines in the hub log), so the first reader took the
+ * invitation and the one that actually navigated found nothing and fell back to
+ * the app root — the exact failure this function exists to prevent. Nothing
+ * needs the clear: the next ordinary load records where it is and overwrites the
+ * entry, so a stale destination cannot outlive the next login.
  */
 export function resolveLoginCallbackUrl(current: string): string {
   if (!isEmailVerificationReturn()) {
     if (!isAuthResultPage()) localStorage.setItem(STORAGE_KEY, current);
     return current;
   }
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (!stored) return current;
-  localStorage.removeItem(STORAGE_KEY);
-  return stored;
+  return localStorage.getItem(STORAGE_KEY) || current;
 }

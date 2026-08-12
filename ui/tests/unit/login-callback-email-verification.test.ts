@@ -48,12 +48,30 @@ describe('resolveLoginCallbackUrl', () => {
     expect(resolveLoginCallbackUrl('/?supportSignUp=true&success=true&code=success')).toBe(ACCEPT_URL);
   });
 
-  it('clears the destination once used, so a later login is not dragged back to it', () => {
+  it('survives a second reader on the same page load', () => {
+    // The regression this file exists for. More than one caller asks for a login
+    // URL on the verification return, and consuming the entry on first read gave
+    // the second one nothing — so the caller that actually navigated fell back
+    // to the app root and the invitee landed on hub home. Verified in production:
+    // the entry was present on the verify screen and gone from the same origin
+    // afterwards, with the redirect carrying the root.
+    resolveLoginCallbackUrl(ACCEPT_URL);
+    standingOn(VERIFIED_RETURN);
+
+    expect(resolveLoginCallbackUrl('/')).toBe(ACCEPT_URL);
+    expect(resolveLoginCallbackUrl('/')).toBe(ACCEPT_URL);
+    expect(localStorage.getItem('loginCallbackUrl')).toBe(ACCEPT_URL);
+  });
+
+  it('lets the next ordinary load overwrite the destination, so it cannot go stale', () => {
     resolveLoginCallbackUrl(ACCEPT_URL);
     standingOn(VERIFIED_RETURN);
     resolveLoginCallbackUrl('/');
 
-    expect(localStorage.getItem('loginCallbackUrl')).toBeNull();
+    // An ordinary page, no Auth0 banner params: records itself over the old one.
+    standingOn('/dock/hub/home');
+    resolveLoginCallbackUrl('/dock/hub/home');
+    expect(localStorage.getItem('loginCallbackUrl')).toBe('/dock/hub/home');
   });
 
   it('falls back to the caller when nothing was recorded', () => {
