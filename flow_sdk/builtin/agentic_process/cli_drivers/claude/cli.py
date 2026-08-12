@@ -95,6 +95,25 @@ class ClaudeAgentOptions(AgentOptions):
         if workdir:
             self.env_vars.setdefault("CLAUDE_PROJECT_DIR", workdir)
 
+        # Keep the visible PTY out of Claude's "Fullscreen rendering" mode
+        # (v2.1.89+). That mode draws on the terminal's ALTERNATE screen buffer
+        # — a scratch canvas exactly the window size with no scrollback behind
+        # it — so the conversation never enters xterm's scrollback. The two
+        # user-visible costs are the ones FLOWPAD-1973 reports: the terminal
+        # scrollbar vanishes and terminal search (Ctrl+F / SearchAddon) can only
+        # ever match the ~45 visible rows, because the alt buffer IS the whole
+        # buffer. See docs/claude_pty_scroll.md.
+        #
+        # Only the interactive PTY path is affected: ``-p`` (print_mode) renders
+        # no TUI at all. The var is honoured because Flowpad spawns ``claude``
+        # itself rather than using ``claude attach``, where it is ignored.
+        #
+        # Trade-off: the classic renderer reintroduces some flicker and grows
+        # memory in very long sessions — which is why Anthropic made fullscreen
+        # the default. ``setdefault`` leaves an explicit caller/user value alone.
+        if not print_mode:
+            self.env_vars.setdefault("CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN", "1")
+
     # ------------------------------------------------------------------
     # AgentOptions contract
     # ------------------------------------------------------------------
@@ -171,7 +190,7 @@ class ClaudeAgentOptions(AgentOptions):
         i = 0
         while i < len(flags):
             if flags[i] == "--add-dir" and i + 1 < len(flags):
-                add_dir.extend(flags[i:i + 2])
+                add_dir.extend(flags[i : i + 2])
                 i += 2
             elif flags[i] == "-p":
                 p_flag.append("-p")
@@ -203,23 +222,25 @@ class ClaudeAgentOptions(AgentOptions):
 
     def to_json(self) -> dict[str, Any]:
         d = super().to_json()
-        d.update({
-            "worker_type": "claude",
-            "session_id": self.session_id,
-            "resume": self.resume,
-            "fork_session_id": self.fork_session_id,
-            "model": self.model,
-            "debug": self.debug,
-            "permission_mode": self.permission_mode,
-            "chrome": self.chrome,
-            "worktree": self.worktree,
-            "agents_json": self.agents_json,
-            "print_mode": self.print_mode,
-            "add_dirs": self.add_dirs,
-            "output_format": self.output_format,
-            "verbose": self.verbose,
-            "effort": self.effort,
-        })
+        d.update(
+            {
+                "worker_type": "claude",
+                "session_id": self.session_id,
+                "resume": self.resume,
+                "fork_session_id": self.fork_session_id,
+                "model": self.model,
+                "debug": self.debug,
+                "permission_mode": self.permission_mode,
+                "chrome": self.chrome,
+                "worktree": self.worktree,
+                "agents_json": self.agents_json,
+                "print_mode": self.print_mode,
+                "add_dirs": self.add_dirs,
+                "output_format": self.output_format,
+                "verbose": self.verbose,
+                "effort": self.effort,
+            }
+        )
         return d
 
     @classmethod
