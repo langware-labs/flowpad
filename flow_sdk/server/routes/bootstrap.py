@@ -1825,6 +1825,24 @@ def entity_to_dict(entity) -> dict:
     }
 
 
+def project_to_dict(project) -> dict:
+    """``entity_to_dict`` plus the project fields the client boots ON.
+
+    The generic dict above is the identity projection every entity shares, so a
+    project-only field must not be added to it. But a Project handed out at
+    bootstrap is not just a label to display: `initSdk` makes it CURRENT before
+    any route runs, and the app then reads properties off it.
+
+    ``locale`` is one of those, and its absence was a real bug: a provisioned
+    sandbox adopts `default_project` on its very first load, so the app saw a
+    project with no language and correctly opened in English — while the row in
+    the database said Hebrew. It only came right on a refresh, when the full
+    entity was fetched. "Correctly, from what it could see" is exactly how a
+    missing field fails: silently, and looking like a timing bug.
+    """
+    return {**entity_to_dict(project), "locale": getattr(project, "locale", None)}
+
+
 # ---------------------------------------------------------------------------
 # Bootstrap endpoint
 # ---------------------------------------------------------------------------
@@ -1912,7 +1930,7 @@ async def _take_opening_project() -> Optional[dict]:
     if project is None:
         logging.warning(f"[bootstrap] pending default project {project_id} no longer exists")
         return None
-    return entity_to_dict(project)
+    return project_to_dict(project)
 
 
 @router.get("/api/v1/graph/bootstrap")
@@ -2114,7 +2132,7 @@ async def bootstrap(electron: bool = False) -> ApiSuccessResponse[BootstrapInfo]
             user=entity_to_dict(user),
             domain=None,
             visitor=None,
-            default_project=entity_to_dict(project),
+            default_project=project_to_dict(project),
             default_workspace=entity_to_dict(workspace),
             default_compute_node=entity_to_dict(compute_node),
             sandbox_available=sandbox_available,
