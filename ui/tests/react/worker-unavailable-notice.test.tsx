@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FlowData, FlowElementTypes, PrefKey, instancePreferences } from '@sdk';
@@ -33,12 +34,17 @@ describe('WorkerUnavailableNotice', () => {
     const onWorkerChange = vi.fn();
     instancePreferences.set(PrefKey.CHAT_SHOW_TOOLS, false);
 
+    // The worker select routes a capability-warned pick to Capabilities, so it
+    // needs a router. No HarnessCapabilitiesProvider here means no warnings —
+    // every worker stays selectable, which is what this test asserts.
     render(
-      <TurnGroupsList
-        groups={groupTurnEvents([unavailableEntry()])}
-        worker="claude_code"
-        onWorkerChange={onWorkerChange}
-      />,
+      <MemoryRouter initialEntries={['/dock/shell']}>
+        <TurnGroupsList
+          groups={groupTurnEvents([unavailableEntry()])}
+          worker="claude_code"
+          onWorkerChange={onWorkerChange}
+        />
+      </MemoryRouter>,
     );
 
     expect(screen.getByTestId('worker-unavailable-notice')).toHaveTextContent(
