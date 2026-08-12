@@ -1,3 +1,4 @@
+import { msg } from '@lingui/core/macro';
 import { i18n } from '@lingui/core';
 import type { ClaudeSessionStatus } from '@sdk/resource_management/fs_records/claude/claude-session';
 import { FusionSpinner } from '@src/components/icons/FusionSpinner';
@@ -80,15 +81,15 @@ interface ResourceTypeMeta {
 }
 
 const RESOURCE_TYPE_META: Record<ProjectResourceType, ResourceTypeMeta> = {
-  skill: { label: 'Skill', icon: Sparkles },
-  mcp_server: { label: 'MCP', icon: Plug },
-  plugin: { label: 'Plugin', icon: Settings },
-  hook: { label: 'Hook', icon: Terminal },
-  command: { label: 'Command', icon: Command },
-  agent: { label: 'SubAgent', icon: Bot },
-  session: { label: 'Session', icon: FolderOpen },
-  todo: { label: 'Todo', icon: CheckSquare },
-  claude_md: { label: 'CLAUDE.md', icon: FileText },
+  skill: { label: msg`Skill`, icon: Sparkles },
+  mcp_server: { label: msg`MCP`, icon: Plug },
+  plugin: { label: msg`Plugin`, icon: Settings },
+  hook: { label: msg`Hook`, icon: Terminal },
+  command: { label: msg`Command`, icon: Command },
+  agent: { label: msg`SubAgent`, icon: Bot },
+  session: { label: msg`Session`, icon: FolderOpen },
+  todo: { label: msg`Todo`, icon: CheckSquare },
+  claude_md: { label: msg`CLAUDE.md`, icon: FileText },
 };
 
 const ALL_RESOURCE_TYPES = Object.keys(RESOURCE_TYPE_META) as ProjectResourceType[];

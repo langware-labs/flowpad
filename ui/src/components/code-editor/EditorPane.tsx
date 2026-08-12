@@ -496,7 +496,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
             variant="ghost"
             size="icon"
             onClick={handleExecuteFlow}
-            title="Execute in Flow"
+            title={t`Execute in Flow`}
             className="hover:bg-muted"
           >
             <PlayCircle className="h-4 w-4" />

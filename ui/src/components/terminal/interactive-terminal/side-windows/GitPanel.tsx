@@ -1,4 +1,5 @@
-import { t } from '@lingui/core/macro';
+import { i18n } from '@lingui/core';
+import { msg, t } from '@lingui/core/macro';
 import { GitWorkdir, type GitStatus, type GitStatusFile } from '@sdk';
 import { useGitPush } from '@src/hooks/use-git-push';
 import {
@@ -77,21 +78,21 @@ interface GitAction {
 // every tracked-edit status (M/A/R/…) not given its own entry.
 const UNDO_VARIANTS: Record<string, { standard: string; advanced: string; tooltip: string; icon: LucideIcon }> = {
   '?': {
-    standard: 'Remove',
-    advanced: 'Discard (delete)',
-    tooltip: "Delete this new file — it isn't saved in git yet",
+    standard: msg`Remove`,
+    advanced: msg`Discard (delete)`,
+    tooltip: msg`Delete this new file — it isn't saved in git yet`,
     icon: Trash2,
   },
   D: {
-    standard: 'Bring back',
-    advanced: 'Restore',
-    tooltip: 'Restore this deleted file from the last commit',
+    standard: msg`Bring back`,
+    advanced: msg`Restore`,
+    tooltip: msg`Restore this deleted file from the last commit`,
     icon: RotateCcw,
   },
   default: {
-    standard: 'Undo changes',
-    advanced: 'Discard',
-    tooltip: 'Restore this file to the last saved version — your edits will be lost',
+    standard: msg`Undo changes`,
+    advanced: msg`Discard`,
+    tooltip: msg`Restore this file to the last saved version — your edits will be lost`,
     icon: Undo2,
   },
 };
@@ -100,7 +101,7 @@ function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
   const view: GitAction = {
     key: 'diff',
     label: t`View`,
-    tooltip: 'View the changes in this file',
+    tooltip: msg`View the changes in this file`,
     icon: Eye,
   };
 
@@ -111,8 +112,11 @@ function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
   const u = UNDO_VARIANTS[file.status] ?? UNDO_VARIANTS.default;
   const undo: GitAction = {
     key: 'discard',
-    label: mode === 'standard' ? u.standard : u.advanced,
-    tooltip: u.tooltip,
+    // Resolved here so `GitAction.label`/`tooltip` stay plain strings — the
+    // sibling actions below build theirs with `t`, and the render sites read
+    // them directly.
+    label: i18n._(mode === 'standard' ? u.standard : u.advanced),
+    tooltip: i18n._(u.tooltip),
     icon: u.icon,
     destructive: true,
     subpath: 'discard-file',
@@ -130,21 +134,21 @@ function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
     ? {
         key: 'unstage',
         label: t`Unstage`,
-        tooltip: 'Remove this file from the next commit (git restore --staged)',
+        tooltip: msg`Remove this file from the next commit (git restore --staged)`,
         icon: PlusSquare,
         subpath: 'unstage-file',
       }
     : {
         key: 'stage',
         label: t`Stage`,
-        tooltip: 'Include this file in the next commit (git add)',
+        tooltip: msg`Include this file in the next commit (git add)`,
         icon: PlusSquare,
         subpath: 'stage-file',
       };
   const copyPath: GitAction = {
     key: 'copyPath',
     label: t`Copy path`,
-    tooltip: "Copy this file's path to the clipboard",
+    tooltip: msg`Copy this file's path to the clipboard`,
     icon: Copy,
   };
   return [view, stageAction, undo, copyPath];
