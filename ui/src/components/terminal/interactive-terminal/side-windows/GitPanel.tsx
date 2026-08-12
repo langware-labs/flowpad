@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { GitWorkdir, type GitStatus, type GitStatusFile } from '@sdk';
 import { useGitPush } from '@src/hooks/use-git-push';
 import {
@@ -98,7 +99,7 @@ const UNDO_VARIANTS: Record<string, { standard: string; advanced: string; toolti
 function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
   const view: GitAction = {
     key: 'diff',
-    label: 'View',
+    label: t`View`,
     tooltip: 'View the changes in this file',
     icon: Eye,
   };
@@ -128,21 +129,21 @@ function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
   const stageAction: GitAction = staged
     ? {
         key: 'unstage',
-        label: 'Unstage',
+        label: t`Unstage`,
         tooltip: 'Remove this file from the next commit (git restore --staged)',
         icon: PlusSquare,
         subpath: 'unstage-file',
       }
     : {
         key: 'stage',
-        label: 'Stage',
+        label: t`Stage`,
         tooltip: 'Include this file in the next commit (git add)',
         icon: PlusSquare,
         subpath: 'stage-file',
       };
   const copyPath: GitAction = {
     key: 'copyPath',
-    label: 'Copy path',
+    label: t`Copy path`,
     tooltip: "Copy this file's path to the clipboard",
     icon: Copy,
   };

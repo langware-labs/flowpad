@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import type { ReactNode } from 'react';
 import { useMemo } from 'react';
 import { Link2, PanelRightClose, PanelRightOpen } from 'lucide-react';
@@ -10,9 +11,9 @@ import { BacklinksTab } from './side-windows';
 // The one built-in side window; asset editors append extras via `extraTabs`.
 const BACKLINKS_TAB: TabDescriptor = {
   id: 'backlinks',
-  label: 'Backlinks',
+  label: t`Backlinks`,
   icon: Link2,
-  description: 'Documents that link here',
+  description: t`Documents that link here`,
 };
 
 // Vibe/Standard keep the markdown rail deliberately small. Context is supplied
@@ -158,7 +159,7 @@ export function EditorWithSidePanel({
           {advanced && openTabs.length === 0 && (
             <SideRailButton
               icon={PanelRightOpen}
-              label="Expand side window"
+              label={t`Expand side window`}
               onClick={() => open(registry[0].id)}
               testId="md-side-window-expand"
             />
