@@ -15,7 +15,7 @@ import { StepList } from '@src/components/ui/step-list';
 import { useSandboxes } from '@src/hooks/use-sandboxes';
 import { useAuth } from '@src/hooks/useAuth';
 import { contentInstallSpec, parseInstallIntent } from '@src/lib/content-install';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { ExternalLink, GitBranch, Lock, PackagePlus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
@@ -35,13 +35,13 @@ export default function InstallLanding() {
   if (!isHubOnly()) {
     return (
       <EntryMessage
-        title="Open this link on Flowpad Hub"
+        title={t`Open this link on Flowpad Hub`}
         detail="Content installation launches a cloud desktop from the Hub."
       />
     );
   }
   if (!parsed.ok) {
-    return <EntryMessage title="Invalid install link" detail={parsed.message} />;
+    return <EntryMessage title={t`Invalid install link`} detail={parsed.message} />;
   }
 
   const intent = parsed.intent;

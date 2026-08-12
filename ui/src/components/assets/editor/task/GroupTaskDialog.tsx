@@ -166,7 +166,7 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Optional message to the members…"
+            placeholder={t`Optional message to the members…`}
             rows={2}
             data-testid="group-task-message"
             className="w-full resize-none rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"

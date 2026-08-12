@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ExternalLink } from 'lucide-react';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Dialog,
   DialogContent,
@@ -54,7 +54,7 @@ export function RunPreviewRoot() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {target.title}
-            <Button variant="ghost" size="sm" onClick={openFull} title="Open in Runs" className="gap-1.5">
+            <Button variant="ghost" size="sm" onClick={openFull} title={t`Open in Runs`} className="gap-1.5">
               <ExternalLink className="h-3.5 w-3.5" /> <Trans>Open</Trans>
             </Button>
           </DialogTitle>

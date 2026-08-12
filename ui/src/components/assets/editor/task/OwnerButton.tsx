@@ -151,12 +151,12 @@ export function OwnerButton({ task }: OwnerButtonProps) {
                 onChange={setPicked}
                 max={1}
                 includeGroups={false}
-                placeholder="Search a contact or type an email"
+                placeholder={t`Search a contact or type an email`}
               />
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="Optional message to the owner…"
+                placeholder={t`Optional message to the owner…`}
                 rows={2}
                 data-testid="task-owner-message"
                 className="w-full resize-none rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"

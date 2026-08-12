@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import {
   Tooltip,
   TooltipContent,
@@ -110,7 +111,7 @@ export function ViewToggle() {
         data-testid="view-toggle"
         {...tagAttrs('ViewToggle', 'label')}
         role="radiogroup"
-        aria-label="View mode"
+        aria-label={t`View mode`}
         className={SEGMENTED_GROUP}
       >
       {modes.map((m) => {

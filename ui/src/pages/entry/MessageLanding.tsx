@@ -120,7 +120,7 @@ const MessageLanding: React.FC = () => {
   if (isLoading || redirecting || (!wrongAccount && !flowMessage && !notFound && !error)) {
     return (
       <div className="nl-center">
-        <div className="nl-spinner" aria-label="Loading" />
+        <div className="nl-spinner" aria-label={t`Loading`} />
       </div>
     );
   }
@@ -209,10 +209,10 @@ const MessageLanding: React.FC = () => {
               <span>Open with your favorite coding agent</span>
               {/* No-network stand-ins for the agent brand icons (Claude Code,
                   Codex, Cursor, Copilot) — lucide glyphs, approximate parity. */}
-              <Bot className="nl-agent-icon" size={22} aria-label="Claude Code" />
-              <Terminal className="nl-agent-icon" size={22} aria-label="Codex" />
-              <Sparkles className="nl-agent-icon" size={22} aria-label="Cursor" />
-              <Code className="nl-agent-icon" size={22} aria-label="Copilot" />
+              <Bot className="nl-agent-icon" size={22} aria-label={t`Claude Code`} />
+              <Terminal className="nl-agent-icon" size={22} aria-label={t`Codex`} />
+              <Sparkles className="nl-agent-icon" size={22} aria-label={t`Cursor`} />
+              <Code className="nl-agent-icon" size={22} aria-label={t`Copilot`} />
             </h3>
             <p>{getAppPromoDesc}</p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>

@@ -960,6 +960,10 @@ msgstr "הוסף תגובה…"
 msgid "Add a data source"
 msgstr "הוספת מקור נתונים"
 
+#: src/components/assets/editor/task/TaskDescription.tsx
+msgid "Add a description…"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Add a key in \"LLM API keys\" above to use it here"
 msgstr "יש להוסיף מפתח ב\"מפתחות LLM API\" למעלה כדי להשתמש בו כאן"
@@ -1052,6 +1056,10 @@ msgstr "הוספת מקור נתונים"
 #: src/components/wiki-toolbar/WikiToolbar.tsx
 msgid "Add entity link"
 msgstr "הוסף קישור לישות"
+
+#: src/components/assets/editor/task/TaskAttachments.tsx
+msgid "Add file or folder"
+msgstr ""
 
 #: src/components/project-home/ProjectGitChip.tsx
 #: src/components/project-home/ProjectGitChip.tsx
@@ -1241,6 +1249,7 @@ msgid "agents"
 msgstr "סוכנים"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/i18n/type-labels.ts
 msgid "Agents"
 msgstr "סוכנים"
@@ -1760,9 +1769,9 @@ msgstr "ארכיון הכל"
 msgid "Archive all todos"
 msgstr "ארכיב את כל המשימות"
 
-#: src/components/tasks-viewer/TasksViewer.tsx
-#~ msgid "Archive task"
-#~ msgstr "ארכיבון משימה"
+#: src/components/assets/editor/task/TaskAssetEditor.tsx
+msgid "Archive task"
+msgstr "ארכיבון משימה"
 
 #: src/components/conversation/conversation-category.ts
 #: src/components/inbox-view/InboxView.tsx
@@ -2839,6 +2848,7 @@ msgstr "Claude (סשן שוחזר)"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
 
@@ -3316,6 +3326,7 @@ msgstr "הפניית קוד"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Codex"
 msgstr "Codex"
 
@@ -3829,6 +3840,7 @@ msgstr "הועתק ללוח"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Copilot"
 msgstr "Copilot"
 
@@ -4507,6 +4519,7 @@ msgstr "צור את הוו-וצק הראשון שלך כדי להתחיל"
 msgid "created"
 msgstr "נוצר"
 
+#: src/components/assets/editor/AssetCollisionUI.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Created"
 msgstr "נוצר"
@@ -4594,6 +4607,10 @@ msgstr "הזמן הנוכחי"
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "cursor"
 msgstr "סמן"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Cursor"
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Custom agents"
@@ -5525,6 +5542,7 @@ msgid "Dismiss failed"
 msgstr "הסרה נכשלה"
 
 #: src/notifications/feed/NotificationFeed.tsx
+#: src/notifications/NotificationOutlet.tsx
 msgid "Dismiss notification"
 msgstr "דחיית התראה"
 
@@ -5712,10 +5730,15 @@ msgstr "הפעולה מוחקת את רשומות המקור ומאפסת את �
 #~ msgstr "תאריך יעד"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
+msgid "Duplicate assets"
+msgstr ""
+
+#: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Duplicates {duplicateCount}"
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
+#: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Duration"
 msgstr "משך זמן"
@@ -7152,6 +7175,10 @@ msgstr "הפעלות: {0}"
 msgid "Firing…"
 msgstr "בשיגור…"
 
+#: src/components/assets/editor/AssetCollisionUI.tsx
+msgid "First indexed"
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Fit (f)"
 msgstr "התאמה (f)"
@@ -7485,6 +7512,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Full Trust"
 msgstr "אמון מלא"
+
+#: src/components/assets/editor/deck/DeckViewer.tsx
+msgid "Fullscreen"
+msgstr ""
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "garbage"
@@ -8185,6 +8216,10 @@ msgstr "כיצד להשלים את ההגדרה"
 #~ msgid "How to install"
 #~ msgstr ""
 
+#: src/components/html-preview/HtmlPreview.tsx
+msgid "HTML preview"
+msgstr ""
+
 #: src/components/code-editor/EditorPane.tsx
 msgid "HTML Preview"
 msgstr "תצוגה מקדימה של HTML"
@@ -8366,6 +8401,10 @@ msgstr "משפר…"
 #: src/components/graph-view/ui/EntityIcon.tsx
 msgid "In git ({gitLabel}), click to open."
 msgstr "ב-git ({gitLabel}), יש ללחוץ כדי לפתוח."
+
+#: src/components/assets/editor/AssetCollisionUI.tsx
+msgid "In Git since"
+msgstr ""
 
 #: src/components/graph-view/ui/EntityIcon.tsx
 msgid "In git, click to open."
@@ -8972,6 +9011,10 @@ msgstr "הפעילו את סביבת העבודה"
 msgid "Layers"
 msgstr "שכבות"
 
+#: src/components/assets/editor/AssetCollisionUI.tsx
+msgid "Learn about duplicates"
+msgstr ""
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Learn about your data"
 msgstr "למד עוד על הנתונים שלך"
@@ -9022,6 +9065,10 @@ msgstr ""
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Lens type \"{0}/{1}\" is not supported."
 msgstr "סוג עדשה \"{0}/{1}\" אינו נתמך."
+
+#: src/components/assets/editor/task/AnalyzeStatusButton.tsx
+msgid "Let an agent assess progress and fill in missing fields"
+msgstr ""
 
 #: src/components/hooks/EventListPanel.tsx
 msgid "Level"
@@ -9206,6 +9253,7 @@ msgstr "טעון"
 #: src/components/icons/FusionSpinner.tsx
 #: src/components/icons/FusionSpinner.tsx
 #: src/components/icons/FusionSpinner.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Loading"
 msgstr "טוען"
 
@@ -9662,6 +9710,10 @@ msgstr "מיפוי מודלים"
 #: src/components/inbox-view/InboxView.tsx
 msgid "Mark all read"
 msgstr "סמן הכל כנקרא"
+
+#: src/components/assets/editor/task/AnalyzeStatusButton.tsx
+msgid "Mark this task as Done?"
+msgstr ""
 
 #: src/components/quick-create/registry.ts
 #: src/types/ViewType.ts
@@ -11904,6 +11956,10 @@ msgstr "פתח חיפוש מלא"
 #~ msgid "Open full view"
 #~ msgstr "פתח תצוגה מלאה"
 
+#: src/components/assets/editor/deck/DeckViewer.tsx
+msgid "Open in a new browser tab"
+msgstr ""
+
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
@@ -12178,6 +12234,10 @@ msgstr "פתח את הסשן"
 msgid "Open the sign-in page"
 msgstr "פתחו את דף ההתחברות"
 
+#: src/components/assets/editor/deck/DeckViewer.tsx
+msgid "Open the source template"
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Open the transcript analysis session"
 msgstr "פתח את הפגישה לניתוח הטרנסקריפט"
@@ -12261,6 +12321,14 @@ msgstr "אופציונלי — השאר ריק עבור בית"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Optional description"
 msgstr "תיאור אופציונלי"
+
+#: src/components/assets/editor/task/GroupTaskDialog.tsx
+msgid "Optional message to the members…"
+msgstr ""
+
+#: src/components/assets/editor/task/OwnerButton.tsx
+msgid "Optional message to the owner…"
+msgstr ""
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Or send them this link"
@@ -12372,6 +12440,10 @@ msgstr "דף"
 #: src/components/ui/pagination.tsx
 msgid "pagination"
 msgstr "עמודים"
+
+#: src/components/assets/editor/task/TaskAssetEditor.tsx
+msgid "Parent comments"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Parent directory"
@@ -13769,6 +13841,7 @@ msgstr "טען מחדש את רשימת MarkdownIndex."
 msgid "Remote Worker Session"
 msgstr "סשן עובד מרוחק"
 
+#: src/components/assets/editor/task/TaskAttachments.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Remove"
 msgstr "הסרה"
@@ -14801,6 +14874,10 @@ msgstr "חיפוש"
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #~ msgid "Search (⌘K)"
 #~ msgstr "חיפוש (⌘K)"
+
+#: src/components/assets/editor/task/OwnerButton.tsx
+msgid "Search a contact or type an email"
+msgstr ""
 
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Search agents and skills…"
@@ -17669,6 +17746,7 @@ msgid "tokens"
 msgstr "טוקנים"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Tokens"
 msgstr "טוקנים"
@@ -17680,6 +17758,10 @@ msgstr "מחר"
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "tool"
 msgstr "כלי"
+
+#: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
+msgid "Tool calls"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Tool Calls"
@@ -18077,6 +18159,7 @@ msgstr "פגישה ללא כותרת"
 #~ msgid "Untitled Skill"
 #~ msgstr "כישור ללא כותרת"
 
+#: src/components/assets/editor/task/TaskAssetEditor.tsx
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Untitled task"
 msgstr "משימה ללא כותרת"
@@ -18494,6 +18577,10 @@ msgstr "הצג הוק"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "View hook config"
 msgstr "הצג הגדרות קישור"
+
+#: src/components/view-toggle/view-toggle.tsx
+msgid "View mode"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "View on GitHub"

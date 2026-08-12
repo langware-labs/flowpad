@@ -130,7 +130,7 @@ export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStat
         className={className}
         disabled={!task.id}
         testId="task-analyze-status"
-        title="Let an agent assess progress and fill in missing fields"
+        title={t`Let an agent assess progress and fill in missing fields`}
       >
         <ScanSearch className="h-3.5 w-3.5" />
         Analyze Status
@@ -138,7 +138,7 @@ export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStat
       <ConfirmDialog
         open={confirmDone}
         onOpenChange={setConfirmDone}
-        title="Mark this task as Done?"
+        title={t`Mark this task as Done?`}
         description="The analysis found every requirement satisfied and a submission recorded. Setting the status is yours to confirm."
         confirmLabel="Mark Done"
         cancelLabel="Not yet"

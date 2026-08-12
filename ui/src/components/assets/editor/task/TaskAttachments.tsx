@@ -418,7 +418,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
               <button
                 type="button"
                 className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                title="Add file or folder"
+                title={t`Add file or folder`}
                 data-testid="task-attachments-add"
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -499,7 +499,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
                       type="button"
                       onClick={() => removeEntry(key)}
                       className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:block"
-                      title="Remove"
+                      title={t`Remove`}
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>

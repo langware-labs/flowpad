@@ -960,6 +960,10 @@ msgstr ""
 msgid "Add a data source"
 msgstr ""
 
+#: src/components/assets/editor/task/TaskDescription.tsx
+msgid "Add a description…"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Add a key in \"LLM API keys\" above to use it here"
 msgstr ""
@@ -1052,6 +1056,10 @@ msgstr "إضافة مصدر بيانات"
 #: src/components/wiki-toolbar/WikiToolbar.tsx
 msgid "Add entity link"
 msgstr "إضافة رابط الكيان"
+
+#: src/components/assets/editor/task/TaskAttachments.tsx
+msgid "Add file or folder"
+msgstr ""
 
 #: src/components/project-home/ProjectGitChip.tsx
 #: src/components/project-home/ProjectGitChip.tsx
@@ -1241,6 +1249,7 @@ msgid "agents"
 msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/i18n/type-labels.ts
 msgid "Agents"
 msgstr ""
@@ -1760,9 +1769,9 @@ msgstr "أرشفة الكل"
 msgid "Archive all todos"
 msgstr ""
 
-#: src/components/tasks-viewer/TasksViewer.tsx
-#~ msgid "Archive task"
-#~ msgstr ""
+#: src/components/assets/editor/task/TaskAssetEditor.tsx
+msgid "Archive task"
+msgstr ""
 
 #: src/components/conversation/conversation-category.ts
 #: src/components/inbox-view/InboxView.tsx
@@ -2839,6 +2848,7 @@ msgstr "Claude (جلسة مستعادة)"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
 
@@ -3316,6 +3326,7 @@ msgstr "مرجع الكود"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Codex"
 msgstr "Codex"
 
@@ -3829,6 +3840,7 @@ msgstr "تم النسخ إلى الحافظة"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Copilot"
 msgstr "Copilot"
 
@@ -4507,6 +4519,7 @@ msgstr ""
 msgid "created"
 msgstr ""
 
+#: src/components/assets/editor/AssetCollisionUI.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Created"
 msgstr ""
@@ -4594,6 +4607,10 @@ msgstr "الوقت الحالي"
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "cursor"
 msgstr "المؤشر"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Cursor"
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Custom agents"
@@ -5525,6 +5542,7 @@ msgid "Dismiss failed"
 msgstr "تجاهل الخطأ"
 
 #: src/notifications/feed/NotificationFeed.tsx
+#: src/notifications/NotificationOutlet.tsx
 msgid "Dismiss notification"
 msgstr ""
 
@@ -5712,10 +5730,15 @@ msgstr "يحذف سجلات هذا المصدر ويعيد ضبط موضع ال�
 #~ msgstr ""
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
+msgid "Duplicate assets"
+msgstr ""
+
+#: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Duplicates {duplicateCount}"
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
+#: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Duration"
 msgstr "المدة"
@@ -7149,6 +7172,10 @@ msgstr ""
 msgid "Firing…"
 msgstr "جارٍ البث…"
 
+#: src/components/assets/editor/AssetCollisionUI.tsx
+msgid "First indexed"
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Fit (f)"
 msgstr ""
@@ -7482,6 +7509,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Full Trust"
 msgstr "الثقة الكاملة"
+
+#: src/components/assets/editor/deck/DeckViewer.tsx
+msgid "Fullscreen"
+msgstr ""
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "garbage"
@@ -8182,6 +8213,10 @@ msgstr "كيفية إكمال الإعداد"
 #~ msgid "How to install"
 #~ msgstr ""
 
+#: src/components/html-preview/HtmlPreview.tsx
+msgid "HTML preview"
+msgstr ""
+
 #: src/components/code-editor/EditorPane.tsx
 msgid "HTML Preview"
 msgstr "معاينة HTML"
@@ -8363,6 +8398,10 @@ msgstr ""
 #: src/components/graph-view/ui/EntityIcon.tsx
 msgid "In git ({gitLabel}), click to open."
 msgstr "في git ({gitLabel})، انقر للفتح."
+
+#: src/components/assets/editor/AssetCollisionUI.tsx
+msgid "In Git since"
+msgstr ""
 
 #: src/components/graph-view/ui/EntityIcon.tsx
 msgid "In git, click to open."
@@ -8969,6 +9008,10 @@ msgstr "إطلاق مساحة العمل"
 msgid "Layers"
 msgstr ""
 
+#: src/components/assets/editor/AssetCollisionUI.tsx
+msgid "Learn about duplicates"
+msgstr ""
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Learn about your data"
 msgstr "التعرف على بياناتك"
@@ -9018,6 +9061,10 @@ msgstr ""
 #. placeholder {1}: lensParts.type
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Lens type \"{0}/{1}\" is not supported."
+msgstr ""
+
+#: src/components/assets/editor/task/AnalyzeStatusButton.tsx
+msgid "Let an agent assess progress and fill in missing fields"
 msgstr ""
 
 #: src/components/hooks/EventListPanel.tsx
@@ -9203,6 +9250,7 @@ msgstr "المحمّل"
 #: src/components/icons/FusionSpinner.tsx
 #: src/components/icons/FusionSpinner.tsx
 #: src/components/icons/FusionSpinner.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Loading"
 msgstr "جارٍ التحميل"
 
@@ -9659,6 +9707,10 @@ msgstr ""
 #: src/components/inbox-view/InboxView.tsx
 msgid "Mark all read"
 msgstr "تحديد الكل كمقروء"
+
+#: src/components/assets/editor/task/AnalyzeStatusButton.tsx
+msgid "Mark this task as Done?"
+msgstr ""
 
 #: src/components/quick-create/registry.ts
 #: src/types/ViewType.ts
@@ -11899,6 +11951,10 @@ msgstr "فتح البحث الكامل"
 #~ msgid "Open full view"
 #~ msgstr ""
 
+#: src/components/assets/editor/deck/DeckViewer.tsx
+msgid "Open in a new browser tab"
+msgstr ""
+
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
@@ -12173,6 +12229,10 @@ msgstr "فتح الجلسة"
 msgid "Open the sign-in page"
 msgstr ""
 
+#: src/components/assets/editor/deck/DeckViewer.tsx
+msgid "Open the source template"
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Open the transcript analysis session"
 msgstr "فتح جلسة تحليل النسخة"
@@ -12255,6 +12315,14 @@ msgstr "اختياري — يُستخدم المجلد الرئيسي إذا ت�
 
 #: src/components/artifacts/artifact-form.tsx
 msgid "Optional description"
+msgstr ""
+
+#: src/components/assets/editor/task/GroupTaskDialog.tsx
+msgid "Optional message to the members…"
+msgstr ""
+
+#: src/components/assets/editor/task/OwnerButton.tsx
+msgid "Optional message to the owner…"
 msgstr ""
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
@@ -12367,6 +12435,10 @@ msgstr "الصفحة"
 #: src/components/ui/pagination.tsx
 msgid "pagination"
 msgstr "ترقيم الصفحات"
+
+#: src/components/assets/editor/task/TaskAssetEditor.tsx
+msgid "Parent comments"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Parent directory"
@@ -13764,6 +13836,7 @@ msgstr "إعادة تحميل قائمة MarkdownIndex."
 msgid "Remote Worker Session"
 msgstr "جلسة العامل البعيد"
 
+#: src/components/assets/editor/task/TaskAttachments.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Remove"
 msgstr "إزالة"
@@ -14794,6 +14867,10 @@ msgstr ""
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #~ msgid "Search (⌘K)"
 #~ msgstr ""
+
+#: src/components/assets/editor/task/OwnerButton.tsx
+msgid "Search a contact or type an email"
+msgstr ""
 
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Search agents and skills…"
@@ -17660,6 +17737,7 @@ msgid "tokens"
 msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Tokens"
 msgstr ""
@@ -17670,6 +17748,10 @@ msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "tool"
+msgstr ""
+
+#: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
+msgid "Tool calls"
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
@@ -18068,6 +18150,7 @@ msgstr "جلسة بدون عنوان"
 #~ msgid "Untitled Skill"
 #~ msgstr ""
 
+#: src/components/assets/editor/task/TaskAssetEditor.tsx
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Untitled task"
 msgstr ""
@@ -18485,6 +18568,10 @@ msgstr "عرض Hook"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "View hook config"
 msgstr "عرض إعدادات الخطاف"
+
+#: src/components/view-toggle/view-toggle.tsx
+msgid "View mode"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "View on GitHub"

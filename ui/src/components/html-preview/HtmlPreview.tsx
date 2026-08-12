@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { FSRef } from '@sdk';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -56,7 +57,7 @@ export function HtmlPreview({ path }: { path: string }) {
   }
   return (
     <iframe
-      title="HTML preview"
+      title={t`HTML preview`}
       sandbox="allow-scripts"
       srcDoc={html}
       className="h-full w-full border-0 bg-white"

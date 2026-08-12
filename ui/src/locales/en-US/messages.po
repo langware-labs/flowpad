@@ -960,6 +960,10 @@ msgstr "Add a comment…"
 msgid "Add a data source"
 msgstr "Add a data source"
 
+#: src/components/assets/editor/task/TaskDescription.tsx
+msgid "Add a description…"
+msgstr "Add a description…"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Add a key in \"LLM API keys\" above to use it here"
 msgstr "Add a key in \"LLM API keys\" above to use it here"
@@ -1052,6 +1056,10 @@ msgstr "Add data source"
 #: src/components/wiki-toolbar/WikiToolbar.tsx
 msgid "Add entity link"
 msgstr "Add entity link"
+
+#: src/components/assets/editor/task/TaskAttachments.tsx
+msgid "Add file or folder"
+msgstr "Add file or folder"
 
 #: src/components/project-home/ProjectGitChip.tsx
 #: src/components/project-home/ProjectGitChip.tsx
@@ -1241,6 +1249,7 @@ msgid "agents"
 msgstr "agents"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/i18n/type-labels.ts
 msgid "Agents"
 msgstr "Agents"
@@ -1760,9 +1769,9 @@ msgstr "Archive all"
 msgid "Archive all todos"
 msgstr "Archive all todos"
 
-#: src/components/tasks-viewer/TasksViewer.tsx
-#~ msgid "Archive task"
-#~ msgstr "Archive task"
+#: src/components/assets/editor/task/TaskAssetEditor.tsx
+msgid "Archive task"
+msgstr "Archive task"
 
 #: src/components/conversation/conversation-category.ts
 #: src/components/inbox-view/InboxView.tsx
@@ -2839,6 +2848,7 @@ msgstr "Claude (restored session)"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
 
@@ -3316,6 +3326,7 @@ msgstr "Code Ref"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Codex"
 msgstr "Codex"
 
@@ -3829,6 +3840,7 @@ msgstr "Copied to Clipboard"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Copilot"
 msgstr "Copilot"
 
@@ -4507,6 +4519,7 @@ msgstr "Create your first hook to get started"
 msgid "created"
 msgstr "created"
 
+#: src/components/assets/editor/AssetCollisionUI.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Created"
 msgstr "Created"
@@ -4594,6 +4607,10 @@ msgstr "Current Time"
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "cursor"
 msgstr "cursor"
+
+#: src/pages/entry/MessageLanding.tsx
+msgid "Cursor"
+msgstr "Cursor"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Custom agents"
@@ -5525,6 +5542,7 @@ msgid "Dismiss failed"
 msgstr "Dismiss failed"
 
 #: src/notifications/feed/NotificationFeed.tsx
+#: src/notifications/NotificationOutlet.tsx
 msgid "Dismiss notification"
 msgstr "Dismiss notification"
 
@@ -5712,10 +5730,15 @@ msgstr "Drops this source's records and clears its sync position, so the next po
 #~ msgstr "Due date"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
+msgid "Duplicate assets"
+msgstr "Duplicate assets"
+
+#: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Duplicates {duplicateCount}"
 msgstr "Duplicates {duplicateCount}"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
+#: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Duration"
 msgstr "Duration"
@@ -7152,6 +7175,10 @@ msgstr "fires: {0}"
 msgid "Firing…"
 msgstr "Firing…"
 
+#: src/components/assets/editor/AssetCollisionUI.tsx
+msgid "First indexed"
+msgstr "First indexed"
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Fit (f)"
 msgstr "Fit (f)"
@@ -7485,6 +7512,10 @@ msgstr "Full environment variable dictionary"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Full Trust"
 msgstr "Full Trust"
+
+#: src/components/assets/editor/deck/DeckViewer.tsx
+msgid "Fullscreen"
+msgstr "Fullscreen"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "garbage"
@@ -8185,6 +8216,10 @@ msgstr "How to finish setup"
 #~ msgid "How to install"
 #~ msgstr "How to install"
 
+#: src/components/html-preview/HtmlPreview.tsx
+msgid "HTML preview"
+msgstr "HTML preview"
+
 #: src/components/code-editor/EditorPane.tsx
 msgid "HTML Preview"
 msgstr "HTML Preview"
@@ -8366,6 +8401,10 @@ msgstr "Improving…"
 #: src/components/graph-view/ui/EntityIcon.tsx
 msgid "In git ({gitLabel}), click to open."
 msgstr "In git ({gitLabel}), click to open."
+
+#: src/components/assets/editor/AssetCollisionUI.tsx
+msgid "In Git since"
+msgstr "In Git since"
 
 #: src/components/graph-view/ui/EntityIcon.tsx
 msgid "In git, click to open."
@@ -8972,6 +9011,10 @@ msgstr "Launch workspace"
 msgid "Layers"
 msgstr "Layers"
 
+#: src/components/assets/editor/AssetCollisionUI.tsx
+msgid "Learn about duplicates"
+msgstr "Learn about duplicates"
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Learn about your data"
 msgstr "Learn about your data"
@@ -9022,6 +9065,10 @@ msgstr "Lens"
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Lens type \"{0}/{1}\" is not supported."
 msgstr "Lens type \"{0}/{1}\" is not supported."
+
+#: src/components/assets/editor/task/AnalyzeStatusButton.tsx
+msgid "Let an agent assess progress and fill in missing fields"
+msgstr "Let an agent assess progress and fill in missing fields"
 
 #: src/components/hooks/EventListPanel.tsx
 msgid "Level"
@@ -9206,6 +9253,7 @@ msgstr "Loaded"
 #: src/components/icons/FusionSpinner.tsx
 #: src/components/icons/FusionSpinner.tsx
 #: src/components/icons/FusionSpinner.tsx
+#: src/pages/entry/MessageLanding.tsx
 msgid "Loading"
 msgstr "Loading"
 
@@ -9662,6 +9710,10 @@ msgstr "Mapping"
 #: src/components/inbox-view/InboxView.tsx
 msgid "Mark all read"
 msgstr "Mark all read"
+
+#: src/components/assets/editor/task/AnalyzeStatusButton.tsx
+msgid "Mark this task as Done?"
+msgstr "Mark this task as Done?"
 
 #: src/components/quick-create/registry.ts
 #: src/types/ViewType.ts
@@ -11904,6 +11956,10 @@ msgstr "Open full search"
 #~ msgid "Open full view"
 #~ msgstr "Open full view"
 
+#: src/components/assets/editor/deck/DeckViewer.tsx
+msgid "Open in a new browser tab"
+msgstr "Open in a new browser tab"
+
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
@@ -12178,6 +12234,10 @@ msgstr "Open the session"
 msgid "Open the sign-in page"
 msgstr "Open the sign-in page"
 
+#: src/components/assets/editor/deck/DeckViewer.tsx
+msgid "Open the source template"
+msgstr "Open the source template"
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Open the transcript analysis session"
 msgstr "Open the transcript analysis session"
@@ -12261,6 +12321,14 @@ msgstr "Optional — leave blank for home"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Optional description"
 msgstr "Optional description"
+
+#: src/components/assets/editor/task/GroupTaskDialog.tsx
+msgid "Optional message to the members…"
+msgstr "Optional message to the members…"
+
+#: src/components/assets/editor/task/OwnerButton.tsx
+msgid "Optional message to the owner…"
+msgstr "Optional message to the owner…"
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Or send them this link"
@@ -12372,6 +12440,10 @@ msgstr "Page"
 #: src/components/ui/pagination.tsx
 msgid "pagination"
 msgstr "pagination"
+
+#: src/components/assets/editor/task/TaskAssetEditor.tsx
+msgid "Parent comments"
+msgstr "Parent comments"
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Parent directory"
@@ -13769,6 +13841,7 @@ msgstr "Reload the MarkdownIndex list."
 msgid "Remote Worker Session"
 msgstr "Remote Worker Session"
 
+#: src/components/assets/editor/task/TaskAttachments.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Remove"
 msgstr "Remove"
@@ -14801,6 +14874,10 @@ msgstr "Search"
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #~ msgid "Search (⌘K)"
 #~ msgstr "Search (⌘K)"
+
+#: src/components/assets/editor/task/OwnerButton.tsx
+msgid "Search a contact or type an email"
+msgstr "Search a contact or type an email"
 
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Search agents and skills…"
@@ -17669,6 +17746,7 @@ msgid "tokens"
 msgstr "tokens"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
+#: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Tokens"
 msgstr "Tokens"
@@ -17680,6 +17758,10 @@ msgstr "Tomorrow"
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "tool"
 msgstr "tool"
+
+#: src/components/lens-viewer/shared/transcript-features/WorkflowRunSummary.tsx
+msgid "Tool calls"
+msgstr "Tool calls"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Tool Calls"
@@ -18077,6 +18159,7 @@ msgstr "Untitled session"
 #~ msgid "Untitled Skill"
 #~ msgstr "Untitled Skill"
 
+#: src/components/assets/editor/task/TaskAssetEditor.tsx
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Untitled task"
 msgstr "Untitled task"
@@ -18494,6 +18577,10 @@ msgstr "View hook"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "View hook config"
 msgstr "View hook config"
+
+#: src/components/view-toggle/view-toggle.tsx
+msgid "View mode"
+msgstr "View mode"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "View on GitHub"
