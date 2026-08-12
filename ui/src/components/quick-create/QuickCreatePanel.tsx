@@ -22,6 +22,7 @@ import { cn } from '@src/lib/utils';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openNewChat } from '@src/navigation/open-new-chat';
+import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
 import { Info, KeyRound, Loader2, MessageSquarePlus } from 'lucide-react';
 import {
   Fragment,
@@ -309,8 +310,16 @@ export function QuickCreatePanel({
   const handleStartSession = async (workerType: 'claude_code' | 'codex' | 'copilot') => {
     onDone?.();
     // openNewChat creates AND navigates (carrying the chat mode) — no second nav.
-    const process = await openNewChat(navigation, { workerType });
-    if (!process) notify.error({ title: t`Failed to start session` });
+    // The catch is load-bearing: this is invoked as `void handleStartSession(…)`,
+    // so a rejected create used to become an unhandled rejection and the user got
+    // no feedback at all in any view mode.
+    try {
+      const process = await openNewChat(navigation, { workerType });
+      if (!process) notify.error({ title: t`Failed to start session` });
+    } catch (err) {
+      console.error('[QuickCreatePanel] start session failed', err);
+      openCapabilitiesForWorker(navigation, workerType);
+    }
   };
 
   // Intersection of the UI registry and the server-reported `creatable` types,
