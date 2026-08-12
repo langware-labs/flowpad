@@ -354,7 +354,10 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
             <Trans>Nothing to display yet — try one to get started</Trans>
           </p>
           <div className="flex max-w-md flex-wrap justify-center gap-2">
-            {VIBE_STARTER_PROMPTS.map((p) => (
+            {VIBE_STARTER_PROMPTS.map((descriptor) => {
+              // One resolution per chip: label, key and submitted prompt alike.
+              const p = t(descriptor);
+              return (
               <button
                 key={p}
                 type="button"
@@ -364,7 +367,8 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
               >
                 {p}
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       );

@@ -90,7 +90,11 @@ export function VibeNoProcessWorkspace() {
               <Trans>Nothing to display yet — try one to get started</Trans>
             </p>
             <div className="flex max-w-md flex-wrap justify-center gap-2">
-              {VIBE_STARTER_PROMPTS.map((p) => (
+              {VIBE_STARTER_PROMPTS.map((descriptor) => {
+                // One resolution per chip: the label, the key and the prompt
+                // that gets sent must all be the same string.
+                const p = t(descriptor);
+                return (
                 <button
                   key={p}
                   type="button"
@@ -102,7 +106,8 @@ export function VibeNoProcessWorkspace() {
                   {startingPrompt === p ? <Loader2 className="me-1 inline h-3.5 w-3.5 animate-spin" /> : null}
                   {p}
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

@@ -968,6 +968,10 @@ msgstr "הוסף ארטיפקט"
 msgid "Add Bookmark"
 msgstr "הוסף סימנייה"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Add Co-Authored-By to git commits"
+msgstr ""
+
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
@@ -1100,6 +1104,14 @@ msgstr "נכסים נוספים"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Additional directories"
 msgstr "תיקיות נוספות"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Additional Directories"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Additional plugin marketplace URLs"
+msgstr ""
 
 #: src/components/tools/ToolsPanel.tsx
 #~ msgid "Additional Tools"
@@ -1267,6 +1279,10 @@ msgstr "הכל בסדר"
 msgid "All guides"
 msgstr "כל המדריכים"
 
+#: src/components/quick-create/ScopeSelection.tsx
+msgid "All harnesses"
+msgstr ""
+
 #: src/components/locale/LocalePicker.tsx
 msgid "All languages"
 msgstr "כל השפות"
@@ -1302,6 +1318,7 @@ msgid "All types"
 msgstr "כל הסוגים"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
+#: src/components/settings-view/settings-utils.ts
 msgid "Allow"
 msgstr "אפשרו"
 
@@ -1316,6 +1333,38 @@ msgstr "יש להרשות ל-{who} להריץ prompt במחשב זה"
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Allow all tools without confirmation (--allow-all)"
 msgstr "אפשור כל הכלים ללא אישור (--allow-all)"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Allow all unix socket connections"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Allow All Unix Sockets"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Allow binding to local ports"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Allow commands to run outside sandbox"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Allow Local Binding"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Allow Unix Sockets"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Allow Unsandboxed Commands"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Allowed Domains"
+msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Already a member — change their role in the list above"
@@ -1362,6 +1411,10 @@ msgstr "תמיד הגב באופן אוטומטי ל{who} עבור פרויקט 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Always auto-run {guestName}'s sessions here"
 msgstr "תמיד להריץ אוטומטית סשנים של {guestName} כאן"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Always Thinking Enabled"
+msgstr ""
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
@@ -1471,9 +1524,17 @@ msgstr "הערה נשלחה"
 msgid "Annotations"
 msgstr "הערות"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Announcements shown at startup"
+msgstr ""
+
 #: src/components/assets/context-folder-sources.tsx
 msgid "Another Flowpad project — its folder becomes context for this one"
 msgstr "פרויקט Flowpad אחר — התיקייה שלו משמשת כקונטקסט לפרויקט זה"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Anthropic API key for direct API access"
+msgstr ""
 
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "Any detail that helps (optional)"
@@ -1516,6 +1577,7 @@ msgid "Api Key"
 msgstr "מפתח API"
 
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/settings-view/settings-utils.ts
 msgid "API Key"
 msgstr "מפתח API"
 
@@ -1543,6 +1605,10 @@ msgstr "יצירת מפתח API"
 msgid "API key has been removed successfully"
 msgstr "מפתח ה-API הוסר בהצלחה"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "API Key Helper"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "API Key, Backend URL, or Machine ID not configured"
@@ -1552,6 +1618,10 @@ msgstr "מפתח API, URL של Backend, או מזהה מכונה לא מוגדר
 #: src/components/credentials-view/CredentialsView.tsx
 msgid "API Keys"
 msgstr "מפתחות API"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "API Timeout"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "App page"
@@ -1655,6 +1725,10 @@ msgstr "קבצים שנוצרו במהלך הפעלת התהליך יופיעו 
 #: src/components/task-bar/TaskCard.tsx
 #~ msgid "Artifacts:"
 #~ msgstr "מכלים:"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Ask"
+msgstr ""
 
 #: src/components/chat-input.tsx
 #~ msgid "Ask {0} to solve..."
@@ -1844,6 +1918,14 @@ msgstr "העלאת הקובץ המצורף נכשלה"
 msgid "Attachments"
 msgstr "קבצים מצורפים"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Attribution"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Attribution line for pull requests"
+msgstr ""
+
 #: src/journey/JourneyStepLive.tsx
 msgid "Authenticated ✓"
 msgstr "ההזדהות אומתה ✓"
@@ -1852,6 +1934,10 @@ msgstr "ההזדהות אומתה ✓"
 #: src/components/connections-manager.tsx
 msgid "Authenticated as {0}"
 msgstr "החיבור אומת בתור {0}"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Authentication"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "authentication required"
@@ -1881,6 +1967,18 @@ msgstr "ההרשאה נכשלה או נדחתה. לחץ על Retry כדי לנס
 #~ msgid "Auto login user — this sandbox belongs to one person."
 #~ msgstr ""
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Auto Updates Channel"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Auto-allow Bash if Sandboxed"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Auto-approve bash when sandbox is active"
+msgstr ""
+
 #: src/components/tasks-viewer/TasksViewer.tsx
 #~ msgid "Auto-archive after..."
 #~ msgstr "ארכיבון אוטומטי אחרי..."
@@ -1888,6 +1986,10 @@ msgstr "ההרשאה נכשלה או נדחתה. לחץ על Retry כדי לנס
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Auto-detect direction from first strong character"
 msgstr "זיהוי כיוון אוטומטי מהתו החזק הראשון"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Auto-enable all project-level MCP servers"
+msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "auto-login off"
@@ -1927,6 +2029,10 @@ msgstr "זמין"
 msgid "Available assets"
 msgstr "נכסים זמינים"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Available Models"
+msgstr ""
+
 #: src/components/graph-view/ui/EntityIcon.tsx
 msgid "Available on cloud"
 msgstr "זמין בענן"
@@ -1934,6 +2040,30 @@ msgstr "זמין בענן"
 #: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
 #~ msgid "Available when the agent is waiting for your input"
 #~ msgstr "זמין כאשר הסוכן ממתין לקלט שלך"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "AWS Auth Refresh"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "AWS CLI profile name"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "AWS Credential Export"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "AWS Profile"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "AWS Region"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "AWS region for Bedrock"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -1999,6 +2129,10 @@ msgstr "מאוזן"
 msgid "Base path"
 msgstr "נתיב בסיס"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Base URL"
+msgstr ""
+
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Bash Command *"
 msgstr "פקודת Bash *"
@@ -2006,6 +2140,10 @@ msgstr "פקודת Bash *"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "bash progress"
 msgstr "התקדמות bash"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Bash Timeout (ms)"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Behaviour"
@@ -2127,6 +2265,10 @@ msgstr "שורת מאגר"
 #: src/components/account/settings-section.tsx
 #~ msgid "Buffer terminal sync updates (prevents scroll jumps)"
 #~ msgstr "שמור עדכוני סנכרון טרמינל בחוצץ (מונע קפיצות גלילה)"
+
+#: src/pages/flow-page/vibe-starter-prompts.ts
+msgid "Build a landing page"
+msgstr ""
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Build history"
@@ -2580,6 +2722,7 @@ msgstr "Claude (סשן שוחזר)"
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/quick-create/ScopeSelection.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
 
@@ -2651,6 +2794,10 @@ msgstr "ניקוי הושלם"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Cleanup failed"
 msgstr "הניקיון נכשל"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Cleanup Period (Days)"
+msgstr ""
 
 #: src/components/events/EventFeed.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -2956,6 +3103,10 @@ msgstr "ארגז חול בענן"
 #~ msgid "Cloud WorldView"
 #~ msgstr "תצוגת עולם בענן"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Co-author line for git commits"
+msgstr ""
+
 #: src/components/markdown-view.tsx
 msgid "code"
 msgstr "קוד"
@@ -3005,6 +3156,7 @@ msgstr "הפניית קוד"
 #~ msgstr "Codebase"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/quick-create/ScopeSelection.tsx
 msgid "Codex"
 msgstr "Codex"
 
@@ -3108,6 +3260,18 @@ msgstr "סטטוס הפקודה"
 msgid "Command to execute (optional for trace-only hooks)"
 msgstr "פקודה להפעלה (אופציונלי עבור hooks של עקבה בלבד)"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Command to export AWS credentials"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Command to refresh AWS credentials"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Command to retrieve API key dynamically"
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "Command: "
 msgstr "פקודה: "
@@ -3115,6 +3279,10 @@ msgstr "פקודה: "
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Commands"
 msgstr "פקודות"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Commands excluded from sandboxing"
+msgstr ""
 
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -3148,6 +3316,10 @@ msgstr "אישור ומיזוג"
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "אשר את כל השינויים ובצע מיזוג לענף הראשי. Claude יצא מ-worktree בעת סיום."
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Commit Attribution"
+msgstr ""
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Commit failed"
@@ -3183,6 +3355,14 @@ msgstr "הוגש {skillName} v{0}"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "compact boundary"
 msgstr "גבול דחוס"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Company & Team"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Company Announcements"
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "completed"
@@ -3416,6 +3596,10 @@ msgstr "המשך דרך דוא״ל"
 msgid "Continue with Google"
 msgstr "המשך עם Google"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Control reasoning effort level"
+msgstr ""
+
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -3457,6 +3641,7 @@ msgid "Copied to Clipboard"
 msgstr "הועתק ללוח"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/quick-create/ScopeSelection.tsx
 msgid "Copilot"
 msgstr "Copilot"
 
@@ -3965,6 +4150,10 @@ msgstr "ליצור מאגר חדש לגמרי"
 msgid "Create a contacts group — add its members to any conversation in one click"
 msgstr "יצירת קבוצת אנשי קשר — הוספת חבריה לכל שיחה בלחיצה אחת"
 
+#: src/pages/flow-page/vibe-starter-prompts.ts
+msgid "Create a dashboard"
+msgstr ""
+
 #. placeholder {0}: m.newFolderTarget?.label ?? 'this folder'
 #: src/components/assets/AssetsNavigator.tsx
 msgid "Create a folder in {0}."
@@ -4156,6 +4345,18 @@ msgstr "סמן"
 msgid "Custom agents"
 msgstr "סוכנים מותאמים"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Custom API base URL for Anthropic"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Custom tip content for the spinner"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Custom verbs for the progress spinner"
+msgstr ""
+
 #: src/components/project-home/ProjectHome.tsx
 msgid "Customize"
 msgstr "התאמה אישית"
@@ -4215,6 +4416,10 @@ msgstr "מערך נתונים"
 #: src/components/cron-view/CronForm.tsx
 msgid "Day {d}"
 msgstr "יום {d}"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Days before old sessions are cleaned up"
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "DB row or shadow dir, file is gone"
@@ -4303,6 +4508,10 @@ msgstr "ברירת מחדל ({defaultDbPath})"
 msgid "Default assistant"
 msgstr "עוזר ברירת מחדל"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Default bash command timeout in milliseconds"
+msgstr ""
+
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "Default CLI"
 msgstr "CLI ברירת מחדל"
@@ -4310,6 +4519,22 @@ msgstr "CLI ברירת מחדל"
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "Default LLM"
 msgstr "LLM ברירת מחדל"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Default Mode"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Default model to use for conversations"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Default output style"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Default permission mode"
+msgstr ""
 
 #: src/components/show-view/ShowView.tsx
 msgid "Defaults: page=\"{DEFAULT_PAGE}\", component=\"{DEFAULT_COMPONENT}\""
@@ -4606,6 +4831,10 @@ msgstr "מחיקה…"
 msgid "Delivered"
 msgstr "סופק"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Deny"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy"
 msgstr "פרסו"
@@ -4712,6 +4941,10 @@ msgstr "תיאור, למשל: הכנת התקציר היומי שלי"
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Description:"
 msgstr "תיאור:"
+
+#: src/pages/flow-page/vibe-starter-prompts.ts
+msgid "Design a pricing page"
+msgstr ""
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -4841,6 +5074,10 @@ msgstr "מימד"
 msgid "Directories"
 msgstr "תיקיות"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Directory for saving plan files"
+msgstr ""
+
 #: src/components/hooks/sniffer_view_mock.tsx
 #~ msgid "Disable"
 #~ msgstr "בטל"
@@ -4849,11 +5086,39 @@ msgstr "תיקיות"
 msgid "Disable all"
 msgstr "כבה הכל"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Disable all hook execution"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Disable All Hooks"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Disable API prompt caching"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Disable Bypass Permissions Mode"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Disable Non-essential Traffic"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Disable Prompt Caching"
+msgstr ""
+
 #: src/components/hooks-manager/index.tsx
 #: src/components/hooks/EventSnifferChip.tsx
 #: src/components/hooks/EventSnifferChip.tsx
 msgid "Disable sniffer"
 msgstr "השבת סניפר"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Disable telemetry and analytics"
+msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/components/triggers-view/TriggerListItem.tsx
@@ -4863,6 +5128,10 @@ msgstr "מכובה"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Disabled"
 msgstr "מבוטל"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Disabled MCP JSON Servers"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Disallowed tools"
@@ -4998,6 +5267,10 @@ msgstr "מסמך"
 #: src/i18n/type-labels.ts
 msgid "Documents"
 msgstr "מסמכים"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Domains accessible from sandbox"
+msgstr ""
 
 #: src/components/conversation/ExecutePromptDialog.tsx
 msgid "Don't ask again"
@@ -5347,9 +5620,21 @@ msgstr "שדה ריק ישתמש בשם המשתנה."
 msgid "Enable all"
 msgstr "הפעל הכל"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Enable All Project MCP Servers"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Enable browser automation via Chrome (--chrome)"
 msgstr "הפוך אוטומציה של דפדפן דרך Chrome (--chrome) לזמינה"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Enable command sandboxing"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Enable extended thinking for all conversations"
+msgstr ""
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
 #~ msgid "Enable for project"
@@ -5374,6 +5659,10 @@ msgstr "הפעל סניפר"
 #~ msgid "Enable the sniffer to start capturing hook traffic"
 #~ msgstr "הפעל את ה-sniffer כדי להתחיל לתפוס תעבורת וו"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Enable Weaker Nested Sandbox"
+msgstr ""
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Enable/Disable hook"
 msgstr "הפעלה או השבתה של הוק"
@@ -5389,6 +5678,14 @@ msgstr "מופעל"
 #: src/components/data-sources/DataSourceCard.tsx
 #~ msgid "Enabled — it polls on the next tick."
 #~ msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Enabled MCP JSON Servers"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Enabled Plugins"
+msgstr ""
 
 #: src/components/secrets/OriginChip.tsx
 msgid "Encrypted keychain"
@@ -5527,9 +5824,9 @@ msgstr "משתנה סביבה"
 msgid "ENV_VAR"
 msgstr "משתנה_סביבה"
 
-#: src/components/credentials-view/CredentialsView.tsx
-#~ msgid "Environment"
-#~ msgstr ""
+#: src/components/settings-view/settings-utils.ts
+msgid "Environment"
+msgstr ""
 
 #: src/components/credentials-view/DeclareEnvVarDialog.tsx
 msgid "Environment variable"
@@ -5547,9 +5844,9 @@ msgstr "משתנה סביבה"
 #~ msgid "Environment variable updated successfully"
 #~ msgstr ""
 
-#: src/components/EnvVarsManager.tsx
-#~ msgid "Environment Variables"
-#~ msgstr ""
+#: src/components/settings-view/settings-utils.ts
+msgid "Environment Variables"
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "error"
@@ -5684,6 +5981,10 @@ msgstr "כל הכישורים, הסוכנים, המפרטים והמסמכים �
 #: src/pages/hub-home/HubHome.tsx
 msgid "Everything you can reach, as a live graph."
 msgstr "כל מה שניתן להגיע אליו, כגרף חי."
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Excluded Commands"
+msgstr ""
 
 #: src/components/conversation/ExecutePromptDialog.tsx
 #~ msgid "Execute"
@@ -5828,6 +6129,14 @@ msgstr "קישור חיצוני"
 #: src/components/account/danger-zone.tsx
 #~ msgid "External Terminal"
 #~ msgstr "טרמינל חיצוני"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Extra directories Claude can access"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Extra Known Marketplaces"
+msgstr ""
 
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "extra rows fetched (limit + overfetch)"
@@ -6324,6 +6633,14 @@ msgstr "הקובץ טרם הועלה"
 msgid "File Size"
 msgstr "גודל קובץ"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "File Suggestion"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "File suggestion configuration"
+msgstr ""
+
 #: src/components/flowdata-renderer/WriteMessageComponent.tsx
 #~ msgid "File Write"
 #~ msgstr "כתיבת קובץ"
@@ -6334,6 +6651,10 @@ msgstr "גודל קובץ"
 #: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Files"
 msgstr "קבצים"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Files & Directories"
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"
@@ -6627,6 +6948,7 @@ msgstr "המקד את הגרף המקומי כאן"
 msgid "Focused"
 msgstr "במיקוד"
 
+#: src/components/quick-create/ScopeSelection.tsx
 #: src/i18n/type-labels.ts
 msgid "Folder"
 msgstr "תיקייה"
@@ -6654,9 +6976,25 @@ msgstr "היקף"
 #~ msgid "for"
 #~ msgstr "עבור"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Force a specific authentication method"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "Force chat UI"
 #~ msgstr "הכפה ממשק צ'אט"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Force Login Method"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Force Login Org UUID"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Force login to a specific organization"
+msgstr ""
 
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Fork Session"
@@ -6748,6 +7086,10 @@ msgstr "מלא"
 msgid "Full — complete rescan"
 msgstr "מלא — סריקה מחדש מלאה"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Full environment variable dictionary"
+msgstr ""
+
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "Full path where your project folder will be created."
 #~ msgstr "הנתיב המלא שבו תיקיית הפרויקט שלך תיווצר."
@@ -6772,6 +7114,14 @@ msgstr "שער"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "GB"
 msgstr "ג'יגה-בייט"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "GCP project ID for Vertex AI"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "GCP region for Vertex AI"
+msgstr ""
 
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "Generate an API key to authenticate API requests to FlowPad"
@@ -7367,6 +7717,8 @@ msgstr "חוק: "
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/hooks-view/hooks-view.tsx
+#: src/components/settings-view/settings-utils.ts
+#: src/components/settings-view/settings-utils.ts
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -7417,6 +7769,26 @@ msgstr "כיצד להשלים את ההגדרה"
 #: src/components/code-editor/EditorPane.tsx
 msgid "HTML Preview"
 msgstr "תצוגה מקדימה של HTML"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "HTTP Proxy"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "HTTP Proxy Port"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "HTTP proxy URL for network requests"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "HTTPS Proxy"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "HTTPS proxy URL for network requests"
+msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "https://github.com/owner/repo"
@@ -7618,6 +7990,10 @@ msgstr "תצוגת תיבת דואר"
 #: src/components/assets/AddContextFolderDialog.tsx
 msgid "Include another folder in this project's context."
 msgstr "הוספת תיקייה נוספת להקשר של הפרויקט."
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Include Co-Authored-By"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Index (seq)"
@@ -8055,6 +8431,7 @@ msgid "Labels:"
 msgstr "תוויות:"
 
 #: src/components/project-home/ProjectLanguageCard.tsx
+#: src/components/settings-view/settings-utils.ts
 msgid "Language"
 msgstr "שפה"
 
@@ -8273,6 +8650,10 @@ msgstr "מקשר…"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "List"
 msgstr "רשימה"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "List of models available for selection"
+msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -8782,6 +9163,10 @@ msgstr "מזהה מכונה"
 msgid "Machine secrets"
 msgstr "סודות המכונה"
 
+#: src/pages/flow-page/vibe-starter-prompts.ts
+msgid "Make a todo app"
+msgstr ""
+
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "Manage API keys"
 msgstr "ניהול מפתחות API"
@@ -8882,13 +9267,37 @@ msgstr "דפוס Matcher (אופציונלי)"
 #~ msgid "Max depth reached"
 #~ msgstr "הגיע לעומק המקסימלי"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Max Memory"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Max Output Tokens"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Max turns"
 msgstr "מקסימום סבבים"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Max Turns"
+msgstr ""
+
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Maximum execution time (default: 60s, max: 600s)"
 msgstr "זמן ביצוע מרבי (ברירת מחדל: 60s, מרבי: 600s)"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Maximum memory usage limit"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Maximum number of agentic turns"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Maximum tokens per model response"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Mcp Server"
@@ -8898,10 +9307,19 @@ msgstr "שרת MCP"
 msgid "MCP servers"
 msgstr "שרתי MCP"
 
+#: src/components/settings-view/settings-utils.ts
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "MCP Servers"
 msgstr "שרתי MCP"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "MCP servers explicitly disabled"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "MCP servers explicitly enabled"
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "MCP tools"
@@ -9090,11 +9508,16 @@ msgstr "מודל"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
+#: src/components/settings-view/settings-utils.ts
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Model"
 msgstr "מודל"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Model & Performance"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Model & runtime"
@@ -9107,6 +9530,10 @@ msgstr "מיפוי מודלים"
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Model not saved"
 msgstr "הדגם לא נשמר"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Model Override"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -10476,6 +10903,10 @@ msgstr "ללא"
 msgid "None"
 msgstr "אף אחד"
 
+#: src/components/quick-create/ScopeSelection.tsx
+msgid "None (project root)"
+msgstr ""
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Normal text"
 msgstr "טקסט רגיל"
@@ -11384,6 +11815,10 @@ msgstr "פלט"
 msgid "Output"
 msgstr "פלט"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Output Style"
+msgstr ""
+
 #. placeholder {0}: formatNumber(entry.usage.output ?? 0)
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "Output: {0}"
@@ -11392,6 +11827,10 @@ msgstr "פלט: {0}"
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "Overfetch"
 msgstr "הבאה יתרה"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Override the default model via environment"
+msgstr ""
 
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
@@ -11582,6 +12021,7 @@ msgid "Permission"
 msgstr "הרשאה"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/settings-view/settings-utils.ts
 msgid "Permissions"
 msgstr "הרשאות"
 
@@ -11719,6 +12159,10 @@ msgstr "כותרת התוכנית…"
 msgid "Plans"
 msgstr "תכניות"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Plans Directory"
+msgstr ""
+
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Please choose an image file"
 msgstr "יש לבחור קובץ תמונה"
@@ -11799,6 +12243,11 @@ msgstr "תוסף"
 msgid "Plugin"
 msgstr "תוסף"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Plugin enable/disable flags"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Plugins"
 msgstr "תוספים"
@@ -11819,6 +12268,14 @@ msgstr "מרווח הסנכרון (שניות)"
 msgid "Port"
 msgstr "יציאה"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Port for HTTP proxy in sandbox"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Port for SOCKS proxy in sandbox"
+msgstr ""
+
 #: src/pages/discover-page/discover-page.tsx
 #~ msgid "Portable core · Claude Code · Codex · Copilot"
 #~ msgstr "גרעין נייד · Claude Code · Codex · Copilot"
@@ -11835,6 +12292,10 @@ msgstr "אחרי שימוש בכלי"
 msgid "Powered by"
 msgstr "מופעל על ידי"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "PR Attribution"
+msgstr ""
+
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Pre Tool Use"
 msgstr "לפני שימוש בכלי"
@@ -11846,6 +12307,14 @@ msgstr "לפני שימוש בכלי"
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Preferences"
 msgstr "העדפות"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Preferred language for responses"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Prefers Reduced Motion"
+msgstr ""
 
 #: src/pages/entry/LaunchLanding.tsx
 #: src/pages/entry/OpenSandboxLanding.tsx
@@ -11863,6 +12332,10 @@ msgstr "מתכונן…"
 #: src/components/collaboration/RoomTabs.tsx
 #~ msgid "Press Enter to save, Esc to cancel"
 #~ msgstr "לחץ Enter כדי לשמור, ESC כדי לבטל"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Prevent use of bypass permissions mode"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/pty-viewer/PTYViewer.tsx
 msgid "preview"
@@ -11975,6 +12448,7 @@ msgstr "התקדמות"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/ScopeSelection.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Project"
@@ -12449,6 +12923,10 @@ msgstr "ניתן לסדר מחדש את המועדפים, ליצור תיקיו�
 msgid "reason"
 msgstr "סיבה"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Reasoning Effort"
+msgstr ""
+
 #: src/components/graph-view/GraphView.tsx
 msgid "Rebuild"
 msgstr "בנו מחדש"
@@ -12562,6 +13040,10 @@ msgstr "שחזור נכשל"
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "recursive"
 msgstr "רקורסיבי"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Reduce animations and motion effects"
+msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
 #~ msgid "Reference"
@@ -13003,6 +13485,14 @@ msgstr "שנה גודל ניווט"
 msgid "Resolving [[{name}]]…"
 msgstr "מחפשת [[{name}]]..."
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Respect .gitignore when searching files"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Respect Gitignore"
+msgstr ""
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "respected"
 msgstr "מוערך"
@@ -13414,9 +13904,14 @@ msgstr "סנדבוקס"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/settings-view/settings-utils.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Sandbox"
 msgstr "ארגז חול"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Sandbox Enabled"
+msgstr ""
 
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "Sandbox is unavailable. Resume or recreate to view logs."
@@ -14478,6 +14973,10 @@ msgstr "קליפה"
 msgid "Shell command to execute. Use $CLAUDE_PROJECT_DIR, $tool_name, $tool_input variables."
 msgstr "פקודת shell להוצאה לפועל. השתמש ב-$CLAUDE_PROJECT_DIR, $tool_name, $tool_input משתנים."
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Shell commands triggered by tool events"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Shell ID"
 msgstr "מזהה Shell"
@@ -14512,6 +15011,10 @@ msgstr "הציגו את {label} בקבצים"
 #: src/components/graph-view/ui/FilterChips.tsx
 msgid "Show {type}"
 msgstr "הצג {type}"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Show a progress bar in the terminal"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -14619,6 +15122,14 @@ msgstr "להציג מדריך הגדרה"
 #~ msgid "Show system skills"
 #~ msgstr "הצג כישורי מערכת"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Show timing info for each turn"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Show tips while spinner is active"
+msgstr ""
+
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/terminal/interactive-terminal/ChatToolsMenu.tsx
@@ -14628,6 +15139,10 @@ msgstr "הצגת קריאות כלים"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #~ msgid "Show tree"
 #~ msgstr "הצג עץ"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Show Turn Duration"
+msgstr ""
 
 #. placeholder {0}: entries.length
 #: src/pages/live-status/LiveStatus.tsx
@@ -14845,6 +15360,14 @@ msgstr "דלג על כל הודעות הרשאה (--dangerously-skip-permissions
 msgid "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 msgstr "דילוג על אישורים ובידוד (--dangerously-bypass-approvals-and-sandbox)"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Skip initial permission check on startup"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Skip Permissions Warmup"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Slower. To wipe rows first, use Clear Index then Full."
 msgstr "איטי יותר. כדי למחוק שורות ראשית, השתמש בברור אינדקס ואז מלא."
@@ -14871,6 +15394,10 @@ msgstr "השהה סימנייה"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Snoozed"
 msgstr "במתן"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "SOCKS Proxy Port"
+msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Some contexts could not be deleted"
@@ -14967,6 +15494,22 @@ msgstr "מפרט"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Spec created"
 msgstr "מפרט נוצר"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Specific unix sockets allowed in sandbox"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Spinner Tips Enabled"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Spinner Tips Override"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Spinner Verbs"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Spreadsheets"
@@ -15191,6 +15734,14 @@ msgstr "סטטיסטיקות"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Status"
 msgstr "סטטוס"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Status Line"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Status line display configuration"
+msgstr ""
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Status request sent"
@@ -15573,6 +16124,14 @@ msgstr "משימות"
 msgid "Team"
 msgstr "צוות"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Team collaboration mode"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Teammate Mode"
+msgstr ""
+
 #: src/components/account/organization-panel.tsx
 msgid "Teams"
 msgstr "צוותים"
@@ -15597,6 +16156,10 @@ msgstr "תבנית:"
 #: src/components/project-home/ProjectHome.tsx
 msgid "Terminal"
 msgstr "טרמינל"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Terminal Progress Bar Enabled"
+msgstr ""
 
 #: src/components/sessions-view/sessions-view.tsx
 msgid "Terminal Sessions"
@@ -16148,6 +16711,10 @@ msgstr "פסק זמן"
 msgid "Timeout (seconds)"
 msgstr "Timeout (שניות)"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Timeout for Anthropic API calls in ms"
+msgstr ""
+
 #: src/components/hooks/sniffer_view_mock.tsx
 #~ msgid "Timestamp"
 #~ msgstr "חותם זמן"
@@ -16275,6 +16842,18 @@ msgstr "שגיאת כלי"
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Tool pattern to match: exact name, regex pattern, or \"*\" for all. Case-sensitive."
 msgstr "דפוס כלים להתאמה: שם מדויק, דפוס regex, או \"*\" עבור הכל. תלוי קטנות אותיות."
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Tool patterns allowed without prompting"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Tool patterns that are always denied"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Tool patterns that require confirmation"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "tool result"
@@ -16462,6 +17041,10 @@ msgstr "הקלד את ההודעה הראשונה שלך..."
 #~ msgid "TypeId string"
 #~ msgstr "מחרוזת TypeId"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "UI & Display"
+msgstr ""
+
 #: src/components/persistent-iframe.tsx
 #~ msgid "Unable to connect to webapp"
 #~ msgstr "לא היה ניתן להתחבר לאפליקציית האינטרנט"
@@ -16641,6 +17224,10 @@ msgstr "עדכן"
 msgid "Update available"
 msgstr "עדכון זמין"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Update channel for auto-updates"
+msgstr ""
+
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Update Plan"
 msgstr "עדכן תכנית"
@@ -16658,6 +17245,10 @@ msgstr "{0} עודכן בהצלחה"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Updated: {0}"
 msgstr "עודכן: {0}"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Updates & Maintenance"
+msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Updating…"
@@ -16751,6 +17342,18 @@ msgstr "השתמש ב\"שלח למומחה\" ליצירת משימה"
 msgid "Use agent"
 msgstr "השתמשו בסוכן"
 
+#: src/components/settings-view/settings-utils.ts
+msgid "Use AWS Bedrock as the backend"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Use Bedrock"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Use Google Vertex AI as the backend"
+msgstr ""
+
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Use suggestion"
 msgstr "השתמש בהצעה"
@@ -16759,6 +17362,14 @@ msgstr "השתמש בהצעה"
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "Use the refresh button in the toolbar to retry"
 msgstr "השתמש בכפתור הרענון בסרגל הכלים כדי לנסות שוב"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Use Vertex"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Use weaker sandbox for nested commands"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Use which key"
@@ -16779,6 +17390,7 @@ msgstr "בשימוש על ידי"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
+#: src/components/quick-create/ScopeSelection.tsx
 #: src/i18n/type-labels.ts
 msgid "User"
 msgstr "משתמש"
@@ -16932,6 +17544,14 @@ msgstr "Version-bump + commit את הנכס"
 #: src/components/account/user-info.tsx
 msgid "Version:"
 msgstr "גרסה:"
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Vertex Project ID"
+msgstr ""
+
+#: src/components/settings-view/settings-utils.ts
+msgid "Vertex Region"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
 #~ msgid "Vibe"
