@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import type { FSEntry } from '@sdk';
 import { ExternalLink, File, FilePlus, Folder, FolderPlus, Link, Play, RefreshCw, Trash2 } from 'lucide-react';
 import type { ComponentType, CSSProperties, ReactNode } from 'react';

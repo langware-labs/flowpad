@@ -1,3 +1,4 @@
+import { msg } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { dataContext, fsManager } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { type BranchSummary, type RepoSummary, isHubOnly, navigator as sdkNavigator } from '@sdk';
 import { BranchPicker } from '@src/components/git/BranchPicker';
 import { CreatePrivateRepoForm } from '@src/components/git/CreatePrivateRepoForm';

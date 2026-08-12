@@ -1,4 +1,4 @@
-import { gitOriginFromUrl, OAUTH_PROVIDERS, OAuthStatus, oauthService, Project, TypeId, type GitOrigin } from '@sdk';
+import { gitOriginFromUrl, OAUTH_PROVIDERS, OAuthStatus, oauthService, type GitOrigin, type Project } from '@sdk';
 import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
@@ -224,44 +224,6 @@ export function NewSandboxDialog({
 
   const onInvalidUrl = useCallback(() => setError(t`Enter a valid GitHub repository URL.`), [t]);
 
-  /**
-   * Let whoever OPENS this box clone its repo.
-   *
-   * A sandbox travels; a personal GitHub connection does not. Share or hand a box
-   * over and the recipient launches it as themselves, so the hub resolves THEIR
-   * GitHub — which they have most likely never connected — and the clone runs
-   * anonymously. A private repo then dies on `fatal: could not read Username`,
-   * which reaches them as "ask whoever shared it to start it": a machine problem
-   * named for what is really "you are not the person who connected GitHub".
-   *
-   * The hub will lend YOUR credential for exactly this repo, but only if it was
-   * attached to the project — and nothing granted that, so the only way to satisfy
-   * it was a hand-written API call. This is the grant, made where the intent is:
-   * you are choosing this project, for a box, right now.
-   *
-   * Attached to the PROJECT rather than the box, because that is what the consent
-   * outlives — every sandbox built on this project reuses one grant instead of
-   * needing a fresh one each time. Revoked from the same place as any other
-   * attachment, and it lends nothing at all beyond this project's own repo: the
-   * hub refuses any origin that is not the one recorded on the box.
-   *
-   * Best-effort by design. A box whose repo cannot be lent is still a working box
-   * for its creator, so a failed attach must not fail the create — the person is
-   * left exactly where they were, not staring at an error for something they never
-   * asked for.
-   */
-  const lendRepoAccessToRecipients = useCallback(async (project: Source) => {
-    // No repo, nothing to lend. A project with no git origin behind it needs no
-    // credential to open, so asking for one would be noise.
-    if (!project.projectId || !project.gitOrigin) return;
-    try {
-      await oauthService.attach(OAUTH_PROVIDERS.GITHUB, new TypeId(Project.type, project.projectId));
-    } catch (e) {
-      // Logged, not surfaced: see "best-effort" above.
-      console.error('[NewSandboxDialog] could not attach GitHub to the project:', e);
-    }
-  }, []);
-
   const handleCreate = useCallback(async () => {
     // Guard the double click here as well as in the hook: the hook's ref stops a
     // second box being provisioned, but only disabling the button stops the
@@ -296,17 +258,13 @@ export function NewSandboxDialog({
       }
       setCreated(node);
       setPhase('created');
-      // AFTER the box exists, and deliberately not awaited: the grant is for a
-      // recipient who does not exist yet, so making the creator wait on it would
-      // slow the one path that never needs it.
-      if (loadedProject) void lendRepoAccessToRecipients(loadedProject);
     } catch (e) {
       // Back to idle, dialog still open, message on screen: the user can fix the
       // input and try again without rebuilding their picks.
       setError(e instanceof Error ? e.message : String(e));
       setPhase('idle');
     }
-  }, [phase, name, defaultName, loadedProject, assets, onCreate, lendRepoAccessToRecipients]);
+  }, [phase, name, defaultName, loadedProject, assets, onCreate]);
 
   const handleLaunch = useCallback(async () => {
     if (!created || phase !== 'created') return;
