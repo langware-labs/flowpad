@@ -66,6 +66,7 @@ describe('React launched-instance isolation source policy', () => {
     expect(liveSdkFiles).toEqual([
       'agentic_process_stress.test.ts',
       'asset-loader-project-context.test.tsx',
+      'boot-order-locale-catchup.test.ts',
       'chat-history-row-rename-sync.test.tsx',
       'chats-open-recency.test.ts',
       'dock-dead-scope-tab-setup.test.tsx',
