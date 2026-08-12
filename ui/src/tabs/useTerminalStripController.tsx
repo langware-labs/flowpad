@@ -26,7 +26,7 @@ import {
   ViewType,
   type ComputeNode,
 } from '@sdk';
-import { type UseCapabilityResult } from '@sdk/react/hooks';
+import { harnessWarning } from '@src/components/workers/harness-availability';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useHarnessCapabilities } from '@src/contexts/HarnessCapabilitiesContext';
@@ -55,12 +55,6 @@ const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
     <History className="absolute -bottom-0.5 -right-0.5 !h-2.5 !w-2.5 text-foreground/80" strokeWidth={3} />
   </span>
 );
-
-/** Opener warning for a harness: set when its backend capability check ran and failed. */
-function harnessWarning(capability: UseCapabilityResult): string | null {
-  if (!capability.checked || capability.available) return null;
-  return capability.result?.message ?? 'This harness is not available on this machine.';
-}
 
 export interface TerminalStripControllerOptions {
   /** Whether to expose the "Add Tab" opener toolbar as `trailing`. */
