@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { AgenticProcess, ClaudeSession, Shell, TypeId } from '@sdk';
 import { notify } from '@src/notifications';
 import { setPendingIntent } from '@src/tabs/pending-intent';
@@ -123,8 +124,8 @@ export async function openAgenticProcess(
       const opened = await navigation.openShellProcess(processId);
       if (!opened) {
         notify.error({
-          title: 'Process unavailable',
-          message: 'That agent is no longer in your workspace.',
+          title: t`Process unavailable`,
+          message: t`That agent is no longer in your workspace.`,
         });
       }
       return;
@@ -135,13 +136,13 @@ export async function openAgenticProcess(
     if (sessionId) {
       navigation.openLens('claude', 'transcript', sessionId);
     } else {
-      notify.error({ title: 'No transcript', message: 'This worker has no session to view yet.' });
+      notify.error({ title: t`No transcript`, message: t`This worker has no session to view yet.` });
     }
   } catch (err) {
     console.error('[openAgenticProcess] open failed', err);
     notify.error({
-      title: 'Process unavailable',
-      message: 'That agent is no longer in your workspace.',
+      title: t`Process unavailable`,
+      message: t`That agent is no longer in your workspace.`,
     });
   }
 }

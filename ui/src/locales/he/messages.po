@@ -517,6 +517,10 @@ msgstr "{sessionCount} הפעלות"
 msgid "{stepsLeft} steps left"
 msgstr "נותרו {stepsLeft} שלבים"
 
+#: src/notifications/ingest.ts
+msgid "{suppressed} hub errors were suppressed in the current window."
+msgstr ""
+
 #. placeholder {0}: leaves.length
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "{title} — {0} items"
@@ -1189,6 +1193,11 @@ msgstr "agent-name"
 #: src/i18n/type-labels.ts
 msgid "Agentic Process"
 msgstr "תהליך סוכנותי"
+
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "Agentic process does not exist."
+msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "agents"
@@ -3085,6 +3094,10 @@ msgstr "סגור"
 msgid "Cloud"
 msgstr "ענן"
 
+#: src/notifications/ingest.ts
+msgid "Cloud access denied"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -3095,9 +3108,31 @@ msgstr "הענן מנותק"
 msgid "Cloud hub"
 msgstr "Hub בענן"
 
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
+msgid "Cloud is not available"
+msgstr ""
+
+#: src/notifications/ingest.ts
+msgid "Cloud request rejected"
+msgstr ""
+
+#: src/notifications/ingest.ts
+msgid "Cloud resource not found"
+msgstr ""
+
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Cloud Sandbox"
 msgstr "ארגז חול בענן"
+
+#: src/notifications/ingest.ts
+msgid "Cloud service is having trouble"
+msgstr ""
+
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
+msgid "Cloud sign-in expired"
+msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
 #~ msgid "Cloud WorldView"
@@ -3894,6 +3929,11 @@ msgstr "לא ניתן לקשר את הנכס לענן"
 msgid "Could not link project to cloud"
 msgstr "לא ניתן לקשר את הפרויקט לענן"
 
+#. placeholder {0}: roomId.slice(0, 8)
+#: src/routes/loaders/load-project.ts
+msgid "Could not load collaboration room {0}. Try again in a moment."
+msgstr ""
+
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Could not load environment variables"
 msgstr "לא ניתן לטעון את משתני הסביבה"
@@ -3901,6 +3941,10 @@ msgstr "לא ניתן לטעון את משתני הסביבה"
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "Could not load source: {error}"
 msgstr "לא ניתן לטעון מקור: {error}"
+
+#: src/routes/loaders/load-project.ts
+msgid "Could not load this project. Try again in a moment."
+msgstr ""
 
 #: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Could not open skill"
@@ -3927,6 +3971,18 @@ msgstr "לא ניתן לשלוף את {0}"
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "Could not reach support"
 msgstr "לא ניתן להתחבר לתמיכה"
+
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "Could not reach the backend. Try again in a moment."
+msgstr ""
+
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "Could not recover this session's project."
+msgstr ""
+
+#: src/routes/loaders/load-next-process.ts
+msgid "Could not recover this session’s project."
+msgstr ""
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Could not remove"
@@ -4079,6 +4135,10 @@ msgstr "לא הצלחנו לטעון את הריפוזיטוריים שלך."
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Couldn't open the help desk"
 msgstr "לא ניתן לפתוח את מרכז העזרה"
+
+#: src/routes/loaders/load-next-process.ts
+msgid "Couldn’t reach backend"
+msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Couldn't reach that repository. Check the URL and try again."
@@ -4963,6 +5023,10 @@ msgstr "גרסת שולחן עבודה"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #~ msgid "Detach"
 #~ msgstr "נתק"
+
+#: src/notifications/ingest.ts
+msgid "Detail"
+msgstr ""
 
 #: src/components/workflow-runner/header/ViewModeToggle.tsx
 #~ msgid "Detailed view"
@@ -6078,6 +6142,14 @@ msgstr "הרחב את רשימת אירועי הסניפר"
 msgid "Expand table"
 msgstr "הרחב טבלה"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Expected /dock/subgraph/<projection>."
+msgstr ""
+
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Expected /dock/tag/graph or /dock/tag/graph/<dot.tag.name>."
+msgstr ""
+
 #: src/components/app-host/AppHost.tsx
 msgid "Expected format: /dock/apps/<uname>/<routerPath>?<options>"
 msgstr "פורמט צפוי: /dock/apps/<uname>/<routerPath>?<options>"
@@ -6425,6 +6497,10 @@ msgstr "הסרת סוכן Vibe נכשלה"
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Failed to restart services"
 #~ msgstr "נכשל הפעלת מחדש של השירותים"
+
+#: src/routes/loaders/load-next-process.ts
+msgid "Failed to restore this session."
+msgstr ""
 
 #: src/components/workflows-view/WorkflowStrip.tsx
 #~ msgid "Failed to run workflow"
@@ -7139,6 +7215,11 @@ msgstr "יצירת קישור והעתקה"
 msgid "Generated"
 msgstr "נוצר"
 
+#. placeholder {0}: context.skill_name
+#: src/notifications/ingest.ts
+msgid "Generating: {0}"
+msgstr ""
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Generating…"
 msgstr "מייצר קישור…"
@@ -7511,6 +7592,10 @@ msgstr "מרכז תמיכה"
 msgid "Help desk files removed"
 msgstr "קבצי העזרה הוסרו"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Help desk unavailable"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Help desks"
 msgstr "מוקדי תמיכה"
@@ -7802,6 +7887,10 @@ msgstr "https://github.com/owner/repo.git"
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
 msgstr "Hub"
+
+#: src/notifications/ingest.ts
+msgid "Hub errors suppressed"
+msgstr ""
 
 #: src/components/version-popover/hub-release-label.tsx
 msgid "Hub release, and the UI build serving it"
@@ -8678,6 +8767,10 @@ msgstr "שורה חיה"
 #: src/components/conversation/LiveSessionGroup.tsx
 msgid "Live session"
 msgstr "סשן חי"
+
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Live session not found"
+msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Live session with {guestName} on your machine · {status}"
@@ -10736,6 +10829,11 @@ msgstr "אין הגדרות התואמות לחיפוש שלך."
 msgid "No shared sessions yet. Executing a prompt starts one."
 msgstr "אין עדיין הפעלות משותפות. הרצת פרומפט תתחיל אחת."
 
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "No shell is linked to this process."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "No skill-attributed findings to improve."
 msgstr "אין ממצאים המיוחסים לכישוריות לשיפור."
@@ -10820,6 +10918,10 @@ msgstr "אין קריאות כלים לפני הסמן בקטע זה"
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
 msgid "No trace events captured yet"
 msgstr "לא נתפסו אירועי עקיבוי עדיין"
+
+#: src/navigation/agentic-process-open.ts
+msgid "No transcript"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "No transcript data"
@@ -12151,6 +12253,10 @@ msgstr "קובץ התכנית לא נמצא"
 msgid "Plan mode — describe what to plan…"
 msgstr "מצב תכנון - תארו מה לתכנן…"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Plan not found"
+msgstr ""
+
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Plan title…"
 msgstr "כותרת התוכנית…"
@@ -12226,6 +12332,11 @@ msgstr "אנא בחר או צור פרויקט תחילה."
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "Please select or enter a folder"
 #~ msgstr "אנא בחר או הזן תיקייה"
+
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
+msgid "Please sign in again to keep using cloud features."
+msgstr ""
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Please try again."
@@ -12429,6 +12540,11 @@ msgstr "התהליך עדיין לא התחיל"
 msgid "Process Result"
 msgstr "תוצאת תהליך"
 
+#: src/navigation/agentic-process-open.ts
+#: src/navigation/agentic-process-open.ts
+msgid "Process unavailable"
+msgstr ""
+
 #: src/components/account/user-info.tsx
 msgid "Profile"
 msgstr "פרופיל"
@@ -12530,6 +12646,9 @@ msgstr "שם הפרויקט"
 #~ msgstr "שם הפרויקט"
 
 #: src/components/collaboration/StartRoomDialog.tsx
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-project.ts
+#: src/routes/loaders/process-load-error-resolution.ts
 msgid "Project not found"
 msgstr "פרויקט לא נמצא"
 
@@ -12557,9 +12676,18 @@ msgstr "פרויקט נדרש"
 msgid "Project secrets on this machine"
 msgstr "סודות הפרויקט במכונה זו"
 
+#. placeholder {0}: tabTypeId.type
+#: src/routes/loaders/load-project.ts
+msgid "Project tabs cannot load {0}."
+msgstr ""
+
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Project to load"
 msgstr "פרויקט לטעינה"
+
+#: src/routes/loaders/load-project.ts
+msgid "Project unavailable"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "projected"
@@ -12910,6 +13038,11 @@ msgstr "מוכן"
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Ready to share"
 msgstr "מוכן לשיתוף"
+
+#. placeholder {0}: context.skill_name
+#: src/notifications/ingest.ts
+msgid "Ready: {0}"
+msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Ready!"
@@ -13715,6 +13848,10 @@ msgstr "חדר מתארח על ידי צוות Flowpad"
 #~ msgid "Room name"
 #~ msgstr "שם החדר"
 
+#: src/routes/loaders/load-project.ts
+msgid "Room not found"
+msgstr ""
+
 #: src/components/collaboration/RoomHeader.tsx
 msgid "Room renamed"
 msgstr "החדר שונה שמו"
@@ -13722,6 +13859,10 @@ msgstr "החדר שונה שמו"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Room started"
 msgstr "החדר התחיל"
+
+#: src/routes/loaders/load-project.ts
+msgid "Room unavailable"
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
 msgid "root"
@@ -14721,6 +14862,9 @@ msgstr "הסדרה לא פעילה"
 #~ msgstr ""
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
+#: src/routes/loaders/load-dock-pointer.ts
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/process-load-error-resolution.ts
 #: src/tabs/useTerminalStripController.tsx
 msgid "Session not found"
 msgstr "הפגישה לא נמצאה"
@@ -14732,6 +14876,13 @@ msgstr "התחלת סשן"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Session Tasks"
 msgstr "משימות הסעיף"
+
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/process-load-error-resolution.ts
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "Session unavailable"
+msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "sessions"
@@ -14985,6 +15136,16 @@ msgstr "מזהה Shell"
 msgid "Shell Name"
 msgstr "שם Shell"
 
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-project.ts
+msgid "Shell not found"
+msgstr ""
+
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-project.ts
+msgid "Shell unavailable"
+msgstr ""
+
 #. placeholder {0}: '{permissionDecision: allow or deny}'
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Should I allow this tool? Respond with JSON: {0}"
@@ -15170,6 +15331,8 @@ msgid "Sigma graph view"
 msgstr "תצוגת גרף Sigma"
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Sign in"
 msgstr "היכנסו"
@@ -15871,6 +16034,10 @@ msgstr "SubAgent לא נמצא"
 msgid "Subfolders"
 msgstr "תיקיות משנה"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Subgraph not found"
+msgstr ""
+
 #: src/components/graph-view/GraphView.tsx
 msgid "subgraph projection"
 msgstr "היטל תת־גרף"
@@ -16063,6 +16230,10 @@ msgstr "צורת תצוגת התגים"
 msgid "Tag Tree"
 msgstr "עץ התגים"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Tag view not found"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Tags"
 msgstr "תגיות"
@@ -16216,6 +16387,11 @@ msgstr "בדוק טריגר"
 #~ msgid "Test your activation rules with sample conversations and hook data to verify they trigger correctly."
 #~ msgstr "בדוק את כללי ההפעלה שלך עם דוגמאות שיחות ונתוני hook לאימות שהם מופעלים כראוי."
 
+#: src/navigation/agentic-process-open.ts
+#: src/navigation/agentic-process-open.ts
+msgid "That agent is no longer in your workspace."
+msgstr ""
+
 #: src/components/assets/editor/run/useRunOnFile.tsx
 #~ msgid "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. Enable it to continue."
 #~ msgstr "שרת <0>flow-sdk-mcp</0> נדרש כדי להריץ עם עקיבות התקדמות. הפעל אותו כדי להמשיך."
@@ -16265,6 +16441,10 @@ msgstr "השינוי לא נשמר."
 msgid "The check did not run."
 msgstr "הבדיקה לא בוצעה."
 
+#: src/notifications/ingest.ts
+msgid "The cloud service returned an error. Please try again in a moment."
+msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "The credential could not be removed."
 msgstr "לא ניתן היה להסיר את האישור."
@@ -16288,6 +16468,10 @@ msgstr "ייתכן שהקובץ נמחק, הועבר או שאינו תואם א
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
 msgid "The FlowPad backend server is not responding."
 msgstr "שרת backend של FlowPad אינו מגיב."
+
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "The help desk files are missing. Open the help desk again to download them."
+msgstr ""
 
 #: src/components/helpdesk/HelpdeskPortalPage.tsx
 msgid "The help desk is not set up on this machine yet."
@@ -16452,6 +16636,11 @@ msgstr "חשיבה"
 msgid "Thinking:"
 msgstr "חשיבה:"
 
+#. placeholder {0}: surface === 'worldview' ? 'WorldView' : 'graph'
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "This {0} URL is malformed or unavailable."
+msgstr ""
+
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "This action cannot be undone."
 msgstr "לא ניתן לבטל פעולה זו."
@@ -16481,6 +16670,10 @@ msgstr "זה עשוי להימשך עד דקה אם ה-Sandbox היה במצב �
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "This chat has no resumable session."
 msgstr "לשיחה זו אין סשן שניתן להמשיך בו."
+
+#: src/routes/loaders/load-project.ts
+msgid "This collaboration room no longer exists or is unavailable."
+msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "This context is empty."
@@ -16542,6 +16735,10 @@ msgstr "הסשן הלייב הסתיים."
 msgid "This live session was declined."
 msgstr "הסשן החי נדחה."
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "This live-session URL is malformed or unavailable."
+msgstr ""
+
 #: src/components/persistent-iframe.tsx
 #~ msgid "This may take up to 20 seconds"
 #~ msgstr "זה עשוי להימשך עד 20 שניות"
@@ -16562,9 +16759,17 @@ msgstr "פעולה זו מוחקת את הקובץ מהדיסק באופן קב�
 msgid "This permanently removes the saved context snapshot. This cannot be undone."
 msgstr "זה יסיר באופן קבוע את תמונת הקשר השמורה. לא ניתן לבטל זאת."
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "This plan no longer exists."
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This process has no transcript session yet."
 msgstr "לתהליך זה אין עדיין הפעלת תמלול."
+
+#: src/routes/loaders/load-project.ts
+msgid "This project doesn't exist or is no longer available."
+msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "This project has no assets yet."
@@ -16581,6 +16786,10 @@ msgstr "הפרויקט זמין כעת בענן."
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #~ msgid "This project is ready to publish and share over Git."
 #~ msgstr ""
+
+#: src/routes/loaders/load-project.ts
+msgid "This project tab URL is malformed."
+msgstr ""
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #~ msgid "This project's folder needs a repository and a remote."
@@ -16640,6 +16849,10 @@ msgstr "ישיבה זו עדיין לא נבדקה, אז אין מה לדווח.
 msgid "This session is running remotely by {guestName} on your machine."
 msgstr "ההפעלה מתבצעת כרגע מרחוק על ידי {guestName} במחשב שלך."
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "This session URL is malformed or unavailable."
+msgstr ""
+
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "This source's remote identity — one source per account."
 msgstr "הזהות המרוחקת של המקור — מקור אחד לכל חשבון."
@@ -16647,6 +16860,11 @@ msgstr "הזהות המרוחקת של המקור — מקור אחד לכל ח�
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 msgid "This starts the machine and sets up whatever it was created with."
 msgstr "פעולה זו מפעילה את המכונה וטוענת את התצורה שאיתה היא נוצרה."
+
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-project.ts
+msgid "This terminal no longer exists."
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "This trace is not linked to a worker session."
@@ -16675,6 +16893,10 @@ msgstr "פעולה זו תמחק את כל יומני הניפוי מ-<0>~/.clau
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "This worker cannot continue the chat right now."
 msgstr "העובד הזה לא יכול להמשיך את השיחה כרגע."
+
+#: src/navigation/agentic-process-open.ts
+msgid "This worker has no session to view yet."
+msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -17182,6 +17404,11 @@ msgstr "הסרת כוכב"
 #~ msgid "Unsupported Content"
 #~ msgstr "תוכן לא נתמך"
 
+#: src/routes/loaders/load-project.ts
+#: src/routes/loaders/load-project.ts
+msgid "Unsupported tab"
+msgstr ""
+
 #: src/components/collaboration/RoomTabs.tsx
 #~ msgid "Unsupported tab type."
 #~ msgstr "סוג כרטיסייה לא נתמך."
@@ -17567,6 +17794,8 @@ msgstr "סוכני Vibe"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "View"
@@ -17628,6 +17857,10 @@ msgstr "צפה ב-PyPI"
 #~ msgid "View resources"
 #~ msgstr "הצג משאבים"
 
+#: src/notifications/ingest.ts
+msgid "View Session"
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 msgid "View session tasks"
@@ -17637,6 +17870,10 @@ msgstr "צפה במשימות הישיבה"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "View session transcript"
 msgstr "הצג תמליל ישיבה"
+
+#: src/notifications/ingest.ts
+msgid "View Skill"
+msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "View the session transcript"
@@ -17732,6 +17969,15 @@ msgstr "צפייה"
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "Watchers register patterns via <0>Shell.addTrigger</0>; matched lines appear here."
 msgstr "משקיפים רושמים דפוסים דרך <0>Shell.addTrigger</0>; שורות תואמות מופיעות כאן."
+
+#: src/notifications/ingest.ts
+msgid "We couldn't find what you were looking for on the cloud."
+msgstr ""
+
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
+msgid "We couldn't reach the cloud service. Check your connection or try again in a moment."
+msgstr ""
 
 #. placeholder {0}: count === 1 ? '' : 's'
 #: src/components/recovery/cleanup-modal.tsx
@@ -18067,6 +18313,10 @@ msgstr "אפשר לסגור את החלון הזה."
 #: src/components/account/organization-panel.tsx
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "עדיין אינכם משויכים לארגון. ארגונים מוגדרים ב‑Flowpad Cloud, ולאחר שתתווספו — הארגון שלכם וחבריו יופיעו כאן."
+
+#: src/notifications/ingest.ts
+msgid "You don't have permission for this action. Contact your admin if this seems wrong."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "You investigate a reported problem and prove the root cause…"

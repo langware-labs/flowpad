@@ -517,6 +517,10 @@ msgstr ""
 msgid "{stepsLeft} steps left"
 msgstr ""
 
+#: src/notifications/ingest.ts
+msgid "{suppressed} hub errors were suppressed in the current window."
+msgstr ""
+
 #. placeholder {0}: leaves.length
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "{title} — {0} items"
@@ -1189,6 +1193,11 @@ msgstr ""
 #: src/i18n/type-labels.ts
 msgid "Agentic Process"
 msgstr "عملية الوكيل"
+
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "Agentic process does not exist."
+msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "agents"
@@ -3085,6 +3094,10 @@ msgstr ""
 msgid "Cloud"
 msgstr "السحابة"
 
+#: src/notifications/ingest.ts
+msgid "Cloud access denied"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -3095,9 +3108,31 @@ msgstr "انقطع الاتصال بالسحابة"
 msgid "Cloud hub"
 msgstr "المركز السحابي"
 
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
+msgid "Cloud is not available"
+msgstr ""
+
+#: src/notifications/ingest.ts
+msgid "Cloud request rejected"
+msgstr ""
+
+#: src/notifications/ingest.ts
+msgid "Cloud resource not found"
+msgstr ""
+
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Cloud Sandbox"
 msgstr "بيئة سحابية معزولة"
+
+#: src/notifications/ingest.ts
+msgid "Cloud service is having trouble"
+msgstr ""
+
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
+msgid "Cloud sign-in expired"
+msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
 #~ msgid "Cloud WorldView"
@@ -3894,12 +3929,21 @@ msgstr "تعذّر ربط الأصل بالسحابة"
 msgid "Could not link project to cloud"
 msgstr "تعذر ربط المشروع بالسحابة"
 
+#. placeholder {0}: roomId.slice(0, 8)
+#: src/routes/loaders/load-project.ts
+msgid "Could not load collaboration room {0}. Try again in a moment."
+msgstr ""
+
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Could not load environment variables"
 msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "Could not load source: {error}"
+msgstr ""
+
+#: src/routes/loaders/load-project.ts
+msgid "Could not load this project. Try again in a moment."
 msgstr ""
 
 #: src/components/entity-execution-panel/useOpenSkill.ts
@@ -3926,6 +3970,18 @@ msgstr "تعذر سحب {0}"
 
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "Could not reach support"
+msgstr ""
+
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "Could not reach the backend. Try again in a moment."
+msgstr ""
+
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "Could not recover this session's project."
+msgstr ""
+
+#: src/routes/loaders/load-next-process.ts
+msgid "Could not recover this session’s project."
 msgstr ""
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
@@ -4079,6 +4135,10 @@ msgstr "تعذر تحميل مستودعاتك."
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Couldn't open the help desk"
 msgstr "تعذر فتح مكتب المساعدة"
+
+#: src/routes/loaders/load-next-process.ts
+msgid "Couldn’t reach backend"
+msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Couldn't reach that repository. Check the URL and try again."
@@ -4963,6 +5023,10 @@ msgstr "إصدار سطح المكتب"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #~ msgid "Detach"
 #~ msgstr ""
+
+#: src/notifications/ingest.ts
+msgid "Detail"
+msgstr ""
 
 #: src/components/workflow-runner/header/ViewModeToggle.tsx
 #~ msgid "Detailed view"
@@ -6075,6 +6139,14 @@ msgstr "توسيع قائمة أحداث المراقب"
 msgid "Expand table"
 msgstr "توسيع الجدول"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Expected /dock/subgraph/<projection>."
+msgstr ""
+
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Expected /dock/tag/graph or /dock/tag/graph/<dot.tag.name>."
+msgstr ""
+
 #: src/components/app-host/AppHost.tsx
 msgid "Expected format: /dock/apps/<uname>/<routerPath>?<options>"
 msgstr "الصيغة المتوقعة: /dock/apps/<uname>/<routerPath>?<options>"
@@ -6422,6 +6494,10 @@ msgstr ""
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Failed to restart services"
 #~ msgstr ""
+
+#: src/routes/loaders/load-next-process.ts
+msgid "Failed to restore this session."
+msgstr ""
 
 #: src/components/workflows-view/WorkflowStrip.tsx
 #~ msgid "Failed to run workflow"
@@ -7136,6 +7212,11 @@ msgstr ""
 msgid "Generated"
 msgstr "تم الإنشاء"
 
+#. placeholder {0}: context.skill_name
+#: src/notifications/ingest.ts
+msgid "Generating: {0}"
+msgstr ""
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Generating…"
 msgstr ""
@@ -7508,6 +7589,10 @@ msgstr "مكتب المساعدة"
 msgid "Help desk files removed"
 msgstr "تم حذف ملفات مكتب المساعدة"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Help desk unavailable"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Help desks"
 msgstr "مكاتب المساعدة"
@@ -7799,6 +7884,10 @@ msgstr ""
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
 msgstr "Hub"
+
+#: src/notifications/ingest.ts
+msgid "Hub errors suppressed"
+msgstr ""
 
 #: src/components/version-popover/hub-release-label.tsx
 msgid "Hub release, and the UI build serving it"
@@ -8674,6 +8763,10 @@ msgstr ""
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/LiveSessionGroup.tsx
 msgid "Live session"
+msgstr ""
+
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Live session not found"
 msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
@@ -10733,6 +10826,11 @@ msgstr "لا توجد إعدادات تطابق بحثك."
 msgid "No shared sessions yet. Executing a prompt starts one."
 msgstr "لا توجد جلسات مشتركة بعد. سيؤدي تنفيذ مطالبة إلى بدء جلسة جديدة."
 
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "No shell is linked to this process."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "No skill-attributed findings to improve."
 msgstr ""
@@ -10817,6 +10915,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
 msgid "No trace events captured yet"
 msgstr "لم يتم التقاط أي أحداث تتبع بعد"
+
+#: src/navigation/agentic-process-open.ts
+msgid "No transcript"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "No transcript data"
@@ -12146,6 +12248,10 @@ msgstr "لم يتم العثور على ملف الخطة."
 msgid "Plan mode — describe what to plan…"
 msgstr "وضع التخطيط — وصف ما تريد تخطيطه…"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Plan not found"
+msgstr ""
+
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Plan title…"
 msgstr ""
@@ -12221,6 +12327,11 @@ msgstr "يرجى اختيار مشروع أو إنشاء مشروع جديد أ�
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "Please select or enter a folder"
 #~ msgstr ""
+
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
+msgid "Please sign in again to keep using cloud features."
+msgstr ""
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Please try again."
@@ -12424,6 +12535,11 @@ msgstr "لم تبدأ العملية بعد"
 msgid "Process Result"
 msgstr "نتيجة العملية"
 
+#: src/navigation/agentic-process-open.ts
+#: src/navigation/agentic-process-open.ts
+msgid "Process unavailable"
+msgstr ""
+
 #: src/components/account/user-info.tsx
 msgid "Profile"
 msgstr "الملف الشخصي"
@@ -12525,6 +12641,9 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/collaboration/StartRoomDialog.tsx
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-project.ts
+#: src/routes/loaders/process-load-error-resolution.ts
 msgid "Project not found"
 msgstr "المشروع غير موجود"
 
@@ -12552,8 +12671,17 @@ msgstr "مشروع مطلوب"
 msgid "Project secrets on this machine"
 msgstr "أسرار المشروع على هذه الآلة"
 
+#. placeholder {0}: tabTypeId.type
+#: src/routes/loaders/load-project.ts
+msgid "Project tabs cannot load {0}."
+msgstr ""
+
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Project to load"
+msgstr ""
+
+#: src/routes/loaders/load-project.ts
+msgid "Project unavailable"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
@@ -12904,6 +13032,11 @@ msgstr "جاهز"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Ready to share"
+msgstr ""
+
+#. placeholder {0}: context.skill_name
+#: src/notifications/ingest.ts
+msgid "Ready: {0}"
 msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
@@ -13708,6 +13841,10 @@ msgstr "الغرفة مستضافة من فريق Flowpad"
 #~ msgid "Room name"
 #~ msgstr ""
 
+#: src/routes/loaders/load-project.ts
+msgid "Room not found"
+msgstr ""
+
 #: src/components/collaboration/RoomHeader.tsx
 msgid "Room renamed"
 msgstr "تمت إعادة تسمية الغرفة"
@@ -13715,6 +13852,10 @@ msgstr "تمت إعادة تسمية الغرفة"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Room started"
 msgstr "تم بدء الغرفة"
+
+#: src/routes/loaders/load-project.ts
+msgid "Room unavailable"
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
 msgid "root"
@@ -14714,6 +14855,9 @@ msgstr "الجلسة ليست قيد التشغيل"
 #~ msgstr ""
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
+#: src/routes/loaders/load-dock-pointer.ts
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/process-load-error-resolution.ts
 #: src/tabs/useTerminalStripController.tsx
 msgid "Session not found"
 msgstr "الجلسة غير موجودة"
@@ -14724,6 +14868,13 @@ msgstr "بدء الجلسة"
 
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Session Tasks"
+msgstr ""
+
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/process-load-error-resolution.ts
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "Session unavailable"
 msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
@@ -14976,6 +15127,16 @@ msgstr "معرّف الصدفة"
 msgid "Shell Name"
 msgstr "اسم الصدفة"
 
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-project.ts
+msgid "Shell not found"
+msgstr ""
+
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-project.ts
+msgid "Shell unavailable"
+msgstr ""
+
 #. placeholder {0}: '{permissionDecision: allow or deny}'
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Should I allow this tool? Respond with JSON: {0}"
@@ -15161,6 +15322,8 @@ msgid "Sigma graph view"
 msgstr "عرض Sigma للرسم البياني"
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Sign in"
 msgstr "تسجيل الدخول"
@@ -15862,6 +16025,10 @@ msgstr "لم يتم العثور على SubAgent"
 msgid "Subfolders"
 msgstr "المجلدات الفرعية"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Subgraph not found"
+msgstr ""
+
 #: src/components/graph-view/GraphView.tsx
 msgid "subgraph projection"
 msgstr "إسقاط الرسم الفرعي"
@@ -16054,6 +16221,10 @@ msgstr "شكل الوسم"
 msgid "Tag Tree"
 msgstr "شجرة الوسوم"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Tag view not found"
+msgstr ""
+
 #: src/i18n/type-labels.ts
 msgid "Tags"
 msgstr "وسوم"
@@ -16207,6 +16378,11 @@ msgstr ""
 #~ msgid "Test your activation rules with sample conversations and hook data to verify they trigger correctly."
 #~ msgstr ""
 
+#: src/navigation/agentic-process-open.ts
+#: src/navigation/agentic-process-open.ts
+msgid "That agent is no longer in your workspace."
+msgstr ""
+
 #: src/components/assets/editor/run/useRunOnFile.tsx
 #~ msgid "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. Enable it to continue."
 #~ msgstr ""
@@ -16256,6 +16432,10 @@ msgstr "لم يتم حفظ التغيير."
 msgid "The check did not run."
 msgstr "لم يتم تنفيذ الفحص."
 
+#: src/notifications/ingest.ts
+msgid "The cloud service returned an error. Please try again in a moment."
+msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "The credential could not be removed."
 msgstr ""
@@ -16279,6 +16459,10 @@ msgstr "قد يكون الملف محذوفاً أو منقولاً أو لا ي
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
 msgid "The FlowPad backend server is not responding."
 msgstr "خادم FlowPad الخلفي لا يستجيب."
+
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "The help desk files are missing. Open the help desk again to download them."
+msgstr ""
 
 #: src/components/helpdesk/HelpdeskPortalPage.tsx
 msgid "The help desk is not set up on this machine yet."
@@ -16443,6 +16627,11 @@ msgstr "التفكير"
 msgid "Thinking:"
 msgstr "التفكير:"
 
+#. placeholder {0}: surface === 'worldview' ? 'WorldView' : 'graph'
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "This {0} URL is malformed or unavailable."
+msgstr ""
+
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "This action cannot be undone."
 msgstr "لا يمكن التراجع عن هذا الإجراء."
@@ -16472,6 +16661,10 @@ msgstr ""
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "This chat has no resumable session."
 msgstr "لا توجد جلسة قابلة للاستئناف في هذه المحادثة."
+
+#: src/routes/loaders/load-project.ts
+msgid "This collaboration room no longer exists or is unavailable."
+msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "This context is empty."
@@ -16533,6 +16726,10 @@ msgstr ""
 msgid "This live session was declined."
 msgstr ""
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "This live-session URL is malformed or unavailable."
+msgstr ""
+
 #: src/components/persistent-iframe.tsx
 #~ msgid "This may take up to 20 seconds"
 #~ msgstr ""
@@ -16553,9 +16750,17 @@ msgstr "سيتم حذف الملف نهائياً من القرص. لا يمكن
 msgid "This permanently removes the saved context snapshot. This cannot be undone."
 msgstr ""
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "This plan no longer exists."
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This process has no transcript session yet."
 msgstr "لم يتم تسجيل جلسة نصية لهذه العملية بعد."
+
+#: src/routes/loaders/load-project.ts
+msgid "This project doesn't exist or is no longer available."
+msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "This project has no assets yet."
@@ -16572,6 +16777,10 @@ msgstr "أصبح هذا المشروع متاحًا الآن في السحابة
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #~ msgid "This project is ready to publish and share over Git."
 #~ msgstr ""
+
+#: src/routes/loaders/load-project.ts
+msgid "This project tab URL is malformed."
+msgstr ""
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #~ msgid "This project's folder needs a repository and a remote."
@@ -16631,6 +16840,10 @@ msgstr ""
 msgid "This session is running remotely by {guestName} on your machine."
 msgstr "يقوم {guestName} بتشغيل هذه الجلسة عن بُعد على جهازك."
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "This session URL is malformed or unavailable."
+msgstr ""
+
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "This source's remote identity — one source per account."
 msgstr ""
@@ -16638,6 +16851,11 @@ msgstr ""
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 msgid "This starts the machine and sets up whatever it was created with."
 msgstr "يؤدي هذا إلى تشغيل الجهاز وتهيئته بالإعدادات التي أُنشئ بها."
+
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-project.ts
+msgid "This terminal no longer exists."
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "This trace is not linked to a worker session."
@@ -16665,6 +16883,10 @@ msgstr "سيؤدي هذا إلى حذف جميع سجلات التصحيح من 
 
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "This worker cannot continue the chat right now."
+msgstr ""
+
+#: src/navigation/agentic-process-open.ts
+msgid "This worker has no session to view yet."
 msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
@@ -17173,6 +17395,11 @@ msgstr ""
 #~ msgid "Unsupported Content"
 #~ msgstr ""
 
+#: src/routes/loaders/load-project.ts
+#: src/routes/loaders/load-project.ts
+msgid "Unsupported tab"
+msgstr ""
+
 #: src/components/collaboration/RoomTabs.tsx
 #~ msgid "Unsupported tab type."
 #~ msgstr ""
@@ -17558,6 +17785,8 @@ msgstr ""
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "View"
@@ -17619,6 +17848,10 @@ msgstr "عرض على PyPI"
 #~ msgid "View resources"
 #~ msgstr ""
 
+#: src/notifications/ingest.ts
+msgid "View Session"
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 msgid "View session tasks"
@@ -17628,6 +17861,10 @@ msgstr "عرض مهام الجلسة"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "View session transcript"
 msgstr "عرض نسخة الجلسة"
+
+#: src/notifications/ingest.ts
+msgid "View Skill"
+msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "View the session transcript"
@@ -17723,6 +17960,15 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "Watchers register patterns via <0>Shell.addTrigger</0>; matched lines appear here."
 msgstr "تسجل المراقبات الأنماط عبر <0>Shell.addTrigger</0>؛ وتظهر الأسطر المطابقة هنا."
+
+#: src/notifications/ingest.ts
+msgid "We couldn't find what you were looking for on the cloud."
+msgstr ""
+
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
+msgid "We couldn't reach the cloud service. Check your connection or try again in a moment."
+msgstr ""
 
 #. placeholder {0}: count === 1 ? '' : 's'
 #: src/components/recovery/cleanup-modal.tsx
@@ -18058,6 +18304,10 @@ msgstr "يمكن الآن إغلاق هذه النافذة."
 #: src/components/account/organization-panel.tsx
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "لم تتم إضافتك بعد إلى أي منظمة. تُنشأ المنظمات في Flowpad Cloud؛ وبمجرد إضافتك إليها، ستظهر منظمتك وأعضاؤها هنا."
+
+#: src/notifications/ingest.ts
+msgid "You don't have permission for this action. Contact your admin if this seems wrong."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "You investigate a reported problem and prove the root cause…"

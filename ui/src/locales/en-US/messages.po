@@ -517,6 +517,10 @@ msgstr "{sessionCount} sessions"
 msgid "{stepsLeft} steps left"
 msgstr "{stepsLeft} steps left"
 
+#: src/notifications/ingest.ts
+msgid "{suppressed} hub errors were suppressed in the current window."
+msgstr "{suppressed} hub errors were suppressed in the current window."
+
 #. placeholder {0}: leaves.length
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "{title} — {0} items"
@@ -1189,6 +1193,11 @@ msgstr "agent-name"
 #: src/i18n/type-labels.ts
 msgid "Agentic Process"
 msgstr "Agentic Process"
+
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "Agentic process does not exist."
+msgstr "Agentic process does not exist."
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "agents"
@@ -3085,6 +3094,10 @@ msgstr "Closed"
 msgid "Cloud"
 msgstr "Cloud"
 
+#: src/notifications/ingest.ts
+msgid "Cloud access denied"
+msgstr "Cloud access denied"
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -3095,9 +3108,31 @@ msgstr "Cloud disconnected"
 msgid "Cloud hub"
 msgstr "Cloud hub"
 
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
+msgid "Cloud is not available"
+msgstr "Cloud is not available"
+
+#: src/notifications/ingest.ts
+msgid "Cloud request rejected"
+msgstr "Cloud request rejected"
+
+#: src/notifications/ingest.ts
+msgid "Cloud resource not found"
+msgstr "Cloud resource not found"
+
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Cloud Sandbox"
 msgstr "Cloud Sandbox"
+
+#: src/notifications/ingest.ts
+msgid "Cloud service is having trouble"
+msgstr "Cloud service is having trouble"
+
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
+msgid "Cloud sign-in expired"
+msgstr "Cloud sign-in expired"
 
 #: src/components/graph-view/GraphView.tsx
 #~ msgid "Cloud WorldView"
@@ -3894,6 +3929,11 @@ msgstr "Could not link asset to cloud"
 msgid "Could not link project to cloud"
 msgstr "Could not link project to cloud"
 
+#. placeholder {0}: roomId.slice(0, 8)
+#: src/routes/loaders/load-project.ts
+msgid "Could not load collaboration room {0}. Try again in a moment."
+msgstr "Could not load collaboration room {0}. Try again in a moment."
+
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Could not load environment variables"
 msgstr "Could not load environment variables"
@@ -3901,6 +3941,10 @@ msgstr "Could not load environment variables"
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "Could not load source: {error}"
 msgstr "Could not load source: {error}"
+
+#: src/routes/loaders/load-project.ts
+msgid "Could not load this project. Try again in a moment."
+msgstr "Could not load this project. Try again in a moment."
 
 #: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Could not open skill"
@@ -3927,6 +3971,18 @@ msgstr "Could not pull {0}"
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 msgid "Could not reach support"
 msgstr "Could not reach support"
+
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "Could not reach the backend. Try again in a moment."
+msgstr "Could not reach the backend. Try again in a moment."
+
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "Could not recover this session's project."
+msgstr "Could not recover this session's project."
+
+#: src/routes/loaders/load-next-process.ts
+msgid "Could not recover this session’s project."
+msgstr "Could not recover this session’s project."
 
 #: src/components/credentials-view/ProjectEnvironmentTab.tsx
 msgid "Could not remove"
@@ -4079,6 +4135,10 @@ msgstr "Couldn’t load your repos."
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Couldn't open the help desk"
 msgstr "Couldn't open the help desk"
+
+#: src/routes/loaders/load-next-process.ts
+msgid "Couldn’t reach backend"
+msgstr "Couldn’t reach backend"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Couldn't reach that repository. Check the URL and try again."
@@ -4963,6 +5023,10 @@ msgstr "Desktop version"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #~ msgid "Detach"
 #~ msgstr "Detach"
+
+#: src/notifications/ingest.ts
+msgid "Detail"
+msgstr "Detail"
 
 #: src/components/workflow-runner/header/ViewModeToggle.tsx
 #~ msgid "Detailed view"
@@ -6078,6 +6142,14 @@ msgstr "Expand sniffer event list"
 msgid "Expand table"
 msgstr "Expand table"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Expected /dock/subgraph/<projection>."
+msgstr "Expected /dock/subgraph/<projection>."
+
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Expected /dock/tag/graph or /dock/tag/graph/<dot.tag.name>."
+msgstr "Expected /dock/tag/graph or /dock/tag/graph/<dot.tag.name>."
+
 #: src/components/app-host/AppHost.tsx
 msgid "Expected format: /dock/apps/<uname>/<routerPath>?<options>"
 msgstr "Expected format: /dock/apps/<uname>/<routerPath>?<options>"
@@ -6425,6 +6497,10 @@ msgstr "Failed to remove vibe agent"
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Failed to restart services"
 #~ msgstr "Failed to restart services"
+
+#: src/routes/loaders/load-next-process.ts
+msgid "Failed to restore this session."
+msgstr "Failed to restore this session."
 
 #: src/components/workflows-view/WorkflowStrip.tsx
 #~ msgid "Failed to run workflow"
@@ -7139,6 +7215,11 @@ msgstr "Generate link & copy"
 msgid "Generated"
 msgstr "Generated"
 
+#. placeholder {0}: context.skill_name
+#: src/notifications/ingest.ts
+msgid "Generating: {0}"
+msgstr "Generating: {0}"
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Generating…"
 msgstr "Generating…"
@@ -7511,6 +7592,10 @@ msgstr "Help Desk"
 msgid "Help desk files removed"
 msgstr "Help desk files removed"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Help desk unavailable"
+msgstr "Help desk unavailable"
+
 #: src/i18n/type-labels.ts
 msgid "Help desks"
 msgstr "Help desks"
@@ -7802,6 +7887,10 @@ msgstr "https://github.com/owner/repo.git"
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
 msgstr "Hub"
+
+#: src/notifications/ingest.ts
+msgid "Hub errors suppressed"
+msgstr "Hub errors suppressed"
 
 #: src/components/version-popover/hub-release-label.tsx
 msgid "Hub release, and the UI build serving it"
@@ -8678,6 +8767,10 @@ msgstr "live row"
 #: src/components/conversation/LiveSessionGroup.tsx
 msgid "Live session"
 msgstr "Live session"
+
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Live session not found"
+msgstr "Live session not found"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Live session with {guestName} on your machine · {status}"
@@ -10736,6 +10829,11 @@ msgstr "No settings match your search."
 msgid "No shared sessions yet. Executing a prompt starts one."
 msgstr "No shared sessions yet. Executing a prompt starts one."
 
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "No shell is linked to this process."
+msgstr "No shell is linked to this process."
+
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "No skill-attributed findings to improve."
 msgstr "No skill-attributed findings to improve."
@@ -10820,6 +10918,10 @@ msgstr "No tool calls before cursor in this segment"
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
 msgid "No trace events captured yet"
 msgstr "No trace events captured yet"
+
+#: src/navigation/agentic-process-open.ts
+msgid "No transcript"
+msgstr "No transcript"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "No transcript data"
@@ -12151,6 +12253,10 @@ msgstr "Plan file not found"
 msgid "Plan mode — describe what to plan…"
 msgstr "Plan mode — describe what to plan…"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Plan not found"
+msgstr "Plan not found"
+
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Plan title…"
 msgstr "Plan title…"
@@ -12226,6 +12332,11 @@ msgstr "Please select or create a project first."
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "Please select or enter a folder"
 #~ msgstr "Please select or enter a folder"
+
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
+msgid "Please sign in again to keep using cloud features."
+msgstr "Please sign in again to keep using cloud features."
 
 #: src/components/helpdesk/HelpdeskResetButton.tsx
 msgid "Please try again."
@@ -12429,6 +12540,11 @@ msgstr "Process not started yet"
 msgid "Process Result"
 msgstr "Process Result"
 
+#: src/navigation/agentic-process-open.ts
+#: src/navigation/agentic-process-open.ts
+msgid "Process unavailable"
+msgstr "Process unavailable"
+
 #: src/components/account/user-info.tsx
 msgid "Profile"
 msgstr "Profile"
@@ -12530,6 +12646,9 @@ msgstr "Project name"
 #~ msgstr "Project Name"
 
 #: src/components/collaboration/StartRoomDialog.tsx
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-project.ts
+#: src/routes/loaders/process-load-error-resolution.ts
 msgid "Project not found"
 msgstr "Project not found"
 
@@ -12557,9 +12676,18 @@ msgstr "Project Required"
 msgid "Project secrets on this machine"
 msgstr "Project secrets on this machine"
 
+#. placeholder {0}: tabTypeId.type
+#: src/routes/loaders/load-project.ts
+msgid "Project tabs cannot load {0}."
+msgstr "Project tabs cannot load {0}."
+
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Project to load"
 msgstr "Project to load"
+
+#: src/routes/loaders/load-project.ts
+msgid "Project unavailable"
+msgstr "Project unavailable"
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "projected"
@@ -12910,6 +13038,11 @@ msgstr "Ready"
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Ready to share"
 msgstr "Ready to share"
+
+#. placeholder {0}: context.skill_name
+#: src/notifications/ingest.ts
+msgid "Ready: {0}"
+msgstr "Ready: {0}"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Ready!"
@@ -13715,6 +13848,10 @@ msgstr "Room hosted by the Flowpad team"
 #~ msgid "Room name"
 #~ msgstr "Room name"
 
+#: src/routes/loaders/load-project.ts
+msgid "Room not found"
+msgstr "Room not found"
+
 #: src/components/collaboration/RoomHeader.tsx
 msgid "Room renamed"
 msgstr "Room renamed"
@@ -13722,6 +13859,10 @@ msgstr "Room renamed"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Room started"
 msgstr "Room started"
+
+#: src/routes/loaders/load-project.ts
+msgid "Room unavailable"
+msgstr "Room unavailable"
 
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
 msgid "root"
@@ -14721,6 +14862,9 @@ msgstr "Session is not running"
 #~ msgstr "Session mode"
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
+#: src/routes/loaders/load-dock-pointer.ts
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/process-load-error-resolution.ts
 #: src/tabs/useTerminalStripController.tsx
 msgid "Session not found"
 msgstr "Session not found"
@@ -14732,6 +14876,13 @@ msgstr "Session Start"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Session Tasks"
 msgstr "Session Tasks"
+
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/process-load-error-resolution.ts
+#: src/routes/loaders/process-load-error-resolution.ts
+msgid "Session unavailable"
+msgstr "Session unavailable"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "sessions"
@@ -14985,6 +15136,16 @@ msgstr "Shell ID"
 msgid "Shell Name"
 msgstr "Shell Name"
 
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-project.ts
+msgid "Shell not found"
+msgstr "Shell not found"
+
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-project.ts
+msgid "Shell unavailable"
+msgstr "Shell unavailable"
+
 #. placeholder {0}: '{permissionDecision: allow or deny}'
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Should I allow this tool? Respond with JSON: {0}"
@@ -15170,6 +15331,8 @@ msgid "Sigma graph view"
 msgstr "Sigma graph view"
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Sign in"
 msgstr "Sign in"
@@ -15871,6 +16034,10 @@ msgstr "SubAgent not found"
 msgid "Subfolders"
 msgstr "Subfolders"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Subgraph not found"
+msgstr "Subgraph not found"
+
 #: src/components/graph-view/GraphView.tsx
 msgid "subgraph projection"
 msgstr "subgraph projection"
@@ -16063,6 +16230,10 @@ msgstr "Tag shape"
 msgid "Tag Tree"
 msgstr "Tag Tree"
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "Tag view not found"
+msgstr "Tag view not found"
+
 #: src/i18n/type-labels.ts
 msgid "Tags"
 msgstr "Tags"
@@ -16216,6 +16387,11 @@ msgstr "Test trigger"
 #~ msgid "Test your activation rules with sample conversations and hook data to verify they trigger correctly."
 #~ msgstr "Test your activation rules with sample conversations and hook data to verify they trigger correctly."
 
+#: src/navigation/agentic-process-open.ts
+#: src/navigation/agentic-process-open.ts
+msgid "That agent is no longer in your workspace."
+msgstr "That agent is no longer in your workspace."
+
 #: src/components/assets/editor/run/useRunOnFile.tsx
 #~ msgid "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. Enable it to continue."
 #~ msgstr "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. Enable it to continue."
@@ -16265,6 +16441,10 @@ msgstr "The change was not saved."
 msgid "The check did not run."
 msgstr "The check did not run."
 
+#: src/notifications/ingest.ts
+msgid "The cloud service returned an error. Please try again in a moment."
+msgstr "The cloud service returned an error. Please try again in a moment."
+
 #: src/components/connections-manager.tsx
 msgid "The credential could not be removed."
 msgstr "The credential could not be removed."
@@ -16288,6 +16468,10 @@ msgstr "The file may have been deleted, moved, or doesn't match the {typeLabel} 
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
 msgid "The FlowPad backend server is not responding."
 msgstr "The FlowPad backend server is not responding."
+
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "The help desk files are missing. Open the help desk again to download them."
+msgstr "The help desk files are missing. Open the help desk again to download them."
 
 #: src/components/helpdesk/HelpdeskPortalPage.tsx
 msgid "The help desk is not set up on this machine yet."
@@ -16452,6 +16636,11 @@ msgstr "thinking"
 msgid "Thinking:"
 msgstr "Thinking:"
 
+#. placeholder {0}: surface === 'worldview' ? 'WorldView' : 'graph'
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "This {0} URL is malformed or unavailable."
+msgstr "This {0} URL is malformed or unavailable."
+
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "This action cannot be undone."
 msgstr "This action cannot be undone."
@@ -16481,6 +16670,10 @@ msgstr "This can take up to a minute if it was asleep."
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "This chat has no resumable session."
 msgstr "This chat has no resumable session."
+
+#: src/routes/loaders/load-project.ts
+msgid "This collaboration room no longer exists or is unavailable."
+msgstr "This collaboration room no longer exists or is unavailable."
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "This context is empty."
@@ -16542,6 +16735,10 @@ msgstr "This live session has ended."
 msgid "This live session was declined."
 msgstr "This live session was declined."
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "This live-session URL is malformed or unavailable."
+msgstr "This live-session URL is malformed or unavailable."
+
 #: src/components/persistent-iframe.tsx
 #~ msgid "This may take up to 20 seconds"
 #~ msgstr "This may take up to 20 seconds"
@@ -16562,9 +16759,17 @@ msgstr "This permanently removes the file from disk. This cannot be undone."
 msgid "This permanently removes the saved context snapshot. This cannot be undone."
 msgstr "This permanently removes the saved context snapshot. This cannot be undone."
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "This plan no longer exists."
+msgstr "This plan no longer exists."
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This process has no transcript session yet."
 msgstr "This process has no transcript session yet."
+
+#: src/routes/loaders/load-project.ts
+msgid "This project doesn't exist or is no longer available."
+msgstr "This project doesn't exist or is no longer available."
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "This project has no assets yet."
@@ -16581,6 +16786,10 @@ msgstr "This project is now available in the cloud."
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #~ msgid "This project is ready to publish and share over Git."
 #~ msgstr "This project is ready to publish and share over Git."
+
+#: src/routes/loaders/load-project.ts
+msgid "This project tab URL is malformed."
+msgstr "This project tab URL is malformed."
 
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #~ msgid "This project's folder needs a repository and a remote."
@@ -16640,6 +16849,10 @@ msgstr "This session hasn't been reviewed yet, so there's nothing to report."
 msgid "This session is running remotely by {guestName} on your machine."
 msgstr "This session is running remotely by {guestName} on your machine."
 
+#: src/routes/loaders/load-dock-pointer.ts
+msgid "This session URL is malformed or unavailable."
+msgstr "This session URL is malformed or unavailable."
+
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "This source's remote identity — one source per account."
 msgstr "This source's remote identity — one source per account."
@@ -16647,6 +16860,11 @@ msgstr "This source's remote identity — one source per account."
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 msgid "This starts the machine and sets up whatever it was created with."
 msgstr "This starts the machine and sets up whatever it was created with."
+
+#: src/routes/loaders/load-next-process.ts
+#: src/routes/loaders/load-project.ts
+msgid "This terminal no longer exists."
+msgstr "This terminal no longer exists."
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "This trace is not linked to a worker session."
@@ -16675,6 +16893,10 @@ msgstr "This will delete all debug logs from <0>~/.claude/debug/</0> and all par
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "This worker cannot continue the chat right now."
 msgstr "This worker cannot continue the chat right now."
+
+#: src/navigation/agentic-process-open.ts
+msgid "This worker has no session to view yet."
+msgstr "This worker has no session to view yet."
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -17182,6 +17404,11 @@ msgstr "Unstar chat"
 #~ msgid "Unsupported Content"
 #~ msgstr "Unsupported Content"
 
+#: src/routes/loaders/load-project.ts
+#: src/routes/loaders/load-project.ts
+msgid "Unsupported tab"
+msgstr "Unsupported tab"
+
 #: src/components/collaboration/RoomTabs.tsx
 #~ msgid "Unsupported tab type."
 #~ msgstr "Unsupported tab type."
@@ -17567,6 +17794,8 @@ msgstr "Vibe agents"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "View"
@@ -17628,6 +17857,10 @@ msgstr "View on PyPI"
 #~ msgid "View resources"
 #~ msgstr "View resources"
 
+#: src/notifications/ingest.ts
+msgid "View Session"
+msgstr "View Session"
+
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 msgid "View session tasks"
@@ -17637,6 +17870,10 @@ msgstr "View session tasks"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "View session transcript"
 msgstr "View session transcript"
+
+#: src/notifications/ingest.ts
+msgid "View Skill"
+msgstr "View Skill"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "View the session transcript"
@@ -17732,6 +17969,15 @@ msgstr "Watch"
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "Watchers register patterns via <0>Shell.addTrigger</0>; matched lines appear here."
 msgstr "Watchers register patterns via <0>Shell.addTrigger</0>; matched lines appear here."
+
+#: src/notifications/ingest.ts
+msgid "We couldn't find what you were looking for on the cloud."
+msgstr "We couldn't find what you were looking for on the cloud."
+
+#: src/notifications/ingest.ts
+#: src/notifications/ingest.ts
+msgid "We couldn't reach the cloud service. Check your connection or try again in a moment."
+msgstr "We couldn't reach the cloud service. Check your connection or try again in a moment."
 
 #. placeholder {0}: count === 1 ? '' : 's'
 #: src/components/recovery/cleanup-modal.tsx
@@ -18067,6 +18313,10 @@ msgstr "You can close this window."
 #: src/components/account/organization-panel.tsx
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
+
+#: src/notifications/ingest.ts
+msgid "You don't have permission for this action. Contact your admin if this seems wrong."
+msgstr "You don't have permission for this action. Contact your admin if this seems wrong."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "You investigate a reported problem and prove the root cause…"
