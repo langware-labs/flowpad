@@ -43,7 +43,10 @@ vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(
 import { dataContext, Project, type TypeId } from '@sdk';
 import { projectScope } from '@src/lib/scope-filter';
 import { ViewType } from '@src/types/ViewType';
-import { useProjectOpener, type UseProjectOpenerOptions } from '@src/components/open-project-component/use-open-project';
+import {
+  useProjectOpener,
+  type UseProjectOpenerOptions,
+} from '@src/components/open-project-component/use-open-project';
 
 const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const PROC_ID = '22222222-2222-4222-8222-222222222222';
@@ -88,8 +91,13 @@ describe('useProjectOpener — home stays home on the new project', () => {
     expect(dock.options?.vibeNoProcess).toBe('true');
     expect(dock.viewMode).toBe('vibe');
     expect(dock.scopeFilter).toEqual(projectScope(PROJECT_ID));
-    // vibe home adopts imperatively and clears the stale process/active entity
-    expect(selectProjectContextMock).toHaveBeenCalledWith(targetProject);
+    // URL-first, like every other home branch: the scope-carrying dock's loader
+    // is the single writer of project context. This used to pre-write it here,
+    // which DISARMED that loader (`adoptScopeProject` skips when context already
+    // equals the URL's project) and silently dropped everything hanging off it —
+    // the project's remembered language and view mode. The vibe-only clears stay;
+    // they are about the stale process/active entity, not about which project.
+    expect(selectProjectContextMock).not.toHaveBeenCalled();
     expect(setActiveEntitySpy).toHaveBeenCalledWith(null);
   });
 

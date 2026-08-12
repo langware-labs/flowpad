@@ -69,6 +69,8 @@ describe('React launched-instance isolation source policy', () => {
       'chat-history-row-rename-sync.test.tsx',
       'chats-open-recency.test.ts',
       'dock-dead-scope-tab-setup.test.tsx',
+      'project-context-locale-follows.test.ts',
+      'project-locale-memory.test.ts',
       'project-view-mode-memory.test.ts',
       'pty_corruption.test.ts',
       'reactivity.test.ts',
@@ -76,6 +78,7 @@ describe('React launched-instance isolation source policy', () => {
       'unit/hooks/useClaudeHistory.test.tsx',
       'unit/hooks/useEntityByPath.test.tsx',
       'unit/useFS.test.tsx',
+      'vibe-switch-project-locale.test.ts',
     ]);
   });
 
