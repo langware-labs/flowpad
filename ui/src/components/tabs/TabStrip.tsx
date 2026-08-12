@@ -240,9 +240,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
             onSelect={entry.onSelect}
             className={entry.emphasized ? 'bg-accent/50 font-medium text-foreground focus:bg-accent' : undefined}
           >
-            {entry.Icon && <entry.Icon className={`mr-2 h-4 w-4${entry.emphasized ? ' text-primary' : ''}`} />}
+            {entry.Icon && <entry.Icon className={`me-2 h-4 w-4${entry.emphasized ? 'text-primary' : ''}`} />}
             {entry.label}
-            {entry.shortcut && <span className="ml-auto pl-4 text-xs text-muted-foreground">{entry.shortcut}</span>}
+            {entry.shortcut && <span className="ms-auto ps-4 text-xs text-muted-foreground">{entry.shortcut}</span>}
           </ContextMenuItem>
         ))}
         <ContextMenuSeparator />
@@ -499,7 +499,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
             {renderMenuGroup(item.contextMenuItems?.filter((e) => e.emphasized))}
             {item.renameable && (
               <>
-                <ContextMenuItem onSelect={() => startRename(key, item.title)}><Trans>Rename</Trans></ContextMenuItem>
+                <ContextMenuItem onSelect={() => startRename(key, item.title)}>
+                  <Trans>Rename</Trans>
+                </ContextMenuItem>
                 <ContextMenuSeparator />
               </>
             )}
@@ -509,11 +511,13 @@ export const TabStrip: React.FC<TabStripProps> = ({
               <ContextMenuItem onSelect={() => onClose(key)}>
                 <Trans>Close</Trans>{' '}
                 {closeShortcutLabel && (
-                  <span className="ml-auto pl-4 text-xs text-muted-foreground">{closeShortcutLabel}</span>
+                  <span className="ms-auto ps-4 text-xs text-muted-foreground">{closeShortcutLabel}</span>
                 )}
               </ContextMenuItem>
             )}
-            <ContextMenuItem onSelect={() => closeMany(allVisibleItems.map((i) => i.key))}><Trans>Close All</Trans></ContextMenuItem>
+            <ContextMenuItem onSelect={() => closeMany(allVisibleItems.map((i) => i.key))}>
+              <Trans>Close All</Trans>
+            </ContextMenuItem>
             <ContextMenuItem
               onSelect={() => closeMany(list.filter((i) => i.key !== key).map((i) => i.key))}
               disabled={list.length <= 1}
@@ -545,7 +549,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
       <div
         ref={tabContainerRef}
         data-testid="terminal-tabs-row"
-        className="flex min-w-0 flex-1 items-end overflow-hidden pl-2 pr-1 pt-1"
+        className="flex min-w-0 flex-1 items-end overflow-hidden pe-1 ps-2 pt-1"
       >
         {items.map((item, index) => renderChip(item, index, items))}
       </div>
@@ -574,7 +578,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 </span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom"><Trans>Close all {allVisibleItems.length} tabs</Trans></TooltipContent>
+            <TooltipContent side="bottom">
+              <Trans>Close all {allVisibleItems.length} tabs</Trans>
+            </TooltipContent>
           </Tooltip>
         </TooltipProvider>
       )}

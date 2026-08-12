@@ -56,7 +56,7 @@ export function ThreadStack({
         onClick={onOpenThread}
         disabled={!onOpenThread}
         data-testid="thread-stack-open"
-        className="mt-1 ml-10 inline-flex items-center gap-1.5 rounded-full border border-sky-400/40 bg-sky-500/10 px-2.5 py-0.5 text-[11px] text-sky-700 transition-colors hover:bg-sky-500/20 disabled:pointer-events-none disabled:opacity-60 dark:text-sky-300"
+        className="ms-10 mt-1 inline-flex items-center gap-1.5 rounded-full border border-sky-400/40 bg-sky-500/10 px-2.5 py-0.5 text-[11px] text-sky-700 transition-colors hover:bg-sky-500/20 disabled:pointer-events-none disabled:opacity-60 dark:text-sky-300"
       >
         <Layers className="h-3 w-3" />
         <Trans>{earlier} earlier in this thread</Trans>

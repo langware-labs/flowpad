@@ -104,7 +104,12 @@ export function Spotlight() {
   const hideEntityChip = profile.allowedEntityTypes?.length === 1 && !!profile.defaultEntityType;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) closeSpotlight(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) closeSpotlight();
+      }}
+    >
       <DialogContent className="overflow-hidden p-0 sm:max-w-[720px]">
         <DialogTitle className="sr-only">{profile.label ?? t`Search`}</DialogTitle>
         <Command
@@ -120,7 +125,7 @@ export function Spotlight() {
                 allowedEntityTypes={profile.allowedEntityTypes}
               />
             )}
-            <div className="ml-1 flex-1">
+            <div className="ms-1 flex-1">
               <CommandInput
                 value={query}
                 onValueChange={setQuery}
@@ -141,11 +146,7 @@ export function Spotlight() {
               </div>
             ) : visible.length === 0 ? (
               <CommandEmpty className="py-6 text-sm text-muted-foreground">
-                {trimmed
-                  ? t`No matches.`
-                  : profile.showTerminalHistory
-                    ? t`No recent items.`
-                    : t`Type to search…`}
+                {trimmed ? t`No matches.` : profile.showTerminalHistory ? t`No recent items.` : t`Type to search…`}
               </CommandEmpty>
             ) : (
               visible.map((row) => (

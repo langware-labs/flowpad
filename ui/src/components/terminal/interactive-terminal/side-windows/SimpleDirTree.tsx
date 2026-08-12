@@ -1,10 +1,7 @@
 import { type TypeId } from '@sdk';
 import apiClient from '@sdk/client';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import {
-  EntityIcon,
-  useEntityLocationLabel,
-} from '@src/components/graph-view/ui/EntityIcon';
+import { EntityIcon, useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
@@ -58,16 +55,10 @@ export function DirTreeItemIconButton({
   onClick: () => void;
 }) {
   const locationText = useEntityLocationLabel(asset?.remote);
-  const baseTitle = asset
-    ? `Open ${asset.type}: ${asset.name || item.name}\n${childPath}`
-    : childPath;
+  const baseTitle = asset ? `Open ${asset.type}: ${asset.name || item.name}\n${childPath}` : childPath;
   const iconTitle = locationText ? `${baseTitle}\n${locationText}` : baseTitle;
   const iconAriaLabel = asset
-    ? [
-        `Open ${asset.type}: ${asset.name || item.name}`,
-        childPath,
-        locationText,
-      ].filter(Boolean).join(', ')
+    ? [`Open ${asset.type}: ${asset.name || item.name}`, childPath, locationText].filter(Boolean).join(', ')
     : childPath;
   const FileGlyph = defaultIconForItem(item);
 
@@ -198,17 +189,16 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
   // Absolute node path of the file being shared; non-null opens the dialog.
   const [sharePath, setSharePath] = useState<string | null>(null);
   const shareSource = useMemo(
-    () =>
-      sharePath
-        ? fileShareSource({ computeNodeTypeId, absPath: sharePath })
-        : null,
+    () => (sharePath ? fileShareSource({ computeNodeTypeId, absPath: sharePath }) : null),
     [computeNodeTypeId, sharePath],
   );
 
   // Reset filter when navigating between directories — a query that fit the
   // old listing rarely fits the next one, and a stale filter that hides
   // every entry looks like the panel is broken.
-  useEffect(() => { setFilterQuery(''); }, [currentPath]);
+  useEffect(() => {
+    setFilterQuery('');
+  }, [currentPath]);
 
   const atTop = currentPath === normalizedTop;
   const browseResult = fs?.browse(currentPath);
@@ -376,7 +366,7 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
           <button
             type="button"
             onClick={handleRefresh}
-            className="flex items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted"
+            className="flex items-center gap-2 rounded-md px-2 py-1 text-start text-sm hover:bg-muted"
             title={t`Current directory (click to refresh)`}
           >
             <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -387,7 +377,7 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
             <button
               type="button"
               onClick={handleUp}
-              className="flex items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted"
+              className="flex items-center gap-2 rounded-md px-2 py-1 text-start text-sm hover:bg-muted"
               title={t`Parent directory`}
             >
               <CornerLeftUp className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -414,7 +404,7 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
                 <button
                   type="button"
                   onClick={() => handleEnter(item, asset)}
-                  className="min-w-0 flex-1 py-1 pr-2 text-left"
+                  className="min-w-0 flex-1 py-1 pe-2 text-start"
                 >
                   <span className="block truncate">{item.name}</span>
                 </button>
@@ -460,13 +450,7 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
         </div>
       </div>
 
-      {shareSource && (
-        <ShareToConversationDialog
-          open
-          onClose={() => setSharePath(null)}
-          source={shareSource}
-        />
-      )}
+      {shareSource && <ShareToConversationDialog open onClose={() => setSharePath(null)} source={shareSource} />}
     </div>
   );
 };

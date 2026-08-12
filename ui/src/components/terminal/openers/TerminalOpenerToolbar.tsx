@@ -163,7 +163,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
           e.stopPropagation();
           togglePin(opener.id);
         }}
-        className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+        className="ms-auto inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground"
         aria-label={pinned ? t`Unpin ${opener.label}` : t`Pin ${opener.label}`}
         title={pinned ? t`Unpin` : t`Pin`}
         data-testid={`opener-pin-toggle-${opener.id}`}
@@ -176,7 +176,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
     if (opener.id === 'docker' && opener.dockerNodes && opener.dockerNodes.length > 1) {
       return (
         <DropdownMenuSub key={opener.id}>
-          <DropdownMenuSubTrigger className="gap-2 pr-1" data-testid={`opener-menu-row-${opener.id}`}>
+          <DropdownMenuSubTrigger className="gap-2 pe-1" data-testid={`opener-menu-row-${opener.id}`}>
             <Icon className={`h-4 w-4 ${opener.iconClassName ?? ''}`} />
             <span>{opener.label}</span>
             {pinButton}
@@ -209,7 +209,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
         key={opener.id}
         onSelect={onSelect}
         disabled={opener.disabled}
-        className="gap-2 pr-1"
+        className="gap-2 pe-1"
         data-testid={`opener-menu-row-${opener.id}`}
         title={opener.warning ?? undefined}
       >
@@ -224,7 +224,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
   };
 
   return (
-    <div className="flex shrink-0 items-center gap-1 border-l px-1" data-testid="terminal-tab-end-toolbar">
+    <div className="flex shrink-0 items-center gap-1 border-s px-1" data-testid="terminal-tab-end-toolbar">
       {inlineOpeners.map(renderInline)}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

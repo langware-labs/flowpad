@@ -145,7 +145,7 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
               type="button"
               onClick={() => setSelectedId(g.id ?? null)}
               className={cn(
-                'flex items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors',
+                'flex items-center justify-between rounded-md border px-3 py-2 text-start text-sm transition-colors',
                 selectedId === g.id ? 'border-primary bg-primary/5' : 'border-transparent hover:bg-muted',
               )}
             >

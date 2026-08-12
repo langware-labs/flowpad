@@ -84,7 +84,7 @@ export function BacklinksTab({ target }: BacklinksTabProps) {
   if (loading && links === null) {
     return (
       <Empty data-testid="md-backlinks-panel">
-        <RefreshCw className="mr-1 inline h-3 w-3 animate-spin" />
+        <RefreshCw className="me-1 inline h-3 w-3 animate-spin" />
         <Trans>Loading backlinks…</Trans>
       </Empty>
     );
@@ -97,16 +97,19 @@ export function BacklinksTab({ target }: BacklinksTabProps) {
     );
   }
   if (!links || links.length === 0) {
-    return <Empty data-testid="md-backlinks-panel"><Trans>No backlinks yet.</Trans></Empty>;
+    return (
+      <Empty data-testid="md-backlinks-panel">
+        <Trans>No backlinks yet.</Trans>
+      </Empty>
+    );
   }
 
   return (
-    <div
-      className="flex h-full flex-col gap-1 overflow-y-auto p-2 text-[11px]"
-      data-testid="md-backlinks-panel"
-    >
+    <div className="flex h-full flex-col gap-1 overflow-y-auto p-2 text-[11px]" data-testid="md-backlinks-panel">
       <div className="flex items-center justify-between px-1 pb-1 text-[10px] uppercase text-muted-foreground">
-        <span>{links.length} backlink{links.length === 1 ? '' : 's'}</span>
+        <span>
+          {links.length} backlink{links.length === 1 ? '' : 's'}
+        </span>
         <button
           onClick={() => void refresh()}
           className="rounded px-1 hover:bg-muted"
@@ -123,12 +126,14 @@ export function BacklinksTab({ target }: BacklinksTabProps) {
           data-testid="md-backlinks-item"
         >
           <div className="flex items-center justify-between">
-            <span className="truncate font-mono text-[10px] text-muted-foreground">
-              {link.src_type}
+            <span className="truncate font-mono text-[10px] text-muted-foreground">{link.src_type}</span>
+            <span className="text-[10px] text-muted-foreground">
+              <Trans>line {link.line}</Trans>
             </span>
-            <span className="text-[10px] text-muted-foreground"><Trans>line {link.line}</Trans></span>
           </div>
-          <div className="truncate" title={link.src_id}>{link.src_id}</div>
+          <div className="truncate" title={link.src_id}>
+            {link.src_id}
+          </div>
           {link.raw && (
             <div className="truncate text-[10px] italic text-muted-foreground" title={link.raw}>
               [[{link.raw}]]
@@ -140,10 +145,7 @@ export function BacklinksTab({ target }: BacklinksTabProps) {
   );
 }
 
-function Empty({
-  children,
-  ...rest
-}: { children: React.ReactNode } & Record<string, unknown>) {
+function Empty({ children, ...rest }: { children: React.ReactNode } & Record<string, unknown>) {
   return (
     <div
       className="flex h-full items-center justify-center p-4 text-center text-[11px] text-muted-foreground"

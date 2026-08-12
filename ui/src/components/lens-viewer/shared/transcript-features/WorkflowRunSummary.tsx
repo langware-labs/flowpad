@@ -64,14 +64,21 @@ export function WorkflowRunSummary({ payload, label }: Props) {
         <span className="shrink-0 text-muted-foreground">{label} run</span>
         {workflowName && <span className="min-w-0 truncate font-semibold text-foreground">{workflowName}</span>}
         {status && (
-          <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium ${verdictStyle(statusTone(status))}`}>
+          <span
+            className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium ${verdictStyle(statusTone(status))}`}
+          >
             {status}
           </span>
         )}
-        {modelProvider && <span className="ml-auto shrink-0 truncate text-[11px] text-muted-foreground">{modelProvider}</span>}
+        {modelProvider && (
+          <span className="ms-auto shrink-0 truncate text-[11px] text-muted-foreground">{modelProvider}</span>
+        )}
       </div>
       {source && (
-        <div className="mb-2 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground" data-testid="wf-run-source">
+        <div
+          className="mb-2 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground"
+          data-testid="wf-run-source"
+        >
           <span className="shrink-0">Source:</span>
           <span className="min-w-0 truncate font-medium text-foreground">{source.file}</span>
           {source.skill && <span className="shrink-0">· skill: {source.skill}</span>}

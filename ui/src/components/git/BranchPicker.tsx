@@ -54,7 +54,7 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t`Filter branches…`}
-          className="pl-7 text-sm"
+          className="ps-7 text-sm"
           autoFocus
         />
       </div>
@@ -66,7 +66,7 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
           </div>
         ) : isError ? (
           <div className="px-3 py-4 text-xs text-destructive">
-            Failed to load branches: {(error as Error)?.message ?? 'unknown error'}
+            Failed to load branches: {(error)?.message ?? 'unknown error'}
           </div>
         ) : list.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">
@@ -93,7 +93,7 @@ export function BranchPicker({ repo, onSelect, onBack }: BranchPickerProps) {
                   </span>
                 )}
                 {/* The list is ordered by this, so show it — otherwise the order looks arbitrary. */}
-                <span className="w-16 shrink-0 text-right text-[10px] text-muted-foreground">
+                <span className="w-16 shrink-0 text-end text-[10px] text-muted-foreground">
                   {formatRelative(branch.updated_at)}
                 </span>
               </li>

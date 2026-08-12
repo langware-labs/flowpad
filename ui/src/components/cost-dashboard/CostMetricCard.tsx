@@ -23,7 +23,7 @@ export function CostMetricCard({ category, value, sparklineData, isSelected, onC
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-center gap-3 rounded-lg border p-2.5 text-left transition-all ${
+      className={`flex w-full items-center gap-3 rounded-lg border p-2.5 text-start transition-all ${
         isSelected ? 'border-primary bg-primary/5' : 'border-transparent hover:border-border hover:bg-muted/50'
       }`}
     >

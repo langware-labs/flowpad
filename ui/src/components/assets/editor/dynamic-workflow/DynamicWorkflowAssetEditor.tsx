@@ -84,17 +84,11 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
               onClick={() => void save()}
               data-testid="dw-save"
             >
-              <Save className="mr-1 h-4 w-4" />
+              <Save className="me-1 h-4 w-4" />
               Save
             </Button>
-            <Button
-              size="sm"
-              variant="default"
-              disabled={busy}
-              onClick={() => void run(true)}
-              data-testid="dw-run"
-            >
-              <Play className="mr-1 h-4 w-4" />
+            <Button size="sm" variant="default" disabled={busy} onClick={() => void run(true)} data-testid="dw-run">
+              <Play className="me-1 h-4 w-4" />
               Run
             </Button>
             <Button
@@ -104,7 +98,7 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
               onClick={() => void run(false)}
               data-testid="dw-run-headless"
             >
-              <Zap className="mr-1 h-4 w-4" />
+              <Zap className="me-1 h-4 w-4" />
               Run headless
             </Button>
           </div>

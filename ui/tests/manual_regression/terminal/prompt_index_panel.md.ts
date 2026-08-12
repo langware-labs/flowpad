@@ -12,11 +12,11 @@
  *   ui/src/components/terminal/interactive-terminal/InteractiveTerminal.tsx
  *
  * Implementation notes:
- *   - Side window container: .w-80.flex-col.border-l (SideWindow)
+ *   - Side window container: .w-80.flex-col.border-s (SideWindow)
  *   - Tab strip: first .border-b inside the side window
  *   - Prompts tab × close button: button[aria-label="Close Prompts"]
  *   - PromptIndexPanel inner header has NO close button — closing is via tab strip ×
- *   - Ribbon .ml-auto button order (Advanced): 0=Context, 1=Git, 2=Prompts,
+ *   - Ribbon .ms-auto button order (Advanced): 0=Context, 1=Git, 2=Prompts,
  *     3=Analysis, 4=SkillsAgents, 5=Files, 6=Dir, 7=Queue, 8=Prompt Library button
  *   - Buttons have NO title attribute — they use tooltips on hover
  *   - Prompt count badge is a lime pill on the Prompts button (index 2)
@@ -25,7 +25,16 @@
  * Tests 5–9, 11–12 require live Claude data or visual inspection.
  */
 import { test, expect } from '@playwright/test';
-import { activePanel, dismissSetupModal, ensureAdvancedView, ensureSideTabClosed, ensureSideTabOpen, getSideWindow, skipIfPtyExhausted, startClaudeSession } from './helpers';
+import {
+  activePanel,
+  dismissSetupModal,
+  ensureAdvancedView,
+  ensureSideTabClosed,
+  ensureSideTabOpen,
+  getSideWindow,
+  skipIfPtyExhausted,
+  startClaudeSession,
+} from './helpers';
 import { apiBase } from '../_shared/api';
 import { withViewMode } from '../_shared/view-mode';
 
@@ -44,7 +53,7 @@ let cachedAgenticUrl: string | null = null;
  */
 async function gotoAgenticProcess(page: import('@playwright/test').Page) {
   const panel = activePanel(page);
-  const ribbon = panel.locator('.border-t .ml-auto');
+  const ribbon = panel.locator('.border-t .ms-auto');
 
   // Fast path: reuse the URL from the first successful navigation in this run.
   if (cachedAgenticUrl) {
@@ -105,13 +114,13 @@ test.describe('Prompt Index Panel', () => {
 
     await gotoAgenticProcess(page);
 
-    // Validate ribbon is visible — check the ml-auto button container
+    // Validate ribbon is visible — check the ms-auto button container
     // (text=/running|idle/i is unreliable: may match a visibility:hidden tooltip element)
     const panel = activePanel(page);
-    const mlAuto = panel.locator('.border-t .ml-auto');
+    const mlAuto = panel.locator('.border-t .ms-auto');
     await expect(mlAuto).toBeVisible({ timeout: 15_000 });
 
-    // Prompts button is at index 2 in .ml-auto:
+    // Prompts button is at index 2 in .ms-auto:
     // Context(0), Git(1), Prompts(2), Analysis(3), SkillsAgents(4), Files(5), Dir(6), Queue(7)
     await expect(mlAuto.locator('button').nth(2)).toBeVisible({ timeout: 15_000 });
 
@@ -131,7 +140,7 @@ test.describe('Prompt Index Panel', () => {
 
     await gotoAgenticProcess(page);
 
-    // Click the Prompts button (index 2 in .ml-auto)
+    // Click the Prompts button (index 2 in .ms-auto)
     const panel = activePanel(page);
     await ensureSideTabOpen(page, 2, 'Prompts');
 
@@ -190,7 +199,7 @@ test.describe('Prompt Index Panel', () => {
 
     const panel = activePanel(page);
     await ensureSideTabClosed(page, 'Prompts');
-    const promptsBtn = panel.locator('.border-t .ml-auto button').nth(2);
+    const promptsBtn = panel.locator('.border-t .ms-auto button').nth(2);
 
     // First click — opens
     await promptsBtn.click();
@@ -233,9 +242,9 @@ test.describe('Prompt Index Panel', () => {
       await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
       await page.waitForTimeout(2_000);
 
-      // On plain shell: ribbon (.border-t .ml-auto) must not be visible.
+      // On plain shell: ribbon (.border-t .ms-auto) must not be visible.
       const panel = activePanel(page);
-      const mlAuto = panel.locator('.border-t .ml-auto');
+      const mlAuto = panel.locator('.border-t .ms-auto');
       await expect(mlAuto).not.toBeVisible({ timeout: 3_000 });
       await expect(page).toHaveURL(new RegExp(`/dock/shell/shell-${shellId}`));
     } finally {
@@ -253,7 +262,7 @@ test.describe('Prompt Index Panel', () => {
     await gotoAgenticProcess(page);
 
     const panel = activePanel(page);
-    const mlAuto = panel.locator('.border-t .ml-auto');
+    const mlAuto = panel.locator('.border-t .ms-auto');
 
     // Open Files (index 5)
     await mlAuto.locator('button').nth(5).click();

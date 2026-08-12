@@ -40,12 +40,22 @@ type BookmarkEntry =
 function AnnotationCard({ annotation }: { annotation: Annotation }) {
   const isComment = annotation.labels?.includes('comment:');
   return (
-    <div className="bookmark-card flex flex-col gap-1 rounded border border-border bg-card p-2.5" data-testid="comment-card">
+    <div
+      className="bookmark-card flex flex-col gap-1 rounded border border-border bg-card p-2.5"
+      data-testid="comment-card"
+    >
       <div className="flex items-center gap-1.5">
         <Tag className={`h-3.5 w-3.5 ${isComment ? 'text-sky-400' : 'text-lime-400'}`} />
-        <span className="text-xs font-medium text-foreground/80">{isComment ? <Trans>Comment</Trans> : <Trans>Prompt</Trans>}</span>
-        {annotation.labels?.map(l => (
-          <span key={l} className={`rounded px-1 py-0.5 text-[9px] font-mono ${isComment ? 'bg-sky-400/10 text-sky-500' : 'bg-lime-400/10 text-lime-500'}`}>{l}</span>
+        <span className="text-xs font-medium text-foreground/80">
+          {isComment ? <Trans>Comment</Trans> : <Trans>Prompt</Trans>}
+        </span>
+        {annotation.labels?.map((l) => (
+          <span
+            key={l}
+            className={`rounded px-1 py-0.5 font-mono text-[9px] ${isComment ? 'bg-sky-400/10 text-sky-500' : 'bg-lime-400/10 text-lime-500'}`}
+          >
+            {l}
+          </span>
         ))}
       </div>
       <p className="text-xs text-muted-foreground">{annotation.content}</p>
@@ -121,7 +131,15 @@ function BookmarksList({
         ) : entry.kind === 'annotation' ? (
           <AnnotationCard key={`annotation-${entry.annotation.id}`} annotation={entry.annotation} />
         ) : (
-          <BookmarkCard key={`bookmark-${entry.bookmark.id}`} bookmark={entry.bookmark} onClose={onCloseBookmark} onDelete={onDeleteBookmark} onRemind={onRemindBookmark} onOpenSession={onOpenSession} onForkSession={onForkSession} />
+          <BookmarkCard
+            key={`bookmark-${entry.bookmark.id}`}
+            bookmark={entry.bookmark}
+            onClose={onCloseBookmark}
+            onDelete={onDeleteBookmark}
+            onRemind={onRemindBookmark}
+            onOpenSession={onOpenSession}
+            onForkSession={onForkSession}
+          />
         ),
       )}
     </div>
@@ -173,7 +191,10 @@ export function BookmarkColumn({
   };
 
   const filteredBookmarkCount = useMemo(
-    () => learningTasks.length + bookmarks.filter((m) => filterBookmark(m, bookmarkFilter)).length + (annotations?.length ?? 0),
+    () =>
+      learningTasks.length +
+      bookmarks.filter((m) => filterBookmark(m, bookmarkFilter)).length +
+      (annotations?.length ?? 0),
     [learningTasks, bookmarks, annotations, bookmarkFilter],
   );
 
@@ -204,7 +225,9 @@ export function BookmarkColumn({
       <div className="flex items-center justify-between border-b border-border p-3">
         <div className="flex items-center gap-2">
           <StickyNote className="h-4 w-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold"><Trans>Todos</Trans></h3>
+          <h3 className="text-sm font-semibold">
+            <Trans>Todos</Trans>
+          </h3>
           {filteredBookmarkCount > 0 && (
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
               {filteredBookmarkCount}
@@ -272,7 +295,10 @@ export function BookmarkColumn({
             <button
               type="button"
               className="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted"
-              onClick={() => { setCommentOpen(false); setCommentText(''); }}
+              onClick={() => {
+                setCommentOpen(false);
+                setCommentText('');
+              }}
             >
               <Trans>Cancel</Trans>
             </button>
@@ -296,10 +322,18 @@ export function BookmarkColumn({
           value={bookmarkFilter}
           onChange={(e) => setBookmarkFilter(e.target.value as BookmarkFilter)}
         >
-          <option value="open"><Trans>Open</Trans></option>
-          <option value="pending"><Trans>Pending</Trans></option>
-          <option value="closed"><Trans>Closed</Trans></option>
-          <option value="all"><Trans>All</Trans></option>
+          <option value="open">
+            <Trans>Open</Trans>
+          </option>
+          <option value="pending">
+            <Trans>Pending</Trans>
+          </option>
+          <option value="closed">
+            <Trans>Closed</Trans>
+          </option>
+          <option value="all">
+            <Trans>All</Trans>
+          </option>
         </select>
       </div>
 
@@ -312,7 +346,9 @@ export function BookmarkColumn({
 
       {/* Bookmark list */}
       {learningTasks.length === 0 && bookmarks.length === 0 && (!annotations || annotations.length === 0) ? (
-        <div className="activity-cell-empty"><Trans>No bookmarks yet</Trans></div>
+        <div className="activity-cell-empty">
+          <Trans>No bookmarks yet</Trans>
+        </div>
       ) : (
         <BookmarksList
           learningTasks={learningTasks}
@@ -362,7 +398,9 @@ export function BookmarkColumn({
       <Dialog open={!!pendingRemindBookmark} onOpenChange={(open) => !open && setPendingRemindBookmark(null)}>
         <DialogContent className="max-w-xs p-4">
           <DialogHeader>
-            <DialogTitle className="text-sm"><Trans>Snooze bookmark</Trans></DialogTitle>
+            <DialogTitle className="text-sm">
+              <Trans>Snooze bookmark</Trans>
+            </DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-1.5 pt-1">
             {[
@@ -374,7 +412,7 @@ export function BookmarkColumn({
               <button
                 key={minutes}
                 type="button"
-                className="rounded px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+                className="rounded px-3 py-1.5 text-start text-sm transition-colors hover:bg-accent"
                 onClick={() => {
                   if (pendingRemindBookmark && onRemindBookmark) onRemindBookmark(pendingRemindBookmark, minutes);
                   setPendingRemindBookmark(null);

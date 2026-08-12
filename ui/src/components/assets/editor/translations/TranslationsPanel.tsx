@@ -60,7 +60,7 @@ export function TranslationsPanel({
         type="button"
         onClick={() => onOpen(null)}
         className={cn(
-          'flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent',
+          'flex items-center gap-2 rounded-md px-2 py-1.5 text-start transition-colors hover:bg-accent',
           activeLang === null && 'bg-accent font-medium',
         )}
       >
@@ -79,7 +79,7 @@ export function TranslationsPanel({
             type="button"
             onClick={() => onOpen(tr.lang)}
             className={cn(
-              'flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent',
+              'flex items-center gap-2 rounded-md px-2 py-1.5 text-start transition-colors hover:bg-accent',
               active && 'bg-accent font-medium',
             )}
           >
@@ -104,7 +104,7 @@ export function TranslationsPanel({
           <button
             type="button"
             disabled={isAdding || available.length === 0}
-            className="mt-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+            className="mt-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-start text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
           >
             {isAdding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             <span>Add translation</span>

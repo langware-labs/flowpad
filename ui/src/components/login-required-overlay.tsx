@@ -60,7 +60,7 @@ export function LoginRequiredOverlay({
             title={cloudManager.cloudUrl ? `Logging in to ${cloudManager.cloudUrl}` : undefined}
             data-testid="login-required-overlay-button"
           >
-            <LogIn className="mr-2 h-4 w-4" />
+            <LogIn className="me-2 h-4 w-4" />
             Login
           </Button>
         )}

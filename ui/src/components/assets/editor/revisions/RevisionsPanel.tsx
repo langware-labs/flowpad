@@ -96,15 +96,15 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
           size="sm"
           className="h-7 gap-1.5 text-xs"
           disabled={settingUp || !project}
-          onClick={() => { void handleSetupGit(); }}
+          onClick={() => {
+            void handleSetupGit();
+          }}
           data-testid="revisions-setup-git"
         >
           <GitBranch className="h-3.5 w-3.5" />
           {settingUp ? 'Setting up…' : 'Setup git'}
         </Button>
-        {setupError && (
-          <p className="text-[10px] text-red-500">{setupError}</p>
-        )}
+        {setupError && <p className="text-[10px] text-red-500">{setupError}</p>}
       </div>
     );
   }
@@ -127,16 +127,16 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
         >
           <div className="flex items-center gap-2">
             {rev.version != null && (
-              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary tabular-nums">
+              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-primary">
                 v{rev.version}
               </span>
             )}
-            {idx === 0 && (
-              <span className="text-[10px] font-medium text-muted-foreground">current</span>
-            )}
-            <span className="ml-auto text-[10px] text-muted-foreground">{formatTimeAgo(rev.date) ?? ''}</span>
+            {idx === 0 && <span className="text-[10px] font-medium text-muted-foreground">current</span>}
+            <span className="ms-auto text-[10px] text-muted-foreground">{formatTimeAgo(rev.date) ?? ''}</span>
           </div>
-          <span className="truncate text-xs text-foreground" title={rev.message}>{rev.message}</span>
+          <span className="truncate text-xs text-foreground" title={rev.message}>
+            {rev.message}
+          </span>
           <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
             <button
               type="button"

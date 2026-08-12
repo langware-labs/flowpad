@@ -52,15 +52,15 @@ export function VibeNoProcessWorkspace() {
   return (
     <div className="relative h-full w-full overflow-hidden bg-background" data-testid="vibe-no-process-workspace">
       <div className="grid h-full grid-cols-[minmax(260px,36%)_1fr]">
-        <div className="relative flex h-full flex-col border-r border-border bg-muted/30">
+        <div className="relative flex h-full flex-col border-e border-border bg-muted/30">
           <div className="pointer-events-none absolute inset-0 z-10 bg-background/20" />
           <div className="flex h-10 items-center gap-2 border-b border-border px-3">
             <div className="h-2.5 w-24 rounded bg-muted-foreground/20" />
-            <div className="ml-auto h-6 w-14 rounded-full border border-border bg-background/60" />
+            <div className="ms-auto h-6 w-14 rounded-full border border-border bg-background/60" />
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-3 p-4 opacity-45">
             <div className="h-16 rounded-lg bg-background/70" />
-            <div className="ml-auto h-12 w-3/4 rounded-lg bg-primary/10" />
+            <div className="ms-auto h-12 w-3/4 rounded-lg bg-primary/10" />
             <div className="h-20 rounded-lg bg-background/70" />
             <div className="mt-auto h-11 rounded-lg border border-border bg-background/80" />
           </div>
@@ -80,7 +80,7 @@ export function VibeNoProcessWorkspace() {
         <div className="flex h-full flex-col bg-muted/20">
           <div className="flex h-10 items-center gap-2 border-b border-border px-3">
             <div className="h-2.5 w-28 rounded bg-muted-foreground/20" />
-            <div className="ml-auto h-6 w-6 rounded border border-border bg-background/70" />
+            <div className="ms-auto h-6 w-6 rounded border border-border bg-background/70" />
           </div>
           <div
             className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6 text-center"
@@ -99,7 +99,7 @@ export function VibeNoProcessWorkspace() {
                   data-testid="display-starter-chip"
                   className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {startingPrompt === p ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : null}
+                  {startingPrompt === p ? <Loader2 className="me-1 inline h-3.5 w-3.5 animate-spin" /> : null}
                   {p}
                 </button>
               ))}

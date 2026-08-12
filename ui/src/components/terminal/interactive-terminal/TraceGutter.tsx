@@ -1,4 +1,10 @@
-import { EventTooltipContent, getEventColor, getEventIcon, getOneLiner, getTranscriptLensPointer } from '@src/components/hooks/event-utils';
+import {
+  EventTooltipContent,
+  getEventColor,
+  getEventIcon,
+  getOneLiner,
+  getTranscriptLensPointer,
+} from '@src/components/hooks/event-utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -118,14 +124,24 @@ export const TraceGutter = React.memo(function TraceGutter({
         {/* Dot column */}
         <div className="absolute inset-0">
           {/* Total event count badge — always visible at the top */}
-          {!hideCounter && <EventCountBadge total={totalTraceEvents} historicalCount={historicalCount} liveCount={liveCount} onOpen={onOpen} />}
+          {!hideCounter && (
+            <EventCountBadge
+              total={totalTraceEvents}
+              historicalCount={historicalCount}
+              liveCount={liveCount}
+              onOpen={onOpen}
+            />
+          )}
           {rowGroups.map((group) => (
             <GutterDot
               key={group.row}
               group={group}
               cellHeight={cellHeight}
               expanded={expanded}
-              onOpen={() => { setSelectedEntries(group.entries); onOpen(); }}
+              onOpen={() => {
+                setSelectedEntries(group.entries);
+                onOpen();
+              }}
             />
           ))}
         </div>
@@ -134,7 +150,7 @@ export const TraceGutter = React.memo(function TraceGutter({
         {expanded && entries.length > 0 && (
           <div
             ref={panelRef}
-            className="absolute top-0 z-50 flex flex-col rounded-r border border-border bg-popover shadow-lg [background-color:hsl(var(--popover)/1)]"
+            className="absolute top-0 z-50 flex flex-col rounded-e border border-border bg-popover shadow-lg [background-color:hsl(var(--popover)/1)]"
             style={{
               left: GUTTER_WIDTH,
               width: PANEL_WIDTH,
@@ -145,7 +161,11 @@ export const TraceGutter = React.memo(function TraceGutter({
             {/* Panel header with X button */}
             <div className="flex shrink-0 items-center justify-between border-b border-border px-2 py-1">
               <span className="text-xs font-medium text-muted-foreground">
-                {selectedEntries ? `${selectedEntries.length} event${selectedEntries.length === 1 ? '' : 's'}` : <Trans>Trace events</Trans>}
+                {selectedEntries ? (
+                  `${selectedEntries.length} event${selectedEntries.length === 1 ? '' : 's'}`
+                ) : (
+                  <Trans>Trace events</Trans>
+                )}
               </span>
               <button
                 className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -167,7 +187,12 @@ export const TraceGutter = React.memo(function TraceGutter({
   );
 });
 
-function EventCountBadge({ total, historicalCount, liveCount, onOpen }: {
+function EventCountBadge({
+  total,
+  historicalCount,
+  liveCount,
+  onOpen,
+}: {
   total: number;
   historicalCount: number;
   liveCount: number;
@@ -179,8 +204,8 @@ function EventCountBadge({ total, historicalCount, liveCount, onOpen }: {
       <TooltipTrigger asChild>
         <div
           className={cn(
-            "absolute left-1/2 top-0 flex -translate-x-1/2 items-center justify-center",
-            total > 0 && "cursor-pointer hover:bg-accent rounded",
+            'absolute left-1/2 top-0 flex -translate-x-1/2 items-center justify-center',
+            total > 0 && 'cursor-pointer rounded hover:bg-accent',
           )}
           style={{ width: GUTTER_WIDTH, height: 18 }}
           onClick={total > 0 ? onOpen : undefined}
@@ -194,14 +219,15 @@ function EventCountBadge({ total, historicalCount, liveCount, onOpen }: {
         </div>
       </TooltipTrigger>
       <TooltipContent side="right" sideOffset={4} className="text-xs">
-        {total === 0
-          ? <Trans>No trace events captured yet</Trans>
-          : `${total} trace event${total === 1 ? '' : 's'} captured`}
+        {total === 0 ? (
+          <Trans>No trace events captured yet</Trans>
+        ) : (
+          `${total} trace event${total === 1 ? '' : 's'} captured`
+        )}
       </TooltipContent>
     </Tooltip>
   );
 }
-
 
 function GutterDot({
   group,
@@ -222,7 +248,10 @@ function GutterDot({
   const dot = (
     <div
       className="absolute flex cursor-pointer items-center justify-center rounded hover:bg-accent"
-      onClick={(e) => { e.stopPropagation(); onOpen(); }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
       style={{
         top: group.row * cellHeight + (cellHeight - 14) / 2,
         left: 0,
@@ -261,16 +290,11 @@ function GutterDot({
               return (
                 <div
                   key={entry.event.id}
-                  className={cn(
-                    'flex items-center gap-1.5 px-2 py-1 text-xs',
-                    i > 0 && 'border-t border-border',
-                  )}
+                  className={cn('flex items-center gap-1.5 px-2 py-1 text-xs', i > 0 && 'border-t border-border')}
                 >
                   <Icon className={cn('h-3 w-3 shrink-0', getEventColor(entry.event))} />
                   <span className="font-medium text-popover-foreground">{entry.event.event_type}</span>
-                  {oneLiner && (
-                    <span className="truncate text-popover-foreground/60">{oneLiner}</span>
-                  )}
+                  {oneLiner && <span className="truncate text-popover-foreground/60">{oneLiner}</span>}
                 </div>
               );
             })}
@@ -281,11 +305,7 @@ function GutterDot({
   );
 }
 
-function ExpandedEventLine({
-  entry,
-}: {
-  entry: TraceGutterEntry;
-}) {
+function ExpandedEventLine({ entry }: { entry: TraceGutterEntry }) {
   const { navigation } = useDockNavigation();
   const { t } = useLingui();
   const Icon = getEventIcon(entry.event.event_type, entry.event);
@@ -296,9 +316,7 @@ function ExpandedEventLine({
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const shortType =
-    entry.event.event_type.length > 16
-      ? entry.event.event_type.slice(0, 15) + '\u2026'
-      : entry.event.event_type;
+    entry.event.event_type.length > 16 ? entry.event.event_type.slice(0, 15) + '\u2026' : entry.event.event_type;
 
   const lensPointer = getTranscriptLensPointer(entry.event);
 
@@ -337,7 +355,7 @@ function ExpandedEventLine({
             </div>
             {/* Subline: time ago */}
             {timeAgo && (
-              <span className="pl-4 text-muted-foreground" style={{ fontSize: 10 }}>
+              <span className="ps-4 text-muted-foreground" style={{ fontSize: 10 }}>
                 {timeAgo}
               </span>
             )}
@@ -358,7 +376,9 @@ function ExpandedEventLine({
                 <FileText className="h-3 w-3" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom"><Trans>View transcript</Trans></TooltipContent>
+            <TooltipContent side="bottom">
+              <Trans>View transcript</Trans>
+            </TooltipContent>
           </Tooltip>
         </div>
       </TooltipTrigger>

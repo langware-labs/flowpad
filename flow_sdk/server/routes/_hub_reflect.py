@@ -136,14 +136,32 @@ def _entity_type_enum(entity: Entity) -> BuiltinEntityType | None:
 REFLECT_CONTINUE_LOCAL = object()
 
 
+def _hub_serves_git_bytes(entity: Entity) -> bool:
+    """Whether Hub can serve this entity's bytes from Git at all.
+
+    Only a git-publishable type (``cloud_file_transport == "git"``) gets a Git
+    mount in Hub's storage resolver. A ``project`` carries a ``git_origin`` too
+    — the repo its folder was cloned from — but Hub has no Git storage for it,
+    so forwarding its VFS reads there answers every browse with a bare
+    "Invalid file system operation" while the authoritative checkout is sitting
+    on this machine.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(getattr(entity, "type", None) or "")
+    return info is not None and info.git_publishable
+
+
 def is_git_backed_remote_fs(entity: Entity | None, action_name: str | None) -> bool:
     """Whether an entity FS request must be replaced by a Hub request.
 
     Git is authoritative for a published asset, so falling through to a local
     cache after a rejected/offline Hub call would report a false success and
-    fork the asset. This gate intentionally does not require the caller to be
-    logged in: an unauthenticated proxy attempt must fail at Hub, never mutate
-    local state.
+    fork the asset. That authority is what the type gate encodes: it holds only
+    where Hub actually mounts the asset's Git tree — everywhere else the local
+    checkout IS the authority and the read stays here. This gate intentionally
+    does not require the caller to be logged in: an unauthenticated proxy
+    attempt must fail at Hub, never mutate local state.
     """
 
     return bool(
@@ -151,6 +169,7 @@ def is_git_backed_remote_fs(entity: Entity | None, action_name: str | None) -> b
         and entity is not None
         and getattr(entity, "remote", False) is True
         and getattr(entity, "git_origin", None) is not None
+        and _hub_serves_git_bytes(entity)
         and not is_local_mode()
     )
 

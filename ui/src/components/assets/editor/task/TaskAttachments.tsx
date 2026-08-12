@@ -427,14 +427,14 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
               <button
                 type="button"
                 onClick={() => void pickAndAdd('file')}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm hover:bg-muted"
               >
                 <FileIcon className="h-4 w-4 text-muted-foreground" /> File…
               </button>
               <button
                 type="button"
                 onClick={() => void pickAndAdd('folder')}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-sm hover:bg-muted"
               >
                 <FolderIcon className="h-4 w-4 text-muted-foreground" /> Folder…
               </button>
@@ -488,7 +488,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
                   <button
                     type="button"
                     onClick={() => void openEntry(a)}
-                    className="min-w-0 flex-1 truncate text-left hover:underline"
+                    className="min-w-0 flex-1 truncate text-start hover:underline"
                     title={a.path ?? (a.git_origin ? formatGitOrigin(a.git_origin) : a.label)}
                   >
                     {a.label}

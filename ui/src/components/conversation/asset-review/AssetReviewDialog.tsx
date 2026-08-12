@@ -438,7 +438,7 @@ export function AssetReviewDialog({
         {/* Two panes: entity list | selected entity's default content view. */}
         <div className="flex min-h-0 gap-3 border-t border-border pt-3">
           {multi && (
-            <div className="max-h-[55vh] w-52 shrink-0 overflow-y-auto border-r border-border pr-2">
+            <div className="max-h-[55vh] w-52 shrink-0 overflow-y-auto border-e border-border pe-2">
               {rows.map(({ a, depth }) => {
                 const r = resolve(a);
                 const RowIcon = iconFor(r);
@@ -452,7 +452,7 @@ export function AssetReviewDialog({
                     data-testid={`asset-review-row-${a.id}`}
                     style={depth ? { paddingLeft: `${depth * 0.875 + 0.375}rem` } : undefined}
                     className={cn(
-                      'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[12px] transition-colors',
+                      'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-start text-[12px] transition-colors',
                       isSel ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50',
                     )}
                   >

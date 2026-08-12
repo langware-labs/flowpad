@@ -118,14 +118,22 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
   const unchanged = ready && oldBody === newBody && !diff;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) onClose();
+      }}
+    >
       <DialogContent className="flex flex-col" style={{ width: '95vw', maxWidth: '95vw', height: '90vh' }}>
         <DialogHeader className="shrink-0">
           <DialogTitle className="text-sm font-medium">
             {skillName}/SKILL.md{' '}
             <span className="text-xs font-normal text-muted-foreground">— improvement vs last version</span>
             {valueNote && (
-              <span className="ml-2 text-[11px] font-normal text-emerald-600 dark:text-emerald-400" data-testid="improvement-value-note">
+              <span
+                className="ms-2 text-[11px] font-normal text-emerald-600 dark:text-emerald-400"
+                data-testid="improvement-value-note"
+              >
                 {valueNote}
               </span>
             )}
@@ -153,7 +161,11 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
             className="text-destructive hover:text-destructive"
             data-testid="improvement-reject"
           >
-            {busy === 'reject' ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="mr-1 h-3.5 w-3.5" />}
+            {busy === 'reject' ? (
+              <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="me-1 h-3.5 w-3.5" />
+            )}
             Reject
           </Button>
           <Button
@@ -162,7 +174,11 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
             disabled={!!busy || unchanged}
             data-testid="improvement-save-version"
           >
-            {busy === 'commit' ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 h-3.5 w-3.5" />}
+            {busy === 'commit' ? (
+              <Loader2 className="me-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Save className="me-1 h-3.5 w-3.5" />
+            )}
             Save &amp; create version
           </Button>
         </div>

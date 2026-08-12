@@ -197,7 +197,7 @@ function MembershipInvitationRow({
   }, [invitation.id, onResolved, hubMode]);
 
   return (
-    <div className="flex items-center gap-3 border-b border-l-2 border-border/40 border-l-violet-500 px-3 py-2">
+    <div className="flex items-center gap-3 border-b border-s-2 border-border/40 border-s-violet-500 px-3 py-2">
       <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{kindLabel}</div>

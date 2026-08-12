@@ -74,110 +74,108 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
       {composer && <div className="px-4 pb-1 pt-2">{composer}</div>}
       {/* Controls strip: status LED + plan/doc chips + side-tab launchers. */}
       <div className="flex items-center px-4 py-1.5">
-      {/* Left: worker status LED. The chat⇄terminal toggle that used to live
+        {/* Left: worker status LED. The chat⇄terminal toggle that used to live
           here is now the mode selector in the footer (ViewToggle). */}
-      <div className="flex items-center gap-2">
-        <span className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
-        {hasLastPlan && onOpenLastPlan && (
-          <TooltipProvider delayDuration={400}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onOpenLastPlan}
-                  className="h-6 gap-1.5 px-2 text-[11px] text-blue-400 border-blue-400/40 hover:border-blue-400 hover:text-blue-300"
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                  <Trans>Open Plan</Trans>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs">
-                <Trans>Open the latest plan</Trans>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
-        {artifacts.length > 0 && onOpenArtifact && (
-          <ArtifactsChip artifacts={artifacts} onOpen={onOpenArtifact} />
-        )}
-      </div>
-
-      {/* Right: side tab toggle buttons */}
-      <div className="ml-auto flex items-center gap-1">
-        <TooltipProvider delayDuration={400}>
-          {ribbonTabs.map((tabId) => {
-            const descriptor = SIDE_TABS[tabId];
-            const Icon = descriptor.icon;
-            const isOpen = openTabs.includes(tabId);
-            const isActive = isOpen && activeSideTab === tabId;
-            const isPrompts = tabId === SideTabId.Prompts;
-
-            // Badge for files and prompts
-            let badge: number | null = null;
-            if (tabId === SideTabId.Files) badge = fileCount;
-            if (isPrompts) badge = promptCount;
-
-            return (
-              <Tooltip key={tabId}>
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`} />
+          {hasLastPlan && onOpenLastPlan && (
+            <TooltipProvider delayDuration={400}>
+              <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="relative">
-                    <Button
-                      variant={isActive ? 'secondary' : 'ghost'}
-                      size="sm"
-                      onClick={() => onOpenSideTab(tabId)}
-                      className={cn(
-                        'h-7 w-7 p-0',
-                        isActive && 'text-foreground',
-                        isOpen && !isActive && 'text-muted-foreground',
-                      )}
-                    >
-                      <Icon className="h-4 w-4" />
-                    </Button>
-                    {/* Open-but-not-active indicator: thin bottom border */}
-                    {isOpen && !isActive && (
-                      <span className="pointer-events-none absolute bottom-0 left-1 right-1 h-px rounded-full bg-primary/50" />
-                    )}
-                    {badge != null && badge > 0 && (
-                      <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] text-primary-foreground">
-                        {badge > 99 ? '99+' : badge}
-                      </span>
-                    )}
-                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onOpenLastPlan}
+                    className="h-6 gap-1.5 border-blue-400/40 px-2 text-[11px] text-blue-400 hover:border-blue-400 hover:text-blue-300"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    <Trans>Open Plan</Trans>
+                  </Button>
                 </TooltipTrigger>
-                <SideTabTooltipContent
-                  side="top"
-                  isPrompts={isPrompts}
-                  lastPromptText={lastPromptText}
-                  promptCount={promptCount}
-                  fallback={descriptor.description}
-                />
+                <TooltipContent side="top" className="text-xs">
+                  <Trans>Open the latest plan</Trans>
+                </TooltipContent>
               </Tooltip>
-            );
-          })}
-          {/* Prompt Library — distinct from the transcript "Prompts" tab:
+            </TooltipProvider>
+          )}
+          {artifacts.length > 0 && onOpenArtifact && <ArtifactsChip artifacts={artifacts} onOpen={onOpenArtifact} />}
+        </div>
+
+        {/* Right: side tab toggle buttons */}
+        <div className="ms-auto flex items-center gap-1">
+          <TooltipProvider delayDuration={400}>
+            {ribbonTabs.map((tabId) => {
+              const descriptor = SIDE_TABS[tabId];
+              const Icon = descriptor.icon;
+              const isOpen = openTabs.includes(tabId);
+              const isActive = isOpen && activeSideTab === tabId;
+              const isPrompts = tabId === SideTabId.Prompts;
+
+              // Badge for files and prompts
+              let badge: number | null = null;
+              if (tabId === SideTabId.Files) badge = fileCount;
+              if (isPrompts) badge = promptCount;
+
+              return (
+                <Tooltip key={tabId}>
+                  <TooltipTrigger asChild>
+                    <div className="relative">
+                      <Button
+                        variant={isActive ? 'secondary' : 'ghost'}
+                        size="sm"
+                        onClick={() => onOpenSideTab(tabId)}
+                        className={cn(
+                          'h-7 w-7 p-0',
+                          isActive && 'text-foreground',
+                          isOpen && !isActive && 'text-muted-foreground',
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </Button>
+                      {/* Open-but-not-active indicator: thin bottom border */}
+                      {isOpen && !isActive && (
+                        <span className="pointer-events-none absolute bottom-0 left-1 right-1 h-px rounded-full bg-primary/50" />
+                      )}
+                      {badge != null && badge > 0 && (
+                        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] text-primary-foreground">
+                          {badge > 99 ? '99+' : badge}
+                        </span>
+                      )}
+                    </div>
+                  </TooltipTrigger>
+                  <SideTabTooltipContent
+                    side="top"
+                    isPrompts={isPrompts}
+                    lastPromptText={lastPromptText}
+                    promptCount={promptCount}
+                    fallback={descriptor.description}
+                  />
+                </Tooltip>
+              );
+            })}
+            {/* Prompt Library — distinct from the transcript "Prompts" tab:
               browse the foldered prompt library; click a prompt to enqueue
               it (docs/prompt-library.md). Pure composition; all behavior
               lives in PromptLibraryMenu / the generic groups layer. */}
-          {process && isAdvanced && (
-            <PromptLibraryMenu
-              process={process}
-              projectId={process.project_id ?? null}
-              trigger={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 w-7 p-0"
-                  aria-label={t`Prompt Library`}
-                  title={t`Prompt Library — click a prompt to add it to the queue`}
-                >
-                  <BookMarked className="h-4 w-4" />
-                </Button>
-              }
-            />
-          )}
-        </TooltipProvider>
-      </div>
+            {process && isAdvanced && (
+              <PromptLibraryMenu
+                process={process}
+                projectId={process.project_id ?? null}
+                trigger={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    aria-label={t`Prompt Library`}
+                    title={t`Prompt Library — click a prompt to add it to the queue`}
+                  >
+                    <BookMarked className="h-4 w-4" />
+                  </Button>
+                }
+              />
+            )}
+          </TooltipProvider>
+        </div>
       </div>
     </div>
   );
@@ -196,8 +194,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
  * with no `asset_ref` (a webapp registered by port, say) has nothing to open
  * and the click is inert rather than routing somewhere wrong.
  */
-const ARTIFACT_CHIP_CLASSES =
-  'h-6 text-violet-400 border-violet-400/40 hover:border-violet-400 hover:text-violet-300';
+const ARTIFACT_CHIP_CLASSES = 'h-6 text-violet-400 border-violet-400/40 hover:border-violet-400 hover:text-violet-300';
 
 const ArtifactsChip: React.FC<{
   artifacts: Artifact[];
@@ -220,11 +217,7 @@ const ArtifactsChip: React.FC<{
               variant="outline"
               size="sm"
               onClick={() => open(latest)}
-              className={cn(
-                ARTIFACT_CHIP_CLASSES,
-                'gap-1.5 px-2 text-[11px]',
-                hasMore && 'rounded-r-none border-r-0',
-              )}
+              className={cn(ARTIFACT_CHIP_CLASSES, 'gap-1.5 px-2 text-[11px]', hasMore && 'rounded-e-none border-e-0')}
             >
               <ArtifactIcon className="h-3.5 w-3.5" />
               <span className="max-w-[10rem] truncate">{latest.name}</span>
@@ -241,7 +234,7 @@ const ArtifactsChip: React.FC<{
                 variant="outline"
                 size="sm"
                 aria-label={t`Choose an artifact to open`}
-                className={cn(ARTIFACT_CHIP_CLASSES, 'rounded-l-none px-1')}
+                className={cn(ARTIFACT_CHIP_CLASSES, 'rounded-s-none px-1')}
               >
                 <ChevronDown className="h-3.5 w-3.5" />
               </Button>
@@ -253,7 +246,7 @@ const ArtifactsChip: React.FC<{
                     key={String(artifact.id)}
                     type="button"
                     onClick={() => open(artifact)}
-                    className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left hover:bg-accent"
+                    className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-start hover:bg-accent"
                   >
                     <ArtifactIcon className="h-3.5 w-3.5 shrink-0 text-violet-500" />
                     <span className="min-w-0 flex-1 truncate text-xs text-foreground">{artifact.name}</span>

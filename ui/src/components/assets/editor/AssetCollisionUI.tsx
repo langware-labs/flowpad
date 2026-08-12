@@ -1,11 +1,6 @@
 import type { APIEntity, AssetOccurrence } from '@sdk';
 import { AlertTriangle } from 'lucide-react';
-import {
-  createContext,
-  type ReactNode,
-  useContext,
-  useMemo,
-} from 'react';
+import { createContext, type ReactNode, useContext, useMemo } from 'react';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { SideDrawer } from '@src/components/ui/side-drawer';
 import { useSideWindows } from '@src/navigation/useSideWindows';
@@ -29,31 +24,16 @@ export function assetCollisionWindowId(entity: CollisionEntity): string {
   return `asset-duplicates:${entity.typeId.toString()}`;
 }
 
-export function AssetCollisionProvider({
-  entity,
-  children,
-}: {
-  entity: CollisionEntity | null;
-  children: ReactNode;
-}) {
+export function AssetCollisionProvider({ entity, children }: { entity: CollisionEntity | null; children: ReactNode }) {
   // APIEntity is updated in place by the data layer. Include the backend
   // projection in the context value so cached/ported drawer consumers are
   // invalidated even when the entity object identity itself is unchanged.
   // Opaque invalidation token — nothing parses it, so serializing the whole
   // backend-ordered projection beats hand-listing fields that then have to be
   // remembered every time the projection grows.
-  const projectionKey = `${entity?.duplicate_count ?? 0}:${JSON.stringify(
-    entity?.asset_occurrences ?? [],
-  )}`;
-  const value = useMemo(
-    () => ({ entity, projectionKey }),
-    [entity, projectionKey],
-  );
-  return (
-    <AssetCollisionContext.Provider value={value}>
-      {children}
-    </AssetCollisionContext.Provider>
-  );
+  const projectionKey = `${entity?.duplicate_count ?? 0}:${JSON.stringify(entity?.asset_occurrences ?? [])}`;
+  const value = useMemo(() => ({ entity, projectionKey }), [entity, projectionKey]);
+  return <AssetCollisionContext.Provider value={value}>{children}</AssetCollisionContext.Provider>;
 }
 
 export function useAssetCollisionEntity(): CollisionEntity | null {
@@ -142,9 +122,9 @@ function TimeFact({ label, iso }: { label: string; iso: string | undefined }) {
   return (
     <div className="flex items-baseline justify-between gap-2">
       <span className="truncate text-muted-foreground">{label}</span>
-      <span className="whitespace-nowrap text-right tabular-nums" title={abs}>
+      <span className="whitespace-nowrap text-end tabular-nums" title={abs}>
         {abs}
-        {ago ? <span className="ml-1 text-muted-foreground">({ago})</span> : null}
+        {ago ? <span className="ms-1 text-muted-foreground">({ago})</span> : null}
       </span>
     </div>
   );
@@ -162,13 +142,10 @@ export function AssetCollisionPanel({ entity: explicitEntity }: { entity?: Colli
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="asset-collision-panel">
       <div className="border-b px-4 py-3">
-        <div className="text-sm font-medium">
-          This file exists in {occurrences.length} places
-        </div>
+        <div className="text-sm font-medium">This file exists in {occurrences.length} places</div>
         <p className="mt-1 text-xs text-muted-foreground">
           Same asset id in all of them — FlowPad reads only the live copy, so edits to the{' '}
-          {occurrences.length === 2 ? 'other one' : `other ${occurrences.length - 1}`} will not
-          appear.
+          {occurrences.length === 2 ? 'other one' : `other ${occurrences.length - 1}`} will not appear.
           {primaryBasis && BASIS_LABEL[primaryBasis] ? (
             <span data-testid="asset-collision-basis"> Live copy: {BASIS_LABEL[primaryBasis]}.</span>
           ) : null}
@@ -177,16 +154,12 @@ export function AssetCollisionPanel({ entity: explicitEntity }: { entity?: Colli
           {/* Explicit space: this panel appears on duplicated assets in the
               user's OWN projects, where the `@local` alias would resolve their
               wiki and miss the shipped page entirely. */}
-          <WikiLabel
-            wikiword="Duplicate assets"
-            label="Learn about duplicates"
-            space={assistantWikiSpace}
-          />
+          <WikiLabel wikiword="Duplicate assets" label="Learn about duplicates" space={assistantWikiSpace} />
         </div>
       </div>
       {shared ? (
         <div className="border-b px-4 py-2 text-[11px] text-muted-foreground">
-          <span className="mr-1">Common path</span>
+          <span className="me-1">Common path</span>
           <span className="break-all font-mono" title={shared}>
             {shared}
           </span>
@@ -251,13 +224,7 @@ export function useAssetCollisionSideTab(): ExtraSideTab | null {
 }
 
 /** Single right-drawer host for entity editors that do not own a Markdown drawer. */
-export function AssetCollisionShell({
-  entity,
-  children,
-}: {
-  entity: CollisionEntity;
-  children: ReactNode;
-}) {
+export function AssetCollisionShell({ entity, children }: { entity: CollisionEntity; children: ReactNode }) {
   const { windows, close } = useSideWindows();
   const windowId = assetCollisionWindowId(entity);
   const open = windows.includes(windowId);

@@ -21,13 +21,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@src/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { useRecordSearch, type SearchFilters, type SearchResult } from '@src/hooks/use-record-search';
 import { cn } from '@src/lib/utils';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -65,16 +59,9 @@ interface WikiLinkInsertDialogProps {
   sourceTypeId: string | null;
 }
 
-type Stage =
-  | { kind: 'search' }
-  | { kind: 'name-prompt'; targetTypeId: TypeId };
+type Stage = { kind: 'search' } | { kind: 'name-prompt'; targetTypeId: TypeId };
 
-export function WikiLinkInsertDialog({
-  open,
-  onOpenChange,
-  editorRef,
-  sourceTypeId,
-}: WikiLinkInsertDialogProps) {
+export function WikiLinkInsertDialog({ open, onOpenChange, editorRef, sourceTypeId }: WikiLinkInsertDialogProps) {
   const [query, setQuery] = useState('');
   const [recordTypeFilter, setRecordTypeFilter] = useState<string>(ALL_TYPES_VALUE);
   const [stage, setStage] = useState<Stage>({ kind: 'search' });
@@ -83,10 +70,7 @@ export function WikiLinkInsertDialog({
   const { t } = useLingui();
 
   const filters: SearchFilters = useMemo(
-    () =>
-      recordTypeFilter === ALL_TYPES_VALUE
-        ? {}
-        : { record_type: recordTypeFilter },
+    () => (recordTypeFilter === ALL_TYPES_VALUE ? {} : { record_type: recordTypeFilter }),
     [recordTypeFilter],
   );
   const { results, isLoading } = useRecordSearch(query, filters);
@@ -124,7 +108,7 @@ export function WikiLinkInsertDialog({
   );
 
   const triggerSourceReindex = useCallback(async () => {
-    if (!sourceTypeId) return;   // unindexed doc — sync_to_db will pick it up later
+    if (!sourceTypeId) return; // unindexed doc — sync_to_db will pick it up later
     try {
       const sourceTid = new TypeId(sourceTypeId);
       const sourceEntity = await dataManager.getByTypeId<APIEntity<APIEntity<unknown>>>(sourceTid);
@@ -185,7 +169,9 @@ export function WikiLinkInsertDialog({
         {stage.kind === 'search' && (
           <>
             <DialogHeader>
-              <DialogTitle><Trans>Add entity link</Trans></DialogTitle>
+              <DialogTitle>
+                <Trans>Add entity link</Trans>
+              </DialogTitle>
               <DialogDescription>
                 <Trans>Search any entity. Selecting one inserts a [[wikilink]] at the cursor.</Trans>
               </DialogDescription>
@@ -204,7 +190,9 @@ export function WikiLinkInsertDialog({
                   <SelectValue placeholder={t`All types`} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={ALL_TYPES_VALUE}><Trans>All types</Trans></SelectItem>
+                  <SelectItem value={ALL_TYPES_VALUE}>
+                    <Trans>All types</Trans>
+                  </SelectItem>
                   {FILTERABLE_RECORD_TYPES.map((t) => (
                     <SelectItem key={t} value={t}>
                       {t}
@@ -215,10 +203,14 @@ export function WikiLinkInsertDialog({
             </div>
             <div className="max-h-72 overflow-y-auto rounded-md border bg-card">
               {isLoading && query.length >= 2 && (
-                <div className="px-3 py-2 text-sm text-muted-foreground"><Trans>Searching…</Trans></div>
+                <div className="px-3 py-2 text-sm text-muted-foreground">
+                  <Trans>Searching…</Trans>
+                </div>
               )}
               {!isLoading && query.length >= 2 && results.length === 0 && (
-                <div className="px-3 py-2 text-sm text-muted-foreground"><Trans>No matches.</Trans></div>
+                <div className="px-3 py-2 text-sm text-muted-foreground">
+                  <Trans>No matches.</Trans>
+                </div>
               )}
               {results.slice(0, 20).map((r) => (
                 <button
@@ -226,13 +218,17 @@ export function WikiLinkInsertDialog({
                   type="button"
                   data-testid="wiki-link-search-result"
                   className={cn(
-                    'flex w-full items-center justify-between gap-3 border-b px-3 py-2 text-left text-sm',
+                    'flex w-full items-center justify-between gap-3 border-b px-3 py-2 text-start text-sm',
                     'hover:bg-muted',
                   )}
                   onClick={() => void handleSelect(r)}
                 >
                   <span className="truncate">
-                    {r.name || <span className="italic text-muted-foreground"><Trans>(unnamed)</Trans></span>}
+                    {r.name || (
+                      <span className="italic text-muted-foreground">
+                        <Trans>(unnamed)</Trans>
+                      </span>
+                    )}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">{r.record_type}</span>
                 </button>
@@ -244,9 +240,14 @@ export function WikiLinkInsertDialog({
         {stage.kind === 'name-prompt' && (
           <>
             <DialogHeader>
-              <DialogTitle><Trans>Name this entity</Trans></DialogTitle>
+              <DialogTitle>
+                <Trans>Name this entity</Trans>
+              </DialogTitle>
               <DialogDescription>
-                <Trans>The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link text.</Trans>
+                <Trans>
+                  The selected entity has no name yet. Choose one — it will be saved to the entity AND used as the link
+                  text.
+                </Trans>
               </DialogDescription>
             </DialogHeader>
             <Input

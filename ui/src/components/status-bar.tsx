@@ -22,7 +22,7 @@ function isRootPath(path: string | null | undefined): boolean {
   return false;
 }
 
-const ROOT_GLOW_STYLE = /* css */`
+const ROOT_GLOW_STYLE = /* css */ `
   @keyframes root-glow {
     0%, 100% { color: #fbbf24; text-shadow: 0 0 6px #fbbf24, 0 0 12px #f59e0b; }
     50%       { color: #f97316; text-shadow: 0 0 10px #f97316, 0 0 20px #ef4444; }
@@ -101,9 +101,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
   }
 
   const rootTooltip = t`Current project is on root folder, this is not recommended`;
-  const glowStyle: React.CSSProperties = isRoot
-    ? { animation: 'root-glow 2s ease-in-out infinite' }
-    : {};
+  const glowStyle: React.CSSProperties = isRoot ? { animation: 'root-glow 2s ease-in-out infinite' } : {};
 
   return (
     <>
@@ -116,13 +114,15 @@ export function StatusBar({ className = '' }: StatusBarProps) {
           title={isRoot ? rootTooltip : t`Switch project`}
         >
           <ArrowLeftRight className="h-3 w-3 shrink-0" />
-          <span className="hidden sm:inline" style={glowStyle}><Trans>Switch Project</Trans></span>
+          <span className="hidden sm:inline" style={glowStyle}>
+            <Trans>Switch Project</Trans>
+          </span>
         </button>
         {/* One-line tip: the project path plus a W-square button that opens the
             "Flowpad project" wiki page in a modal (like the skill preview). */}
         <WikiTip
           wikiword="Flowpad project"
-          label={isRoot ? rootTooltip : projectPath ?? t`Open project view`}
+          label={isRoot ? rootTooltip : (projectPath ?? t`Open project view`)}
           buttonLabel={t`What is a Flowpad project?`}
         >
           <button
@@ -133,10 +133,12 @@ export function StatusBar({ className = '' }: StatusBarProps) {
             // the name ellipsizes (instead of overrunning the bar) under width
             // pressure; max-w keeps one long name from starving the counters.
             // Full name stays reachable via title + aria-label.
-            className="block min-w-0 max-w-[34ch] shrink truncate text-left text-xs font-medium transition-colors hover:underline"
+            className="block min-w-0 max-w-[34ch] shrink truncate text-start text-xs font-medium transition-colors hover:underline"
             style={isRoot ? glowStyle : { color: 'var(--muted-foreground)' }}
             title={project.displayName}
-            aria-label={isRoot ? rootTooltip : projectPath ? t`Open project view — ${projectPath}` : t`Open project view`}
+            aria-label={
+              isRoot ? rootTooltip : projectPath ? t`Open project view — ${projectPath}` : t`Open project view`
+            }
           >
             {project.displayName}
           </button>

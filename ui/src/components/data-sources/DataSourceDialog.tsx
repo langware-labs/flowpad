@@ -106,8 +106,7 @@ export function DataSourceDialog({
   const spec = providerSpec(draft.provider);
   const problems = useMemo(() => validateDraft(draft), [draft]);
 
-  const setField = (key: string, value: string) =>
-    setDraft((d) => ({ ...d, fields: { ...d.fields, [key]: value } }));
+  const setField = (key: string, value: string) => setDraft((d) => ({ ...d, fields: { ...d.fields, [key]: value } }));
 
   const submit = async () => {
     if (problems.length) return;
@@ -154,7 +153,7 @@ export function DataSourceDialog({
       <div key={field.key} className="space-y-1">
         <Label htmlFor={`ds-${field.key}`}>
           {field.label}
-          {field.required && <span className="ml-1 text-destructive">*</span>}
+          {field.required && <span className="ms-1 text-destructive">*</span>}
         </Label>
         {field.kind === 'lines' ? (
           <Textarea
@@ -184,9 +183,7 @@ export function DataSourceDialog({
         <DialogHeader>
           <DialogTitle>{editing ? t`Edit data source` : t`Add a data source`}</DialogTitle>
           <DialogDescription>
-            <Trans>
-              A source is one remote account or feed set. The poller syncs it on the heartbeat.
-            </Trans>
+            <Trans>A source is one remote account or feed set. The poller syncs it on the heartbeat.</Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -203,7 +200,7 @@ export function DataSourceDialog({
                     type="button"
                     data-testid={`provider-${p.id}`}
                     onClick={() => setDraft(emptyDraft(p.id))}
-                    className={`rounded border p-2 text-left text-xs ${
+                    className={`rounded border p-2 text-start text-xs ${
                       draft.provider === p.id ? 'border-primary bg-primary/5' : 'border-border'
                     }`}
                   >
@@ -218,7 +215,7 @@ export function DataSourceDialog({
           <div className="space-y-1">
             <Label htmlFor="ds-name">
               <Trans>Name</Trans>
-              <span className="ml-1 text-destructive">*</span>
+              <span className="ms-1 text-destructive">*</span>
             </Label>
             <Input
               id="ds-name"
@@ -260,9 +257,7 @@ export function DataSourceDialog({
                   type="number"
                   min={60}
                   value={draft.poll_interval_seconds}
-                  onChange={(e) =>
-                    setDraft((d) => ({ ...d, poll_interval_seconds: Number(e.target.value) }))
-                  }
+                  onChange={(e) => setDraft((d) => ({ ...d, poll_interval_seconds: Number(e.target.value) }))}
                 />
                 <p className="text-xs text-muted-foreground">
                   <Trans>Minimum 60 — the heartbeat only ticks once a minute.</Trans>

@@ -123,14 +123,21 @@ export function SecretsSection() {
   };
 
   if (enabled === null) {
-    return <p className="text-xs text-muted-foreground"><Trans>Loading…</Trans></p>;
+    return (
+      <p className="text-xs text-muted-foreground">
+        <Trans>Loading…</Trans>
+      </p>
+    );
   }
 
   if (!enabled) {
     return (
       <div className="flex flex-col gap-3">
         <p className="text-sm text-muted-foreground">
-          <Trans>App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store third-party API keys and other secrets used by your flows.</Trans>
+          <Trans>
+            App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store
+            third-party API keys and other secrets used by your flows.
+          </Trans>
         </p>
         <Button onClick={() => void handleEnable()} disabled={busy}>
           {busy ? t`Requesting…` : t`Enable secrets`}
@@ -143,25 +150,27 @@ export function SecretsSection() {
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          <Trans>{secrets.length} secret{secrets.length === 1 ? '' : 's'}</Trans>
+          <Trans>
+            {secrets.length} secret{secrets.length === 1 ? '' : 's'}
+          </Trans>
         </p>
         <Button size="sm" onClick={() => setShowAdd(true)} disabled={busy}>
-          <Plus className="mr-1 h-4 w-4" />
+          <Plus className="me-1 h-4 w-4" />
           <Trans>Add secret</Trans>
         </Button>
       </div>
 
       {secrets.length === 0 ? (
-        <p className="text-xs text-muted-foreground"><Trans>No secrets yet. Click "Add secret" to create one.</Trans></p>
+        <p className="text-xs text-muted-foreground">
+          <Trans>No secrets yet. Click "Add secret" to create one.</Trans>
+        </p>
       ) : (
         <ul className="flex flex-col divide-y rounded-md border">
           {secrets.map((s) => (
             <li key={s.name} className="flex items-start justify-between gap-3 p-3">
               <div className="min-w-0 flex-1">
                 <p className="truncate font-mono text-sm">{s.name}</p>
-                {s.description && (
-                  <p className="truncate text-xs text-muted-foreground">{s.description}</p>
-                )}
+                {s.description && <p className="truncate text-xs text-muted-foreground">{s.description}</p>}
               </div>
               <Button
                 size="icon"
@@ -186,14 +195,18 @@ export function SecretsSection() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle><Trans>Add secret</Trans></DialogTitle>
+            <DialogTitle>
+              <Trans>Add secret</Trans>
+            </DialogTitle>
             <DialogDescription>
               <Trans>The value is stored in your operating system keychain and never readable from this UI.</Trans>
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="secret-name"><Trans>Name</Trans></Label>
+              <Label htmlFor="secret-name">
+                <Trans>Name</Trans>
+              </Label>
               <Input
                 id="secret-name"
                 placeholder={t`OPENAI_API_KEY`}
@@ -203,7 +216,9 @@ export function SecretsSection() {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="secret-value"><Trans>Value</Trans></Label>
+              <Label htmlFor="secret-value">
+                <Trans>Value</Trans>
+              </Label>
               <Input
                 id="secret-value"
                 type="password"
@@ -213,7 +228,9 @@ export function SecretsSection() {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="secret-description"><Trans>Description (optional)</Trans></Label>
+              <Label htmlFor="secret-description">
+                <Trans>Description (optional)</Trans>
+              </Label>
               <Textarea
                 id="secret-description"
                 placeholder={t`What is this secret used for?`}
@@ -224,7 +241,14 @@ export function SecretsSection() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => { setShowAdd(false); resetForm(); }} disabled={busy}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowAdd(false);
+                resetForm();
+              }}
+              disabled={busy}
+            >
               <Trans>Cancel</Trans>
             </Button>
             <Button onClick={() => void handleSave()} disabled={busy || !name.trim() || !value}>
@@ -236,7 +260,9 @@ export function SecretsSection() {
 
       <ConfirmDialog
         open={confirmDelete !== null}
-        onOpenChange={(next) => { if (!next) setConfirmDelete(null); }}
+        onOpenChange={(next) => {
+          if (!next) setConfirmDelete(null);
+        }}
         title={t`Delete secret`}
         description={t`Delete "${confirmDelete ?? ''}" from the OS keychain? This cannot be undone.`}
         confirmLabel={t`Delete`}

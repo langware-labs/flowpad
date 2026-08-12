@@ -78,7 +78,7 @@ export function AttachMenu({ assetRefs, onAssetRefsChange, onFilesPicked, disabl
           <PopoverContent align="start" className="w-40 p-1">
             <button
               type="button"
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-start text-sm hover:bg-accent"
               onClick={() => {
                 setOpen(false);
                 fileInputRef.current?.click();
@@ -90,7 +90,7 @@ export function AttachMenu({ assetRefs, onAssetRefsChange, onFilesPicked, disabl
             </button>
             <button
               type="button"
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent"
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-start text-sm hover:bg-accent"
               onClick={() => setView('asset')}
               data-testid="attach-menu-asset"
             >

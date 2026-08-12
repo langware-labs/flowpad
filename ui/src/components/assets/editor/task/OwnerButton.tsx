@@ -117,7 +117,7 @@ export function OwnerButton({ task }: OwnerButtonProps) {
                 type="button"
                 onClick={openIndividual}
                 data-testid="task-owner-individual"
-                className="flex items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
+                className="flex items-center gap-2 rounded-md px-2 py-2 text-start text-sm hover:bg-muted"
               >
                 <UserIcon className="h-4 w-4 text-muted-foreground" />
                 <span>
@@ -129,7 +129,7 @@ export function OwnerButton({ task }: OwnerButtonProps) {
                 type="button"
                 onClick={openGroupFlow}
                 data-testid="task-owner-group"
-                className="flex items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
+                className="flex items-center gap-2 rounded-md px-2 py-2 text-start text-sm hover:bg-muted"
               >
                 <Users className="h-4 w-4 text-muted-foreground" />
                 <span>

@@ -28,7 +28,7 @@ export function MiniDesktop({ scope }: { scope?: ScopeFilter }) {
 
   return (
     <div className="relative rounded-lg border border-border bg-card/50 px-4 py-3">
-      <DesktopSurface className="pr-6" filter={filter} />
+      <DesktopSurface className="pe-6" filter={filter} />
 
       <button
         type="button"

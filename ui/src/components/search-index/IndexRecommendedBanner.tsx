@@ -34,7 +34,13 @@ export function IndexRecommendedBanner({ lastIndexedAt, types, onComplete }: Ind
       <span className="text-muted-foreground">
         Last updated {formatTimeAgo(lastIndexedAt) ?? 'a while ago'} — results may be outdated.
       </span>
-      <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-amber-700 hover:text-amber-900 dark:text-amber-400" disabled={busy} onClick={() => void startIndexing()}>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="ms-auto h-6 px-2 text-amber-700 hover:text-amber-900 dark:text-amber-400"
+        disabled={busy}
+        onClick={() => void startIndexing()}
+      >
         Refresh now →
       </Button>
     </div>

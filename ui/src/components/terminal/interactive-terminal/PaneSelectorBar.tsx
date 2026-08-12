@@ -12,7 +12,7 @@ export const PaneSelectorBar: React.FC<PaneSelectorBarProps> = ({ activePane, on
   const { t } = useLingui();
 
   return (
-    <div className="flex flex-col items-center gap-2 border-r bg-muted/30 px-1 py-2">
+    <div className="flex flex-col items-center gap-2 border-e bg-muted/30 px-1 py-2">
       <Button
         variant={activePane === 'claude' ? 'secondary' : 'ghost'}
         size="icon"

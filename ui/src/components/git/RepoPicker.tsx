@@ -71,7 +71,7 @@ export function RepoPicker({ provider, onSelect, enabled = true, allowedRoles, o
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t`Filter repos by owner or name…`}
-            className="pl-7 text-sm"
+            className="ps-7 text-sm"
           />
         </div>
         <button

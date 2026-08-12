@@ -211,7 +211,7 @@ export function AttachmentChip({
           onClick={clickable ? () => onDownload?.() : undefined}
           title={title}
           className={cn(
-            'flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
+            'flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-start transition-colors',
             inert
               ? 'cursor-not-allowed border-border bg-background opacity-50'
               : clickable
@@ -297,7 +297,7 @@ export function AttachmentChip({
                 setMenuOpen(false);
                 onOpenInEditor();
               }}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-foreground transition-colors hover:bg-muted"
             >
               <FileText className="h-3 w-3 text-muted-foreground" />
               <Trans>Open in editor</Trans>
@@ -320,7 +320,7 @@ export function AttachmentChip({
                 setMenuOpen(false);
                 onRevealInFolder();
               }}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-foreground transition-colors hover:bg-muted"
             >
               <FolderOpen className="h-3 w-3 text-muted-foreground" />
               <Trans>Reveal in folder</Trans>
@@ -329,7 +329,7 @@ export function AttachmentChip({
           <button
             type="button"
             onClick={() => void handleCopyLink()}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-foreground transition-colors hover:bg-muted"
           >
             <LinkIcon className="h-3 w-3 text-muted-foreground" />
             <Trans>Copy link</Trans>
@@ -357,7 +357,7 @@ export function AttachmentChip({
       aria-modal="true"
       aria-label={filename}
       onClick={() => setLightbox(false)}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-6 cursor-zoom-out"
+      className="fixed inset-0 z-[100] flex cursor-zoom-out items-center justify-center bg-black/80 p-6"
     >
       {isVideo(filename) ? (
         <video
@@ -365,7 +365,7 @@ export function AttachmentChip({
           autoPlay
           playsInline
           onClick={(e) => e.stopPropagation()}
-          className="max-h-full max-w-full rounded-lg shadow-2xl bg-black cursor-default"
+          className="max-h-full max-w-full cursor-default rounded-lg bg-black shadow-2xl"
         >
           {videoSource(url, filename)}
         </video>
@@ -374,7 +374,7 @@ export function AttachmentChip({
           src={url}
           alt={filename}
           onClick={(e) => e.stopPropagation()}
-          className="max-h-full max-w-full rounded-lg object-contain shadow-2xl cursor-default"
+          className="max-h-full max-w-full cursor-default rounded-lg object-contain shadow-2xl"
         />
       )}
     </div>
@@ -428,7 +428,7 @@ export function AttachmentChip({
             e.stopPropagation();
             setLightbox(true);
           }}
-          className="absolute left-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border bg-background/95 text-muted-foreground shadow-sm backdrop-blur-sm opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+          className="absolute left-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border bg-background/95 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
         >
           <Maximize2 className="h-3.5 w-3.5" />
         </button>
@@ -445,14 +445,14 @@ export function AttachmentChip({
       <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded text-white', bg)}>
         <Icon className="h-5 w-5" />
       </div>
-      <div className="flex min-w-0 flex-col pr-14">
+      <div className="flex min-w-0 flex-col pe-14">
         <span className="truncate text-sm font-medium text-foreground">{filename}</span>
         <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
       </div>
     </>
   );
   const cardClass =
-    'flex w-full items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5 text-left transition-colors hover:bg-muted/40';
+    'flex w-full items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5 text-start transition-colors hover:bg-muted/40';
 
   return (
     <div ref={containerRef} className="group relative max-w-[360px]">

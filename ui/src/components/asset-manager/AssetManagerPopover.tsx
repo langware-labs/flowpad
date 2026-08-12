@@ -482,7 +482,7 @@ export function AssetManagerPopover({
         {view !== 'list' && (
           <button
             type="button"
-            className="-ml-1 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted"
+            className="-ms-1 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted"
             onClick={backToList}
             title={t`Back`}
             data-testid="asset-manager-back"
@@ -515,7 +515,7 @@ export function AssetManagerPopover({
           )}
         </span>
         {view === 'list' && (
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ms-auto flex items-center gap-1">
             {onToggleAssistant && (
               <button
                 type="button"
@@ -566,7 +566,7 @@ export function AssetManagerPopover({
                       }}
                       data-testid="asset-manager-add-folder"
                     >
-                      <FolderOpen className="mr-2 h-3.5 w-3.5" />
+                      <FolderOpen className="me-2 h-3.5 w-3.5" />
                       <Trans>Folder…</Trans>
                     </DropdownMenuItem>
                   )}
@@ -578,7 +578,7 @@ export function AssetManagerPopover({
                       }}
                       data-testid="asset-manager-add-project-folder"
                     >
-                      <FolderPlus className="mr-2 h-3.5 w-3.5" />
+                      <FolderPlus className="me-2 h-3.5 w-3.5" />
                       <Trans>Project folder…</Trans>
                     </DropdownMenuItem>
                   )}
@@ -628,7 +628,7 @@ export function AssetManagerPopover({
               <button
                 type="button"
                 onClick={openAssistant}
-                className="m-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded border border-primary/40 bg-primary/5 px-2.5 py-1.5 text-left hover:bg-primary/10"
+                className="m-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded border border-primary/40 bg-primary/5 px-2.5 py-1.5 text-start hover:bg-primary/10"
                 data-testid="asset-manager-flowpad-location"
                 title={t`Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them.`}
               >
@@ -801,7 +801,7 @@ function ProjectPickRow({
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-2 border-b px-3 py-1.5 text-left last:border-b-0 hover:bg-muted/50"
+      className="flex w-full items-center gap-2 border-b px-3 py-1.5 text-start last:border-b-0 hover:bg-muted/50"
       onClick={() => void onPick(path)}
       data-testid={`asset-manager-project-pick-${path}`}
     >

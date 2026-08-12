@@ -344,7 +344,7 @@ export function ConversationListRow({
         isInvitationRow && !selectMode ? 'cursor-default' : 'cursor-pointer'
       } items-center gap-3 border-b border-border/40 px-3 text-sm transition-colors hover:bg-accent/40 hover:shadow-sm ${
         selected ? 'bg-primary/10' : isFocused ? 'bg-primary/10' : ''
-      } ${isUnread ? 'bg-background' : 'bg-muted/20'} ${isInvitationRow ? 'border-l-2 border-l-violet-500/60' : ''}`}
+      } ${isUnread ? 'bg-background' : 'bg-muted/20'} ${isInvitationRow ? 'border-l-2 border-s-violet-500/60' : ''}`}
     >
       {/* Multi-select tick. Stops propagation so ticking a row never opens it.
           Always visible per line but faded (light border, dimmed) so it doesn't
@@ -370,11 +370,11 @@ export function ConversationListRow({
         {isInvitationRow && <MailPlus className="h-3.5 w-3.5 flex-shrink-0 text-violet-500" aria-label="invitation" />}
         <span className="min-w-0 flex-1 truncate">{senderLabel}</span>
         {!isInvitationRow && count > 1 && (
-          <span className="ml-1 shrink-0 font-normal text-muted-foreground">({count})</span>
+          <span className="ms-1 shrink-0 font-normal text-muted-foreground">({count})</span>
         )}
       </span>
       <span className="min-w-0 flex-1 truncate" data-testid="inbox-row-subject-line">
-        <CategoryChips facets={facets} className="mr-1" />
+        <CategoryChips facets={facets} className="me-1" />
         <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
         {snippet && (
           <>
@@ -385,7 +385,7 @@ export function ConversationListRow({
       </span>
       <span className="shrink-0 text-xs text-muted-foreground transition-opacity group-hover:opacity-0">
         {time}
-        {ago && <span className="ml-1.5 text-muted-foreground/70">· {ago}</span>}
+        {ago && <span className="ms-1.5 text-muted-foreground/70">· {ago}</span>}
       </span>
       <RowActions
         specs={actionsFor(facets, {
@@ -927,14 +927,14 @@ export function InboxView() {
               messages contain the query, spanning archived rows. Hidden in
               the Help Desk view (hub-sourced tickets, not local messages). */}
           {!inHelpdeskView && (
-            <div className="relative ml-2 flex items-center">
+            <div className="relative ms-2 flex items-center">
               <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t`Search messages`}
-                className="h-7 w-44 rounded-md border border-border/60 bg-background pl-7 pr-6 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                 data-testid="inbox-search-input"
                 aria-label={t`Search messages`}
               />
@@ -962,7 +962,7 @@ export function InboxView() {
             data-testid="inbox-new-conversation-button"
             title={t`Start a new conversation`}
           >
-            <SquarePen className="mr-1 h-3.5 w-3.5" />
+            <SquarePen className="me-1 h-3.5 w-3.5" />
             <Trans>New</Trans>
           </Button>
           <Button
@@ -973,7 +973,7 @@ export function InboxView() {
             data-testid="inbox-new-contacts-group-button"
             title={t`Create a contacts group — add its members to any conversation in one click`}
           >
-            <UsersRound className="mr-1 h-3.5 w-3.5" />
+            <UsersRound className="me-1 h-3.5 w-3.5" />
             <Trans>New group</Trans>
           </Button>
         </div>
@@ -981,7 +981,7 @@ export function InboxView() {
         <div className="flex flex-1 items-center justify-end gap-1" data-testid="inbox-action-bar">
           {selectedCount > 0 && !inHelpdeskView ? (
             <div className="flex items-center gap-1" data-testid="inbox-selection-bar">
-              <span className="mr-1 text-xs text-muted-foreground" data-testid="inbox-selection-count">
+              <span className="me-1 text-xs text-muted-foreground" data-testid="inbox-selection-count">
                 <Trans>{selectedCount} selected</Trans>
               </span>
               <Button
@@ -991,7 +991,7 @@ export function InboxView() {
                 onClick={() => void handleBulkMarkRead(true)}
                 data-testid="inbox-selection-mark-read"
               >
-                <MailOpen className="mr-1 h-3.5 w-3.5" />
+                <MailOpen className="me-1 h-3.5 w-3.5" />
                 <Trans>Read</Trans>
               </Button>
               <Button
@@ -1001,7 +1001,7 @@ export function InboxView() {
                 onClick={() => void handleBulkMarkRead(false)}
                 data-testid="inbox-selection-mark-unread"
               >
-                <Mail className="mr-1 h-3.5 w-3.5" />
+                <Mail className="me-1 h-3.5 w-3.5" />
                 <Trans>Unread</Trans>
               </Button>
               {!inArchivedView && (
@@ -1012,7 +1012,7 @@ export function InboxView() {
                   onClick={() => void handleBulkArchive()}
                   data-testid="inbox-selection-archive"
                 >
-                  <Archive className="mr-1 h-3.5 w-3.5" />
+                  <Archive className="me-1 h-3.5 w-3.5" />
                   <Trans>Archive</Trans>
                 </Button>
               )}
@@ -1023,7 +1023,7 @@ export function InboxView() {
                 onClick={() => void handleBulkDelete()}
                 data-testid="inbox-selection-delete"
               >
-                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                <Trash2 className="me-1 h-3.5 w-3.5" />
                 <Trans>Delete</Trans>
               </Button>
               <Button
@@ -1086,7 +1086,7 @@ export function InboxView() {
                   disabled={isLoading || visibleCount === 0}
                   data-testid="inbox-delete-archived-button"
                 >
-                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                  <Trash2 className="me-1 h-3.5 w-3.5" />
                   <Trans>Delete all</Trans>
                 </Button>
               )}
@@ -1121,7 +1121,7 @@ export function InboxView() {
               <Trans>No help desk tickets</Trans>
             </span>
             <Button variant="outline" size="sm" onClick={() => void loadHelpdeskTickets()} disabled={helpdeskLoading}>
-              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${helpdeskLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${helpdeskLoading ? 'animate-spin' : ''}`} />
               <Trans>Refresh</Trans>
             </Button>
           </div>
@@ -1182,7 +1182,7 @@ export function InboxView() {
             </span>
             {!inArchivedView && !searchActive && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
-                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
                 <Trans>Check for new messages</Trans>
               </Button>
             )}

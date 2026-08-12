@@ -289,7 +289,7 @@ export function CompactExecutionInput({
           )}
           {leadingSlot}
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="ms-auto flex shrink-0 items-center gap-2">
           {statusSlot}
           {/* While running, Send stays available for non-empty drafts (it
               enqueues); Stop sits beside it. */}

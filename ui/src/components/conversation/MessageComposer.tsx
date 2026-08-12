@@ -601,7 +601,7 @@ export function MessageComposer({
             <div className="flex items-center gap-1.5">
               {attachButtons}
               {promptButton}
-              <div className="ml-auto flex items-center gap-1.5">
+              <div className="ms-auto flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => void handleDiscard()}

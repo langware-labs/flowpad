@@ -4,7 +4,12 @@ import { useEventFilterMask } from '@src/hooks/use-event-filter-mask';
 import { usePreference } from '@src/hooks/use-preference';
 import { type SnifferEvent } from '@src/hooks/use-hooks-sniffer';
 import { useSnifferContext } from '@src/contexts/SnifferContext';
-import { useSnifferPipeline, parsePipelineFilters, SnifferLevel, type PipelineFilters } from '@src/hooks/use-sniffer-pipeline';
+import {
+  useSnifferPipeline,
+  parsePipelineFilters,
+  SnifferLevel,
+  type PipelineFilters,
+} from '@src/hooks/use-sniffer-pipeline';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -148,10 +153,7 @@ export function EventSnifferChip() {
   const [timeSpan, setTimeSpan] = usePreference<TimeSpan>(PrefKey.SNIFFER_TIME_SPAN);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [storedFilters, setStoredFilters] = usePreference<PipelineFilters>(PrefKey.SNIFFER_FILTERS);
-  const filters = useMemo<PipelineFilters>(
-    () => parsePipelineFilters(JSON.stringify(storedFilters)),
-    [storedFilters],
-  );
+  const filters = useMemo<PipelineFilters>(() => parsePipelineFilters(JSON.stringify(storedFilters)), [storedFilters]);
   const levelClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleFilterChange = useCallback(
@@ -226,9 +228,7 @@ export function EventSnifferChip() {
       </button>
 
       {/* Event count + popover trigger */}
-      {filteredEvents.length > 0 && (
-        <span className="text-xs text-muted-foreground">({filteredEvents.length})</span>
-      )}
+      {filteredEvents.length > 0 && <span className="text-xs text-muted-foreground">({filteredEvents.length})</span>}
 
       {/* Event list popover (via expand button) */}
       <Popover
@@ -285,8 +285,8 @@ export function EventSnifferChip() {
                     timeSpan === span.value
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:text-foreground',
-                    i === 0 && 'rounded-l-[5px]',
-                    i === TIME_SPANS.length - 1 && 'rounded-r-[5px]',
+                    i === 0 && 'rounded-s-[5px]',
+                    i === TIME_SPANS.length - 1 && 'rounded-e-[5px]',
                   )}
                   onClick={() => handleTimeSpan(span.value)}
                 >
