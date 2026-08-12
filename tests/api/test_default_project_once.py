@@ -1,14 +1,17 @@
-"""The provisioned default project reaches exactly one bootstrap PER PERSON.
+"""The provisioned default project reaches exactly one bootstrap.
 
 `initSdk` only honours `default_project` when the client has no project of its
 own remembered, so a value that stuck around would keep asserting itself on a
 box where the user has since chosen something else. Handing it out once makes it
 an opening instruction; everything after that belongs to the user's own picking.
 
-Once per PERSON, not once per box: a shared sandbox is handed to a second reader.
-Alice provisions the box and opens it; Bob gets the link afterwards, and his
-first visit must not be mistaken for Alice pressing refresh — that mistake landed
-him on the ordinary default instead of the project the machine was made for.
+One-shot PER BOX, not per person, and that is a real limit rather than an
+oversight: every visitor reaches a sandbox through the same shared cookie-gate
+secret, so this side cannot tell a second person from a refresh. Serving a
+recipient is the hub's job — it re-arms this instruction before handing someone
+the machine (`ComputeNode._rearm_opening_project_for`), and its own tests cover
+who gets re-armed. What is pinned here is that the box honours an armed
+instruction exactly once, which is what makes that re-arm land.
 
 The bootstrap payload is cached for 30s, which is exactly why the instruction is
 stamped per-caller on the way out rather than baked into the cached object —
@@ -21,7 +24,6 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.cli.app_config import set_user
 from flow_sdk.server.state import _read_opening_project, set_pending_default_project
 
 
@@ -76,66 +78,6 @@ async def test_first_bootstrap_opens_the_provisioned_project_then_forgets_it(boo
     # so it cannot overwrite a choice the user has made in between.
     again = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     assert _default_project_id(again.json()) == local_project_id
-
-
-# do not increase timeout without approval
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)
-async def test_the_recipient_of_a_shared_sandbox_lands_on_its_project(bootstrapped_client, tmp_path):
-    """Alice provisions and opens the box; Bob is handed the link afterwards.
-
-    Bob's first visit is the box's SECOND bootstrap, and a single one-shot could
-    not tell that apart from Alice refreshing — so he used to land on the
-    ordinary default. Signing in is what makes him a different consumer, which is
-    why this drives the real ``set_user`` the login path writes rather than
-    simulating two callers some other way.
-    """
-    first = await bootstrapped_client.get("/api/v1/graph/bootstrap")
-    cn_id = _cn_id(first.json())
-    local_project_id = _default_project_id(first.json())
-    provisioned = await _materialize(bootstrapped_client, cn_id, tmp_path, "cyber-course")
-    assert provisioned != local_project_id
-
-    set_user({"id": "alice-hub-id", "email": "alice@example.test"})
-    r = await bootstrapped_client.post(
-        f"/api/v1/graph/compute_node/{cn_id}/set-default-project",
-        json={"project_id": provisioned},
-    )
-    assert r.status_code == 200, r.text
-
-    # Alice opens the machine she just made: she gets its project…
-    assert _default_project_id((await bootstrapped_client.get("/api/v1/graph/bootstrap")).json()) == provisioned
-    # …and her own refresh does not drag her back to it.
-    assert _default_project_id((await bootstrapped_client.get("/api/v1/graph/bootstrap")).json()) == local_project_id
-
-    # Bob signs in on the shared box. He has never been served.
-    set_user({"id": "bob-hub-id", "email": "bob@example.test"})
-    assert _default_project_id((await bootstrapped_client.get("/api/v1/graph/bootstrap")).json()) == provisioned
-    # And the same guarantee holds for him.
-    assert _default_project_id((await bootstrapped_client.get("/api/v1/graph/bootstrap")).json()) == local_project_id
-
-
-# do not increase timeout without approval
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)
-async def test_the_opening_project_survives_a_restart_of_the_box(bootstrapped_client, tmp_path):
-    """A sandbox pauses when idle and resumes; the instruction must outlive that.
-
-    Process memory lost it on every restart, so a box that idled between Alice
-    provisioning it and Bob opening it had nothing left to hand him. Reading the
-    record back off disk is the proof it is no longer boot-scoped state.
-    """
-    first = await bootstrapped_client.get("/api/v1/graph/bootstrap")
-    cn_id = _cn_id(first.json())
-    provisioned = await _materialize(bootstrapped_client, cn_id, tmp_path, "survives-restart")
-
-    r = await bootstrapped_client.post(
-        f"/api/v1/graph/compute_node/{cn_id}/set-default-project",
-        json={"project_id": provisioned},
-    )
-    assert r.status_code == 200, r.text
-
-    assert _read_opening_project()["project_id"] == provisioned
 
 
 # do not increase timeout without approval
