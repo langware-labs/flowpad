@@ -3775,6 +3775,7 @@ msgstr "התחבר"
 #~ msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/pages/entry/OpenSandboxLanding.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect GitHub"
 msgstr "חבר את GitHub"
@@ -3797,8 +3798,8 @@ msgid "Connect to GitHub"
 msgstr "התחברות ל-GitHub"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
-#~ msgid "Connect your GitHub account to open it. Whoever shared the sandbox can't do this for you."
-#~ msgstr "ربط حساب GitHub مطلوب لفتح Sandbox. الشخص الذي شارك معك Sandbox لا يمكنه القيام بذلك نيابةً عنك."
+msgid "Connect your GitHub account to open it. Whoever shared the sandbox can't do this for you."
+msgstr "ربط حساب GitHub مطلوب لفتح Sandbox. الشخص الذي شارك معك Sandbox لا يمكنه القيام بذلك نيابةً عنك."
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
@@ -4589,8 +4590,8 @@ msgid "Couldn't start GitHub connection."
 msgstr "לא ניתן להתחיל את החיבור ל-GitHub."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
-#~ msgid "Couldn't start the GitHub connection."
-#~ msgstr "تعذّر بدء الاتصال بـ GitHub."
+msgid "Couldn't start the GitHub connection."
+msgstr "تعذّر بدء الاتصال بـ GitHub."
 
 #: src/components/account/db-stats.tsx
 msgid "Count"
@@ -17823,8 +17824,8 @@ msgid "The FlowPad backend server is not responding."
 msgstr "שרת backend של FlowPad אינו מגיב."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
-#~ msgid "The GitHub connection didn't complete."
-#~ msgstr "لم يكتمل الاتصال بـ GitHub."
+msgid "The GitHub connection didn't complete."
+msgstr "لم يكتمل الاتصال بـ GitHub."
 
 #: src/routes/loaders/load-dock-pointer.ts
 #~ msgid "The help desk files are missing. Open the help desk again to download them."
@@ -18244,8 +18245,8 @@ msgid "This sandbox hasn't been started yet"
 msgstr "הסנדבוקס הזה עדיין לא הופעל"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
-#~ msgid "This sandbox loads code from a private repository."
-#~ msgstr "هذا Sandbox يحمّل الكود من مستودع خاص."
+msgid "This sandbox loads code from a private repository."
+msgstr "هذا Sandbox يحمّل الكود من مستودع خاص."
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
