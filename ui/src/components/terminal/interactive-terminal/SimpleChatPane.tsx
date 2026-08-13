@@ -67,8 +67,13 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
   // the rows below remain the record of what happened.
   const currentActivity = useStickyActivity(
     useMemo(
-      () => describeCurrentActivity(splitLiveGroup(turnGroups, activity.active).liveEvents, activity.startedAt),
-      [turnGroups, activity.active, activity.startedAt],
+      () =>
+        describeCurrentActivity(
+          splitLiveGroup(turnGroups, activity.active).liveEvents,
+          activity.startedAt,
+          activity.status,
+        ),
+      [turnGroups, activity.active, activity.startedAt, activity.status],
     ),
     activity.startedAt,
   );

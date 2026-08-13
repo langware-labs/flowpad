@@ -82,9 +82,14 @@ of the longest-lived bug (see below).
    exist. Dropping the pairing check is only safe because of invariant 1 — the
    turn scoping is what stops a finished operation reading as live, so do not
    weaken it thinking the pairing check is the guard.
-4. **Reasoning supersedes the operation before it.** Once a `REASONING` frame is
-   newer than the last tool call, the answer is `null` and the line hands back
-   to the phase label. Otherwise it freezes on the last file touched.
+4. **Thinking supersedes the operation before it — via TWO independent
+   signals.** A `REASONING` frame newer than the last tool call, *and* the
+   worker reporting `WorkerStatus.THINKING`. Both are needed and neither is
+   redundant: the frame only exists when the model emits a thinking block, and
+   plenty of turns think without one — then the newest frame stays the finished
+   tool call and the line sits on `Reading` for as long as the model
+   deliberates. The status moves either way. Do not delete the status check as
+   "already covered by the frame check"; that is the bug it was added to fix.
 5. **Each shown operation gets ≥** **`MIN_ACTIVITY_MS`** **(500 ms).**
 6. **Intermediate operations are skipped, never queued.** A queue puts the line
    progressively further behind the agent — showing a file edited seconds ago
@@ -114,6 +119,7 @@ Each was observed, and each maps to the invariant that prevents it.
 | Every frame of a finished turn reported as current                              | `findIndex` returned `-1`, collapsed into the "start at 0" branch                                                                                                      | 2         |
 | `Editing` shown with **no filename**, until an unrelated operation displaced it | the display latch compared only `key`, so the refinement carrying the path was discarded. Measured: label→detail gap 890 ms or never; after the fix 20–30 ms           | 7         |
 | Fast `Edit`/`Read` never visible at all                                         | an in-flight-only rule; they complete in tens of ms                                                                                                                    | 3, 5      |
+| `Reading` stuck on screen for a long time                                       | the turn went back to thinking without emitting a thinking block, so no `REASONING` frame arrived and the newest frame stayed the finished tool call                    | 4         |
 | Long path pushed the clock and event chip out of the pane                       | no flex-shrink discipline; a flex item defaults to `min-width:auto` and refuses to shrink. A fixed `max-w` does **not** fix this — it only clips earlier on wide panes | 11        |
 | An operation present at mount replaced instantly                                | `shownAt` seeded to `0`, so a pane remounting mid-turn recorded no start time                                                                                          | 5         |
 

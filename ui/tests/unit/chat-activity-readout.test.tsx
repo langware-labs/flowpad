@@ -10,7 +10,7 @@
  * obvious alternative failed.
  */
 import { act, renderHook } from '@testing-library/react';
-import { FlowData, FlowElementTypes } from '@sdk';
+import { FlowData, FlowElementTypes, WorkerStatus } from '@sdk';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { describeCurrentActivity } from '@src/components/entity-execution-panel/current-activity';
@@ -100,6 +100,16 @@ describe('describeCurrentActivity', () => {
       T0,
     );
     expect(activity).toBeNull();
+  });
+
+  it('hands back when the WORKER reports thinking, with no reasoning frame at all', () => {
+    // The frame-based rule above only fires when the model emits a thinking
+    // block. Plenty of turns think without one — the newest frame stays the
+    // finished tool call and the line sat on "Reading" for as long as the model
+    // deliberated. The status is the signal that moves either way.
+    const events = [toolCall('file_read', { path: '/repo/stuck.ts' })];
+    expect(describeCurrentActivity(events, T0, WorkerStatus.TOOL_RUNNING)?.detail).toBe('stuck.ts');
+    expect(describeCurrentActivity(events, T0, WorkerStatus.THINKING)).toBeNull();
   });
 
   it('ignores replayed history, so a resumed session reports nothing stale', () => {

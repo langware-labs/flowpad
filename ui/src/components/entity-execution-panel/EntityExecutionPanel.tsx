@@ -415,7 +415,10 @@ export function EntityExecutionPanel({
   // just counted (FLOWPAD-1980). `startedAt` scopes the read to the current
   // turn — a resumed session's replayed history is in this buffer too.
   const currentActivity = useStickyActivity(
-    useMemo(() => describeCurrentActivity(liveEvents, activity.startedAt), [liveEvents, activity.startedAt]),
+    useMemo(
+      () => describeCurrentActivity(liveEvents, activity.startedAt, activity.status),
+      [liveEvents, activity.startedAt, activity.status],
+    ),
     activity.startedAt,
   );
 

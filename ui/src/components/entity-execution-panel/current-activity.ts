@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { FlowData, FlowElementTypes } from '@sdk';
+import { FlowData, FlowElementTypes, WorkerStatus } from '@sdk';
 import type { LucideIcon } from 'lucide-react';
 
 import { getToolUseId } from '@src/components/floating-chat/groupTurnEvents';
@@ -52,7 +52,8 @@ const HIDDEN_DETAIL_KINDS = new Set(['shell_command']);
  * Null is a real answer, not a failure — it means "no operation is the current
  * story", and the caller falls back to the coarse phase label. That is what
  * makes the readout follow the agent between tools instead of freezing on the
- * last file it touched.
+ * last file it touched. Two independent signals produce it: a REASONING frame
+ * newer than the last tool call, and the worker reporting THINKING.
  *
  * Deliberately the newest TOOL_CALL, not the newest *unanswered* one. Pairing a
  * call against its TOOL_RESULT reads as the stricter, more honest rule, but it
@@ -72,7 +73,16 @@ const HIDDEN_DETAIL_KINDS = new Set(['shell_command']);
 export function describeCurrentActivity(
   events: readonly FlowData[],
   turnStartedAt: number | null,
+  workerStatus: WorkerStatus | null = null,
 ): CurrentActivity | null {
+  // The worker saying THINKING is the authoritative "that operation is over".
+  // A reasoning FRAME is the same news, but only arrives when the model emits a
+  // thinking block — plenty of turns think without one, and then the newest
+  // frame stays the finished tool call and the line sits on "Reading" for as
+  // long as the model deliberates. The status moves either way, so it is the
+  // signal that actually unsticks the readout.
+  if (workerStatus === WorkerStatus.THINKING) return null;
+
   const scoped = currentTurnSlice(events, turnStartedAt);
 
   for (let i = scoped.length - 1; i >= 0; i--) {
