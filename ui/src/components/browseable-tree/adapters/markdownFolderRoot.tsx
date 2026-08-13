@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import React from 'react';
 import { FileText, Folder, FolderPlus, Library, Network, Plus, RefreshCw, User as UserIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
@@ -119,7 +120,7 @@ function folderToolbar(
     {
       id: `new-folder:${target.typeid}:${target.relPath || 'root'}`,
       icon: <FolderPlus />,
-      label: `New folder in ${target.label}`,
+      label: t`New folder in ${target.label}`,
       run: () => onCreateFolder(target),
       showBusyIndicator: false,
     },
@@ -137,7 +138,7 @@ function rootToolbar(type: AssetTypeInfo, deps: MarkdownFolderRootDeps): Toolbar
     {
       id: `scan:${type.type_name}`,
       icon: <RefreshCw />,
-      label: 'Scan for changes',
+      label: t`Scan for changes`,
       run: async () => {
         // Reindex; resulting data_ops refresh the tree via useAssetTreeRefresh.
         await deps.indexType(type.type_name, deps.filter?.scope);
@@ -148,7 +149,7 @@ function rootToolbar(type: AssetTypeInfo, deps: MarkdownFolderRootDeps): Toolbar
     actions.push({
       id: `new:${type.type_name}`,
       icon: <Plus />,
-      label: `New ${type.label}`,
+      label: t`New ${type.label}`,
       run: () => deps.onNew?.(type.type_name),
       showBusyIndicator: false,
     });
@@ -176,7 +177,7 @@ function fetchVaultFiles(vaultAbsPath: string, refresh = false): Promise<string[
   const params = new URLSearchParams({ root: vaultAbsPath });
   const p = apiClient
     .get(`/assets/markdown-files?${params.toString()}`)
-    .then((d: unknown) => ((d as { files?: string[] } | null)?.files ?? []))
+    .then((d: unknown) => (d as { files?: string[] } | null)?.files ?? [])
     .catch(() => [] as string[]);
   _vaultFilesCache.set(vaultAbsPath, p);
   return p;
@@ -232,11 +233,16 @@ export function childrenForPrefix(args: {
     .sort((a, b) => a.localeCompare(b))
     .map((name) =>
       folderBrowseable({
-        typeName, typeid, vaultAbsPath, vaultRelPath, files,
+        typeName,
+        typeid,
+        vaultAbsPath,
+        vaultRelPath,
+        files,
         prefixRel: norm ? `${norm}/${name}` : name,
         label: name,
         kind: 'folder',
-        onCreateFolder, onMoveItem,
+        onCreateFolder,
+        onMoveItem,
       }),
     );
 
@@ -288,8 +294,17 @@ function folderBrowseable(args: {
   onOpenKnowledgeBrowser?: (absPath: string) => void;
 }): Browseable {
   const {
-    typeName, typeid, vaultAbsPath, vaultRelPath, prefixRel,
-    label, kind, files, onCreateFolder, onMoveItem, onOpenKnowledgeBrowser,
+    typeName,
+    typeid,
+    vaultAbsPath,
+    vaultRelPath,
+    prefixRel,
+    label,
+    kind,
+    files,
+    onCreateFolder,
+    onMoveItem,
+    onOpenKnowledgeBrowser,
   } = args;
   // This folder's own paths derive from the vault root + its vault-relative prefix.
   const absPath = vaultAbsForPrefix(vaultAbsPath, prefixRel);
@@ -303,7 +318,7 @@ function folderBrowseable(args: {
           {
             id: `kbrowser:${typeid}:${absPath}`,
             icon: <Network />,
-            label: 'Open knowledge browser',
+            label: t`Open knowledge browser`,
             run: () => onOpenKnowledgeBrowser(absPath),
             showBusyIndicator: false,
           },
@@ -322,18 +337,19 @@ function folderBrowseable(args: {
     hasChildren: true,
     pointer: DockPointer.forAssetFolder(typeName, typeid, relPath),
     toolbar: [...(folderToolbar(target, onCreateFolder) ?? []), ...kbAction],
-    dragData: kind === 'folder'
-      ? {
-          kind: 'markdown-folder',
-          id: `md-folder:${typeid}:${absPath}`,
-          label,
-          typeName,
-          typeid,
-          relPath: normalizeRelPath(relPath),
-          absPath,
-          isDir: true,
-        }
-      : undefined,
+    dragData:
+      kind === 'folder'
+        ? {
+            kind: 'markdown-folder',
+            id: `md-folder:${typeid}:${absPath}`,
+            label,
+            typeName,
+            typeid,
+            relPath: normalizeRelPath(relPath),
+            absPath,
+            isDir: true,
+          }
+        : undefined,
     canDrop: onMoveItem ? (data) => canDropMarkdownItem(target, data) : undefined,
     onDrop: onMoveItem
       ? (data) => {
@@ -347,8 +363,14 @@ function folderBrowseable(args: {
       // already-fetched `files` array — no extra request.
       const walk = files ?? (await fetchVaultFiles(vaultAbsPath, !!opts?.refresh));
       return childrenForPrefix({
-        typeName, typeid, vaultAbsPath, vaultRelPath, files: walk,
-        prefixRel, onCreateFolder, onMoveItem,
+        typeName,
+        typeid,
+        vaultAbsPath,
+        vaultRelPath,
+        files: walk,
+        prefixRel,
+        onCreateFolder,
+        onMoveItem,
       });
     },
   };
@@ -363,17 +385,13 @@ function keepVault(v: AssetTypeVault, filter: AssetFilter): boolean {
   if (v.scope === 'project') {
     const selected = new Set(scopeProjectIds(filter.scope));
     return (
-      (!!v.project_id && selected.has(v.project_id)) ||
-      (!!v.record_project_id && selected.has(v.record_project_id))
+      (!!v.project_id && selected.has(v.project_id)) || (!!v.record_project_id && selected.has(v.record_project_id))
     );
   }
   return false;
 }
 
-function findVaultForAbsPath(
-  vaults: AssetTypeVault[],
-  absPath: string,
-): AssetTypeVault | null {
+function findVaultForAbsPath(vaults: AssetTypeVault[], absPath: string): AssetTypeVault | null {
   // Pick the most specific (longest absPath) vault that is a prefix of `absPath`.
   let best: AssetTypeVault | null = null;
   for (const v of vaults) {
@@ -384,11 +402,7 @@ function findVaultForAbsPath(
   return best;
 }
 
-function findVaultForTypeidRel(
-  vaults: AssetTypeVault[],
-  typeid: string,
-  relPath: string,
-): AssetTypeVault | null {
+function findVaultForTypeidRel(vaults: AssetTypeVault[], typeid: string, relPath: string): AssetTypeVault | null {
   let best: AssetTypeVault | null = null;
   for (const v of vaults) {
     if (v.typeid !== typeid) continue;
@@ -404,10 +418,7 @@ function findVaultForTypeidRel(
  * vault roots (from AssetTypeInfo.vaults); each vault's subtree comes from one
  * gitignore-aware project walk (``/assets/markdown-files``), built in memory.
  */
-export function markdownFolderRoot(
-  type: AssetTypeInfo,
-  deps: MarkdownFolderRootDeps,
-): BrowseableRoot {
+export function markdownFolderRoot(type: AssetTypeInfo, deps: MarkdownFolderRootDeps): BrowseableRoot {
   const vaults = type.vaults ?? [];
   const filter = deps.filter ?? DEFAULT_ASSET_FILTER;
 
@@ -482,10 +493,7 @@ export function markdownFolderRoot(
         if (!vault) return Promise.resolve([root]);
         const chain: Browseable[] = [root, buildVaultNode(vault)];
         if (folder.relPath === vault.relPath) return Promise.resolve(chain);
-        const extra = folder.relPath
-          .slice(vault.relPath.length)
-          .replace(/^\/+/, '')
-          .replace(/\/+$/, '');
+        const extra = folder.relPath.slice(vault.relPath.length).replace(/^\/+/, '').replace(/\/+$/, '');
         if (!extra) return Promise.resolve(chain);
         let currentPrefix = '';
         for (const seg of extra.split('/')) {
@@ -515,10 +523,7 @@ export function markdownFolderRoot(
         const vault = findVaultForAbsPath(vaults, absPath);
         if (!vault) return Promise.resolve([root]);
         const chain: Browseable[] = [root, buildVaultNode(vault)];
-        const remainder = absPath
-          .slice(vault.absPath.length)
-          .replace(/^\/+/, '')
-          .replace(/\/+$/, '');
+        const remainder = absPath.slice(vault.absPath.length).replace(/^\/+/, '').replace(/\/+$/, '');
         if (!remainder) return Promise.resolve(chain);
         const segments = remainder.split('/');
         const fileName = segments.pop()!;

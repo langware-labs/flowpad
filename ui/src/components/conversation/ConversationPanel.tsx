@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Conversation, type Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -262,7 +263,7 @@ export function ConversationPanel({
   // Context first, Runs second. Runs is hidden entirely when there's no
   // anchor to query (covered by `showRuns`).
   const tabs = [
-    { id: 'context' as const, label: 'Context', icon: Layers },
+    { id: 'context' as const, label: t`Context`, icon: Layers },
     ...(showRuns
       ? [{ id: 'runs' as const, label: runEntries.length > 0 ? `Runs ${runEntries.length}` : 'Runs', icon: History }]
       : []),
@@ -362,7 +363,7 @@ export function ConversationPanel({
         ) : (
           // Collapsed strip — clicking the drawer icon folds it back open.
           <CollapsedSideRail data-testid="conversation-side-drawer-collapsed">
-            <SideRailButton icon={PanelRightOpen} label="Expand drawer" onClick={() => setSideOpen(true)} />
+            <SideRailButton icon={PanelRightOpen} label={t`Expand drawer`} onClick={() => setSideOpen(true)} />
           </CollapsedSideRail>
         )}
       </div>

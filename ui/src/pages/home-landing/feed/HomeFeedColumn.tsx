@@ -250,7 +250,7 @@ export function HomeFeedColumn() {
                 </Button>
               </DialogClose>
               <Button type="submit" disabled={!canCreateNote}>
-                <Send className="me-2 h-3.5 w-3.5" />
+                <Send className="me-2 h-3.5 w-3.5 rtl:-scale-x-100" />
                 <Trans>Add</Trans>
               </Button>
             </DialogFooter>

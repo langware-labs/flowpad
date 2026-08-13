@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { DockLoadError } from './dock-load-error';
 import { describeProcessStartError, type ProcessLoadError } from './load-process';
 
@@ -8,8 +9,8 @@ export function processLoadErrorToDockError(error: ProcessLoadError, source: str
       'hard',
       {
         action: 'render_error',
-        title: 'Session not found',
-        message: 'Agentic process does not exist.',
+        title: t`Session not found`,
+        message: t`Agentic process does not exist.`,
       },
       source,
       error,
@@ -21,8 +22,8 @@ export function processLoadErrorToDockError(error: ProcessLoadError, source: str
       error.severity,
       {
         action: 'render_error',
-        title: 'Session unavailable',
-        message: 'Could not reach the backend. Try again in a moment.',
+        title: t`Session unavailable`,
+        message: t`Could not reach the backend. Try again in a moment.`,
         retryable: true,
       },
       source,
@@ -50,8 +51,8 @@ export function processLoadErrorToDockError(error: ProcessLoadError, source: str
       'soft',
       {
         action: 'render_error',
-        title: 'Project not found',
-        message: "Could not recover this session's project.",
+        title: t`Project not found`,
+        message: t`Could not recover this session's project.`,
       },
       source,
       error,
@@ -62,8 +63,8 @@ export function processLoadErrorToDockError(error: ProcessLoadError, source: str
     'soft',
     {
       action: 'render_error',
-      title: 'Session unavailable',
-      message: 'No shell is linked to this process.',
+      title: t`Session unavailable`,
+      message: t`No shell is linked to this process.`,
     },
     source,
     error,

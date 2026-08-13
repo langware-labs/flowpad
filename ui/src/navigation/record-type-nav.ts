@@ -1,3 +1,7 @@
+import { t } from '@lingui/core/macro';
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import type { LucideIcon } from 'lucide-react';
 import type { SearchResult } from '@src/hooks/use-record-search';
 import { DockPointer } from './DockPointer';
@@ -12,7 +16,7 @@ import { notify } from '@src/notifications';
 
 export interface DockNavigationAction {
   icon: LucideIcon;
-  name: string;
+  name: MessageDescriptor;
   // Either a sync dock pointer OR an async action callback (not both)
   dockPointer?: (result: SearchResult) => DockPointer;
   action?: (result: SearchResult, navigation: NavigationActions) => void | Promise<void>;
@@ -57,8 +61,6 @@ function codexThreadIdFromResult(result: SearchResult): string {
   return result.record_id.replace(/^codex_session-/, '');
 }
 
-
-
 /**
  * The stable TypeId for a search result, or null when no usable id is present.
  * ``record_id`` may be a full ``<type>-<uuid>`` typeid (favorites store the full
@@ -96,15 +98,24 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   skill: {
     dockPointer: (r) => assetEditorPointer('skill', r),
     actions: [
-      { icon: Search, name: 'All skills', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }) },
+      {
+        icon: Search,
+        name: msg`All skills`,
+        dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }),
+      },
     ],
   },
   claude_hook: {
-    dockPointer: (r) => new DockPointer(ViewType.HOOKS, undefined, {
-      hookId: r.record_id,
-    }),
+    dockPointer: (r) =>
+      new DockPointer(ViewType.HOOKS, undefined, {
+        hookId: r.record_id,
+      }),
     actions: [
-      { icon: Search, name: 'All hooks', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'claude_hook' }) },
+      {
+        icon: Search,
+        name: msg`All hooks`,
+        dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'claude_hook' }),
+      },
     ],
   },
   agent: {
@@ -115,7 +126,11 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const sessionId = r.session_id;
       if (sessionId) {
         const p = await navigation.openWorkerSession(sessionId);
-        if (!p) notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        if (!p)
+          notify.error({
+            title: t`Session not found`,
+            message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+          });
       }
     },
   },
@@ -125,7 +140,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       if (sessionId) {
         const p = await AgenticProcess.getByWorkerId(sessionId);
         if (!p) {
-          notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+          notify.error({
+            title: t`Session not found`,
+            message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+          });
           return;
         }
         navigation.openDockPointer(p.dockPointer, r.created_at ? { t: r.created_at } : undefined);
@@ -140,7 +158,11 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const sessionId = r.session_id;
       if (sessionId) {
         const p = await navigation.openWorkerSession(sessionId);
-        if (!p) notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        if (!p)
+          notify.error({
+            title: t`Session not found`,
+            message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+          });
       }
     },
   },
@@ -170,9 +192,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const tid = resultTypeId(r);
       return tid ? DockPointer.forTasks(tid.id) : null;
     },
-    actions: [
-      { icon: CheckSquare, name: 'All tasks', dockPointer: () => DockPointer.forTasks() },
-    ],
+    actions: [{ icon: CheckSquare, name: msg`All tasks`, dockPointer: () => DockPointer.forTasks() }],
   },
   agentic_process: {
     dockPointer: (r) => {
@@ -195,9 +215,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   project: {
     dockPointer: (r) => {
       const tid = resultTypeId(r);
-      return tid
-        ? new DockPointer(ViewType.ASSETS, 'list/all', { scope: 'project', project_ids: tid.id })
-        : null;
+      return tid ? new DockPointer(ViewType.ASSETS, 'list/all', { scope: 'project', project_ids: tid.id }) : null;
     },
   },
   artifact: {
@@ -209,11 +227,9 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     primaryAction: async (r, navigation) => {
       const tid = resultTypeId(r);
       if (!tid) return;
-      const artifact = await dataManager
-        .getByTypeId<Artifact>(new TypeId(Artifact.type, tid.id))
-        .catch(() => null);
+      const artifact = await dataManager.getByTypeId<Artifact>(new TypeId(Artifact.type, tid.id)).catch(() => null);
       if (!artifact) {
-        notify.error({ title: 'App not found', message: 'This app is no longer available.' });
+        notify.error({ title: t`App not found`, message: t`This app is no longer available.` });
         return;
       }
       openArtifact(artifact, {
@@ -227,7 +243,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const threadId = codexThreadIdFromResult(r);
       const p = await AgenticProcess.getByWorkerId(threadId);
       if (!p) {
-        notify.error({ title: 'Session not found', message: `Session ${threadId} is not in Claude, Codex, or Copilot history.` });
+        notify.error({
+          title: t`Session not found`,
+          message: t`Session ${threadId} is not in Claude, Codex, or Copilot history.`,
+        });
         return;
       }
       navigation.openDock(p.dockPointer);
@@ -235,7 +254,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     actions: [
       {
         icon: FileText,
-        name: 'Transcript',
+        name: msg`Transcript`,
         action: (r, navigation) => {
           // codex/transcript lens (LensViewer.tsx case 'codex/transcript')
           // expects URL-encoded absolute path. DockPointer.forLensTranscript
@@ -250,7 +269,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const sessionId = r.record_id.replace(/^copilot_session-/, '');
       const p = await AgenticProcess.getByWorkerId(sessionId);
       if (!p) {
-        notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        notify.error({
+          title: t`Session not found`,
+          message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+        });
         return;
       }
       navigation.openDock(p.dockPointer);
@@ -258,7 +280,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     actions: [
       {
         icon: FileText,
-        name: 'Transcript',
+        name: msg`Transcript`,
         action: (r, navigation) => {
           if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript('copilot', r.asset_ref));
         },
@@ -270,7 +292,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const sessionId = sessionIdFromResult(r);
       const p = await AgenticProcess.getByWorkerId(sessionId);
       if (!p) {
-        notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        notify.error({
+          title: t`Session not found`,
+          message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
+        });
         return;
       }
       navigation.openDock(p.dockPointer);
@@ -278,14 +303,14 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     actions: [
       {
         icon: FileText,
-        name: 'Transcript',
+        name: msg`Transcript`,
         action: (r, navigation) => {
           navigation.openLens('claude', 'transcript', sessionIdFromResult(r));
         },
       },
       {
         icon: GitBranch,
-        name: 'Fork',
+        name: msg`Fork`,
         action: async (r, navigation) => {
           const sessionId = sessionIdFromResult(r);
           const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
@@ -305,7 +330,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     actions: [
       {
         icon: FileText,
-        name: 'Transcript',
+        name: msg`Transcript`,
         action: (r, navigation) => {
           if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript('workflow', r.asset_ref));
         },
@@ -345,5 +370,12 @@ export async function navigateToResult(result: SearchResult, navigation: Navigat
 
 /** Returns the action list for a result's record type */
 export function getActionsForResult(result: SearchResult): DockNavigationAction[] {
-  return RECORD_TYPE_NAV[result.record_type]?.actions ?? [];
+  // Resolved HERE, at the one accessor, so `DockNavigationAction.name` stays a
+  // plain string for every consumer while the table itself holds lazy
+  // descriptors (it is module-level, so an eager macro would bind the language
+  // at import and never follow a locale switch).
+  return (RECORD_TYPE_NAV[result.record_type]?.actions ?? []).map((action) => ({
+    ...action,
+    name: i18n._(action.name),
+  }));
 }

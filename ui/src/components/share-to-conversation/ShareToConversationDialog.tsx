@@ -326,7 +326,7 @@ export function ShareToConversationDialog({
       <DialogContent className="sm:max-w-md" data-testid="share-to-conversation-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Send className="h-5 w-5 text-primary" />
+            <Send className="h-5 w-5 text-primary rtl:-scale-x-100" />
             {heading ?? <Trans>Share</Trans>}
           </DialogTitle>
         </DialogHeader>
@@ -589,7 +589,7 @@ export function ShareToConversationDialog({
                   data-testid="share-submit"
                   className="gap-1.5"
                 >
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 rtl:-scale-x-100" />}
                   {busy ? t`Sharing…` : (submitLabel ?? t`Share`)}
                 </Button>
               </div>

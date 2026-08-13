@@ -90,19 +90,24 @@ export function VibeNoProcessWorkspace() {
               <Trans>Nothing to display yet — try one to get started</Trans>
             </p>
             <div className="flex max-w-md flex-wrap justify-center gap-2">
-              {VIBE_STARTER_PROMPTS.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => void startFromPrompt(p)}
-                  disabled={!project?.id || starting || !!startingPrompt}
-                  data-testid="display-starter-chip"
-                  className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {startingPrompt === p ? <Loader2 className="me-1 inline h-3.5 w-3.5 animate-spin" /> : null}
-                  {p}
-                </button>
-              ))}
+              {VIBE_STARTER_PROMPTS.map((descriptor) => {
+                // One resolution per chip: the label, the key and the prompt
+                // that gets sent must all be the same string.
+                const p = t(descriptor);
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => void startFromPrompt(p)}
+                    disabled={!project?.id || starting || !!startingPrompt}
+                    data-testid="display-starter-chip"
+                    className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {startingPrompt === p ? <Loader2 className="me-1 inline h-3.5 w-3.5 animate-spin" /> : null}
+                    {p}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

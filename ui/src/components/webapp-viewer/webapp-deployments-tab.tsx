@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { KIND_WEB, WorldViewProjection } from '@sdk';
 import { ScrollArea } from '@src/components/ui/scroll-area';
@@ -39,7 +40,7 @@ export const WebappDeploymentsTab: React.FC = () => {
       });
     } catch (e) {
       notify.error({
-        title: 'Could not deploy',
+        title: t`Could not deploy`,
         message: e instanceof Error ? e.message : 'Deploy failed.',
       });
     } finally {

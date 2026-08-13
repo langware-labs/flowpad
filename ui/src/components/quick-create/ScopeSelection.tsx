@@ -1,3 +1,5 @@
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import type { Project } from '@sdk';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
@@ -45,18 +47,27 @@ export interface ScopeSelectionProps {
   allowedScopes?: readonly ScopeKind[];
 }
 
-const SCOPE_OPTIONS: ScopeBarOption<ScopeKind>[] = [
-  { value: 'user', label: 'User' },
-  { value: 'project', label: 'Project' },
-  { value: 'folder', label: 'Folder' },
+/* Both tables are module-level, so their wording is held as lazy `msg`
+ * descriptors and resolved with `t` inside the component — an eager macro out
+ * here would bind the language at import and never follow a locale switch.
+ * The harness NAMES (Claude Code, Codex, Copilot) stay literal: they are
+ * products, not words to translate. */
+const SCOPE_OPTIONS: { value: ScopeKind; label: MessageDescriptor }[] = [
+  { value: 'user', label: msg`User` },
+  { value: 'project', label: msg`Project` },
+  { value: 'folder', label: msg`Folder` },
 ];
 
-const HARNESS_OPTIONS: { value: HarnessKind; title: string; Icon: React.ComponentType<{ className?: string }> }[] = [
-  { value: 'all', title: 'All harnesses', Icon: Layers },
-  { value: 'claude', title: 'Claude Code', Icon: ClaudeIcon },
-  { value: 'codex', title: 'Codex', Icon: CodexIcon },
-  { value: 'copilot', title: 'Copilot', Icon: CopilotIcon },
-  { value: 'none', title: 'None (project root)', Icon: CircleSlash },
+const HARNESS_OPTIONS: {
+  value: HarnessKind;
+  title: MessageDescriptor;
+  Icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { value: 'all', title: msg`All harnesses`, Icon: Layers },
+  { value: 'claude', title: msg`Claude Code`, Icon: ClaudeIcon },
+  { value: 'codex', title: msg`Codex`, Icon: CodexIcon },
+  { value: 'copilot', title: msg`Copilot`, Icon: CopilotIcon },
+  { value: 'none', title: msg`None (project root)`, Icon: CircleSlash },
 ];
 
 export function ScopeSelection({
@@ -72,9 +83,11 @@ export function ScopeSelection({
   allowedScopes,
 }: ScopeSelectionProps) {
   const { t } = useLingui();
-  const scopeOptions = allowedScopes
-    ? SCOPE_OPTIONS.filter((option) => allowedScopes.includes(option.value))
-    : SCOPE_OPTIONS;
+  // Resolved here rather than in the table: `ScopeBar` wants plain strings, and
+  // resolving at render is what lets the chips re-label on a locale switch.
+  const scopeOptions: ScopeBarOption<ScopeKind>[] = (
+    allowedScopes ? SCOPE_OPTIONS.filter((option) => allowedScopes.includes(option.value)) : SCOPE_OPTIONS
+  ).map(({ value, label }) => ({ value, label: t(label) }));
 
   const handleScopeChange = useCallback(
     (next: ScopeKind) => {
@@ -131,7 +144,8 @@ export function ScopeSelection({
           <Trans>Harness path</Trans>
         </span>
         <div className="flex items-center gap-1" role="radiogroup" aria-label={t`Harness path`}>
-          {HARNESS_OPTIONS.map(({ value, title, Icon }) => {
+          {HARNESS_OPTIONS.map(({ value, title: titleMsg, Icon }) => {
+            const title = t(titleMsg);
             const active = value === harness;
             return (
               <button

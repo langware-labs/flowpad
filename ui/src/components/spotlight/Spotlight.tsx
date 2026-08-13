@@ -1,3 +1,4 @@
+import { i18n } from '@lingui/core';
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@src/components/ui/command';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { useRecordSearch } from '@src/hooks/use-record-search';
@@ -99,7 +100,7 @@ export function Spotlight() {
     }
   };
 
-  const placeholder = profile.placeholder ?? t`Search…`;
+  const placeholder = profile.placeholder ? i18n._(profile.placeholder) : t`Search…`;
   // Hide the entity chip when only one type is allowed AND it's pinned (no meaningful choice).
   const hideEntityChip = profile.allowedEntityTypes?.length === 1 && !!profile.defaultEntityType;
 
@@ -111,7 +112,7 @@ export function Spotlight() {
       }}
     >
       <DialogContent className="overflow-hidden p-0 sm:max-w-[720px]">
-        <DialogTitle className="sr-only">{profile.label ?? t`Search`}</DialogTitle>
+        <DialogTitle className="sr-only">{profile.label ? i18n._(profile.label) : t`Search`}</DialogTitle>
         <Command
           shouldFilter={false}
           className="[&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-2"

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -377,7 +378,7 @@ export function useAssetsModel() {
         });
       }
       if (failed.length) {
-        notify.error({ title: 'Not copied into context folder', message: failed.join(', ') });
+        notify.error({ title: t`Not copied into context folder`, message: failed.join(', ') });
       }
     },
     [fsTypeId, contextTreeNodeId],
@@ -412,7 +413,7 @@ export function useAssetsModel() {
         });
       } catch (err) {
         console.error('[AssetsNavigator] Failed to add dropped files to context folder:', err);
-        notify.error({ title: 'Failed to add files to context folder' });
+        notify.error({ title: t`Failed to add files to context folder` });
       }
     },
     [fsTypeId, contextTreeNodeId],
@@ -456,7 +457,7 @@ export function useAssetsModel() {
       const copyLinksAction: MultiSelectAction = {
         id: 'copy-links',
         icon: <Link />,
-        label: 'Copy links',
+        label: t`Copy links`,
         // Entity rows only — folder files have no shareable deep link.
         enabledWhen: (items) => items.length > 0 && items.every((n) => n.selectionType !== 'file'),
         run: async (items, ctx) => {
@@ -466,9 +467,9 @@ export function useAssetsModel() {
           if (urls.length === 0) return;
           try {
             await navigator.clipboard.writeText(urls.join('\n'));
-            notify.success({ title: `Copied ${urls.length} link${urls.length > 1 ? 's' : ''}` });
+            notify.success({ title: t`Copied ${urls.length} link${urls.length > 1 ? 's' : ''}` });
           } catch {
-            notify.error({ title: 'Failed to copy links' });
+            notify.error({ title: t`Failed to copy links` });
           }
           ctx.clearSelection();
         },
@@ -516,23 +517,23 @@ export function useAssetsModel() {
     async (rawName: string) => {
       const name = rawName.trim();
       if (!newFolderTarget || !isValidFolderName(name)) {
-        notify.error({ title: 'Invalid folder name' });
+        notify.error({ title: t`Invalid folder name` });
         return;
       }
       const typeId = new TypeId(newFolderTarget.typeid);
       const folderRelPath = joinRelPath(newFolderTarget.relPath, name);
       try {
         if (await fsManager.exists(typeId, folderRelPath)) {
-          notify.error({ title: 'Folder already exists' });
+          notify.error({ title: t`Folder already exists` });
           return;
         }
         await fsManager.mkdir(typeId, folderRelPath);
         fsStore.getState().invalidate(typeId, newFolderTarget.relPath || '/', 'browse');
         refreshNode(markdownFolderNodeId(newFolderTarget.typeid, newFolderTarget.absPath));
-        notify.success({ title: 'Folder created' });
+        notify.success({ title: t`Folder created` });
       } catch (err) {
         console.error('[AssetsNavigator] Failed to create folder:', err);
-        notify.error({ title: 'Failed to create folder' });
+        notify.error({ title: t`Failed to create folder` });
       } finally {
         setNewFolderTarget(null);
       }
@@ -570,7 +571,7 @@ export function useAssetsModel() {
         }
       } catch (err) {
         console.error('[AssetsNavigator] Failed to create:', err);
-        notify.error({ title: 'Failed to create' });
+        notify.error({ title: t`Failed to create` });
       }
       setNewTypeTarget(null);
     },
@@ -590,7 +591,7 @@ export function useAssetsModel() {
       if (sourceRel === destRel) return;
       try {
         if (await fsManager.exists(typeId, destRel)) {
-          notify.error({ title: 'Destination already has an item with that name' });
+          notify.error({ title: t`Destination already has an item with that name` });
           return;
         }
         await fsManager.move(typeId, sourceRel, destRel);
@@ -632,13 +633,13 @@ export function useAssetsModel() {
           await indexType('markdown', effectiveFilter.scope, { force: true });
         } catch (err) {
           console.error('[AssetsNavigator] Markdown reindex after move failed:', err);
-          notify.error({ title: 'Moved, but reindex failed' });
+          notify.error({ title: t`Moved, but reindex failed` });
           return;
         }
-        notify.success({ title: 'Moved' });
+        notify.success({ title: t`Moved` });
       } catch (err) {
         console.error('[AssetsNavigator] Failed to move markdown item:', err);
-        notify.error({ title: 'Failed to move item' });
+        notify.error({ title: t`Failed to move item` });
       }
     },
     [effectiveFilter.scope, effectivePointer, indexType, navigateAsset],

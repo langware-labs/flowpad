@@ -148,7 +148,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
                     isPrompts={isPrompts}
                     lastPromptText={lastPromptText}
                     promptCount={promptCount}
-                    fallback={descriptor.description}
+                    fallback={t(descriptor.description)}
                   />
                 </Tooltip>
               );

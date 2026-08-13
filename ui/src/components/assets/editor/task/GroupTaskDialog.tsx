@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { ActionInfo, ContactsGroup, dataManager, normalizeEmail, Task, TypeId } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import {
@@ -73,15 +74,15 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
       const failed = result?.failed ?? [];
       if (failed.length) {
         notify.warning({
-          title: `Group task created with issues`,
+          title: t`Group task created with issues`,
           message: `${created} member task(s) created; ${failed.length} failed (${failed
             .map((f) => f.email ?? f.error)
             .join(', ')}). Re-run to retry.`,
         });
       } else {
         notify.success({
-          title: 'Group task created',
-          message: `${created} member task(s) created for "${selected.displayName ?? selected.name}".`,
+          title: t`Group task created`,
+          message: t`${created} member task(s) created for "${selected.displayName ?? selected.name}".`,
         });
       }
       // The assignment message (push-notify channel): ONE conversation PER
@@ -105,14 +106,14 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
       }
       if (messageFailures > 0) {
         notify.warning({
-          title: 'Members assigned, but some messages failed',
-          message: `The member tasks were created; ${messageFailures} notification message(s) did not go through.`,
+          title: t`Members assigned, but some messages failed`,
+          message: t`The member tasks were created; ${messageFailures} notification message(s) did not go through.`,
         });
       }
       onOpenChange(false);
     } catch (e) {
       notify.error({
-        title: 'Could not create group task',
+        title: t`Could not create group task`,
         message: e instanceof Error ? e.message : 'The group task could not be created.',
       });
     } finally {
@@ -165,7 +166,7 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Optional message to the members…"
+            placeholder={t`Optional message to the members…`}
             rows={2}
             data-testid="group-task-message"
             className="w-full resize-none rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"

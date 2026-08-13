@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useEffect, useState } from 'react';
 import { DynamicWorkflow, FSRef, ProcessKind } from '@sdk';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
@@ -48,9 +49,9 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
     try {
       await fsRef.write(script);
       setDirty(false);
-      notify.success({ title: 'Workflow saved' });
+      notify.success({ title: t`Workflow saved` });
     } catch (err) {
-      notify.error({ title: 'Save failed', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Save failed`, message: err instanceof Error ? err.message : String(err) });
     } finally {
       setBusy(false);
     }
@@ -61,9 +62,9 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
     try {
       if (dirty) await fsRef.write(script ?? '').then(() => setDirty(false));
       await workflow.run(undefined, { ptyMode });
-      if (!ptyMode) notify.success({ title: 'Workflow launched', message: 'Running in the background.' });
+      if (!ptyMode) notify.success({ title: t`Workflow launched`, message: t`Running in the background.` });
     } catch (err) {
-      notify.error({ title: 'Failed to launch', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Failed to launch`, message: err instanceof Error ? err.message : String(err) });
     } finally {
       setBusy(false);
     }

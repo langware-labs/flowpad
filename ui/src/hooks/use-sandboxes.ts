@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import {
   ActionInfo,
   ComputeNode,
@@ -601,7 +602,7 @@ export function useSandboxes() {
           if (!result.logged_in) {
             notify.warning({
               id: 'sandbox-no-signin',
-              title: 'Sandbox started without cloud sign-in',
+              title: t`Sandbox started without cloud sign-in`,
               message:
                 "Couldn't reach the hub to sign this sandbox in — it may be down or unreachable. You can sign in from inside the sandbox.",
             });
@@ -762,7 +763,7 @@ export function useSandboxes() {
       } catch (err) {
         notify.error({
           id: 'sandbox-logout',
-          title: 'Could not sign the sandbox out',
+          title: t`Could not sign the sandbox out`,
           message: errorMessage(err, 'The sandbox did not confirm the sign-out.'),
         });
       } finally {

@@ -152,7 +152,7 @@ export function DataSourceDialog({
     return (
       <div key={field.key} className="space-y-1">
         <Label htmlFor={`ds-${field.key}`}>
-          {field.label}
+          {t(field.label)}
           {field.required && <span className="ms-1 text-destructive">*</span>}
         </Label>
         {field.kind === 'lines' ? (
@@ -160,7 +160,7 @@ export function DataSourceDialog({
             id={`ds-${field.key}`}
             rows={3}
             value={value}
-            placeholder={field.placeholder}
+            placeholder={field.placeholder ? t(field.placeholder) : undefined}
             onChange={(e) => setField(field.key, e.target.value)}
           />
         ) : (
@@ -168,11 +168,11 @@ export function DataSourceDialog({
             id={`ds-${field.key}`}
             type={field.kind === 'password' ? 'password' : field.kind === 'number' ? 'number' : 'text'}
             value={value}
-            placeholder={field.placeholder}
+            placeholder={field.placeholder ? t(field.placeholder) : undefined}
             onChange={(e) => setField(field.key, e.target.value)}
           />
         )}
-        {field.hint && <p className="text-xs text-muted-foreground">{field.hint}</p>}
+        {field.hint && <p className="text-xs text-muted-foreground">{t(field.hint)}</p>}
       </div>
     );
   };
@@ -204,8 +204,8 @@ export function DataSourceDialog({
                       draft.provider === p.id ? 'border-primary bg-primary/5' : 'border-border'
                     }`}
                   >
-                    <span className="block font-medium">{p.label}</span>
-                    <span className="block text-muted-foreground">{p.blurb}</span>
+                    <span className="block font-medium">{t(p.label)}</span>
+                    <span className="block text-muted-foreground">{t(p.blurb)}</span>
                   </button>
                 ))}
               </div>
@@ -220,7 +220,7 @@ export function DataSourceDialog({
             <Input
               id="ds-name"
               value={draft.name}
-              placeholder={spec?.label}
+              placeholder={spec ? t(spec.label) : undefined}
               onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
             />
           </div>

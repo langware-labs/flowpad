@@ -1,3 +1,6 @@
+import { i18n } from '@lingui/core';
+import { msg, t } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 /**
  * ```breadcrumb fences render as a card of the tests a rules doc governs.
  *
@@ -19,17 +22,8 @@
 import { FileCode, RefreshCw } from 'lucide-react';
 
 import { registerFenceRenderer, type FenceRenderContext, type FenceRenderer } from '../registry';
-import {
-  ensureBreadcrumbContext,
-  invalidateBreadcrumbContext,
-  peekBreadcrumbContext,
-} from './breadcrumb-context';
-import {
-  formatSiteLabel,
-  parseBreadcrumbBlock,
-  type BreadcrumbSite,
-  type BreadcrumbSpec,
-} from './breadcrumb-schema';
+import { ensureBreadcrumbContext, invalidateBreadcrumbContext, peekBreadcrumbContext } from './breadcrumb-context';
+import { formatSiteLabel, parseBreadcrumbBlock, type BreadcrumbSite, type BreadcrumbSpec } from './breadcrumb-schema';
 import { el, iconMarkup } from './dom';
 import { resolveRelPath, type SourceLocation } from './source-location';
 
@@ -46,11 +40,13 @@ const REFRESH_ICON = iconMarkup(RefreshCw);
 type Provenance = 'authored' | 'pending' | 'live' | 'stale';
 
 /** Label and tooltip kept in one table so a new state cannot get half of it. */
-const PROVENANCE: Record<Provenance, { label: string; title: string }> = {
-  authored: { label: 'authored', title: "From this block's own sites list" },
-  pending: { label: '', title: 'Checking the tag index…' },
-  live: { label: 'live', title: 'From the tag index' },
-  stale: { label: 'live · stale', title: 'From the tag index; the last refresh failed' },
+const PROVENANCE: Record<Provenance, { label: MessageDescriptor | null; title: MessageDescriptor }> = {
+  authored: { label: msg`authored`, title: msg`From this block's own sites list` },
+  // `pending` shows no label, only a tooltip — null rather than an empty
+  // `msg`, which would be an invalid (empty) message id.
+  pending: { label: null, title: msg`Checking the tag index…` },
+  live: { label: msg`live`, title: msg`From the tag index` },
+  stale: { label: msg`live · stale`, title: msg`From the tag index; the last refresh failed` },
 };
 
 /** What to draw, resolved from the block and whatever the cache knows. */
@@ -95,7 +91,7 @@ function chipRow(
   chip.appendChild(el('span', 'breadcrumb-card-site-label', label));
 
   if (location.ok) {
-    chip.title = `Preview ${location.path}`;
+    chip.title = t`Preview ${location.path}`;
     chip.addEventListener('click', () => {
       ctx.host.previewFile(location.path, { line: location.line });
     });
@@ -129,10 +125,11 @@ function buildCard(
   tag.setAttribute('data-testid', 'breadcrumb-tag');
   header.appendChild(tag);
 
-  const provenance = el('span', 'breadcrumb-card-provenance', PROVENANCE[state.provenance].label);
+  const provenanceLabel = PROVENANCE[state.provenance].label;
+  const provenance = el('span', 'breadcrumb-card-provenance', provenanceLabel ? i18n._(provenanceLabel) : '');
   provenance.setAttribute('data-testid', 'breadcrumb-provenance');
   provenance.setAttribute('data-provenance', state.provenance);
-  provenance.title = PROVENANCE[state.provenance].title;
+  provenance.title = i18n._(PROVENANCE[state.provenance].title);
   header.appendChild(provenance);
 
   if (refresh) {
@@ -140,7 +137,7 @@ function buildCard(
     button.type = 'button';
     button.setAttribute('data-testid', 'breadcrumb-refresh');
     button.setAttribute('aria-label', 'Refresh from the tag index');
-    button.title = 'Refresh from the tag index';
+    button.title = t`Refresh from the tag index`;
     button.innerHTML = REFRESH_ICON;
     button.addEventListener('click', refresh);
     header.appendChild(button);

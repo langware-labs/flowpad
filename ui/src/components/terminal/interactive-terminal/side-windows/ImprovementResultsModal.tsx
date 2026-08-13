@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import React, { useEffect, useState } from 'react';
 import { ActionInfo, GitWorkdir, type FSRef, dataManager } from '@sdk';
 import { extractBody } from '@sdk/fs/FrontMatterFsRef';
@@ -77,7 +78,7 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
     try {
       const r = await new GitWorkdir(workdir, computeNodeId).discardFile(file, 'M');
       if (r && r.ok === false) {
-        notify.error({ title: 'Could not discard', message: r.message || 'Discard failed' });
+        notify.error({ title: t`Could not discard`, message: r.message || 'Discard failed' });
         return;
       }
       invalidateGitStatus(computeNodeId, workdir);
@@ -85,7 +86,7 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
       onCommitted?.();
       onClose();
     } catch (e) {
-      notify.error({ title: 'Discard failed', message: e instanceof Error ? e.message : String(e) });
+      notify.error({ title: t`Discard failed`, message: e instanceof Error ? e.message : String(e) });
     } finally {
       setBusy(null);
     }
@@ -98,15 +99,15 @@ export const ImprovementResultsModal: React.FC<ImprovementResultsModalProps> = (
       action.bodyParameters = { workdir, file };
       const r = await dataManager.callAction<null, { committed: boolean; version?: number }>(action);
       if (r?.committed) {
-        notify.success({ title: `Committed ${skillName} v${r.version}` });
+        notify.success({ title: t`Committed ${skillName} v${r.version}` });
         invalidateGitStatus(computeNodeId, workdir);
         onCommitted?.();
         onClose();
       } else {
-        notify.info({ title: 'Nothing to commit', message: 'The skill matches HEAD.' });
+        notify.info({ title: t`Nothing to commit`, message: t`The skill matches HEAD.` });
       }
     } catch (e) {
-      notify.error({ title: 'Commit failed', message: e instanceof Error ? e.message : String(e) });
+      notify.error({ title: t`Commit failed`, message: e instanceof Error ? e.message : String(e) });
     } finally {
       setBusy(null);
     }

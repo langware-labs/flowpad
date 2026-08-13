@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { i18n } from '@lingui/core';
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
@@ -307,7 +308,7 @@ export function AssetsPage() {
         await proj.deleteWithChildren();
       },
       onAfterDelete: () => {
-        notify.success({ title: 'Project deleted', message: name });
+        notify.success({ title: t`Project deleted`, message: name });
         navigation.closeDock();
       },
     });
@@ -515,7 +516,7 @@ export function AssetsPage() {
       if (!path || !path.startsWith('/')) {
         notify.error({
           title: t`Asset has no file on disk`,
-          message: `${result.name || result.record_id} is indexed without a valid source path and cannot be opened.`,
+          message: t`${result.name || result.record_id} is indexed without a valid source path and cannot be opened.`,
         });
         return;
       }

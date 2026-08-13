@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { dataContext, FSRef, Markdown, PageId, TypeId, Whiteboard, type APIEntity, type WikiResolveResult } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -88,7 +89,7 @@ export function WikiResolveView({
       await queryClient.invalidateQueries({ queryKey });
     } catch (err) {
       notify.error({
-        title: `Could not create ${createAs}`,
+        title: t`Could not create ${createAs}`,
         message: err instanceof Error ? err.message : String(err),
       });
     } finally {
@@ -316,7 +317,7 @@ function WikiPlainMarkdown({
       plainHeaderActions={(share) => (
         <>
           {authority === 'local' ? (
-            <Button variant="ghost" size="sm" onClick={openFull} title="Open full page" className="gap-1.5">
+            <Button variant="ghost" size="sm" onClick={openFull} title={t`Open full page`} className="gap-1.5">
               <ExternalLink className="h-3.5 w-3.5" />
               Open
             </Button>

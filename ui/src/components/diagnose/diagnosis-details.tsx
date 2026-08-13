@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
 import { useDiagnosisReport } from '@src/components/diagnose/use-diagnosis-report';
 import { copyToClipboard, FlowpadDiagnosis, TypeId } from '@sdk';
@@ -33,10 +34,10 @@ interface Field {
 /** The four labelled diagnosis fields, in display order. */
 function diagnosisFields(diag: FlowpadDiagnosis): Field[] {
   return [
-    { label: 'Summary', value: diag.summary },
-    { label: 'Symptoms', value: diag.symptoms },
-    { label: 'Root cause', value: diag.rca },
-    { label: 'Fix', value: diag.fix },
+    { label: t`Summary`, value: diag.summary },
+    { label: t`Symptoms`, value: diag.symptoms },
+    { label: t`Root cause`, value: diag.rca },
+    { label: t`Fix`, value: diag.fix },
   ];
 }
 
@@ -51,11 +52,11 @@ function diagnosisFields(diag: FlowpadDiagnosis): Field[] {
  */
 function diagnosisDetailFields(diag: FlowpadDiagnosis, diagnosisId: string): Field[] {
   return [
-    { label: 'User', value: diag.reported_by },
-    { label: 'When', value: diag.occurred_at },
-    { label: 'OS', value: diag.os },
-    { label: 'App version', value: diag.app_version },
-    { label: 'Diagnosis id', value: diagnosisId },
+    { label: t`User`, value: diag.reported_by },
+    { label: t`When`, value: diag.occurred_at },
+    { label: t`OS`, value: diag.os },
+    { label: t`App version`, value: diag.app_version },
+    { label: t`Diagnosis id`, value: diagnosisId },
   ];
 }
 

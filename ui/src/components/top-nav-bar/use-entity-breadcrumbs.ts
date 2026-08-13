@@ -357,7 +357,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     dock?.isProjectShell,
     dockKey,
     resolved.entity,
-  ]);  
+  ]);
 
   return { crumbs, targetTypeId, targetTitle };
 }

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { PrefDataType, PrefInfo, PrefOption, soundService } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { SettingRow } from '@src/components/settings/settings-card';
@@ -104,8 +105,8 @@ function SelectControl({
             if (url) void soundService.play(url);
           }}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
-          title="Preview"
-          aria-label="Preview sound"
+          title={t`Preview`}
+          aria-label={t`Preview sound`}
         >
           <Play className="h-3.5 w-3.5" />
         </button>

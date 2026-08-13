@@ -25,11 +25,27 @@ import type { WorkerType } from '@src/components/workers/worker-types';
 // reuse across builds. Raw graph route (not useEntitiesQuery) because system
 // (SDK-shipped) agents only surface with include_system=true. Failed lookups
 // are NOT cached so a late-indexed agent is picked up on the next submit.
+//
+// The SUBAGENT named `vibe` (`.claude/agents/vibe.md`) — the persona carrying
+// the `flow show` presentation contract — NOT the `agent` of the same name.
+// Both exist and the old `/graph/agent` lookup matched on the bare name, so the
+// moment the internal-agents family shipped a launchable `vibe` Agent (a ~20
+// line haiku front for the same subagent), every vibe session silently started
+// riding THAT: a generic "you are the project assistant" prompt with no
+// presentation rules. The visible symptom was the agent presenting its
+// deliverable by shelling `open <file>` — straight into the user's browser —
+// instead of `flow show`. `scope: 'system'` pins it to the SDK-shipped asset so
+// a project subagent someone names `vibe` can't shadow it. This also matches
+// what the seam expects: `load_embedded_agent_action` parses the file with
+// `extract_subagent_from_path`, and the Agent asset has no subagent `name`, so
+// it materialized as a nameless "you are the 'agent' agent".
 let vibeAgentRefCache: string | null = null;
 async function resolveVibeAgentRef(): Promise<string | null> {
   if (vibeAgentRefCache) return vibeAgentRefCache;
-  const rows = await apiClient.get<{ name?: string; asset_ref?: string }[]>('/graph/agent?include_system=true');
-  vibeAgentRefCache = (rows ?? []).find((r) => r.name === 'vibe')?.asset_ref ?? null;
+  const rows = await apiClient.get<{ name?: string; scope?: string; asset_ref?: string }[]>(
+    '/graph/subagent?include_system=true',
+  );
+  vibeAgentRefCache = (rows ?? []).find((r) => r.name === 'vibe' && r.scope === 'system')?.asset_ref ?? null;
   return vibeAgentRefCache;
 }
 

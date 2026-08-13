@@ -508,7 +508,7 @@ export function MessageComposer({
       title={t`Send`}
       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
     >
-      <Send className="h-3.5 w-3.5" />
+      <Send className="h-3.5 w-3.5 rtl:-scale-x-100" />
     </button>
   );
 

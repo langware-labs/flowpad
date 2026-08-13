@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import type { ReactNode } from 'react';
 import { Activity, EyeOff, MessageSquare } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -80,7 +81,7 @@ export function ColumnHeaderBar({
               onClick={onToggleTrace}
             />
           ) : (
-            <ShowButton label="Show Trace" icon={<Activity className="h-3 w-3" />} onClick={onToggleTrace} />
+            <ShowButton label={t`Show Trace`} icon={<Activity className="h-3 w-3" />} onClick={onToggleTrace} />
           )}
         </div>
         {showTime && (
@@ -108,7 +109,7 @@ export function ColumnHeaderBar({
             </div>
             {/* Hide button absolutely overlaid at right edge — zero layout impact */}
             <div className="absolute right-0 top-0 flex h-full items-center pe-0.5">
-              <HideButton label="Time" onClick={onHideTime} />
+              <HideButton label={t`Time`} onClick={onHideTime} />
             </div>
           </div>
         )}
@@ -130,7 +131,7 @@ export function ColumnHeaderBar({
             />
           ) : (
             <ShowButton
-              label="Show Annotations"
+              label={t`Show Annotations`}
               icon={<MessageSquare className="h-3 w-3" />}
               onClick={onToggleAnnotations}
             />

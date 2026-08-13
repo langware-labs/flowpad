@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Invitation,
@@ -150,8 +151,8 @@ function MembershipInvitationRow({
       if (hubMode) await acceptInvitationOnHub(invitation.id);
       else await acceptInvitation({ invitation_id: invitation.id });
       notify.success({
-        title: 'Invitation accepted',
-        message: `${targetLabel} is now available in your workspace.`,
+        title: t`Invitation accepted`,
+        message: t`${targetLabel} is now available in your workspace.`,
         id: 'membership-invite',
       });
       onResolved();
@@ -159,12 +160,12 @@ function MembershipInvitationRow({
       if (isInvitationGoneError(err)) {
         // Orphan: the backend already removed the stale local row — just tell
         // the user and refetch so it drops (and stays gone across refresh).
-        notify.warning({ title: 'Invitation no longer valid', id: 'membership-invite' });
+        notify.warning({ title: t`Invitation no longer valid`, id: 'membership-invite' });
         onResolved();
         return;
       }
       notify.error({
-        title: 'Accept failed',
+        title: t`Accept failed`,
         message: err instanceof Error ? err.message : 'Unknown error.',
         id: 'membership-invite',
       });
@@ -182,12 +183,12 @@ function MembershipInvitationRow({
       onResolved();
     } catch (err) {
       if (isInvitationGoneError(err)) {
-        notify.warning({ title: 'Invitation no longer valid', id: 'membership-invite' });
+        notify.warning({ title: t`Invitation no longer valid`, id: 'membership-invite' });
         onResolved();
         return;
       }
       notify.error({
-        title: 'Decline failed',
+        title: t`Decline failed`,
         message: err instanceof Error ? err.message : 'Unknown error.',
         id: 'membership-invite',
       });

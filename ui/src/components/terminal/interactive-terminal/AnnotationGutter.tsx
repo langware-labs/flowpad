@@ -755,7 +755,7 @@ function AnnotationCell({
         )}
         <div className="my-0.5 border-t border-border" />
         <div className="flex justify-between">
-          <CoordLabel title="Absolute buffer row recorded at click time">
+          <CoordLabel title={t`Absolute buffer row recorded at click time`}>
             <Trans>stored line</Trans>
           </CoordLabel>
           <span className="text-foreground">{storedLine ?? el.absRow}</span>
@@ -772,7 +772,7 @@ function AnnotationCell({
         </div>
         {sessionId && (
           <div className="flex justify-between gap-3">
-            <CoordLabel title="Claude session ID this annotation is associated with">
+            <CoordLabel title={t`Claude session ID this annotation is associated with`}>
               <Trans>session</Trans>
             </CoordLabel>
             <span className="max-w-[130px] truncate text-foreground" title={sessionId}>
@@ -842,14 +842,16 @@ function AnnotationCell({
         )}
         <div className="my-0.5 border-t border-border" />
         <div className="flex justify-between">
-          <CoordLabel title="Current resolved buffer row — prompt annotations position by text-search in xterm buffer">
+          <CoordLabel
+            title={t`Current resolved buffer row — prompt annotations position by text-search in xterm buffer`}
+          >
             <Trans>live row</Trans>
           </CoordLabel>
           <span className="text-foreground">{el.absRow}</span>
         </div>
         {sessionId && (
           <div className="flex justify-between gap-3">
-            <CoordLabel title="Claude session ID from the UserPromptSubmit hook event">
+            <CoordLabel title={t`Claude session ID from the UserPromptSubmit hook event`}>
               <Trans>session</Trans>
             </CoordLabel>
             <span className="max-w-[130px] truncate text-foreground" title={sessionId}>
@@ -859,7 +861,7 @@ function AnnotationCell({
         )}
         {annotation.target_id && (
           <div className="flex justify-between gap-3">
-            <CoordLabel title="AgenticProcess ID this prompt annotation is linked to">
+            <CoordLabel title={t`AgenticProcess ID this prompt annotation is linked to`}>
               <Trans>target</Trans>
             </CoordLabel>
             <span className="max-w-[130px] truncate text-foreground" title={annotation.target_id}>
@@ -920,14 +922,14 @@ function AnnotationCell({
         )}
         <div className="my-0.5 border-t border-border" />
         <div className="flex justify-between">
-          <CoordLabel title="Current resolved buffer row — plan annotations position by text-search in xterm buffer">
+          <CoordLabel title={t`Current resolved buffer row — plan annotations position by text-search in xterm buffer`}>
             <Trans>live row</Trans>
           </CoordLabel>
           <span className="text-foreground">{el.absRow}</span>
         </div>
         {sessionId && (
           <div className="flex justify-between gap-3">
-            <CoordLabel title="Claude session ID from the ExitPlanMode hook event">
+            <CoordLabel title={t`Claude session ID from the ExitPlanMode hook event`}>
               <Trans>session</Trans>
             </CoordLabel>
             <span className="max-w-[130px] truncate text-foreground" title={sessionId}>
@@ -937,7 +939,7 @@ function AnnotationCell({
         )}
         {filePath && (
           <div className="flex justify-between gap-3">
-            <CoordLabel title="Full path to the plan .md file written by the agent">
+            <CoordLabel title={t`Full path to the plan .md file written by the agent`}>
               <Trans>plan file</Trans>
             </CoordLabel>
             <span className="max-w-[130px] truncate text-foreground" title={filePath}>

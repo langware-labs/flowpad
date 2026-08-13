@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useMemo, useState } from 'react';
 import { Check, FileText, Loader2, Plus } from 'lucide-react';
 import { cn } from '@src/lib/utils';
@@ -112,10 +113,10 @@ export function TranslationsPanel({
         </PopoverTrigger>
         <PopoverContent align="start" className="w-64 p-0">
           <Command>
-            <CommandInput placeholder="Search languages…" />
+            <CommandInput placeholder={t`Search languages…`} />
             <CommandList>
               <CommandEmpty>No languages found.</CommandEmpty>
-              <CommandGroup heading="Translate to">
+              <CommandGroup heading={t`Translate to`}>
                 {available.map((target) => (
                   <CommandItem
                     key={target.code}

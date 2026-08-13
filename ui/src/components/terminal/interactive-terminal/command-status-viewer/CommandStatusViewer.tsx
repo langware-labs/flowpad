@@ -54,8 +54,8 @@ function formatValue(v: unknown): string {
 }
 
 function fieldNames(loaded: SnapshotPayload | null, current: SnapshotPayload, section: 'generic' | 'worker'): string[] {
-  const l = (loaded?.[section] ?? {});
-  const c = (current?.[section] ?? {});
+  const l = loaded?.[section] ?? {};
+  const c = current?.[section] ?? {};
   return Array.from(new Set([...Object.keys(l), ...Object.keys(c)])).sort();
 }
 
@@ -174,8 +174,8 @@ export function CommandStatusViewer({ open, onClose, process }: Props) {
                 title={t`Generic options`}
                 section="generic"
                 fields={fieldNames(data.loaded, data.current, 'generic')}
-                loaded={(data.loaded?.generic ?? null)}
-                current={(data.current.generic ?? {})}
+                loaded={data.loaded?.generic ?? null}
+                current={data.current.generic ?? {}}
                 changed={changedSet}
                 showLoaded={!noLoadedYet}
               />
@@ -184,8 +184,8 @@ export function CommandStatusViewer({ open, onClose, process }: Props) {
                 title={t`Worker options${data.worker_type ? ` (${data.worker_type})` : ''}`}
                 section="worker"
                 fields={fieldNames(data.loaded, data.current, 'worker')}
-                loaded={(data.loaded?.worker ?? null)}
-                current={(data.current.worker ?? {})}
+                loaded={data.loaded?.worker ?? null}
+                current={data.current.worker ?? {}}
                 changed={changedSet}
                 showLoaded={!noLoadedYet}
               />

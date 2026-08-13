@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { Fragment } from 'react';
 import type { RowSyncData } from './use-time-gutter';
 import type { TraceFilters } from './InteractiveTerminal';
@@ -73,32 +74,32 @@ function SegmentBorderTooltipContent({
   const endRow = segment.baseAbsRow + segment.rows - 1;
   const lines: { label: string; value: string; sub?: string }[] = [
     {
-      label: 'Boundary',
+      label: t`Boundary`,
       value: isStart && isEnd ? 'Start & End' : isStart ? 'Segment Start' : 'Segment End',
     },
     {
-      label: 'Start time',
+      label: t`Start time`,
       value: formatTimestamp(segment.startTime),
       sub: new Date(segment.startTime).toLocaleString(),
     },
     {
-      label: 'End time',
+      label: t`End time`,
       value: `${formatTimestamp(segment.endTime)}${segment.finalized ? '' : ' (live)'}`,
       sub: new Date(segment.endTime).toLocaleString(),
     },
-    { label: 'Duration', value: formatDurationMs(durMs) },
-    { label: 'Row range', value: `@${segment.baseAbsRow} → @${endRow}`, sub: `${segment.rows} rows` },
+    { label: t`Duration`, value: formatDurationMs(durMs) },
+    { label: t`Row range`, value: `@${segment.baseAbsRow} → @${endRow}`, sub: `${segment.rows} rows` },
   ];
   if (segment.startAnchor) {
     lines.push({
-      label: 'Start anchor',
+      label: t`Start anchor`,
       value: segment.startAnchor.text.slice(0, 40),
       sub: formatISOFull(segment.startAnchor.time),
     });
   }
   if (segment.endAnchor) {
     lines.push({
-      label: 'End anchor',
+      label: t`End anchor`,
       value: segment.endAnchor.text.slice(0, 40),
       sub: formatISOFull(segment.endAnchor.time),
     });
@@ -139,31 +140,31 @@ function RowTooltipContent({ row, absRow, filters, ptySyncSession, ref_ }: RowTo
     if (row.timestamp !== null) {
       const d = new Date(row.timestamp);
       lines.push({
-        label: 'PTY time',
+        label: t`PTY time`,
         value: `${formatTimestamp(row.timestamp)} (${formatTimeAgo(row.timestamp)})`,
         sub: d.toLocaleString(),
       });
     } else {
-      lines.push({ label: 'PTY time', value: 'no chunk timestamp' });
+      lines.push({ label: t`PTY time`, value: 'no chunk timestamp' });
     }
   }
 
   if (filters.index) {
     lines.push({
-      label: 'Seq #',
+      label: t`Seq #`,
       value: row.ownerSeq !== null ? `#${row.ownerSeq}` : 'none',
     });
   }
 
   if (filters.line) {
     lines.push({
-      label: 'Logical line',
+      label: t`Logical line`,
       value: row.logicalLine !== null ? `L${row.logicalLine}` : 'none',
     });
   }
 
   if (filters.absLine) {
-    lines.push({ label: 'Abs row', value: `@${absRow}` });
+    lines.push({ label: t`Abs row`, value: `@${absRow}` });
   }
 
   if (filters.debugTime) {
@@ -171,12 +172,12 @@ function RowTooltipContent({ row, absRow, filters, ptySyncSession, ref_ }: RowTo
     if (range) {
       const durMs = range.endTime - range.startTime;
       lines.push({
-        label: 'Segment dur',
+        label: t`Segment dur`,
         value: formatDurationMs(durMs),
         sub: `${(durMs / 1000).toFixed(3)}s raw`,
       });
     } else {
-      lines.push({ label: 'Segment dur', value: 'no segment' });
+      lines.push({ label: t`Segment dur`, value: 'no segment' });
     }
   }
 
@@ -184,12 +185,12 @@ function RowTooltipContent({ row, absRow, filters, ptySyncSession, ref_ }: RowTo
     if (ref_) {
       const durMs = new Date(ref_.stopTime).getTime() - new Date(ref_.startTime).getTime();
       lines.push({
-        label: 'Anchor range',
+        label: t`Anchor range`,
         value: `${formatISOTime(ref_.startTime)} → ${formatISOTime(ref_.stopTime)}`,
         sub: `duration: ${formatDurationMs(durMs)} · ${formatISOFull(ref_.startTime)}`,
       });
     } else {
-      lines.push({ label: 'Anchor range', value: 'no anchor for this row' });
+      lines.push({ label: t`Anchor range`, value: 'no anchor for this row' });
     }
   }
 

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { Folder, FolderPlus, FolderTree, GitBranch, Trash2 } from 'lucide-react';
@@ -282,7 +283,7 @@ function dirNode(row: DirRow, deps: AssetContextFoldersRootDeps, locatorTypeId: 
             {
               id: 'remove',
               icon: <Trash2 className="h-3 w-3" />,
-              label: 'Remove context folder',
+              label: t`Remove context folder`,
               run: () => onRemove(dir),
             },
           ]
@@ -306,7 +307,7 @@ export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): Brow
       {
         id: 'add',
         icon: <FolderPlus className="h-3.5 w-3.5" />,
-        label: 'Add context folder',
+        label: t`Add context folder`,
         run: onAdd,
       },
     ],
