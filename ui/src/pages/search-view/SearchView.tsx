@@ -5,13 +5,28 @@ import { SearchCalibrationPanel } from '@src/components/search-calibration/Searc
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { IndexNowModal } from '@src/components/search-index/IndexNowModal';
 import { IndexRecommendedBanner } from '@src/components/search-index/IndexRecommendedBanner';
-import { INDEX_BUILD_LABEL, INDEX_PROMPT_DESCRIPTION, INDEX_PROMPT_TITLE } from '@src/components/search-index/index-copy';
+import {
+  INDEX_BUILD_LABEL,
+  INDEX_PROMPT_DESCRIPTION,
+  INDEX_PROMPT_TITLE,
+} from '@src/components/search-index/index-copy';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@src/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { dataContext, dataManager, systemTools } from '@sdk';
-import { SearchCalibration, SearchFilters, loadStoredCalibration, saveCalibration, useRecordSearch } from '@src/hooks/use-record-search';
+import {
+  SearchCalibration,
+  SearchFilters,
+  loadStoredCalibration,
+  saveCalibration,
+  useRecordSearch,
+} from '@src/hooks/use-record-search';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
@@ -32,16 +47,24 @@ function loadStoredFilters(): SearchFilters {
 }
 
 function saveFilters(f: SearchFilters) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(f)); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(f));
+  } catch {
+    /* ignore */
+  }
 }
 
 function clearStoredFilters() {
-  try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
+  try {
+    localStorage.removeItem(LS_KEY);
+  } catch {
+    /* ignore */
+  }
 }
 
 function SkeletonCard() {
   return (
-    <div className="flex flex-col gap-2 rounded-lg border bg-card px-4 py-3 animate-pulse">
+    <div className="flex animate-pulse flex-col gap-2 rounded-lg border bg-card px-4 py-3">
       <div className="flex items-center gap-2">
         <div className="h-4 w-14 rounded bg-muted" />
         <div className="h-4 flex-1 rounded bg-muted" />
@@ -111,10 +134,13 @@ export function SearchView() {
   const [modalOpen, setModalOpen] = useState(false);
 
   const indexState: IndexState =
-    statusState.phase !== 'ready' ? 'loading'
-    : statusState.status.never_indexed ? 'never_indexed'
-    : statusState.status.stale ? 'stale'
-    : 'ok';
+    statusState.phase !== 'ready'
+      ? 'loading'
+      : statusState.status.never_indexed
+        ? 'never_indexed'
+        : statusState.status.stale
+          ? 'stale'
+          : 'ok';
 
   // Sync from URL when dock options change (e.g., browser back/forward)
   useEffect(() => {
@@ -188,26 +214,26 @@ export function SearchView() {
     <div className="flex h-full flex-col gap-4 overflow-hidden p-6" data-testid="search-view">
       {/* Header */}
       <div className="flex shrink-0 items-center gap-3">
-        <h1 className="text-lg font-semibold"><Trans>Search</Trans></h1>
+        <h1 className="text-lg font-semibold">
+          <Trans>Search</Trans>
+        </h1>
         {results.length > 0 && !isLoading && (
           <Badge variant="secondary" className="text-xs">
             {results.length} result{results.length !== 1 ? 's' : ''}
           </Badge>
         )}
-        {latencyMs != null && !isLoading && (
-          <span className="text-xs text-muted-foreground">⚡ {latencyMs} ms</span>
-        )}
+        {latencyMs != null && !isLoading && <span className="text-xs text-muted-foreground">⚡ {latencyMs} ms</span>}
         {scanInfo?.total_indexed != null && (
           <span className="text-xs text-muted-foreground">
             {scanInfo.total_indexed.toLocaleString()} <Trans>indexed</Trans>
           </span>
         )}
         {indexState === 'stale' && (
-          <Badge variant="outline" className="text-xs text-amber-600 border-amber-400">
+          <Badge variant="outline" className="border-amber-400 text-xs text-amber-600">
             <Trans>refresh recommended</Trans>
           </Badge>
         )}
-        <div className="ml-auto">
+        <div className="ms-auto">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7">
@@ -218,8 +244,10 @@ export function SearchView() {
               <DropdownMenuItem onClick={() => navigation.openDock(DockPointer.forFsRecordsScanner())}>
                 <Trans>Records Scan</Trans>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleCalibrationChange({ ...calibration, visible: !calibration.visible })}>
-                <SlidersHorizontal className="mr-2 h-4 w-4" />
+              <DropdownMenuItem
+                onClick={() => handleCalibrationChange({ ...calibration, visible: !calibration.visible })}
+              >
+                <SlidersHorizontal className="me-2 h-4 w-4" />
                 <Trans>Search Calibration</Trans>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -237,7 +265,7 @@ export function SearchView() {
       </div>
 
       {/* Search bar row — with refresh button */}
-      <div className="shrink-0 flex items-start gap-2">
+      <div className="flex shrink-0 items-start gap-2">
         <div className="flex-1">
           <RecordSearchBar
             compact={false}
@@ -253,7 +281,7 @@ export function SearchView() {
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 shrink-0 mt-0.5"
+              className="mt-0.5 h-9 w-9 shrink-0"
               onClick={handleRebuildIndex}
               disabled={busy}
               data-testid="rebuild-index"
@@ -261,12 +289,13 @@ export function SearchView() {
               <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
             </Button>
           </TooltipTrigger>
-          <TooltipContent><Trans>Refresh search data</Trans></TooltipContent>
+          <TooltipContent>
+            <Trans>Refresh search data</Trans>
+          </TooltipContent>
         </Tooltip>
       </div>
 
       <ActivityIndicator variant="strip" />
-
 
       {/* Stale banner — between search bar and calibration panel */}
       {indexState === 'stale' && statusState.phase === 'ready' && (
@@ -279,11 +308,7 @@ export function SearchView() {
 
       {/* Calibration panel */}
       {calibration.visible && (
-        <SearchCalibrationPanel
-          calibration={calibration}
-          onChange={handleCalibrationChange}
-          latencyMs={latencyMs}
-        />
+        <SearchCalibrationPanel calibration={calibration} onChange={handleCalibrationChange} latencyMs={latencyMs} />
       )}
 
       {/* Results */}
@@ -291,7 +316,9 @@ export function SearchView() {
         {!indexerReady && (
           <div className="flex items-start gap-2 rounded-lg border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span><Trans>Search index is warming up. Results will appear once indexing is complete.</Trans></span>
+            <span>
+              <Trans>Search index is warming up. Results will appear once indexing is complete.</Trans>
+            </span>
           </div>
         )}
 
@@ -331,11 +358,17 @@ export function SearchView() {
               </>
             ) : (
               <div>
-                <p className="font-medium"><Trans>No records found</Trans></p>
+                <p className="font-medium">
+                  <Trans>No records found</Trans>
+                </p>
                 {query.trim() ? (
-                  <p className="text-sm"><Trans>No records found for &ldquo;{query}&rdquo;</Trans></p>
+                  <p className="text-sm">
+                    <Trans>No records found for &ldquo;{query}&rdquo;</Trans>
+                  </p>
                 ) : (
-                  <p className="text-sm"><Trans>No records of this type</Trans></p>
+                  <p className="text-sm">
+                    <Trans>No records of this type</Trans>
+                  </p>
                 )}
               </div>
             )}
@@ -356,11 +389,13 @@ export function SearchView() {
         <IndexNowModal
           open={modalOpen}
           types={statusState.status.default_types}
-          onComplete={() => { setModalOpen(false); refreshStatus(); }}
+          onComplete={() => {
+            setModalOpen(false);
+            refreshStatus();
+          }}
           onDeny={() => setModalOpen(false)}
         />
       )}
-
     </div>
   );
 }

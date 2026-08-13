@@ -422,12 +422,14 @@ function IntentSection({
     <div className="overflow-hidden rounded-lg border">
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-2 bg-muted/40 px-3 py-2 text-left hover:bg-muted/60"
+        className="flex w-full items-center justify-between gap-2 bg-muted/40 px-3 py-2 text-start hover:bg-muted/60"
         onClick={() => setOpen((v) => !v)}
         data-testid={`intent-section-${intent.intent}`}
       >
         <div className="flex items-center gap-2">
-          <Chevron className="h-4 w-4 text-muted-foreground" />
+          {/* Only the COLLAPSED caret points along the reading direction,
+              so only it mirrors in RTL; the open one points down. */}
+          <Chevron className={cn('h-4 w-4 text-muted-foreground', !open && 'rtl:-scale-x-100')} />
           <span className="text-sm font-medium">{intent.label}</span>
           <span className="text-xs text-muted-foreground">({intent.capabilities.length})</span>
         </div>

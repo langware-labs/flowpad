@@ -8,7 +8,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { agenticProcessName, openAgenticProcess, resolveAgenticProcessName } from '@src/navigation/agentic-process-open';
+import {
+  agenticProcessName,
+  openAgenticProcess,
+  resolveAgenticProcessName,
+} from '@src/navigation/agentic-process-open';
 import {
   acknowledgePending,
   formatTimeAgo,
@@ -79,14 +83,8 @@ export function PendingActionsChip() {
   // The shown set: the user's selection, or all supported modes when nothing
   // is narrowed. Memoized so the `filtered` memo below stays stable across
   // renders where neither input changed.
-  const effective: readonly string[] = useMemo(
-    () => (selected.length ? selected : supported),
-    [selected, supported],
-  );
-  const filtered = useMemo(
-    () => allRows.filter((e) => effective.includes(e.mode)),
-    [allRows, effective],
-  );
+  const effective: readonly string[] = useMemo(() => (selected.length ? selected : supported), [selected, supported]);
+  const filtered = useMemo(() => allRows.filter((e) => effective.includes(e.mode)), [allRows, effective]);
 
   // When the popover opens, lazily fetch each row's process (+ its ClaudeSession
   // / Shell) and its Project so the cached names replace the id fragments. Both
@@ -201,10 +199,7 @@ export function PendingActionsChip() {
               keeps the bar in place; only the scrollable body below it changes
               when a filter is toggled, so the header never moves. */}
           {supported.length > 1 && (
-            <div
-              className="flex shrink-0 items-center border-b px-2 py-1.5"
-              data-testid="worker-mode-bar"
-            >
+            <div className="flex shrink-0 items-center border-b px-2 py-1.5" data-testid="worker-mode-bar">
               <EntityTypeBar
                 selected={selected}
                 onChange={setSelected}
@@ -220,27 +215,19 @@ export function PendingActionsChip() {
               (which opens upward) never resizes when the filtered count
               changes, so the pinned filter bar above stays put. */}
           <div className="h-64 overflow-y-auto" data-testid="worker-list-body">
-          {rows.length === 0 ? (
-            <div
-              className="px-2 py-3 text-center text-xs text-muted-foreground"
-              data-testid="worker-list-empty"
-            >
-              {effective.length === 1 && effective[0] === ExecutionMode.External
-                ? 'No external workers detected'
-                : 'No agents match this filter'}
-            </div>
-          ) : (
-            <ul className="flex flex-col">
-              {rows.map((row) => (
-                <WorkerRow
-                  key={row.processId}
-                  row={row}
-                  onPick={handlePick}
-                  onRenamed={bumpNameTick}
-                />
-              ))}
-            </ul>
-          )}
+            {rows.length === 0 ? (
+              <div className="px-2 py-3 text-center text-xs text-muted-foreground" data-testid="worker-list-empty">
+                {effective.length === 1 && effective[0] === ExecutionMode.External
+                  ? 'No external workers detected'
+                  : 'No agents match this filter'}
+              </div>
+            ) : (
+              <ul className="flex flex-col">
+                {rows.map((row) => (
+                  <WorkerRow key={row.processId} row={row} onPick={handlePick} onRenamed={bumpNameTick} />
+                ))}
+              </ul>
+            )}
           </div>
         </PopoverContent>
       </Popover>
@@ -291,14 +278,14 @@ const WorkerRow = memo(function WorkerRow({
   }
 
   const rowClass = [
-    'flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm',
+    'flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-start text-sm',
     row.pending ? 'animate-pending-glow' : '',
   ]
     .filter(Boolean)
     .join(' ');
 
   return (
-    <li className="group flex items-center rounded pr-1 hover:bg-muted" data-pending={row.pending ? 'true' : undefined}>
+    <li className="group flex items-center rounded pe-1 hover:bg-muted" data-pending={row.pending ? 'true' : undefined}>
       <button
         type="button"
         onClick={() => void onPick(row.processId, row.mode)}
@@ -328,7 +315,7 @@ const WorkerRow = memo(function WorkerRow({
       >
         <Pencil className="h-3 w-3" />
       </button>
-      <span className="shrink-0 pl-1 text-xs tabular-nums text-muted-foreground">{row.lastActive}</span>
+      <span className="shrink-0 ps-1 text-xs tabular-nums text-muted-foreground">{row.lastActive}</span>
     </li>
   );
 });

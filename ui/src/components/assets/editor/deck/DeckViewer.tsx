@@ -65,16 +65,19 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
         if (!ref) {
           const files = await fsRef.ls();
           ref =
-            files.find(
-              (f) => f.path.toLowerCase().endsWith('.html') && !f.path.toLowerCase().endsWith('.mcp.html'),
-            ) ?? null;
+            files.find((f) => f.path.toLowerCase().endsWith('.html') && !f.path.toLowerCase().endsWith('.mcp.html')) ??
+            null;
         }
         if (!ref) throw new Error('No deck HTML in this folder.');
         // deck.json is nice-to-have (slide count + provenance) — a missing/invalid
         // one leaves those unset, never fails the deck itself.
         const [text, manifest] = await Promise.all([
           ref.read(),
-          fsRef.child('deck.json').read().then(JSON.parse).catch(() => null),
+          fsRef
+            .child('deck.json')
+            .read()
+            .then(JSON.parse)
+            .catch(() => null),
         ]);
         if (cancelled) return;
         setHtml(text);
@@ -125,7 +128,7 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
         {numSlides && numSlides > 0 ? (
           <span className="shrink-0 text-xs text-neutral-500">{numSlides} slides</span>
         ) : null}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ms-auto flex items-center gap-1">
           {templateVpath ? (
             <button
               type="button"

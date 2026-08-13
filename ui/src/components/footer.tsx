@@ -86,10 +86,10 @@ export function Footer({ className = '' }: FooterProps) {
 
         {/* Status bar with project name — the single flexible slot that yields
             (its project name truncates) so the bar never overruns. */}
-        <StatusBar className="min-w-0 flex-1 sm:ml-4" />
+        <StatusBar className="min-w-0 flex-1 sm:ms-4" />
 
         {/* Version + Powered by on the right */}
-        <div className="flex w-full min-w-0 items-center justify-end gap-1 overflow-hidden sm:ml-auto sm:w-auto sm:flex-none sm:gap-2">
+        <div className="flex w-full min-w-0 items-center justify-end gap-1 overflow-hidden sm:ms-auto sm:w-auto sm:flex-none sm:gap-2">
           <PendingActionsChip />
           <AdvancedOnly reserve={false}>
             <IndexerStatusPill />
@@ -110,7 +110,9 @@ export function Footer({ className = '' }: FooterProps) {
               data-testid="footer-helpdesk-button"
             >
               <LifeBuoy className="h-3.5 w-3.5" />
-              <span className="cq-helpdesk-label"><Trans>Help desk</Trans></span>
+              <span className="cq-helpdesk-label">
+                <Trans>Help desk</Trans>
+              </span>
             </button>
           )}
           {/* `isHubOnly()`, not `hubMode`: this gate is runtime-shaped, not

@@ -21,15 +21,7 @@ function formatSize(bytes: number): string {
  * (mirrors the composer's PendingFileChip) so an attached image reads as an
  * image, not a nameless binary; everything else shows a small file icon.
  */
-export function PickedFileRow({
-  file,
-  disabled,
-  onRemove,
-}: {
-  file: File;
-  disabled?: boolean;
-  onRemove: () => void;
-}) {
+export function PickedFileRow({ file, disabled, onRemove }: { file: File; disabled?: boolean; onRemove: () => void }) {
   const image = isImageFile(file);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -144,20 +136,21 @@ export function usePickedFiles({ enabled, disabled }: { enabled: boolean; disabl
     setDragging(false);
   }, []);
 
-  const dragProps = enabled && !disabled
-    ? {
-        onDragOver: (e: React.DragEvent) => {
-          e.preventDefault();
-          setDragging(true);
-        },
-        onDragLeave: () => setDragging(false),
-        onDrop: (e: React.DragEvent) => {
-          e.preventDefault();
-          setDragging(false);
-          addFiles(e.dataTransfer.files);
-        },
-      }
-    : undefined;
+  const dragProps =
+    enabled && !disabled
+      ? {
+          onDragOver: (e: React.DragEvent) => {
+            e.preventDefault();
+            setDragging(true);
+          },
+          onDragLeave: () => setDragging(false),
+          onDrop: (e: React.DragEvent) => {
+            e.preventDefault();
+            setDragging(false);
+            addFiles(e.dataTransfer.files);
+          },
+        }
+      : undefined;
 
   return { inputId, files: picked.files, rejected: picked.rejected, dragging, addFiles, removeAt, clear, dragProps };
 }
@@ -225,20 +218,15 @@ export function PickedFileList({
   return (
     <>
       {files.length > 0 && (
-        <ul className={cn('flex flex-wrap gap-1.5 text-left', className)}>
+        <ul className={cn('flex flex-wrap gap-1.5 text-start', className)}>
           {/* name+size is unique (mergePickedFiles dedupes on it); no index in
               the key so removal doesn't remount later chips' object URLs. */}
           {files.map((f, i) => (
-            <PickedFileRow
-              key={`${f.name}-${f.size}`}
-              file={f}
-              disabled={disabled}
-              onRemove={() => onRemoveAt(i)}
-            />
+            <PickedFileRow key={`${f.name}-${f.size}`} file={f} disabled={disabled} onRemove={() => onRemoveAt(i)} />
           ))}
         </ul>
       )}
-      {rejected && <p className={cn('text-left text-[11px] text-destructive', className)}>{rejected}</p>}
+      {rejected && <p className={cn('text-start text-[11px] text-destructive', className)}>{rejected}</p>}
     </>
   );
 }

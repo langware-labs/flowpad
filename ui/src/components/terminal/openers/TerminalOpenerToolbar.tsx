@@ -15,6 +15,7 @@ import { useCallback } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { OpenerDescriptor, OpenerId } from './tab_opener_types';
+import { OpenerWarningBadge } from './OpenerWarningBadge';
 import { usePinnedOpeners } from './usePinnedOpeners';
 
 interface Props {
@@ -24,19 +25,6 @@ interface Props {
 
 function dockerNodeName(node: ComputeNode): string {
   return (node as { uname?: string }).uname?.replace(/^docker-/, '') ?? node.id;
-}
-
-/** Small "!" sub-icon overlaid on an opener whose capability check failed. */
-function OpenerWarningBadge({ openerId }: { openerId: OpenerId }) {
-  return (
-    <span
-      className="absolute -right-0.5 -top-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold leading-none text-black"
-      data-testid={`opener-warning-${openerId}`}
-      aria-hidden="true"
-    >
-      !
-    </span>
-  );
 }
 
 export function getInlineOpeners(
@@ -91,7 +79,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
     ) : (
       <>
         <Icon className={`h-4 w-4 ${opener.iconClassName ?? ''}`} />
-        {opener.warning && <OpenerWarningBadge openerId={opener.id} />}
+        {opener.warning && <OpenerWarningBadge id={opener.id} />}
       </>
     );
 
@@ -175,7 +163,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
           e.stopPropagation();
           togglePin(opener.id);
         }}
-        className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+        className="ms-auto inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground"
         aria-label={pinned ? t`Unpin ${opener.label}` : t`Pin ${opener.label}`}
         title={pinned ? t`Unpin` : t`Pin`}
         data-testid={`opener-pin-toggle-${opener.id}`}
@@ -188,7 +176,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
     if (opener.id === 'docker' && opener.dockerNodes && opener.dockerNodes.length > 1) {
       return (
         <DropdownMenuSub key={opener.id}>
-          <DropdownMenuSubTrigger className="gap-2 pr-1" data-testid={`opener-menu-row-${opener.id}`}>
+          <DropdownMenuSubTrigger className="gap-2 pe-1" data-testid={`opener-menu-row-${opener.id}`}>
             <Icon className={`h-4 w-4 ${opener.iconClassName ?? ''}`} />
             <span>{opener.label}</span>
             {pinButton}
@@ -221,13 +209,13 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
         key={opener.id}
         onSelect={onSelect}
         disabled={opener.disabled}
-        className="gap-2 pr-1"
+        className="gap-2 pe-1"
         data-testid={`opener-menu-row-${opener.id}`}
         title={opener.warning ?? undefined}
       >
         <span className="relative inline-flex">
           <Icon className={`h-4 w-4 ${opener.iconClassName ?? ''}`} />
-          {opener.warning && <OpenerWarningBadge openerId={opener.id} />}
+          {opener.warning && <OpenerWarningBadge id={opener.id} />}
         </span>
         <span>{opener.label}</span>
         {pinButton}
@@ -236,7 +224,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
   };
 
   return (
-    <div className="flex shrink-0 items-center gap-1 border-l px-1" data-testid="terminal-tab-end-toolbar">
+    <div className="flex shrink-0 items-center gap-1 border-s px-1" data-testid="terminal-tab-end-toolbar">
       {inlineOpeners.map(renderInline)}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

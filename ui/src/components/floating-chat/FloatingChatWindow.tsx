@@ -98,18 +98,14 @@ export function FloatingChatWindow() {
   const { project: flowpadAssistantProject, target, isLoading } = useFlowpadAssistantProject();
   const [ptyExperiment] = useState<boolean>(() => loadPtyChatExperiment());
 
-  const [bounds, setBounds] = useState<Bounds>(() =>
-    clampToViewport(loadBounds() ?? defaultBounds()),
-  );
+  const [bounds, setBounds] = useState<Bounds>(() => clampToViewport(loadBounds() ?? defaultBounds()));
 
   // Animation phase. Mount lifecycle is gated on `phase !== 'closed'` so the
   // node stays in the DOM while the close transition runs.
   // If `open` was restored from localStorage (the user reloaded with the chat
   // open), start in the resting `open` phase and skip the entrance animation
   // — there's no triggerRect to animate from after a refresh.
-  const [phase, setPhase] = useState<Phase>(() =>
-    restoredFromStorage && open ? 'open' : 'closed',
-  );
+  const [phase, setPhase] = useState<Phase>(() => (restoredFromStorage && open ? 'open' : 'closed'));
 
   useEffect(() => {
     if (open) {
@@ -168,9 +164,7 @@ export function FloatingChatWindow() {
   const onHeaderPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragStateRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
-    setBounds((prev) =>
-      clampToViewport({ ...prev, x: e.clientX - drag.offX, y: e.clientY - drag.offY }),
-    );
+    setBounds((prev) => clampToViewport({ ...prev, x: e.clientX - drag.offX, y: e.clientY - drag.offY }));
   }, []);
 
   const onHeaderPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -276,16 +270,12 @@ export function FloatingChatWindow() {
         onPointerCancel={onHeaderPointerUp}
         data-testid="floating-chat-drag-handle"
       >
-        <img
-          src={logoSrc}
-          alt=""
-          className="h-5 w-5 flex-shrink-0 object-contain"
-        />
+        <img src={logoSrc} alt="" className="h-5 w-5 flex-shrink-0 object-contain" />
         <span className="flex-1 truncate text-xs font-medium">
           <Trans>Flowpad Assistant</Trans>
           {ptyExperiment && (
             <span
-              className="ml-1.5 rounded bg-amber-500/15 px-1 py-px text-[9px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400"
+              className="ms-1.5 rounded bg-amber-500/15 px-1 py-px text-[9px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400"
               data-testid="floating-chat-pty-experiment-badge"
             >
               <Trans>pty experiment</Trans>
@@ -329,7 +319,11 @@ export function FloatingChatWindow() {
           />
         ) : (
           <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-muted-foreground">
-            {isLoading ? <Trans>Loading Flowpad Assistant…</Trans> : <Trans>Flowpad Assistant project not available.</Trans>}
+            {isLoading ? (
+              <Trans>Loading Flowpad Assistant…</Trans>
+            ) : (
+              <Trans>Flowpad Assistant project not available.</Trans>
+            )}
           </div>
         )}
       </div>

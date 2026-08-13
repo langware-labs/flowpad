@@ -86,7 +86,7 @@ export function AnnotatorToolbar({
         <Eraser className="h-4 w-4" />
       </button>
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ms-auto flex items-center gap-2">
         <button
           type="button"
           onClick={onCancel}

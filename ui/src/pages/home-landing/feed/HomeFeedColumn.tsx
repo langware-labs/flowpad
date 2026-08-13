@@ -182,7 +182,7 @@ export function HomeFeedColumn() {
                 onClick={() => void handleDismissAll()}
                 data-testid="home-feed-dismiss-all"
               >
-                <EyeOff className="mr-1 h-3.5 w-3.5" />
+                <EyeOff className="me-1 h-3.5 w-3.5" />
                 <Trans>Dismiss all</Trans>
               </Button>
             )}
@@ -250,7 +250,7 @@ export function HomeFeedColumn() {
                 </Button>
               </DialogClose>
               <Button type="submit" disabled={!canCreateNote}>
-                <Send className="mr-2 h-3.5 w-3.5" />
+                <Send className="me-2 h-3.5 w-3.5" />
                 <Trans>Add</Trans>
               </Button>
             </DialogFooter>

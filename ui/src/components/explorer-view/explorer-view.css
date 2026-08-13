@@ -67,7 +67,7 @@
 /* Tree view styling */
 .explorer-view-container .wx-tree {
   background: hsl(var(--muted));
-  border-right: 1px solid hsl(var(--border));
+  border-inline-end: 1px solid hsl(var(--border));
 }
 
 /* Context menu styling */

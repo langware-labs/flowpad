@@ -5,12 +5,7 @@ import { Search } from 'lucide-react';
 import { Input } from '@src/components/ui/input';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Label } from '@src/components/ui/label';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@src/components/ui/accordion';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@src/components/ui/accordion';
 import type { ClaudeSettingsJsonRecordList } from '@sdk';
 import { flattenSettings, matchesSearch, groupByCategory, CATEGORY_ORDER } from './settings-utils';
 import { SettingsFieldRow } from './SettingsFieldRow';
@@ -67,7 +62,7 @@ export function ClaudeSettingsPanel({
             placeholder={t`Search settings...`}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
+            className="ps-9"
           />
         </div>
         <div className="flex items-center gap-2">
@@ -76,7 +71,7 @@ export function ClaudeSettingsPanel({
             checked={showOverrides}
             onCheckedChange={(checked) => setShowOverrides(checked === true)}
           />
-          <Label htmlFor="show-overrides" className="text-sm whitespace-nowrap cursor-pointer">
+          <Label htmlFor="show-overrides" className="cursor-pointer whitespace-nowrap text-sm">
             <Trans>Show scope overrides</Trans>
           </Label>
         </div>
@@ -91,7 +86,7 @@ export function ClaudeSettingsPanel({
         </div>
       ) : isSearching ? (
         /* Flat list when searching */
-        <div className="rounded-lg border divide-y">
+        <div className="divide-y rounded-lg border">
           {filteredFields.map((field) => (
             <div
               key={field.key}
@@ -113,17 +108,12 @@ export function ClaudeSettingsPanel({
             <AccordionItem key={category} value={category}>
               <AccordionTrigger className="text-sm font-semibold">
                 {category}
-                <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  ({fields.length})
-                </span>
+                <span className="ms-2 text-xs font-normal text-muted-foreground">({fields.length})</span>
               </AccordionTrigger>
               <AccordionContent>
                 <div className="divide-y">
                   {fields.map((field) => (
-                    <div
-                      key={field.key}
-                      ref={field.key === initialFieldName ? highlightedFieldRef : undefined}
-                    >
+                    <div key={field.key} ref={field.key === initialFieldName ? highlightedFieldRef : undefined}>
                       <SettingsFieldRow
                         field={field}
                         showOverrides={showOverrides}

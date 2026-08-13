@@ -1,5 +1,16 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, Flag, Hand, ListPlus, Maximize2, MessageSquare, Puzzle, SquareTerminal, User } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  Flag,
+  Hand,
+  ListPlus,
+  Maximize2,
+  MessageSquare,
+  Puzzle,
+  SquareTerminal,
+  User,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Slider } from '@src/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -32,7 +43,14 @@ const EVENT_ICON: Record<string, LucideIcon> = {
 
 // Outline-only event kinds surfaced on the timeline.
 const OUTLINE_EVENT_KINDS = new Set([
-  'user_prompt', 'interrupt', 'skill_load', 'skill_fail', 'task_create', 'task_update', 'error', 'skill_issue',
+  'user_prompt',
+  'interrupt',
+  'skill_load',
+  'skill_fail',
+  'task_create',
+  'task_update',
+  'error',
+  'skill_issue',
 ]);
 
 /** Color for an outline lane's span bar (skills/plan/subagent). */
@@ -84,11 +102,7 @@ export const OUTLINE_LEGEND: {
 ];
 
 function severityBar(severity: string): string {
-  return severity === 'attention'
-    ? 'bg-red-500/70'
-    : severity === 'notable'
-      ? 'bg-amber-500/70'
-      : 'bg-primary/35';
+  return severity === 'attention' ? 'bg-red-500/70' : severity === 'notable' ? 'bg-amber-500/70' : 'bg-primary/35';
 }
 
 function markerColor(m: TraceMarker): string {
@@ -151,9 +165,7 @@ export function TraceTimeline({
   }, []);
 
   const { tMin, span } = useMemo(() => {
-    const stamps = doc.lanes
-      .flatMap((l) => [tsMs(l.start_ts), tsMs(l.end_ts)])
-      .filter((v): v is number => v !== null);
+    const stamps = doc.lanes.flatMap((l) => [tsMs(l.start_ts), tsMs(l.end_ts)]).filter((v): v is number => v !== null);
     if (stamps.length === 0) return { tMin: 0, span: 1 };
     const lo = Math.min(...stamps);
     return { tMin: lo, span: Math.max(1, Math.max(...stamps) - lo) };
@@ -272,10 +284,7 @@ export function TraceTimeline({
     return { timeSeries: time, costSeries: cost, totalCostSeries: cumulative, bucketMs: bMs };
   }, [doc, width, tMin, span]);
 
-  const cursorBucket = Math.min(
-    timeSeries.length - 1,
-    Math.max(0, Math.floor((cursorMs - tMin) / bucketMs)),
-  );
+  const cursorBucket = Math.min(timeSeries.length - 1, Math.max(0, Math.floor((cursorMs - tMin) / bucketMs)));
 
   const strips = (
     // In outline mode the strips start at the gutter so they line up under the
@@ -372,49 +381,47 @@ export function TraceTimeline({
 
   return (
     <TooltipProvider delayDuration={500} skipDelayDuration={0}>
-    <div
-      className={cn('border-t px-3 pb-2 pt-1', outlineMode ? 'flex min-h-0 flex-1 flex-col' : 'flex-shrink-0')}
-      data-testid="trace-timeline"
-    >
-      {/* Call-stack (outline) mode: lanes fill the top, cost graphs sit below —
+      <div
+        className={cn('border-t px-3 pb-2 pt-1', outlineMode ? 'flex min-h-0 flex-1 flex-col' : 'flex-shrink-0')}
+        data-testid="trace-timeline"
+      >
+        {/* Call-stack (outline) mode: lanes fill the top, cost graphs sit below —
           Execution mode keeps the compact strips-on-top layout. */}
-      <div ref={trackRef} className={cn('relative', outlineMode && 'flex min-h-0 flex-1 flex-col')}>
-        {outlineMode ? (
-          <>
-            {laneRows}
-            {strips}
-          </>
-        ) : (
-          <>
-            {strips}
-            {laneRows}
-          </>
-        )}
-        {!outlineMode && cursorX !== null && (
-          <div
-            className="pointer-events-none absolute bottom-0 top-0 z-10 w-px bg-foreground/70"
-            style={{ left: cursorX }}
-            data-testid="trace-cursor-line"
+        <div ref={trackRef} className={cn('relative', outlineMode && 'flex min-h-0 flex-1 flex-col')}>
+          {outlineMode ? (
+            <>
+              {laneRows}
+              {strips}
+            </>
+          ) : (
+            <>
+              {strips}
+              {laneRows}
+            </>
+          )}
+          {!outlineMode && cursorX !== null && (
+            <div
+              className="pointer-events-none absolute bottom-0 top-0 z-10 w-px bg-foreground/70"
+              style={{ left: cursorX }}
+              data-testid="trace-cursor-line"
+            />
+          )}
+        </div>
+        <div className="mt-1 flex items-center gap-2">
+          <span className="w-14 flex-shrink-0 text-end font-mono text-[10px] text-muted-foreground">
+            {formatOffset(cursorMs - tMin)}
+          </span>
+          <Slider
+            min={tMin}
+            max={tMin + span}
+            step={1000}
+            value={[cursorMs]}
+            onValueChange={([v]) => onCursorChange(v)}
+            data-testid="trace-cursor-slider"
           />
-        )}
+          <span className="w-14 flex-shrink-0 font-mono text-[10px] text-muted-foreground">{formatOffset(span)}</span>
+        </div>
       </div>
-      <div className="mt-1 flex items-center gap-2">
-        <span className="w-14 flex-shrink-0 text-right font-mono text-[10px] text-muted-foreground">
-          {formatOffset(cursorMs - tMin)}
-        </span>
-        <Slider
-          min={tMin}
-          max={tMin + span}
-          step={1000}
-          value={[cursorMs]}
-          onValueChange={([v]) => onCursorChange(v)}
-          data-testid="trace-cursor-slider"
-        />
-        <span className="w-14 flex-shrink-0 font-mono text-[10px] text-muted-foreground">
-          {formatOffset(span)}
-        </span>
-      </div>
-    </div>
     </TooltipProvider>
   );
 }
@@ -441,16 +448,10 @@ function SeriesStrip({
 }) {
   const max = Math.max(...values, 1e-9);
   const n = values.length;
-  const points = values
-    .map((v, i) => `${((i + 0.5) / n) * 100},${STRIP_H - (v / max) * (STRIP_H - 2)}`)
-    .join(' ');
+  const points = values.map((v, i) => `${((i + 0.5) / n) * 100},${STRIP_H - (v / max) * (STRIP_H - 2)}`).join(' ');
   return (
     <div className="relative" style={{ height: STRIP_H }} data-testid={testId}>
-      <svg
-        className="absolute inset-0 h-full w-full"
-        viewBox={`0 0 100 ${STRIP_H}`}
-        preserveAspectRatio="none"
-      >
+      <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 100 ${STRIP_H}`} preserveAspectRatio="none">
         <polygon points={`0,${STRIP_H} ${points} 100,${STRIP_H}`} fill={color} fillOpacity={0.18} />
         <polyline points={points} fill="none" stroke={color} strokeWidth={1} vectorEffect="non-scaling-stroke" />
         {band && (
@@ -554,12 +555,21 @@ const LaneRow = memo(function LaneRow({
       )}
       style={{ height: outline ? OUTLINE_ROW_H : LANE_ROW_H }}
       onClick={outline ? undefined : () => onSelect(selected ? null : lane.id)}
-      title={outline ? label : lane.kind === 'root' ? 'root' : `${lane.agent_type ?? 'subagent'}: ${lane.description ?? lane.id}`}
+      title={
+        outline
+          ? label
+          : lane.kind === 'root'
+            ? 'root'
+            : `${lane.agent_type ?? 'subagent'}: ${lane.description ?? lane.id}`
+      }
       data-testid={`trace-lane-${lane.id}`}
     >
       {outline ? (
         <span
-          className={cn('absolute inset-y-0 left-0 z-30 flex items-center gap-1.5 bg-background text-[13px] leading-none', labelTone)}
+          className={cn(
+            'absolute inset-y-0 left-0 z-30 flex items-center gap-1.5 bg-background text-[13px] leading-none',
+            labelTone,
+          )}
           style={{ width: GUTTER, paddingLeft: indentPx + 2 }}
           onClick={
             isLink
@@ -576,7 +586,7 @@ const LaneRow = memo(function LaneRow({
         </span>
       ) : (
         <span
-          className="pointer-events-none absolute left-0 top-0 z-30 w-20 truncate pl-0.5 text-[9px] leading-none text-muted-foreground"
+          className="pointer-events-none absolute left-0 top-0 z-30 w-20 truncate ps-0.5 text-[9px] leading-none text-muted-foreground"
           style={{ paddingLeft: indentPx + 2 }}
         >
           {label}
@@ -657,7 +667,10 @@ const LaneRow = memo(function LaneRow({
               <span
                 // Bigger, ringed dots so prompts / interrupts / tasks read
                 // clearly against the lane bars.
-                className={cn('h-2.5 w-2.5 rotate-45 rounded-[1px] ring-1 ring-background', eventColor(e.kind, e.severity))}
+                className={cn(
+                  'h-2.5 w-2.5 rotate-45 rounded-[1px] ring-1 ring-background',
+                  eventColor(e.kind, e.severity),
+                )}
               />
             </div>
           );
@@ -677,10 +690,7 @@ const LaneRow = memo(function LaneRow({
         return (
           <div
             key={`${m.ts}-${i}`}
-            className={cn(
-              'absolute top-0 h-2 w-2 rounded-full ring-1 ring-background',
-              markerColor(m),
-            )}
+            className={cn('absolute top-0 h-2 w-2 rounded-full ring-1 ring-background', markerColor(m))}
             style={{ left: mx - 4 }}
             title={`${m.kind}: ${m.label}`}
             data-testid={`trace-marker-${m.kind}`}

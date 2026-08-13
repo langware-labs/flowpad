@@ -6,7 +6,7 @@ import type { TraceFilters } from './InteractiveTerminal';
 import { FIELD_WIDTHS, FIELD_GAP } from './TimeGutter';
 
 const TIME_FIELDS = ['time', 'index', 'line', 'absLine', 'debugTime', 'refTime'] as const;
-type TimeField = typeof TIME_FIELDS[number];
+type TimeField = (typeof TIME_FIELDS)[number];
 
 const TIME_FIELD_LABELS: Record<TimeField, string> = {
   time: 'PTY',
@@ -64,17 +64,19 @@ export function ColumnHeaderBar({
 
   return (
     <TooltipProvider delayDuration={2000}>
-      <div className="flex h-[18px] shrink-0 border-b bg-muted/20 text-[10px] font-mono">
+      <div className="flex h-[18px] shrink-0 border-b bg-muted/20 font-mono text-[10px]">
         {/* Trace cell — always rendered, toggles between show-icon and hide-icon */}
         <div
           style={{ width: traceWidth, minWidth: traceWidth }}
-          className="flex shrink-0 items-center justify-center border-r border-border/50"
+          className="flex shrink-0 items-center justify-center border-e border-border/50"
         >
           {showTrace ? (
             <HideButton
-              label={totalTraceEvents === 0
-                ? 'Hide Trace — no events yet'
-                : `Hide Trace — ${historicalCount > 0 ? `${historicalCount}+${liveCount}` : totalTraceEvents} event${totalTraceEvents === 1 ? '' : 's'}`}
+              label={
+                totalTraceEvents === 0
+                  ? 'Hide Trace — no events yet'
+                  : `Hide Trace — ${historicalCount > 0 ? `${historicalCount}+${liveCount}` : totalTraceEvents} event${totalTraceEvents === 1 ? '' : 's'}`
+              }
               onClick={onToggleTrace}
             />
           ) : (
@@ -84,7 +86,7 @@ export function ColumnHeaderBar({
         {showTime && (
           <div
             style={{ width: timeWidth, minWidth: timeWidth }}
-            className="relative flex shrink-0 items-center border-r border-border/50"
+            className="relative flex shrink-0 items-center border-e border-border/50"
           >
             {/* Per-field centered labels — exact widths mirror TimeGutter column layout */}
             <div className="flex items-center overflow-hidden" style={{ gap: FIELD_GAP }}>
@@ -105,7 +107,7 @@ export function ColumnHeaderBar({
               ))}
             </div>
             {/* Hide button absolutely overlaid at right edge — zero layout impact */}
-            <div className="absolute right-0 top-0 flex h-full items-center pr-0.5">
+            <div className="absolute right-0 top-0 flex h-full items-center pe-0.5">
               <HideButton label="Time" onClick={onHideTime} />
             </div>
           </div>
@@ -115,17 +117,23 @@ export function ColumnHeaderBar({
         {/* Annotations cell — always rendered, toggles between show-icon and hide-icon */}
         <div
           style={{ width: annotationsWidth, minWidth: annotationsWidth }}
-          className="flex shrink-0 items-center justify-center border-l border-border/50"
+          className="flex shrink-0 items-center justify-center border-s border-border/50"
         >
           {showAnnotations ? (
             <HideButton
-              label={annotationElements.length === 0
-                ? 'Hide Annotations — none yet'
-                : `Hide Annotations — ${annotationElements.length} annotation${annotationElements.length === 1 ? '' : 's'}`}
+              label={
+                annotationElements.length === 0
+                  ? 'Hide Annotations — none yet'
+                  : `Hide Annotations — ${annotationElements.length} annotation${annotationElements.length === 1 ? '' : 's'}`
+              }
               onClick={onToggleAnnotations}
             />
           ) : (
-            <ShowButton label="Show Annotations" icon={<MessageSquare className="h-3 w-3" />} onClick={onToggleAnnotations} />
+            <ShowButton
+              label="Show Annotations"
+              icon={<MessageSquare className="h-3 w-3" />}
+              onClick={onToggleAnnotations}
+            />
           )}
         </div>
       </div>

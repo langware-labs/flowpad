@@ -20,31 +20,25 @@ function StatTile({ label, value }: { label: string; value: string }) {
   );
 }
 
-function BreakdownTable({
-  title,
-  cols,
-  rows,
-}: {
-  title: string;
-  cols: [string, string];
-  rows: [string, string][];
-}) {
+function BreakdownTable({ title, cols, rows }: { title: string; cols: [string, string]; rows: [string, string][] }) {
   if (!rows.length) return null;
   return (
     <div className="min-w-0 flex-1">
       <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
       <table className="w-full text-xs">
         <thead>
-          <tr className="text-left text-muted-foreground">
+          <tr className="text-start text-muted-foreground">
             <th className="font-medium">{cols[0]}</th>
-            <th className="w-16 text-right font-medium">{cols[1]}</th>
+            <th className="w-16 text-end font-medium">{cols[1]}</th>
           </tr>
         </thead>
         <tbody>
           {rows.map(([k, v]) => (
             <tr key={k} className="border-t border-border/50">
-              <td className="truncate py-0.5 pr-2 text-foreground" title={k}>{k}</td>
-              <td className="py-0.5 text-right tabular-nums text-muted-foreground">{v}</td>
+              <td className="truncate py-0.5 pe-2 text-foreground" title={k}>
+                {k}
+              </td>
+              <td className="py-0.5 text-end tabular-nums text-muted-foreground">{v}</td>
             </tr>
           ))}
         </tbody>
@@ -70,14 +64,28 @@ function SessionsTable({ data }: { data: UsageReportData }) {
       </h3>
       <table className="w-full text-xs">
         <thead>
-          <tr className="text-left text-muted-foreground">
-            <th className="font-medium"><Trans>session</Trans></th>
-            <th className="w-16 text-right font-medium"><Trans>cost</Trans></th>
-            <th className="w-16 text-right font-medium"><Trans>time</Trans></th>
-            <th className="w-14 text-right font-medium"><Trans>prompts</Trans></th>
-            <th className="w-12 text-right font-medium"><Trans>skills</Trans></th>
-            <th className="w-12 text-right font-medium"><Trans>agents</Trans></th>
-            <th className="w-12 text-right font-medium"><Trans>errors</Trans></th>
+          <tr className="text-start text-muted-foreground">
+            <th className="font-medium">
+              <Trans>session</Trans>
+            </th>
+            <th className="w-16 text-end font-medium">
+              <Trans>cost</Trans>
+            </th>
+            <th className="w-16 text-end font-medium">
+              <Trans>time</Trans>
+            </th>
+            <th className="w-14 text-end font-medium">
+              <Trans>prompts</Trans>
+            </th>
+            <th className="w-12 text-end font-medium">
+              <Trans>skills</Trans>
+            </th>
+            <th className="w-12 text-end font-medium">
+              <Trans>agents</Trans>
+            </th>
+            <th className="w-12 text-end font-medium">
+              <Trans>errors</Trans>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -88,15 +96,13 @@ function SessionsTable({ data }: { data: UsageReportData }) {
               title={`Open transcript · ${s.project || s.cwd}`}
               onClick={() => open(s)}
             >
-              <td className="truncate py-1 pr-2 text-primary hover:underline">
-                {s.title || s.session_id.slice(0, 8)}
-              </td>
-              <td className="py-1 text-right tabular-nums text-muted-foreground">${s.cost_usd.toFixed(2)}</td>
-              <td className="py-1 text-right tabular-nums text-muted-foreground">{formatDuration(s.duration_ms)}</td>
-              <td className="py-1 text-right tabular-nums text-muted-foreground">{s.prompt_count}</td>
-              <td className="py-1 text-right tabular-nums text-muted-foreground">{s.skills.length}</td>
-              <td className="py-1 text-right tabular-nums text-muted-foreground">{s.agents.length}</td>
-              <td className="py-1 text-right tabular-nums text-muted-foreground">{s.tool_failures || ''}</td>
+              <td className="truncate py-1 pe-2 text-primary hover:underline">{s.title || s.session_id.slice(0, 8)}</td>
+              <td className="py-1 text-end tabular-nums text-muted-foreground">${s.cost_usd.toFixed(2)}</td>
+              <td className="py-1 text-end tabular-nums text-muted-foreground">{formatDuration(s.duration_ms)}</td>
+              <td className="py-1 text-end tabular-nums text-muted-foreground">{s.prompt_count}</td>
+              <td className="py-1 text-end tabular-nums text-muted-foreground">{s.skills.length}</td>
+              <td className="py-1 text-end tabular-nums text-muted-foreground">{s.agents.length}</td>
+              <td className="py-1 text-end tabular-nums text-muted-foreground">{s.tool_failures || ''}</td>
             </tr>
           ))}
         </tbody>
@@ -122,8 +128,16 @@ export function UsageReportAssetEditor({ fsRef, report }: UsageReportAssetEditor
       <AssetEditorHeader fileName={report.name || fileName} dirPath={dirPath} />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {loading && <p className="text-sm text-muted-foreground"><Trans>Loading report…</Trans></p>}
-        {error && <p className="text-sm text-destructive"><Trans>Failed to load report: {error}</Trans></p>}
+        {loading && (
+          <p className="text-sm text-muted-foreground">
+            <Trans>Loading report…</Trans>
+          </p>
+        )}
+        {error && (
+          <p className="text-sm text-destructive">
+            <Trans>Failed to load report: {error}</Trans>
+          </p>
+        )}
         {data && (
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -172,9 +186,11 @@ export function UsageReportAssetEditor({ fsRef, report }: UsageReportAssetEditor
                 <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   <Trans>Sample prompts</Trans>
                 </h3>
-                <ul className="list-disc space-y-0.5 pl-4 text-xs text-muted-foreground">
+                <ul className="list-disc space-y-0.5 ps-4 text-xs text-muted-foreground">
                   {data.sample_prompts.map((p, i) => (
-                    <li key={i} className="truncate" title={p}>{p}</li>
+                    <li key={i} className="truncate" title={p}>
+                      {p}
+                    </li>
                   ))}
                 </ul>
               </div>

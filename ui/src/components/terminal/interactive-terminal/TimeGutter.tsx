@@ -7,12 +7,12 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 
 // Approximate width (px) each field contributes at 9px monospace + 8px total h-padding
 export const FIELD_WIDTHS: Record<'time' | 'index' | 'line' | 'absLine' | 'debugTime' | 'refTime', number> = {
-  time: 92,       // "14:32:07 (99m)"
-  index: 38,      // "#99999"
-  line: 30,       // "L9999"
-  absLine: 38,    // "@99999"
-  debugTime: 44,  // "99.9s"
-  refTime: 100,   // "HH:MM:SS→HH:MM:SS"
+  time: 92, // "14:32:07 (99m)"
+  index: 38, // "#99999"
+  line: 30, // "L9999"
+  absLine: 38, // "@99999"
+  debugTime: 44, // "99.9s"
+  refTime: 100, // "HH:MM:SS→HH:MM:SS"
 };
 export const FIELD_GAP = 6; // px gap rendered between fields as a space character
 
@@ -60,7 +60,15 @@ function formatDurationMs(ms: number): string {
   return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
 }
 
-function SegmentBorderTooltipContent({ isStart, isEnd, segment }: { isStart: boolean; isEnd: boolean; segment: PtySegment }) {
+function SegmentBorderTooltipContent({
+  isStart,
+  isEnd,
+  segment,
+}: {
+  isStart: boolean;
+  isEnd: boolean;
+  segment: PtySegment;
+}) {
   const durMs = segment.endTime - segment.startTime;
   const endRow = segment.baseAbsRow + segment.rows - 1;
   const lines: { label: string; value: string; sub?: string }[] = [
@@ -82,19 +90,33 @@ function SegmentBorderTooltipContent({ isStart, isEnd, segment }: { isStart: boo
     { label: 'Row range', value: `@${segment.baseAbsRow} → @${endRow}`, sub: `${segment.rows} rows` },
   ];
   if (segment.startAnchor) {
-    lines.push({ label: 'Start anchor', value: segment.startAnchor.text.slice(0, 40), sub: formatISOFull(segment.startAnchor.time) });
+    lines.push({
+      label: 'Start anchor',
+      value: segment.startAnchor.text.slice(0, 40),
+      sub: formatISOFull(segment.startAnchor.time),
+    });
   }
   if (segment.endAnchor) {
-    lines.push({ label: 'End anchor', value: segment.endAnchor.text.slice(0, 40), sub: formatISOFull(segment.endAnchor.time) });
+    lines.push({
+      label: 'End anchor',
+      value: segment.endAnchor.text.slice(0, 40),
+      sub: formatISOFull(segment.endAnchor.time),
+    });
   }
   return (
     <div className="grid gap-x-3 gap-y-1.5 p-3" style={{ gridTemplateColumns: 'auto 1fr', maxWidth: 320 }}>
       {lines.map(({ label, value, sub }) => (
         <Fragment key={label}>
-          <span className="self-start pt-px text-right font-mono text-sky-400/80" style={{ fontSize: 12 }}>{label}</span>
+          <span className="self-start pt-px text-end font-mono text-sky-400/80" style={{ fontSize: 12 }}>
+            {label}
+          </span>
           <span className="flex flex-col font-mono" style={{ fontSize: 12 }}>
             <span className="font-bold text-white">{value}</span>
-            {sub && <span className="font-normal text-white/55" style={{ fontSize: 11 }}>{sub}</span>}
+            {sub && (
+              <span className="font-normal text-white/55" style={{ fontSize: 11 }}>
+                {sub}
+              </span>
+            )}
           </span>
         </Fragment>
       ))}
@@ -175,10 +197,16 @@ function RowTooltipContent({ row, absRow, filters, ptySyncSession, ref_ }: RowTo
     <div className="grid gap-x-3 gap-y-1.5 p-3" style={{ gridTemplateColumns: 'auto 1fr' }}>
       {lines.map(({ label, value, sub }) => (
         <Fragment key={label}>
-          <span className="self-start pt-px text-right font-mono text-white/50" style={{ fontSize: 13 }}>{label}</span>
+          <span className="self-start pt-px text-end font-mono text-white/50" style={{ fontSize: 13 }}>
+            {label}
+          </span>
           <span className="flex flex-col font-mono" style={{ fontSize: 13 }}>
             <span className="font-bold text-white">{value}</span>
-            {sub && <span className="font-normal text-white/55" style={{ fontSize: 11 }}>{sub}</span>}
+            {sub && (
+              <span className="font-normal text-white/55" style={{ fontSize: 11 }}>
+                {sub}
+              </span>
+            )}
           </span>
         </Fragment>
       ))}
@@ -213,7 +241,7 @@ export function TimeGutter({ rows, cellHeight, filters, ptySyncSession, viewport
       <div
         data-testid="time-gutter"
         style={{ width, minWidth: width }}
-        className="relative shrink-0 border-r border-border/50 bg-muted/30 select-none"
+        className="relative shrink-0 select-none border-e border-border/50 bg-muted/30"
       >
         {rows.map((row, i) => {
           const absRow = viewportY + i;
@@ -228,16 +256,25 @@ export function TimeGutter({ rows, cellHeight, filters, ptySyncSession, viewport
             fieldCells.push({
               key: 'time',
               width: FIELD_WIDTHS.time,
-              text: row.timestamp !== null
-                ? `${formatTimestamp(row.timestamp)} (${formatTimeAgo(row.timestamp)})`
-                : '--:--:--',
+              text:
+                row.timestamp !== null
+                  ? `${formatTimestamp(row.timestamp)} (${formatTimeAgo(row.timestamp)})`
+                  : '--:--:--',
             });
           }
           if (filters.index) {
-            fieldCells.push({ key: 'index', width: FIELD_WIDTHS.index, text: row.ownerSeq !== null ? `#${row.ownerSeq}` : '-' });
+            fieldCells.push({
+              key: 'index',
+              width: FIELD_WIDTHS.index,
+              text: row.ownerSeq !== null ? `#${row.ownerSeq}` : '-',
+            });
           }
           if (filters.line) {
-            fieldCells.push({ key: 'line', width: FIELD_WIDTHS.line, text: row.logicalLine !== null ? `L${row.logicalLine}` : '-' });
+            fieldCells.push({
+              key: 'line',
+              width: FIELD_WIDTHS.line,
+              text: row.logicalLine !== null ? `L${row.logicalLine}` : '-',
+            });
           }
           if (filters.absLine) {
             fieldCells.push({ key: 'absLine', width: FIELD_WIDTHS.absLine, text: `@${absRow}` });
@@ -258,9 +295,8 @@ export function TimeGutter({ rows, cellHeight, filters, ptySyncSession, viewport
             });
           }
 
-          const segmentBorderInfo = (isSegmentStart || isSegmentEnd)
-            ? ptySyncSession.getSegmentForBorderRow(absRow)
-            : null;
+          const segmentBorderInfo =
+            isSegmentStart || isSegmentEnd ? ptySyncSession.getSegmentForBorderRow(absRow) : null;
 
           return (
             <div key={i} className="relative">
@@ -291,10 +327,14 @@ export function TimeGutter({ rows, cellHeight, filters, ptySyncSession, viewport
               {isSegmentStart && segmentBorderInfo && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div className="absolute inset-x-0 top-0 h-[3px] cursor-pointer bg-sky-500/70 dark:bg-sky-400/70 hover:bg-sky-500 dark:hover:bg-sky-400" />
+                    <div className="absolute inset-x-0 top-0 h-[3px] cursor-pointer bg-sky-500/70 hover:bg-sky-500 dark:bg-sky-400/70 dark:hover:bg-sky-400" />
                   </TooltipTrigger>
                   <TooltipContent side="right" className="border-0 bg-neutral-900 p-0 shadow-xl" sideOffset={4}>
-                    <SegmentBorderTooltipContent isStart={segmentBorderInfo.isStart} isEnd={segmentBorderInfo.isEnd} segment={segmentBorderInfo.segment} />
+                    <SegmentBorderTooltipContent
+                      isStart={segmentBorderInfo.isStart}
+                      isEnd={segmentBorderInfo.isEnd}
+                      segment={segmentBorderInfo.segment}
+                    />
                   </TooltipContent>
                 </Tooltip>
               )}
@@ -302,10 +342,14 @@ export function TimeGutter({ rows, cellHeight, filters, ptySyncSession, viewport
               {isSegmentEnd && segmentBorderInfo && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div className="absolute inset-x-0 bottom-0 h-[3px] cursor-pointer bg-sky-500/70 dark:bg-sky-400/70 hover:bg-sky-500 dark:hover:bg-sky-400" />
+                    <div className="absolute inset-x-0 bottom-0 h-[3px] cursor-pointer bg-sky-500/70 hover:bg-sky-500 dark:bg-sky-400/70 dark:hover:bg-sky-400" />
                   </TooltipTrigger>
                   <TooltipContent side="right" className="border-0 bg-neutral-900 p-0 shadow-xl" sideOffset={4}>
-                    <SegmentBorderTooltipContent isStart={segmentBorderInfo.isStart} isEnd={segmentBorderInfo.isEnd} segment={segmentBorderInfo.segment} />
+                    <SegmentBorderTooltipContent
+                      isStart={segmentBorderInfo.isStart}
+                      isEnd={segmentBorderInfo.isEnd}
+                      segment={segmentBorderInfo.segment}
+                    />
                   </TooltipContent>
                 </Tooltip>
               )}

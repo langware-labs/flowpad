@@ -73,82 +73,69 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
 
   return (
     <>
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          // Stop the click from bubbling to the conversation row (which would
-          // navigate). The popover still opens — Radix's own handler runs.
-          onClick={(e) => e.stopPropagation()}
-          className="flex min-w-0 max-w-[150px] items-center gap-1 rounded text-muted-foreground transition-colors hover:text-foreground"
-          aria-label={`${participants.length} participant${participants.length === 1 ? '' : 's'}`}
-          data-testid="conversation-participants"
-        >
-          <Users className="h-2.5 w-2.5 shrink-0" />
-          {trigger}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        side="top"
-        className="w-56 p-2"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Participants ({participants.length})
-        </div>
-        <ul className="flex flex-col gap-1">
-          {participants.map((p, i) => {
-            const role = participantRoleLabel(p);
-            const contact = participantIsUser(p, me) ? null : contactFromParticipant(p);
-            const row = (
-              <>
-                <Avatar className="h-5 w-5">
-                  <AvatarFallback
-                    className={`text-[9px] text-white ${avatarColorForParticipant(p, participantIsUser(p, me))}`}
-                  >
-                    {participantInitials(p)}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="flex-1 truncate">{participantName(p)}</span>
-                {role && (
-                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{role}</span>
-                )}
-              </>
-            );
-            return (
-              <li key={p.user_id || p.email || i} className="flex items-center gap-2 text-xs">
-                {contact ? (
-                  <button
-                    type="button"
-                    className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-0.5 text-left transition-colors hover:bg-muted"
-                    onClick={() => {
-                      setPermissionsContact(contact);
-                      setOpen(false);
-                    }}
-                    aria-label={`Open permissions for ${participantName(p)}`}
-                    data-testid={`conversation-participant-contact-${p.user_id || p.email || i}`}
-                  >
-                    {row}
-                  </button>
-                ) : (
-                  <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">
-                    {row}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </PopoverContent>
-    </Popover>
-    {permissionsContact && (
-      <ContactPermissionsDialog
-        open
-        onClose={() => setPermissionsContact(null)}
-        contact={permissionsContact}
-      />
-    )}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            // Stop the click from bubbling to the conversation row (which would
+            // navigate). The popover still opens — Radix's own handler runs.
+            onClick={(e) => e.stopPropagation()}
+            className="flex min-w-0 max-w-[150px] items-center gap-1 rounded text-muted-foreground transition-colors hover:text-foreground"
+            aria-label={`${participants.length} participant${participants.length === 1 ? '' : 's'}`}
+            data-testid="conversation-participants"
+          >
+            <Users className="h-2.5 w-2.5 shrink-0" />
+            {trigger}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" side="top" className="w-56 p-2" onClick={(e) => e.stopPropagation()}>
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Participants ({participants.length})
+          </div>
+          <ul className="flex flex-col gap-1">
+            {participants.map((p, i) => {
+              const role = participantRoleLabel(p);
+              const contact = participantIsUser(p, me) ? null : contactFromParticipant(p);
+              const row = (
+                <>
+                  <Avatar className="h-5 w-5">
+                    <AvatarFallback
+                      className={`text-[9px] text-white ${avatarColorForParticipant(p, participantIsUser(p, me))}`}
+                    >
+                      {participantInitials(p)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="flex-1 truncate">{participantName(p)}</span>
+                  {role && <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{role}</span>}
+                </>
+              );
+              return (
+                <li key={p.user_id || p.email || i} className="flex items-center gap-2 text-xs">
+                  {contact ? (
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-0.5 text-start transition-colors hover:bg-muted"
+                      onClick={() => {
+                        setPermissionsContact(contact);
+                        setOpen(false);
+                      }}
+                      aria-label={`Open permissions for ${participantName(p)}`}
+                      data-testid={`conversation-participant-contact-${p.user_id || p.email || i}`}
+                    >
+                      {row}
+                    </button>
+                  ) : (
+                    <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">{row}</div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </PopoverContent>
+      </Popover>
+      {permissionsContact && (
+        <ContactPermissionsDialog open onClose={() => setPermissionsContact(null)} contact={permissionsContact} />
+      )}
     </>
   );
 }
