@@ -41,16 +41,24 @@ export const TerminalSearchBar: React.FC<TerminalSearchBarProps> = ({ searchAddo
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') {
+      // The bar renders INSIDE the xterm container, whose own keydown listener
+      // also closes on Escape — without this the event is handled twice.
+      e.stopPropagation();
       onClose();
     } else if (e.key === 'Enter') {
-      e.shiftKey ? findPrevious() : findNext();
+      if (e.shiftKey) findPrevious();
+      else findNext();
     }
   };
 
   return (
-    <div className="absolute right-3 top-2 z-50 flex items-center gap-1 rounded-md border border-border bg-background/95 px-2 py-1 shadow-lg backdrop-blur-sm">
+    <div
+      data-testid="terminal-search-bar"
+      className="absolute right-3 top-2 z-50 flex items-center gap-1 rounded-md border border-border bg-background/95 px-2 py-1 shadow-lg backdrop-blur-sm"
+    >
       <input
         ref={inputRef}
+        data-testid="terminal-search-input"
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}

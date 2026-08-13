@@ -748,9 +748,9 @@ msgstr "🤖 الموجِّه - الاستعلام من الذكاء الاصط�
 #~ msgid "$items"
 #~ msgstr ""
 
-#: src/components/data-sources/provider-catalog.ts
-#~ msgid "0"
-#~ msgstr "0"
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
+msgid "0"
+msgstr "0"
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "1 hour"
@@ -3329,6 +3329,7 @@ msgstr "جارِ الاستنساخ…"
 msgid "Close"
 msgstr "إغلاق"
 
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Close (Escape)"
 msgstr "إغلاق (Escape)"
@@ -9688,6 +9689,7 @@ msgid "Loading comparison…"
 msgstr "جاري تحميل المقارنة…"
 
 #: src/components/conversation/ConversationRoute.tsx
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
 msgid "Loading conversation…"
 msgstr "جاري تحميل المحادثة…"
 
@@ -10859,6 +10861,7 @@ msgstr "التالي"
 msgid "next {0}"
 msgstr "التالي {0}"
 
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "المطابقة التالية (Enter)"
@@ -11322,6 +11325,10 @@ msgstr "لا توجد نتائج مطابقة"
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "No matches found in the Flowpad known-issues database."
 msgstr "لم يتم العثور على تطابقات في قاعدة بيانات Flowpad للمشاكل المعروفة."
+
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
+msgid "No matches in this conversation"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
@@ -13467,6 +13474,7 @@ msgstr "السابق"
 #~ msgid "Previous 7 days"
 #~ msgstr "آخر 7 أيام"
 
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Previous match (Shift+Enter)"
 msgstr "المطابقة السابقة (Shift+Enter)"
@@ -15484,6 +15492,10 @@ msgstr "معايرة البحث"
 msgid "Search chats…"
 msgstr "البحث في المحادثات…"
 
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
+msgid "Search conversation…"
+msgstr ""
+
 #: src/components/docs-viewer/DocsNavigator.tsx
 #~ msgid "Search docs…"
 #~ msgstr "البحث في التوثيق…"
@@ -16535,6 +16547,11 @@ msgstr "عرض 20 من أصل {0} إدخال"
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Showing current configuration only — there is no loaded snapshot until the first successful start."
 msgstr "عرض الإعدادات الحالية فقط — لا توجد لقطة محفوظة حتى البدء الناجح الأول."
+
+#. placeholder {0}: hits.length
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
+msgid "Showing the first {0} matches — narrow the search to see the rest."
+msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "Shown at approval"

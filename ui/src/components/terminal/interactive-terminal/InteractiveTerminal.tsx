@@ -66,6 +66,7 @@ import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-dr
 import { SidecarShellTerminal } from './SidecarShellTerminal';
 import { TerminalBottomRibbon } from './TerminalBottomRibbon';
 import { TerminalSearchBar } from './TerminalSearchBar';
+import { ConversationSearchOverlay } from './ConversationSearchOverlay';
 import { calcTimeGutterWidth, TimeGutter } from './TimeGutter';
 import { TraceGutter } from './TraceGutter';
 import { getAnchors, useAnnotationGutter } from './use-annotation-gutter';
@@ -1686,15 +1687,30 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                         void handleFileDrop(e);
                       }}
                     >
+                      {/* Ctrl+F searches the CONVERSATION when this is an agentic
+                          process, because the CLI TUIs leave nothing in the xterm
+                          buffer to search (alt screen / DECSTBM sub-region scroll —
+                          see use-conversation-search). A plain shell has real
+                          scrollback, so it keeps the xterm SearchAddon. */}
                       {searchOpen && (
                         <div onClick={(e) => e.stopPropagation()}>
-                          <TerminalSearchBar
-                            searchAddon={searchAddonRef.current}
-                            onClose={() => {
-                              setSearchOpen(false);
-                              terminalRef.current?.focus();
-                            }}
-                          />
+                          {process ? (
+                            <ConversationSearchOverlay
+                              process={process}
+                              onClose={() => {
+                                setSearchOpen(false);
+                                terminalRef.current?.focus();
+                              }}
+                            />
+                          ) : (
+                            <TerminalSearchBar
+                              searchAddon={searchAddonRef.current}
+                              onClose={() => {
+                                setSearchOpen(false);
+                                terminalRef.current?.focus();
+                              }}
+                            />
+                          )}
                         </div>
                       )}
                     </div>

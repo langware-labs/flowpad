@@ -748,9 +748,9 @@ msgstr "🤖 Prompt - Query AI (Claude Haiku)"
 #~ msgid "$items"
 #~ msgstr "$items"
 
-#: src/components/data-sources/provider-catalog.ts
-#~ msgid "0"
-#~ msgstr "0"
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
+msgid "0"
+msgstr "0"
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "1 hour"
@@ -3329,6 +3329,7 @@ msgstr "Cloning…"
 msgid "Close"
 msgstr "Close"
 
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Close (Escape)"
 msgstr "Close (Escape)"
@@ -9691,6 +9692,7 @@ msgid "Loading comparison…"
 msgstr "Loading comparison…"
 
 #: src/components/conversation/ConversationRoute.tsx
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
 msgid "Loading conversation…"
 msgstr "Loading conversation…"
 
@@ -10862,6 +10864,7 @@ msgstr "Next"
 msgid "next {0}"
 msgstr "next {0}"
 
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "Next match (Enter)"
@@ -11325,6 +11328,10 @@ msgstr "No matches"
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "No matches found in the Flowpad known-issues database."
 msgstr "No matches found in the Flowpad known-issues database."
+
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
+msgid "No matches in this conversation"
+msgstr "No matches in this conversation"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
@@ -13470,6 +13477,7 @@ msgstr "Previous"
 #~ msgid "Previous 7 days"
 #~ msgstr "Previous 7 days"
 
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Previous match (Shift+Enter)"
 msgstr "Previous match (Shift+Enter)"
@@ -15487,6 +15495,10 @@ msgstr "Search Calibration"
 msgid "Search chats…"
 msgstr "Search chats…"
 
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
+msgid "Search conversation…"
+msgstr "Search conversation…"
+
 #: src/components/docs-viewer/DocsNavigator.tsx
 #~ msgid "Search docs…"
 #~ msgstr "Search docs…"
@@ -16538,6 +16550,11 @@ msgstr "Showing 20 of {0} entries"
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Showing current configuration only — there is no loaded snapshot until the first successful start."
 msgstr "Showing current configuration only — there is no loaded snapshot until the first successful start."
+
+#. placeholder {0}: hits.length
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
+msgid "Showing the first {0} matches — narrow the search to see the rest."
+msgstr "Showing the first {0} matches — narrow the search to see the rest."
 
 #: src/components/connections-manager.tsx
 msgid "Shown at approval"

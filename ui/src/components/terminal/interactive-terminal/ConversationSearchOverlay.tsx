@@ -1,0 +1,260 @@
+import { ChevronDown, ChevronUp, X } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { AgenticProcess } from '@sdk';
+import { useLingui } from '@lingui/react/macro';
+import ExecutionMessage from '@src/components/entity-execution-panel/execution-message/execution-message';
+import { useConversationSearch, type ConversationHit } from '@src/hooks/use-conversation-search';
+
+interface ConversationSearchOverlayProps {
+  process: AgenticProcess;
+  onClose: () => void;
+}
+
+/** Highlight every occurrence of `query` in `text`.
+ *
+ *  Deliberately local to this component — see the plan's non-goals: no shared
+ *  helper, and the existing copies elsewhere in the app are left alone. */
+function highlight(text: string, query: string): React.ReactNode {
+  if (!query) return text;
+  const needle = query.toLowerCase();
+  const hay = text.toLowerCase();
+  const out: React.ReactNode[] = [];
+  let from = 0;
+  let key = 0;
+  for (;;) {
+    const at = hay.indexOf(needle, from);
+    if (at === -1) break;
+    if (at > from) out.push(text.slice(from, at));
+    out.push(
+      <mark
+        key={key++}
+        className="rounded-sm bg-yellow-200 px-0.5 text-yellow-900 dark:bg-yellow-800/60 dark:text-yellow-200"
+      >
+        {text.slice(at, at + query.length)}
+      </mark>,
+    );
+    from = at + query.length;
+  }
+  out.push(text.slice(from));
+  return out;
+}
+
+/**
+ * Ctrl+F for an agentic-process terminal.
+ *
+ * Searches the CONVERSATION rather than the xterm buffer, because no CLI we
+ * host leaves anything in that buffer to search — see `use-conversation-search`
+ * for the measurements. Nothing here touches the terminal: it is not scrolled,
+ * not written to, and not navigated away from. Hits are read in place.
+ */
+export const ConversationSearchOverlay: React.FC<ConversationSearchOverlayProps> = ({ process, onClose }) => {
+  const { t } = useLingui();
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState(-1);
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  const { hits, truncated, loading } = useConversationSearch(process, query);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  // A new query invalidates any prior selection/expansion.
+  useEffect(() => {
+    setSelected(hits.length > 0 ? 0 : -1);
+    setExpanded(null);
+  }, [query, hits.length]);
+
+  const worker = process.worker_type ?? undefined;
+
+  const select = useCallback(
+    (index: number) => {
+      if (hits.length === 0) return;
+      const next = ((index % hits.length) + hits.length) % hits.length;
+      setSelected(next);
+      rowRefs.current[next]?.scrollIntoView({ block: 'nearest' });
+    },
+    [hits.length],
+  );
+
+  const findNext = useCallback(() => select(selected + 1), [select, selected]);
+  const findPrevious = useCallback(() => select(selected - 1), [select, selected]);
+
+  /** Focus moves into the list so Enter means "expand this row" rather than
+   *  "next hit" — the two Enter meanings are separated by focus, not by mode. */
+  const focusRow = useCallback(
+    (index: number) => {
+      if (hits.length === 0) return;
+      const next = ((index % hits.length) + hits.length) % hits.length;
+      setSelected(next);
+      rowRefs.current[next]?.focus();
+    },
+    [hits.length],
+  );
+
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      onClose();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (e.shiftKey) findPrevious();
+      else findNext();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusRow(selected + 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusRow(selected - 1);
+    }
+  };
+
+  const onRowKeyDown = (e: React.KeyboardEvent<HTMLDivElement>, index: number) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      onClose();
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      setExpanded((cur) => (cur === index ? null : index));
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (index === hits.length - 1) {
+        inputRef.current?.focus();
+      } else {
+        focusRow(index + 1);
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (index === 0) {
+        inputRef.current?.focus();
+      } else {
+        focusRow(index - 1);
+      }
+    }
+  };
+
+  const counter = useMemo(() => {
+    if (!query) return '';
+    if (hits.length === 0) return t`0`;
+    return `${selected + 1}/${hits.length}${truncated ? '+' : ''}`;
+  }, [query, hits.length, selected, truncated, t]);
+
+  return (
+    <div
+      data-testid="conversation-search-overlay"
+      className="absolute right-3 top-2 z-50 flex max-h-[70%] w-[28rem] flex-col rounded-md border border-border bg-background/95 shadow-lg backdrop-blur-sm"
+    >
+      <div className="flex items-center gap-1 border-b border-border px-2 py-1">
+        <input
+          ref={inputRef}
+          data-testid="conversation-search-input"
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={onInputKeyDown}
+          placeholder={t`Search conversation…`}
+          className="h-6 min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+        />
+        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{counter}</span>
+        <button
+          onClick={findPrevious}
+          disabled={hits.length === 0}
+          title={t`Previous match (Shift+Enter)`}
+          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+        >
+          <ChevronUp className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={findNext}
+          disabled={hits.length === 0}
+          title={t`Next match (Enter)`}
+          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+        >
+          <ChevronDown className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={onClose}
+          title={t`Close (Escape)`}
+          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {query && (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {hits.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">
+              {loading ? t`Loading conversation…` : t`No matches in this conversation`}
+            </div>
+          ) : (
+            hits.map((hit, i) => (
+              <ConversationHitRow
+                key={`${hit.itemIndex}-${hit.charOffset}`}
+                ref={(el: HTMLDivElement | null) => {
+                  rowRefs.current[i] = el;
+                }}
+                hit={hit}
+                query={query}
+                worker={worker}
+                selected={i === selected}
+                expanded={expanded === i}
+                onKeyDown={(e) => onRowKeyDown(e, i)}
+                onClick={() => {
+                  setSelected(i);
+                  setExpanded((cur) => (cur === i ? null : i));
+                }}
+              />
+            ))
+          )}
+          {truncated && (
+            <div className="border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground">
+              {t`Showing the first ${hits.length} matches — narrow the search to see the rest.`}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface ConversationHitRowProps {
+  hit: ConversationHit;
+  query: string;
+  worker?: string;
+  selected: boolean;
+  expanded: boolean;
+  onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  onClick: () => void;
+}
+
+const ConversationHitRow = React.forwardRef<HTMLDivElement, ConversationHitRowProps>(
+  ({ hit, query, worker, selected, expanded, onKeyDown, onClick }, ref) => (
+    <div
+      ref={ref}
+      data-testid="conversation-search-result"
+      tabIndex={-1}
+      role="option"
+      aria-selected={selected}
+      onKeyDown={onKeyDown}
+      onClick={onClick}
+      className={`cursor-pointer border-b border-border/50 px-2 py-1.5 outline-none ${
+        selected ? 'bg-accent text-foreground' : 'hover:bg-accent/50'
+      }`}
+    >
+      <div className="flex items-baseline gap-2">
+        <span className="shrink-0 rounded bg-muted px-1 text-[10px] uppercase text-muted-foreground">{hit.label}</span>
+        <span className="min-w-0 flex-1 truncate text-xs">{highlight(hit.snippet, query)}</span>
+      </div>
+      {expanded && (
+        <div className="mt-1.5 max-h-64 overflow-y-auto rounded border border-border bg-background/60 p-1">
+          <ExecutionMessage flowData={hit.item} isUser={hit.isUser} worker={worker} />
+        </div>
+      )}
+    </div>
+  ),
+);
+ConversationHitRow.displayName = 'ConversationHitRow';

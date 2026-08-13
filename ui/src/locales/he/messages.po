@@ -748,9 +748,9 @@ msgstr "🤖 Prompt - בקש מ-AI (Claude Haiku)"
 #~ msgid "$items"
 #~ msgstr "$פריטים"
 
-#: src/components/data-sources/provider-catalog.ts
-#~ msgid "0"
-#~ msgstr "0"
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
+msgid "0"
+msgstr "0"
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "1 hour"
@@ -3329,6 +3329,7 @@ msgstr "משבוט…"
 msgid "Close"
 msgstr "סגור"
 
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Close (Escape)"
 msgstr "סגור (Escape)"
@@ -9691,6 +9692,7 @@ msgid "Loading comparison…"
 msgstr "טוען השוואה…"
 
 #: src/components/conversation/ConversationRoute.tsx
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
 msgid "Loading conversation…"
 msgstr "טוען שיחה…"
 
@@ -10862,6 +10864,7 @@ msgstr "הבא"
 msgid "next {0}"
 msgstr "בעוד {0}"
 
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Next match (Enter)"
 msgstr "התאמה הבאה (Enter)"
@@ -11325,6 +11328,10 @@ msgstr "אין התאמות"
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "No matches found in the Flowpad known-issues database."
 msgstr "לא נמצאו התאמות במאגר הבעיות הידועות של Flowpad."
+
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
+msgid "No matches in this conversation"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
@@ -13470,6 +13477,7 @@ msgstr "הקודם"
 #~ msgid "Previous 7 days"
 #~ msgstr "7 הימים האחרונים"
 
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Previous match (Shift+Enter)"
 msgstr "התאמה קודמת (Shift+Enter)"
@@ -15487,6 +15495,10 @@ msgstr "כיול חיפוש"
 msgid "Search chats…"
 msgstr "חיפוש שיחות…"
 
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
+msgid "Search conversation…"
+msgstr ""
+
 #: src/components/docs-viewer/DocsNavigator.tsx
 #~ msgid "Search docs…"
 #~ msgstr "חיפוש בתיעוד…"
@@ -16538,6 +16550,11 @@ msgstr "מציג 20 מתוך {0} ערכים"
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Showing current configuration only — there is no loaded snapshot until the first successful start."
 msgstr "מציג את התצורה הנוכחית בלבד — אין תמונת מצב טעונה עד ההתחלה המוצלחת הראשונה."
+
+#. placeholder {0}: hits.length
+#: src/components/terminal/interactive-terminal/ConversationSearchOverlay.tsx
+msgid "Showing the first {0} matches — narrow the search to see the rest."
+msgstr ""
 
 #: src/components/connections-manager.tsx
 msgid "Shown at approval"

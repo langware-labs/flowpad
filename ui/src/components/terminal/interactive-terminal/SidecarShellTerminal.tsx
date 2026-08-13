@@ -3,6 +3,7 @@ import '@xterm/xterm/css/xterm.css';
 
 import { dataContext, Shell } from '@sdk';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
@@ -14,6 +15,7 @@ import {
   openTerminalLink,
   registerOsc52ClipboardWrite,
 } from './terminalConfig';
+import { TerminalSearchBar } from './TerminalSearchBar';
 
 const DARK_THEME = {
   background: '#1e1e1e',
@@ -74,8 +76,10 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
   const shellRef = useRef<Shell | null>(null);
   const [terminalReady, setTerminalReady] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const reattachBufferRef = useRef<string[] | null>([]);
   const ptyOwnedRef = useRef(false);
 
@@ -126,6 +130,20 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
     const fit = new FitAddon();
     term.loadAddon(fit);
 
+    // A plain shell is the one terminal that DOES accumulate scrollback (normal
+    // buffer, no full-screen TUI), so xterm's own buffer search genuinely works
+    // here — unlike an agentic-process terminal, which searches its conversation.
+    const search = new SearchAddon();
+    term.loadAddon(search);
+    searchAddonRef.current = search;
+
+    // Don't send ^F to the PTY; let it bubble to the container listener below,
+    // which preventDefaults so the browser's find bar doesn't open either.
+    term.attachCustomKeyEventHandler((event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'f') return false;
+      return true;
+    });
+
     try {
       term.open(container);
       // A plain shell emits logical order on every platform — no CLI here that
@@ -169,10 +187,36 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
         }, 10);
         terminalRef.current = null;
         fitAddonRef.current = null;
+        searchAddonRef.current = null;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shellId]);
+
+  // Ctrl+F opens the search bar. Bound to the container rather than to xterm's
+  // key handler because only a real DOM listener can preventDefault the
+  // browser's own find bar.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !terminalReady) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+      if (e.key === 'Escape') {
+        setSearchOpen((open) => {
+          if (open) {
+            terminalRef.current?.focus();
+            return false;
+          }
+          return open;
+        });
+      }
+    };
+    container.addEventListener('keydown', onKeyDown);
+    return () => container.removeEventListener('keydown', onKeyDown);
+  }, [terminalReady]);
 
   // Connect to PTY when terminal is ready
   useEffect(() => {
@@ -288,11 +332,25 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
   }, [active, terminalReady]);
 
   return (
+    // `relative` is load-bearing: TerminalSearchBar positions itself absolutely
+    // and would otherwise anchor to some ancestor far up the tree.
     <div
       ref={containerRef}
-      className={`min-h-0 flex-1 ${className}`}
+      className={`relative min-h-0 flex-1 ${className}`}
       onClick={() => terminalRef.current?.focus()}
       tabIndex={0}
-    />
+    >
+      {searchOpen && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <TerminalSearchBar
+            searchAddon={searchAddonRef.current}
+            onClose={() => {
+              setSearchOpen(false);
+              terminalRef.current?.focus();
+            }}
+          />
+        </div>
+      )}
+    </div>
   );
 };
