@@ -18229,6 +18229,10 @@ msgid "This runs in the background — feel free to keep working. When it's done
 msgstr "התהליך רץ ברקע — אפשר להמשיך לעבוד. כשהוא יסתיים, התוצאה (וכל פעולה שתידרש) תחכה לכם בפיד הבית."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This sandbox could not be set up."
+msgstr ""
+
+#: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This sandbox could not be started."
 msgstr "לא ניתן היה להפעיל את ה-Sandbox הזה."
 
