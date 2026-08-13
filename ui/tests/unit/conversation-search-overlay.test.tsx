@@ -8,7 +8,7 @@
  * `contextWindowFor`; only the stream source is mocked, so the corpus is fixed.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { FlowData, FlowElementTypes } from '@sdk';
@@ -51,6 +51,53 @@ async function search(term: string) {
 
 // The unit tier has no RTL auto-cleanup, so each render is unmounted here.
 afterEach(cleanup);
+
+describe('ConversationSearchOverlay — text that arrives after the row exists', () => {
+  /**
+   * The stream emits 'data' only when a streaming group OPENS; every later
+   * frame is `appendContent`, which mutates the row in place and emits CHUNK on
+   * the instance alone. `items` keeps its identity throughout, so nothing
+   * downstream re-renders unless the row itself is subscribed to.
+   */
+  it('finds text appended to the LAST row after the search is open', async () => {
+    const opening = prose(FlowElementTypes.CHAT, 'the answer begins');
+    renderOverlay([prose(FlowElementTypes.USER_MESSAGE, 'a question', { role: 'user' }), opening]);
+    await search('ZEBRAMARKER');
+    expect(screen.queryAllByTestId('conversation-search-result')).toHaveLength(0);
+
+    act(() => opening.appendContent(' and then ZEBRAMARKER lands'));
+
+    await waitFor(() => expect(screen.getAllByTestId('conversation-search-result')).toHaveLength(1));
+  });
+
+  it('finds text appended to a row that is NO LONGER last', async () => {
+    // The regression: an assistant message opens, a tool call lands after it,
+    // and the answer keeps growing from the middle of the array. Subscribing to
+    // the tail alone missed every frame after that point.
+    const opening = prose(FlowElementTypes.CHAT, 'the answer begins');
+    const toolCallAfter = prose(FlowElementTypes.TOOL_RESULT, 'a tool ran meanwhile');
+    renderOverlay([opening, toolCallAfter]);
+    await search('ZEBRAMARKER');
+    expect(screen.queryAllByTestId('conversation-search-result')).toHaveLength(0);
+
+    act(() => opening.appendContent(' and then ZEBRAMARKER lands'));
+
+    await waitFor(() => expect(screen.getAllByTestId('conversation-search-result')).toHaveLength(1));
+    expect(screen.getByTestId('conversation-search-result').textContent).toContain('ZEBRAMARKER');
+  });
+
+  it('keeps the hit count in step with several appends', async () => {
+    const opening = prose(FlowElementTypes.CHAT, 'start');
+    renderOverlay([opening, prose(FlowElementTypes.TOOL_RESULT, 'tool output')]);
+    await search('ZEBRAMARKER');
+
+    act(() => opening.appendContent(' ZEBRAMARKER one'));
+    await waitFor(() => expect(screen.getAllByTestId('conversation-search-result')).toHaveLength(1));
+
+    act(() => opening.appendContent(' ZEBRAMARKER two'));
+    await waitFor(() => expect(screen.getAllByTestId('conversation-search-result')).toHaveLength(2));
+  });
+});
 
 describe('ConversationSearchOverlay — expanding a hit', () => {
   it('shows no context until a hit is clicked', async () => {

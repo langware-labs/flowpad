@@ -19,6 +19,10 @@
  * Consequence, accepted by design: this finds what the agent SAID, not what the
  * terminal PAINTED. Banners, pinned status lines and raw rows that never became
  * a message are not searchable.
+ *
+ * Scope is the ACTIVE SESSION. The stream outlives a session — a resumed or
+ * restarted process keeps whatever it streamed under the previous session_id —
+ * so rows are filtered against `process.session_id`. See `isInSession`.
  */
 
 import { AgenticProcess, FlowData, FlowDataEvents, FlowElementTypes } from '@sdk';
@@ -86,6 +90,8 @@ export interface ConversationSearchResult {
    * hits that would mean 200 redundant slices, and only one row is ever open.
    */
   items: readonly FlowData[];
+  /** The session the results are scoped to; null when the process has none. */
+  sessionId: string | null;
 }
 
 /** One message in an expanded hit's surroundings. */
@@ -102,6 +108,42 @@ export const CONTEXT_AFTER = 2;
 
 function isUserRow(item: FlowData): boolean {
   return item.elementType === FlowElementTypes.USER_MESSAGE || item.attributes?.role === 'user';
+}
+
+/**
+ * The session a row belongs to, or null when it doesn't say.
+ *
+ * Replayed rows carry the transcript envelope, whose `session_id` is the
+ * authoritative per-row answer (`transcript_analyzer/entry.py` writes it into
+ * every `to_dict`). Live rows have no envelope at all.
+ */
+export function sessionIdOf(item: FlowData): string | null {
+  const entry = item.processEntry?.transcript_entry as { session_id?: unknown } | undefined;
+  if (entry && typeof entry.session_id === 'string' && entry.session_id) return entry.session_id;
+  const attr = item.attributes?.['session-id'];
+  return attr || null;
+}
+
+/**
+ * Whether a row belongs to the session the terminal is currently running.
+ *
+ * A row that names no session is live — it arrived over the WS from the worker
+ * running right now, so it IS the active session by construction. Only a row
+ * that names a DIFFERENT session is excluded, which is exactly the leftover a
+ * resume/restart leaves behind in the long-lived stream.
+ *
+ * With no active session id known (a process that has not started one), nothing
+ * is filtered — an unknown scope must not silently empty the results.
+ */
+export function isInSession(item: FlowData, activeSessionId: string | null | undefined): boolean {
+  if (!activeSessionId) return true;
+  const sid = sessionIdOf(item);
+  return sid === null || sid === activeSessionId;
+}
+
+export interface SearchScope {
+  /** Restrict to this session; omit/null to search every row in the stream. */
+  sessionId?: string | null;
 }
 
 function labelFor(item: FlowData): string {
@@ -173,14 +215,16 @@ function buildSnippet(text: string, at: number, queryLength: number): { snippet:
 export function findConversationHits(
   items: readonly FlowData[],
   query: string,
-  maxHits: number = MAX_HITS,
+  options: SearchScope & { maxHits?: number } = {},
 ): { hits: ConversationHit[]; truncated: boolean } {
+  const { sessionId = null, maxHits = MAX_HITS } = options;
   const hits: ConversationHit[] = [];
   if (!query) return { hits, truncated: false };
   const needle = query.toLowerCase();
 
   for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
     const item = items[itemIndex];
+    if (!isInSession(item, sessionId)) continue;
     const text = searchableText(item);
     if (!text) continue;
 
@@ -223,9 +267,9 @@ export function findConversationHits(
 export function contextWindowFor(
   items: readonly FlowData[],
   itemIndex: number,
-  before: number = CONTEXT_BEFORE,
-  after: number = CONTEXT_AFTER,
+  options: SearchScope & { before?: number; after?: number } = {},
 ): ContextEntry[] {
+  const { sessionId = null, before = CONTEXT_BEFORE, after = CONTEXT_AFTER } = options;
   if (itemIndex < 0 || itemIndex >= items.length) return [];
 
   const entryAt = (i: number, isMatch: boolean): ContextEntry => ({
@@ -235,15 +279,19 @@ export function contextWindowFor(
     isMatch,
   });
 
+  // Context never crosses a session boundary — a neighbour from the previous
+  // run is not context for this one.
+  const readable = (i: number) => isInSession(items[i], sessionId) && !!searchableText(items[i]);
+
   const head: ContextEntry[] = [];
   for (let i = itemIndex - 1; i >= 0 && head.length < before; i--) {
-    if (!searchableText(items[i])) continue;
+    if (!readable(i)) continue;
     head.unshift(entryAt(i, false));
   }
 
   const tail: ContextEntry[] = [];
   for (let i = itemIndex + 1; i < items.length && tail.length < after; i++) {
-    if (!searchableText(items[i])) continue;
+    if (!readable(i)) continue;
     tail.push(entryAt(i, false));
   }
 
@@ -285,32 +333,61 @@ export function useConversationSearch(
   }, [process]);
 
   /**
-   * A streaming answer is ONE FlowData mutated in place: `appendContent` emits
-   * CHUNK on the instance and does NOT emit 'data' on the stream, and
-   * `FlowDataStream.items` stays memoized until it does. So
-   * `useAgenticProcessStream` — which re-emits only on length/identity change —
-   * never sees text growing inside an already-listed message. Without this,
-   * searching mid-turn silently misses everything after the first frame.
+   * A streaming answer is ONE FlowData mutated in place: the stream emits
+   * 'data' only when the group OPENS — carrying whatever the first frame held,
+   * often a few characters — and every later frame is `appendContent`, which
+   * emits CHUNK on the instance and nothing on the stream. The authoritative
+   * `complete=true` payload arrives the same way. `FlowDataStream.items` stays
+   * memoized throughout, so `useAgenticProcessStream` (which re-emits only on
+   * length/identity change) never sees the text grow.
+   *
+   * Subscribing to the TAIL alone is not enough, and that was the bug: the
+   * moment a tool call lands after an open assistant message, the growing row
+   * is no longer last, and the rest of that answer never becomes searchable.
+   *
+   * So every row is subscribed. There is no cheaper filter — `ready` looks like
+   * one but is set at construction, so it is true even while a group is open
+   * and `appendContent` is still mutating the row. Subscribing is diffed
+   * against what is already bound, making it O(rows added) per stream event
+   * rather than re-binding the whole conversation each time.
    */
   const [chunkTick, setChunkTick] = useState(0);
-  const tail = items.length > 0 ? items[items.length - 1] : null;
-  const tailRef = useRef<FlowData | null>(null);
-  tailRef.current = tail;
+  const bound = useRef<Map<FlowData, () => void>>(new Map());
   useEffect(() => {
-    if (!tail) return;
-    const onChunk = () => setChunkTick((n) => n + 1);
-    tail.on(FlowDataEvents.CHUNK, onChunk);
+    const map = bound.current;
+    const live = new Set(items);
+    for (const [item, handler] of map) {
+      // Gone from the stream — cleared, or retracted as an optimistic echo.
+      if (live.has(item)) continue;
+      item.off(FlowDataEvents.CHUNK, handler);
+      map.delete(item);
+    }
+    for (const item of items) {
+      if (map.has(item)) continue;
+      const handler = () => setChunkTick((n) => n + 1);
+      item.on(FlowDataEvents.CHUNK, handler);
+      map.set(item, handler);
+    }
+  }, [items]);
+
+  // Release every listener on unmount — the search UI is mounted only while the
+  // bar is open, but the FlowData rows outlive it on the process.
+  useEffect(() => {
+    const map = bound.current;
     return () => {
-      tail.off(FlowDataEvents.CHUNK, onChunk);
+      for (const [item, handler] of map) item.off(FlowDataEvents.CHUNK, handler);
+      map.clear();
     };
-  }, [tail]);
+  }, []);
+
+  const sessionId = process?.session_id ?? null;
 
   const { hits, truncated } = useMemo(
-    () => findConversationHits(items, query),
+    () => findConversationHits(items, query, { sessionId }),
     // chunkTick is a deliberate recompute trigger for in-place text growth.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, query, chunkTick],
+    [items, query, chunkTick, sessionId],
   );
 
-  return { hits, truncated, loading, items };
+  return { hits, truncated, loading, items, sessionId };
 }

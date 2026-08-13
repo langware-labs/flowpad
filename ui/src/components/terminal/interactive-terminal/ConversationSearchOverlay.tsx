@@ -60,13 +60,13 @@ export const ConversationSearchOverlay: React.FC<ConversationSearchOverlayProps>
   const inputRef = useRef<HTMLInputElement>(null);
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  const { hits, truncated, loading, items } = useConversationSearch(process, query);
+  const { hits, truncated, loading, items, sessionId } = useConversationSearch(process, query);
 
   /** Only the open row's surroundings are built — see `contextWindowFor`. */
   const expandedContext = useMemo(() => {
     const hit = expanded === null ? undefined : hits[expanded];
-    return hit ? contextWindowFor(items, hit.itemIndex) : [];
-  }, [expanded, hits, items]);
+    return hit ? contextWindowFor(items, hit.itemIndex, { sessionId }) : [];
+  }, [expanded, hits, items, sessionId]);
 
   useEffect(() => {
     inputRef.current?.focus();

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { FlowData, FlowElementTypes } from '@sdk';
-import { contextWindowFor, findConversationHits, searchableText, MAX_HITS } from '@src/hooks/use-conversation-search';
+import {
+  contextWindowFor,
+  findConversationHits,
+  isInSession,
+  searchableText,
+  sessionIdOf,
+  MAX_HITS,
+} from '@src/hooks/use-conversation-search';
 
 /** A prose row (assistant/user/tool-result/…) carrying `text`. */
 function prose(elementType: string, text: string, attrs: Record<string, string> = {}): FlowData {
@@ -15,6 +22,64 @@ function toolCall(toolName: string, input: Record<string, unknown>): FlowData {
     { 'data-type': 'object', 'tool-name': toolName },
   );
 }
+
+/** A replayed row, which carries the transcript envelope naming its session. */
+function replayed(elementType: string, text: string, sessionId: string): FlowData {
+  const item = prose(elementType, text);
+  item.processEntry = { transcript_entry: { kind: 'assistant_message', session_id: sessionId } };
+  return item;
+}
+
+describe('session scoping', () => {
+  it('reads the session off a replayed row and reports null for a live one', () => {
+    expect(sessionIdOf(replayed(FlowElementTypes.CHAT, 'x', 'sess-1'))).toBe('sess-1');
+    expect(sessionIdOf(prose(FlowElementTypes.CHAT, 'x'))).toBeNull();
+  });
+
+  it('treats a row that names no session as live, hence current', () => {
+    // Live rows arrive over the WS from the worker running right now.
+    expect(isInSession(prose(FlowElementTypes.CHAT, 'x'), 'sess-1')).toBe(true);
+  });
+
+  it('excludes rows belonging to a previous session', () => {
+    expect(isInSession(replayed(FlowElementTypes.CHAT, 'x', 'sess-0'), 'sess-1')).toBe(false);
+    expect(isInSession(replayed(FlowElementTypes.CHAT, 'x', 'sess-1'), 'sess-1')).toBe(true);
+  });
+
+  it('filters nothing when no active session is known', () => {
+    // An unknown scope must not silently empty the results.
+    expect(isInSession(replayed(FlowElementTypes.CHAT, 'x', 'sess-0'), null)).toBe(true);
+  });
+
+  it('searches only the active session — a resumed process keeps the old rows', () => {
+    const items = [
+      replayed(FlowElementTypes.CHAT, 'ZEBRAMARKER from the previous run', 'sess-0'),
+      replayed(FlowElementTypes.CHAT, 'ZEBRAMARKER from this run', 'sess-1'),
+      prose(FlowElementTypes.CHAT, 'ZEBRAMARKER streaming in live'),
+    ];
+    const { hits } = findConversationHits(items, 'ZEBRAMARKER', { sessionId: 'sess-1' });
+    expect(hits.map((h) => h.itemIndex)).toEqual([1, 2]);
+  });
+
+  it('searches every session when none is given', () => {
+    const items = [
+      replayed(FlowElementTypes.CHAT, 'ZEBRAMARKER old', 'sess-0'),
+      replayed(FlowElementTypes.CHAT, 'ZEBRAMARKER new', 'sess-1'),
+    ];
+    expect(findConversationHits(items, 'ZEBRAMARKER').hits).toHaveLength(2);
+  });
+
+  it('does not pull context across a session boundary', () => {
+    const items = [
+      replayed(FlowElementTypes.CHAT, 'previous run tail', 'sess-0'),
+      replayed(FlowElementTypes.CHAT, 'this run opener', 'sess-1'),
+      replayed(FlowElementTypes.CHAT, 'ZEBRAMARKER', 'sess-1'),
+      replayed(FlowElementTypes.CHAT, 'this run follow-up', 'sess-1'),
+    ];
+    const window = contextWindowFor(items, 2, { sessionId: 'sess-1' });
+    expect(window.map((e) => e.itemIndex)).toEqual([1, 2, 3]);
+  });
+});
 
 describe('findConversationHits — corpus filtering', () => {
   it('finds a match in an assistant message that scrolled out of the terminal', () => {
