@@ -8,6 +8,7 @@
  * typed failures become dock-load errors rendered inside the requested URL.
  */
 
+import { t } from '@lingui/core/macro';
 import {
   AgenticProcess,
   CollaborationRoom,
@@ -62,8 +63,8 @@ function throwProjectRouteError(cause: unknown): never {
       'hard',
       {
         action: 'render_error',
-        title: 'Project not found',
-        message: "This project doesn't exist or is no longer available.",
+        title: t`Project not found`,
+        message: t`This project doesn't exist or is no longer available.`,
       },
       'project',
       cause,
@@ -74,8 +75,8 @@ function throwProjectRouteError(cause: unknown): never {
     'soft',
     {
       action: 'render_error',
-      title: 'Project unavailable',
-      message: 'Could not load this project. Try again in a moment.',
+      title: t`Project unavailable`,
+      message: t`Could not load this project. Try again in a moment.`,
       retryable: true,
     },
     'project',
@@ -91,8 +92,8 @@ function throwRoomLoadError(cause: unknown, roomId: string): never {
       'hard',
       {
         action: 'render_error',
-        title: 'Room not found',
-        message: 'This collaboration room no longer exists or is unavailable.',
+        title: t`Room not found`,
+        message: t`This collaboration room no longer exists or is unavailable.`,
       },
       'project',
       cause,
@@ -103,8 +104,8 @@ function throwRoomLoadError(cause: unknown, roomId: string): never {
     'soft',
     {
       action: 'render_error',
-      title: 'Room unavailable',
-      message: `Could not load collaboration room ${roomId.slice(0, 8)}. Try again in a moment.`,
+      title: t`Room unavailable`,
+      message: t`Could not load collaboration room ${roomId.slice(0, 8)}. Try again in a moment.`,
       retryable: true,
     },
     'project',
@@ -119,8 +120,8 @@ function throwShellTabLoadError(error: ShellLoadError): never {
       'hard',
       {
         action: 'render_error',
-        title: 'Shell not found',
-        message: 'This terminal no longer exists.',
+        title: t`Shell not found`,
+        message: t`This terminal no longer exists.`,
       },
       'project',
       error,
@@ -132,7 +133,7 @@ function throwShellTabLoadError(error: ShellLoadError): never {
       'hard',
       {
         action: 'render_error',
-        title: 'Shell unavailable',
+        title: t`Shell unavailable`,
         message: error.errorMessage ?? 'Shell error',
       },
       'project',
@@ -272,8 +273,8 @@ export async function loadProjectRoute(
       'hard',
       {
         action: 'render_error',
-        title: 'Unsupported tab',
-        message: 'This project tab URL is malformed.',
+        title: t`Unsupported tab`,
+        message: t`This project tab URL is malformed.`,
       },
       'project',
     );
@@ -334,8 +335,8 @@ export async function loadProjectRoute(
     'hard',
     {
       action: 'render_error',
-      title: 'Unsupported tab',
-      message: `Project tabs cannot load ${tabTypeId.type}.`,
+      title: t`Unsupported tab`,
+      message: t`Project tabs cannot load ${tabTypeId.type}.`,
     },
     'project',
   );

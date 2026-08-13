@@ -185,7 +185,7 @@ export function EventFeed({
               type="button"
               onClick={onClearTarget}
               className="text-muted-foreground hover:text-foreground"
-              aria-label="Clear subject filter"
+              aria-label={t`Clear subject filter`}
             >
               <X className="size-3" />
             </button>

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import {
   Capability,
   capabilityManager,
@@ -188,9 +189,9 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   const authBadge =
     authMode === 'api'
       ? apiAvailable
-        ? { label: 'LLM key', tone: 'emerald' as const }
-        : { label: 'Key not set', tone: 'amber' as const }
-      : { label: 'Device login', tone: 'sky' as const };
+        ? { label: t`LLM key`, tone: 'emerald' as const }
+        : { label: t`Key not set`, tone: 'amber' as const }
+      : { label: t`Device login`, tone: 'sky' as const };
 
   return {
     capability,
@@ -244,26 +245,26 @@ function AuthBadge({
 
 const STATUS_TEXT: Record<Status, { label: string; dot: string; tone: string }> = {
   signedin: {
-    label: 'Signed in',
+    label: t`Signed in`,
     dot: 'bg-emerald-400 shadow-[0_0_7px] shadow-emerald-400/60',
     tone: 'text-emerald-500',
   },
   awaiting: {
-    label: 'Waiting for you…',
+    label: t`Waiting for you…`,
     dot: 'bg-sky-400 shadow-[0_0_7px] shadow-sky-400/60 animate-pulse',
     tone: 'text-sky-500',
   },
   busy: {
-    label: 'Starting…',
+    label: t`Starting…`,
     dot: 'bg-sky-400 shadow-[0_0_7px] shadow-sky-400/60 animate-pulse',
     tone: 'text-sky-500',
   },
   signedout: {
-    label: 'Not signed in',
+    label: t`Not signed in`,
     dot: 'bg-amber-400 shadow-[0_0_7px] shadow-amber-400/60',
     tone: 'text-amber-500',
   },
-  unavailable: { label: 'Not installed', dot: 'bg-muted-foreground/40', tone: 'text-muted-foreground' },
+  unavailable: { label: t`Not installed`, dot: 'bg-muted-foreground/40', tone: 'text-muted-foreground' },
 };
 
 /** Master list: one big, tappable row per assistant. */

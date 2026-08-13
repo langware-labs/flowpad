@@ -207,7 +207,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
 
     if (!targetId && selectedTimestamp) {
       const targetMs = new Date(selectedTimestamp).getTime();
-       
+
       let closest: SnifferEvent | null = null;
       let closestDiff = Infinity;
       for (const e of displayEvents) {

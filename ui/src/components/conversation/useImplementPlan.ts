@@ -1,11 +1,6 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
-import {
-  AgenticProcess,
-  FlowMessage,
-  QueryRequest,
-  Task,
-  TypeId,
-} from '@sdk';
+import { AgenticProcess, FlowMessage, QueryRequest, Task, TypeId } from '@sdk';
 import { ClaudeAgentOptions } from '@sdk/cli_workers/claude-cli';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
@@ -73,9 +68,7 @@ export function useImplementPlan({
   // the watched query notices the new entity. The watched-query result
   // (`planSessionByMessageId`) takes over once it catches up — pending stays
   // in the map but loses to live in `conversationPlanSession` below.
-  const [pendingPlanPointers, setPendingPlanPointers] = useState<Map<string, DockPointer>>(
-    () => new Map(),
-  );
+  const [pendingPlanPointers, setPendingPlanPointers] = useState<Map<string, DockPointer>>(() => new Map());
 
   const runImplementPlan = useCallback(
     (messageId: string) => {
@@ -83,7 +76,7 @@ export function useImplementPlan({
       const run = async () => {
         const workdir = await resolveWorkdir(task.project_id);
         if (!workdir) {
-          notify.warning({ title: 'Map this conversation to a local project first.' });
+          notify.warning({ title: t`Map this conversation to a local project first.` });
           return;
         }
         try {
@@ -110,7 +103,7 @@ export function useImplementPlan({
           proc.openTerminalDock();
         } catch (err) {
           console.error('[useImplementPlan] failed', err);
-          notify.error({ title: 'Failed to start session' });
+          notify.error({ title: t`Failed to start session` });
         }
       };
       if (ensureMapped) ensureMapped(run);
@@ -125,12 +118,13 @@ export function useImplementPlan({
   // only one that's meaningful here); for a tie we keep the most recently
   // created so users land in the latest run after re-clicks.
   const planSessionsQuery = useMemo(
-    () => new QueryRequest({
-      type: AgenticProcess.type,
-      scope: [],
-      name: `conv-plan-sessions:${conversationId}`,
-      query: undefined,
-    }),
+    () =>
+      new QueryRequest({
+        type: AgenticProcess.type,
+        scope: [],
+        name: `conv-plan-sessions:${conversationId}`,
+        query: undefined,
+      }),
     [conversationId],
   );
   const { data: planSessionCandidates = [] } = useEntitiesQuery<AgenticProcess>(planSessionsQuery, {

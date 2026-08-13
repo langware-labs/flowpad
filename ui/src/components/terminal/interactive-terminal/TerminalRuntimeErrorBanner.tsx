@@ -1,20 +1,8 @@
+import { t } from '@lingui/core/macro';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import {
-  AlertTriangle,
-  PlayCircle,
-  Plug,
-  RefreshCw,
-  Wand2,
-  type LucideIcon,
-} from 'lucide-react';
-import {
-  AgenticProcess,
-  Project,
-  TypeId,
-  dataContext,
-  type TerminalRuntimeError,
-} from '@sdk';
+import { AlertTriangle, PlayCircle, Plug, RefreshCw, Wand2, type LucideIcon } from 'lucide-react';
+import { AgenticProcess, Project, TypeId, dataContext, type TerminalRuntimeError } from '@sdk';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { useContext as useDataContext } from '@src/hooks/useContext';
@@ -61,16 +49,19 @@ async function loadProcessById(processId: string): Promise<AgenticProcess | null
 async function retryStart(processId: string): Promise<boolean> {
   const process = await loadProcessById(processId);
   if (!process) {
-    notify.error({ title: 'Couldn’t resolve this process.', id: `terminal-recover:${processId}` });
+    notify.error({ title: t`Couldn’t resolve this process.`, id: `terminal-recover:${processId}` });
     return false;
   }
   try {
     await process.start({ visible: true });
-    notify.success({ title: 'Reconnected.', id: `terminal-recover:${processId}` });
+    notify.success({ title: t`Reconnected.`, id: `terminal-recover:${processId}` });
     dataContext.setTerminalRuntimeError(null);
     return true;
   } catch (err) {
-    notify.error({ title: err instanceof Error ? err.message : 'Reconnect failed.', id: `terminal-recover:${processId}` });
+    notify.error({
+      title: err instanceof Error ? err.message : 'Reconnect failed.',
+      id: `terminal-recover:${processId}`,
+    });
     return false;
   }
 }
@@ -85,12 +76,12 @@ async function retryStart(processId: string): Promise<boolean> {
 export async function retryFailedStart(processId: string): Promise<boolean> {
   const process = await loadProcessById(processId);
   if (!process) {
-    notify.error({ title: 'Couldn’t resolve this process.', id: `terminal-recover:${processId}` });
+    notify.error({ title: t`Couldn’t resolve this process.`, id: `terminal-recover:${processId}` });
     return false;
   }
   try {
     await process.start({ visible: true, retry: true });
-    notify.success({ title: 'Relaunched.', id: `terminal-recover:${processId}` });
+    notify.success({ title: t`Relaunched.`, id: `terminal-recover:${processId}` });
     dataContext.setTerminalRuntimeError(null);
     return true;
   } catch (err) {
@@ -102,13 +93,13 @@ export async function retryFailedStart(processId: string): Promise<boolean> {
 async function recoverProject(processId: string): Promise<boolean> {
   const process = await loadProcessById(processId);
   if (!process) {
-    notify.error({ title: 'Couldn’t resolve this process.', id: `terminal-recover:${processId}` });
+    notify.error({ title: t`Couldn’t resolve this process.`, id: `terminal-recover:${processId}` });
     return false;
   }
   try {
     const recovered = await process.recoverProject();
     if (!recovered) {
-      notify.error({ title: 'Project not recoverable from this workdir.', id: `terminal-recover:${processId}` });
+      notify.error({ title: t`Project not recoverable from this workdir.`, id: `terminal-recover:${processId}` });
       return false;
     }
     await dataContext.setContextEntityTypeId(
@@ -117,11 +108,14 @@ async function recoverProject(processId: string): Promise<boolean> {
       'CurrentProjectTypeId' as never,
       new TypeId(Project.type, recovered.id),
     );
-    notify.success({ title: 'Project recovered.', id: `terminal-recover:${processId}` });
+    notify.success({ title: t`Project recovered.`, id: `terminal-recover:${processId}` });
     dataContext.setTerminalRuntimeError(null);
     return true;
   } catch (err) {
-    notify.error({ title: err instanceof Error ? err.message : 'Project recovery failed.', id: `terminal-recover:${processId}` });
+    notify.error({
+      title: err instanceof Error ? err.message : 'Project recovery failed.',
+      id: `terminal-recover:${processId}`,
+    });
     return false;
   }
 }
@@ -137,7 +131,7 @@ async function retryNetwork(_processId: string): Promise<boolean> {
 const KIND_CONFIG: Record<TerminalRuntimeError['kind'], KindConfig> = {
   runtime_terminated: {
     icon: AlertTriangle,
-    title: 'This process has stopped.',
+    title: t`This process has stopped.`,
     detail: 'Click Restart to spawn a fresh PTY.',
     actionLabel: 'Restart',
     actionIcon: PlayCircle,
@@ -145,7 +139,7 @@ const KIND_CONFIG: Record<TerminalRuntimeError['kind'], KindConfig> = {
   },
   pty_attach_failed: {
     icon: Plug,
-    title: 'PTY disconnected.',
+    title: t`PTY disconnected.`,
     detail: 'The backend may have restarted. Click to reattach.',
     actionLabel: 'Reconnect',
     actionIcon: Plug,
@@ -153,7 +147,7 @@ const KIND_CONFIG: Record<TerminalRuntimeError['kind'], KindConfig> = {
   },
   shell_entity_missing: {
     icon: AlertTriangle,
-    title: 'Shell record is missing for this process.',
+    title: t`Shell record is missing for this process.`,
     detail: 'A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)',
     actionLabel: 'Restart',
     actionIcon: PlayCircle,
@@ -161,7 +155,7 @@ const KIND_CONFIG: Record<TerminalRuntimeError['kind'], KindConfig> = {
   },
   project_missing: {
     icon: Wand2,
-    title: 'This process points to a deleted project.',
+    title: t`This process points to a deleted project.`,
     detail: 'Recover it from the workdir, or pick a new project via the project chip.',
     actionLabel: 'Recover project',
     actionIcon: Wand2,
@@ -169,7 +163,7 @@ const KIND_CONFIG: Record<TerminalRuntimeError['kind'], KindConfig> = {
   },
   network_error: {
     icon: RefreshCw,
-    title: 'Couldn’t reach the backend.',
+    title: t`Couldn’t reach the backend.`,
     detail: 'The fetch failed. Retry once the backend is up.',
     actionLabel: 'Retry',
     actionIcon: RefreshCw,
@@ -177,7 +171,7 @@ const KIND_CONFIG: Record<TerminalRuntimeError['kind'], KindConfig> = {
   },
   project_mismatch: {
     icon: AlertTriangle,
-    title: 'This session belongs to a different project.',
+    title: t`This session belongs to a different project.`,
     detail:
       'The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project.',
     actionLabel: 'Reload',
@@ -186,9 +180,8 @@ const KIND_CONFIG: Record<TerminalRuntimeError['kind'], KindConfig> = {
   },
   failed_to_start: {
     icon: AlertTriangle,
-    title: 'Failed to start.',
-    detail:
-      'The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again.',
+    title: t`Failed to start.`,
+    detail: 'The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again.',
     actionLabel: 'Retry',
     actionIcon: RefreshCw,
     action: retryFailedStart,
@@ -218,12 +211,9 @@ export function TerminalRuntimeErrorBanner() {
   // Prefer it over the generic copy when the process is in cache.
   const latchedReason =
     terminalRuntimeError.kind === 'failed_to_start'
-      ? AgenticProcess.getByIdFromCache<AgenticProcess>(terminalRuntimeError.processId)
-          ?.start_failure
+      ? AgenticProcess.getByIdFromCache<AgenticProcess>(terminalRuntimeError.processId)?.start_failure
       : null;
-  const detail = latchedReason
-    ? `${latchedReason} Auto-relaunch is paused — Retry to launch again.`
-    : cfg.detail;
+  const detail = latchedReason ? `${latchedReason} Auto-relaunch is paused — Retry to launch again.` : cfg.detail;
 
   const Icon = cfg.icon;
   const ActionIcon = cfg.actionIcon;

@@ -4,6 +4,7 @@
  * (StatTile grid + verdictStyle status chip) so it reads consistently with the
  * rest of the agentic-execution UI.
  */
+import { t } from '@lingui/core/macro';
 import { Workflow } from 'lucide-react';
 
 import { StatTile } from '@src/components/assets/editor/agent-trace/simple/SimpleSessionReport';
@@ -85,10 +86,10 @@ export function WorkflowRunSummary({ payload, label }: Props) {
         </div>
       )}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <StatTile label="Agents" value={formatNumber(num(payload.agentCount))} />
-        <StatTile label="Tokens" value={formatNumber(num(payload.totalTokens))} />
-        <StatTile label="Tool calls" value={formatNumber(num(payload.totalToolCalls))} />
-        <StatTile label="Duration" value={formatDuration(num(payload.durationMs))} />
+        <StatTile label={t`Agents`} value={formatNumber(num(payload.agentCount))} />
+        <StatTile label={t`Tokens`} value={formatNumber(num(payload.totalTokens))} />
+        <StatTile label={t`Tool calls`} value={formatNumber(num(payload.totalToolCalls))} />
+        <StatTile label={t`Duration`} value={formatDuration(num(payload.durationMs))} />
       </div>
     </div>
   );

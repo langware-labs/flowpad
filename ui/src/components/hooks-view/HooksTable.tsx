@@ -1,3 +1,5 @@
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
@@ -16,16 +18,16 @@ export interface HookTableRow {
 }
 
 const HOOK_EVENTS = {
-  PreToolUse: { title: 'Pre Tool Use', icon: '⚡' },
-  PostToolUse: { title: 'Post Tool Use', icon: '✅' },
-  PermissionRequest: { title: 'Permission Request', icon: '🔐' },
-  UserPromptSubmit: { title: 'User Prompt Submit', icon: '💬' },
-  Stop: { title: 'Stop', icon: '🛑' },
-  SubagentStop: { title: 'Subagent Stop', icon: '🤖' },
-  SessionStart: { title: 'Session Start', icon: '🚀' },
-  SessionEnd: { title: 'Session End', icon: '🏁' },
-  Notification: { title: 'Notification', icon: '🔔' },
-  PreCompact: { title: 'Pre Compact', icon: '📦' },
+  PreToolUse: { title: msg`Pre Tool Use`, icon: '⚡' },
+  PostToolUse: { title: msg`Post Tool Use`, icon: '✅' },
+  PermissionRequest: { title: msg`Permission Request`, icon: '🔐' },
+  UserPromptSubmit: { title: msg`User Prompt Submit`, icon: '💬' },
+  Stop: { title: msg`Stop`, icon: '🛑' },
+  SubagentStop: { title: msg`Subagent Stop`, icon: '🤖' },
+  SessionStart: { title: msg`Session Start`, icon: '🚀' },
+  SessionEnd: { title: msg`Session End`, icon: '🏁' },
+  Notification: { title: msg`Notification`, icon: '🔔' },
+  PreCompact: { title: msg`Pre Compact`, icon: '📦' },
 } as const;
 
 interface HooksTableProps {
@@ -97,7 +99,10 @@ export function HooksTable({ rows, selectedRowId, onRowClick, onAddClick, onDele
               >
                 <TableCell className="font-medium">
                   {HOOK_EVENTS[row.eventName as keyof typeof HOOK_EVENTS]?.icon}{' '}
-                  {HOOK_EVENTS[row.eventName as keyof typeof HOOK_EVENTS]?.title || row.eventName}
+                  {(() => {
+                    const d = HOOK_EVENTS[row.eventName as keyof typeof HOOK_EVENTS]?.title;
+                    return d ? t(d) : row.eventName;
+                  })()}
                 </TableCell>
                 <TableCell>
                   <code className="text-xs">{row.matcher}</code>

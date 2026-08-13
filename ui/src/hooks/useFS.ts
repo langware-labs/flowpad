@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import type { BrowseCache, ContentCache } from '@sdk';
 import { dataManager, fsManager, fsStore, type FSEntry, type TypeId } from '@sdk';
 import { notify } from '@src/notifications';
@@ -74,8 +75,7 @@ export function useFS(typeid?: TypeId) {
     /** Monotonic change token for this exact path. Folder paths also advance
      * when a descendant changes, as owned by FSStore.invalidate(). */
     revision: (path: string): number => {
-      const normalizedPath =
-        path.replace(/\/+/g, '/').replace(/\/$/, '').replace(/^\/+/, '') || '/';
+      const normalizedPath = path.replace(/\/+/g, '/').replace(/\/$/, '').replace(/^\/+/, '') || '/';
       return pathRevisions.get(`${typeid.toString()}:${normalizedPath}`) ?? 0;
     },
 
@@ -235,7 +235,7 @@ export function useFS(typeid?: TypeId) {
     refetch: async (path: string, asBlob = false) => {
       const store = fsStore.getState();
       if (store.getContentFromCache(typeid, path)?.isDirty) {
-        notify.warning({ title: 'Discarded unsaved edits', message: path });
+        notify.warning({ title: t`Discarded unsaved edits`, message: path });
       }
       store.invalidate(typeid, path, 'content');
       return store.downloadFile(typeid, path, asBlob);

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { ExternalLink, Eye, Pencil, Play } from 'lucide-react';
 import type { AttachmentActionContext, AttachmentActionDescriptor } from './types';
 import { firstUnapprovedPromptIdx } from './prompt-attachment';
@@ -36,13 +37,11 @@ export const ATTACHMENT_ACTION_DESCRIPTORS: AttachmentActionDescriptor[] = [
       const sessionLabel = ctx.workerSessionExists ? ctx.workerSessionLabel : null;
       return {
         id: 'prompt.approve-execute',
-        label: sessionLabel ? `${truncateLabel(sessionLabel)} · new run` : 'Run',
+        label: sessionLabel ? t`${truncateLabel(sessionLabel)} · new run` : t`Run`,
         icon: Play,
         variant: 'primary',
         pulse: ctx.workerSessionInFlight,
-        title: sessionLabel
-          ? `Approve and run this prompt in ${sessionLabel}`
-          : 'Approve this prompt and run it',
+        title: sessionLabel ? t`Approve and run this prompt in ${sessionLabel}` : t`Approve this prompt and run it`,
         testId: 'message-bubble-execute-prompt',
         run: () => ctx.handlers.approveAndExecute?.(firstUnapprovedPromptIdx(ctx.fm)),
       };
@@ -53,10 +52,10 @@ export const ATTACHMENT_ACTION_DESCRIPTORS: AttachmentActionDescriptor[] = [
     visible: (ctx) => ctx.isFromOther && !!ctx.specOrPlanTypeId && !!ctx.handlers.viewPlan,
     build: (ctx) => ({
       id: 'spec.view-plan',
-      label: 'View Plan',
+      label: t`View Plan`,
       icon: Eye,
       variant: 'view',
-      title: 'Open the spec/plan in the Milkdown editor',
+      title: t`Open the spec/plan in the Milkdown editor`,
       testId: 'message-bubble-view-plan',
       run: () => ctx.handlers.viewPlan?.(ctx.specOrPlanTypeId!.id),
     }),
@@ -66,10 +65,10 @@ export const ATTACHMENT_ACTION_DESCRIPTORS: AttachmentActionDescriptor[] = [
     visible: (ctx) => ctx.isFromOther && !!ctx.specOrPlanTypeId && ctx.hasPlanSession && !!ctx.handlers.openPlanSession,
     build: (ctx) => ({
       id: 'spec.open-spec-session',
-      label: 'Open Spec Session',
+      label: t`Open Spec Session`,
       icon: ExternalLink,
       variant: 'link',
-      title: 'Open the worker session already started for this spec/plan in this conversation',
+      title: t`Open the worker session already started for this spec/plan in this conversation`,
       testId: 'message-bubble-open-spec-session',
       run: () => ctx.handlers.openPlanSession?.(),
     }),
@@ -79,10 +78,10 @@ export const ATTACHMENT_ACTION_DESCRIPTORS: AttachmentActionDescriptor[] = [
     visible: (ctx) => ctx.isFromOther && !!ctx.specOrPlanTypeId && !ctx.hasPlanSession && !!ctx.handlers.implementPlan,
     build: (ctx) => ({
       id: 'spec.open-spec',
-      label: 'Open Spec',
+      label: t`Open Spec`,
       icon: Play,
       variant: 'primary',
-      title: 'Start a worker session pre-loaded with this spec/plan and the conversation context to read and review (no changes yet)',
+      title: t`Start a worker session pre-loaded with this spec/plan and the conversation context to read and review (no changes yet)`,
       testId: 'message-bubble-open-spec',
       run: () => ctx.handlers.implementPlan?.(),
     }),
@@ -92,10 +91,10 @@ export const ATTACHMENT_ACTION_DESCRIPTORS: AttachmentActionDescriptor[] = [
     visible: (ctx) => ctx.isComposerPreview && !!ctx.handlers.edit && !approveVisible(ctx),
     build: (ctx) => ({
       id: 'prompt.edit',
-      label: 'Edit',
+      label: t`Edit`,
       icon: Pencil,
       variant: 'edit',
-      title: 'Edit the queued prompt',
+      title: t`Edit the queued prompt`,
       run: () => ctx.handlers.edit?.(),
     }),
   },

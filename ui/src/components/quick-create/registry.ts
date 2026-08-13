@@ -11,7 +11,7 @@ import {
   Task,
   Whiteboard,
 } from '@sdk';
-import { msg } from '@lingui/core/macro';
+import { t, msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import { PromptEditDialog } from '@src/components/prompt-library/PromptEditDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -260,7 +260,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     Dialog: PromptEditDialog,
     create: async ({ project, name }) => {
       await Prompt.createInProject(project, name);
-      return { toastTitle: 'Prompt created' };
+      return { toastTitle: msg`Prompt created` };
     },
   },
 ];

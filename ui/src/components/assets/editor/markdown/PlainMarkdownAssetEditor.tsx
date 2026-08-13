@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { MarkdownEditor, type WikiLinkTarget } from './MarkdownEditor';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
@@ -124,7 +125,7 @@ export function PlainMarkdownAssetEditor({
     id: 'runs',
     label: runHistory.length > 0 ? `Runs ${runHistory.length}` : 'Runs',
     icon: History,
-    description: 'Runs on this file',
+    description: t`Runs on this file`,
     panel: <ProcessRunsPanel entries={runHistory} />,
   };
 

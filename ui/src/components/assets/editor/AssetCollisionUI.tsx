@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import type { APIEntity, AssetOccurrence } from '@sdk';
 import { AlertTriangle } from 'lucide-react';
 import { createContext, type ReactNode, useContext, useMemo } from 'react';
@@ -154,7 +155,7 @@ export function AssetCollisionPanel({ entity: explicitEntity }: { entity?: Colli
           {/* Explicit space: this panel appears on duplicated assets in the
               user's OWN projects, where the `@local` alias would resolve their
               wiki and miss the shipped page entirely. */}
-          <WikiLabel wikiword="Duplicate assets" label="Learn about duplicates" space={assistantWikiSpace} />
+          <WikiLabel wikiword="Duplicate assets" label={t`Learn about duplicates`} space={assistantWikiSpace} />
         </div>
       </div>
       {shared ? (
@@ -193,9 +194,9 @@ export function AssetCollisionPanel({ entity: explicitEntity }: { entity?: Colli
               {occurrence.path.slice(shared.length)}
             </div>
             <div className="mt-2 space-y-0.5 border-t pt-2 text-[11px]">
-              <TimeFact label="In Git since" iso={occurrence.introduced_at} />
-              <TimeFact label="Created" iso={occurrence.birth_time} />
-              <TimeFact label="First indexed" iso={occurrence.first_seen_at} />
+              <TimeFact label={t`In Git since`} iso={occurrence.introduced_at} />
+              <TimeFact label={t`Created`} iso={occurrence.birth_time} />
+              <TimeFact label={t`First indexed`} iso={occurrence.first_seen_at} />
             </div>
           </div>
         ))}
@@ -212,9 +213,9 @@ export function useAssetCollisionSideTab(): ExtraSideTab | null {
     if (!entity || duplicateCount <= 0) return null;
     return {
       id: assetCollisionWindowId(entity),
-      label: `Duplicates ${duplicateCount}`,
+      label: t`Duplicates ${duplicateCount}`,
       icon: AlertTriangle,
-      description: 'Other paths with this asset identity',
+      description: t`Other paths with this asset identity`,
       // The Markdown tab registry retains panel elements by id. Read the live
       // context instead of capturing this render's mutable APIEntity prop.
       panel: <AssetCollisionPanel />,
@@ -235,7 +236,7 @@ export function AssetCollisionShell({ entity, children }: { entity: CollisionEnt
         <SideDrawer
           open={open}
           onOpenChange={() => close(windowId)}
-          title="Duplicate assets"
+          title={t`Duplicate assets`}
           count={entity.duplicate_count ?? 0}
           width="w-80"
           data-testid="asset-collision-side-window"

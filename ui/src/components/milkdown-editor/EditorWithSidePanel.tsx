@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import type { ReactNode } from 'react';
 import { useMemo } from 'react';
 import { Link2, PanelRightClose, PanelRightOpen } from 'lucide-react';
@@ -10,9 +11,9 @@ import { BacklinksTab } from './side-windows';
 // The one built-in side window; asset editors append extras via `extraTabs`.
 const BACKLINKS_TAB: TabDescriptor = {
   id: 'backlinks',
-  label: 'Backlinks',
+  label: t`Backlinks`,
   icon: Link2,
-  description: 'Documents that link here',
+  description: t`Documents that link here`,
 };
 
 // Vibe/Standard keep the markdown rail deliberately small. Context is supplied
@@ -70,11 +71,7 @@ interface EditorWithSidePanelProps {
  * caller calls `useSideWindows().open(id)` directly — there is no controlled
  * active-tab prop, because the URL is the single source of truth.
  */
-export function EditorWithSidePanel({
-  children,
-  target,
-  extraTabs,
-}: EditorWithSidePanelProps) {
+export function EditorWithSidePanel({ children, target, extraTabs }: EditorWithSidePanelProps) {
   const { windows, active, open, close, closeAll, select } = useSideWindows();
   const advanced = useIsAdvanced();
 
@@ -91,12 +88,8 @@ export function EditorWithSidePanel({
     const all = [BACKLINKS_TAB, ...extras];
     if (advanced) return all;
     // Non-Advanced: built-in always-on ids, plus any extra tab that opted in.
-    const nonAdvancedExtraIds = new Set(
-      (extraTabs ?? []).filter((t) => t.availableInNonAdvanced).map((t) => t.id),
-    );
-    return all.filter(
-      (tab) => NON_ADVANCED_SIDE_TAB_IDS.has(tab.id) || nonAdvancedExtraIds.has(tab.id),
-    );
+    const nonAdvancedExtraIds = new Set((extraTabs ?? []).filter((t) => t.availableInNonAdvanced).map((t) => t.id));
+    return all.filter((tab) => NON_ADVANCED_SIDE_TAB_IDS.has(tab.id) || nonAdvancedExtraIds.has(tab.id));
   }, [advanced, extraTabs]);
 
   // A window this mode cannot show is IGNORED, never deleted from the URL.
@@ -158,7 +151,7 @@ export function EditorWithSidePanel({
           {advanced && openTabs.length === 0 && (
             <SideRailButton
               icon={PanelRightOpen}
-              label="Expand side window"
+              label={t`Expand side window`}
               onClick={() => open(registry[0].id)}
               testId="md-side-window-expand"
             />

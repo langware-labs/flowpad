@@ -7,7 +7,7 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { Label } from '@src/components/ui/label';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@src/components/ui/accordion';
 import type { ClaudeSettingsJsonRecordList } from '@sdk';
-import { flattenSettings, matchesSearch, groupByCategory, CATEGORY_ORDER } from './settings-utils';
+import { flattenSettings, matchesSearch, groupByCategory, CATEGORY_ORDER, categoryLabel } from './settings-utils';
 import { SettingsFieldRow } from './SettingsFieldRow';
 
 interface ClaudeSettingsPanelProps {
@@ -107,7 +107,7 @@ export function ClaudeSettingsPanel({
           {Array.from(groups.entries()).map(([category, fields]) => (
             <AccordionItem key={category} value={category}>
               <AccordionTrigger className="text-sm font-semibold">
-                {category}
+                {categoryLabel(category)}
                 <span className="ms-2 text-xs font-normal text-muted-foreground">({fields.length})</span>
               </AccordionTrigger>
               <AccordionContent>
