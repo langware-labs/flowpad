@@ -3775,6 +3775,7 @@ msgstr "Connect"
 #~ msgstr "Connect a harness"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
+#: src/pages/entry/OpenSandboxLanding.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect GitHub"
 msgstr "Connect GitHub"
@@ -3797,8 +3798,8 @@ msgid "Connect to GitHub"
 msgstr "Connect to GitHub"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
-#~ msgid "Connect your GitHub account to open it. Whoever shared the sandbox can't do this for you."
-#~ msgstr "Connect your GitHub account to open it. Whoever shared the sandbox can't do this for you."
+msgid "Connect your GitHub account to open it. Whoever shared the sandbox can't do this for you."
+msgstr "Connect your GitHub account to open it. Whoever shared the sandbox can't do this for you."
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
@@ -4589,8 +4590,8 @@ msgid "Couldn't start GitHub connection."
 msgstr "Couldn't start GitHub connection."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
-#~ msgid "Couldn't start the GitHub connection."
-#~ msgstr "Couldn't start the GitHub connection."
+msgid "Couldn't start the GitHub connection."
+msgstr "Couldn't start the GitHub connection."
 
 #: src/components/account/db-stats.tsx
 msgid "Count"
@@ -17823,8 +17824,8 @@ msgid "The FlowPad backend server is not responding."
 msgstr "The FlowPad backend server is not responding."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
-#~ msgid "The GitHub connection didn't complete."
-#~ msgstr "The GitHub connection didn't complete."
+msgid "The GitHub connection didn't complete."
+msgstr "The GitHub connection didn't complete."
 
 #: src/routes/loaders/load-dock-pointer.ts
 #~ msgid "The help desk files are missing. Open the help desk again to download them."
@@ -18244,8 +18245,8 @@ msgid "This sandbox hasn't been started yet"
 msgstr "This sandbox hasn't been started yet"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
-#~ msgid "This sandbox loads code from a private repository."
-#~ msgstr "This sandbox loads code from a private repository."
+msgid "This sandbox loads code from a private repository."
+msgstr "This sandbox loads code from a private repository."
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
