@@ -18441,6 +18441,10 @@ msgid "This runs in the background — feel free to keep working. When it's done
 msgstr "تعمل هذه العملية في الخلفية، ويمكن الاستمرار في العمل بكل حرية. عند الانتهاء، ستكون النتيجة (وأي إجراءات) متاحة في الصفحة الرئيسية."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This sandbox could not be set up."
+msgstr "تعذر إعداد هذه البيئة المعزولة."
+
+#: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This sandbox could not be started."
 msgstr "تعذر بدء تشغيل هذه البيئة المعزولة."
 

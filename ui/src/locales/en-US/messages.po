@@ -18444,6 +18444,10 @@ msgid "This runs in the background — feel free to keep working. When it's done
 msgstr "This runs in the background — feel free to keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
+msgid "This sandbox could not be set up."
+msgstr "This sandbox could not be set up."
+
+#: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This sandbox could not be started."
 msgstr "This sandbox could not be started."
 
