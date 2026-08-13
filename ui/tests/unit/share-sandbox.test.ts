@@ -274,3 +274,64 @@ describe('sandboxShareLink', () => {
     expect(url.pathname).toBe(`/${ComputeNode.type}/${NODE_ID}`);
   });
 });
+
+/**
+ * The project rides along with the machine.
+ *
+ * A sandbox is only useful as the project it opens, and the box fetches that
+ * project from the hub AS the person who opened it — so a role on the machine
+ * alone gets a 401 there and the box falls back to a bare row: right files, no
+ * language, none of the author's settings. It fails silently (the adopt is
+ * best-effort and logs inside the box) and reads as "the sandbox opened in the
+ * wrong language" rather than as a permission problem, which is exactly why it
+ * is asserted on the wire instead of left to be noticed.
+ */
+describe('sharing grants the project too', () => {
+  const PROJECT_ID = '99999999-2222-4333-8444-555555555555';
+
+  function nodeWithProject(): ComputeNode {
+    return new ComputeNode({
+      id: NODE_ID,
+      name: 'Desktop 1',
+      node_config: { pending_setup: { name: 'hebrew project', projectId: PROJECT_ID } },
+    } as never);
+  }
+
+  function targets(): { typeid: string; role: string }[] {
+    return (lastBody().invitation_targets ?? []) as { typeid: string; role: string }[];
+  }
+
+  it('sends the project in the SAME invitation as the machine', async () => {
+    // One invitation, not two: `invitation_targets` is a list the hub grants in
+    // full, so the pair cannot end up half-done.
+    await shareSandboxByEmail(nodeWithProject(), ['someone@example.com']);
+    expect(targets()).toEqual([
+      { typeid: `compute_node-${NODE_ID}`, role: SANDBOX_SHARE_ROLE },
+      { typeid: `project-${PROJECT_ID}`, role: 'member' },
+    ]);
+  });
+
+  it('grants member, not reader', async () => {
+    // On `project`, reader also allows `secret`. Being handed a sandbox is not a
+    // reason to reach its secrets.
+    await shareSandboxByEmail(nodeWithProject(), ['someone@example.com']);
+    expect(targets().find((t) => t.typeid.startsWith('project-'))?.role).toBe('member');
+  });
+
+  it('carries the project on a handover as well as a share', async () => {
+    // The transfer path is the one that produced the bug: a new OWNER of the box
+    // still had no role on the project it opens.
+    await shareSandboxByEmail(nodeWithProject(), ['someone@example.com'], { transfer: true });
+    expect(targets()).toEqual([
+      { typeid: `compute_node-${NODE_ID}`, role: 'owner' },
+      { typeid: `project-${PROJECT_ID}`, role: 'member' },
+    ]);
+    expect(lastBody().transfer).toBe(true);
+  });
+
+  it('sends the machine alone when the box has no project', async () => {
+    // An empty sandbox is a machine and nothing else — there is nothing to grant.
+    await shareSandboxByEmail(node(), ['someone@example.com']);
+    expect(targets()).toEqual([{ typeid: `compute_node-${NODE_ID}`, role: SANDBOX_SHARE_ROLE }]);
+  });
+});
