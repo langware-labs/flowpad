@@ -160,7 +160,10 @@ export default function OpenSandboxLanding() {
   // reading, redirected to `open-service`, and the recipient got the 409 this
   // page exists to prevent. Arriving straight from a sign-in round trip, which is
   // exactly what an invitation does, made that the COMMON path rather than a race.
-  const { launchSandbox, steps } = useSandboxes();
+  const { launchSandbox, provisionProject, steps } = useSandboxes();
+  // The box whose clone failed. Held so a completed GitHub grant can finish the
+  // job on the SAME node rather than starting the arrival over.
+  const pendingNode = useRef<ComputeNode | null>(null);
 
   useEffect(() => {
     if (started.current) return;
@@ -263,6 +266,7 @@ export default function OpenSandboxLanding() {
         // principal making the request. So the only way in is their own account,
         // and the raw `could not read Username` says none of that.
         if (isMissingGitCredential(e)) {
+          pendingNode.current = node;
           setNeedsGithub(true);
           return;
         }
@@ -287,20 +291,40 @@ export default function OpenSandboxLanding() {
     });
   };
 
-  // A grant lands here, and the answer is to do the whole arrival again rather
-  // than resume mid-flight: every step this page takes is idempotent (accepting
-  // an invitation a second time finds nothing pending, and the launch is guarded
-  // against a double provision), and the clone is several steps upstream of where
-  // it failed. Reloading re-enters the one path that is known to work, now with a
-  // token; unpicking the effect to retry from the middle would be a second,
-  // less-tested path for no gain.
+  // A grant lands here, and what it unblocks is the PROJECT, not the machine.
+  //
+  // Reloading was the obvious answer and it is wrong: `ops/setup` has already
+  // succeeded by the time a clone fails, so `isLaunched` is true and a fresh
+  // arrival takes the "already launched" branch straight to `open-service` —
+  // opening a box that never got its project, forever. The VM is not the thing
+  // that failed and must not be rebuilt (a second setup orphans the live one);
+  // the clone is, and it is separately retryable.
   useOAuthFlowComplete(OAUTH_PROVIDERS.GITHUB, (msg) => {
-    if (msg.status === OAuthStatus.SUCCESS) {
+    if (msg.status !== OAuthStatus.SUCCESS) {
+      setConnecting(false);
+      setError(t`The GitHub connection didn't complete.`);
+      return;
+    }
+    const node = pendingNode.current;
+    if (!node) {
       window.location.reload();
       return;
     }
+    setNeedsGithub(false);
     setConnecting(false);
-    setError(t`The GitHub connection didn't complete.`);
+    setLaunching(true);
+    void (async () => {
+      try {
+        await provisionProject(node);
+        window.location.assign(workspaceServiceUrl(node.id));
+      } catch (e) {
+        setLaunching(false);
+        // Still no usable credential — the account they connected is not the one
+        // that can read this repo. Offering the same button again would loop, so
+        // this lands on the ordinary error with what the clone actually said.
+        setError(errorMessage(e, t`This sandbox could not be set up.`));
+      }
+    })();
   });
 
   return (
