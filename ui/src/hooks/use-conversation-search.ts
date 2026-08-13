@@ -80,7 +80,25 @@ export interface ConversationSearchResult {
   truncated: boolean;
   /** True while the one-time history backfill is in flight. */
   loading: boolean;
+  /**
+   * The searched corpus itself, so a caller can pull the neighbourhood around a
+   * hit via `contextWindowFor`. Exposed rather than baked into each hit: at 200
+   * hits that would mean 200 redundant slices, and only one row is ever open.
+   */
+  items: readonly FlowData[];
 }
+
+/** One message in an expanded hit's surroundings. */
+export interface ContextEntry {
+  itemIndex: number;
+  item: FlowData;
+  isUser: boolean;
+  /** True for the message the hit was found in. */
+  isMatch: boolean;
+}
+
+export const CONTEXT_BEFORE = 2;
+export const CONTEXT_AFTER = 2;
 
 function isUserRow(item: FlowData): boolean {
   return item.elementType === FlowElementTypes.USER_MESSAGE || item.attributes?.role === 'user';
@@ -189,6 +207,50 @@ export function findConversationHits(
 }
 
 /**
+ * The messages surrounding a hit: a couple before, a couple after.
+ *
+ * Walks outward skipping anything `searchableText` rejects, because the raw
+ * neighbours of a message are mostly empty `{}` STATUS bookkeeping — taking
+ * `items[i-2..i+2]` verbatim would spend the whole window on rows that render
+ * as nothing. Counting only rows that would have been searched means "two
+ * before" is two things the user can actually read.
+ *
+ * The matched message is always included, even if it sits at either end of the
+ * conversation and the window is one-sided.
+ *
+ * Pure and exported for unit tests — keep it free of React.
+ */
+export function contextWindowFor(
+  items: readonly FlowData[],
+  itemIndex: number,
+  before: number = CONTEXT_BEFORE,
+  after: number = CONTEXT_AFTER,
+): ContextEntry[] {
+  if (itemIndex < 0 || itemIndex >= items.length) return [];
+
+  const entryAt = (i: number, isMatch: boolean): ContextEntry => ({
+    itemIndex: i,
+    item: items[i],
+    isUser: isUserRow(items[i]),
+    isMatch,
+  });
+
+  const head: ContextEntry[] = [];
+  for (let i = itemIndex - 1; i >= 0 && head.length < before; i--) {
+    if (!searchableText(items[i])) continue;
+    head.unshift(entryAt(i, false));
+  }
+
+  const tail: ContextEntry[] = [];
+  for (let i = itemIndex + 1; i < items.length && tail.length < after; i++) {
+    if (!searchableText(items[i])) continue;
+    tail.push(entryAt(i, false));
+  }
+
+  return [...head, entryAt(itemIndex, true), ...tail];
+}
+
+/**
  * Live search over a process's conversation.
  *
  * Mount this only while the search UI is open — it triggers the history
@@ -250,5 +312,5 @@ export function useConversationSearch(
     [items, query, chunkTick],
   );
 
-  return { hits, truncated, loading };
+  return { hits, truncated, loading, items };
 }

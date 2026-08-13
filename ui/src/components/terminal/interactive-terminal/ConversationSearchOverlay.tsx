@@ -3,7 +3,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgenticProcess } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import ExecutionMessage from '@src/components/entity-execution-panel/execution-message/execution-message';
-import { useConversationSearch, type ConversationHit } from '@src/hooks/use-conversation-search';
+import {
+  contextWindowFor,
+  useConversationSearch,
+  type ContextEntry,
+  type ConversationHit,
+} from '@src/hooks/use-conversation-search';
 
 interface ConversationSearchOverlayProps {
   process: AgenticProcess;
@@ -55,7 +60,13 @@ export const ConversationSearchOverlay: React.FC<ConversationSearchOverlayProps>
   const inputRef = useRef<HTMLInputElement>(null);
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  const { hits, truncated, loading } = useConversationSearch(process, query);
+  const { hits, truncated, loading, items } = useConversationSearch(process, query);
+
+  /** Only the open row's surroundings are built — see `contextWindowFor`. */
+  const expandedContext = useMemo(() => {
+    const hit = expanded === null ? undefined : hits[expanded];
+    return hit ? contextWindowFor(items, hit.itemIndex) : [];
+  }, [expanded, hits, items]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -202,6 +213,7 @@ export const ConversationSearchOverlay: React.FC<ConversationSearchOverlayProps>
                 worker={worker}
                 selected={i === selected}
                 expanded={expanded === i}
+                context={expanded === i ? expandedContext : undefined}
                 onKeyDown={(e) => onRowKeyDown(e, i)}
                 onClick={() => {
                   setSelected(i);
@@ -227,12 +239,14 @@ interface ConversationHitRowProps {
   worker?: string;
   selected: boolean;
   expanded: boolean;
+  /** The matched message plus its neighbours; only supplied while expanded. */
+  context?: ContextEntry[];
   onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   onClick: () => void;
 }
 
 const ConversationHitRow = React.forwardRef<HTMLDivElement, ConversationHitRowProps>(
-  ({ hit, query, worker, selected, expanded, onKeyDown, onClick }, ref) => (
+  ({ hit, query, worker, selected, expanded, context, onKeyDown, onClick }, ref) => (
     <div
       ref={ref}
       data-testid="conversation-search-result"
@@ -249,9 +263,25 @@ const ConversationHitRow = React.forwardRef<HTMLDivElement, ConversationHitRowPr
         <span className="shrink-0 rounded bg-muted px-1 text-[10px] uppercase text-muted-foreground">{hit.label}</span>
         <span className="min-w-0 flex-1 truncate text-xs">{highlight(hit.snippet, query)}</span>
       </div>
-      {expanded && (
-        <div className="mt-1.5 max-h-64 overflow-y-auto rounded border border-border bg-background/60 p-1">
-          <ExecutionMessage flowData={hit.item} isUser={hit.isUser} worker={worker} />
+      {expanded && context && context.length > 0 && (
+        // The matched message reads in its surroundings: a couple of messages
+        // before and after, dimmed, with the match itself at full contrast and
+        // rail-marked so it stays findable once the block is scrolled.
+        <div
+          data-testid="conversation-search-context"
+          className="mt-1.5 max-h-64 space-y-1 overflow-y-auto rounded border border-border bg-background/60 p-1"
+        >
+          {context.map((entry) => (
+            <div
+              key={entry.itemIndex}
+              data-testid={entry.isMatch ? 'conversation-search-context-match' : 'conversation-search-context-nearby'}
+              className={
+                entry.isMatch ? 'rounded-sm border-l-2 border-primary bg-background/70 pl-1.5' : 'pl-1.5 opacity-60'
+              }
+            >
+              <ExecutionMessage flowData={entry.item} isUser={entry.isUser} worker={worker} />
+            </div>
+          ))}
         </div>
       )}
     </div>

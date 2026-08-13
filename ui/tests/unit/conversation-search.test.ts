@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FlowData, FlowElementTypes } from '@sdk';
-import { findConversationHits, searchableText, MAX_HITS } from '@src/hooks/use-conversation-search';
+import { contextWindowFor, findConversationHits, searchableText, MAX_HITS } from '@src/hooks/use-conversation-search';
 
 /** A prose row (assistant/user/tool-result/…) carrying `text`. */
 function prose(elementType: string, text: string, attrs: Record<string, string> = {}): FlowData {
@@ -109,6 +109,77 @@ describe('findConversationHits — hit cap', () => {
     const { hits, truncated } = findConversationHits([prose(FlowElementTypes.CHAT, 'zebra zebra')], 'zebra');
     expect(hits).toHaveLength(2);
     expect(truncated).toBe(false);
+  });
+});
+
+describe('contextWindowFor — surroundings of an expanded hit', () => {
+  const convo = () => [
+    prose(FlowElementTypes.USER_MESSAGE, 'm0 question', { role: 'user' }),
+    prose(FlowElementTypes.CHAT, 'm1 answer'),
+    prose(FlowElementTypes.CHAT, 'm2 answer'),
+    prose(FlowElementTypes.CHAT, 'm3 ZEBRAMARKER here'),
+    prose(FlowElementTypes.CHAT, 'm4 answer'),
+    prose(FlowElementTypes.CHAT, 'm5 answer'),
+    prose(FlowElementTypes.CHAT, 'm6 answer'),
+  ];
+
+  it('returns two messages before and two after, with the match in the middle', () => {
+    const window = contextWindowFor(convo(), 3);
+    expect(window.map((e) => e.itemIndex)).toEqual([1, 2, 3, 4, 5]);
+    expect(window.filter((e) => e.isMatch).map((e) => e.itemIndex)).toEqual([3]);
+  });
+
+  it('skips noise rows when counting, so the window is readable messages', () => {
+    // The real stream is mostly empty {} bookkeeping between messages; taking
+    // items[i-2..i+2] verbatim would spend the window on rows that render as
+    // nothing.
+    const items = [
+      prose(FlowElementTypes.CHAT, 'far before'),
+      prose(FlowElementTypes.CHAT, 'near before'),
+      prose(FlowElementTypes.CHAT, '{}'),
+      prose(FlowElementTypes.STATUS, 'status noise'),
+      prose(FlowElementTypes.CHAT, 'ZEBRAMARKER'),
+      prose(FlowElementTypes.CHAT, '{}'),
+      prose(FlowElementTypes.CHAT, 'near after'),
+    ];
+    const window = contextWindowFor(items, 4);
+    expect(window.map((e) => e.itemIndex)).toEqual([0, 1, 4, 6]);
+  });
+
+  it('is one-sided at the start of the conversation', () => {
+    const window = contextWindowFor(convo(), 0);
+    expect(window.map((e) => e.itemIndex)).toEqual([0, 1, 2]);
+    expect(window[0].isMatch).toBe(true);
+  });
+
+  it('is one-sided at the end of the conversation', () => {
+    const window = contextWindowFor(convo(), 6);
+    expect(window.map((e) => e.itemIndex)).toEqual([4, 5, 6]);
+    expect(window[window.length - 1].isMatch).toBe(true);
+  });
+
+  it('carries the per-message isUser flag so each renders with its own role', () => {
+    // Only one message precedes index 1, so the window is m0..m3 — the short
+    // side is not padded by taking extra from the long one.
+    const window = contextWindowFor(convo(), 1);
+    expect(window.map((e) => e.itemIndex)).toEqual([0, 1, 2, 3]);
+    expect(window.map((e) => e.isUser)).toEqual([true, false, false, false]);
+  });
+
+  it('always includes the match even when nothing around it is readable', () => {
+    const items = [
+      prose(FlowElementTypes.CHAT, '{}'),
+      prose(FlowElementTypes.CHAT, 'ZEBRAMARKER'),
+      prose(FlowElementTypes.STATUS, 'noise'),
+    ];
+    const window = contextWindowFor(items, 1);
+    expect(window.map((e) => e.itemIndex)).toEqual([1]);
+    expect(window[0].isMatch).toBe(true);
+  });
+
+  it('returns nothing for an out-of-range index', () => {
+    expect(contextWindowFor(convo(), 99)).toEqual([]);
+    expect(contextWindowFor([], 0)).toEqual([]);
   });
 });
 
