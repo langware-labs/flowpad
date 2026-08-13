@@ -4712,7 +4712,7 @@ msgstr "צור תיקייה ב-{0}."
 
 #: src/components/login-required-dialog.tsx
 msgid "Create a free account to continue your conversation and save your progress."
-msgstr ""
+msgstr "إنشاء حساب مجاني لمتابعة محادثتك وحفظ تقدمك"
 
 #. placeholder {0}: t(descriptor.label).toLowerCase()
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -13436,7 +13436,7 @@ msgstr "אנא בחר או צור פרויקט תחילה."
 
 #: src/components/login-required-dialog.tsx
 msgid "Please sign in"
-msgstr ""
+msgstr "يرجى تسجيل الدخول"
 
 #: src/notifications/ingest.ts
 #: src/notifications/ingest.ts
@@ -16765,7 +16765,7 @@ msgstr "היכנסו"
 
 #: src/components/login-required-dialog.tsx
 msgid "Sign in to access your flow and unlock Flowpad AI agent."
-msgstr ""
+msgstr "تسجيل الدخول للوصول إلى flow الخاص بك وتفعيل Flowpad AI agent"
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Sign in to choose one of your GitHub repositories."
