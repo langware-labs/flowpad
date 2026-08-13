@@ -15277,7 +15277,6 @@ msgstr "הפעל את המיומנות \"{name}\" על ההקשר הנוכחי."
 msgid "running"
 msgstr "פועל"
 
-#: src/components/entity-execution-panel/current-activity.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Running"
 msgstr "פועל"
@@ -15285,6 +15284,10 @@ msgstr "פועל"
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Running /context…"
 msgstr "הרצת /context…"
+
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Running command…"
+msgstr ""
 
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 msgid "Running in the background."

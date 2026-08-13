@@ -15274,7 +15274,6 @@ msgstr "تشغيل المهارة \"{name}\" على السياق الحالي."
 msgid "running"
 msgstr "قيد التشغيل"
 
-#: src/components/entity-execution-panel/current-activity.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Running"
 msgstr "قيد التشغيل"
@@ -15282,6 +15281,10 @@ msgstr "قيد التشغيل"
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Running /context…"
 msgstr "جارٍ تنفيذ /context…"
+
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Running command…"
+msgstr ""
 
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 msgid "Running in the background."

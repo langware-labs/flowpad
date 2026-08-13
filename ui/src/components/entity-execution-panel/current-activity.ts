@@ -35,6 +35,17 @@ const MAX_DETAIL = 200;
 const FILE_KINDS = new Set(['file_read', 'file_write', 'file_edit']);
 
 /**
+ * Kinds whose detail is deliberately withheld from the line.
+ *
+ * A shell command is unbounded prose — pipelines, quoted heredocs, absolute
+ * paths — and unlike a file path it has no short form that stays meaningful, so
+ * any clipping of it reads as noise rather than information. It gets a
+ * self-contained label instead ("Running command…") and no detail at all. The
+ * command itself stays one click away in the turn's event list.
+ */
+const HIDDEN_DETAIL_KINDS = new Set(['shell_command']);
+
+/**
  * Describe what the agent is doing in the CURRENT turn: the newest operation,
  * or null when the newest thing it did was think (or it has done neither).
  *
@@ -76,12 +87,15 @@ export function describeCurrentActivity(
     if (event.elementType === FlowElementTypes.REASONING) return null;
     if (event.elementType !== FlowElementTypes.TOOL_CALL) continue;
     const { kind, icon, label, detail } = describeEvent(event);
+    const hideDetail = HIDDEN_DETAIL_KINDS.has(kind);
     return {
+      // Keyed on the real detail even when it is not shown, so two different
+      // commands stay two distinct operations to the display latch.
       key: getToolUseId(event) ?? `${kind}:${detail}`,
       icon,
       label: gerundFor(kind, label),
-      detail: shorten(kind, detail),
-      title: detail,
+      detail: hideDetail ? '' : shorten(kind, detail),
+      title: hideDetail ? '' : detail,
     };
   }
 
@@ -154,8 +168,10 @@ function gerundFor(kind: string, fallback: string): string {
       return t`Writing`;
     case 'file_edit':
       return t`Editing`;
+    // Carries its own object because no detail follows it — see
+    // HIDDEN_DETAIL_KINDS.
     case 'shell_command':
-      return t`Running`;
+      return t`Running command…`;
     case 'search':
       return t`Searching`;
     case 'web_fetch':
