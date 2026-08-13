@@ -934,13 +934,30 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   public async inviteMember(
     email: string,
     role: string = 'member',
-    opts?: { callbackOverride?: string; transfer?: boolean; roleToKeep?: string | null },
+    opts?: {
+      callbackOverride?: string;
+      transfer?: boolean;
+      roleToKeep?: string | null;
+      /**
+       * Entities to grant ALONGSIDE this one, in the same invitation.
+       *
+       * `invitation_targets` has always been a list and the hub grants every
+       * entry, so a thing that is only usable together with something else can
+       * say so here rather than being chased with a second invitation that can
+       * fail on its own or be accepted separately.
+       *
+       * Sharing a sandbox is the case that needed it: the recipient's box asks
+       * the hub for the project it opens, AS the recipient, and a role on the
+       * machine alone leaves that read refused.
+       */
+      extraTargets?: { typeid: string; role: string }[];
+    },
   ): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = {
       recipient_email: normalizeEmail(email) ?? '',
-      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
+      invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }, ...(opts?.extraTargets ?? [])],
       ...(opts?.callbackOverride ? { callback_override: opts.callbackOverride } : {}),
       ...(opts?.transfer ? { transfer: true, role_to_keep: opts.roleToKeep ?? null } : {}),
     };

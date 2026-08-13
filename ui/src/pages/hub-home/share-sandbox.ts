@@ -1,5 +1,5 @@
-import { ComputeNode } from '@sdk';
-import { workspaceServiceUrl } from '@src/hooks/use-sandboxes';
+import { ComputeNode, Project } from '@sdk';
+import { pendingSetup, workspaceServiceUrl } from '@src/hooks/use-sandboxes';
 import { errorMessage, errorStatus } from '@src/lib/error-message';
 
 /**
@@ -129,6 +129,26 @@ export async function shareSandboxByEmail(
 ): Promise<ShareOutcome> {
   const outcome: ShareOutcome = { granted: [], failed: [] };
   const role = opts.transfer ? 'owner' : (opts.role ?? SANDBOX_SHARE_ROLE);
+  // THE PROJECT TRAVELS WITH THE BOX. A sandbox is only useful as the project it
+  // opens, and the box fetches that project from the hub AS the person who opened
+  // it -- so a role on the machine alone gets a 401 there, and the box falls back
+  // to a bare row: right files, no language, no helpdesk config, none of the
+  // author's settings. That failure is silent (the adopt is best-effort and logs
+  // inside the box), and it reads as "the sandbox opened in the wrong language"
+  // rather than as a permission problem.
+  //
+  // Granted in the SAME invitation rather than a second call: `invitation_targets`
+  // is a list the hub already grants in full, so the two cannot end up half-done —
+  // no machine shared without its project, whatever fails.
+  //
+  // `member`, deliberately, not `reader`: on `project` the reader role also allows
+  // `secret`, and being handed a sandbox is not a reason to reach its secrets.
+  // `member` is read plus the member list, which is what the box's fetch needs.
+  //
+  // Nothing to grant for a box with no project recorded -- an empty sandbox is a
+  // machine and nothing else.
+  const projectId = pendingSetup(node)?.projectId;
+  const projectTarget = projectId ? { typeid: `${Project.type}-${projectId}`, role: 'member' } : undefined;
 
   for (const email of emails) {
     try {
@@ -138,6 +158,7 @@ export async function shareSandboxByEmail(
       // spelling of the address the hub already produces.
       await node.inviteMember(email, role, {
         ...(opts.transfer ? { transfer: true, roleToKeep: opts.roleToKeep ?? null } : {}),
+        ...(projectTarget ? { extraTargets: [projectTarget] } : {}),
       });
       outcome.granted.push(email);
     } catch (err) {
