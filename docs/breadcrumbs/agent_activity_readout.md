@@ -127,3 +127,9 @@ Each was observed, and each maps to the invariant that prevents it.
 * Verification that is actually trustworthy here is a `MutationObserver` over a
   live turn, not a poller. A 120 ms sampler steps straight over these
   transitions and will tell you an operation "never renders" when it does.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: 9445799d-e807-4cdf-80a5-3bfab86b335f
+flowpad:endcapsule identity -->

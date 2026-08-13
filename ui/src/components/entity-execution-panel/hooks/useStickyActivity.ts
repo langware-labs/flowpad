@@ -43,7 +43,11 @@ export function useStickyActivity(
   // time — that is what makes the swap land on the newest operation instead of
   // whichever one happened to be pending when the timer was set.
   const latest = useRef(activity);
-  const shownAt = useRef(0);
+  // Seeded when the hook mounts with an operation already in hand — a pane
+  // remounting mid-turn. Left at 0 (i.e. "long ago") when it mounts idle, so
+  // the turn's first operation appears immediately rather than serving a
+  // window it never occupied.
+  const shownAt = useRef(activity ? Date.now() : 0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const turn = useRef(resetKey);
 

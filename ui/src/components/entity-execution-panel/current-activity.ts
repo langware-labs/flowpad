@@ -137,7 +137,11 @@ function currentTurnSlice(events: readonly FlowData[], turnStartedAt: number | n
     const at = timestampMs(event);
     return at == null || at >= turnStartedAt;
   });
-  return firstOfTurn <= 0 ? live : live.slice(firstOfTurn);
+  // -1 means NOTHING here belongs to the current turn — an empty slice, not the
+  // whole buffer. Collapsing that into the `<= 0` "start from the top" case is
+  // how every frame of a finished turn gets reported as current activity.
+  if (firstOfTurn < 0) return [];
+  return firstOfTurn === 0 ? live : live.slice(firstOfTurn);
 }
 
 /** Was this frame observed on replay (i.e. it is history, not live activity)? */
