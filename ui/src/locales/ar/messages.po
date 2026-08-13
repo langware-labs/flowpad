@@ -5128,6 +5128,10 @@ msgstr "الإعدادات الافتراضية: page=\"{DEFAULT_PAGE}\"، compo
 msgid "Define the conditions that must match for this trigger to fire"
 msgstr "تحديد الشروط التي يجب أن تتطابق لإطلاق هذا المشغّل"
 
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Delegating to"
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
@@ -6229,6 +6233,10 @@ msgstr "تعديل المشغّل"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Edit your draft…"
 msgstr "تعديل مسودتك…"
+
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Editing"
+msgstr ""
 
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Editing system trigger"
@@ -7359,6 +7367,10 @@ msgstr "جلب"
 #: src/components/inbox-view/InboxView.tsx
 msgid "Fetch new messages from hub"
 msgstr "جلب الرسائل الجديدة من Hub"
+
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Fetching"
+msgstr ""
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Fetching the latest"
@@ -14199,6 +14211,10 @@ msgstr "تم قراءتها"
 #~ msgid "Read-only source. Attach to get a private editable copy."
 #~ msgstr ""
 
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Reading"
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Reading…"
 msgstr "جاري القراءة…"
@@ -15258,6 +15274,7 @@ msgstr "تشغيل المهارة \"{name}\" على السياق الحالي."
 msgid "running"
 msgstr "قيد التشغيل"
 
+#: src/components/entity-execution-panel/current-activity.ts
 #: src/pages/hub-home/HubHome.tsx
 msgid "Running"
 msgstr "قيد التشغيل"
@@ -15783,6 +15800,10 @@ msgstr "بحث..."
 #: src/components/top-nav-bar/AddressSearchField.tsx
 msgid "Search…"
 msgstr "بحث…"
+
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Searching"
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
@@ -19218,6 +19239,10 @@ msgstr "تم التحديث: {0}"
 msgid "Updates & Maintenance"
 msgstr "التحديثات والصيانة"
 
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Updating plan"
+msgstr ""
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Updating…"
 msgstr "جاري التحديث…"
@@ -19417,6 +19442,7 @@ msgstr "باستخدام"
 msgid "Using {0} key"
 msgstr "استخدام مفتاح {0}"
 
+#: src/components/entity-execution-panel/current-activity.ts
 #: src/components/floating-chat/toolEventDescriptor.ts
 msgid "Using skill"
 msgstr "استخدام المهارة"
@@ -20094,6 +20120,10 @@ msgstr "الرؤية الشاملة"
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Would you like to launch a sandbox for this repository?"
 msgstr "هل يمكن تشغيل صندوق رملي لهذا المستودع؟"
+
+#: src/components/entity-execution-panel/current-activity.ts
+msgid "Writing"
+msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Written down, not started. Launching boots it and sets the project up."
