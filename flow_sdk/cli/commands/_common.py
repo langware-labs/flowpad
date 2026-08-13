@@ -11,14 +11,23 @@ Command modules import these as their private names
 (``from ._common import fail as _fail, ...``) so call sites read the same
 everywhere; group-specific EXIT_* codes stay in each module as part of its
 documented contract.
+
+It also owns the CLI's HTTP transport (``local_get`` / ``local_post``). That is
+not an aesthetic grouping: a bare ``requests`` call to the local server is
+refused outright on a gated instance, so every command that builds its own is a
+command that breaks the moment the gate is armed. One seam, one place that
+presents the secret.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, NoReturn, Optional
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, Optional
 
 import typer
+
+if TYPE_CHECKING:
+    import requests
 
 EXIT_INVALID_ARG = 2
 EXIT_CONNECTION_ERROR = 5
@@ -52,6 +61,61 @@ def discover_port() -> int:
         fail(EXIT_CONNECTION_ERROR, "INSTANCE_NOT_RUNNING", str(e))
 
 
+def local_request(method: str, url: str, **kwargs: Any) -> "requests.Response":
+    """``requests.request`` with this instance's cookie-gate header attached.
+
+    THE transport for every CLI call to the local server, and the reason this
+    module owns one: ``CookieGateMiddleware`` refuses every request that cannot
+    present the secret, with NO path and NO loopback exemption. A command that
+    builds its own bare ``requests`` call therefore stops working the moment the
+    instance is gated — which is what shipped, and what answered every ``flow``
+    command inside a gated sandbox with the gate's 403 HTML page.
+
+    ``gate_headers`` decides whether anything is attached; it yields nothing for
+    an unarmed instance or a non-loopback URL, so this is safe to use for every
+    outbound call a command makes.
+
+    An explicit ``headers`` kwarg wins — the gate header is merged underneath it
+    — so a caller can still override it deliberately.
+    """
+    import requests
+
+    from flow_sdk.instance_settings.cookie_gate import gate_headers
+
+    headers = {**gate_headers(url), **(kwargs.pop("headers", None) or {})}
+    if headers:
+        kwargs["headers"] = headers
+    return requests.request(method, url, **kwargs)
+
+
+def local_get(url: str, **kwargs: Any) -> "requests.Response":
+    return local_request("GET", url, **kwargs)
+
+
+def local_post(url: str, **kwargs: Any) -> "requests.Response":
+    return local_request("POST", url, **kwargs)
+
+
+def bad_response_message(resp: "requests.Response") -> str:
+    """Describe a response that is not the JSON envelope, naming the gate.
+
+    The gate answers with an HTML page, so a caller expecting JSON used to
+    report ``Bad response: <!doctype html>…`` — the first 200 characters of a
+    document written for a human, which says nothing an agent can act on. With
+    ``local_request`` presenting the secret this should now be unreachable, so
+    if it is reached the secret could not be read at all, and that is what the
+    message says.
+    """
+    if resp.status_code == 403 and "html" in (resp.headers.get("content-type") or "").lower():
+        return (
+            "Request refused by this instance's cookie-gate (HTTP 403): the CLI "
+            "could not read the gate secret. Check that the instance is logged in "
+            "and its secret store is readable, or run "
+            "`flow auth clear-cookie-gate` to disarm the gate."
+        )
+    return f"Bad response (status {resp.status_code}): {resp.text[:200]}"
+
+
 def post_graph_json(
     url: str,
     payload: Optional[dict],
@@ -70,13 +134,13 @@ def post_graph_json(
     import requests
 
     try:
-        resp = requests.post(url, json=payload or {}, timeout=timeout)
+        resp = local_post(url, json=payload or {}, timeout=timeout)
     except requests.exceptions.RequestException as e:
         fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
     try:
         body = resp.json()
     except ValueError:
-        fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+        fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", bad_response_message(resp))
 
     if resp.status_code != 200 or body.get("status") != "SUCCESS":
         on_error(resp.status_code, body)

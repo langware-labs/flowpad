@@ -122,8 +122,7 @@ def _kill_instance_processes(name: str, *, backend_only: bool) -> list[int]:
 
     if result.survivors:
         raise KillFailed(
-            f"instance '{name}' still owns live process(es) after SIGKILL: "
-            f"{sorted(set(result.survivors))}"
+            f"instance '{name}' still owns live process(es) after SIGKILL: {sorted(set(result.survivors))}"
         )
     return sorted(set(result.killed))
 
@@ -161,9 +160,18 @@ def _proc_create_time(pid: int) -> float | None:
 # JSONL under ~/.claude and ~/.codex (11K+ on a developer machine), contending
 # with the first desktop-db/clear and re-emitting already-consumed deltas.
 _KEEP = {
-    "sodot", ".secrets_enabled", "config.json", "preferences.json",
-    "launcher.json", "launcher-backend.log", "launcher-frontend.log", "logs",
-    "schema", "toplog.json", "skill_rules", "transcript_cursors.json",
+    "sodot",
+    ".secrets_enabled",
+    "config.json",
+    "preferences.json",
+    "launcher.json",
+    "launcher-backend.log",
+    "launcher-frontend.log",
+    "logs",
+    "schema",
+    "toplog.json",
+    "skill_rules",
+    "transcript_cursors.json",
 }
 
 
@@ -251,15 +259,18 @@ def _pin_view_mode_for_qa(name: str) -> None:
 
 def _wait_ready(port: int, timeout: float) -> bool:
     """Poll bootstrap until the schema 'types' are present (unauth'd-safe gate)."""
-    import urllib.request
+    # `local_get` rather than a bare urlopen: a gated instance answers this probe
+    # with a 403, which reads here as "not up yet" and makes the wait run to its
+    # full deadline against a server that is already serving.
+    from flow_sdk.cli.commands._common import local_get
 
     deadline = time.monotonic() + timeout
     url = f"http://127.0.0.1:{port}/api/v1/graph/bootstrap"
     while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=5) as r:
-                if r.status == 200 and b'"types"' in r.read(65536):
-                    return True
+            r = local_get(url, timeout=5)
+            if r.status_code == 200 and '"types"' in r.text[:65536]:
+                return True
         except Exception:
             pass
         time.sleep(1)
@@ -316,9 +327,7 @@ def restart_backend(
     try:
         server_pid = int(server_pid)
     except (TypeError, ValueError):
-        raise RuntimeError(
-            f"instance '{name}' has no recorded backend server PID"
-        ) from None
+        raise RuntimeError(f"instance '{name}' has no recorded backend server PID") from None
     marker = request_backend_restart(instance_dir, server_pid)
     try:
         killed = _kill_instance_processes(name, backend_only=True)
@@ -339,10 +348,7 @@ def restart_backend(
     if json_out:
         typer.echo(json.dumps(summary))
     else:
-        typer.echo(
-            f"restart-backend '{name}': killed {len(killed)} pid(s), "
-            f"new backend pid={new_pid}"
-        )
+        typer.echo(f"restart-backend '{name}': killed {len(killed)} pid(s), new backend pid={new_pid}")
 
 
 # ── command ───────────────────────────────────────────────────────────────────
@@ -350,9 +356,15 @@ def restart_backend(
 def reset(
     name: Annotated[str, typer.Argument(help="Instance name (e.g. qa-cycle, dev-1).")],
     relaunch: Annotated[bool, typer.Option("--relaunch/--no-relaunch", help="Relaunch after wipe.")] = True,
-    backend_only: Annotated[bool, typer.Option("--backend-only", help="Kill/wipe/respawn only the backend; leave vite running (fast path).")] = False,
-    purge_keychain: Annotated[bool, typer.Option("--purge-keychain/--keep-keychain", help="Also clear this instance's OS-keychain SOD key.")] = True,
-    ready_timeout: Annotated[float, typer.Option("--ready-timeout", help="Seconds to wait for bootstrap readiness after relaunch.")] = 90.0,
+    backend_only: Annotated[
+        bool, typer.Option("--backend-only", help="Kill/wipe/respawn only the backend; leave vite running (fast path).")
+    ] = False,
+    purge_keychain: Annotated[
+        bool, typer.Option("--purge-keychain/--keep-keychain", help="Also clear this instance's OS-keychain SOD key.")
+    ] = True,
+    ready_timeout: Annotated[
+        float, typer.Option("--ready-timeout", help="Seconds to wait for bootstrap readiness after relaunch.")
+    ] = 90.0,
     json_out: Annotated[bool, typer.Option("--json", help="Emit a machine-readable summary.")] = False,
 ) -> None:
     """Reset a named local dev instance: kill its processes, wipe its state,
@@ -424,10 +436,7 @@ def reset(
 # read stdin.
 ctl_app = typer.Typer(
     name="ctl",
-    help=(
-        "Launcher control surface: allocate, inspect and tear down named dev/QA "
-        "instances (and instance groups)."
-    ),
+    help=("Launcher control surface: allocate, inspect and tear down named dev/QA instances (and instance groups)."),
     add_completion=False,
     no_args_is_help=True,
 )
@@ -478,10 +487,14 @@ def _role(value: str):
 def ctl_status(
     name: Annotated[str | None, typer.Argument(help="Instance name. Omit for all.")] = None,
     group: Annotated[str | None, typer.Option("--group", "-g", help="Only this group.")] = None,
-    quiet: Annotated[bool, typer.Option("--quiet", "-q", help="No output; exit 0 iff the instance is up and owned.")] = False,
+    quiet: Annotated[
+        bool, typer.Option("--quiet", "-q", help="No output; exit 0 iff the instance is up and owned.")
+    ] = False,
     all_: Annotated[bool, typer.Option("--all", "-a", help="Include stale and never-allocated instances.")] = False,
     json_out: Annotated[bool, typer.Option("--json", help="Emit the machine-readable report.")] = False,
-    fmt: Annotated[str | None, typer.Option("--format", help="rich | plain | json. Default: rich on a tty, plain when piped.")] = None,
+    fmt: Annotated[
+        str | None, typer.Option("--format", help="rich | plain | json. Default: rich on a tty, plain when piped.")
+    ] = None,
     legend: Annotated[bool, typer.Option("--legend", help="Explain the status glyphs.")] = False,
 ) -> None:
     """Show instance state, grouped.
@@ -510,15 +523,22 @@ def ctl_list(
     group: Annotated[str | None, typer.Option("--group", "-g", help="Only this group.")] = None,
     all_: Annotated[bool, typer.Option("--all", "-a", help="Include stale and never-allocated instances.")] = False,
     json_out: Annotated[bool, typer.Option("--json", help="Emit the machine-readable report.")] = False,
-    fmt: Annotated[str | None, typer.Option("--format", help="rich | plain | json. Default: rich on a tty, plain when piped.")] = None,
+    fmt: Annotated[
+        str | None, typer.Option("--format", help="rich | plain | json. Default: rich on a tty, plain when piped.")
+    ] = None,
     legend: Annotated[bool, typer.Option("--legend", help="Explain the status glyphs.")] = False,
 ) -> None:
     """List every known instance, grouped. Alias of `status` with no name."""
     # Delegates rather than duplicating the body: the two had already drifted
     # (different --format help text) before either shipped.
     ctl_status(
-        name=None, group=group, quiet=False, all_=all_,
-        json_out=json_out, fmt=fmt, legend=legend,
+        name=None,
+        group=group,
+        quiet=False,
+        all_=all_,
+        json_out=json_out,
+        fmt=fmt,
+        legend=legend,
     )
 
 
@@ -598,7 +618,9 @@ def ctl_reconcile(
 def ctl_reap(
     dry_run: Annotated[bool, typer.Option("--dry-run", help="List what would be killed, kill nothing.")] = False,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Do not prompt.")] = False,
-    include_protected: Annotated[bool, typer.Option("--include-protected", help="Also reap protected instances.")] = False,
+    include_protected: Annotated[
+        bool, typer.Option("--include-protected", help="Also reap protected instances.")
+    ] = False,
     json_out: Annotated[bool, typer.Option("--json", help="Emit a machine-readable summary.")] = False,
 ) -> None:
     """Kill live processes belonging to instances nothing accounts for.
@@ -646,10 +668,7 @@ def ctl_reap(
     if json_out:
         typer.echo(json.dumps(result))
     else:
-        typer.echo(
-            f"reaped {len(result['killed'])} process(es) across "
-            f"{len(result['instances'])} instance(s)"
-        )
+        typer.echo(f"reaped {len(result['killed'])} process(es) across {len(result['instances'])} instance(s)")
     for note in result["refused"]:
         typer.echo(f"  refused: {note}", err=True)
     if result["survivors"]:
@@ -662,7 +681,9 @@ def ctl_gc(
     age_days: Annotated[int, typer.Option("--age", help="Only remove dirs untouched for this many days.")] = 14,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Report without deleting anything.")] = False,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Do not prompt.")] = False,
-    include_protected: Annotated[bool, typer.Option("--include-protected", help="Also consider protected instances.")] = False,
+    include_protected: Annotated[
+        bool, typer.Option("--include-protected", help="Also consider protected instances.")
+    ] = False,
     json_out: Annotated[bool, typer.Option("--json", help="Emit a machine-readable summary.")] = False,
 ) -> None:
     """Delete the DATA DIRECTORY of dead, abandoned instances.
