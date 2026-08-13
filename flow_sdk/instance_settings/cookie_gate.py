@@ -196,6 +196,52 @@ def clear_cookie_gate() -> bool:
     return was_armed
 
 
+# Loopback hostnames. The secret is presented to these and nothing else: a
+# caller can be pointed at a configured remote host, and a credential for THIS
+# machine must never ride a request that leaves it.
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def gate_headers(url: str) -> dict[str, str]:
+    """The header a same-machine caller presents to get past its own gate.
+
+    Empty for an unarmed instance (which is every desktop install) and for any
+    non-loopback URL.
+
+    This is the *machine* transport the middleware documents, and it lives here
+    — beside the secret — rather than in any one caller, because there are
+    several: the ``flow`` CLI (what an agent inside a gated sandbox runs), the
+    discovery health probe, and the supervisor's. Each of them spelling it out
+    separately is how the CLI came to have none at all, answering every command
+    inside a gated sandbox with the gate's 403 HTML page.
+
+    The header rather than ``?cookie-gate=``: a secret in a URL lands in access
+    logs.
+
+    Free when unarmed — ``get_cookie_gate`` answers from a ``stat()`` of the
+    marker file and never opens the encrypted store, which is what keeps desktop
+    installs away from a keychain prompt. Starlette is imported only on the
+    armed path, so an ordinary call does not pay for it. Any failure to resolve
+    the secret degrades to no header, never to an exception: being unable to
+    read the gate is a reason to call without it, never a reason to fail.
+    """
+    try:
+        from urllib.parse import urlsplit
+
+        if (urlsplit(url).hostname or "") not in _LOOPBACK_HOSTS:
+            return {}
+        secret = get_cookie_gate()
+        if not secret:
+            return {}
+        # Imported from the middleware that READS the header so the two cannot
+        # drift; deferred so the ungated path never pulls in starlette.
+        from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME
+
+        return {HEADER_NAME: secret}
+    except Exception:
+        return {}
+
+
 def is_gated() -> bool:
     """The single predicate the middleware calls. ``True`` when this instance
     answers nothing without the secret."""

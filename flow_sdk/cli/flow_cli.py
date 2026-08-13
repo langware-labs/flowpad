@@ -112,8 +112,10 @@ def ping(
 
     # Send ping to local server
     try:
+        from flow_sdk.cli.commands._common import local_get
+
         url = f"http://127.0.0.1:{port}/ping"
-        response = requests.get(url, params={"ping_str": ping_str}, timeout=5)
+        response = local_get(url, params={"ping_str": ping_str}, timeout=5)
 
         if response.status_code == 200:
             typer.echo(f"Ping sent successfully: {ping_str}")
@@ -901,6 +903,7 @@ def hooks_report(
         }
 
         # Parse execution_scope from env (identifies which entity this hook belongs to)
+        from flow_sdk.cli.commands._common import local_post
         from flow_sdk.utils.environment import get_execution_scope
 
         _exec_scope = get_execution_scope()
@@ -937,7 +940,7 @@ def hooks_report(
                 typer.echo(f"\nTarget: POST {report_url}")
                 typer.echo(f"\nPayload:\n{json.dumps(flow_data_payload, indent=2)}")
             try:
-                last_resp = requests.post(report_url, json=flow_data_payload, timeout=5)
+                last_resp = local_post(report_url, json=flow_data_payload, timeout=5)
                 if verbose:
                     typer.echo(f"\nResponse: {last_resp.status_code} {last_resp.text[:200]}")
             except requests.exceptions.RequestException as e:
@@ -971,7 +974,12 @@ def hooks_report(
                     if verbose:
                         typer.echo(f"\nReporting to server at port {s.port}")
                     try:
-                        last_resp = requests.post(s.url, json=fallback_payload, timeout=5)
+                        # Broadcast: `s.url` may be ANOTHER instance, whose gate
+                        # secret differs from this one's. Attaching ours is
+                        # harmless — that instance refuses it exactly as it
+                        # refuses a keyless call today — and it is what makes
+                        # the report land on the gated instance that is ours.
+                        last_resp = local_post(s.url, json=fallback_payload, timeout=5)
                         if verbose:
                             typer.echo(f"  Response: {last_resp.status_code} {last_resp.text[:200]}")
                     except requests.exceptions.RequestException as e:
@@ -983,7 +991,7 @@ def hooks_report(
                 if verbose:
                     typer.echo(f"\nNo server.json found, using legacy fallback (port {port})")
                 try:
-                    last_resp = requests.post(fallback_url, json=report_payload, timeout=5)
+                    last_resp = local_post(fallback_url, json=report_payload, timeout=5)
                     if verbose:
                         typer.echo(f"\nResponse: {last_resp.status_code} {last_resp.text[:200]}")
                 except requests.exceptions.RequestException as e:

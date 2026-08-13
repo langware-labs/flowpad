@@ -1,7 +1,6 @@
 import io
 import json
 import sys
-from pathlib import Path
 
 import pytest
 import typer
@@ -59,7 +58,7 @@ def test_hooks_report_posts_agent_hook_envelope_with_entry_id(monkeypatch, tmp_p
 
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project_dir))
     monkeypatch.setenv("AGENT_HOOKS_REPORT_URL", "http://localhost:9007/api/v1/webhook/listen")
-    monkeypatch.setattr(flow_cli.requests, "post", fake_post)
+    monkeypatch.setattr("flow_sdk.cli.commands._common.local_post", fake_post)
 
     _invoke_hooks_report(
         json.dumps(
@@ -101,11 +100,9 @@ def test_hooks_report_falls_back_to_local_server_when_report_url_missing(monkeyp
 
     monkeypatch.delenv("AGENT_HOOKS_REPORT_URL", raising=False)
     monkeypatch.setenv("LOCAL_SERVER_PORT", "9123")
-    monkeypatch.setattr(flow_cli.requests, "post", fake_post)
+    monkeypatch.setattr("flow_sdk.cli.commands._common.local_post", fake_post)
     # Ensure server.json discovery doesn't short-circuit the LOCAL_SERVER_PORT fallback
-    monkeypatch.setattr(
-        "flow_sdk.discovery.flowpad_discovery.read_all_server_infos", lambda: []
-    )
+    monkeypatch.setattr("flow_sdk.discovery.flowpad_discovery.read_all_server_infos", lambda: [])
 
     _invoke_hooks_report(
         json.dumps({"hook_event_name": "UserPromptSubmit", "prompt": "hello"}),
@@ -128,7 +125,7 @@ def test_hooks_report_ignores_invalid_json(monkeypatch):
         calls.append({"url": url, "json": json, "timeout": timeout})
         return None
 
-    monkeypatch.setattr(flow_cli.requests, "post", fake_post)
+    monkeypatch.setattr("flow_sdk.cli.commands._common.local_post", fake_post)
 
     _invoke_hooks_report("{invalid json", hook_entry_id="hook-1")
 
