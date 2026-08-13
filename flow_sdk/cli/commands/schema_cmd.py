@@ -12,10 +12,16 @@ import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
+    bad_response_message as _bad_response_message,
+)
+from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
 )
 from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
+    local_get as _local_get,
 )
 from flow_sdk.cli.commands._common import (
     ok as _ok,
@@ -49,14 +55,14 @@ def list_views() -> None:
     port = _discover_port()
     url = f"http://127.0.0.1:{port}/api/v1/agent/schema/views"
     try:
-        resp = requests.get(url, timeout=10)
+        resp = _local_get(url, timeout=10)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         return
     try:
         body = resp.json()
     except ValueError:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
         return
     if resp.status_code == 200 and body.get("ok"):
         _ok({"views": body.get("views") or []})
@@ -72,14 +78,14 @@ def list_schema() -> None:
     port = _discover_port()
     url = f"http://127.0.0.1:{port}/api/v1/agent/schema"
     try:
-        resp = requests.get(url, timeout=10)
+        resp = _local_get(url, timeout=10)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         return
     try:
         body = resp.json()
     except ValueError:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
         return
     if resp.status_code == 200 and body.get("ok"):
         _ok({"types": body.get("types") or []})
@@ -102,14 +108,14 @@ def info_schema(
     port = _discover_port()
     url = f"http://127.0.0.1:{port}/api/v1/agent/schema/{type_name}"
     try:
-        resp = requests.get(url, timeout=5)
+        resp = _local_get(url, timeout=5)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         return
     try:
         body = resp.json()
     except ValueError:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
         return
     if resp.status_code == 200 and body.get("ok"):
         _ok({"type": body.get("type") or {}})

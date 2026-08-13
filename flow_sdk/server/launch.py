@@ -157,23 +157,16 @@ def check_server_health(port: int, timeout: float = 2.0) -> bool:
     url = f"http://127.0.0.1:{port}/health/status"
     try:
         req = urllib.request.Request(url, method="GET")
-        try:
-            # Both lazy. The header name is imported from the middleware that
-            # READS it so the two cannot drift, but that module pulls in
-            # starlette -- which this supervisor otherwise never needs, and must
-            # not pay for at startup. sys.modules caches it after the first
-            # gated probe.
-            from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
-            from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME
+        # Lazy: `gate_headers` pulls in starlette on the armed path, and this
+        # supervisor otherwise never needs it and must not pay for it at
+        # startup. It swallows its own failures and yields {} -- the monitor
+        # must survive anything the settings layer does, since being unable to
+        # read the gate is a reason to probe without it, never a reason to stop
+        # supervising the server.
+        from flow_sdk.instance_settings.cookie_gate import gate_headers
 
-            secret = get_cookie_gate()
-        except Exception:
-            # The monitor must survive anything the settings layer does: being
-            # unable to read the gate is a reason to probe without it, never a
-            # reason to stop supervising the server.
-            secret, HEADER_NAME = None, ""
-        if secret:
-            req.add_header(HEADER_NAME, secret)
+        for name, value in gate_headers(url).items():
+            req.add_header(name, value)
         with urllib.request.urlopen(req, timeout=timeout):
             return True
     except urllib.error.HTTPError as e:

@@ -14,6 +14,7 @@ import { cloudManager, ComputeNode, dataManager } from '@sdk';
 import { workspaceServiceUrl } from '@src/hooks/use-sandboxes';
 import {
   SANDBOX_SHARE_ROLE,
+  SANDBOX_PROJECT_ROLE,
   sandboxShareLandingPath,
   pickInvitableEmails,
   shareSandboxByEmail,
@@ -276,15 +277,24 @@ describe('sandboxShareLink', () => {
 });
 
 /**
- * The project rides along with the machine.
+ * The project is shared alongside the machine — as its own invitation.
  *
  * A sandbox is only useful as the project it opens, and the box fetches that
- * project from the hub AS the person who opened it — so a role on the machine
- * alone gets a 401 there and the box falls back to a bare row: right files, no
- * language, none of the author's settings. It fails silently (the adopt is
- * best-effort and logs inside the box) and reads as "the sandbox opened in the
- * wrong language" rather than as a permission problem, which is exactly why it
- * is asserted on the wire instead of left to be noticed.
+ * project from the hub AS the person who opened it, so a role on the machine
+ * alone gets a 401 there and the box keeps a bare row: right files, no language,
+ * none of the author's settings. It fails silently and reads as "the sandbox
+ * opened in the wrong language" rather than as a permission problem, which is why
+ * it is asserted on the wire.
+ *
+ * TWO invitations rather than one, and that is load-bearing in both directions:
+ *
+ *  - `transfer` is a property of the INVITATION. One `grant_kind` is chosen per
+ *    request, so a handover judges every target as a transfer and the hub refuses
+ *    anything but `owner`. A single invitation cannot say "hand over the box,
+ *    share the project".
+ *  - the emailed link lands on `non_workspace_targets[0]`. With two targets that
+ *    order is whatever the round-trip returns, so the mail could open the PROJECT
+ *    instead of the sandbox. One target per invitation makes it unambiguous.
  */
 describe('sharing grants the project too', () => {
   const PROJECT_ID = '99999999-2222-4333-8444-555555555555';
@@ -297,41 +307,72 @@ describe('sharing grants the project too', () => {
     } as never);
   }
 
-  function targets(): { typeid: string; role: string }[] {
-    return (lastBody().invitation_targets ?? []) as { typeid: string; role: string }[];
+  /** Every invitation sent, in order: `[targets, transfer?]` per call. */
+  function invitations(): { path: string; targets: { typeid: string; role: string }[]; transfer: unknown }[] {
+    return callAction.mock.calls.map((c) => {
+      const info = c[0] as { typeId?: { type: string }; bodyParameters?: Record<string, unknown> };
+      const body = info?.bodyParameters ?? {};
+      return {
+        path: (body.invitation_targets as { typeid: string }[])?.[0]?.typeid?.split('-')[0] ?? '',
+        targets: (body.invitation_targets ?? []) as { typeid: string; role: string }[],
+        transfer: body.transfer,
+      };
+    });
   }
 
-  it('sends the project in the SAME invitation as the machine', async () => {
-    // One invitation, not two: `invitation_targets` is a list the hub grants in
-    // full, so the pair cannot end up half-done.
+  it('sends the machine and the project as SEPARATE invitations', async () => {
     await shareSandboxByEmail(nodeWithProject(), ['someone@example.com']);
-    expect(targets()).toEqual([
-      { typeid: `compute_node-${NODE_ID}`, role: SANDBOX_SHARE_ROLE },
-      { typeid: `project-${PROJECT_ID}`, role: 'member' },
-    ]);
+    const sent = invitations();
+    expect(sent).toHaveLength(2);
+    // One target each: this is what makes the emailed link's destination
+    // unambiguous, since the hub lands on the first target it finds.
+    expect(sent[0].targets).toEqual([{ typeid: `compute_node-${NODE_ID}`, role: SANDBOX_SHARE_ROLE }]);
+    expect(sent[1].targets).toEqual([{ typeid: `project-${PROJECT_ID}`, role: SANDBOX_PROJECT_ROLE }]);
   });
 
-  it('grants member, not reader', async () => {
+  it('sends the box FIRST, so a failure there grants nothing on the project', async () => {
+    await shareSandboxByEmail(nodeWithProject(), ['someone@example.com']);
+    expect(invitations()[0].targets[0].typeid.startsWith('compute_node-')).toBe(true);
+  });
+
+  it('grants member on the project, not reader', async () => {
     // On `project`, reader also allows `secret`. Being handed a sandbox is not a
     // reason to reach its secrets.
     await shareSandboxByEmail(nodeWithProject(), ['someone@example.com']);
-    expect(targets().find((t) => t.typeid.startsWith('project-'))?.role).toBe('member');
+    expect(invitations()[1].targets[0].role).toBe('member');
   });
 
-  it('carries the project on a handover as well as a share', async () => {
-    // The transfer path is the one that produced the bug: a new OWNER of the box
-    // still had no role on the project it opens.
+  it('keeps the transfer flag OFF the project invitation', async () => {
+    // The whole reason for splitting: a transfer confers `owner` and nothing
+    // else, so a `member` target inside it is refused outright.
     await shareSandboxByEmail(nodeWithProject(), ['someone@example.com'], { transfer: true });
-    expect(targets()).toEqual([
-      { typeid: `compute_node-${NODE_ID}`, role: 'owner' },
-      { typeid: `project-${PROJECT_ID}`, role: 'member' },
-    ]);
-    expect(lastBody().transfer).toBe(true);
+    const sent = invitations();
+    expect(sent[0].targets).toEqual([{ typeid: `compute_node-${NODE_ID}`, role: 'owner' }]);
+    expect(sent[0].transfer).toBe(true);
+    expect(sent[1].targets).toEqual([{ typeid: `project-${PROJECT_ID}`, role: SANDBOX_PROJECT_ROLE }]);
+    expect(sent[1].transfer).toBeUndefined();
   });
 
-  it('sends the machine alone when the box has no project', async () => {
-    // An empty sandbox is a machine and nothing else — there is nothing to grant.
+  it('still shares the project at member on a handover', async () => {
+    // Owning the machine does not make someone the owner of the work it opens.
+    await shareSandboxByEmail(nodeWithProject(), ['someone@example.com'], { transfer: true });
+    expect(invitations()[1].targets[0].role).toBe('member');
+  });
+
+  it('sends one invitation when the box has no project', async () => {
+    // An empty sandbox is a machine and nothing else.
     await shareSandboxByEmail(node(), ['someone@example.com']);
-    expect(targets()).toEqual([{ typeid: `compute_node-${NODE_ID}`, role: SANDBOX_SHARE_ROLE }]);
+    const sent = invitations();
+    expect(sent).toHaveLength(1);
+    expect(sent[0].targets).toEqual([{ typeid: `compute_node-${NODE_ID}`, role: SANDBOX_SHARE_ROLE }]);
+  });
+
+  it('does not grant the project when sharing the box failed', async () => {
+    // Nothing for the grant to accompany, and a role on work they cannot open.
+    callAction.mockRejectedValueOnce(new Error('nope') as never);
+    const out = await shareSandboxByEmail(nodeWithProject(), ['someone@example.com']);
+    expect(invitations()).toHaveLength(1);
+    expect(out.granted).toEqual([]);
+    expect(out.failed).toHaveLength(1);
   });
 });
