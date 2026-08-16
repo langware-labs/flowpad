@@ -112,6 +112,101 @@ def test_set_rejects_empty(sod_env):
     assert cookie_gate.is_gated() is False
 
 
+# ---------------------------------------------------------------------------
+# Desktop refusal
+# ---------------------------------------------------------------------------
+
+
+def test_set_refused_on_a_desktop_instance(sod_env):
+    """The gate exempts no path, so arming a desktop instance rejects the
+    Electron shell's own /health/status poll and the app never launches."""
+    sod_env.instance_dir.mkdir(parents=True, exist_ok=True)
+    sod_env.desktop_marker_path.touch()
+
+    with pytest.raises(cookie_gate.DesktopGateRefused):
+        cookie_gate.set_cookie_gate("s3cret")
+
+
+def test_desktop_refusal_leaves_the_instance_open(sod_env):
+    """Refusing must not half-arm: no marker, no secret, still serving."""
+    sod_env.instance_dir.mkdir(parents=True, exist_ok=True)
+    sod_env.desktop_marker_path.touch()
+
+    with pytest.raises(cookie_gate.DesktopGateRefused):
+        cookie_gate.set_cookie_gate("s3cret")
+
+    assert not sod_env.cookie_gate_marker_path.exists()
+    assert cookie_gate.get_cookie_gate() is None
+    assert cookie_gate.is_gated() is False
+
+
+def test_desktop_refusal_is_a_value_error(sod_env):
+    """The CLI reports it through its existing `except ValueError` handler."""
+    assert issubclass(cookie_gate.DesktopGateRefused, ValueError)
+
+
+def test_sandbox_without_a_desktop_marker_still_arms(sod_env):
+    """The refusal keys on positive desktop evidence, not on the absence of a
+    hub runtime assignment — a box that has not finished starting has neither."""
+    assert not sod_env.desktop_marker_path.exists()
+
+    cookie_gate.set_cookie_gate("s3cret")
+
+    assert cookie_gate.get_cookie_gate() == "s3cret"
+
+
+# ---------------------------------------------------------------------------
+# Recording the desktop fact — what makes the refusal above reachable from a
+# `flow` CLI process, which never sees FLOWPAD_DESKTOP itself.
+# ---------------------------------------------------------------------------
+
+
+def test_marks_desktop_instance_under_electron(sod_env, monkeypatch):
+    from flow_sdk.server.startup import mark_desktop_managed
+
+    monkeypatch.setenv("FLOWPAD_DESKTOP", "1")
+    mark_desktop_managed()
+
+    assert sod_env.desktop_marker_path.exists()
+
+
+def test_does_not_mark_without_electron(sod_env, monkeypatch):
+    """A sandbox or a plain CLI install must stay armable."""
+    from flow_sdk.server.startup import mark_desktop_managed
+
+    monkeypatch.delenv("FLOWPAD_DESKTOP", raising=False)
+    mark_desktop_managed()
+
+    assert not sod_env.desktop_marker_path.exists()
+    cookie_gate.set_cookie_gate("s3cret")
+    assert cookie_gate.is_gated() is True
+
+
+def test_marking_then_arming_is_refused(sod_env, monkeypatch):
+    """The end-to-end shape of the incident: desktop backend boots, then a CLI
+    call tries to arm the gate and is turned away."""
+    from flow_sdk.server.startup import mark_desktop_managed
+
+    monkeypatch.setenv("FLOWPAD_DESKTOP", "1")
+    mark_desktop_managed()
+
+    with pytest.raises(cookie_gate.DesktopGateRefused):
+        cookie_gate.set_cookie_gate("s3cret")
+
+    assert cookie_gate.is_gated() is False
+
+
+def test_marking_is_idempotent(sod_env, monkeypatch):
+    from flow_sdk.server.startup import mark_desktop_managed
+
+    monkeypatch.setenv("FLOWPAD_DESKTOP", "1")
+    mark_desktop_managed()
+    first = sod_env.desktop_marker_path.stat().st_mtime_ns
+    mark_desktop_managed()
+
+    assert sod_env.desktop_marker_path.stat().st_mtime_ns == first
+
+
 def test_armed_marker_alone_does_not_gate(sod_env):
     """Marker present but no secret in the sod → ungated. Never a gate with
     nothing to compare against."""
