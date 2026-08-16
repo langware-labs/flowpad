@@ -40,6 +40,43 @@ const wrote = (path: string, extra: Record<string, unknown> = {}) =>
 const edited = (path: string, extra: Record<string, unknown> = {}) =>
   toolFrame({ kind: 'file_edit', path, ...extra });
 
+/**
+ * A LIVE frame: no `process_entry` at all.
+ *
+ * This is the real wire shape, not a hypothetical. `processEntry` is populated
+ * only by `FlowData.fromJSON` (the history path); a live turn streams as XML,
+ * which carries attributes and the flow value but not a nested dict. Reading
+ * the kind/path solely off the transcript entry is why the chips once appeared
+ * only after a page reload.
+ */
+function liveFrame(kind: 'file_write' | 'file_edit', path: string, toolUseId = `tu-${seq++}`): FlowData {
+  const args = kind === 'file_write' ? { file_path: path, content: 'x' } : { file_path: path, edits: [] };
+  return new FlowData(
+    FlowElementTypes.TOOL_CALL,
+    JSON.stringify({ tool_name: kind === 'file_write' ? 'Write' : 'Edit', tool_call_id: toolUseId, input: args, args }),
+    {
+      i: String(seq++),
+      t: '2026-08-01T10:00:00Z',
+      'data-type': 'object',
+      subtype: kind,
+      'tool-name': kind === 'file_write' ? 'Write' : 'Edit',
+      'tool-use-id': toolUseId,
+      'observation-kind': 'live',
+    },
+  );
+}
+
+function liveResult(toolUseId: string, outcome: 'success' | 'error'): FlowData {
+  return new FlowData(FlowElementTypes.TOOL_RESULT, JSON.stringify({ tool_call_id: toolUseId, content: 'done' }), {
+    i: String(seq++),
+    t: '2026-08-01T10:00:00Z',
+    'data-type': 'object',
+    subtype: 'tool_result',
+    'tool-use-id': toolUseId,
+    outcome,
+  });
+}
+
 function dense(...events: FlowData[]): TurnGroup {
   return { kind: 'dense', index: seq++, events };
 }
@@ -134,6 +171,52 @@ describe('filesInGroup', () => {
 
   it('returns nothing for a message group', () => {
     expect(filesInGroup(userMessage('hello'))).toEqual([]);
+  });
+});
+
+describe('filesInGroup — the LIVE frame shape (no process_entry)', () => {
+  it('reads a live write off the subtype attribute and the tool input', () => {
+    // The regression this exists for: chips appeared only after a reload,
+    // because a live frame carries no `process_entry` to read the kind from.
+    expect(filesInGroup(dense(liveFrame('file_write', '/repo/live.ts')))).toEqual([
+      { path: '/repo/live.ts', name: 'live.ts', change: 'create' },
+    ]);
+  });
+
+  it('reads a live edit the same way', () => {
+    expect(marks(filesInGroup(dense(liveFrame('file_edit', '/repo/live.ts'))))).toEqual(['edit:/repo/live.ts']);
+  });
+
+  it('still ignores a live frame that touched no file', () => {
+    const bash = new FlowData(
+      FlowElementTypes.TOOL_CALL,
+      JSON.stringify({ tool_name: 'Bash', tool_call_id: 'tu-b', input: { command: 'rm -rf /repo' } }),
+      { i: '1', t: 'x', 'data-type': 'object', subtype: 'shell_command', 'tool-name': 'Bash' },
+    );
+
+    // A command line must never be mistaken for a path.
+    expect(filesInGroup(dense(bash))).toEqual([]);
+  });
+
+  it('drops a live write whose result reported failure', () => {
+    // `is_error` is folded in only on replay, so live the paired result is the
+    // only signal. Without it a failed write would chip mid-turn and then
+    // vanish on reload — the chips disagreeing with themselves.
+    const group = dense(liveFrame('file_write', '/repo/bad.ts', 'tu-x'), liveResult('tu-x', 'error'));
+
+    expect(filesInGroup(group)).toEqual([]);
+  });
+
+  it('keeps a live write whose result succeeded', () => {
+    const group = dense(liveFrame('file_write', '/repo/good.ts', 'tu-y'), liveResult('tu-y', 'success'));
+
+    expect(paths(filesInGroup(group))).toEqual(['/repo/good.ts']);
+  });
+
+  it('mixes live and replayed frames in one group', () => {
+    const group = dense(liveFrame('file_write', '/repo/live.ts'), wrote('/repo/replayed.ts'));
+
+    expect(paths(filesInGroup(group))).toEqual(['/repo/live.ts', '/repo/replayed.ts']);
   });
 });
 
