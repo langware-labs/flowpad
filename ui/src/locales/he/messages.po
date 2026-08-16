@@ -6596,6 +6596,10 @@ msgstr "שגיאה בטעינת רכיב"
 msgid "Error Loading Transcript"
 msgstr "שגיאה בטעינת הטרנסקריפט"
 
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx
+msgid "Error while displaying the suggestion, contact support"
+msgstr ""
+
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Error: {errorMessage}"
 #~ msgstr "שגיאה: {errorMessage}"
@@ -8432,6 +8436,7 @@ msgid "Hide empty"
 msgstr "הסתר ריקים"
 
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Hide feed entry"
 msgstr "הסתר הזנה"
 

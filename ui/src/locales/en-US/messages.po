@@ -6596,6 +6596,10 @@ msgstr "Error Loading Component"
 msgid "Error Loading Transcript"
 msgstr "Error Loading Transcript"
 
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx
+msgid "Error while displaying the suggestion, contact support"
+msgstr "Error while displaying the suggestion, contact support"
+
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Error: {errorMessage}"
 #~ msgstr "Error: {errorMessage}"
@@ -8432,6 +8436,7 @@ msgid "Hide empty"
 msgstr "Hide empty"
 
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Hide feed entry"
 msgstr "Hide feed entry"
 

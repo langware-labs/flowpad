@@ -6593,6 +6593,10 @@ msgstr "خطأ في تحميل المكون"
 msgid "Error Loading Transcript"
 msgstr "خطأ في تحميل النسخة"
 
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx
+msgid "Error while displaying the suggestion, contact support"
+msgstr ""
+
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Error: {errorMessage}"
 #~ msgstr ""
@@ -8429,6 +8433,7 @@ msgid "Hide empty"
 msgstr "إخفاء العناصر الفارغة"
 
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
+#: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Hide feed entry"
 msgstr "إخفاء العنصر"
 
