@@ -36,8 +36,10 @@ import { useInputHistory } from '@src/hooks/use-input-history';
 import { splitLiveGroup, useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { TurnGroupsList } from './TurnGroupsList';
 import { ChatActivityLine } from './ChatActivityLine';
+import { describeCurrentActivity } from './current-activity';
 import { TurnEventChip } from '@src/components/floating-chat/TurnEventChip';
 import { useObservedTurn } from './hooks/useObservedTurn';
+import { useStickyActivity } from './hooks/useStickyActivity';
 import { useTurnActivity } from './hooks/useTurnActivity';
 import {
   buildHistorySubline,
@@ -406,6 +408,18 @@ export function EntityExecutionPanel({
   const { inlineGroups, liveEvents } = useMemo(
     () => splitLiveGroup(turnGroups, dense && activity.active),
     [dense, activity.active, turnGroups],
+  );
+  // The live group is hidden behind the counter chip, so without this the
+  // footer could only say "Using tool" while the stream already knew it was
+  // editing a named file. Same frames, read for their operation instead of
+  // just counted (FLOWPAD-1980). `startedAt` scopes the read to the current
+  // turn — a resumed session's replayed history is in this buffer too.
+  const currentActivity = useStickyActivity(
+    useMemo(
+      () => describeCurrentActivity(liveEvents, activity.startedAt, activity.status),
+      [liveEvents, activity.startedAt, activity.status],
+    ),
+    activity.startedAt,
   );
 
   // 4. Project workdir + id (lazy-create inputs). Caller-supplied defaults
@@ -839,6 +853,7 @@ export function EntityExecutionPanel({
                 active={activity.active}
                 startedAt={activity.startedAt}
                 status={activity.status}
+                activity={currentActivity}
                 trailing={<TurnEventChip events={liveEvents} />}
               />
             )}
