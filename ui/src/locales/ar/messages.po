@@ -4812,6 +4812,7 @@ msgid "created"
 msgstr "تم الإنشاء"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Created"
 msgstr "تاريخ الإنشاء"
@@ -6233,6 +6234,10 @@ msgstr "تعديل المشغّل"
 #: src/components/conversation/MessageComposer.tsx
 msgid "Edit your draft…"
 msgstr "تعديل مسودتك…"
+
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Edited"
+msgstr ""
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Editing"
@@ -12357,6 +12362,11 @@ msgstr "فتح"
 msgid "Open .env.local at this line"
 msgstr "فتح .env.local عند هذا السطر"
 
+#. placeholder {0}: file.path
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Open {0}"
+msgstr ""
+
 #: src/components/terminal/ProjectsCounterChip.tsx
 #~ msgid "Open {0} on…"
 #~ msgstr ""
@@ -16721,6 +16731,10 @@ msgstr "عرض دليل الإعداد"
 #: src/components/account/danger-zone.tsx
 #~ msgid "Show system skills"
 #~ msgstr ""
+
+#: src/components/entity-execution-panel/TurnFilesChips.tsx
+msgid "Show the other files this turn touched"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Show timing info for each turn"
