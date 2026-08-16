@@ -6601,8 +6601,8 @@ msgstr "Error Loading Transcript"
 #~ msgstr "Error: {errorMessage}"
 
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
-msgid "Error: {statusCode}"
-msgstr "Error: {statusCode}"
+#~ msgid "Error: {statusCode}"
+#~ msgstr "Error: {statusCode}"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "errors"

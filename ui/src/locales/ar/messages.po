@@ -6598,8 +6598,8 @@ msgstr "خطأ في تحميل النسخة"
 #~ msgstr ""
 
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
-msgid "Error: {statusCode}"
-msgstr "خطأ: {statusCode}"
+#~ msgid "Error: {statusCode}"
+#~ msgstr "خطأ: {statusCode}"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "errors"
