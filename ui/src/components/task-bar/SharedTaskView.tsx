@@ -34,18 +34,14 @@ interface SharedTaskViewProps {
 export function SharedTaskView({ task, conversationId, onClose }: SharedTaskViewProps) {
   const { t } = useLingui();
 
-  const senderName = task.sender_name
-    || task.shared_by_id
-    || 'Unknown';
+  const senderName = task.sender_name || task.shared_by_id || 'Unknown';
 
   // Spec is now a plain `spec.md` file inside the task folder (with a legacy
   // Spec-entity fallback) — resolved by the shared hook.
   const specText = useTaskSpecText(task);
   const taskDerivedConvTypeId = task.firstContextOfType?.('conversation') ?? null;
   const resolvedConversationId = conversationId ?? taskDerivedConvTypeId?.id ?? null;
-  const conversationTypeId = resolvedConversationId
-    ? new TypeId(Conversation.type, resolvedConversationId)
-    : null;
+  const conversationTypeId = resolvedConversationId ? new TypeId(Conversation.type, resolvedConversationId) : null;
 
   const { localUser } = useLocalUser();
   const ensureCloudLogin = useCloudLoginGate();
@@ -61,15 +57,9 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
         notify.error({ title: gate.error });
         return;
       }
-      await sendReply(
-        { conversationId: conversationTypeId.id },
-        '',
-        undefined,
-        {
-          promptText: STATUS_REQUEST_PROMPT_TEXT,
-          sharedContextEntities: specTypeId ? [specTypeId.toString()] : [],
-        },
-      );
+      await sendReply({ conversationId: conversationTypeId.id }, '', undefined, {
+        promptText: STATUS_REQUEST_PROMPT_TEXT,
+      });
       notify.success({
         title: t`Status request sent`,
         message: t`The recipient will see a PROMPT to approve.`,
@@ -96,7 +86,9 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-base font-semibold">{task.displayName}</h2>
           {senderName && (
-            <p className="text-xs text-muted-foreground"><Trans>From {senderName}</Trans></p>
+            <p className="text-xs text-muted-foreground">
+              <Trans>From {senderName}</Trans>
+            </p>
           )}
         </div>
         {isAuthor && conversationTypeId && (
@@ -121,14 +113,18 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
           <section className="flex-shrink-0 space-y-3 border-b border-border px-4 py-4">
             {task.title && (
               <div>
-                <span className="text-xs font-medium text-muted-foreground"><Trans>Title</Trans></span>
+                <span className="text-xs font-medium text-muted-foreground">
+                  <Trans>Title</Trans>
+                </span>
                 <p className="mt-0.5 text-sm">{task.title}</p>
               </div>
             )}
             {specText && (
               <div>
-                <span className="text-xs font-medium text-muted-foreground"><Trans>Plan</Trans></span>
-                <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-border bg-muted/30 p-3 text-sm text-foreground/80 whitespace-pre-wrap">
+                <span className="text-xs font-medium text-muted-foreground">
+                  <Trans>Plan</Trans>
+                </span>
+                <div className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/30 p-3 text-sm text-foreground/80">
                   {specText}
                 </div>
               </div>
@@ -138,13 +134,11 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
 
         <div className="flex min-h-0 flex-1 flex-col">
           {conversationTypeId ? (
-            <ConversationPanel
-              task={task}
-              conversationId={conversationTypeId.id}
-              senderName={senderName}
-            />
+            <ConversationPanel task={task} conversationId={conversationTypeId.id} senderName={senderName} />
           ) : (
-            <p className="px-4 py-4 text-xs italic text-muted-foreground/60"><Trans>No conversation yet.</Trans></p>
+            <p className="px-4 py-4 text-xs italic text-muted-foreground/60">
+              <Trans>No conversation yet.</Trans>
+            </p>
           )}
         </div>
       </div>

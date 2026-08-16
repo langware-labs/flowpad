@@ -6613,8 +6613,8 @@ msgstr ""
 #~ msgstr "שגיאה: {errorMessage}"
 
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
-msgid "Error: {statusCode}"
-msgstr "שגיאה: {statusCode}"
+#~ msgid "Error: {statusCode}"
+#~ msgstr "שגיאה: {statusCode}"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "errors"
@@ -14326,7 +14326,7 @@ msgstr "גורם העדכניות (k)"
 #: src/components/open-project-component/open-project-component.tsx
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Recent"
-msgstr "אחרוני"
+msgstr "אחרונים"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Recent conversations"

@@ -60,6 +60,33 @@ secret: that an instance is gated is something the Forbidden page reveals anyway
 > and the only restart path is gated on `workspace_hub_url`, which defaults to empty. The gate would
 > silently stay off — the wrong direction for this to fail in.
 
+## What refuses to arm
+
+**A desktop-managed instance cannot be gated.** `set_cookie_gate` raises `DesktopGateRefused` when
+`<instance_dir>/.desktop_managed` exists, and both writers — the CLI command and
+`/auth/login_callback` — go through it. The callback logs and drops the secret rather than failing
+the login, the same posture it already takes for an unassignable `runtime`.
+
+This is not defensive dressing; it closes a real incident. `flow auth set-cookie-gate` is hub-driven
+and, as its help says, not meant to be typed by a human — but nothing enforced that, and a sandbox
+provisioning command aimed at `FLOW_INSTANCE=prod` armed the gate on a desktop install. Because the
+gate exempts no path, the Electron shell's own `/health/status` poll got the 403 like every other
+caller: 222 refusals across its 120-second startup budget, after which it concluded the backend it
+had just spawned was dead and killed it. The backend was healthy the whole time. Nothing in the
+desktop logs said "gate" — only "Backend failed to start within 120s timeout".
+
+Arming a desktop install is never correct: the gate exists to protect a sandbox's public
+`https://9007-<sandbox-id>.e2b.dev` URL, and a desktop app has no public URL to protect.
+
+The marker is written by the backend at startup (`server/startup.py::mark_desktop_managed`) when it
+sees `FLOWPAD_DESKTOP=1`, which `electron/uv-manager.js` sets on the process it spawns. It has to be
+persisted because that env var is visible only inside that one process — every `flow` CLI call is a
+separate process, which is exactly why the CLI could not tell a desktop install from a sandbox.
+
+Keyed on positive desktop evidence rather than on the absence of a hub `runtime` assignment: a real
+sandbox has no assignment either until `/auth/login_callback` lands, so refusing "unassigned"
+instances would block legitimate arming on a box that has not finished starting.
+
 ## How a caller gets in
 
 One credential, three transports — not three special cases:
