@@ -1,6 +1,6 @@
 import { FlowData, FlowElementTypes } from '@sdk';
 
-import type { TurnGroup } from './groupTurnEvents';
+import { getToolUseId, type TurnGroup } from './groupTurnEvents';
 import { transcriptEntry } from './transcriptEntry';
 
 /**
@@ -60,20 +60,69 @@ const CHANGE_OF_KIND: Record<string, FileChange> = {
   file_edit: 'edit',
 };
 
-/** What a frame did to a file, or null when it touched no file. */
+/**
+ * The file path off a tool call's own input — the LIVE-stream source.
+ *
+ * Both `file_write` and `file_edit` put it at `input.file_path` / `args.file_path`
+ * (`TranscriptEntry._tool_flow_data`). Read only that key, never the generic
+ * `describeToolInput`, which also yields commands and queries — a `Run` frame
+ * must never be able to chip its command line as a path.
+ */
+function toolInputPath(data: unknown): string {
+  if (typeof data !== 'object' || !data) return '';
+  const root = data as Record<string, unknown>;
+  const input = (root.input ?? root.args) as Record<string, unknown> | undefined;
+  if (!input || typeof input !== 'object') return '';
+  return typeof input.file_path === 'string' ? input.file_path : '';
+}
+
+/**
+ * What a frame did to a file, or null when it touched no file.
+ *
+ * Reads the typed transcript entry FIRST, then falls back to the frame's own
+ * attributes and value — and the fallback is load-bearing, not belt-and-braces.
+ * `processEntry` is a nested dict populated ONLY by `FlowData.fromJSON`, i.e.
+ * the history path. A live turn streams as XML, where only attributes and the
+ * flow value survive, so every live frame arrives with `processEntry === null`.
+ * Depending on it alone is why the chips used to appear only after a reload.
+ * The semantic `subtype` attribute and the tool input are what the live frame
+ * actually carries — the same fallback chain `describeEvent` uses.
+ */
 function fileTouchedBy(event: FlowData): TurnFile | null {
   if (event.elementType !== FlowElementTypes.TOOL_CALL) return null;
   const entry = transcriptEntry(event);
-  if (!entry) return null;
-  const change = CHANGE_OF_KIND[String(entry.kind)];
+  const entryKind = entry?.kind;
+  const kind = typeof entryKind === 'string' && entryKind ? entryKind : (event.attributes['subtype'] ?? '');
+  const change = CHANGE_OF_KIND[kind];
   if (!change) return null;
   // A failed operation changed nothing; `is_new: false` on a write would mean a
-  // plain overwrite rather than a creation.
-  if (entry.is_error === true) return null;
-  if (change === 'create' && entry.is_new === false) return null;
-  const path = entry.path;
-  if (typeof path !== 'string' || !path) return null;
+  // plain overwrite rather than a creation. Both are replay-only signals (they
+  // are folded in from the paired tool result), so live failures are caught by
+  // the result correlation in `filesInGroup` instead.
+  if (entry?.is_error === true) return null;
+  if (change === 'create' && entry?.is_new === false) return null;
+  const path = typeof entry?.path === 'string' && entry.path ? entry.path : toolInputPath(event.data);
+  if (!path) return null;
   return { path, name: fileNameOf(path), change };
+}
+
+/**
+ * tool_use_ids whose TOOL_RESULT reported failure.
+ *
+ * On replay the backend folds this into the entry as `is_error`, but a live
+ * frame is emitted before its result exists, so the only live signal is the
+ * paired result. Without this a write that threw would chip mid-turn and then
+ * vanish on reload — the chips would disagree with themselves.
+ */
+function erroredCallIds(events: readonly FlowData[]): Set<string> {
+  const failed = new Set<string>();
+  for (const event of events) {
+    if (event.elementType !== FlowElementTypes.TOOL_RESULT) continue;
+    if (event.attributes['outcome'] !== 'error' && event.attributes['is_error'] !== 'true') continue;
+    const id = getToolUseId(event);
+    if (id) failed.add(id);
+  }
+  return failed;
 }
 
 /**
@@ -118,10 +167,14 @@ export function filesInGroup(group: TurnGroup): readonly TurnFile[] {
   const cached = groupFiles.get(group);
   if (cached) return cached;
 
+  const failed = erroredCallIds(group.events);
   const byPath = new Map<string, TurnFile>();
   for (const event of group.events) {
     const file = fileTouchedBy(event);
-    if (file) collect(byPath, [file]);
+    if (!file) continue;
+    const id = getToolUseId(event);
+    if (id && failed.has(id)) continue;
+    collect(byPath, [file]);
   }
 
   const result = byPath.size > 0 ? Object.freeze([...byPath.values()]) : NO_FILES;
