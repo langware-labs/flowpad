@@ -422,6 +422,17 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
 
     * ``FLOWPAD_EXECUTION_SCOPE`` — process identity, so worker `flow`
       commands (show/record/context/…) resolve their calling process.
+    * ``FLOWPAD_PYTHON`` — the interpreter that can ``import flow_sdk``, named
+      outright so a worker never has to resolve one. Skills that run Flowpad's
+      own Python (e.g. flow-diagnose's ``report.py``) cannot use ``uv run``:
+      uv ignores PATH and resolves an environment by walking up from the
+      working directory, which for a worker is a user workspace with no
+      Flowpad in it. Nor can they use bare ``python``/``python3`` — the
+      capability bin folder is prepended AFTER our PATH pin at spawn time
+      (see :meth:`AgenticProcess.start_pty` and
+      :func:`build_worker_spawn_env`), so the name can resolve to an unrelated
+      interpreter, and a Windows venv ships no ``python3.exe`` at all. An
+      absolute path is the only form immune to both.
     * ``PATH`` — pinned to this backend's `flow` CLI (version-skew guard,
       see :func:`flow_cli_env_path`).
     * ``CLAUDE_CONFIG_DIR`` — for explicitly configured Claude roots, pinned
@@ -431,6 +442,13 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
 
     ``setdefault`` semantics for the scope (an explicit override wins);
     mutates and returns ``env``.
+
+    The interpreter is assigned rather than ``setdefault``-ed on purpose: it is
+    derived machine state, not launch config, and its value moves whenever the
+    install does (upgrade, reinstall). A stale one persisted in a process's
+    ``cli_config["env_vars"]`` would silently point workers at an interpreter
+    that no longer exists — the same failure this var was added to remove. Same
+    reasoning as ``FLOW_INSTANCE`` in ``ClaudeCLIWorker.build_env``.
     """
     import json as _json  # noqa: PLC0415
 
@@ -438,6 +456,7 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
         "FLOWPAD_EXECUTION_SCOPE",
         _json.dumps([{"type": process.get_type(), "id": process.id}]),
     )
+    env["FLOWPAD_PYTHON"] = sys.executable
     if process.driver.name == "claude":
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         from flow_sdk.instance_settings.base_settings import (  # noqa: PLC0415
@@ -877,6 +896,9 @@ def restart_payload_from_cli_options(options: AgentOptions) -> dict[str, Any]:
 
     Runtime-only env vars are injected after the process identity is known but
     are not user launch config, so they must not force a restart prompt.
+    ``FLOWPAD_PYTHON`` is stripped for the same reason and one of its own: it is
+    derived from this backend's ``sys.executable``, so it changes on every
+    reinstall/upgrade and would light a phantom restart glow on every process.
 
     ``resume`` is derived from (session_id, transcript-on-disk) by the driver's
     ``cli_options`` and flips False→True as soon as the worker writes its first
@@ -895,6 +917,7 @@ def restart_payload_from_cli_options(options: AgentOptions) -> dict[str, Any]:
     data = dict(options.to_json())
     env_vars = dict(data.get("env_vars") or {})
     env_vars.pop("FLOWPAD_EXECUTION_SCOPE", None)
+    env_vars.pop("FLOWPAD_PYTHON", None)
     data["env_vars"] = env_vars
     data.pop("resume", None)
     data.pop("fork_session_id", None)
@@ -923,7 +946,6 @@ def worker_capability_kind(worker_type: str) -> str:
     from flow_sdk.core.capabilities.mcp import harness_kind_for_worker_type
 
     return harness_kind_for_worker_type(worker_type) or f"harness.{worker_type}.cli"
-
 
 
 def worker_bin_folder(worker_type: str) -> str | None:

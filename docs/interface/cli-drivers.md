@@ -126,6 +126,7 @@ inputs that would light up a phantom "restart required" glow:
 | `resume` | Derived from (session_id, transcript-on-disk); flips False→True the instant the worker writes its first JSONL line, racing the snapshot captured at `start_pty()` |
 | `fork_session_id` | Same shape — points at the parent at fork time, then gets stripped from `cli_config` once the new session materialises on disk (see `ClaudeDriver.headless_prompt`'s fork-strip) |
 | `env_vars["FLOWPAD_EXECUTION_SCOPE"]` | Runtime-only, injected after process identity is known — not user launch config |
+| `env_vars["FLOWPAD_PYTHON"]` | Runtime-only, derived from this backend's `sys.executable`; changes on every reinstall/upgrade, so hashing it would glow on every process after an update |
 
 ### Factories
 
