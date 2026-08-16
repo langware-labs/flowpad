@@ -3,7 +3,7 @@
 This script lives **next to the flow-diagnose SKILL.md** and is what the skill's
 final step (Step 7) runs to record a diagnosis. Run it as a script, e.g.:
 
-    uv run python <skill_dir>/report.py \
+    "$FLOWPAD_PYTHON" <skill_dir>/report.py \
         --title "Stale lock blocked startup" \
         --symptoms "App stuck on Starting; backend not responding." \
         --rca "server.lock left by a dead PID blocked the singleton bind." \
@@ -41,9 +41,29 @@ The `flow diagnose` runner cross-links the diagnosis to the calling process itse
 from __future__ import annotations
 
 import logging
+import os
+import sys
 from datetime import datetime
 
-from flow_sdk._compat import UTC
+try:
+    from flow_sdk._compat import UTC
+except ModuleNotFoundError as exc:  # pragma: no cover — wrong-interpreter path
+    if exc.name != "flow_sdk":
+        raise  # a genuine dependency break; don't swallow it
+    # Say which interpreter to use instead of leaving a bare traceback. Recovery
+    # used to be pure improvisation — one run invented a diagnosis_id rather than
+    # fail (FLOWPAD-1974). Deliberately mentions no "diagnosis_id": the runner
+    # scrapes that token to detect completion, so keeping it out of this message
+    # leaves the run incomplete and lets the runner's nudge deliver this text
+    # back to the agent.
+    raise SystemExit(
+        f"report.py needs Flowpad's own interpreter; this one has no flow_sdk:\n"
+        f"  ran under:      {sys.executable}\n"
+        f"  should run as:  {os.environ.get('FLOWPAD_PYTHON') or '$FLOWPAD_PYTHON (unset!)'}\n"
+        f"Re-run the exact same command with \"$FLOWPAD_PYTHON\" as the interpreter. "
+        f"Do not use `uv run` (it resolves an environment from the working directory, "
+        f"not PATH) or `python3` (a Windows venv ships no python3.exe)."
+    ) from exc
 
 logger = logging.getLogger(__name__)
 
@@ -313,6 +333,5 @@ async def _amain(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     import asyncio
-    import sys
 
     sys.exit(asyncio.run(_amain()))
