@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AgenticProcess } from '@sdk';
+import { cn } from '@src/lib/utils';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
@@ -40,7 +41,17 @@ const FETCH_LIMIT = 10;
  * Renders nothing when the project has no sessions — a fresh project keeps the
  * clean hero.
  */
-export function VibeRecentSessions() {
+interface VibeRecentSessionsProps {
+  /** Optional caption above the rows. Rendered INSIDE the non-empty branch, so a
+   *  project with no sessions shows neither the label nor an empty container.
+   *  The hero passes none (the composer above it is context enough); the
+   *  no-process workspace labels it, because there the list is the only content. */
+  heading?: ReactNode;
+  /** Extra classes for the list container (e.g. a max-width on a narrow pane). */
+  className?: string;
+}
+
+export function VibeRecentSessions({ heading, className }: VibeRecentSessionsProps = {}) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { project } = useProject();
@@ -97,9 +108,14 @@ export function VibeRecentSessions() {
   return (
     <>
       <div
-        className="w-full overflow-hidden rounded-lg border border-border/60 text-start"
+        className={cn('w-full overflow-hidden rounded-lg border border-border/60 text-left', className)}
         data-testid="vibe-recent-sessions"
       >
+        {heading ? (
+          <div className="border-b border-border/60 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {heading}
+          </div>
+        ) : null}
         <div className="divide-y divide-border/60">
           {recent.map((entry) => {
             // Cached read only — never a fetch per row. The entity wins over the
