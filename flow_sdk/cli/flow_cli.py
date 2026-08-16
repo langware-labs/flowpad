@@ -546,6 +546,10 @@ def auth_set_cookie_gate(
     point (see docs/cookie-gate.md); it is also why the supervisor in
     server/launch.py has to present the secret on its own probes.
 
+    Refused on a desktop-managed instance, where that same total coverage would
+    reject the Electron shell's own startup health poll and stop the app from
+    launching at all.
+
     Example: flow auth set-cookie-gate <secret>
     """
     from flow_sdk.instance_settings.cookie_gate import set_cookie_gate
@@ -554,7 +558,8 @@ def auth_set_cookie_gate(
         set_cookie_gate(value)
     except ValueError as e:
         # Empty value: arming on "" would store a secret that reads as unset,
-        # leaving the instance open while looking locked.
+        # leaving the instance open while looking locked. Or DesktopGateRefused:
+        # this instance is the desktop app's, which the gate would brick.
         typer.echo(f"✗ {e}", err=True)
         raise typer.Exit(1)
     typer.echo("✓ Cookie gate armed")

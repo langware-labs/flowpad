@@ -56,11 +56,13 @@ def _canonical_lexical_path(path: str | os.PathLike[str]) -> Path:
     """Normalize a configured path without touching the filesystem."""
     return Path(os.path.abspath(os.path.expanduser(os.fspath(path))))
 
+
 # Phase B additions — instance identity + sod accessor.
 INSTANCE_NAME_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
 SOD_KEY_KEYCHAIN_SERVICE = "Flowpad.ai.sod_key"
 CONSENT_MARKER_FILENAME = ".secrets_enabled"
 COOKIE_GATE_MARKER_FILENAME = ".cookie_gate_armed"
+DESKTOP_MARKER_FILENAME = ".desktop_managed"
 SODOT_FILENAME = "sodot"
 
 # Sentinel for the per-instance memoized key/store fields, set on the frozen
@@ -85,7 +87,7 @@ class BaseInstanceSettings:
     """Resolved per-instance config. Defaults are prod values."""
 
     # ---- Identity ----
-    instance_name: str           # "prod" | "dev" | "test"
+    instance_name: str  # "prod" | "dev" | "test"
     is_dev: bool
 
     # ---- Networking ----
@@ -117,7 +119,7 @@ class BaseInstanceSettings:
     toplog_config_path: Path
 
     # ---- Database ----
-    db_driver: str               # "sqlite" | "neo4j" | "networkx"
+    db_driver: str  # "sqlite" | "neo4j" | "networkx"
 
     # ---- User-level (intentionally shared across instances unless overridden) ----
     user_home: Path
@@ -211,7 +213,11 @@ class BaseInstanceSettings:
 
     @staticmethod
     def _build_from_env(
-        *, cls: type, instance_name: str, is_dev: bool, default_port: int,
+        *,
+        cls: type,
+        instance_name: str,
+        is_dev: bool,
+        default_port: int,
     ) -> "BaseInstanceSettings":
         """Shared from_env body — Phase F consolidation.
 
@@ -483,6 +489,28 @@ class BaseInstanceSettings:
         return self.instance_dir / COOKIE_GATE_MARKER_FILENAME
 
     @property
+    def desktop_marker_path(self) -> Path:
+        """Desktop-managed marker. Presence ⇔ the Electron app owns this instance.
+
+        Written by the backend at startup when it sees ``FLOWPAD_DESKTOP=1``
+        (``server/startup.py::mark_desktop_managed``), which is set only by
+        ``electron/uv-manager.js``. It exists because that env var lives in the
+        backend process alone: ``flow`` CLI invocations are separate processes
+        and cannot see it, so without a persisted fact they cannot tell a
+        desktop install from a sandbox. ``cookie_gate.set_cookie_gate`` reads
+        this to refuse arming a gate that would lock the desktop app out of its
+        own health check.
+
+        Positive evidence rather than the absence of a hub runtime assignment:
+        a sandbox has no assignment either until ``/auth/login_callback`` lands,
+        so keying on "unassigned" would refuse legitimate arming on a box that
+        has not finished starting.
+
+        Holds no secret; the same stat()-only trick as the markers above.
+        """
+        return self.instance_dir / DESKTOP_MARKER_FILENAME
+
+    @property
     def sod_key(self) -> bytes:
         """Resolve (once, memoized) the per-instance Fernet key.
 
@@ -539,6 +567,7 @@ class BaseInstanceSettings:
         if cached is not _UNSET:
             return cached
         from flow_sdk.sod.file_sod import FileSodStorage
+
         store = FileSodStorage(key_provider=lambda: self.sod_key, file_path=self.sodot_path)
         object.__setattr__(self, "_sod_store_memo", store)
         return store
@@ -620,6 +649,7 @@ def _read_legacy_keyring_key(instance_name: str) -> str | None:
     unavailable. Kept local to avoid a circular import with the secrets layer."""
     try:
         import keyring
+
         return keyring.get_password(SOD_KEY_KEYCHAIN_SERVICE, instance_name)
     except Exception:  # noqa: BLE001
         return None

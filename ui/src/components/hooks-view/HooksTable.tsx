@@ -4,7 +4,7 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { Plus, Trash2 } from 'lucide-react';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 export interface HookTableRow {
   id: string;
@@ -39,6 +39,8 @@ interface HooksTableProps {
 }
 
 export function HooksTable({ rows, selectedRowId, onRowClick, onAddClick, onDeleteClick }: HooksTableProps) {
+  const { t } = useLingui();
+
   if (rows.length === 0) {
     // Compact empty state
     return (
