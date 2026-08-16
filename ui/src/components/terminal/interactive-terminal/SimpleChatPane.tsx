@@ -62,8 +62,8 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
   const activity = useTurnActivity(process);
   // Skin layer: this pane also serves a HEADLESS process in Advanced/Dev (see
   // `showSimpleChat` in InteractiveTerminal), so "the chat pane is mounted"
-  // does NOT imply Standard. The per-turn created-files chips are a Standard
-  // affordance, so the mode is read explicitly.
+  // does NOT imply Standard. The per-turn file chips are a Standard affordance,
+  // so the mode is read explicitly.
   const viewMode = useViewMode();
 
   // Same named-operation readout the vibe chat shows ("Editing · foo.ts").
@@ -121,7 +121,7 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
             <TurnGroupsList
               groups={turnGroups}
               worker={process.worker_type ?? undefined}
-              showCreatedFiles={viewMode === ViewMode.Standard}
+              showTurnFiles={viewMode === ViewMode.Standard}
               process={process}
               turnActive={activity.active}
             />
