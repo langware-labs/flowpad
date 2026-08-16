@@ -1,8 +1,9 @@
 import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AgenticProcess } from '@sdk';
+import { FlowElementTypes, type AgenticProcess, type FlowData } from '@sdk';
 import { useLingui } from '@lingui/react/macro';
 import ExecutionMessage from '@src/components/entity-execution-panel/execution-message/execution-message';
+import { ToolEntryRow } from '@src/components/floating-chat/ToolEntryRow';
 import {
   contextWindowFor,
   useConversationSearch,
@@ -42,6 +43,54 @@ function highlight(text: string, query: string): React.ReactNode {
   }
   out.push(text.slice(from));
   return out;
+}
+
+/**
+ * A row the chat renders as a tool chip rather than as prose.
+ *
+ * `ExecutionMessage` has no tool branch — it markdown-renders `content` under an
+ * assistant identity row. On a TOOL_RESULT that means the raw tool output
+ * attributed to the agent as if it had said it, and on a TOOL_CALL it means
+ * nothing at all, because a call's payload lives in `data` and `content` is
+ * empty (the component returns null on empty content). Both go to the chip.
+ */
+function isToolRow(item: FlowData): boolean {
+  return item.elementType === FlowElementTypes.TOOL_CALL || item.elementType === FlowElementTypes.TOOL_RESULT;
+}
+
+/** One rendered row of an expanded hit's context. */
+interface ContextRow {
+  key: number;
+  entries: ContextEntry[];
+  isTool: boolean;
+  /** True when the searched-for match is in this row. */
+  isMatch: boolean;
+}
+
+/**
+ * Partition a context window into rendered rows: prose one-per-entry, and
+ * CONSECUTIVE tool rows merged into one.
+ *
+ * The merge is what lets `ToolEntryRow` pair a call with its result via
+ * `pairToolEvents` — handed a lone TOOL_RESULT it can only render the
+ * "tool result (no matching call)" fallback, which is the raw reading this
+ * replaces. Mirrors how `groupTurnEvents` feeds the same component in the chat
+ * panes, minus the grouper's stream bookkeeping: a context window is a fixed
+ * five-row slice, not a live stream.
+ */
+function groupContextRows(context: readonly ContextEntry[]): ContextRow[] {
+  const rows: ContextRow[] = [];
+  for (const entry of context) {
+    const isTool = isToolRow(entry.item);
+    const open = rows[rows.length - 1];
+    if (isTool && open?.isTool) {
+      open.entries.push(entry);
+      open.isMatch = open.isMatch || entry.isMatch;
+      continue;
+    }
+    rows.push({ key: entry.itemIndex, entries: [entry], isTool, isMatch: entry.isMatch });
+  }
+  return rows;
 }
 
 /**
@@ -246,45 +295,57 @@ interface ConversationHitRowProps {
 }
 
 const ConversationHitRow = React.forwardRef<HTMLDivElement, ConversationHitRowProps>(
-  ({ hit, query, worker, selected, expanded, context, onKeyDown, onClick }, ref) => (
-    <div
-      ref={ref}
-      data-testid="conversation-search-result"
-      tabIndex={-1}
-      role="option"
-      aria-selected={selected}
-      onKeyDown={onKeyDown}
-      onClick={onClick}
-      className={`cursor-pointer border-b border-border/50 px-2 py-1.5 outline-none ${
-        selected ? 'bg-accent text-foreground' : 'hover:bg-accent/50'
-      }`}
-    >
-      <div className="flex items-baseline gap-2">
-        <span className="shrink-0 rounded bg-muted px-1 text-[10px] uppercase text-muted-foreground">{hit.label}</span>
-        <span className="min-w-0 flex-1 truncate text-xs">{highlight(hit.snippet, query)}</span>
-      </div>
-      {expanded && context && context.length > 0 && (
-        // The matched message reads in its surroundings: a couple of messages
-        // before and after, dimmed, with the match itself at full contrast and
-        // rail-marked so it stays findable once the block is scrolled.
-        <div
-          data-testid="conversation-search-context"
-          className="mt-1.5 max-h-64 space-y-1 overflow-y-auto rounded border border-border bg-background/60 p-1"
-        >
-          {context.map((entry) => (
-            <div
-              key={entry.itemIndex}
-              data-testid={entry.isMatch ? 'conversation-search-context-match' : 'conversation-search-context-nearby'}
-              className={
-                entry.isMatch ? 'rounded-sm border-l-2 border-primary bg-background/70 pl-1.5' : 'pl-1.5 opacity-60'
-              }
-            >
-              <ExecutionMessage flowData={entry.item} isUser={entry.isUser} worker={worker} />
-            </div>
-          ))}
+  ({ hit, query, worker, selected, expanded, context, onKeyDown, onClick }, ref) => {
+    const rows = useMemo(() => (context ? groupContextRows(context) : []), [context]);
+    return (
+      <div
+        ref={ref}
+        data-testid="conversation-search-result"
+        tabIndex={-1}
+        role="option"
+        aria-selected={selected}
+        onKeyDown={onKeyDown}
+        onClick={onClick}
+        className={`cursor-pointer border-b border-border/50 px-2 py-1.5 outline-none ${
+          selected ? 'bg-accent text-foreground' : 'hover:bg-accent/50'
+        }`}
+      >
+        <div className="flex items-baseline gap-2">
+          <span className="shrink-0 rounded bg-muted px-1 text-[10px] uppercase text-muted-foreground">
+            {hit.label}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-xs">{highlight(hit.snippet, query)}</span>
         </div>
-      )}
-    </div>
-  ),
+        {expanded && rows.length > 0 && (
+          // The matched message reads in its surroundings: a couple of messages
+          // before and after, dimmed, with the match itself at full contrast and
+          // rail-marked so it stays findable once the block is scrolled.
+          <div
+            data-testid="conversation-search-context"
+            className="mt-1.5 max-h-64 space-y-1 overflow-y-auto rounded border border-border bg-background/60 p-1"
+          >
+            {rows.map((row) => (
+              <div
+                key={row.key}
+                data-testid={row.isMatch ? 'conversation-search-context-match' : 'conversation-search-context-nearby'}
+                className={
+                  row.isMatch ? 'rounded-sm border-l-2 border-primary bg-background/70 pl-1.5' : 'pl-1.5 opacity-60'
+                }
+                // A chip is interactive — expanding it must not toggle the hit
+                // row shut underneath.
+                onClick={row.isTool ? (e) => e.stopPropagation() : undefined}
+              >
+                {row.isTool ? (
+                  <ToolEntryRow events={row.entries.map((entry) => entry.item)} />
+                ) : (
+                  <ExecutionMessage flowData={row.entries[0].item} isUser={row.entries[0].isUser} worker={worker} />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  },
 );
 ConversationHitRow.displayName = 'ConversationHitRow';
